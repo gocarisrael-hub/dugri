@@ -269,3 +269,54 @@ def test_order_to_pdf_defaults_to_the_blend():
 
     sig = inspect.signature(order_to_pdf.order_to_pdf)
     assert sig.parameters["order"].default == pack.ORDER_RANDOM
+
+
+def test_an_explicit_boundary_beats_the_measured_one(monkeypatch):
+    # THE BUG THIS GUARDS, in the owner's words: "i try to say to him first
+    # costumer words and then ours and it still comes the pdf not like this".
+    #
+    # An order with a FROZEN WORD BANK reaches the generator as one flat list —
+    # her 240 words with the pool's 172 already behind them. Measuring the
+    # boundary off that list answers 412, `card_groups` sees a boundary equal to
+    # the deck and returns ONE group, and personal-first silently prints the
+    # blend. Nothing errors; the deck just isn't what she asked for.
+    import order_to_pdf
+
+    seen = {}
+
+    def spy(words, out_csv, **kw):
+        seen.update(kw)
+        raise _Stop()
+
+    monkeypatch.setattr(pack, "pack", spy)
+    bank = _he(240) + _en(172)  # hers first, filler behind — what a bank is
+    try:
+        order_to_pdf.order_to_pdf(
+            "bachelorette", "שירה", {}, bank, out_pdf="/tmp/unused.pdf",
+            order=pack.ORDER_PERSONAL_FIRST, personal_count=240,
+        )
+    except _Stop:
+        pass
+    assert seen.get("personal_count") == 240
+
+    # …and without it, the measurement says "all of them", which is the silent
+    # no-op the fix exists to stop being possible unnoticed.
+    seen.clear()
+    try:
+        order_to_pdf.order_to_pdf(
+            "bachelorette", "שירה", {}, bank, out_pdf="/tmp/unused.pdf",
+            order=pack.ORDER_PERSONAL_FIRST,
+        )
+    except _Stop:
+        pass
+    assert seen.get("personal_count") == len(bank)
+    assert len(pack.card_groups(bank, pack.ORDER_PERSONAL_FIRST, len(bank))) == 1
+
+
+def test_a_boundary_of_zero_or_none_still_measures():
+    # Both mean "nothing to say" — a collection with no bank, or a bank frozen
+    # before the count was recorded — and must fall back to measuring rather than
+    # splitting at zero (which would put every word in the filler group).
+    for boundary in (None, 0):
+        groups = pack.card_groups(_he(10), pack.ORDER_PERSONAL_FIRST, boundary)
+        assert len(groups) == 1

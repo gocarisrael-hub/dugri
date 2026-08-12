@@ -31,7 +31,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
                  custom_title=None, photos=None, press_icc=None,
                  press_bleed=None, press_cmyk=True, gender=None, wordlist=None,
-                 order=pack.ORDER_RANDOM):
+                 order=pack.ORDER_RANDOM, personal_count=None):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -62,6 +62,15 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                   buyer's personal words still come first and generic-350 is
                   still the backstop, so an override can neither drop a word nor
                   leave the deck short
+    personal_count
+                  where the BUYER's own words end in ``personal_words`` — the
+                  boundary 'personal-first' splits on. Normally None and measured
+                  here, which is right when the caller hands over her raw list.
+                  It is NOT right for an order with a frozen word bank: that
+                  arrives as one flat list of 412 (hers, then filler), so the
+                  measurement below would say "all 412 are hers" and the deck
+                  would print blended with nothing to show it. The server knows
+                  the real boundary and passes it.
     order         how the words are laid onto cards (see pack.ORDERS), chosen per
                   order by the owner: 'random' blends everything, 'personal-first'
                   opens the deck with HER words, 'by-script' keeps Hebrew cards and
@@ -93,7 +102,11 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         # Where her own words end and the filler begins — the boundary the
         # 'personal-first' order splits on. It is a count because the deck is one
         # flat list; nothing marks a word as filler.
-        personal_count = topupmod.personal_span(personal_words)
+        #
+        # An explicit count from the caller WINS. Measuring works only when what
+        # we were handed is her raw list; a frozen word bank is her words with the
+        # filler already behind them, and measuring that says "all of it".
+        boundary = personal_count if personal_count else topupmod.personal_span(personal_words)
 
         # 2) Write the words to a temp file, then pack into the deck CSV (one row
         #    per card in v2, one row per 8-up sheet in v1). The front cycling is
@@ -105,9 +118,9 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         csv_path = os.path.join(workdir, "order.csv")
         if config.is_single_card(cfg):
             pack.pack(words, csv_path, fronts=len(config.fronts(cfg)),
-                      order=order, personal_count=personal_count)
+                      order=order, personal_count=boundary)
         else:
-            pack.pack(words, csv_path, order=order, personal_count=personal_count)
+            pack.pack(words, csv_path, order=order, personal_count=boundary)
 
         # 3) Render. A v2 (single-card) template produces TWO artifacts — the
         #    208-page card deck and a separate board file; a v1 template still
@@ -204,6 +217,11 @@ def main():
                     help="how the words are laid onto cards: random blends them, "
                          "personal-first opens with the buyer's own words, by-script "
                          "keeps Hebrew and Latin cards apart")
+    ap.add_argument("--personal-count", type=int, default=None, metavar="N",
+                    help="how many of the leading words are the buyer's own — the "
+                         "boundary --order=personal-first splits on. Pass it when "
+                         "the word list is a frozen bank (hers + filler already "
+                         "joined); omit it when the list IS her own words")
     ap.add_argument("--photo", action="append", default=[], metavar="PATH",
                     help="a customer pawn photo for the photo card (repeatable, up to 4)")
     args = ap.parse_args()
@@ -216,6 +234,7 @@ def main():
         press_icc=args.press, press_bleed=args.bleed,
         press_cmyk=not args.press_passthrough, gender=args.gender,
         wordlist=args.wordlist, order=args.order,
+        personal_count=args.personal_count,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of
