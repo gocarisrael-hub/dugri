@@ -1686,6 +1686,13 @@
         if (isSent) btn.title = 'סומן כנשלח לדפוס ב-' + fmtDate(order.sent_to_print_at);
         // Back from print already — the stamp is now history, not a toggle. It
         // is disabled rather than hidden so the row still says the order went.
+        //
+        // The WHY is printed under it, not left in a title attribute. A tooltip
+        // needs a hover, and this table is worked from a phone: the owner met two
+        // green stamps, a button that did nothing, and no way to find out that the
+        // order to undo them is the reverse of the order they were made in. Shown
+        // only while it applies, which is exactly when it is the next thing she
+        // needs to know.
         if (isSent && isReady) {
           btn.disabled = true;
           btn.title = 'ההזמנה כבר סומנה כמוכנה — לביטול, בטלו קודם את "מוכן"';
@@ -1713,6 +1720,13 @@
           }
         };
         td.appendChild(btn);
+        if (isSent && isReady) {
+          const why = document.createElement('div');
+          why.className = 'muted';
+          why.dataset.testid = 'to-print-blocked';
+          why.textContent = 'לביטול — בטלו קודם את "מוכן"';
+          td.appendChild(why);
+        }
         return td;
       }
 
@@ -1822,6 +1836,8 @@
           btn.disabled = true;
           btn.title = 'קודם צריך לסמן שההזמנה נשלחה לדפוס';
         }
+        // Same reasoning as the print cell above: the gate is stated on the row,
+        // not in a tooltip nobody on a phone can reach.
         btn.onclick = async () => {
           if (isReady) {
             const ok = confirm(
@@ -1847,6 +1863,13 @@
           }
         };
         td.appendChild(btn);
+        if (!isReady && !isSent) {
+          const why = document.createElement('div');
+          why.className = 'muted';
+          why.dataset.testid = 'ready-blocked';
+          why.textContent = 'קודם סמנו "נשלח לגלאור"';
+          td.appendChild(why);
+        }
         return td;
       }
 

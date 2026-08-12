@@ -93,13 +93,32 @@ test.describe('admin wordlists', () => {
     }
   });
 
-  // DESTRUCTIVE, and therefore single-project: the two device projects share one
-  // server and one throwaway store, so whichever runs second would find the pool
-  // already renamed. Same reason the linkage describe below pins itself.
+  // These two are DESTRUCTIVE, which costs them two things.
+  //
+  // Single-project: the device projects share one server and one store, so
+  // whichever ran second would find the pool already gone. (Same reason the
+  // linkage describe below pins itself.)
+  //
+  // And self-seeding: they subject a pool that ships in the image, and a store
+  // that has already run them once no longer has it. `ensurePool` puts it back
+  // first, so the suite is re-runnable against an accumulated .e2e-data instead of
+  // passing only on the fresh store CI happens to give it.
+  async function ensurePool(request, name) {
+    const r = await request.get(`/api/admin/wordlists?key=${KEY}`);
+    const body = await r.json().catch(() => ({}));
+    if ((body.wordlists || []).some((w) => w.name === name)) return;
+    const created = await request.post(`/api/admin/wordlists?key=${KEY}`, {
+      data: { name: name.replace(/\.txt$/, ''), text: 'מילה\nשנייה' },
+    });
+    expect(created.ok()).toBeTruthy();
+  }
+
   test('a shipped pool nobody uses can be renamed, and the new name persists', async ({
     page,
+    request,
   }, testInfo) => {
     test.skip(testInfo.project.name !== 'Desktop Chrome', 'destructive: runs once per server');
+    await ensurePool(request, 'combined-416.txt');
     const to = 'שם חדש ' + Math.random().toString(36).slice(2, 7);
     await page.goto(`/admin-wordlists.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
@@ -123,8 +142,10 @@ test.describe('admin wordlists', () => {
 
   test('a shipped pool nobody uses can be deleted, and stays deleted', async ({
     page,
+    request,
   }, testInfo) => {
     test.skip(testInfo.project.name !== 'Desktop Chrome', 'destructive: runs once per server');
+    await ensurePool(request, 'friends-25.txt');
     await page.goto(`/admin-wordlists.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
     const item = page.locator('.list-item[data-item="friends-25.txt"]');

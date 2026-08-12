@@ -156,6 +156,8 @@ test('to-print: an order that never went to print cannot be marked ready', async
   const ready = rowFor(page, name).getByTestId('ready-toggle');
   await expect(ready).toBeDisabled();
   await expect(ready).toHaveAttribute('title', /נשלחה לדפוס/);
+  // …and the reason is legible without a hover, which is what a phone has.
+  await expect(rowFor(page, name).getByTestId('ready-blocked')).toBeVisible();
 
   // ...and it opens up the moment the order goes to the printer.
   await rowFor(page, name).getByTestId('to-print-toggle').click();
@@ -173,4 +175,38 @@ test('to-print: cannot be un-sent once the order is marked ready', async ({ page
   await page.goto(`/admin.html?key=${KEY}`);
   await expect(rowFor(page, name).getByTestId('ready-toggle')).toHaveText(/מוכן ✅/);
   await expect(rowFor(page, name).getByTestId('to-print-toggle')).toBeDisabled();
+});
+
+// AND HOW TO GET BACK. Both stamps come off — in the reverse of the order they
+// went on — but the only thing that said so was a title attribute, which needs a
+// hover this table does not get: it is worked from a phone. The owner met two
+// green stamps and a button that did nothing.
+test('the way back is written on the row, not left in a tooltip', async ({ page, request }) => {
+  const name = uniq('דרךחזרה');
+  const { id } = await seedOrder(request, name);
+  const r = await request.post(`/api/admin/collections/${id}/ready?key=${KEY}`, { data: {} });
+  expect(r.ok()).toBeTruthy();
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = rowFor(page, name);
+
+  // Both stamped: the print cell says what to undo first, in the row itself.
+  await expect(row.getByTestId('to-print-blocked')).toBeVisible();
+  await expect(row.getByTestId('to-print-blocked')).toContainText('מוכן');
+
+  // Follow it: un-mark ready…
+  page.on('dialog', (d) => d.accept());
+  await row.getByTestId('ready-toggle').click();
+  await expect(row.getByTestId('ready-toggle')).toHaveText(/מוכן לאיסוף/);
+
+  // …and the print stamp is a toggle again, with the hint gone.
+  await expect(row.getByTestId('to-print-toggle')).toBeEnabled();
+  await expect(row.getByTestId('to-print-blocked')).toHaveCount(0);
+
+  // Un-send it too: the order is back to produced-and-waiting, which is where a
+  // reprint starts from.
+  await row.getByTestId('to-print-toggle').click();
+  await expect(row.getByTestId('to-print-toggle')).toHaveText('נשלח לגלאור');
+  // The ready gate is back up, and it says so on the row.
+  await expect(row.getByTestId('ready-toggle')).toBeDisabled();
+  await expect(row.getByTestId('ready-blocked')).toBeVisible();
 });
