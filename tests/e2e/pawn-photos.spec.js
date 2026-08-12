@@ -397,12 +397,22 @@ test.describe('pawn photos: the helper copy', () => {
     await toPawnStep(page);
     await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
 
-    const copy = { sub: '[data-step="5"] .wiz-sub', hint: '[data-testid="pawn-hint"]' };
+    const copy = {
+      sub: '[data-step="5"] .wiz-sub',
+      hint: '[data-testid="pawn-hint"]',
+      // The same floor covers the two lines added later — what arrives (the cut
+      // line) and the tip — for the same reason: they are read once, on a phone.
+      cut: '[data-testid="pawn-cut"]',
+      tip: '[data-testid="pawn-tip"] p',
+    };
     for (const [what, sel] of Object.entries(copy)) {
-      const { size, lead } = await page.locator(sel).evaluate((el) => {
-        const cs = getComputedStyle(el);
-        return { size: parseFloat(cs.fontSize), lead: parseFloat(cs.lineHeight) };
-      });
+      const { size, lead } = await page
+        .locator(sel)
+        .first()
+        .evaluate((el) => {
+          const cs = getComputedStyle(el);
+          return { size: parseFloat(cs.fontSize), lead: parseFloat(cs.lineHeight) };
+        });
       expect(size, `${what} font-size`).toBeGreaterThanOrEqual(16);
       // Bigger type on its old cramped leading reads no better, so hold the ratio.
       expect(lead / size, `${what} line-height ratio`).toBeGreaterThanOrEqual(1.4);
@@ -425,5 +435,77 @@ test.describe('pawn photos: the helper copy', () => {
         })
       )
       .toBeLessThanOrEqual(0);
+  });
+
+  // What the buyer RECEIVES, said once and said in weight. The step described how
+  // the photos are cut but never what arrives: the pawns come printed on a single
+  // card, already cut into circles. It is the one promise on this step, so it is
+  // the one line that is not muted grey.
+  test('the step says the pawns arrive on one card, cut into circles — in bold', async ({
+    page,
+  }) => {
+    await toPawnStep(page);
+    const cut = page.getByTestId('pawn-cut');
+    await expect(cut).toBeVisible();
+    await expect(cut).toContainText('קלף אחד');
+    await expect(cut).toContainText('בעיגול');
+
+    const { weight, colour, hintColour } = await cut.evaluate((el) => ({
+      weight: getComputedStyle(el).fontWeight,
+      colour: getComputedStyle(el).color,
+      hintColour: getComputedStyle(document.querySelector('[data-testid="pawn-hint"]')).color,
+    }));
+    expect(Number(weight), 'the cut line must be bold').toBeGreaterThanOrEqual(600);
+    // …and set in ink, not the muted grey the surrounding helper copy uses.
+    expect(colour).not.toBe(hintColour);
+  });
+
+  // The buyer judges the cut from an on-device preview, which is the weakest link
+  // in the chain — so the step has to say where the real one is made, and what to
+  // do when the preview looks wrong. Both are one-line answers to the two things
+  // she would otherwise message about.
+  test('the tip names the print shop and the black-background fix', async ({ page }) => {
+    await toPawnStep(page);
+    const tip = page.getByTestId('pawn-tip');
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText('בבית הדפוס');
+    await expect(tip).toContainText('ChatGPT');
+    await expect(tip).toContainText('רקע שחור');
+
+    // It sits BELOW the grid: the advice is about a cut she has already looked at.
+    const order = await page.evaluate(() => {
+      const grid = document.querySelector('[data-testid="pawn-grid"]').getBoundingClientRect();
+      const t = document.querySelector('[data-testid="pawn-tip"]').getBoundingClientRect();
+      const cut = document.querySelector('[data-testid="pawn-cut"]').getBoundingClientRect();
+      return { tipBelowGrid: t.top >= grid.bottom, cutAboveGrid: cut.bottom <= grid.top };
+    });
+    expect(order).toEqual({ tipBelowGrid: true, cutAboveGrid: true });
+  });
+
+  // Every word on this step is the owner's to change without a deploy — the copy
+  // she is most likely to reword is exactly this kind (a promise + a workaround).
+  // Bold and the box are CSS, so an override can never strip them.
+  test('both new lines are owner-editable, and an override keeps the styling', async ({ page }) => {
+    await toPawnStep(page);
+    for (const [testid, key] of [
+      ['pawn-cut', 'options-photos-cut'],
+      ['pawn-tip', 'options-photos-tip-shop'],
+    ]) {
+      const node =
+        testid === 'pawn-cut'
+          ? page.getByTestId(testid)
+          : page.locator(`[data-testid="${testid}"] [data-edit="${key}"]`);
+      await expect(node).toHaveAttribute('data-edit', key);
+    }
+
+    // Simulate what the editor does on load: replace textContent.
+    const styled = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="pawn-cut"]');
+      el.textContent = 'נוסח חדש של הבעלים';
+      const cs = getComputedStyle(el);
+      return { weight: Number(cs.fontWeight), text: el.textContent };
+    });
+    expect(styled.weight).toBeGreaterThanOrEqual(600);
+    expect(styled.text).toBe('נוסח חדש של הבעלים');
   });
 });

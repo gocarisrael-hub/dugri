@@ -3150,6 +3150,12 @@
         <p class="wiz-sub" data-edit="options-photos-sub">
           ככה החיילים (הפיונים) ייראו במשחק. תמונות פנים עובדות הכי טוב.
         </p>
+        <!-- What the buyer physically receives. Its own node (not <strong> inside
+             the sub) because the inline editor writes textContent — any markup the
+             owner's first edit touches would be wiped. Bold comes from CSS. -->
+        <p class="pawn-cut" data-testid="pawn-cut" data-edit="options-photos-cut">
+          החיילים מגיעים מודפסים על קלף אחד, גזורים בעיגול.
+        </p>
         <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
           <!-- 4 fixed slots; each wraps a hidden file input + a small preview. -->
           <label class="pawn-slot" data-idx="0">
@@ -3254,6 +3260,19 @@
           נסיר את הרקע אוטומטית על המכשיר שלכם. התצוגה בעיגול משוערת. לא אהבתם את התוצאה? לחצו על
           התמונה כדי להחליף אותה.
         </p>
+        <!-- The cut the buyer sees here is a PREVIEW. The real one — background
+             removal, processing, the circle cut — is done at the print shop, so a
+             preview she isn't thrilled with is not the thing she'll receive. Two
+             separate nodes so the owner can reword either line on its own (and,
+             again, because an override replaces textContent). -->
+        <div class="pawn-tip" data-testid="pawn-tip">
+          <p data-edit="options-photos-tip-shop">
+            כל העבודה על החיילים - הסרת הרקע, העיבוד והגזירה לעיגול - נעשית בבית הדפוס.
+          </p>
+          <p data-edit="options-photos-tip-fix">
+            לא יצא טוב? בקשו מ-ChatGPT להוסיף רקע שחור לתמונה, והעלו אותה שוב. כמעט תמיד זה עובד.
+          </p>
+        </div>
         <p class="wiz-err" id="pawnErr" data-testid="pawn-err" hidden></p>
         <button class="pawn-skip" type="button" id="pawnSkip" data-testid="pawn-skip">דלגו</button>
         <style>
@@ -3282,6 +3301,37 @@
             line-height: 1.6;
             color: var(--muted);
             text-align: center;
+          }
+          /* The one line on this step about what ARRIVES, so it is the one line
+             set in ink and weight rather than muted grey. Bold lives here, not in
+             the markup: the inline editor replaces textContent, so a <strong>
+             would survive exactly until the owner's first edit. */
+          .pawn-cut {
+            margin: 0 0 10px;
+            font-size: 16.5px;
+            line-height: 1.6;
+            font-weight: 700;
+            color: var(--ink);
+            text-align: center;
+          }
+          /* The tip sits UNDER the grid, after the buyer has seen her cut and can
+             have an opinion about it. Boxed so it reads as an aside rather than as
+             another instruction competing with .pawn-cut above the grid. */
+          .pawn-tip {
+            margin: 0 0 10px;
+            padding: 10px 12px;
+            border: 1px solid var(--line);
+            background: var(--surface);
+            text-align: center;
+          }
+          .pawn-tip p {
+            margin: 0;
+            font-size: 16px;
+            line-height: 1.6;
+            color: var(--muted);
+          }
+          .pawn-tip p + p {
+            margin-top: 6px;
           }
           /* TWO per row, not four. The slot stopped being a file-picker thumbnail
              and became a preview of the printed pawn, and at four across (96px on
