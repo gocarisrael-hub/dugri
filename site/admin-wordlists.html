@@ -216,30 +216,6 @@
         unicode-bidi: embed;
         flex: 1 1 auto;
       }
-      .badge {
-        font-size: 11.5px;
-        font-weight: 700;
-        border-radius: 99px;
-        padding: 2px 10px;
-        border: 1px solid var(--line);
-        color: var(--muted);
-        white-space: nowrap;
-      }
-      .badge.shipped {
-        background: #f4f6f4;
-        border-color: #dfe6df;
-        color: #5c7357;
-      }
-      .badge.override {
-        background: #fdf2f5;
-        border-color: #f3c4d8;
-        color: var(--pink-deep);
-      }
-      .badge.custom {
-        background: #fff8ec;
-        border-color: #f0dcbb;
-        color: #96702a;
-      }
       .li-meta {
         color: var(--muted);
         font-size: 12.5px;
@@ -432,12 +408,6 @@
           (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
         );
       }
-      const SOURCE_LABEL = {
-        shipped: 'מגיעה עם המערכת',
-        override: 'נערכה על ידך',
-        custom: 'נוצרה על ידך',
-      };
-
       function render() {
         qs('lists').innerHTML =
           data.wordlists
@@ -452,11 +422,7 @@
                 '">' +
                 '<div class="li-head"><p class="li-name">' +
                 esc(w.name) +
-                '</p><span class="badge ' +
-                esc(w.source) +
-                '">' +
-                esc(SOURCE_LABEL[w.source] || w.source) +
-                '</span></div>' +
+                '</p></div>' +
                 '<div class="li-meta">' +
                 w.count +
                 ' מילים' +
@@ -468,9 +434,9 @@
                 '" type="button">' +
                 (open ? 'סגירה' : 'עריכה') +
                 '</button>' +
-                (w.source === 'override'
-                  ? '<button data-revert="' + esc(w.name) + '" type="button">ביטול העריכות</button>'
-                  : '') +
+                '<button data-rename="' +
+                esc(w.name) +
+                '" type="button">שינוי שם</button>' +
                 '<button class="danger" data-del="' +
                 esc(w.name) +
                 '" type="button">מחיקה</button>' +
@@ -539,11 +505,6 @@
           '<button class="ghost" id="closeBtn" type="button">סגירה</button>' +
           '<span class="status" id="editMsg" role="status" aria-live="polite"></span>' +
           '</div>' +
-          (w.source === 'shipped'
-            ? '<p class="status" style="margin-top: 8px">' +
-              'זו רשימה שמגיעה עם המערכת. שמירה יוצרת עותק אישי שגובר עליה — המקור נשמר ואפשר לחזור אליו.' +
-              '</p>'
-            : '') +
           '</div>'
         );
       }
@@ -642,20 +603,36 @@
           openName = openName === t.dataset.open ? null : t.dataset.open;
           return load();
         }
-        if (t.dataset.revert) {
-          if (!confirm('לבטל את העריכות ולחזור לרשימה המקורית?')) return;
+        if (t.dataset.rename) {
+          const from = t.dataset.rename;
+          const to = prompt('שם חדש לרשימה:', from);
+          if (to == null || !to.trim() || to.trim() === from) return;
           try {
-            await api(
+            const r = await api(
               'POST',
-              '/api/admin/wordlists/' + encodeURIComponent(t.dataset.revert) + '/revert'
+              '/api/admin/wordlists/' + encodeURIComponent(from) + '/rename',
+              { name: to.trim() }
             );
+            // Designs that pointed at the old name were repointed server-side; say
+            // so, because it is a change to THEIR settings made from this screen.
+            if (openName === from) openName = r && r.name ? r.name : null;
             await load();
+            if (r && r.repointed) {
+              setMsg(
+                document.querySelector('[data-msg="' + (r.name || '') + '"]'),
+                'השם שונה. ' + r.repointed + ' עיצובים עודכנו לשם החדש.',
+                'ok'
+              );
+            }
+            if (r && r.failed && r.failed.length) {
+              setMsg(
+                document.querySelector('[data-msg="' + (r.name || '') + '"]'),
+                'השם שונה, אבל לא הצלחתי לעדכן: ' + r.failed.join(', '),
+                'err'
+              );
+            }
           } catch (err) {
-            setMsg(
-              document.querySelector('[data-msg="' + t.dataset.revert + '"]'),
-              err.message,
-              'err'
-            );
+            setMsg(document.querySelector('[data-msg="' + from + '"]'), err.message, 'err');
           }
           return;
         }

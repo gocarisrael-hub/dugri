@@ -34,11 +34,26 @@
 // deletes the override). A "saved" list that vanishes on the next deploy is the
 // one outcome this design exists to prevent.
 //
-// `source` on every record tells the UI which case a list is in:
-//   'shipped'  — only in the image; never edited (delete refused: it would come
-//                back on the next deploy anyway).
+// NO LIST IS "THE SYSTEM'S". Every pool can be edited, renamed and deleted — the
+// owner's rule, and the storage difference above is hers to be unaware of. What it
+// costs is one mechanism: a shipped file cannot be unlinked (it is inside the
+// image, and a redeploy would bring it back), so deleting one writes a TOMBSTONE
+// on the volume — an empty `<name>.deleted` marker that masks it. Both readers
+// honour it: this module, and generator/topup.py, which resolves pools by the same
+// store-first rule and would otherwise go on feeding a deck from a pool the admin
+// screen says is gone. The tombstone lives on the volume, so the deletion survives
+// deploys exactly as an edit does.
+//
+// Renaming is the same two moves: write the words under the new name on the
+// volume, and delete the old one (unlink an owner copy, tombstone a shipped one).
+// Designs pointing at the old name are repointed by the route, through the one
+// validated template path.
+//
+// `source` on every record is now an INTERNAL storage fact, still reported for
+// the staging mirror and for tests, and no longer shown to the owner:
+//   'shipped'  — only in the image.
 //   'override' — a shipped name the owner has edited; lives in BOTH dirs, the
-//                volume copy wins. Revertible.
+//                volume copy wins.
 //   'custom'   — created by the owner; only on the volume.
 //
 // THE THEME -> POOL LINK (previously a known gap here, now closed): that link
@@ -264,11 +279,60 @@ function existsIn(dir, name) {
 function resolveWordlist(name) {
   const n = safeName(name);
   if (!n) return null;
+  // Deleted is deleted, whichever directory the bytes are in. Checked FIRST so a
+  // masked shipped pool is invisible to every reader here — list, read, update and
+  // the "name already taken" check in create all inherit it from this one line.
+  if (isDeleted(n)) return null;
   const store = existsIn(STORE_DIR, n);
   const shipped = existsIn(SHIPPED_DIR, n);
   if (store) return { abs: store, source: shipped ? 'override' : 'custom' };
   if (shipped) return { abs: shipped, source: 'shipped' };
   return null;
+}
+
+// --- tombstones ---------------------------------------------------------------
+// A shipped pool cannot be deleted from the image, so a deletion is recorded as an
+// empty marker beside the store: `<name>.deleted`. listDir only sees `.txt`, so
+// markers never appear as lists, are never exported to staging, and are never
+// swept by replaceOwnerLists — a deletion is a deliberate act on one service, not
+// content to mirror.
+const DELETED_SUFFIX = '.deleted';
+
+function tombstonePath(name) {
+  const abs = resolveIn(STORE_DIR, name);
+  return abs ? abs + DELETED_SUFFIX : null;
+}
+
+function isDeleted(name) {
+  const p = tombstonePath(name);
+  if (!p) return false;
+  try {
+    return fs.existsSync(p);
+  } catch {
+    return false;
+  }
+}
+
+function markDeleted(name) {
+  const p = tombstonePath(name);
+  if (!p) return false;
+  fs.mkdirSync(STORE_DIR, { recursive: true });
+  fs.writeFileSync(p, '', 'utf8');
+  return true;
+}
+
+// Clear a name's tombstone. Every write path calls this: without it, a list
+// created or renamed onto a previously deleted name would be written to disk and
+// then hidden by its own marker.
+function clearDeleted(name) {
+  const p = tombstonePath(name);
+  if (!p) return false;
+  try {
+    if (fs.existsSync(p)) fs.unlinkSync(p);
+  } catch {
+    /* best-effort: a marker we cannot remove is handled by the resolve below */
+  }
+  return true;
 }
 
 // Atomic write into the PERSISTENT store (tmp file + rename), creating the
@@ -403,6 +467,9 @@ function create({ name, words, text } = {}) {
     parseWords(words != null ? words : text),
     []
   );
+  // A name that was deleted before is free again — but its marker would hide the
+  // file we are about to write, so it goes first.
+  clearDeleted(n);
   writeStore(n, kept);
   return { ...read(n), too_long: tooLong, with_emoji: withEmoji, warning };
 }
@@ -453,13 +520,15 @@ function update(name, { words, text, append } = {}) {
 //   • a SHIPPED pool is refused outright: it lives in the Docker image, so
 //     "deleting" it would only remove a volume override and the file would be
 //     back on the next deploy. Reverting an override is the honest operation
-//     (see revert), and there is no way to remove an image file from here.
 function remove(name, themes) {
   const n = safeName(name);
   if (!n) return { error: 'שם רשימה לא תקין.', httpStatus: 400 };
   const hit = resolveWordlist(n);
   if (!hit) return { error: 'הרשימה ' + n + ' לא נמצאה.', httpStatus: 404 };
 
+  // The one refusal left, and it is about the DESIGNS, not about the list: a pool
+  // a design still points at is filler that deck is counting on. The message says
+  // which designs and what to do, so it is a step rather than a wall.
   const used = themesUsing(n, themes);
   if (used.length) {
     return {
@@ -473,19 +542,68 @@ function remove(name, themes) {
       themes: used,
     };
   }
-  if (hit.source !== 'custom') {
+  dropEverywhere(n);
+  return { ok: true, name: n };
+}
+
+// Delete one pool from the owner's world: unlink the volume copy if there is one,
+// and mask the image's copy if there is one. Either or both may apply — an edited
+// shipped pool lives in both places, and leaving the shipped half would resurrect
+// it under the same name the moment the override went.
+function dropEverywhere(name) {
+  const n = safeName(name);
+  if (!n) return false;
+  const store = existsIn(STORE_DIR, n);
+  if (store) {
+    try {
+      fs.unlinkSync(store);
+    } catch {
+      /* already gone — the tombstone below still makes the deletion stick */
+    }
+  }
+  if (existsIn(SHIPPED_DIR, n)) markDeleted(n);
+  return true;
+}
+
+// RENAME a pool. Same two moves as a delete plus a write: the words are stored
+// under the new name on the volume, and the old name is dropped everywhere. Works
+// for every list, including one that only exists in the image — that case is a
+// copy-then-mask, which is what "rename" has to mean when the original is inside a
+// read-only image.
+//
+// Designs pointing at the old name are NOT repointed here: that write belongs to
+// the templates module, which owns theme validation. The names to repoint are
+// returned instead, and the route walks them — one validated path, as before.
+function rename(name, newName, themes) {
+  const from = safeName(name);
+  if (!from) return { error: 'שם רשימה לא תקין.', httpStatus: 400 };
+  const to = safeName(newName);
+  if (!to) {
     return {
-      error:
-        'הרשימה ' +
-        n +
-        ' מגיעה עם המערכת ולא ניתן למחוק אותה — היא חלק מקובץ ההתקנה ותחזור בעלייה הבאה לאוויר. אפשר לערוך אותה, ואפשר לבטל את העריכה ולחזור למקור.',
-      httpStatus: 409,
+      error: 'שם חדש לא תקין. אותיות/ספרות, רווח, מקף או קו תחתון, עד 60 תווים.',
+      httpStatus: 400,
     };
   }
-  const abs = resolveIn(STORE_DIR, n);
-  if (!abs) return { error: 'שם רשימה לא תקין.', httpStatus: 400 };
-  fs.unlinkSync(abs);
-  return { ok: true, name: n };
+  const hit = resolveWordlist(from);
+  if (!hit) return { error: 'הרשימה ' + from + ' לא נמצאה.', httpStatus: 404 };
+  if (to === from) return read(from, themes);
+  if (resolveWordlist(to)) {
+    return { error: 'כבר קיימת רשימה בשם ' + to + '. בחרו שם אחר.', httpStatus: 409 };
+  }
+
+  let words = [];
+  try {
+    words = readFileWords(hit.abs);
+  } catch {
+    return { error: 'לא הצלחתי לקרוא את ' + from + '.', httpStatus: 500 };
+  }
+  clearDeleted(to);
+  writeStore(to, words);
+  dropEverywhere(from);
+  const rec = read(to, themes);
+  // Which designs the caller must now repoint. Read BEFORE the move would have
+  // been the same answer; read after, it is the one the route acts on.
+  return { ...rec, renamed_from: from, repoint: themesUsing(from, themes) };
 }
 
 // REVERT an edited shipped pool: drop the volume override so the image's
@@ -578,6 +696,7 @@ function replaceOwnerLists(incoming) {
 
 module.exports = {
   list,
+  rename,
   exportOwnerLists,
   replaceOwnerLists,
   backup,
