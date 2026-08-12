@@ -183,6 +183,13 @@ test('the fit follows the copy: more text is set smaller, never below the floor'
     await page.goto('/index.html?explainer=1');
     await expect(page.getByTestId(OVERLAY)).toBeVisible();
     await settled(page);
+    // Re-fit before measuring. The sheet fits itself once, on open, and this test
+    // changes the two things that decide the answer AFTER that: the simulated home
+    // indicator (a real phone has it before any script runs; a test can only add it
+    // afterwards) and the copy (which arrives with the overrides fetch). Reading
+    // without this measures whichever of the two happened to land first — it passed
+    // here and failed on CI, on different assertions, for exactly that reason.
+    await page.evaluate(() => window.dispatchEvent(new Event('resize')));
     return page.evaluate(() => {
       const o = document.getElementById('startExplainer');
       const inner = o.querySelector('.sx-inner');
@@ -198,11 +205,14 @@ test('the fit follows the copy: more text is set smaller, never below the floor'
   };
 
   // An iPhone 16 in Safari, home indicator included — the phone from the report.
+  // Injected as a stylesheet at document start, not as a property set on
+  // DOMContentLoaded: the explainer's script is `defer`, so it runs (and fits the
+  // sheet) BEFORE that event, and the inset would arrive too late to be measured.
   await page.setViewportSize({ width: 393, height: 745 });
   await page.addInitScript(() => {
-    document.addEventListener('DOMContentLoaded', () => {
-      document.documentElement.style.setProperty('--sx-safe-b', '34px');
-    });
+    const style = document.createElement('style');
+    style.textContent = ':root{--sx-safe-b:34px}';
+    document.documentElement.appendChild(style);
   });
   const onPhone = await read();
   expect(onPhone.need, 'the shipped copy must fit an iPhone 16').toBeLessThanOrEqual(
