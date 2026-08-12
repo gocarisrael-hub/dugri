@@ -71,9 +71,13 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
   await page.getByTestId('next-btn').click();
   await page.waitForURL(/collect\.html/);
 
-  // The owner's admin view shows a ✓ in the chasers column for this order.
+  // The choice reached the owner's side. The orders table no longer carries a
+  // צ׳ייסרים column of its own — it was a read-only tick nobody acted on — so the
+  // add-on is read where it is also CHANGED: the עריכת הזמנה dialog. That is the
+  // stronger assertion anyway, since it is the field the owner actually edits.
   await page.goto('/admin.html?key=dugri-admin');
   const row = page.locator('tr', { hasText: honoree }).first();
   await expect(row).toBeVisible();
-  await expect(row).toContainText('✓');
+  await row.getByRole('button', { name: 'ערוך' }).click();
+  await expect(page.locator('#e-chasers')).toBeChecked();
 });
