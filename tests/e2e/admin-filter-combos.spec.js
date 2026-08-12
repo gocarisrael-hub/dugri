@@ -105,8 +105,9 @@ const chip = (page, label) =>
   page.locator('.tab').filter({ hasText: new RegExp(`^${label} \\(\\d+\\)$`) });
 
 const shownNames = async (page) =>
+  // Second cell: the row opens with ניהול (see COLUMNS in site/admin.html).
   (
-    await page.$$eval('tbody tr td:first-child', (tds) => tds.map((td) => td.textContent || ''))
+    await page.$$eval('tbody tr td:nth-child(2)', (tds) => tds.map((td) => td.textContent || ''))
   ).map((t) => t.trim());
 
 test.beforeEach(async ({ page }) => {
