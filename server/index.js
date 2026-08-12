@@ -3678,6 +3678,45 @@ app.post('/api/admin/wordlists/:name/revert', (req, res) => {
 // Admin: delete a pool. Refused (409) when a theme still points at it (the
 // message names them) and refused for a SHIPPED pool, which lives in the image
 // and would simply reappear on the next deploy.
+// Admin: RENAME a pool. The rename itself is wordlists.rename (write under the new
+// name, drop the old one); the DESIGNS that pointed at the old name are repointed
+// here, through the templates module, because that is the one path allowed to write
+// a theme entry — see the note at the top of server/wordlists.js.
+//
+// The repoint is best-effort per design and reported: a design whose entry could
+// not be written is named in the response rather than silently left pointing at a
+// pool that no longer exists. The rename itself has already happened by then, so
+// failing the whole request would leave the owner with a rename she cannot see.
+app.post('/api/admin/wordlists/:name/rename', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = wordlists.rename(req.params.name, (req.body || {}).name);
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result && result.error) return res.status(result.httpStatus || 400).json(result);
+  const failed = [];
+  for (const key of result.repoint || []) {
+    try {
+      const r = templates.updateTemplateSettings({
+        root: TEMPLATE_ROOT,
+        key,
+        patch: { wordlist: result.name },
+      });
+      if (r && r.error) failed.push(key);
+    } catch {
+      failed.push(key);
+    }
+  }
+  res.json({
+    ok: true,
+    ...result,
+    repointed: (result.repoint || []).length - failed.length,
+    failed,
+  });
+});
+
 app.delete('/api/admin/wordlists/:name', (req, res) => {
   if (!requireAdmin(req, res)) return;
   let result;

@@ -130,6 +130,37 @@ def test_a_pool_that_exists_nowhere_degrades_to_empty_not_a_crash():
     assert topup._wordlist_path("no-such-pool.txt") is None
 
 
+# ---- deletion ---------------------------------------------------------------
+# The admin can delete ANY pool, including one that ships inside the image. That
+# file cannot be unlinked, so the deletion is an empty `<name>.deleted` marker on
+# the volume (server/wordlists.js). If the generator ignored it, a deck would go
+# on being filled from a pool the owner has already thrown away — and she would
+# find out on printed cards.
+
+
+def test_a_deleted_shipped_pool_reads_as_gone():
+    with _store({"generic-350.txt.deleted": []}):
+        assert topup._wordlist_path("generic-350.txt") is None
+        assert topup._read_wordlist("generic-350.txt") == []
+    # …and the shipped file is untouched: the marker masks, it does not erase.
+    assert len(topup._read_wordlist("generic-350.txt")) == 350
+
+
+def test_a_deleted_pool_leaves_the_deck_short_rather_than_crashing():
+    # The same degradation as a pool that never existed — a paid order still
+    # renders, with fewer filler words.
+    with _store({"friends-350.txt.deleted": [], "generic-350.txt.deleted": []}):
+        result = topup.topup(["אישית"], "trip comeback")
+        assert result == ["אישית"]
+
+
+def test_a_marker_does_not_hide_a_pool_that_was_recreated():
+    # Deleting and then creating the same name again is a normal thing to do; the
+    # admin clears the marker on write, and the new pool must be visible.
+    with _store({"friends-350.txt": ["חדש"]}):
+        assert topup._read_wordlist("friends-350.txt") == ["חדש"]
+
+
 def test_a_traversal_wordlist_name_cannot_escape_the_pool_dirs():
     for bad in ["../../etc/passwd", "../themes.json", "sub/dir.txt"]:
         p = topup._wordlist_path(bad)

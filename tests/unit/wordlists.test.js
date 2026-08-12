@@ -165,27 +165,129 @@ describe('wordlists store — delete guards', () => {
     expect(r.error).toContain('japanese');
   });
 
-  it('refuses to delete an unreferenced SHIPPED list and explains the redeploy', () => {
+  // NO LIST IS THE SYSTEM'S ANY MORE. A shipped pool cannot be unlinked (it is in
+  // the image), so deleting one leaves a tombstone on the volume that masks it.
+  it('deletes an unreferenced SHIPPED list by masking it, leaving the image alone', () => {
     // family-350.txt ships but no theme in the fixture points at it.
     expect(store.themesUsing('family-350.txt', THEMES)).toEqual([]);
-    const r = store.remove('family-350.txt', THEMES);
-    expect(r.httpStatus).toBe(409);
-    expect(r.error).toContain('תחזור');
+    expect(store.remove('family-350.txt', THEMES)).toEqual({ ok: true, name: 'family-350.txt' });
+    // Gone from every reader…
+    expect(store.read('family-350.txt')).toBeNull();
+    expect(store.list(THEMES).some((w) => w.name === 'family-350.txt')).toBe(false);
+    // …while the image's own copy is untouched (this module never writes there),
+    // and the deletion is what lives on the volume.
     expect(fs.existsSync(path.join(SHIPPED_DIR, 'family-350.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(storeDir, 'family-350.txt.deleted'))).toBe(true);
   });
 
-  it('refuses to delete a shipped list even when it has been edited (an override)', () => {
-    store.update('family-350.txt', { text: 'א\nב' });
-    const r = store.remove('family-350.txt', THEMES);
-    expect(r.httpStatus).toBe(409);
-    // the override survives — delete must not silently become a revert
-    expect(fs.existsSync(path.join(storeDir, 'family-350.txt'))).toBe(true);
+  it('deletes an EDITED shipped list from both places at once', () => {
+    // combined-416.txt ships and no fixture theme points at it.
+    store.update('combined-416.txt', { text: 'א\nב' });
+    expect(fs.existsSync(path.join(storeDir, 'combined-416.txt'))).toBe(true);
+    expect(store.remove('combined-416.txt', THEMES).ok).toBe(true);
+    // The override is unlinked AND the shipped half masked — leaving either would
+    // bring the list back, under the same name, with the wrong contents.
+    expect(fs.existsSync(path.join(storeDir, 'combined-416.txt'))).toBe(false);
+    expect(fs.existsSync(path.join(storeDir, 'combined-416.txt.deleted'))).toBe(true);
+    expect(store.read('combined-416.txt')).toBeNull();
+  });
+
+  it('a deleted name is free again, and creating it there works', () => {
+    store.remove('family-350.txt', THEMES);
+    expect(store.read('family-350.txt')).toBeNull();
+    const rec = store.create({ name: 'family-350', text: 'חדש\nלגמרי' });
+    expect(rec.error).toBeUndefined();
+    // The tombstone is cleared by the write, or the new list would be hidden by
+    // the old deletion — the one ordering bug this design can produce.
+    expect(store.read('family-350.txt').words).toEqual(['חדש', 'לגמרי']);
+    expect(fs.existsSync(path.join(storeDir, 'family-350.txt.deleted'))).toBe(false);
+  });
+
+  it('deletes an owner-created list without leaving a tombstone behind', () => {
+    store.create({ name: 'no-marker', text: 'א' });
+    expect(store.remove('no-marker.txt', THEMES).ok).toBe(true);
+    // Nothing to mask: the file was only ever on the volume.
+    expect(fs.existsSync(path.join(storeDir, 'no-marker.txt.deleted'))).toBe(false);
   });
 
   it('deletes an unreferenced owner-created list', () => {
     store.create({ name: 'throwaway', text: 'א\nב' });
     expect(store.remove('throwaway.txt', THEMES)).toEqual({ ok: true, name: 'throwaway.txt' });
     expect(fs.existsSync(path.join(storeDir, 'throwaway.txt'))).toBe(false);
+  });
+});
+
+// RENAMING. The owner's rule is that no list is the system's, so every list can be
+// renamed — including one that exists only inside the image, where "rename" has to
+// mean copy-then-mask because the original cannot be moved.
+describe('wordlists store — rename', () => {
+  it('renames an owner-created list, keeping its words', () => {
+    store.create({ name: 'ישן', text: 'אחת\nשתיים' });
+    const rec = store.rename('ישן.txt', 'חדש', THEMES);
+    expect(rec.error).toBeUndefined();
+    expect(rec.name).toBe('חדש.txt');
+    expect(rec.words).toEqual(['אחת', 'שתיים']);
+    expect(store.read('ישן.txt')).toBeNull();
+    expect(fs.existsSync(path.join(storeDir, 'ישן.txt'))).toBe(false);
+  });
+
+  it('renames a SHIPPED list: the words move to the new name, the old one is masked', () => {
+    const before = store.read('family-350.txt').words;
+    const rec = store.rename('family-350.txt', 'משפחה שלי', THEMES);
+    expect(rec.name).toBe('משפחה שלי.txt');
+    expect(rec.words).toEqual(before);
+    // Old name gone from every reader, image untouched, deletion on the volume.
+    expect(store.read('family-350.txt')).toBeNull();
+    expect(fs.existsSync(path.join(SHIPPED_DIR, 'family-350.txt'))).toBe(true);
+    expect(fs.existsSync(path.join(storeDir, 'family-350.txt.deleted'))).toBe(true);
+  });
+
+  it('reports the designs that must be repointed rather than writing them itself', () => {
+    // The theme write belongs to the templates module; this returns the names.
+    const rec = store.rename('friends-350.txt', 'חברים', THEMES);
+    expect(rec.repoint).toEqual(['trip comeback']);
+    expect(rec.renamed_from).toBe('friends-350.txt');
+  });
+
+  it('refuses a name that is taken, and accepts one that was deleted', () => {
+    store.create({ name: 'תפוס', text: 'א' });
+    store.create({ name: 'זז', text: 'ב' });
+    expect(store.rename('זז.txt', 'תפוס', THEMES).httpStatus).toBe(409);
+    // …but a name whose list was deleted is free again.
+    store.remove('תפוס.txt', THEMES);
+    const rec = store.rename('זז.txt', 'תפוס', THEMES);
+    expect(rec.name).toBe('תפוס.txt');
+    expect(rec.words).toEqual(['ב']);
+  });
+
+  it('refuses an invalid new name and leaves the list where it was', () => {
+    store.create({ name: 'שמור', text: 'א' });
+    expect(store.rename('שמור.txt', '../../etc/passwd', THEMES).httpStatus).toBe(400);
+    expect(store.read('שמור.txt').words).toEqual(['א']);
+  });
+});
+
+describe('wordlists routes — rename over HTTP', () => {
+  it('renames and repoints the designs that used the old name', async () => {
+    const r = await req('POST', key('/api/admin/wordlists/family-350.txt/rename'), {
+      name: 'הרשימה שלי',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.name).toBe('הרשימה שלי.txt');
+    expect(r.body.failed).toEqual([]);
+    const listed = await req('GET', key('/api/admin/wordlists'));
+    const names = listed.body.wordlists.map((w) => w.name);
+    expect(names).toContain('הרשימה שלי.txt');
+    expect(names).not.toContain('family-350.txt');
+  });
+
+  // A pool no LIVE theme points at (these routes read generator/themes.json, not
+  // the fixture above) — the in-use guard is a separate test's subject.
+  it('deleting a shipped list over HTTP removes it from the list', async () => {
+    const del = await req('DELETE', key('/api/admin/wordlists/kids-birthday-350.txt'));
+    expect(del.status).toBe(200);
+    const listed = await req('GET', key('/api/admin/wordlists'));
+    expect(listed.body.wordlists.map((w) => w.name)).not.toContain('kids-birthday-350.txt');
   });
 });
 

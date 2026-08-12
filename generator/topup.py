@@ -54,11 +54,20 @@ def _wordlist_path(filename):
     The owner's DATA_DIR copy wins over the shipped baseline. basename() is the
     traversal guard: a themes.json `wordlist` can never reach outside the two
     wordlist directories.
+
+    A DELETED pool reads as nowhere. The admin can delete any pool, including one
+    that ships inside the image — which cannot be unlinked, so the deletion is
+    recorded as an empty `<name>.deleted` marker on the volume (see
+    server/wordlists.js). Honouring it here is what makes the deletion real: a
+    generator that ignored the marker would go on filling decks from a pool the
+    owner has already thrown away, and only on printed cards would she find out.
     """
     name = os.path.basename(str(filename or "").strip())
     if not name:
         return None
     if STORE_DIR:
+        if os.path.isfile(os.path.join(STORE_DIR, name + ".deleted")):
+            return None
         owner = os.path.join(STORE_DIR, name)
         if os.path.isfile(owner):
             return owner

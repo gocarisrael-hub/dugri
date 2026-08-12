@@ -73,6 +73,72 @@ test.describe('admin wordlists', () => {
     await expect(item).toBeVisible();
   });
 
+  // NO LIST IS "THE SYSTEM'S". The screen used to badge each pool by where it was
+  // stored and refuse to delete the ones that ship with the image; the owner's
+  // rule is that every list is hers, so the badges are gone and every row offers
+  // both actions.
+  test("no list is labelled as the system's, and every one offers rename + delete", async ({
+    page,
+  }) => {
+    await page.goto(`/admin-wordlists.html?key=${KEY}`);
+    await expect(page.locator('#app')).toBeVisible();
+    await expect(page.locator('.badge')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText('מגיעה עם המערכת');
+    const rows = page.locator('.list-item');
+    const n = await rows.count();
+    expect(n).toBeGreaterThan(0);
+    for (let i = 0; i < n; i += 1) {
+      await expect(rows.nth(i).locator('button[data-rename]')).toBeVisible();
+      await expect(rows.nth(i).locator('button[data-del]')).toBeVisible();
+    }
+  });
+
+  // DESTRUCTIVE, and therefore single-project: the two device projects share one
+  // server and one throwaway store, so whichever runs second would find the pool
+  // already renamed. Same reason the linkage describe below pins itself.
+  test('a shipped pool nobody uses can be renamed, and the new name persists', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== 'Desktop Chrome', 'destructive: runs once per server');
+    const to = 'שם חדש ' + Math.random().toString(36).slice(2, 7);
+    await page.goto(`/admin-wordlists.html?key=${KEY}`);
+    await expect(page.locator('#app')).toBeVisible();
+    const item = page.locator('.list-item[data-item="combined-416.txt"]');
+    await expect(item).toBeVisible();
+    const words = await item.locator('.li-meta').textContent();
+
+    page.on('dialog', (d) => d.accept(to));
+    await item.locator('button[data-rename]').click();
+    const renamed = page.locator(`.list-item[data-item="${to}.txt"]`);
+    await expect(renamed).toBeVisible();
+    // Same pool, same words — a rename, not a new empty list.
+    await expect(renamed.locator('.li-meta')).toContainText(words.split(' ')[0]);
+    await expect(page.locator('.list-item[data-item="combined-416.txt"]')).toHaveCount(0);
+
+    // …and it is still gone/renamed after a reload, i.e. it landed on the volume.
+    await page.reload();
+    await expect(page.locator(`.list-item[data-item="${to}.txt"]`)).toBeVisible();
+    await expect(page.locator('.list-item[data-item="combined-416.txt"]')).toHaveCount(0);
+  });
+
+  test('a shipped pool nobody uses can be deleted, and stays deleted', async ({
+    page,
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== 'Desktop Chrome', 'destructive: runs once per server');
+    await page.goto(`/admin-wordlists.html?key=${KEY}`);
+    await expect(page.locator('#app')).toBeVisible();
+    const item = page.locator('.list-item[data-item="friends-25.txt"]');
+    await expect(item).toBeVisible();
+    page.on('dialog', (d) => d.accept());
+    await item.locator('button[data-del]').click();
+    await expect(page.locator('.list-item[data-item="friends-25.txt"]')).toHaveCount(0);
+    // The file is inside the Docker image and cannot be unlinked — the deletion is
+    // a marker on the volume, so it has to survive a reload to mean anything.
+    await page.reload();
+    await expect(page.locator('#app')).toBeVisible();
+    await expect(page.locator('.list-item[data-item="friends-25.txt"]')).toHaveCount(0);
+  });
+
   test('a wrong key is rejected by the API', async ({ request }) => {
     const r = await request.get('/api/admin/wordlists?key=nope');
     expect(r.status()).toBe(403);
