@@ -104,6 +104,11 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'options-step1-title',
       'options-step2-sub',
       'options-photos-title',
+      // The pawn step's two later lines: what arrives (bold) and the tip under
+      // the grid (print shop + the black-background fix).
+      'options-photos-cut',
+      'options-photos-tip-shop',
+      'options-photos-tip-fix',
       'options-step4-title',
       'options-chasers-desc',
       'options-code-summary',
