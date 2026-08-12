@@ -66,8 +66,7 @@ async function createCollection(page, name) {
   await page.goto('/options.html');
   await page.getByTestId('next-btn').click();
   await page.getByTestId('next-btn').click();
-  await page.fill('#honoreeInput', name);
-  await page.getByTestId('gender-female').check();
+  await page.fill('#customTitleInput', name);
   await page.getByTestId('next-btn').click(); // -> pawn photos
   await page.getByTestId('next-btn').click(); // -> contact
   await page.fill('#ownerEmail', 'test@example.com');
@@ -84,8 +83,7 @@ test.describe('the custom title', () => {
   test('she types 🎉, is told why, fixes it, and moves on', async ({ page }) => {
     const reqs = await mockPreview(page);
     await gotoNameStep(page);
-    await page.fill('#honoreeInput', 'Shira');
-    await page.getByTestId('gender-female').check();
+    await page.fill('#customTitleInput', 'Shira');
 
     const err = page.getByTestId('custom-title-err');
     const next = page.getByTestId('next-btn');
@@ -125,8 +123,7 @@ test.describe('the custom title', () => {
     // unprintable deck.
     await mockPreview(page);
     await gotoNameStep(page);
-    await page.fill('#honoreeInput', 'Shira');
-    await page.getByTestId('gender-female').check();
+    await page.fill('#customTitleInput', 'Shira');
 
     await page.getByTestId('custom-title-input').fill('כותרת ארוכה מאוד מאוד שלא נגמרת בכלל');
     await expect(page.getByTestId('custom-title-warn')).toBeVisible();
@@ -144,8 +141,7 @@ test.describe('the custom title', () => {
     // lost to a rule nobody asked for.
     await mockPreview(page);
     await gotoNameStep(page);
-    await page.fill('#honoreeInput', 'Shira');
-    await page.getByTestId('gender-female').check();
+    await page.fill('#customTitleInput', 'Shira');
 
     const err = page.getByTestId('custom-title-err');
     for (const title of [

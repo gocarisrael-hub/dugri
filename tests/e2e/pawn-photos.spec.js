@@ -84,8 +84,7 @@ async function stubCutter(page, { succeeds, png }) {
 async function toPawnStep(page) {
   await page.goto('/options.html?step=3');
   await expect(page.getByTestId('step-3')).toBeVisible();
-  await page.fill('#honoreeInput', 'Shira');
-  await page.getByTestId('gender-female').check();
+  await page.fill('#customTitleInput', 'Shira');
   await page.getByTestId('next-btn').click();
   await expect(page.getByTestId('step-pawns')).toBeVisible();
 }

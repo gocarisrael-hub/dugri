@@ -78,15 +78,14 @@ test.describe('B4: the board preview fills the panel like the cards', () => {
 
 test.describe('B8: order inputs carry no example-value placeholders', () => {
   // A field's placeholder must be absent or empty — the fields keep visible labels.
-  const NO_PLACEHOLDER_IDS = [
-    'honoreeInput',
-    'extraAge',
-    'extraYears',
-    'extraName1',
-    'extraName2',
-    'ownerEmail',
-    'ownerPhone',
-  ];
+  //
+  // The honoree name and the theme extra fields used to be on this list. They are
+  // not inputs any more (the title replaced all of them), so they left the list
+  // rather than being renamed onto it. The TITLE box is deliberately NOT here: it
+  // carries a visible label AND a hint, and its placeholder ("למשל: ליאת חוגגת
+  // 40") is the example that tells a buyer what kind of thing to write — which is
+  // the one case this rule was never aimed at.
+  const NO_PLACEHOLDER_IDS = ['ownerEmail', 'ownerPhone'];
 
   test('the listed inputs have no example placeholder text', async ({ page }) => {
     await page.goto('/options.html');
@@ -104,13 +103,11 @@ test.describe('B8: order inputs carry no example-value placeholders', () => {
     await expect(page.getByTestId('design-code-input')).toHaveAttribute('placeholder', 'קוד עיצוב');
   });
 
-  test('honoreeInput keeps an accessible name after its placeholder was removed', async ({
-    page,
-  }) => {
+  test('the title box keeps an accessible name of its own', async ({ page }) => {
     await page.goto('/options.html');
     // It has no wrapping <label>, so removing the placeholder must not leave it
     // unnamed for screen readers — it carries an aria-label instead.
-    const label = await page.getByTestId('honoree-input').getAttribute('aria-label');
+    const label = await page.getByTestId('custom-title-input').getAttribute('aria-label');
     expect(label?.trim()).toBeTruthy();
   });
 });

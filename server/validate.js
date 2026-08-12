@@ -429,15 +429,21 @@ function validateOrderForProduction(collection, theme, words) {
   const problems = [];
   const name = collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
 
-  // 1) Name language must match the theme's name_form.
-  const langProblem = checkNameLanguage(name, theme);
+  // Whether this order carries its own title. Every order placed through the
+  // wizard now does — the buyer types the title and nothing composes one — so
+  // both checks below apply only to the ORDERS THAT PREDATE that, which still
+  // print a title the theme composes from the name and its extra fields.
+  const hasCustomTitle = String((collection && collection.custom_title) || '').trim() !== '';
+
+  // 1) Name language must match the theme's name_form — for a legacy order only.
+  // The name is not printed on a title-carrying order: it is the order's label,
+  // taken from the title's first line, so a Hebrew label on an English design is
+  // not a problem to flag, it is just what she called her order.
+  const langProblem = hasCustomTitle ? null : checkNameLanguage(name, theme);
   if (langProblem) problems.push(langProblem);
 
-  // 2) Every extra field the theme requires must be present — UNLESS the buyer
-  // set their own custom title. The theme extras (AGE / YEARS / NAME1 / NAME2)
-  // only ever fed the DEFAULT title, so a custom-title order does not need them
-  // and must not be flagged for their absence.
-  const hasCustomTitle = String((collection && collection.custom_title) || '').trim() !== '';
+  // 2) Every extra field the theme requires must be present — again, legacy only.
+  // The extras (AGE / YEARS / NAME1 / NAME2) only ever fed the composed title.
   const required =
     !hasCustomTitle && theme && Array.isArray(theme.extra_fields) ? theme.extra_fields : [];
   for (const field of required) {

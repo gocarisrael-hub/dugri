@@ -35,8 +35,7 @@ async function createCollection(page, name) {
   await page.goto('/options.html');
   await page.getByTestId('next-btn').click(); // design -> colour + add-ons
   await page.getByTestId('next-btn').click(); // colour + add-ons -> name
-  await page.fill('#honoreeInput', name);
-  await page.getByTestId('gender-female').check(); // gender is required to advance
+  await page.fill('#customTitleInput', name);
   await page.getByTestId('next-btn').click(); // name -> optional pawn photos
   await page.getByTestId('next-btn').click(); // pawn photos -> contact
   await page.fill('#ownerEmail', 'test@example.com'); // email required
@@ -1373,7 +1372,7 @@ test('questionnaire: answering a question adds the word + shows ✓, and add-ano
 });
 
 test('questionnaire question text carries the honoree name + gender phrasing', async ({ page }) => {
-  await createCollection(page, 'Shira'); // created with gender=female in the wizard
+  await createCollection(page, 'Shira');
   await page.locator('#catChips .chip').first().click();
   // The first default category is "people"; its first question interpolates the
   // name and resolves the {female|male} token to the feminine form.

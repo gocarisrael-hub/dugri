@@ -67,17 +67,33 @@ describe('validateOrderForProduction', () => {
     expect(problems.some((p) => p.includes('AGE'))).toBe(true);
   });
 
-  it('still enforces name language + word count for a custom-title order', () => {
-    // Skipping the extras must NOT skip the other checks: a Latin name into a
-    // Hebrew theme with no words still yields the language + no-words problems.
+  it("does not judge the LANGUAGE of a title-carrying order's name", () => {
+    // The name is not printed on an order that carries its own title — it is the
+    // order's label, taken from the title's first line. So "Shira turns 40" on a
+    // Hebrew design is not a problem to report: it is simply what she called it.
+    // (Before the title became the only input, the name WAS the printed thing and
+    // its script had to match the design's.)
     const problems = validate.validateOrderForProduction(
       { honoree_name: 'Shira', custom_title: 'Shira turns 40' },
       hebrewAgeTheme,
       []
     );
-    expect(problems.some((p) => p.includes('עברית'))).toBe(true); // name language
+    expect(problems.some((p) => p.includes('עברית'))).toBe(false);
+    expect(problems.some((p) => p.includes('AGE'))).toBe(false);
+    // …but the check that has nothing to do with the title still stands.
     expect(problems.some((p) => p.includes('מיל'))).toBe(true); // no words
-    expect(problems.some((p) => p.includes('AGE'))).toBe(false); // extras skipped
+  });
+
+  it('still judges the name language of an order with NO title of its own', () => {
+    // The legacy shape: no custom_title, so the theme composes the title out of
+    // the name and its extras, and both rules still apply to it.
+    const problems = validate.validateOrderForProduction(
+      { honoree_name: 'Shira' },
+      hebrewAgeTheme,
+      ['a']
+    );
+    expect(problems.some((p) => p.includes('עברית'))).toBe(true);
+    expect(problems.some((p) => p.includes('AGE'))).toBe(true);
   });
 
   it('reads a required extra field from order.extra_fields too', () => {

@@ -33,8 +33,7 @@ async function createCollection(page, name) {
   await page.goto('/options.html');
   await page.getByTestId('next-btn').click();
   await page.getByTestId('next-btn').click();
-  await page.fill('#honoreeInput', name);
-  await page.getByTestId('gender-female').check();
+  await page.fill('#customTitleInput', name);
   await page.getByTestId('next-btn').click();
   await page.getByTestId('next-btn').click();
   await page.fill('#ownerEmail', 'quota@example.com');

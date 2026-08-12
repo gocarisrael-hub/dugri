@@ -49,8 +49,7 @@ async function toNameStep(page) {
 
 // On from the name step to the DETAILS step, where the note lives.
 async function toDetailsStep(page) {
-  await page.getByTestId('honoree-input').fill('Shira'); // this design asks for a Latin name
-  await page.getByTestId('gender-female').check();
+  await page.getByTestId('custom-title-input').fill('Shira'); // this design asks for a Latin name
   await page.getByTestId('next-btn').click(); // -> pawn photos
   await expect(page.getByTestId('step-pawns')).toBeVisible();
   await page.getByTestId('next-btn').click(); // -> details

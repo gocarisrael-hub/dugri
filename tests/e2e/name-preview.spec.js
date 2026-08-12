@@ -81,7 +81,7 @@ test.describe('name-step live preview + font picker', () => {
     // no preview before a name is entered
     await expect(page.getByTestId('name-preview')).toBeHidden();
 
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     const card = page.getByTestId('name-preview-card');
     await expect(card).toBeVisible();
@@ -111,7 +111,7 @@ test.describe('name-step live preview + font picker', () => {
   test('switching the word font re-requests the preview with that font', async ({ page }) => {
     const reqs = await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(
       page.getByTestId('font-opts').locator('.font-opt:not(.font-opt-orig)')
     ).toHaveCount(5);
@@ -133,7 +133,7 @@ test.describe('name-step live preview + font picker', () => {
   }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(
       page.getByTestId('font-opts').locator('.font-opt:not(.font-opt-orig)')
     ).toHaveCount(5);
@@ -147,7 +147,7 @@ test.describe('name-step live preview + font picker', () => {
   test('the font picker sits ABOVE the rendered card/board images', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     const fontsBottom = await page
@@ -163,7 +163,7 @@ test.describe('name-step live preview + font picker', () => {
   test('the name preview no longer offers a fullscreen enlarge affordance', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     // the name-preview zoom was removed: no enlarge button, and tapping the
@@ -187,7 +187,7 @@ test.describe('name-step preview resilience', () => {
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     );
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     // the instant approximation is never revealed…
     await expect(page.getByTestId('name-preview-instant-card')).toBeHidden();
@@ -207,7 +207,7 @@ test.describe('name-step preview resilience', () => {
       route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
     );
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     await expect(page.getByTestId('name-preview-fallback')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('#npfName')).toHaveText('Shira');
@@ -224,7 +224,7 @@ test.describe('name-step preview resilience', () => {
       /* never fulfilled → the request hangs, holding the loading state open */
     });
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     // the card-shaped loading indicator is visible...
     await expect(page.getByTestId('name-preview-loading')).toBeVisible({ timeout: 6000 });
@@ -262,7 +262,7 @@ test.describe('name-step preview resilience', () => {
       });
     });
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     // the first attempt fails, the auto-retry succeeds → the real image lands
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/, {
@@ -283,7 +283,7 @@ test.describe('name preview shows more of the card artwork', () => {
   }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     const card = page.getByTestId('name-preview-card');
     const back = page.getByTestId('name-preview-back');
@@ -320,7 +320,7 @@ test.describe('OPTION C — the board slide fills the full preview width', () =>
     // The board reaches this preview only via the chasers add-on now, so that is
     // the state its layout has to be measured in.
     await toNameStep(page, { chasers: true });
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     // navigate the inline carousel to the board slide (mock ships card+back+board)
@@ -370,7 +370,7 @@ test.describe('OPTION C — the board slide fills the full preview width', () =>
   }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     const card = page.getByTestId('name-preview-card');
     await expect(card).toBeVisible();
 
@@ -396,7 +396,7 @@ test.describe('the name preview carries a board only for the chasers add-on', ()
   test('with the add-on OFF the board is never requested and never shown', async ({ page }) => {
     const reqs = await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
@@ -409,7 +409,7 @@ test.describe('the name preview carries a board only for the chasers add-on', ()
   test('with the add-on ON the board is requested and shown', async ({ page }) => {
     const reqs = await mockPreview(page);
     await toNameStep(page, { chasers: true });
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);

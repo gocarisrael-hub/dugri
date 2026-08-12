@@ -63,7 +63,7 @@ test.describe('chasers add-on drives the name-step board preview', () => {
     await page.getByTestId('next-btn').click(); // -> step 3 (name)
     await expect(page.getByTestId('step-3')).toBeVisible();
 
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     // the board shown is the CHASERS variant (the mock returns it only when the
     // request carried chasers:true)
@@ -82,7 +82,7 @@ test.describe('chasers add-on drives the name-step board preview', () => {
     await page.getByTestId('next-btn').click(); // -> step 2
     await page.getByTestId('chasers-toggle').check(); // chasers ON
     await page.getByTestId('next-btn').click(); // -> step 3
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-board')).toHaveAttribute('src', BOARD_CHASERS);
 
     // go BACK to step 2, turn chasers OFF, return to the name step
@@ -108,7 +108,7 @@ test.describe('chasers add-on drives the name-step board preview', () => {
     await page.getByTestId('design-0').click();
     await page.getByTestId('next-btn').click(); // -> step 2
     await page.getByTestId('next-btn').click(); // -> step 3 (chasers left OFF)
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     await expect(page.getByTestId('name-preview-board')).toBeHidden();

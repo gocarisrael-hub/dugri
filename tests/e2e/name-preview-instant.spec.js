@@ -53,7 +53,7 @@ test.describe('(a) the loading card holds while the server render is pending', (
       /* never resolves */
     });
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     // the card-shaped loading indicator (spinner skeleton) is on screen…
     await expect(page.getByTestId('name-preview-loading')).toBeVisible();
@@ -77,7 +77,7 @@ test.describe('(b) the exact server PNG reveals and opens the gate', () => {
       await route.fulfill({ status: 200, contentType: 'application/json', body: previewBody });
     });
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     // loading first — the server render is held, so the gate is still closed…
     await expect(page.getByTestId('name-preview-loading')).toBeVisible();
@@ -106,7 +106,7 @@ test.describe('(c) a failing / 429 server render settles on the graceful fallbac
         })
       );
       await toNameStep(page);
-      await page.getByTestId('honoree-input').fill('Shira');
+      await page.getByTestId('custom-title-input').fill('Shira');
 
       // after the auto-retry both attempts fail → the graceful fallback (name in a
       // script font + manual retry) is the terminal state, and the gate opens.
@@ -126,7 +126,7 @@ test.describe('(d) the instant approximation layer stays hidden even after the r
       route.fulfill({ status: 200, contentType: 'application/json', body: previewBody })
     );
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', /^data:image\/png/);
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
@@ -159,11 +159,11 @@ test.describe('server-render reconciliation', () => {
     const next = page.getByTestId('next-btn');
 
     // name A: server render lands → gate opens
-    await page.fill('#honoreeInput', 'David');
+    await page.fill('#customTitleInput', 'David');
     await expect(next).toBeEnabled({ timeout: 6000 });
 
     // edit to B: B's render hangs → gate must RE-CLOSE and stay closed
-    await page.fill('#honoreeInput', 'Sarah');
+    await page.fill('#customTitleInput', 'Sarah');
     await expect(next).toBeDisabled();
     await page.waitForTimeout(700);
     await expect(next).toBeDisabled();
@@ -199,10 +199,10 @@ test.describe('server-render reconciliation', () => {
     await toNameStep(page);
 
     // type A and wait past the 450ms debounce so A's server request actually fires
-    await page.getByTestId('honoree-input').fill('Aaa');
+    await page.getByTestId('custom-title-input').fill('Aaa');
     await page.waitForTimeout(650);
     // now type B — bumps the seq; B's response returns fast
-    await page.getByTestId('honoree-input').fill('Bbb');
+    await page.getByTestId('custom-title-input').fill('Bbb');
     await expect(page.getByTestId('name-preview-card')).toHaveAttribute('src', CARD_B);
 
     // wait long enough for A's DELAYED response to arrive and be (correctly) ignored

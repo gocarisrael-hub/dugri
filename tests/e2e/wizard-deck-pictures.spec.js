@@ -164,7 +164,7 @@ test.describe('wizard — the deck pictures under the collapsed summary', () => 
     await gotoNameStep(page);
     // No row, no thrown error, and the step itself still works.
     await expect(page.getByTestId('deck-row')).toBeHidden();
-    await expect(page.getByTestId('honoree-input')).toBeVisible();
+    await expect(page.getByTestId('custom-title-input')).toBeVisible();
   });
 
   test('a picture that 404s drops its own thumb and leaves the others', async ({ page }) => {

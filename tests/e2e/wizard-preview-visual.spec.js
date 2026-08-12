@@ -123,7 +123,7 @@ test.describe('Bug 1 — name-preview images are not distorted', () => {
   }) => {
     await mockPreview(page, { card: PORTRAIT_CARD, back: null, board: null });
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     const card = page.getByTestId('name-preview-card');
     await expect(card).toHaveAttribute('src', /^data:image\/png/);
@@ -216,7 +216,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
   test('a horizontal swipe walks card → back → board and back', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     // dots exist for all three present views; opens on the card
@@ -258,7 +258,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
   }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-dots')).toBeVisible();
 
     // active dot on the first (card) view
@@ -287,7 +287,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
   test('desktop dots navigate without any touch gesture', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-dot-board')).toBeVisible();
 
     await page.getByTestId('name-preview-dot-board').click();
@@ -306,7 +306,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
     // rather than filled by an approximation.
     await mockPreview(page, { card: PORTRAIT_CARD, back: null, board: null });
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     // only the card is present → the other views are not navigable, and a lone view
@@ -319,7 +319,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
   test('a plain tap (no drag) does NOT open a fullscreen zoom', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     const vp = page.getByTestId('name-preview-viewport');
@@ -336,7 +336,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
   test('a tap after a swipe does NOT open a zoom, and keeps the swiped view', async ({ page }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     // swipe the inline carousel to the board view
@@ -358,7 +358,7 @@ test.describe('Bug 2 — the inline name preview is swipeable/navigable', () => 
   }) => {
     await mockPreview(page);
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
     const vp = page.getByTestId('name-preview-viewport');

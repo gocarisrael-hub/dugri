@@ -35,8 +35,7 @@ async function mockPreview(page) {
 test('the WhatsApp consent line is gone from the phone step', async ({ page }) => {
   await mockPreview(page);
   await page.goto('/options.html?step=3');
-  await page.fill('#honoreeInput', 'Shira');
-  await page.getByTestId('gender-female').check(); // gender is required to advance
+  await page.fill('#customTitleInput', 'Shira');
   await page.getByTestId('next-btn').click();
   // name → optional pawn-photos step → details
   await expect(page.getByTestId('step-pawns')).toBeVisible();

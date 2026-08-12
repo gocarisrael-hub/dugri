@@ -251,8 +251,7 @@ test.describe('options.html — the wizard opens the design the shopper actually
     await expect(page.getByTestId('step-1')).toBeVisible();
     await page.getByTestId('next-btn').click(); // -> name step (step 2 is gated off)
     await expect(page.getByTestId('step-3')).toBeVisible();
-    await page.fill('#honoreeInput', 'שירה');
-    await page.getByTestId('gender-female').check();
+    await page.fill('#customTitleInput', 'שירה');
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click();

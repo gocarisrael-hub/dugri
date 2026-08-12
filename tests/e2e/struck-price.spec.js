@@ -62,8 +62,7 @@ async function createCollection(page, name) {
   await page.goto('/options.html');
   await page.getByTestId('next-btn').click(); // design -> colour + add-ons
   await page.getByTestId('next-btn').click(); // colour + add-ons -> name
-  await page.fill('#honoreeInput', name);
-  await page.getByTestId('gender-female').check();
+  await page.fill('#customTitleInput', name);
   await page.getByTestId('next-btn').click(); // name -> pawn photos
   await page.getByTestId('next-btn').click(); // pawn photos -> contact
   await page.fill('#ownerEmail', 'test@example.com');

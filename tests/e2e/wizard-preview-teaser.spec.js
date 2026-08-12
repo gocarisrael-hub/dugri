@@ -71,7 +71,7 @@ test.describe('name-step preview teaser', () => {
     await toNameStep(page);
     await expect(page.getByTestId('preview-teaser')).toBeVisible();
 
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     await expect(page.getByTestId('name-preview')).toBeVisible();
     await expect(page.getByTestId('preview-teaser')).toBeHidden();
@@ -79,10 +79,10 @@ test.describe('name-step preview teaser', () => {
 
   test('clearing the name brings the teaser back', async ({ page }) => {
     await toNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview')).toBeVisible();
 
-    await page.getByTestId('honoree-input').fill('');
+    await page.getByTestId('custom-title-input').fill('');
 
     await expect(page.getByTestId('preview-teaser')).toBeVisible();
     await expect(page.getByTestId('name-preview')).toBeHidden();
@@ -108,6 +108,6 @@ test('name_preview gated OFF: no preview and no promise of one', async ({ page }
   await expect(page.getByTestId('preview-teaser')).toBeHidden();
 
   // Still nothing to promise once a valid name is typed.
-  await page.getByTestId('honoree-input').fill('Shira');
+  await page.getByTestId('custom-title-input').fill('Shira');
   await expect(page.getByTestId('preview-teaser')).toBeHidden();
 });
