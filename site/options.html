@@ -3150,11 +3150,17 @@
         <p class="wiz-sub" data-edit="options-photos-sub">
           ככה החיילים (הפיונים) ייראו במשחק. תמונות פנים עובדות הכי טוב.
         </p>
-        <!-- What the buyer physically receives. Its own node (not <strong> inside
-             the sub) because the inline editor writes textContent — any markup the
-             owner's first edit touches would be wiped. Bold comes from CSS. -->
+        <!-- What the buyer physically receives, and the one thing SHE has to do
+             with it: the four pawns print on a single card and she cuts them into
+             circles herself. Nobody cuts them for her — not us, not the print shop
+             — so this line has to say it plainly rather than leave her to discover
+             it with the parcel open.
+
+             Its own node (not <strong> inside the sub) because the inline editor
+             writes textContent — any markup the owner's first edit touches would
+             be wiped. Bold comes from CSS. -->
         <p class="pawn-cut" data-testid="pawn-cut" data-edit="options-photos-cut">
-          החיילים מגיעים מודפסים על קלף אחד, גזורים בעיגול.
+          החיילים מגיעים מודפסים על קלף אחד - פשוט גוזרים אותם בעיגול.
         </p>
         <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
           <!-- 4 fixed slots; each wraps a hidden file input + a small preview. -->
@@ -3260,17 +3266,18 @@
           נסיר את הרקע אוטומטית על המכשיר שלכם. התצוגה בעיגול משוערת. לא אהבתם את התוצאה? לחצו על
           התמונה כדי להחליף אותה.
         </p>
-        <!-- The cut the buyer sees here is a PREVIEW. The real one — background
-             removal, processing, the circle cut — is done at the print shop, so a
-             preview she isn't thrilled with is not the thing she'll receive. Two
-             separate nodes so the owner can reword either line on its own (and,
-             again, because an override replaces textContent). -->
+        <!-- The cut the buyer sees here is a PREVIEW. The real background removal
+             and print prep happen at the print shop, so a preview she isn't
+             thrilled with is not the thing she'll receive. Note what this line
+             does NOT claim: the print shop does not cut the circles — she does,
+             and the bold line above the grid is where that is said. Two separate
+             nodes so the owner can reword either line on its own (and, again,
+             because an override replaces textContent). -->
         <div class="pawn-tip" data-testid="pawn-tip">
-          <p data-edit="options-photos-tip-shop">
-            כל העבודה על החיילים - הסרת הרקע, העיבוד והגזירה לעיגול - נעשית בבית הדפוס.
-          </p>
+          <p data-edit="options-photos-tip-shop">הסרת הרקע והעיבוד של התמונות נעשים בבית הדפוס.</p>
           <p data-edit="options-photos-tip-fix">
-            לא יצא טוב? בקשו מ-ChatGPT להוסיף רקע שחור לתמונה, והעלו אותה שוב. כמעט תמיד זה עובד.
+            לא יצא טוב? בקשו מ-ChatGPT להחליף את הרקע שלכם בתמונה בצבע שחור ונסו להעלות שוב,
+            מניסיוננו זה משפר מאוד.
           </p>
         </div>
         <p class="wiz-err" id="pawnErr" data-testid="pawn-err" hidden></p>

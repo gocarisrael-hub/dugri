@@ -437,17 +437,20 @@ test.describe('pawn photos: the helper copy', () => {
       .toBeLessThanOrEqual(0);
   });
 
-  // What the buyer RECEIVES, said once and said in weight. The step described how
-  // the photos are cut but never what arrives: the pawns come printed on a single
-  // card, already cut into circles. It is the one promise on this step, so it is
+  // What the buyer RECEIVES, and the one job it leaves her. The step described how
+  // the photos are cut but never what arrives: four pawns printed on a single card,
+  // which SHE cuts into circles. It is the one instruction on this step, so it is
   // the one line that is not muted grey.
-  test('the step says the pawns arrive on one card, cut into circles — in bold', async ({
+  test('the step says the pawns arrive on one card and the BUYER cuts the circles — in bold', async ({
     page,
   }) => {
     await toPawnStep(page);
     const cut = page.getByTestId('pawn-cut');
     await expect(cut).toBeVisible();
     await expect(cut).toContainText('קלף אחד');
+    // Addressed to her, in the second person — not "arrive already cut", which is
+    // what an earlier draft said and nobody does.
+    await expect(cut).toContainText('גוזרים');
     await expect(cut).toContainText('בעיגול');
 
     const { weight, colour, hintColour } = await cut.evaluate((el) => ({
@@ -461,16 +464,23 @@ test.describe('pawn photos: the helper copy', () => {
   });
 
   // The buyer judges the cut from an on-device preview, which is the weakest link
-  // in the chain — so the step has to say where the real one is made, and what to
-  // do when the preview looks wrong. Both are one-line answers to the two things
-  // she would otherwise message about.
+  // in the chain — so the step has to say where the real background removal is
+  // made, and what to do when the preview looks wrong. Both are one-line answers
+  // to the two things she would otherwise message about.
   test('the tip names the print shop and the black-background fix', async ({ page }) => {
     await toPawnStep(page);
     const tip = page.getByTestId('pawn-tip');
     await expect(tip).toBeVisible();
     await expect(tip).toContainText('בבית הדפוס');
     await expect(tip).toContainText('ChatGPT');
-    await expect(tip).toContainText('רקע שחור');
+    await expect(tip).toContainText('רקע');
+    await expect(tip).toContainText('שחור');
+
+    // …and it must NOT promise that the print shop does the cutting. It doesn't —
+    // the buyer does, and an earlier draft of this tip said otherwise. The claim
+    // lives in one place (the bold line above the grid) and nowhere else.
+    await expect(tip).not.toContainText('גזירה');
+    await expect(tip).not.toContainText('גוזר');
 
     // It sits BELOW the grid: the advice is about a cut she has already looked at.
     const order = await page.evaluate(() => {
