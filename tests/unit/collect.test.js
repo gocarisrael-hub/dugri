@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
+  stripListNumbers,
   normalizeWord,
   dedupeWords,
   parseWordText,
@@ -115,5 +116,77 @@ describe('collect.html editable keys', () => {
       seen.add(k);
     }
     expect(dupes).toEqual([]);
+  });
+});
+
+// PASTED NUMBERED LISTS. People paste "1. שוקולד / 2. הצחוק שלה / …" straight out
+// of Notes or WhatsApp, and every ordinal used to be stored as part of the word
+// and printed on the card — the owner sent a collection where sixty-three entries
+// all carried their number.
+//
+// The opposite mistake is the dangerous one, and her list is full of candidates:
+// "ערוץ 14", "שירלי מכאן 11", "C14" and "60 שניות עם ליאל אלי" are real words
+// with real numbers. Every test below is about the line between the two.
+describe('stripListNumbers', () => {
+  const REAL_LIST = [
+    '60. ערוץ 14',
+    '61. איתם אלמדון',
+    '44. 60 שניות עם ליאל אלי',
+    '29. C14',
+    '40.בלעדי',
+    '36. שירלי מכאן 11',
+  ];
+
+  it('drops the ordinal and keeps the numbers that belong to the word', () => {
+    expect(stripListNumbers(REAL_LIST)).toEqual([
+      'ערוץ 14',
+      'איתם אלמדון',
+      '60 שניות עם ליאל אלי',
+      'C14',
+      'בלעדי',
+      'שירלי מכאן 11',
+    ]);
+  });
+
+  it('takes ")" and "-" and ":" as list separators too', () => {
+    expect(stripListNumbers(['1) אחת', '2- שתיים', '3: שלוש'])).toEqual(['אחת', 'שתיים', 'שלוש']);
+  });
+
+  it('leaves a batch alone when it is not a numbered list', () => {
+    const words = ['ערוץ 14', 'שירלי מכאן 11', '60 שניות עם ליאל אלי', 'C14'];
+    expect(stripListNumbers(words)).toEqual(words);
+  });
+
+  it('leaves ONE ambiguous line alone — a list is a property of the batch', () => {
+    expect(stripListNumbers(['1. משהו'])).toEqual(['1. משהו']);
+    expect(stripListNumbers(['1. משהו', '2. עוד'])).toEqual(['1. משהו', '2. עוד']);
+  });
+
+  it('never reads a decimal as an ordinal', () => {
+    const prices = ['14.5', '15.5', '16.5', '17.5'];
+    expect(stripListNumbers(prices)).toEqual(prices);
+  });
+
+  it('refuses a batch whose numbers repeat — a list counts, it does not repeat', () => {
+    const scores = ['3. טוב', '3. טוב מאוד', '3. מצוין', '3. סביר'];
+    expect(stripListNumbers(scores)).toEqual(scores);
+  });
+
+  it('tolerates a few unnumbered lines inside a numbered list', () => {
+    const mixed = ['1. אחת', '2. שתיים', '3. שלוש', 'הערה בלי מספר', '4. ארבע'];
+    expect(stripListNumbers(mixed)).toEqual(['אחת', 'שתיים', 'שלוש', 'הערה בלי מספר', 'ארבע']);
+  });
+
+  it('gives up when most of the batch is unnumbered', () => {
+    const mostly = ['1. אחת', '2. שתיים', '3. שלוש', 'א', 'ב', 'ג', 'ד', 'ה'];
+    expect(stripListNumbers(mostly)).toEqual(mostly);
+  });
+
+  it('runs as part of parsing pasted text, not only when asked', () => {
+    expect(parseWordText('1. שוקולד\n2. קפה\n3. הצחוק שלה')).toEqual([
+      'שוקולד',
+      'קפה',
+      'הצחוק שלה',
+    ]);
   });
 });
