@@ -81,6 +81,7 @@ Every unique word is placed exactly once in every case — the deal only reorder
 """
 import csv
 import math
+import re
 import random
 import sys
 
@@ -142,6 +143,83 @@ def _phrase_quota(n_multi, caps):
     return quota
 
 
+# ---- CARD ORDER (per order) -------------------------------------------------
+# How the deck's words are laid onto cards. The owner picks this per order, next
+# to the seed pool, because a 63-word order and a 400-word one want different
+# answers.
+#
+#   random          the historical behaviour: one shuffled blend, nobody can tell
+#                   her words from the filler.
+#   personal-first  HER words fill the opening cards, in her own list's order,
+#                   and the pool fills the rest.
+#   by-script       Hebrew cards and Latin cards are kept apart, so no card mixes
+#                   the two scripts.
+#
+# THE PHRASE RULE IS NOT ONE OF THE OPTIONS — it applies underneath all of them.
+# `deal` guarantees every card lands within ONE multi-word entry of the average,
+# because all four words on a card render at one size and a card of four phrases
+# prints tiny. Grouping only decides WHICH words a card may draw from; the deal
+# inside each group is the same balanced deal it always was.
+#
+# THE SEAM. A group whose size is not a multiple of four leaves its last card
+# short (2 or 3 words, blanks trailing), so a grouped deck can run ONE card
+# longer than the same words blended. That is deliberate and it is the only
+# honest option: filling that card from the next group would put filler on a
+# personal card, or Hebrew on a Latin one, which is the whole thing the option
+# was chosen to prevent. A short card is also not a new look — the last card of
+# every deck has always been one — and with two groups there is at most one
+# extra of them.
+ORDER_RANDOM = "random"
+ORDER_PERSONAL_FIRST = "personal-first"
+ORDER_BY_SCRIPT = "by-script"
+ORDERS = (ORDER_RANDOM, ORDER_PERSONAL_FIRST, ORDER_BY_SCRIPT)
+
+_HEBREW_RE = re.compile(r"[\u0590-\u05FF]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+
+def is_hebrew(word):
+    """Whether an entry belongs on a HEBREW card.
+
+    Any Hebrew letter makes it Hebrew — a mixed entry ("Tel Aviv בתל אביב",
+    "C14 של ערוץ") has to live on one side or the other, and the Hebrew face is
+    the deck's primary one, so it goes there. An entry with neither script
+    (digits, punctuation) is Hebrew too: the cards are a Hebrew product and that
+    is where a bare number reads naturally.
+    """
+    w = str(word or "")
+    if _HEBREW_RE.search(w):
+        return True
+    return not _LATIN_RE.search(w)
+
+
+def card_groups(uniq, order, personal_count=None):
+    """Partition the deck's words into the groups a card may be drawn from.
+
+    Returns a list of lists, in the order their cards are printed. One group
+    means "no grouping" — which is what `random` is, and what any option falls
+    back to when the split would be empty on one side (an all-Hebrew list under
+    by-script is just a deck, not two).
+    """
+    words = list(uniq)
+    if order == ORDER_PERSONAL_FIRST:
+        # topup puts the customer's own words first and fills behind them, so the
+        # boundary is a COUNT rather than a mark on each word. Without one (an
+        # order that predates the frozen bank, or a list that is all hers) there
+        # is nothing to separate.
+        n = int(personal_count or 0)
+        if 0 < n < len(words):
+            return [words[:n], words[n:]]
+        return [words]
+    if order == ORDER_BY_SCRIPT:
+        heb = [w for w in words if is_hebrew(w)]
+        lat = [w for w in words if not is_hebrew(w)]
+        if heb and lat:
+            return [heb, lat]
+        return [words]
+    return [words]
+
+
 def deal(uniq, n_cards, rnd):
     """Deal ``uniq`` into ``n_cards`` rows of PER_CARD slots (blank-padded).
 
@@ -179,11 +257,18 @@ def deal(uniq, n_cards, rnd):
     return rows
 
 
-def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True):
+def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
+         order=ORDER_RANDOM, personal_count=None):
     """Write the deck CSV and return ``(unique_words, card_count)``.
 
     ``card_count`` INCLUDES the photo card when one is emitted, so it is the
     number of printed cards (and half the page count).
+
+    ``order`` is the per-order card order (see ORDERS): the words are partitioned
+    into groups and each group is dealt into its OWN cards, so a card only ever
+    draws from one group. The phrase balance is unchanged and applies inside every
+    group. ``personal_count`` is how many of the leading words are the customer's
+    own — the boundary `personal-first` splits on, and ignored by the others.
     """
     seen = set()
     uniq = []
@@ -196,9 +281,13 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True):
     # anything else seeding random in the same order-rendering process.
     rnd = random.Random(seed)
     # Enough cards to hold every word (never fewer, so no word is dropped), and
-    # at least one so an empty list still yields a well-formed deck.
-    n_cards = max(1, math.ceil(len(uniq) / PER_CARD))
-    rows = deal(uniq, n_cards, rnd)
+    # at least one so an empty list still yields a well-formed deck. Each GROUP
+    # gets whole cards of its own, so a group whose size is not a multiple of four
+    # leaves its last card short — see the seam note above ORDERS.
+    groups = card_groups(uniq, order, personal_count)
+    rows = []
+    for g in groups:
+        rows.extend(deal(g, max(1, math.ceil(len(g) / PER_CARD)), rnd))
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(FIELDS)
@@ -206,7 +295,7 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True):
             wr.writerow(["word", i % fronts] + row)
         if photo_card:
             wr.writerow(["photo", ""] + [""] * PER_CARD)
-    return len(uniq), n_cards + (1 if photo_card else 0)
+    return len(uniq), len(rows) + (1 if photo_card else 0)
 
 
 def load_cards(path):

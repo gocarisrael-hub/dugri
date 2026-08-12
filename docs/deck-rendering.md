@@ -105,3 +105,27 @@ Two deliberate departures from a fixed 104:
 - MORE words yields MORE cards. Every personal word is always kept (the product
   promises no upper limit), so an oversized list grows the deck past 103 instead
   of silently dropping the overflow. Front cycling stays even at any size.
+
+### Which words share a card (per order)
+
+The owner picks this per order, in the admin order dialog beside the seed pool
+(`card_order` on the collection, `--order` on the generator, `pack.ORDERS`):
+
+| choice           | what a card may hold                                         |
+| ---------------- | ------------------------------------------------------------ |
+| _(default)_      | anything — one shuffled blend, as every deck was before this |
+| `personal-first` | her own words open the deck; the filler follows, never mixed |
+| `by-script`      | Hebrew cards and Latin cards, never one card of both         |
+
+Underneath all three, unchanged: **phrases are spread evenly**, so every card is
+within one multi-word entry of the deck average (four words on a card render at
+one size, and a card of four phrases prints tiny). Grouping only decides which
+words a card may draw from — each group is dealt by the same balanced deal.
+
+The cost is one card. A group whose size is not a multiple of four ends on a
+short card (2 or 3 words), so a grouped deck can run one card longer than the
+same words blended. Filling that card from the next group is the one thing the
+option exists to prevent, and the last card of every deck has always been short.
+
+Changing it does **not** discard a frozen word bank — the same 412 words print
+either way — so it can be switched after a deck is produced and simply re-run.

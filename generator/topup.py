@@ -79,6 +79,28 @@ def _read_wordlist(filename):
         return [ln for ln in f.read().splitlines()]
 
 
+def personal_span(personal_words):
+    """How many of ``topup``'s leading words are the buyer's OWN.
+
+    The deck is one flat list — the filler is not marked, it is merely behind
+    her words — so a card order that wants to keep her words together needs the
+    boundary as a count. It is exactly what step 1 above adds: every personal
+    word, deduped the same way, none dropped.
+    """
+    seen = set()
+    n = 0
+    for w in personal_words or []:
+        w = re.sub(r"\s+", " ", str(w).strip())
+        if not w:
+            continue
+        k = _norm(w)
+        if k in seen:
+            continue
+        seen.add(k)
+        n += 1
+    return n
+
+
 def topup(personal_words, theme_key, target=TARGET, wordlist=None):
     """Return a deduped word list: all personal words + seed fillers to >= target.
 

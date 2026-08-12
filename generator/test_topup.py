@@ -4,6 +4,7 @@
 Run: python3 generator/test_topup.py   (or via pytest)
 """
 import os
+import re
 import shutil
 import tempfile
 
@@ -247,3 +248,24 @@ def test_cli_takes_the_orders_own_seed_pool(tmp_path):
     assert default != overridden
     generic = set(topup._read_wordlist("generic-350.txt"))
     assert set(overridden[2:]) <= generic
+
+
+def test_personal_span_is_where_her_words_end_in_the_topped_up_deck():
+    # The boundary the 'personal-first' card order splits on. It has to be the
+    # same dedup topup itself does, or the split lands one word off and a filler
+    # word opens the deck (or one of hers closes the filler).
+    for personal in (
+        ["שירה", "ריקוד", "חוף"],
+        ["שירה", "שירה ", " שירה"],          # exact repeats, collapsed to one
+        ["a", "A"],                            # same word, different case
+        ["ריקוד", "", "   ", "חוף"],          # blanks are not words
+        [],
+    ):
+        words = topup.topup(personal, "bachelorette")
+        n = topup.personal_span(personal)
+        assert words[:n] == list(dict.fromkeys(
+            w for w in (re.sub(r"\s+", " ", str(x).strip()) for x in personal) if w
+        ))[:n]
+        assert len(set(words[:n])) == n
+        # …and everything after it came from a pool, not from her.
+        assert n <= len(words)

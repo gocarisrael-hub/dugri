@@ -217,6 +217,13 @@ function effectivePricing() {
 // where 5 was meant — from becoming a five-figure charge attempt.
 const MAX_COPIES = Number(process.env.MAX_COPIES || 999);
 
+// How an order's words are laid onto cards — the owner picks one per order, in
+// the order dialog next to the seed pool. These MUST stay the strings
+// generator/pack.py accepts (its ORDERS), because they are passed to the child
+// verbatim as --order=<value>; null means the default blend, which is what every
+// order did before this existed.
+const CARD_ORDERS = ['random', 'personal-first', 'by-script'];
+
 // The one-time shipping fee. Only a NON-NEGATIVE integer is honoured; anything
 // else falls back to 0, so a corrupt override can never inflate a charge.
 function deliveryFee() {
@@ -986,6 +993,14 @@ const db = {
       // change, so re-saving the dialog untouched cannot cost an order its bank.
       if (c.word_bank && (c.wordlist || '') !== (next || '')) delete c.word_bank;
       c.wordlist = next;
+    }
+    // How this order's words are laid onto cards (generator/pack.py ORDERS).
+    // Unlike the seed pool this does NOT invalidate the frozen word bank: the
+    // same 412 words print either way, only their arrangement onto cards
+    // changes — so the owner can switch it after the bank is frozen, and after a
+    // deck is produced, at the cost of nothing but a re-run.
+    if (has('card_order')) {
+      c.card_order = CARD_ORDERS.includes(p.card_order) ? p.card_order : null;
     }
     if (has('custom_title')) c.custom_title = sanitizeCustomTitle(p.custom_title);
     // The two short answers from the details step. Sanitized through the SAME
@@ -1794,6 +1809,7 @@ module.exports.deliveryFee = deliveryFee;
 module.exports.sanitizeQuantity = sanitizeQuantity;
 module.exports.orderTotal = orderTotal;
 module.exports.MAX_COPIES = MAX_COPIES;
+module.exports.CARD_ORDERS = CARD_ORDERS;
 // Pure free-quota projection (collection + word count -> {limit, applies, paid,
 // remaining, locked}), exposed for the API's public view and for unit tests.
 module.exports.freeLimitState = freeLimitState;
