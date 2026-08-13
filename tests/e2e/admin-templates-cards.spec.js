@@ -524,7 +524,15 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.goto(`/admin-templates.html?key=${KEY}`);
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'קלפים E2E');
+    // The composed title lives behind a disclosure now — it is legacy, only ever
+    // reached by orders placed before the buyer started typing her own title —
+    // so a test that sets one has to open it, the way the owner would.
+    await page.locator('#form details.legacy-title > summary').click();
     await page.fill('#form textarea[name="title_text"]', '{NAME}');
+    // A composed title needs a name_form beside it — it decides how {NAME} is
+    // cast. The select defaults to "—" now, because a template without a title
+    // has no name to cast.
+    await page.selectOption('#form select[name="name_form"]', 'hebrew');
     await page.setInputFiles('#form input[name="clean_cards"]', files('clean'));
     await page.setInputFiles('#form input[name="filled_cards"]', files('filled'));
     await page.setInputFiles('#form input[name="title_font"]', font('Title.ttf'));
@@ -568,7 +576,15 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.locator('#form .mode-btn[data-fronts="one"]').click();
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'עיצוב אחד E2E');
+    // The composed title lives behind a disclosure now — it is legacy, only ever
+    // reached by orders placed before the buyer started typing her own title —
+    // so a test that sets one has to open it, the way the owner would.
+    await page.locator('#form details.legacy-title > summary').click();
     await page.fill('#form textarea[name="title_text"]', '{NAME}');
+    // A composed title needs a name_form beside it — it decides how {NAME} is
+    // cast. The select defaults to "—" now, because a template without a title
+    // has no name to cast.
+    await page.selectOption('#form select[name="name_form"]', 'hebrew');
     await page.setInputFiles('#form input[name="clean_2"]', svg('clean-front'));
     await page.setInputFiles('#form input[name="clean_1"]', svg('clean-back'));
     await page.setInputFiles('#form input[name="filled_2"]', svg('filled-front'));
@@ -618,7 +634,15 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.locator('#form .mode-btn[data-fronts="one"]').click();
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'חסר גב E2E');
+    // The composed title lives behind a disclosure now — it is legacy, only ever
+    // reached by orders placed before the buyer started typing her own title —
+    // so a test that sets one has to open it, the way the owner would.
+    await page.locator('#form details.legacy-title > summary').click();
     await page.fill('#form textarea[name="title_text"]', '{NAME}');
+    // A composed title needs a name_form beside it — it decides how {NAME} is
+    // cast. The select defaults to "—" now, because a template without a title
+    // has no name to cast.
+    await page.selectOption('#form select[name="name_form"]', 'hebrew');
     await page.setInputFiles('#form input[name="clean_2"]', svg);
     await page.setInputFiles('#form input[name="clean_1"]', svg);
     await page.setInputFiles('#form input[name="filled_2"]', svg);
@@ -647,7 +671,15 @@ test.describe('admin templates — single-card mutations (fixture only, single p
     await page.goto(`/admin-templates.html?key=${KEY}`);
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'חסר E2E');
+    // The composed title lives behind a disclosure now — it is legacy, only ever
+    // reached by orders placed before the buyer started typing her own title —
+    // so a test that sets one has to open it, the way the owner would.
+    await page.locator('#form details.legacy-title > summary').click();
     await page.fill('#form textarea[name="title_text"]', '{NAME}');
+    // A composed title needs a name_form beside it — it decides how {NAME} is
+    // cast. The select defaults to "—" now, because a template without a title
+    // has no name to cast.
+    await page.selectOption('#form select[name="name_form"]', 'hebrew');
     await page.setInputFiles(
       '#form input[name="clean_cards"]',
       [1, 2].map((n) => ({
