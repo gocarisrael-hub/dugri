@@ -15,6 +15,7 @@ The theme's calibrated clean backgrounds (fronts/board/backs) come from
 config.clean_path(theme, which). Only calibrated themes render; others raise.
 """
 import argparse
+import json
 import os
 import shutil
 import sys
@@ -22,6 +23,7 @@ import tempfile
 
 import config
 import pack
+import word_demand
 import build as buildmod
 import topup as topupmod
 from topup import topup
@@ -116,11 +118,25 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         with open(words_path, "w", encoding="utf-8") as f:
             f.write("\n".join(words) + "\n")
         csv_path = os.path.join(workdir, "order.csv")
+        # HOW HARD each entry is to print, measured against this template's own
+        # slot and font (word_demand). The packer uses it to put the demanding
+        # entries TOGETHER — one small card instead of four — and it is what
+        # names the entries that would make a card small whatever we did.
+        sizes = word_demand.measure(words, theme_key, word_font=word_font)
         if config.is_single_card(cfg):
             pack.pack(words, csv_path, fronts=len(config.fronts(cfg)),
-                      order=order, personal_count=boundary)
+                      order=order, personal_count=boundary, sizes=sizes)
         else:
-            pack.pack(words, csv_path, order=order, personal_count=boundary)
+            pack.pack(words, csv_path, order=order, personal_count=boundary,
+                      sizes=sizes)
+        # The cards that will print noticeably smaller than the rest, with the
+        # entry responsible for each. Printed on its own line for the server to
+        # pick up, the same way the board path is.
+        small = word_demand.small_cards(
+            [c["words"] for c in pack.load_cards(csv_path) if c["kind"] == "word"], sizes
+        )
+        if small:
+            print("smallcards " + json.dumps(small, ensure_ascii=False))
 
         # 3) Render. A v2 (single-card) template produces TWO artifacts — the
         #    208-page card deck and a separate board file; a v1 template still
