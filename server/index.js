@@ -27,6 +27,8 @@ const faq = require('./faq');
 const wordlists = require('./wordlists');
 const pdfName = require('./pdf-name');
 const wordBank = require('./word-bank');
+// The print-shop pass over a finished deck (generator/press_marks.py).
+const pressMarks = require('./press-marks');
 const messagePreview = require('./message-preview');
 const storeImport = require('./store-import');
 const templateImport = require('./template-import');
@@ -1008,6 +1010,43 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     // to probe the disk anyway — they run in a later request — and two sources
     // can disagree, so the record is derived the same way the routes resolve it.
     const boardFile = boardFileFor(c.id);
+    // THE PRINT SHOP'S COPY, built from the deck that was just produced —
+    // "1 button called create pdf and what it does is creating the pdf (as now
+    // this button do) and then run this script". No second button, no waiting:
+    // the marks pass is 0.44s on a real 208-page order, so the file is on disk
+    // before this request answers, and the optional colour pass carries on
+    // afterwards (see below).
+    //
+    // It is an EXTRA, deliberately: a failure here leaves the order produced and
+    // the customer's deck correct, and is reported rather than thrown. The one
+    // thing it must not do is leave a STALE press file from a previous run
+    // sitting next to a freshly produced deck — that is a file the shop would
+    // print without anyone noticing it belongs to an older version — so the old
+    // one and its markers go before the new one is built.
+    const pressFiles = pressPaths(c.id);
+    pressUnlink(
+      pressFiles.err,
+      pressFiles.pdf,
+      pressFiles.mode,
+      pressFiles.board,
+      pressFiles.partial,
+      pressFiles.partialBoard,
+      pressFiles.rejected,
+      pressFiles.building
+    );
+    const marks = await pressMarks.addMarks(outPdf, pressFiles.pdf);
+    if (marks.ok) {
+      // RGB with marks + TrimBox until the colour pass says otherwise. The
+      // download route reads this to NAME the file honestly (-press-rgb.pdf vs
+      // -press.pdf), which is the only place the difference is recorded for free.
+      writePressMode(c.id, 'passthrough');
+    } else {
+      try {
+        fs.writeFileSync(pressFiles.err, String(marks.detail || 'press_marks failed'), 'utf8');
+      } catch {
+        /* the produce itself still succeeded */
+      }
+    }
     const production = db.setProduction(c.id, {
       state: 'generated',
       pdf_file: path.basename(outPdf),
@@ -1015,7 +1054,33 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       generated_at: new Date().toISOString(),
       theme,
       pages,
+      // What the shop's copy is, as of this moment. 'rgb' the instant the deck
+      // exists; 'cmyk' when the background pass finishes; 'failed' if the marks
+      // pass could not run at all. The admin reads it instead of guessing from
+      // the presence of a file.
+      press: marks.ok ? (pressCmyk() ? 'converting' : 'rgb') : 'failed',
     });
+    // The colour pass is Ghostscript over every page — minutes, not seconds — so
+    // it runs AFTER the answer and replaces the file in place when it lands. The
+    // RGB file stays downloadable throughout, and stays the published file if the
+    // conversion fails: a file the shop can print beats no file at all, and the
+    // download name says which one it is.
+    if (marks.ok && pressCmyk()) {
+      pressMarks
+        .toCmyk(pressFiles.pdf, fs.existsSync(PRESS_ICC) ? PRESS_ICC : null)
+        .then((r) => {
+          if (r.ok) writePressMode(c.id, 'cmyk');
+          else {
+            try {
+              fs.writeFileSync(pressFiles.err, String(r.detail || 'cmyk failed'), 'utf8');
+            } catch {
+              /* the RGB file is still there and still valid */
+            }
+          }
+          db.setPressState(c.id, r.ok ? 'cmyk' : 'rgb');
+        })
+        .catch(() => db.setPressState(c.id, 'rgb'));
+    }
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:
     //  - adminLink carries the master ADMIN_KEY and is for Dugri's own use only.
@@ -1242,6 +1307,22 @@ function pressMode(id) {
     /* no sidecar, or an unreadable one */
   }
   return null;
+}
+
+// Record the mode BESIDE the published file, in the shape pressMode reads back.
+// Both kinds accumulate in the owner's orders folder and look identical in any
+// viewer, so which one a file is has to survive the build that made it — this is
+// what names the download -press.pdf or -press-rgb.pdf.
+function writePressMode(id, mode) {
+  try {
+    fs.writeFileSync(
+      pressPaths(id).mode,
+      JSON.stringify({ cmyk: mode === 'cmyk', at: Date.now() }),
+      'utf8'
+    );
+  } catch {
+    /* a missing sidecar is not a reason to withhold a good file */
+  }
 }
 
 // A marker that is too old to be a live build — the signature of a restart or a

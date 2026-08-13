@@ -964,81 +964,46 @@
         return a;
       }
 
-      // A button for the PRINT SHOP copy of an order: bleed, crop marks and a
-      // TrimBox, plus the CMYK conversion when the switch above is on. A separate
-      // artifact from the customer's deck, and (with the colour pass on) minutes
-      // to build — a full re-render onto the bigger press sheet, then Ghostscript
-      // over the whole deck — so this POSTs to start the job and polls until the
-      // file lands, rather than holding a request open.
-      function pressButton(id) {
-        const b = document.createElement('button');
-        b.className = 'act';
-        b.textContent = 'PDF לבית דפוס';
-        b.title = 'עם בליד וסימוני חיתוך — הקובץ שנשלח לבית הדפוס. המרת הצבע לפי ההגדרה למעלה';
+      // THE PRINT SHOP COPY is no longer something to press a button for. "צור
+      // PDF" builds it along with the deck (generator/press_marks.py, run by the
+      // produce route), so this is a download, not a job: bleed, crop marks and a
+      // TrimBox over the very deck that was just produced.
+      //
+      // `press` says what is on disk right now — 'rgb' the instant the deck
+      // exists, 'cmyk' once the background colour pass lands, 'converting' while
+      // it runs, 'failed' if the marks pass could not run at all. The link says
+      // so, because the two files look identical in any viewer and only the
+      // filename ever recorded which one a shop received.
+      const PRESS_LABEL = {
+        rgb: 'הורד PDF לבית דפוס',
+        cmyk: 'הורד PDF לבית דפוס (CMYK)',
+        converting: 'הורד PDF לבית דפוס (ממיר ל‑CMYK ברקע)',
+        failed: 'קובץ לבית דפוס נכשל',
+      };
+      function pressLink(id, state) {
         const url =
           location.origin +
           '/api/admin/collections/' +
           id +
           '/press?key=' +
           encodeURIComponent(key);
-        let polling = false;
-        const stop = (label) => {
-          b.textContent = label;
-          b.disabled = false;
-          polling = false;
-        };
-        // While the job runs the server answers 202 with how long it has been
-        // going. Showing the minutes is the honest thing: this build is three
-        // minutes of Chrome plus Ghostscript, and a button that says only
-        // "בונה…" for that long reads as a button that broke.
-        const building = (d) => {
-          const mins = Math.floor((Number(d && d.elapsedMs) || 0) / 60000);
-          b.textContent = mins >= 1 ? 'בונה… (' + mins + ' דק׳)' : 'בונה…';
-        };
-        const poll = () => {
-          if (!polling) return;
-          fetch(url)
-            .then(async (r) => {
-              // 202 means the build is still running — and now it means ONLY
-              // that: the server no longer hands over whatever file happens to
-              // sit at the press path mid-build (that file is the RGB deck, or
-              // the previous theme's copy).
-              if (r.status === 202) {
-                building(await r.json().catch(() => ({})));
-                return setTimeout(poll, 5000);
-              }
-              if (r.ok) {
-                stop('הורד PDF לבית דפוס');
-                b.onclick = () => window.open(url, '_blank', 'noopener');
-                window.open(url, '_blank', 'noopener');
-                return;
-              }
-              const d = await r.json().catch(() => ({}));
-              stop('נכשל — נסי שוב');
-              alert('בניית הקובץ לבית הדפוס נכשלה:\n' + (d.detail || d.error || r.status));
-            })
-            .catch(() => setTimeout(poll, 5000));
-        };
-        b.onclick = async () => {
-          b.disabled = true;
-          b.textContent = 'בונה…';
-          const r = await fetch(url, { method: 'POST' }).catch(() => null);
-          // 202 = ours, or an identical build already in flight — poll either
-          // way. 409 = a build for a DIFFERENT design is running on this order;
-          // it is refused rather than silently dropped, because a dropped
-          // request used to end with the other design's file downloaded under
-          // this order's name.
-          if (!r || (!r.ok && r.status !== 202)) {
-            const d = r ? await r.json().catch(() => ({})) : {};
-            stop(r && r.status === 409 ? 'בונה עיצוב אחר — נסי שוב' : 'נכשל — נסי שוב');
-            alert('לא הצלחתי להתחיל:\n' + (d.detail || d.error || (r && r.status) || 'network'));
-            return;
-          }
-          building(await r.json().catch(() => ({})));
-          polling = true;
-          setTimeout(poll, 5000);
-        };
-        return b;
+        if (state === 'failed') {
+          const span = document.createElement('span');
+          span.className = 'muted';
+          span.textContent = PRESS_LABEL.failed;
+          span.title = 'ההפקה הצליחה, אבל שלב הסימונים לבית הדפוס לא רץ. אפשר להפיק שוב.';
+          return span;
+        }
+        const a = document.createElement('a');
+        a.className = 'act';
+        a.textContent = PRESS_LABEL[state] || PRESS_LABEL.rgb;
+        a.title =
+          'עם בליד, סימוני חיתוך ו-TrimBox — נוצר יחד עם ה-PDF' +
+          (state === 'converting' ? '. ההמרה ל-CMYK עדיין רצה; הקובץ יתחלף כשתסתיים.' : '');
+        a.href = url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        return a;
       }
 
       // Last fetched list + current view state (client-side filter/sort).
@@ -2763,7 +2728,7 @@
               pdfWrap.appendChild(boardLink(c.id, 'הורד לוח'));
             }
             pdfWrap.appendChild(document.createTextNode(' '));
-            pdfWrap.appendChild(pressButton(c.id));
+            pdfWrap.appendChild(pressLink(c.id, (prod && prod.press) || 'rgb'));
           };
           genBtn.onclick = async () => {
             // Default to the RESOLVED generator theme key stored on the order/
