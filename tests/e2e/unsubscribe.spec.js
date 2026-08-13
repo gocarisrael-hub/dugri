@@ -122,3 +122,38 @@ test('the orders table flags a buyer who has stopped her mail', async ({ page, r
   await expect(row.getByTestId('unsubscribed-flag')).toBeVisible();
   await expect(row.getByTestId('unsubscribed-flag')).toContainText('ביטלה');
 });
+
+// The owner has to be able to SEE the list, not just the per-row flag — it is the
+// one thing that overrides every email switch on that page.
+test('the emails page lists who stopped their mail, and puts them back', async ({
+  page,
+  request,
+}) => {
+  const email = uniqEmail();
+  await request.post(`/api/admin/unsubscribed?key=${KEY}`, { data: { email } });
+
+  await page.goto(`/admin-texts.html?key=${KEY}`);
+  const row = page.locator('.unsub-row').filter({ hasText: email });
+  await expect(row).toHaveCount(1);
+  // Where it came from matters: pressed-it-themselves is a different fact from
+  // added-by-hand when deciding whether to put someone back.
+  await expect(row).toContainText('הוספה ידנית');
+
+  await row.locator('button[data-resume]').click();
+  await expect(page.locator('.unsub-row').filter({ hasText: email })).toHaveCount(0);
+  expect(await isListed(request, email)).toBe(false);
+});
+
+test('the emails page can stop an address by hand', async ({ page, request }) => {
+  const email = uniqEmail();
+  await page.goto(`/admin-texts.html?key=${KEY}`);
+  await page.locator('#unsubEmail').fill(email);
+  await page.locator('#unsubAdd').click();
+  await expect(page.locator('.unsub-row').filter({ hasText: email })).toHaveCount(1);
+  expect(await isListed(request, email)).toBe(true);
+
+  // A bad address is refused in the page, without a round trip.
+  await page.locator('#unsubEmail').fill('not-an-email');
+  await page.locator('#unsubAdd').click();
+  await expect(page.locator('#unsubStatus')).toContainText('תקינה');
+});
