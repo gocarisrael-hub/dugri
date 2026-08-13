@@ -399,6 +399,23 @@
       button.danger:hover {
         background: #fdecf2;
       }
+      .unsub-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 8px 0;
+        border-bottom: 1px solid var(--line, #e4ddd0);
+      }
+      .unsub-row:last-child {
+        border-bottom: 0;
+      }
+      .unsub-addr {
+        direction: ltr;
+        unicode-bidi: plaintext;
+        font-weight: 700;
+        flex: 1 1 200px;
+      }
       .meta {
         color: var(--muted);
         font-size: 12px;
@@ -506,6 +523,24 @@
         <div class="section-group">
           <p class="section-title">מיילים</p>
           <div id="emailCards"></div>
+        </div>
+        <!-- Who has stopped their mail. It belongs on THIS page: it is the only
+             thing that overrides every switch above it, so the owner reading the
+             email settings has to be able to see who those settings no longer
+             reach. -->
+        <div class="section-group" id="unsubGroup">
+          <p class="section-title">ביקשו להפסיק מיילים</p>
+          <p class="card-when">
+            כתובות שלחצו על "להפסיק לקבל מיילים" בתחתית מייל, או שהוספת כאן ידנית. לכתובת ברשימה הזו
+            לא נשלח שום מייל — כולל אישור הזמנה, קבלה, והודעה שהמשחק מוכן. אפשר להחזיר כתובת לרשימת
+            התפוצה בלחיצה.
+          </p>
+          <div id="unsubList"></div>
+          <div class="actions">
+            <input id="unsubEmail" type="email" placeholder="כתובת מייל להוספה ידנית…" />
+            <button id="unsubAdd" type="button">הוספה לרשימה</button>
+            <span id="unsubStatus" class="meta status" role="status" aria-live="polite"></span>
+          </div>
         </div>
       </div>
 
@@ -956,6 +991,57 @@
         'group_mode',
         'reachout_daily_max',
       ]);
+      // --- who has stopped their mail -------------------------------------------
+      // Read from its own endpoint (it is not a setting — it is a list of people),
+      // and rendered newest first, which is the order she will be looking for:
+      // "who unsubscribed after that mail I just sent".
+      let unsubbed = [];
+
+      function renderUnsub() {
+        const box = qs('unsubList');
+        if (!unsubbed.length) {
+          box.innerHTML = '<p class="meta">אף אחד לא ביקש להפסיק. </p>';
+          return;
+        }
+        box.innerHTML = unsubbed
+          .map((a) => {
+            const when = a.at ? new Date(a.at).toLocaleString('he-IL') : '';
+            // `source` says whether they pressed the button themselves or the
+            // owner added them — which changes how she should treat putting them
+            // back.
+            const how = a.source === 'admin' ? 'הוספה ידנית' : 'לחצו בעצמם במייל';
+            return (
+              '<div class="unsub-row"><span class="unsub-addr">' +
+              esc(a.email) +
+              '</span><span class="meta">' +
+              esc(when) +
+              ' · ' +
+              esc(how) +
+              '</span><button data-resume="' +
+              esc(a.email) +
+              '" type="button">להחזיר לרשימה</button></div>'
+            );
+          })
+          .join('');
+      }
+
+      function setUnsubStatus(text, cls) {
+        const el = qs('unsubStatus');
+        el.textContent = text;
+        el.className = 'meta status' + (cls ? ' ' + cls : '');
+        if (cls === 'ok') setTimeout(() => (el.textContent = ''), 2200);
+      }
+
+      async function loadUnsub() {
+        try {
+          const r = await api('GET', '/api/admin/unsubscribed');
+          unsubbed = (r && r.addresses) || [];
+        } catch {
+          unsubbed = [];
+        }
+        renderUnsub();
+      }
+
       function render() {
         const { registry, effective } = state;
         qs('waCards').innerHTML = Object.keys(registry.wa)
@@ -967,6 +1053,7 @@
           .join('');
         renderWaSafety();
         renderReminders();
+        renderUnsub();
       }
 
       // --- Ban-safety panel ------------------------------------------------------
@@ -1522,11 +1609,43 @@
           state = await api('GET', '/api/admin/settings');
           render();
           renderWaStatus();
+          loadUnsub();
         } catch (e) {
           qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message + ' (מפתח שגוי?)';
           qs('loadErr').hidden = false;
         }
       }
+
+      qs('unsubList').addEventListener('click', async (e) => {
+        const email = e.target && e.target.dataset && e.target.dataset.resume;
+        if (!email) return;
+        e.target.disabled = true;
+        try {
+          await api('POST', '/api/admin/unsubscribed', { email, unsubscribed: false });
+          setUnsubStatus('הוחזרה לרשימת התפוצה', 'ok');
+          await loadUnsub();
+        } catch (err) {
+          e.target.disabled = false;
+          setUnsubStatus('לא הצלחתי: ' + err.message, 'err');
+        }
+      });
+
+      qs('unsubAdd').addEventListener('click', async () => {
+        const input = qs('unsubEmail');
+        const email = (input.value || '').trim();
+        if (!email || !email.includes('@')) {
+          setUnsubStatus('צריך כתובת מייל תקינה', 'err');
+          return;
+        }
+        try {
+          await api('POST', '/api/admin/unsubscribed', { email });
+          input.value = '';
+          setUnsubStatus('נוספה — לא יישלחו אליה מיילים', 'ok');
+          await loadUnsub();
+        } catch (err) {
+          setUnsubStatus('לא הצלחתי: ' + err.message, 'err');
+        }
+      });
 
       if (!key) {
         qs('noKey').hidden = false;
