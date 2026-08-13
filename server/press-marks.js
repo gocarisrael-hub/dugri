@@ -13,15 +13,13 @@
 // relative to its own trim — that is the whole reason this is a post-pass over
 // the finished PDF rather than a second render.
 //
-// TIMING is why the marks pass runs inline and the colour pass does not.
-// Measured on a real 208-page order (3.6 MB, staging 9d6a86ae):
-//
-//     marks + boxes  0.44 s      pure pikepdf
-//     CMYK           minutes     Ghostscript over every page
-//
-// So the marks file is written before the produce request answers — the download
-// is there the moment the deck is — and the optional CMYK conversion continues in
-// the background, replacing the file when it lands. Nobody waits for a button.
+// NO COLOUR CONVERSION. The owner's call: "about the pdf button - remove the
+// cymk entirely". It is also what her own script argues for — "a shop that knows
+// its own press separates better than we can guess from here" — and it is what
+// makes one button possible at all: the marks pass is 0.44s on a real 208-page
+// order (3.6 MB, staging 9d6a86ae), where Ghostscript over the same file is
+// minutes. So the shop's copy is written before the produce request answers, and
+// there is nothing running afterwards to wait for or to explain.
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -30,11 +28,8 @@ const REPO_ROOT = path.join(__dirname, '..');
 const SCRIPT = path.join(REPO_ROOT, 'generator', 'press_marks.py');
 const PYTHON = process.env.PYTHON_BIN || 'python3';
 
-// The marks pass is sub-second on a full deck; a minute is a hang, not a slow
-// run. The colour pass is Ghostscript over 208 pages of artwork — minutes is
-// normal, so it gets its own much longer bound.
+// The marks pass is sub-second on a full deck; a minute is a hang, not a slow run.
 const MARKS_TIMEOUT_MS = Number(process.env.PRESS_MARKS_TIMEOUT_MS || 60 * 1000);
-const CMYK_TIMEOUT_MS = Number(process.env.PRESS_CMYK_TIMEOUT_MS || 30 * 60 * 1000);
 
 // Run the script once. Resolves { ok, detail } — never rejects, because a press
 // file is an EXTRA: the customer's deck is already produced and correct, and a
@@ -101,31 +96,4 @@ async function addMarks(deckPdf, outPdf) {
   return { ok: true, detail: r.detail };
 }
 
-/**
- * The optional colour pass: CMYK, flattened, text outlined, OutputIntent written.
- *
- * Slow by nature (Ghostscript over every page), so this is what runs in the
- * background. It converts the file IN PLACE via a temp copy — an interrupted run
- * therefore leaves the RGB marks file exactly as it was, which is a file the shop
- * can still print, rather than nothing.
- */
-async function toCmyk(pressPdf, icc) {
-  if (!fs.existsSync(pressPdf)) return { ok: false, detail: 'press pdf missing: ' + pressPdf };
-  if (icc && !fs.existsSync(icc)) return { ok: false, detail: 'ICC profile missing: ' + icc };
-  const tmp = pressPdf + '.cmyk.pdf';
-  const args = [pressPdf, tmp, '--cmyk'];
-  if (icc) args.push('--icc', icc);
-  const r = await run(args, CMYK_TIMEOUT_MS);
-  if (!r.ok || !fs.existsSync(tmp)) {
-    try {
-      fs.unlinkSync(tmp);
-    } catch {
-      /* best effort */
-    }
-    return { ok: false, detail: r.detail || 'the colour pass produced no file' };
-  }
-  fs.renameSync(tmp, pressPdf);
-  return { ok: true, detail: r.detail };
-}
-
-module.exports = { addMarks, toCmyk, SCRIPT, MARKS_TIMEOUT_MS, CMYK_TIMEOUT_MS };
+module.exports = { addMarks, SCRIPT, MARKS_TIMEOUT_MS };

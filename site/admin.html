@@ -778,13 +778,6 @@
            the switch that decides what that button produces has to be readable
            from the page it changes, and its state has to be visible without
            being hunted for. -->
-      <div class="controls" id="pressmode" hidden>
-        <label class="sortwrap"
-          ><input type="checkbox" id="press-cmyk" />
-          <span>המרת צבע ל‑CMYK בקובץ לבית דפוס</span>
-        </label>
-        <span class="sub" id="press-cmyk-note"></span>
-      </div>
       <div id="content"></div>
     </div>
 
@@ -964,43 +957,33 @@
         return a;
       }
 
-      // THE PRINT SHOP COPY is no longer something to press a button for. "צור
-      // PDF" builds it along with the deck (generator/press_marks.py, run by the
-      // produce route), so this is a download, not a job: bleed, crop marks and a
-      // TrimBox over the very deck that was just produced.
+      // THE PRINT SHOP COPY is not something to press a button for any more.
+      // "צור PDF" builds it along with the deck (generator/press_marks.py), so
+      // this is a download: bleed, crop marks and a TrimBox over the very deck
+      // that was just produced, in its own colours — the shop separates.
       //
-      // `press` says what is on disk right now — 'rgb' the instant the deck
-      // exists, 'cmyk' once the background colour pass lands, 'converting' while
-      // it runs, 'failed' if the marks pass could not run at all. The link says
-      // so, because the two files look identical in any viewer and only the
-      // filename ever recorded which one a shop received.
-      const PRESS_LABEL = {
-        rgb: 'הורד PDF לבית דפוס',
-        cmyk: 'הורד PDF לבית דפוס (CMYK)',
-        converting: 'הורד PDF לבית דפוס (ממיר ל‑CMYK ברקע)',
-        failed: 'קובץ לבית דפוס נכשל',
-      };
+      // `press` is a fact, not a mode: the file is there ('ready') or the last
+      // produce could not make it ('failed'). An order produced before this
+      // existed has neither, and gets the plain link — the download itself
+      // answers honestly (404) if there is nothing behind it.
       function pressLink(id, state) {
-        const url =
+        if (state === 'failed') {
+          const span = document.createElement('span');
+          span.className = 'muted';
+          span.textContent = 'קובץ לבית דפוס נכשל';
+          span.title = 'ההפקה הצליחה, אבל שלב הסימונים לא רץ. אפשר להפיק שוב.';
+          return span;
+        }
+        const a = document.createElement('a');
+        a.className = 'act';
+        a.textContent = 'הורד PDF לבית דפוס';
+        a.title = 'עם בליד, סימוני חיתוך ו-TrimBox — נוצר יחד עם ה-PDF';
+        a.href =
           location.origin +
           '/api/admin/collections/' +
           id +
           '/press?key=' +
           encodeURIComponent(key);
-        if (state === 'failed') {
-          const span = document.createElement('span');
-          span.className = 'muted';
-          span.textContent = PRESS_LABEL.failed;
-          span.title = 'ההפקה הצליחה, אבל שלב הסימונים לבית הדפוס לא רץ. אפשר להפיק שוב.';
-          return span;
-        }
-        const a = document.createElement('a');
-        a.className = 'act';
-        a.textContent = PRESS_LABEL[state] || PRESS_LABEL.rgb;
-        a.title =
-          'עם בליד, סימוני חיתוך ו-TrimBox — נוצר יחד עם ה-PDF' +
-          (state === 'converting' ? '. ההמרה ל-CMYK עדיין רצה; הקובץ יתחלף כשתסתיים.' : '');
-        a.href = url;
         a.target = '_blank';
         a.rel = 'noopener';
         return a;
@@ -2728,7 +2711,7 @@
               pdfWrap.appendChild(boardLink(c.id, 'הורד לוח'));
             }
             pdfWrap.appendChild(document.createTextNode(' '));
-            pdfWrap.appendChild(pressLink(c.id, (prod && prod.press) || 'rgb'));
+            pdfWrap.appendChild(pressLink(c.id, prod && prod.press));
           };
           genBtn.onclick = async () => {
             // Default to the RESOLVED generator theme key stored on the order/
@@ -2922,65 +2905,7 @@
         controlsEl.hidden = true;
         closeMenu();
         document.getElementById('colfilters').hidden = true;
-        pressModeEl.hidden = true;
-        pressModeLoaded = false;
       }
-
-      // --- the press build's colour pass ------------------------------------
-      // OFF (the default) hands the print shop the RGB deck with its bleed, crop
-      // marks and TrimBox, and lets the shop separate the colour — which is what
-      // it does today, and it knows its own press. ON adds the Ghostscript pass:
-      // CMYK against our profile, transparency flattened, text outlined, and
-      // roughly two more minutes per deck. The note under the switch says which
-      // of the two the button is currently going to produce, because both kinds
-      // of file end up in the same orders folder.
-      const pressModeEl = document.getElementById('pressmode');
-      const pressCmykEl = document.getElementById('press-cmyk');
-      const pressNoteEl = document.getElementById('press-cmyk-note');
-      function renderPressMode(on) {
-        pressCmykEl.checked = !!on;
-        pressNoteEl.textContent = on
-          ? 'הקובץ יומר ל‑CMYK ויישטח אצלנו (איטי יותר — כ‑2 דקות לחפיסה).'
-          : 'הקובץ יישלח ב‑RGB ובית הדפוס ממיר בעצמו (מהיר). הבליד, סימוני החיתוך וקווי החיתוך נשלחים תמיד.';
-      }
-      // Fetched ONCE, not on every 15-second refresh: /api/admin/settings returns
-      // the whole settings tree, and a periodic re-read would also fight the
-      // owner for the checkbox while she is clicking it.
-      let pressModeLoaded = false;
-      async function loadPressMode() {
-        if (pressModeLoaded) return;
-        try {
-          const r = await fetch('/api/admin/settings?key=' + encodeURIComponent(key));
-          if (!r.ok) return;
-          const s = await r.json();
-          renderPressMode(!!(s.effective && s.effective.press && s.effective.press.cmyk_pass));
-          pressModeEl.hidden = false;
-          pressModeLoaded = true;
-        } catch {
-          /* the orders table is the point of this page; a settings hiccup hides
-             the switch rather than breaking the load */
-        }
-      }
-      pressCmykEl.onchange = async () => {
-        const want = pressCmykEl.checked;
-        pressCmykEl.disabled = true;
-        try {
-          const r = await fetch('/api/admin/settings?key=' + encodeURIComponent(key), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ section: 'press', key: 'cmyk_pass', value: want }),
-          });
-          if (!r.ok) throw new Error(String(r.status));
-          renderPressMode((await r.json()).effective);
-        } catch {
-          // Snap back to what the server actually holds: a switch that shows a
-          // state the server does not have is worse than one that refuses.
-          renderPressMode(!want);
-          alert('לא הצלחתי לשמור את ההגדרה. נסי שוב.');
-        } finally {
-          pressCmykEl.disabled = false;
-        }
-      };
 
       sortSelect.onchange = () => {
         sortBy = sortSelect.value;
@@ -3017,9 +2942,6 @@
           }
           controlsEl.hidden = false;
           renderAll();
-          // Best-effort and AFTER the table: the switch is useful context, not a
-          // reason for the orders list to fail to appear.
-          loadPressMode();
         } catch (e) {
           hideControls();
           content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';

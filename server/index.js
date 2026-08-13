@@ -34,7 +34,6 @@ const storeImport = require('./store-import');
 const templateImport = require('./template-import');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 const generatorProc = require('./generator-proc');
-const pressVerify = require('./press-verify');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -1012,35 +1011,25 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     const boardFile = boardFileFor(c.id);
     // THE PRINT SHOP'S COPY, built from the deck that was just produced —
     // "1 button called create pdf and what it does is creating the pdf (as now
-    // this button do) and then run this script". No second button, no waiting:
-    // the marks pass is 0.44s on a real 208-page order, so the file is on disk
-    // before this request answers, and the optional colour pass carries on
-    // afterwards (see below).
+    // this button do) and then run this script". One button, and nothing to wait
+    // for: the marks pass is 0.44s on a real 208-page order, so the shop's file
+    // is on disk before this request answers.
     //
-    // It is an EXTRA, deliberately: a failure here leaves the order produced and
-    // the customer's deck correct, and is reported rather than thrown. The one
-    // thing it must not do is leave a STALE press file from a previous run
-    // sitting next to a freshly produced deck — that is a file the shop would
+    // NO COLOUR CONVERSION — "remove the cymk entirely". It was minutes of
+    // Ghostscript for a decision the shop makes better than we can, and it is the
+    // reason the old press build needed a button, a progress poll and a way to
+    // say "still building".
+    //
+    // The press file is an EXTRA, deliberately: a failure here leaves the order
+    // produced and the customer's deck correct, and is recorded rather than
+    // thrown. The one thing it must not do is leave a STALE press file from an
+    // earlier run beside a freshly produced deck — that is a file the shop would
     // print without anyone noticing it belongs to an older version — so the old
-    // one and its markers go before the new one is built.
+    // one goes before the new one is built.
     const pressFiles = pressPaths(c.id);
-    pressUnlink(
-      pressFiles.err,
-      pressFiles.pdf,
-      pressFiles.mode,
-      pressFiles.board,
-      pressFiles.partial,
-      pressFiles.partialBoard,
-      pressFiles.rejected,
-      pressFiles.building
-    );
+    pressUnlink(pressFiles.err, pressFiles.pdf, pressFiles.partial);
     const marks = await pressMarks.addMarks(outPdf, pressFiles.pdf);
-    if (marks.ok) {
-      // RGB with marks + TrimBox until the colour pass says otherwise. The
-      // download route reads this to NAME the file honestly (-press-rgb.pdf vs
-      // -press.pdf), which is the only place the difference is recorded for free.
-      writePressMode(c.id, 'passthrough');
-    } else {
+    if (!marks.ok) {
       try {
         fs.writeFileSync(pressFiles.err, String(marks.detail || 'press_marks failed'), 'utf8');
       } catch {
@@ -1054,33 +1043,10 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       generated_at: new Date().toISOString(),
       theme,
       pages,
-      // What the shop's copy is, as of this moment. 'rgb' the instant the deck
-      // exists; 'cmyk' when the background pass finishes; 'failed' if the marks
-      // pass could not run at all. The admin reads it instead of guessing from
-      // the presence of a file.
-      press: marks.ok ? (pressCmyk() ? 'converting' : 'rgb') : 'failed',
+      // Whether the shop's copy is on disk. There is only ONE kind of press file
+      // now, so this is a fact rather than a mode: 'ready' or 'failed'.
+      press: marks.ok ? 'ready' : 'failed',
     });
-    // The colour pass is Ghostscript over every page — minutes, not seconds — so
-    // it runs AFTER the answer and replaces the file in place when it lands. The
-    // RGB file stays downloadable throughout, and stays the published file if the
-    // conversion fails: a file the shop can print beats no file at all, and the
-    // download name says which one it is.
-    if (marks.ok && pressCmyk()) {
-      pressMarks
-        .toCmyk(pressFiles.pdf, fs.existsSync(PRESS_ICC) ? PRESS_ICC : null)
-        .then((r) => {
-          if (r.ok) writePressMode(c.id, 'cmyk');
-          else {
-            try {
-              fs.writeFileSync(pressFiles.err, String(r.detail || 'cmyk failed'), 'utf8');
-            } catch {
-              /* the RGB file is still there and still valid */
-            }
-          }
-          db.setPressState(c.id, r.ok ? 'cmyk' : 'rgb');
-        })
-        .catch(() => db.setPressState(c.id, 'rgb'));
-    }
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:
     //  - adminLink carries the master ADMIN_KEY and is for Dugri's own use only.
@@ -1159,422 +1125,69 @@ app.get('/api/admin/collections/:id/board', (req, res) => {
 });
 
 // --- The PRESS copy -------------------------------------------------------
-// The deck above is what the CUSTOMER prints at home: RGB, live text, no crop
-// marks. A commercial printer needs a different artifact — CMYK against a named
-// profile, transparency flattened, text outlined, and the sheet grown to carry
-// bleed and crop marks with a TrimBox stating where to cut.
+// The deck is what the customer's game is printed from; a commercial printer
+// needs the same artwork on a bigger sheet, carrying bleed, crop marks and a
+// TrimBox that states where to cut.
 //
-// That is a full RE-RENDER plus a Ghostscript pass: measured at ~200s for a
-// 208-page deck, far past GENERATE_TIMEOUT_MS. So it cannot run inside a
-// request, and it is a background job whose entire state is files on the volume
-// — which beats a job table precisely because it survives a restart for free:
-//   <id>.press.pdf          the finished artifact, and ONLY ever that
-//   <id>.press.partial.pdf  where the build actually writes
-//   <id>.press.building     the in-flight marker: JSON {started, theme, cmyk}
-//   <id>.press.mode.json    which mode published the finished file
-//   <id>.press.err          the failure detail, for the admin to read
-//   <id>.press.rejected.pdf a build that finished but did not verify, kept for
-//                           diagnosis and never served
+// It is not a build any more, and there is no button for it. Producing an order
+// runs generator/press_marks.py over the deck it just made (server/press-marks
+// .js) and writes <id>.press.pdf beside it, in 0.44s on a real 208-page order.
+// This route only hands that file over.
 //
-// TWO MODES. The Ghostscript half — CMYK, flattening, outlining — is the owner's
-// switch (settings `press.cmyk_pass`, default OFF), because the print shop
-// separates the colour itself and knows its own press. OFF is pass-through: the
-// deck goes over in Chrome's RGB and the build is seconds rather than the ~2
-// minutes Ghostscript costs on a 208-page deck. What never changes is the
-// geometry — bleed, crop marks and a TrimBox on every page, the only statement
-// in the file of where to cut. The tradeoff the switch buys, stated plainly: in
-// pass-through nothing here guarantees the colour a press lays down, and a shop
-// that does NOT convert would print an RGB file with shifted colour. That is a
-// property of the shop, so it is the owner's call and hers to revisit.
+// WHAT WAS HERE BEFORE, and why it is gone: a second full render onto a press
+// sheet, then Ghostscript for CMYK — minutes of work, so it needed a POST, a
+// progress poll, a "still building" state, partial paths, a verifier for the
+// half-written files a killed run leaves behind, and a switch for the colour
+// pass. The owner replaced the artwork half with her own post-pass over the
+// finished PDF ("the create pdf for printing shop is not so good… i want when i
+// press the create pdf button this is what will be created") and removed the
+// colour half outright ("remove the cymk entirely") — a separation the shop
+// makes better than we can. All of that machinery went with them.
 //
-// THE BUILD NEVER WRITES TO THE DOWNLOAD PATH. It writes to <id>.press.partial
-// .pdf, and the server renames that onto <id>.press.pdf only after the child
-// exits 0 AND the file verifies as a press copy. Both halves are needed:
-//
-//  * The build passes through the wrong artifact. Chrome prints the RGB deck
-//    first and Ghostscript replaces it with the CMYK one minutes later, so for
-//    most of a build there IS a complete, openable PDF at the output path that
-//    is NOT the press copy — no CMYK, no TrimBox, no OutputIntent, no crop
-//    marks. Served, it reaches a print shop looking perfectly fine.
-//  * A killed run leaves a truncated file. Chrome prints straight to the path
-//    it is given, so a timeout/OOM/PID-ceiling kill leaves a half-written PDF
-//    behind. On the partial path that is inert; on the download path it is a
-//    corrupt file that every "does it exist?" check passes.
-const PRESS_ICC =
-  process.env.PRESS_ICC ||
-  path.join(REPO_ROOT, 'resources', 'print shop', 'SWOP2006_Coated3v2.icc');
-const PRESS_TIMEOUT_MS = Number(process.env.PRESS_TIMEOUT_MS || 900000);
-// A marker older than this is a crashed run, not a live one — so a container
-// restart mid-build cannot leave the button stuck on "building" forever.
-const PRESS_STALE_MS = PRESS_TIMEOUT_MS + 60000;
-
-// Is the SLOW half of the press build (Ghostscript: CMYK + flatten + outline)
-// switched on? The owner's setting, editable from the admin screen with no
-// deploy — see settings.js `press.cmyk_pass` for why it lives there.
-//
-// FAILS TOWARDS CMYK. The two failure directions are not symmetric: falling back
-// to the full pass costs two minutes and produces a file that is a superset of
-// the fast one, while falling back to pass-through would quietly undo a switch
-// the owner had deliberately turned ON and hand the shop RGB it was not
-// expecting. Only a settings read that plainly says false takes the fast path.
-function pressCmyk() {
-  try {
-    return settings.get('press', 'cmyk_pass') !== false;
-  } catch {
-    return true;
-  }
-}
-
+// The generator still HAS a press mode (order_to_pdf --press, generator/press.py
+// and the geometry in deck_html.py). Nothing reaches it now; deleting it touches
+// the render path itself, so it is its own change rather than a passenger on
+// this one.
 function pressPaths(id) {
   const base = path.join(GENERATED_DIR, id + '.press');
   return {
     pdf: base + '.pdf',
+    // The marks pass writes here and the file is moved into place, so a download
+    // arriving mid-write gets the previous file or none — never a torn one.
     partial: base + '.partial.pdf',
-    // Which mode built the published file, so a download months later can still
-    // name it honestly. The stamp inside the PDF (press.py MODE_KEY) is the
-    // durable record; this sidecar is the one the server can read without
-    // opening a multi-megabyte deck on every poll.
-    mode: base + '.mode.json',
-    // The generator derives the board's path from the deck's (build.py
-    // board_pdf_path), so the partial run writes its board here.
-    partialBoard: base + '.partial.board.pdf',
-    board: base + '.board.pdf',
-    rejected: base + '.rejected.pdf',
-    building: base + '.building',
+    // Why the last attempt produced nothing, for the admin to show. The order
+    // itself is produced and the customer's deck is correct either way.
     err: base + '.err',
   };
 }
 
-// The in-flight build for `id`, or null when nothing is running.
-//
-// The marker carries WHICH THEME is being built, because the job is keyed by
-// collection and a collection can be asked for a different theme's press copy
-// while one is in flight. Without the theme, the second request could only be
-// answered with the first one's file — a different design, under this order's
-// name. An older marker (written before this field existed) reads as null,
-// which the caller treats as "cannot prove it is the same build".
-function pressRunning(id) {
-  const p = pressPaths(id).building;
-  let st;
-  try {
-    st = fs.statSync(p);
-  } catch {
-    return null;
-  }
-  // Older than the whole timeout budget: the container restarted mid-build and
-  // no child is coming back, so the button must not stay stuck on "building".
-  if (Date.now() - st.mtimeMs >= PRESS_STALE_MS) return null;
-  let meta = null;
-  try {
-    meta = JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch {
-    /* pre-JSON marker (a bare timestamp), or a partial write: fall back to mtime */
-  }
-  return {
-    theme: (meta && typeof meta.theme === 'string' && meta.theme) || null,
-    started: (meta && Number(meta.started)) || st.mtimeMs,
-    // The mode this build was STARTED in. A marker from before the switch
-    // existed has no field and reads as the full pass, which is what those
-    // builds were.
-    cmyk: !(meta && meta.cmyk === false),
-  };
-}
-
-// What a "still building" answer tells the caller beyond the word itself: when
-// it started and how long it has been going. The admin UI shows the elapsed
-// minutes, so a build that takes three minutes reads as progress rather than as
-// a button that stopped responding.
-function runningInfo(running) {
-  return {
-    started: running.started,
-    elapsedMs: Math.max(0, Date.now() - running.started),
-    // Which build is running, not merely that one is: a pass-through build takes
-    // seconds and a full one takes minutes, so the mode is most of what "how
-    // long should this take?" depends on.
-    mode: running.cmyk ? 'cmyk' : 'passthrough',
-  };
-}
-
-// The mode the published file was built in, read back from its sidecar. Null
-// when there is none — a file published before the sidecar existed, which was
-// necessarily a full CMYK build; the caller decides what to do with that rather
-// than being handed a guess dressed up as a fact.
-function pressMode(id) {
-  try {
-    const raw = JSON.parse(fs.readFileSync(pressPaths(id).mode, 'utf8'));
-    if (raw && typeof raw.cmyk === 'boolean') return raw.cmyk ? 'cmyk' : 'passthrough';
-  } catch {
-    /* no sidecar, or an unreadable one */
-  }
-  return null;
-}
-
-// Record the mode BESIDE the published file, in the shape pressMode reads back.
-// Both kinds accumulate in the owner's orders folder and look identical in any
-// viewer, so which one a file is has to survive the build that made it — this is
-// what names the download -press.pdf or -press-rgb.pdf.
-function writePressMode(id, mode) {
-  try {
-    fs.writeFileSync(
-      pressPaths(id).mode,
-      JSON.stringify({ cmyk: mode === 'cmyk', at: Date.now() }),
-      'utf8'
-    );
-  } catch {
-    /* a missing sidecar is not a reason to withhold a good file */
-  }
-}
-
-// A marker that is too old to be a live build — the signature of a restart or a
-// kill that never got to run the child's close handler. Reported honestly
-// rather than as "no press pdf", which would read as "you never asked for one".
-function pressAbandoned(id) {
-  const p = pressPaths(id).building;
-  try {
-    return Date.now() - fs.statSync(p).mtimeMs >= PRESS_STALE_MS;
-  } catch {
-    return false;
-  }
-}
-
+// Remove press files, ignoring what was not there. Used before a rebuild: a
+// stale press copy beside a freshly produced deck is a file the shop would print
+// without anyone noticing it belongs to an older version.
 function pressUnlink(...files) {
   for (const f of files) {
     try {
       fs.unlinkSync(f);
     } catch {
-      /* nothing stale to clear */
+      /* absent is the state we wanted */
     }
   }
 }
 
-// Publish a finished build: verify what the child actually produced, and only
-// then rename it onto the download path. Returns null on success, or the reason
-// it was refused.
-//
-// The rename is the last step and it is atomic within the volume, so the
-// download path holds either the previous finished file or the new one — never
-// a file mid-write. The verification is what stops the OTHER failure, the one
-// that looks fine: a complete, openable PDF that is the RGB intermediate rather
-// than the press copy.
-// `cmyk` is the mode the build was STARTED in (captured at spawn, not re-read
-// here): the file is held to the contract it was actually asked to meet, so
-// flipping the switch mid-build cannot make a finished file fail against a
-// contract nobody built it for. Pass-through relaxes only the two colour
-// assertions — truncation, a missing TrimBox and a sheet with no room for the
-// crop marks are still refused (server/press-verify.js).
-function pressPublish(id, cmyk) {
-  const paths = pressPaths(id);
-  if (!fs.existsSync(paths.partial)) return 'the build produced no file';
-  const v = pressVerify.checkPressFile(paths.partial, { cmyk });
-  if (!v.ok) {
-    // Keep the artifact: a rejected file is the only evidence of WHY, and it is
-    // out of reach of every download route where it now sits.
-    try {
-      fs.renameSync(paths.partial, paths.rejected);
-    } catch {
-      pressUnlink(paths.partial);
-    }
-    pressUnlink(paths.partialBoard);
-    return v.reason || 'the built file did not verify as a press copy';
-  }
-  fs.renameSync(paths.partial, paths.pdf);
-  // Record the mode BESIDE the published file. The owner will accumulate both
-  // kinds in her orders folder and they look identical in any viewer, so a press
-  // file has to remain identifiable as the fast or the full one long after the
-  // build that made it — this drives the download's filename, and press.py
-  // stamps the same fact inside the PDF for when the file travels alone.
-  try {
-    fs.writeFileSync(paths.mode, JSON.stringify({ cmyk: !!cmyk, at: Date.now() }), 'utf8');
-  } catch {
-    /* the PDF's own stamp still carries this; a missing sidecar is not a reason
-       to withhold a verified file */
-  }
-  try {
-    if (fs.existsSync(paths.partialBoard)) fs.renameSync(paths.partialBoard, paths.board);
-  } catch {
-    /* the board is a by-product of the press run; nothing serves it */
-  }
-  return null;
-}
-
-// Admin: START the press build. 202 immediately; the child outlives the
-// request.
-//
-// A second POST while one is in flight is answered by WHAT IS RUNNING, never by
-// starting a second Chrome+Ghostscript pair over the same paths:
-//   * same theme  -> 202 building. The caller asked for the file that is
-//                    already being built, so this is genuinely idempotent.
-//   * other theme -> 409. This is the case that used to silently no-op: the
-//                    request was dropped, the poll then found the FIRST theme's
-//                    file at this order's press path, and downloaded it. Same
-//                    order, wrong artwork, and nothing anywhere said so. A
-//                    build cannot be re-aimed mid-flight, so the honest answer
-//                    is to refuse and name the theme that is running.
-app.post('/api/admin/collections/:id/press', (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const c = db.getCollection(req.params.id);
-  if (!c) return res.status(404).json({ error: 'not found' });
-  const theme = String((req.body && req.body.theme) || c.theme || '').trim();
-  if (!theme) return res.status(400).json({ error: 'theme required' });
-  const running = pressRunning(c.id);
-  if (running) {
-    // An unknown theme (a marker from before this field existed) cannot be
-    // proven to match, so it is treated as a conflict rather than assumed
-    // identical — the assumption is exactly what shipped the wrong file.
-    if (running.theme === theme) {
-      return res
-        .status(202)
-        .json({ status: 'building', theme: running.theme, ...runningInfo(running) });
-    }
-    return res.status(409).json({
-      error: 'a press build is already running for this order',
-      status: 'building',
-      theme: running.theme,
-      requested: theme,
-      ...runningInfo(running),
-      detail:
-        'בנייה לבית דפוס כבר רצה להזמנה הזאת' +
-        (running.theme ? ' (עיצוב: ' + running.theme + ')' : '') +
-        '. יש לחכות שתסתיים ואז לבקש את העיצוב השני.',
-    });
-  }
-  // The APPROVED BANK when this order has one, the buyer's own words otherwise.
-  // A frozen bank is already a full deck, and topup keeps every word it is given
-  // and only fills a shortfall — so handing it over prints the approved list
-  // exactly, with no change to the generator at all. (server/word-bank.js)
-  const words = wordBank.wordsForProduction(
-    c,
-    db.listWords(c.id).map((w) => w.text)
-  );
-  if (!words.length) return res.status(400).json({ error: 'no words to generate' });
-  // Read the switch ONCE, here, and carry that value through the spawn, the
-  // marker and the verification. Re-reading it later would let a flip mid-build
-  // judge a finished file by a contract it was never built to.
-  const cmyk = pressCmyk();
-  if (cmyk && !fs.existsSync(PRESS_ICC)) {
-    // Refuse rather than let Ghostscript fall back to a built-in profile: a
-    // wrong-profile file that LOOKS correct is exactly what reaches a print run
-    // unnoticed. Only in CMYK mode — pass-through separates nothing, so a
-    // profile it never opens is not a reason to refuse the build.
-    return res.status(500).json({ error: 'press ICC profile missing', detail: PRESS_ICC });
-  }
-  const paths = pressPaths(c.id);
-  const started = Date.now();
-  let wordsFile;
-  try {
-    fs.mkdirSync(GENERATED_DIR, { recursive: true });
-    wordsFile = path.join(os.tmpdir(), 'dugri-press-' + crypto.randomUUID() + '.txt');
-    fs.writeFileSync(wordsFile, words.join('\n') + '\n', 'utf8');
-    // The finished file goes FIRST: from here until this build verifies, this
-    // order has no press copy, and every poll says so. Serving the previous
-    // theme's file while a new theme renders is the same wrong-artwork failure
-    // by another route.
-    pressUnlink(
-      paths.err,
-      paths.pdf,
-      paths.mode,
-      paths.board,
-      paths.partial,
-      paths.partialBoard,
-      paths.rejected
-    );
-    fs.writeFileSync(paths.building, JSON.stringify({ started, theme, cmyk }), 'utf8');
-  } catch (e) {
-    return res.status(500).json({ error: 'could not start', detail: String(e.message || e) });
-  }
-  // EXACTLY the argv the customer's own PDF is built from — same helper, same
-  // order, same values, all read from the STORED collection. The press sheet is
-  // the file that gets printed; anything it is not told is a difference between
-  // what she approved and what arrives in the box.
-  const args = orderArgs({
-    theme,
-    name: c.honoree_name || '',
-    wordsFile,
-    // NOT paths.pdf: the child writes to the partial path, and the server
-    // renames it into place only once it verifies (see pressPublish).
-    outPath: paths.partial,
-    wordFont: c.word_font || null,
-    extraFields: validate.effectiveExtraFields(c),
-    chasers: !!c.chasers,
-    customTitle: c.custom_title || null,
-    wordlist: c.wordlist || null,
-    cardOrder: c.card_order || null,
-    // Same boundary as the customer's deck — the two files are the same deck.
-    personalCount: wordBank.personalCountForProduction(c),
-    gender: c.gender || null,
-    photos: pawnPhotoFiles(c),
-  });
-  // The two press modes are separate flags rather than a flag plus an option, so
-  // neither argv can say something untrue: pass-through never names a profile it
-  // will not open (order_to_pdf.py --press / --press-passthrough).
-  args.push(...(cmyk ? ['--press', PRESS_ICC] : ['--press-passthrough']));
-  const child = spawnGenerator(args, { stdio: ['ignore', 'ignore', 'pipe'] });
-  let stderr = '';
-  child.stderr.on('data', (d) => (stderr += d));
-  const timer = setTimeout(() => killGenerator(child), PRESS_TIMEOUT_MS);
-  child.on('close', (code) => {
-    clearTimeout(timer);
-    pressUnlink(wordsFile);
-    let failure = null;
-    if (code !== 0) {
-      failure = stderr.slice(-2000) || 'exit ' + code;
-      // A non-zero exit can still leave a half-written sheet on the partial
-      // path (a killed Chrome, a Ghostscript that died mid-convert). It is
-      // evidence, not a deliverable: keep it out of the download path.
-      pressUnlink(paths.partial, paths.partialBoard);
-    } else {
-      failure = pressPublish(c.id, cmyk);
-    }
-    if (failure) {
-      try {
-        fs.writeFileSync(paths.err, String(failure), 'utf8');
-      } catch {
-        /* nothing more we can do */
-      }
-    }
-    pressUnlink(paths.building);
-  });
-  child.unref();
-  res.status(202).json({
-    status: 'building',
-    theme,
-    started,
-    mode: cmyk ? 'cmyk' : 'passthrough',
-  });
-});
-
-// Admin: poll for / download the press copy. 202 while it builds, 200 streams
-// the finished PDF, 409 carries a failure (or an interrupted build), 404 when
-// none was requested.
-//
-// THE ORDER OF THESE CHECKS IS THE FIX. It used to ask "is there a file?" before
-// "is a build running?", so a poll landing mid-build was answered with whatever
-// sat at the press path — the previous build's file, or (before the partial
-// path existed) the RGB intermediate of the run still in progress. Both are
-// complete, openable PDFs; both are the wrong artwork. "Building" first means a
-// download during a build can only ever say "still building".
+// Hand over the print shop's copy. It is written when the order is PRODUCED, so
+// there is no build to poll and no state to report: the file is there, or the
+// last produce could not make it, or this order was never produced.
 app.get('/api/admin/collections/:id/press', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   const paths = pressPaths(c.id);
-  const running = pressRunning(c.id);
-  if (running) {
-    return res
-      .status(202)
-      .json({ status: 'building', theme: running.theme, ...runningInfo(running) });
-  }
   if (fs.existsSync(paths.pdf)) {
-    // The DOWNLOAD NAME carries the mode. Both kinds land in the same orders
-    // folder and are indistinguishable on screen, so the one moment the
-    // difference can still be recorded for free is the moment the file is named.
-    // A file with no sidecar keeps the plain name it was published under.
-    const mode = pressMode(c.id);
-    const suffix = mode === 'passthrough' ? '-press-rgb.pdf' : '-press.pdf';
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    if (mode) res.setHeader('X-Dugri-Press-Mode', mode);
-    res.setHeader('Content-Disposition', pdfName.contentDisposition(c, suffix, ''));
+    // Named apart from the customer's deck, because both land in the same orders
+    // folder and are indistinguishable on screen.
+    res.setHeader('Content-Disposition', pdfName.contentDisposition(c, '-press.pdf', ''));
     return res.sendFile(paths.pdf);
   }
   if (fs.existsSync(paths.err)) {
@@ -1585,19 +1198,8 @@ app.get('/api/admin/collections/:id/press', (req, res) => {
       /* unreadable is still a failure */
     }
     // The TAIL, not the head. A Python traceback puts the actual error on its
-    // LAST line, and the head is 800 characters of frames that say nothing —
-    // which is what a staging failure just reported back: eight frames and no
-    // message.
+    // LAST line, and the head is 800 characters of frames that say nothing.
     return res.status(409).json({ status: 'failed', detail: detail.slice(-800) });
-  }
-  // A marker too old to be live, with no file and no error: the process died
-  // without running its close handler (a restart, an OOM kill). Say that,
-  // rather than "no press pdf" — which reads as "you never asked".
-  if (pressAbandoned(c.id)) {
-    return res.status(409).json({
-      status: 'interrupted',
-      detail: 'הבנייה לבית דפוס נקטעה (השרת כנראה הופעל מחדש באמצע). אפשר להריץ אותה שוב.',
-    });
   }
   res.status(404).json({ error: 'no press pdf' });
 });
