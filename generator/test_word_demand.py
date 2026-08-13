@@ -122,3 +122,80 @@ def test_an_even_deck_reports_nothing():
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- WHICH ROW an entry takes (render_page.order_by_room) --------------------
+#
+# The packer decides which entries share a card; only the renderer knows which
+# FRONT the card is printed on, and therefore which of its four rows an icon has
+# taken a bite out of. So the row is chosen here, against this card's artwork.
+
+import config
+import render_page as rp
+
+
+def _card():
+    cfg = config.theme(THEME)
+    rec = config.recipe_or_empty(cfg)
+    cell = (rec.get("card") or {}).get("cell") or rp._recipe_cell(rec, None)
+    slots = rp.deck_slots(THEME, config.card_word_boxes(cfg, rec, cell), cell)
+    face = rp._word_face(
+        config.resolve_word_font(THEME, None),
+        rp.word_font_alt(THEME, None),
+        alt_scale=config.word_alt_scale(cfg, rp._WORD_ALT_SCALE),
+    )
+    return slots, cell, face
+
+
+def _icon_over(slot, width=40):
+    """An icon biting into one row, from the left where the artwork's are."""
+    return [(slot["x0"] - 2, slot["y0"] - 1, slot["x0"] + width, slot["y1"] + 1)]
+
+
+def test_a_hard_entry_moves_off_the_row_an_icon_eats():
+    slots, cell, face = _card()
+    words = [HARD, "ים", "אמא", "חוף"]
+    # With an icon over the FIRST row, the demanding entry must not stay there.
+    got = rp.order_by_room(slots, words, face, cell=cell, obstacles=_icon_over(slots[0]))
+    assert got[0] != HARD, got
+    assert HARD in got
+
+
+def test_the_icon_decides_it_not_a_fixed_rule():
+    # The same four entries, the same card, two different fronts: the demanding
+    # entry lands somewhere else. That is the whole reason this moved out of the
+    # packer — a fixed "hardest goes last" cannot see the artwork.
+    slots, cell, face = _card()
+    words = [HARD, "ים", "אמא", "חוף"]
+    first = rp.order_by_room(slots, words, face, cell=cell, obstacles=_icon_over(slots[0]))
+    last = rp.order_by_room(slots, words, face, cell=cell, obstacles=_icon_over(slots[3]))
+    assert first.index(HARD) != last.index(HARD), (first, last)
+
+
+def test_it_keeps_every_entry_and_leaves_blanks_at_the_end():
+    slots, cell, face = _card()
+    words = [HARD, "ים", "", ""]
+    got = rp.order_by_room(slots, words, face, cell=cell, obstacles=_icon_over(slots[0]))
+    assert sorted(w for w in got if w) == sorted([HARD, "ים"])
+    # A blank between two entries would print an empty numbered line.
+    present = [bool(w) for w in got]
+    assert present == sorted(present, reverse=True), got
+
+
+def test_a_card_with_nothing_to_choose_is_left_alone():
+    slots, cell, face = _card()
+    for words in ([HARD, "", "", ""], ["", "", "", ""]):
+        assert rp.order_by_room(slots, words, face, cell=cell, obstacles=None) == list(words)
+
+
+def test_equal_rows_keep_the_order_they_arrived_in():
+    # Stability matters: on a card whose rows are equally roomy the deck should
+    # look exactly as it did, not be reshuffled for no gain.
+    slots, cell, face = _card()
+    words = ["אמא", "חוף", "ים", "דוד"]
+    flat = [dict(s) for s in slots]
+    for i, s in enumerate(flat):          # four identical rows, evenly spaced
+        h = slots[0]["y1"] - slots[0]["y0"]
+        s["y0"], s["y1"] = 20 + i * 40.0, 20 + i * 40.0 + h
+        s["x0"], s["x1"] = slots[0]["x0"], slots[0]["x1"]
+    assert rp.order_by_room(flat, words, face, cell=cell, obstacles=None) == words

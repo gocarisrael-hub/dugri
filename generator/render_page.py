@@ -2567,6 +2567,129 @@ def unclearable_icons(obstacles, band, center, right, width):
                   if o[1] < center < o[3])[::-1]
 
 
+def order_by_room(slots, words, font, cell=None, obstacles=None, safe=_CELL_SAFE,
+                  room_bottom=None, floor=None):
+    """Put each entry on the ROW that suits it, instead of the row it arrived on.
+
+    THE RULE THIS REPLACES: the packer always sent the hardest entry to the
+    bottom row, on the reasoning that a wrapped entry has somewhere to go there.
+    The owner's question was whether that rule is worth keeping — "sometimes the
+    icon is down the card and sometimes not" — and it is not, because the rows of
+    a card are identical to each other and it is the ARTWORK that differs. An
+    icon beside row 3 takes a bite out of row 3; on the next front it takes it
+    out of row 1. A fixed rule cannot know that, and only the renderer can: the
+    packer has no idea which front a card will be printed on.
+
+    So every entry is measured against every row of THIS card — the same
+    measurement the fit will make — and the arrangement that leaves the card's
+    smallest entry as large as possible wins. Four entries over four rows is 24
+    arrangements, so the best one is found by trying them all rather than by a
+    rule of thumb that would need its own exceptions.
+
+    Ties are broken by the total, which keeps the arrangement stable when the
+    rows are equally roomy (a card with no icons beside its words): the entries
+    then stay in the order they arrived, and the deck looks exactly as it did.
+
+    Blanks stay TRAILING. Only the live entries are permuted, among the rows they
+    already occupy — the renderer numbers the rows 1..4 downwards, so a blank
+    between two entries would print an empty numbered line.
+    """
+    live = [w for w in words if w]
+    if len(live) < 2 or not slots:
+        return list(words)
+    centers = [(sl["y0"] + sl["y1"]) / 2 for sl in slots]
+    vbounds = ((cell[1] + (cell[3] - cell[1]) * safe,
+                cell[3] - (cell[3] - cell[1]) * safe) if cell else None)
+    rows = slot_rows(slots, centers, vbounds, room_bottom)
+    # The fit meets the icons with their clear air already on them, so the choice
+    # has to meet the same boxes — otherwise an entry is placed against one
+    # geometry and set against a tighter one.
+    obstacles = _grown(obstacles, _ICON_CLEAR_MM * _PT_PER_MM)
+
+    ref = font.ref
+    # ONE digit column for the whole card, exactly as the fit and the render use
+    # (see the anchor note in _words_overlay). Measuring each row against its own
+    # digit would make the choice turn on whether "4" is wider than "1" — a
+    # fraction of a millimetre that has nothing to do with the artwork, and
+    # enough to reshuffle a card that has no icons at all.
+    advance = _marker_advance(_primary(font), len(slots))
+    size = {}
+    for wi in range(len(live)):
+        right, left, _ = row_bounds(slots, slots[wi], rows[wi], cell, obstacles, floor)
+        avail = max(0.0, right - left)
+        for w in live:
+            try:
+                cands = _candidates(font, ref, 1, w, avail, advance=advance)
+                best = max((c[2] for c in cands.values() if c and c[2] is not None),
+                           default=0.0)
+            except Exception:
+                best = 0.0
+            size[(w, wi)] = best
+
+    best_order, best_key = None, None
+    for perm in itertools.permutations(live):
+        got = [size[(w, i)] for i, w in enumerate(perm)]
+        # The card is set at its smallest entry, so that is what is maximised;
+        # the sum only settles ties.
+        key = (min(got), sum(got))
+        if best_key is None or key > best_key:
+            best_order, best_key = perm, key
+    return list(best_order) + [""] * (len(words) - len(best_order))
+
+
+def slot_rows(slots, centers, vbounds=None, room_bottom=None):
+    """THE ROW each entry owns: its centre plus and minus half the way to the
+    nearest neighbouring slot, held inside the card's safe area and above the
+    printed frame's clear air.
+
+    It answers both halves of the icon question — which icons this entry can
+    meet, and how far its own block may grow before it reaches the next row's.
+    Extracted so the ROW CHOICE reads the same rows the fit will use.
+    """
+    rows = {}
+    for wi in range(len(slots)):
+        half = _slot_pitch(slots, wi) / 2
+        top, bottom = centers[wi] - half, centers[wi] + half
+        if vbounds:
+            top, bottom = max(top, vbounds[0]), min(bottom, vbounds[1])
+        if room_bottom is not None and room_bottom > centers[wi]:
+            bottom = min(bottom, room_bottom)
+        rows[wi] = (min(top, centers[wi]), max(bottom, centers[wi]))
+    return rows
+
+
+def row_bounds(slots, slot, row, cell, obstacles, floor=None):
+    """One row's ``(right, left, on_icon)`` — the paper an entry there may use.
+
+    Extracted from the fit so the ROW CHOICE can ask the same question the fit
+    will answer later: how much room does row 3 of this card actually have? The
+    two must agree, or an entry is placed by one measurement and set by another.
+
+    The rows of a card are the same size as each other; what makes them differ is
+    the artwork. An icon beside a row pushes its left edge in, and how far
+    depends on which front this card is — which is why this cannot be decided
+    when the deck is packed.
+    """
+    right = _card_right_edge(slots, cell)
+    # ONE left line for the card, whether or not the template states its column:
+    # see ``_card_left_edge``. The trim-safe floor still holds it off the paper
+    # edge on a card with no cell to mirror against.
+    left = _card_left_edge(slots, cell)
+    if floor is not None:
+        left = max(left, floor)
+    if left >= right:                 # degenerate slot: fall back to the floor
+        left = floor if floor is not None else slot["x0"]
+    # The row is shortened first, because an icon it no longer reaches is an icon
+    # this entry no longer has to be narrow for.
+    clipped = _row_clip(obstacles, row, row[0] / 2 + row[1] / 2,
+                        right, cell[2] - cell[0] if cell else 0.0)
+    edge = _obstacle_left(obstacles, clipped, right)
+    on_icon = edge is not None and edge > left
+    if on_icon:
+        left = edge
+    return right, left, on_icon
+
+
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
                   obstacles=None, title_box=None):
@@ -2628,15 +2751,7 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # printed frame's clear air. It answers both halves of the icon question —
     # which icons this entry can meet, and how far its own block may grow before
     # it reaches the next row's.
-    rows = {}
-    for wi in range(len(slots)):
-        half = _slot_pitch(slots, wi) / 2
-        top, bottom = centers[wi] - half, centers[wi] + half
-        if vbounds:
-            top, bottom = max(top, vbounds[0]), min(bottom, vbounds[1])
-        if room_bottom is not None and room_bottom > centers[wi]:
-            bottom = min(bottom, room_bottom)
-        rows[wi] = (min(top, centers[wi]), max(bottom, centers[wi]))
+    rows = slot_rows(slots, centers, vbounds, room_bottom)
     # Each live entry's band, before and after the icons beside it have taken
     # their bite. Measured for the whole card first, because whether ANY entry is
     # blocked decides whether THIS CARD may wrap at all (see AND ONLY WHERE THERE
@@ -2657,24 +2772,8 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
             word = words[wi] if wi < len(words) else ""
             if not word:
                 continue
-            right = _card_right_edge(slots, cell)
-            # ONE left line for the card, whether or not the template states
-            # its column: see ``_card_left_edge``. The trim-safe floor still
-            # holds it off the paper edge on a card with no cell to mirror
-            # against.
-            left = _card_left_edge(slots, cell)
-            if floor is not None:
-                left = max(left, floor)
-            if left >= right:             # degenerate slot: fall back to the floor
-                left = floor if floor is not None else slot["x0"]
-            # The row is shortened first, because an icon it no longer reaches is
-            # an icon this entry no longer has to be narrow for.
-            row = _row_clip(obstacles, rows[wi], rows[wi][0] / 2 + rows[wi][1] / 2,
-                            right, cell[2] - cell[0] if cell else 0.0)
-            edge = _obstacle_left(obstacles, row, right)
-            on_icon = edge is not None and edge > left
-            if on_icon:
-                left = edge
+            right, left, on_icon = row_bounds(slots, slot, rows[wi], cell,
+                                              obstacles, floor)
             bands[wi] = (word, right, left, on_icon)
         return bands
 
@@ -3996,6 +4095,12 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     alt_scale = config.word_alt_scale(cfg, _WORD_ALT_SCALE)
     face = _word_face(word_font, word_font_alt, alt_scale=alt_scale)
     bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
+    # WHICH ROW each entry takes, decided against THIS card's artwork — see
+    # order_by_room. The packer chooses which entries share a card; only here is
+    # it known which front they are printed on, and therefore which of the four
+    # rows an icon has taken a bite out of.
+    words = order_by_room(slots, words, face, cell=cell, obstacles=obstacles,
+                          safe=_CARD_SAFE, room_bottom=room)
     layouts = _word_layouts(slots, words, face, face.ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                             room_bottom=room, bold_w=bold_w,
