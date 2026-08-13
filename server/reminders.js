@@ -112,22 +112,22 @@ function validateReminders(list) {
   return null;
 }
 
-// WHEN CHASING STOPS. Two different debts, so two different answers — both pure,
-// both applied by every scheduler that chases (see runReminderListScan,
-// collectionsDueForReminder and collectionsDueForPaymentReminder).
+// WHEN CHASING STOPS. One rule, applied by every scheduler that chases (see
+// runReminderListScan, collectionsDueForReminder and
+// collectionsDueForPaymentReminder). Pure, so it is exhaustively testable.
 //
-// The rule the owner asked for: an order that is READY has been made and handed
-// over, and a list that is CLOSED has its words. Carrying on chasing either is
-// asking a customer for something they already gave — and once the deck is at the
-// printer, "add a few more words" is worse than noise: it is an offer we cannot
-// honour.
+// IT STOPS WHEN THE ORDER GOES INTO PRODUCTION — the moment the buyer closes her
+// word list — and not one step later. That is the owner's rule, and it corrects
+// where this landed first: the money half used to keep chasing until the order
+// was marked ready, on the reasoning that words and payment are separate debts.
+// They are, but the chasing is not: from the close onwards this is an order being
+// MADE, and a customer whose game is in production should hear from a person
+// about anything still outstanding, not from a scheduler. Automated nudges belong
+// to the stretch before that, when nothing has started yet.
 //
-// A cancelled order is nobody's debt.
-
-// Words. Stopped once the list is closed or expired (the words are in), once the
-// deck has gone to the printer or come back ready (too late to add any), or once
-// the order is cancelled.
-function wordRemindersStopped(c) {
+// So: closed or expired (the words are in and production begins), at the printer,
+// back and ready, or cancelled — no more automated mail of any kind.
+function chasingStopped(c) {
   if (!c) return true;
   if (c.cancelled) return true;
   if (c.status && c.status !== 'open') return true;
@@ -135,16 +135,13 @@ function wordRemindersStopped(c) {
   return !!(o && (o.sent_to_print_at || o.ready_at));
 }
 
-// Money. Stopped when the order is ready — she has already handed the game over,
-// and an automated "you still owe us" after that is hers to send, not ours — or
-// when the order is cancelled. NOT stopped by closing the word list: words and
-// payment are separate debts, and a buyer can (and often does) finish her words
-// before she pays.
-function paymentRemindersStopped(c) {
-  if (!c) return true;
-  if (c.cancelled) return true;
-  return !!(c.order && c.order.ready_at);
-}
+// The two names the schedulers call it by. Kept as separate exports because the
+// two ARE different questions — a future "we still need your payment" that the
+// owner wants to keep running past the close would change one of them and not the
+// other — but today they have the same answer, in one place rather than two that
+// can drift.
+const wordRemindersStopped = chasingStopped;
+const paymentRemindersStopped = chasingStopped;
 
 // Which reminders are due for ONE collection right now. Pure.
 //   opts.reminders      — the reminder list (settings value)
@@ -210,6 +207,7 @@ function remindersDue(opts = {}) {
 
 module.exports = {
   DEFAULT_REMINDERS,
+  chasingStopped,
   validateReminders,
   remindersDue,
   wordRemindersStopped,
