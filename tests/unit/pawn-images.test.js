@@ -399,3 +399,91 @@ describe('GET /api/collections/:id — pawn_images visibility', () => {
     expect('pawn_images' in guest).toBe(false);
   });
 });
+
+// SHE RETITLES HER OWN DECK. Same sheet, same owner token — but a different rule
+// about WHEN: the title is what gets printed, and closing the collection is what
+// starts the printing. Until then it is hers to change, paid or not; after it the
+// deck is being made and the title it is made with is fixed.
+async function putTitle(id, k, custom_title) {
+  const res = await fetch(base + '/api/collections/' + id + '/title?k=' + encodeURIComponent(k), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ custom_title }),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+describe('PUT /api/collections/:id/title', () => {
+  it('stores the buyer’s title and answers with what was stored', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, c.owner_token, '30 שנה לשירה שלנו');
+    expect(r.status).toBe(200);
+    expect(r.body.custom_title).toBe('30 שנה לשירה שלנו');
+    expect(db.getCollection(c.id).custom_title).toBe('30 שנה לשירה שלנו');
+  });
+
+  it('a blank title restores the theme’s own title rather than printing nothing', async () => {
+    const c = db.createCollection('בדיקה', {});
+    await putTitle(c.id, c.owner_token, 'כותרת');
+    const r = await putTitle(c.id, c.owner_token, '   ');
+    expect(r.status).toBe(200);
+    expect(r.body.custom_title).toBe(null);
+    expect(db.getCollection(c.id).custom_title).toBe(null);
+  });
+
+  it('caps at 120 characters, the same cap the order flow applies', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, c.owner_token, 'א'.repeat(200));
+    expect(r.status).toBe(200);
+    expect(Array.from(r.body.custom_title)).toHaveLength(120);
+  });
+
+  it('refuses an emoji title, names the field, and stores nothing', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, c.owner_token, 'שירה בת 30 🎉');
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('emoji');
+    expect(r.body.field).toBe('custom_title');
+    expect(db.getCollection(c.id).custom_title).toBe(null);
+  });
+
+  it('403 on a wrong owner token', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, 'nope', 'לא שלי');
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).custom_title).toBe(null);
+  });
+
+  // The rule the owner chose: editable until she closes, and closing is the
+  // moment production starts. Enforced HERE, not only in the page.
+  it('409 once the collection is closed, and the stored title is untouched', async () => {
+    const c = db.createCollection('בדיקה', {});
+    await putTitle(c.id, c.owner_token, 'לפני הסגירה');
+    db.closeCollection(c.id, c.owner_token);
+    const r = await putTitle(c.id, c.owner_token, 'אחרי הסגירה');
+    expect(r.status).toBe(409);
+    expect(db.getCollection(c.id).custom_title).toBe('לפני הסגירה');
+  });
+
+  it('a PAID but still-open order can be retitled', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.setOrder(c.id, { version: 'pickup', total: 199, source: 'public' });
+    db.markPaid(c.id);
+    const r = await putTitle(c.id, c.owner_token, 'שיניתי אחרי התשלום');
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).custom_title).toBe('שיניתי אחרי התשלום');
+  });
+});
+
+describe('GET /api/collections/:id — custom_title visibility', () => {
+  it('ships the title to the owner and omits it for a contributor', async () => {
+    const c = db.createCollection('בדיקה', {});
+    await putTitle(c.id, c.owner_token, 'הכותרת שלי');
+    const owner = await fetch(
+      base + '/api/collections/' + c.id + '?k=' + encodeURIComponent(c.owner_token)
+    ).then((r) => r.json());
+    expect(owner.custom_title).toBe('הכותרת שלי');
+    const guest = await fetch(base + '/api/collections/' + c.id).then((r) => r.json());
+    expect('custom_title' in guest).toBe(false);
+  });
+});

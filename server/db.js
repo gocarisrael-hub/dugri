@@ -905,6 +905,22 @@ const db = {
     return c.pawn_images;
   },
 
+  // The buyer RETITLES her own deck, owner-token gated. Sanitized with the very
+  // same sanitizeCustomTitle the order flow uses, so what she is shown in the
+  // preview is what the generator will print — one rule, not two that can drift.
+  //
+  // An empty/blank title stores null, which means "use the theme's own title"
+  // rather than "print nothing". Returns the stored value (string or null), or
+  // the string 'forbidden' for a bad token / unknown collection — distinguishable
+  // from a legitimately-null title, which is why it is not simply null.
+  setCustomTitleForOwner(id, ownerToken, title) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return 'forbidden';
+    c.custom_title = sanitizeCustomTitle(title);
+    saveDb();
+    return c.custom_title;
+  },
+
   // REMOVE / REORDER the buyer's own pawn photos, owner-token gated. The buyer's
   // half of adminSetPawnImages: she reopens her collection page, sees the faces
   // she sent, and takes one out.

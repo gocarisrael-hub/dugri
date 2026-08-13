@@ -603,7 +603,14 @@ function publicView(c, { owner = false } = {}) {
     // OWNER ONLY, and this one is not a nicety: they are photographs of her
     // people, while the collection LINK is meant to be forwarded to everyone at
     // the party. A contributor gets no hint that they exist.
-    ...(owner ? { pawn_images: Array.isArray(c.pawn_images) ? [...c.pawn_images] : [] } : {}),
+    ...(owner
+      ? {
+          pawn_images: Array.isArray(c.pawn_images) ? [...c.pawn_images] : [],
+          // …and the title she chose, so the same sheet can show and change it.
+          // null means she never set one and the theme's own title is printed.
+          custom_title: c.custom_title || null,
+        }
+      : {}),
     // Free word quota. The buyer is meant to discover the cap by REACHING it, so
     // while the collection is still open the limit is withheld — shipping it here
     // would put it in devtools' Network tab (and in any scraper) long before the
@@ -1645,6 +1652,30 @@ app.put('/api/collections/:id/pawns', express.json({ limit: '16kb' }), (req, res
   // bad token, on purpose: both are "that is not yours to edit".
   if (imgs == null) return res.status(403).json({ error: 'forbidden' });
   res.json({ ok: true, pawn_images: imgs });
+});
+
+// The buyer RETITLES her own deck from the collection page. Body: { custom_title }
+// (a blank one restores the theme's own title).
+//
+// Allowed until she CLOSES the collection — closing is what starts production, so
+// up to that moment nothing has been printed and the title is still hers to move,
+// paid or not. After it, the deck is being made and the title it is made with is
+// fixed. Enforced here and not only in the page, because a UI-only rule is not a
+// rule.
+app.put('/api/collections/:id/title', express.json({ limit: '8kb' }), (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  if (db.effectiveStatus(c) !== 'open') {
+    return res.status(409).json({ error: 'closed', message: 'האיסוף נסגר והמשחק בהפקה' });
+  }
+  const title = (req.body || {}).custom_title;
+  // The SAME emoji refusal the order flow applies, with the same Hebrew message:
+  // an emoji cannot be drawn onto the printed card, and the buyer should hear
+  // about it in the one place she can still fix it.
+  if (refuseEmojiTitle(res, { title })) return;
+  const stored = db.setCustomTitleForOwner(req.params.id, req.query.k, title);
+  if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  res.json({ ok: true, custom_title: stored });
 });
 
 // A cutout part is named after the original it belongs to: "cut:pawn0" carries the
