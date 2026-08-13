@@ -55,6 +55,9 @@ export default defineConfig({
       // the server would put in a buyer's mail without a route existing to hand
       // one out. Production generates and persists its own (server/unsubscribe.js).
       UNSUBSCRIBE_SECRET: 'e2e-unsubscribe-secret',
+      // The SMS gateway's own secret, so the outbox routes are live in E2E. The
+      // feature switch itself is a setting, flipped by the spec that needs it.
+      SMS_GATEWAY_KEY: 'e2e-sms-gateway-key',
       TEMPLATE_ROOT: FIXTURE_ROOT,
     },
     port: PORT,

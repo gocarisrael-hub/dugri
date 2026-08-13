@@ -26,6 +26,7 @@ const reminders = require('./reminders');
 const faq = require('./faq');
 const wordlists = require('./wordlists');
 const unsubscribe = require('./unsubscribe');
+const sms = require('./sms');
 const pdfName = require('./pdf-name');
 const wordBank = require('./word-bank');
 const messagePreview = require('./message-preview');
@@ -1628,6 +1629,36 @@ app.post('/api/admin/collections/:id/to-print', (req, res) => {
 // owner-editable template). It is called defensively so this route works, and the
 // tally stays correct, whether or not that template has shipped yet — a missing
 // mail must never cost the owner the ability to mark an order done.
+// Queue the "your game is ready" SMS for the owner's phone to send. Silent no-op
+// when the feature is off, the buyer left no mobile, or the text is empty — an
+// SMS is optional in a way the email is not, so nothing here is ever an error the
+// owner has to clear.
+function queueReadySms(collection) {
+  try {
+    if (!settings.get('sms', 'enabled')) return null;
+    const tpl = String(settings.get('sms', 'order_ready') || '');
+    if (!tpl.trim()) return null;
+    const base = paymentBaseUrl();
+    const link =
+      base && collection && collection.id && collection.owner_token
+        ? base + '/collect.html?c=' + collection.id + '&k=' + collection.owner_token
+        : '';
+    const text = settings.interpolate(tpl, {
+      honoree: (collection && collection.honoree_name) || 'בעל/ת השמחה',
+      link,
+    });
+    return sms.enqueue({
+      to: collection && collection.owner_phone,
+      text,
+      event: 'order_ready',
+      collection_id: collection && collection.id,
+    });
+  } catch (e) {
+    console.warn('[sms] queue failed:', e && e.message ? e.message : e);
+    return null;
+  }
+}
+
 app.post('/api/admin/collections/:id/ready', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const ready = !(req.body && req.body.undo);
@@ -1639,8 +1670,15 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
       message: 'צריך קודם לסמן שההזמנה נשלחה לדפוס.',
     });
   }
-  if (ready && r.changed && typeof notify.sendOrderReady === 'function') {
-    notify.sendOrderReady(db.getCollection(req.params.id), paymentBaseUrl()).catch(() => {});
+  if (ready && r.changed) {
+    const fresh = db.getCollection(req.params.id);
+    if (typeof notify.sendOrderReady === 'function') {
+      notify.sendOrderReady(fresh, paymentBaseUrl()).catch(() => {});
+    }
+    // …and the SMS, queued for the phone to collect. Same moment, same order,
+    // different medium — and enqueue is a local write, so a gateway that is
+    // asleep cannot slow this response down or fail the press.
+    queueReadySms(fresh);
   }
   res.json({
     ok: true,
@@ -3959,6 +3997,66 @@ app.post('/api/admin/unsubscribed', (req, res) => {
   if (body.unsubscribed === false) unsubscribe.resubscribe(email);
   else unsubscribe.unsubscribe(email, 'admin');
   res.json({ ok: true, email, unsubscribed: unsubscribe.isUnsubscribed(email) });
+});
+
+// --- the SMS gateway on the owner's phone -------------------------------------
+// The phone POLLS: it is behind a home router with no address of its own, so the
+// server cannot call it. Everything here is gated by SMS_GATEWAY_KEY — a shared
+// secret in the app's config, separate from ADMIN_KEY so a phone left in a drawer
+// never carries the key to the whole admin.
+//
+// Dormant until that env var is set: with no key, these routes answer 404 rather
+// than 403, so an unconfigured deployment does not advertise a feature it has not
+// got.
+function requireSmsGateway(req, res) {
+  const key = process.env.SMS_GATEWAY_KEY || '';
+  if (!key) {
+    res.status(404).json({ error: 'sms gateway not configured' });
+    return false;
+  }
+  const given = String(req.get('x-sms-key') || req.query.key || '');
+  // Length check first so timingSafeEqual cannot throw on a mismatched length.
+  const ok =
+    given.length === key.length && crypto.timingSafeEqual(Buffer.from(given), Buffer.from(key));
+  if (!ok) {
+    res.status(403).json({ error: 'forbidden' });
+    return false;
+  }
+  return true;
+}
+
+// What to send now. Leased, so a second poll does not hand out the same message
+// twice; see server/sms.js for why a lease rather than a delete.
+app.get('/api/sms/outbox', (req, res) => {
+  if (!requireSmsGateway(req, res)) return;
+  sms.markPolled();
+  const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
+  res.json({ messages: sms.claim({ limit }) });
+});
+
+// The phone's report on one message. `ok:false` carries the SIM's reason, which
+// is what makes a failure legible on the admin screen instead of a silence.
+app.post('/api/sms/outbox/:id/ack', (req, res) => {
+  if (!requireSmsGateway(req, res)) return;
+  sms.markPolled();
+  const body = req.body || {};
+  const m = sms.ack(req.params.id, { ok: body.ok !== false, error: body.error });
+  if (!m) return res.status(404).json({ error: 'not found' });
+  res.json({ ok: true, state: m.state });
+});
+
+// Admin: the queue, and when the phone last asked for work. That second number is
+// the one that matters — pending messages plus a poll from two days ago is a
+// phone that is off, not a server that is broken.
+app.get('/api/admin/sms', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({
+    enabled: !!settings.get('sms', 'enabled'),
+    gateway_configured: !!process.env.SMS_GATEWAY_KEY,
+    last_poll_at: sms.lastPollAt(),
+    counts: sms.counts(),
+    messages: sms.list({ limit: 30 }),
+  });
 });
 
 app.get('/api/content', (req, res) => {
