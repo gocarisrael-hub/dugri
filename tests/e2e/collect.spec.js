@@ -856,6 +856,11 @@ test('pricing fetch failure disables pay and offers a refresh (never a guessed p
   await expect(page.locator('#priceLoadErr')).toBeVisible();
   await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeVisible();
   await expect(page.locator('#payOpts')).toBeHidden();
+  // The shipping tick goes with it. It is a CHILD of #payOpts, so hiding the box
+  // hides it — but its own class must be cleared too, or the next time the box
+  // comes back it flashes a "ship it to me" that belongs to the last good load.
+  await expect(page.getByTestId('ship-toggle')).toBeHidden();
+  await expect(page.getByTestId('ship-toggle')).toHaveClass(/\bhidden\b/);
   await expect(page.locator('#cardPayBtn')).toBeDisabled();
   // Fix #2: the total line must NOT show the PRICING_FALLBACK ₪199 beside the
   // "couldn't load prices" message — no guessed number at all.
@@ -2193,6 +2198,11 @@ test('the shipping tick lays out like an option: price on its own end, notes bel
   // "on" (the fallback sets "off"), so this pins the stub, not the seed.
   await expect(page.locator('html')).toHaveAttribute('data-sale', 'on');
   await expect(page.locator('#payTotal')).toHaveText('199');
+  // …and for the option list itself. The tick is a CHILD of #payOpts, and every
+  // not-yet-payable branch of applyPricing hides that whole box — so measuring
+  // the moment the price looks right can still catch the box mid-flight, which
+  // is what made this spec flaky under load.
+  await expect(page.locator('#payOpts')).toBeVisible();
   const tick = page.getByTestId('ship-toggle');
   await expect(tick).toBeVisible();
   const label = tick.locator('[data-edit="collect-ship-title"]');
