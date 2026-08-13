@@ -799,17 +799,18 @@
         <fieldset>
           <legend>פרטי בעל/ת השמחה</legend>
           <div class="fgrid">
+            <!-- THE LABEL, not the printed title. The buyer types a title and
+                 nothing else; this is what the order is CALLED in this table, in
+                 the emails and on the collection page, and for a wizard order it
+                 is the title's first line. Editable because a label taken over
+                 the phone should land in the same box as one derived.
+                 It still matters for an order placed BEFORE the title replaced
+                 the name: those have no title of their own, so the theme composes
+                 one out of this name — until the generator cleanup backfills them
+                 a real title. The hint under the box says so. -->
             <label class="fld"
-              ><span>שם בעל/ת השמחה</span><input type="text" id="e-name" maxlength="80"
+              ><span>שם / תווית פנימית</span><input type="text" id="e-name" maxlength="80"
             /></label>
-            <label class="fld"
-              ><span>מגדר</span>
-              <select id="e-gender">
-                <option value="">—</option>
-                <option value="female">נקבה</option>
-                <option value="male">זכר</option>
-              </select>
-            </label>
             <label class="fld"
               ><span>אימייל</span><input type="email" id="e-email" maxlength="120"
             /></label>
@@ -872,8 +873,9 @@
           <div class="fgrid" id="e-extra" style="margin-top: 10px"></div>
           <div class="fgrid one" style="margin-top: 10px">
             <label class="fld"
-              ><span>כותרת מותאמת (ריק = ברירת המחדל של התבנית)</span
-              ><textarea id="e-title" rows="2" maxlength="120"></textarea>
+              ><span>הכותרת שמודפסת על הקלפים</span
+              ><textarea id="e-title" rows="2" maxlength="120" data-testid="e-title"></textarea>
+              <span class="sub" id="e-title-note"></span>
             </label>
             <!-- The buyer's own note, typed with the order. Never printed on
                  anything — it is a message to us — and editable here so a note
@@ -1482,12 +1484,27 @@
       async function openEdit(c) {
         editing = c;
         editPhotos = Array.isArray(c.pawn_images) ? [...c.pawn_images] : [];
-        el('edit-title').textContent = 'עריכת הזמנה · ' + (c.honoree_name || '');
+        // The dialog names the order the way the table does: by its printed
+        // title, falling back to the label for an order that has none.
+        el('edit-title').textContent =
+          'עריכת הזמנה · ' + ((c.custom_title || '').split('\n')[0] || c.honoree_name || '');
         el('e-err').hidden = true;
         el('e-photo-msg').textContent = '';
         el('e-photo-file').value = '';
         el('e-name').value = c.honoree_name || '';
-        el('e-gender').value = c.gender || '';
+        // What the title box actually decides, which is not the same sentence for
+        // every order: for one placed since the change it IS the printed title,
+        // and for an older one it is still empty while the theme composes a title
+        // out of the name above. Saying so is the difference between "leave it
+        // alone" and "this order prints nothing until I type here".
+        {
+          const note = el('e-title-note');
+          if (note) {
+            note.textContent = (c.custom_title || '').trim()
+              ? 'זה בדיוק מה שמודפס על הקלפים ועל הלוח.'
+              : 'ההזמנה הזו נוצרה לפני שהכותרת החליפה את השם, ולכן הכותרת שלה עדיין מורכבת מהשם ומהתבנית. כתבו כאן כותרת כדי לקבוע בדיוק מה יודפס.';
+          }
+        }
         el('e-email').value = c.owner_email || '';
         el('e-phone').value = c.owner_phone || '';
         el('e-buyer-name').value = c.buyer_name || '';
@@ -1886,13 +1903,12 @@
         err.hidden = true;
         const name = el('e-name').value.trim();
         if (!name) {
-          err.textContent = 'שם בעל/ת השמחה הוא שדה חובה.';
+          err.textContent = 'צריך שם או תווית להזמנה (זה מה שמופיע בטבלה ובמיילים).';
           err.hidden = false;
           return;
         }
         const patch = {
           honoree_name: name,
-          gender: el('e-gender').value || null,
           email: el('e-email').value.trim(),
           phone: el('e-phone').value.trim(),
           buyer_name: el('e-buyer-name').value,
@@ -2063,10 +2079,14 @@
         // to press, and at the far end they sat behind a horizontal scroll on every
         // screen narrower than the full column set.
         ['ניהול', 240],
-        ['בעל/ת השמחה', 130],
-        // The buyer's own title, beside the honoree it belongs to — the two are read
-        // together (whose game, and what it says on the card).
-        ['כותרת', 140],
+        // ONE identity column. It used to be two — the honoree's name, then the
+        // title beside it — because a title was an optional override on a title
+        // composed from that name. The buyer types the title now and nothing
+        // else, so the two columns said the same thing twice: the owner asked for
+        // "a title column" in their place. An order placed before the change has
+        // no title of its own, so the cell falls back to its name (muted) rather
+        // than reading as an empty row.
+        ['כותרת', 200],
         ['לקוח', 140],
         ['מילים', 60],
         [
@@ -2432,9 +2452,13 @@
 
           // Build cells with textContent - never innerHTML - since honoree_name /
           // email / phone are unsanitized user input (stored-XSS otherwise).
+          // THE IDENTITY CELL: the printed title. An order from before the title
+          // replaced the name has none, so it falls back to that name — shown
+          // muted, because it is a label we are borrowing, not something printed.
           const tdName = document.createElement('td');
           const strong = document.createElement('strong');
-          strong.textContent = c.honoree_name || '-';
+          strong.textContent = c.custom_title || c.honoree_name || '-';
+          if (!c.custom_title) strong.className = 'muted';
           tdName.appendChild(strong);
 
           // Per-order theme extra fields (kids AGE, or anniversary YEARS +
@@ -2452,14 +2476,6 @@
               tdName.appendChild(line);
             }
           }
-
-          // The buyer's own title, as it is printed on the cards. Stored user input,
-          // so textContent — never innerHTML — for the same stored-XSS reason as the
-          // honoree name above. A '-' when she left the theme's own title alone,
-          // matching how every other empty cell in this table reads.
-          const tdTitle = document.createElement('td');
-          tdTitle.textContent = c.custom_title || '-';
-          if (!c.custom_title) tdTitle.className = 'muted';
 
           const tdContact = document.createElement('td');
           tdContact.className = 'contact';
@@ -2588,7 +2604,6 @@
           const tdActionsSlot = document.createElement('td');
           tr.appendChild(tdActionsSlot);
           tr.appendChild(tdName);
-          tr.appendChild(tdTitle);
           tr.appendChild(tdContact);
           tr.appendChild(tdCount);
           tr.appendChild(tdStatus);

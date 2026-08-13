@@ -64,7 +64,7 @@ async function openAdmin(page, { width = 1440, height = 900 } = {}) {
 
 const names = async (page) =>
   (
-    await page.$$eval('tbody tr td[data-label="בעל/ת השמחה"]', (tds) =>
+    await page.$$eval('tbody tr td[data-label="כותרת"]', (tds) =>
       tds.map((td) => td.textContent || '')
     )
   ).map((t) => t.trim());
@@ -101,8 +101,8 @@ test('only columns with a value worth narrowing by carry a filter', async ({ pag
     'a column grew a filter unannounced'
   ).toEqual([]);
   // …and the free-text ones that are here today are named anyway: a list of every
-  // distinct honoree name is not a filter, it is the table again.
-  for (const label of ['בעל/ת השמחה', 'לקוח', 'כתובת']) {
+  // distinct title is not a filter, it is the table again.
+  for (const label of ['כותרת', 'לקוח', 'כתובת']) {
     const head = heads.find((h) => h.label === label);
     expect(head, `${label} is missing from the table`).toBeTruthy();
     expect(head.hasFilter, `${label} should not filter`).toBe(false);
