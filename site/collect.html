@@ -549,6 +549,98 @@
         font-weight: 800;
         margin-bottom: 8px;
       }
+      /* THE PAWN PHOTOS she sent with the order. A row of square thumbs, sized so
+         four sit side by side on the narrowest phone (4 × 68 + gaps < 320). Each
+         one opens full-size on tap, because "let me see what I sent" is half of
+         why this card exists. */
+      .pawn-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .pawn-cell {
+        position: relative;
+        width: 68px;
+        height: 68px;
+        flex: 0 0 auto;
+      }
+      .pawn-cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border: 1px solid var(--line);
+        background: var(--section);
+        cursor: zoom-in;
+        display: block;
+      }
+      /* The remove control sits ON the photo, at the corner the thumb's own
+         content is least likely to matter (a face is centred). Big enough to hit
+         with a thumb — 26px, over the 24px floor — without covering the picture. */
+      .pawn-x {
+        position: absolute;
+        top: -8px;
+        inset-inline-end: -8px;
+        width: 26px;
+        height: 26px;
+        line-height: 1;
+        padding: 0;
+        font-size: 15px;
+        font-weight: 700;
+        border-radius: 50%;
+        background: var(--ink);
+        color: #fff;
+        border: 2px solid var(--surface);
+        cursor: pointer;
+      }
+      /* The add slot reads as an empty frame, not a button: it is the same square
+         as a photo so the row keeps its rhythm as photos come and go. */
+      .pawn-add {
+        width: 68px;
+        height: 68px;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 26px;
+        font-weight: 300;
+        color: var(--muted);
+        background: var(--surface);
+        border: 1px dashed var(--line);
+        cursor: pointer;
+        padding: 0;
+      }
+      .pawn-add:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .pawn-empty {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .pawn-err {
+        color: #b00020;
+        font-size: 14px;
+        margin-top: 10px;
+      }
+      /* Full-size view. Deliberately plain: a dark sheet, the photo, and any tap
+         closes it — nothing to learn, and no way to get stuck in it. */
+      .pawn-view {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        background: rgba(0, 0, 0, 0.82);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        cursor: zoom-out;
+      }
+      .pawn-view img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
       /* Compact segmented control — small enough to read as a switcher, not a
          primary action. Tighter padding + smaller type than the old chunky tabs. */
       .tabs {
@@ -1606,6 +1698,33 @@
         </button>
       </div>
 
+      <!-- OWNER: the pawn photos she sent with the order.
+           The wizard asked for them once, on a step she can never reach again —
+           so until now a wrong photo, or a photo she simply wanted to see, meant
+           writing to us. This is that step, reachable from the page she is
+           already on for days.
+           Add/remove while the collection is OPEN; once it is closed the deck is
+           in production and the photos are read-only, but still visible. -->
+      <div class="card owner-only hidden" id="pawnCard" data-testid="pawn-card">
+        <div class="sec-h" data-edit="collect-pawns-heading">התמונות שלכם</div>
+        <p class="muted" data-edit="collect-pawns-hint">
+          אלו התמונות שיודפסו על החיילים של המשחק. אפשר להחליף כל עוד האיסוף פתוח.
+        </p>
+        <div class="pawn-strip" id="pawnStrip" data-testid="pawn-strip"></div>
+        <p class="muted pawn-locked hidden" id="pawnLockedNote" data-edit="collect-pawns-locked">
+          האיסוף נסגר והמשחק בהפקה - אי אפשר להחליף תמונות עכשיו.
+        </p>
+        <input
+          type="file"
+          id="pawnAddInput"
+          accept="image/*"
+          multiple
+          hidden
+          data-testid="pawn-add-input"
+        />
+        <div class="pawn-err" id="pawnErr" role="alert" hidden></div>
+      </div>
+
       <!-- owner / closing controls -->
       <div class="card owner-only hidden" id="ownerControls">
         <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
@@ -2013,6 +2132,153 @@
         });
       }
 
+      // ---- the buyer's pawn photos -------------------------------------------
+      // Four photos, sent once in the order wizard, on a step she can never get
+      // back to. This card is that step, on the page she actually revisits.
+      //
+      // The list is the SERVER's (state.pawn_images, owner-only) — every action
+      // re-renders from what the server answered, never from an optimistic local
+      // copy, so a rejected removal cannot leave the page showing a photo the
+      // order no longer has (or hiding one it still does).
+      const PAWN_MAX = 4;
+      function pawnList() {
+        return Array.isArray(state && state.pawn_images) ? state.pawn_images : [];
+      }
+      function showPawnErr(msg) {
+        const el = $('#pawnErr');
+        el.textContent = msg || '';
+        el.hidden = !msg;
+      }
+      // Full-size view of one photo. Any tap (or Esc) closes it — see .pawn-view.
+      function openPawnView(src) {
+        const sheet = document.createElement('div');
+        sheet.className = 'pawn-view';
+        sheet.setAttribute('data-testid', 'pawn-view');
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        sheet.appendChild(img);
+        const close = () => {
+          sheet.remove();
+          document.removeEventListener('keydown', onKey);
+        };
+        const onKey = (e) => {
+          if (e.key === 'Escape') close();
+        };
+        sheet.addEventListener('click', close);
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(sheet);
+      }
+      function renderPawns() {
+        const card = $('#pawnCard');
+        const strip = $('#pawnStrip');
+        if (!card || !strip) return;
+        const photos = pawnList();
+        const open = state.status === 'open';
+        // Nothing to show and nothing to add (a closed order with no photos) is
+        // not a card, it is noise on a page that is already long.
+        card.classList.toggle('hidden', !isOwner || (!photos.length && !open));
+        $('#pawnLockedNote').classList.toggle('hidden', open || !photos.length);
+        strip.textContent = '';
+        for (const src of photos) {
+          const cell = document.createElement('div');
+          cell.className = 'pawn-cell';
+          const img = document.createElement('img');
+          img.src = src;
+          img.alt = 'תמונה שנשלחה עם ההזמנה';
+          img.setAttribute('data-testid', 'pawn-thumb');
+          img.addEventListener('click', () => openPawnView(src));
+          cell.appendChild(img);
+          if (open) {
+            const x = document.createElement('button');
+            x.type = 'button';
+            x.className = 'pawn-x';
+            x.textContent = '×';
+            x.setAttribute('aria-label', 'הסרת התמונה');
+            x.setAttribute('data-testid', 'pawn-remove');
+            // Confirm first: a photo she took at the party is not re-uploadable
+            // from this page in one tap, and the file itself is gone from her
+            // order the moment the server answers.
+            x.addEventListener('click', () =>
+              openDialog('להסיר את התמונה מההזמנה?', { onOk: () => removePawn(src) })
+            );
+            cell.appendChild(x);
+          }
+          strip.appendChild(cell);
+        }
+        if (open) {
+          const add = document.createElement('button');
+          add.type = 'button';
+          add.className = 'pawn-add';
+          add.textContent = '+';
+          add.setAttribute('data-testid', 'pawn-add');
+          add.setAttribute('aria-label', 'הוספת תמונה');
+          // At four the slot stays VISIBLE but disabled, so the cap is something
+          // she can see rather than a control that silently vanished.
+          add.disabled = photos.length >= PAWN_MAX;
+          add.title = add.disabled ? 'אפשר עד 4 תמונות' : '';
+          add.addEventListener('click', () => $('#pawnAddInput').click());
+          strip.appendChild(add);
+        } else if (!photos.length) {
+          const none = document.createElement('span');
+          none.className = 'pawn-empty';
+          none.textContent = 'לא נשלחו תמונות';
+          strip.appendChild(none);
+        }
+      }
+      async function removePawn(src) {
+        showPawnErr('');
+        try {
+          const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pawn_images: pawnList().filter((p) => p !== src) }),
+          });
+          state.pawn_images = r.pawn_images;
+          renderPawns();
+        } catch (e) {
+          showPawnErr('לא הצלחנו להסיר את התמונה, נסו שוב');
+        }
+      }
+      // Upload goes to the SAME route the wizard uses, in the same shape, so the
+      // server has one way to attach a photo. What it does not send is a cutout:
+      // the wizard cuts the background out in the browser before uploading, and a
+      // photo added here arrives uncut — the server records that as "never
+      // attempted", which is the state an older browser produces too, and the
+      // orders table flags it for a manual cut.
+      async function addPawns(files) {
+        showPawnErr('');
+        const room = PAWN_MAX - pawnList().length;
+        const picked = Array.from(files || []).slice(0, Math.max(0, room));
+        if (!picked.length) return;
+        try {
+          const fd = new FormData();
+          picked.forEach((f, i) => fd.append('pawn' + i, f, f.name || 'pawn' + i));
+          const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
+            method: 'POST',
+            body: fd,
+          });
+          state.pawn_images = r.pawn_images;
+          renderPawns();
+        } catch (e) {
+          showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
+        }
+      }
+      (function wirePawnInput() {
+        const input = document.getElementById('pawnAddInput');
+        if (!input) return;
+        input.addEventListener('change', () => {
+          // COPY the picks out FIRST. `input.files` is a live FileList: clearing
+          // the input empties it, so holding the reference across the line below
+          // hands addPawns an empty list and the upload silently does nothing.
+          const files = Array.from(input.files || []);
+          // Cleared so picking the SAME file twice in a row still fires `change`
+          // the second time.
+          input.value = '';
+          addPawns(files);
+        });
+      })();
+
       // Honoree gender drives phrasing on the prompts. publicView ships `gender`
       // on every read now (owner AND contributor), so this is the buyer's own
       // answer whenever the order has one; the fallback covers a legacy row that
@@ -2251,6 +2517,8 @@
         if (isOwner) {
           const paid = isPaid();
           const cardEnabled = !!state.card_enabled;
+          // Her own photos, and whether she may still change them (open only).
+          renderPawns();
           // Paid: drop the pay panel + the pay bar, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,
           // which is what actually starts production.

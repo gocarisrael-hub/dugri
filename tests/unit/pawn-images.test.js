@@ -274,3 +274,128 @@ describe('POST /api/collections/:id/pawns', () => {
     expect(body.error).toMatch(/multipart/);
   });
 });
+
+// SHE TAKES ONE BACK OUT. The wizard asked for these photos on a step she can
+// never return to, so the collection page now shows them with a remove control —
+// PUT /api/collections/:id/pawns, owner-token gated, carrying the photos she is
+// KEEPING.
+//
+// The rule that makes it safe is that it can only ever REMOVE: every path in the
+// body must already be attached to this collection. Otherwise a link to your own
+// order would be enough to graft any /content-uploads path onto it — including a
+// photo belonging to somebody else's order, which is a stranger's face on your
+// printed deck.
+async function putPawns(id, k, pawn_images) {
+  const res = await fetch(base + '/api/collections/' + id + '/pawns?k=' + encodeURIComponent(k), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pawn_images }),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+describe('db.setPawnImagesForOwner', () => {
+  it('removes one photo and keeps the order of the rest', () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png', '/b.png', '/c.png']);
+    const out = db.setPawnImagesForOwner(c.id, c.owner_token, ['/a.png', '/c.png']);
+    expect(out).toEqual(['/a.png', '/c.png']);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png', '/c.png']);
+  });
+
+  it('refuses a path that is not already attached (no grafting)', () => {
+    const mine = db.createCollection('בדיקה', {});
+    const yours = db.createCollection('בדיקה', {});
+    db.addPawnImages(mine.id, mine.owner_token, ['/mine.png']);
+    db.addPawnImages(yours.id, yours.owner_token, ['/yours.png']);
+    expect(db.setPawnImagesForOwner(mine.id, mine.owner_token, ['/mine.png', '/yours.png'])).toBe(
+      null
+    );
+    // …and the refusal changed nothing.
+    expect(db.getCollection(mine.id).pawn_images).toEqual(['/mine.png']);
+  });
+
+  it('refuses a wrong owner token and leaves the list alone', () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png', '/b.png']);
+    expect(db.setPawnImagesForOwner(c.id, 'not-the-token', ['/a.png'])).toBe(null);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png', '/b.png']);
+  });
+
+  // Real upload paths here, not the '/a.png' shorthand the append tests use:
+  // setPawnCutout re-validates the cutout against pawnPathOk, so a made-up path
+  // is simply not recorded and the test would pass on an empty map either way.
+  it("drops a removed photo's cutout and keeps the survivors'", () => {
+    const A = '/content-uploads/aaaaaaaaaaaaaaaa.png';
+    const B = '/content-uploads/bbbbbbbbbbbbbbbb.png';
+    const ACUT = '/content-uploads/aaaaaaaaaaaaaaaa-cut.png';
+    const BCUT = '/content-uploads/bbbbbbbbbbbbbbbb-cut.png';
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, [A, B]);
+    db.setPawnCutout(c.id, c.owner_token, A, ACUT);
+    db.setPawnCutout(c.id, c.owner_token, B, BCUT);
+    expect(db.getCollection(c.id).pawn_cutouts).toEqual({ [A]: ACUT, [B]: BCUT });
+    db.setPawnImagesForOwner(c.id, c.owner_token, [B]);
+    expect(db.getCollection(c.id).pawn_cutouts).toEqual({ [B]: BCUT });
+  });
+
+  it('an empty list removes them all', () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    expect(db.setPawnImagesForOwner(c.id, c.owner_token, [])).toEqual([]);
+  });
+});
+
+describe('PUT /api/collections/:id/pawns', () => {
+  it('removes a photo for the owner and answers with the new list', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png', '/b.png']);
+    const r = await putPawns(c.id, c.owner_token, ['/b.png']);
+    expect(r.status).toBe(200);
+    expect(r.body.pawn_images).toEqual(['/b.png']);
+  });
+
+  it('403 on a wrong owner token', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    const r = await putPawns(c.id, 'nope', []);
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png']);
+  });
+
+  it("403 on a path that isn't this collection's", async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    const r = await putPawns(c.id, c.owner_token, ['/a.png', '/somebody-elses.png']);
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png']);
+  });
+
+  it('400 when the body carries no pawn_images array', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const res = await fetch(
+      base + '/api/collections/' + c.id + '/pawns?k=' + encodeURIComponent(c.owner_token),
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nope: true }),
+      }
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+// The photos are OWNER-ONLY on the read side too. The collection link is meant to
+// be forwarded to everyone at the party, and these are photographs of her people.
+describe('GET /api/collections/:id — pawn_images visibility', () => {
+  it('ships the list to the owner and omits it entirely for a contributor', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    const owner = await fetch(
+      base + '/api/collections/' + c.id + '?k=' + encodeURIComponent(c.owner_token)
+    ).then((r) => r.json());
+    expect(owner.pawn_images).toEqual(['/a.png']);
+    const guest = await fetch(base + '/api/collections/' + c.id).then((r) => r.json());
+    expect('pawn_images' in guest).toBe(false);
+  });
+});
