@@ -2464,6 +2464,18 @@
           const tdContact = document.createElement('td');
           tdContact.className = 'contact';
           tdContact.textContent = contact;
+          // A buyer who pressed "stop sending me mail" gets NOTHING from us — no
+          // receipt, no "your order is ready", no reminder. Said on her row,
+          // because the alternative is finding out that email is "broken" for one
+          // customer and having no way to see why.
+          if (c.unsubscribed) {
+            const off = document.createElement('div');
+            off.className = 'late';
+            off.dataset.testid = 'unsubscribed-flag';
+            off.textContent = 'ביטלה קבלת מיילים';
+            off.title = 'הלקוח/ה ביקשה להפסיק לקבל מיילים — שום מייל לא נשלח לכתובת הזו';
+            tdContact.appendChild(off);
+          }
 
           const tdCount = document.createElement('td');
           tdCount.textContent = c.word_count;

@@ -51,6 +51,10 @@ export default defineConfig({
       PORT: String(PORT),
       DATA_DIR: '.e2e-data',
       ADMIN_KEY: 'dugri-admin',
+      // A known unsubscribe signing key, so a test can mint the same signed link
+      // the server would put in a buyer's mail without a route existing to hand
+      // one out. Production generates and persists its own (server/unsubscribe.js).
+      UNSUBSCRIBE_SECRET: 'e2e-unsubscribe-secret',
       TEMPLATE_ROOT: FIXTURE_ROOT,
     },
     port: PORT,

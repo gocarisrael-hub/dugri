@@ -30,6 +30,8 @@
 // used to be inline here — so email output is unchanged until the owner edits it.
 const settings = require('./settings');
 const { interpolate } = settings;
+// The "stop emailing me" list + the signed link that gets an address onto it.
+const unsub = require('./unsubscribe');
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
 // Abort a stalled Resend request instead of hanging the (fire-and-forget) send
@@ -909,10 +911,57 @@ function buildPaymentReminder(collection, baseUrl) {
 // the customer's address). Fully wrapped: a failure (a non-2xx response, a
 // thrown/network error, being unconfigured, or an empty recipient) NEVER throws
 // into the caller — it logs a warning and returns false.
+// Append the unsubscribe footer to one already-rendered message.
+//
+// Done here, on the way out, rather than inside renderEmailHtml: the builders do
+// not know WHO the mail is going to (send() resolves that), and the link has to
+// carry the recipient's own signed token. As a side effect every mail gets one —
+// including the ones nobody has written yet, which is the property that makes
+// "no mail at all" true rather than aspirational.
+//
+// Never added for the owner's own inbox (NOTIFY_TO): that address is exempt from
+// suppression, so offering it a button that does nothing would be a lie.
+function withUnsubscribeFooter(msg, recipient, baseUrl) {
+  const link = unsub.linkFor(recipient, baseUrl);
+  if (!link) return msg;
+  const line = 'לא רוצה לקבל מאיתנו מיילים? אפשר להפסיק כאן: ' + link;
+  const out = { ...msg };
+  out.text = (msg.text || '') + '\n\n' + line;
+  if (msg.html != null) {
+    const block =
+      '<tr><td style="padding:0 32px 20px;text-align:center;font-size:12px;line-height:1.6;color:' +
+      MUTED +
+      ';">לא רוצה לקבל מאיתנו מיילים? <a href="' +
+      escapeHtml(link) +
+      '" style="color:' +
+      MUTED +
+      ';text-decoration:underline;">אפשר להפסיק כאן</a></td></tr>';
+    // Slipped in after the sign-off row, before the table closes. A plain append
+    // would land outside the <table> and render above the layout in some clients.
+    out.html = msg.html.includes('</table>')
+      ? msg.html.replace('</table>', block + '</table>')
+      : msg.html + block;
+  }
+  return out;
+}
+
 async function send({ subject, text, html, to }) {
   if (!isConfigured()) return false;
   const recipient = to || NOTIFY_TO;
   if (!recipient) return false;
+  // THE UNSUBSCRIBE GATE, and the reason it lives here rather than in each sender:
+  // this is the one place every message passes through, so "no mail at all" covers
+  // the ones written after this line as well as the ones before it. A receipt and
+  // a "your order is ready" stop too — the owner's rule was no mail, no matter
+  // what, and a half-honoured unsubscribe is what gets a domain reported.
+  //
+  // NOTIFY_TO is exempt: that is the business inbox reading its own order alerts,
+  // and silencing it from a link in the owner's copy of a customer mail would stop
+  // her hearing about orders with no way to notice.
+  if (recipient !== NOTIFY_TO && unsub.isUnsubscribed(recipient)) {
+    console.warn('[notify] suppressed: recipient has unsubscribed');
+    return false;
+  }
   // Abort the request if Resend stalls, so a fire-and-forget send can never hang
   // forever. The timer is always cleared in finally so it can't leak.
   const controller = new AbortController();
@@ -920,7 +969,12 @@ async function send({ subject, text, html, to }) {
   try {
     // Non-prod (e.g. staging) sends are stamped as test emails; production and
     // local/unset stay untouched.
-    const marked = markTestEnv({ subject, text, html });
+    const base = String(process.env.PUBLIC_BASE_URL || '').replace(/\/+$/, '');
+    const withFooter =
+      recipient === NOTIFY_TO
+        ? { subject, text, html }
+        : withUnsubscribeFooter({ subject, text, html }, recipient, base);
+    const marked = markTestEnv(withFooter);
     const body = {
       from: NOTIFY_FROM,
       to: [recipient],
@@ -931,6 +985,18 @@ async function send({ subject, text, html, to }) {
     // Route replies to the business inbox (Reply-To). Only sent when non-empty so
     // an unset/blank REPLY_TO never adds an empty header to the Resend payload.
     if (REPLY_TO) body.reply_to = REPLY_TO;
+    // One-click unsubscribe (RFC 8058). Gmail and Outlook render their OWN
+    // unsubscribe control from these headers and POST to the URL without ever
+    // opening the page — which is the button most people actually press. The
+    // route answers that POST; see /api/unsubscribe.
+    const unsubLink = recipient === NOTIFY_TO ? null : unsub.linkFor(recipient, base);
+    if (unsubLink) {
+      body.headers = {
+        'List-Unsubscribe':
+          '<' + unsubLink.replace('/unsubscribe.html?', '/api/unsubscribe?') + '>',
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      };
+    }
     timer = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS);
     const res = await fetch(RESEND_API_URL, {
       method: 'POST',

@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="unsubscribe.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · ביטול קבלת מיילים</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #f7f4ef;
+        color: #23201c;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+        line-height: 1.6;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        max-width: 520px;
+        width: 100%;
+        padding: 32px 26px;
+        text-align: center;
+      }
+      h1 {
+        font-size: 22px;
+        font-weight: 800;
+        margin-bottom: 10px;
+      }
+      p {
+        color: #4b463d;
+        margin-bottom: 12px;
+      }
+      .addr {
+        direction: ltr;
+        unicode-bidi: plaintext;
+        font-weight: 700;
+      }
+      /* What "stop" actually means here, spelled out rather than implied: the
+         suppression is total, so the buyer has to be told she is also giving up
+         the receipt and the "your order is ready" — before she confirms, and
+         again after. */
+      .what {
+        background: #f7f4ef;
+        border: 1px solid #efe9df;
+        text-align: right;
+        padding: 12px 14px;
+        margin: 14px 0;
+        font-size: 14.5px;
+        color: #4b463d;
+      }
+      button {
+        font: inherit;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid #23201c;
+        background: #23201c;
+        color: #fff;
+        border-radius: 0;
+        padding: 13px 26px;
+        margin-top: 6px;
+      }
+      button.ghost {
+        background: #fff;
+        color: #23201c;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .muted {
+        color: #6b645b;
+        font-size: 13.5px;
+      }
+      .err {
+        color: #a4443a;
+        font-weight: 700;
+      }
+      a {
+        color: #5c7357;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="card">
+      <h1 id="title">רגע…</h1>
+      <div id="body"><p class="muted">טוען…</p></div>
+    </div>
+
+    <script type="module">
+      const params = new URLSearchParams(location.search);
+      const email = params.get('e') || '';
+      const token = params.get('t') || '';
+      const titleEl = document.getElementById('title');
+      const bodyEl = document.getElementById('body');
+
+      const esc = (s) =>
+        String(s == null ? '' : s).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+
+      async function call(path) {
+        const r = await fetch(path, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, token }),
+        });
+        if (!r.ok) throw new Error('failed');
+        return r.json();
+      }
+
+      // The list of what stops. Kept identical in both states: before she presses
+      // it is the warning, after it is the explanation of what just happened.
+      const WHAT =
+        '<div class="what">זה מפסיק <strong>את כל המיילים</strong> מדוגרי לכתובת הזו — ' +
+        'כולל אישור הזמנה, קבלה על תשלום, הקישור לאיסוף המילים, וההודעה שהמשחק מוכן. ' +
+        'תמיד אפשר לחזור מהעמוד הזה.</div>';
+
+      function renderOff() {
+        titleEl.textContent = 'הפסקנו לשלוח לך מיילים';
+        bodyEl.innerHTML =
+          '<p>הכתובת <span class="addr">' +
+          esc(email) +
+          '</span> הוסרה מרשימת התפוצה.</p>' +
+          WHAT +
+          '<button id="undo" class="ghost" type="button">בעצם, אשמח לקבל מיילים</button>' +
+          '<p class="muted" style="margin-top:14px">אם היה משהו דחוף בהזמנה — אפשר לכתוב לנו בוואטסאפ.</p>';
+        document.getElementById('undo').onclick = async (e) => {
+          e.target.disabled = true;
+          try {
+            await call('/api/resubscribe');
+            renderOn(true);
+          } catch {
+            e.target.disabled = false;
+            bodyEl.insertAdjacentHTML('beforeend', '<p class="err">משהו השתבש. נסו שוב.</p>');
+          }
+        };
+      }
+
+      function renderOn(justResubscribed) {
+        titleEl.textContent = justResubscribed ? 'חזרת לרשימה' : 'להפסיק לקבל מיילים מדוגרי?';
+        bodyEl.innerHTML =
+          '<p>' +
+          (justResubscribed ? 'נמשיך לשלוח ל' : 'הכתובת ') +
+          '<span class="addr">' +
+          esc(email) +
+          '</span>' +
+          (justResubscribed ? '.' : '') +
+          '</p>' +
+          (justResubscribed ? '' : WHAT) +
+          '<button id="stop" type="button">' +
+          (justResubscribed ? 'בכל זאת, להפסיק' : 'כן, להפסיק לשלוח') +
+          '</button>';
+        document.getElementById('stop').onclick = async (e) => {
+          e.target.disabled = true;
+          try {
+            await call('/api/unsubscribe');
+            renderOff();
+          } catch {
+            e.target.disabled = false;
+            bodyEl.insertAdjacentHTML('beforeend', '<p class="err">משהו השתבש. נסו שוב.</p>');
+          }
+        };
+      }
+
+      async function start() {
+        if (!email || !token) {
+          titleEl.textContent = 'קישור לא תקין';
+          bodyEl.innerHTML =
+            '<p>הקישור חסר או שגוי. אפשר לפתוח אותו מתוך המייל עצמו, או לכתוב לנו ונטפל בזה.</p>';
+          return;
+        }
+        try {
+          const r = await fetch(
+            '/api/unsubscribe/status?e=' +
+              encodeURIComponent(email) +
+              '&t=' +
+              encodeURIComponent(token)
+          );
+          if (!r.ok) throw new Error('bad');
+          const data = await r.json();
+          // A mail client's one-click control may have unsubscribed already,
+          // before the page ever opened — so the page reports the STATE it finds
+          // rather than assuming this is the first press.
+          if (data.unsubscribed) renderOff();
+          else renderOn(false);
+        } catch {
+          titleEl.textContent = 'קישור לא תקין';
+          bodyEl.innerHTML = '<p>הקישור פג או שגוי. כתבו לנו ונסיר אתכם ידנית.</p>';
+        }
+      }
+      start();
+    </script>
+  </body>
+</html>
