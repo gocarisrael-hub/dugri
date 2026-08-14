@@ -703,3 +703,82 @@ def test_the_house_english_size_is_the_one_the_owner_picked():
     # ...and no design overrides it, which is what "all" meant.
     for key, cfg in config.load_themes().items():
         assert config.word_alt_scale(cfg, rp._WORD_ALT_SCALE) == 0.8, key
+
+
+# --- ONE LINE RHYTHM FOR THE WHOLE DECK --------------------------------------
+#
+# The owner's rule, in her words: "between each line i want even spaces, even if
+# it is in between rows of the same number… 1. is one line, that line is height
+# x; 2. is two lines, so 2 is 2x."
+#
+# Within one card that was already true. What was not true is ACROSS cards: the
+# pitch was solved per card against the paper its own line count left, so a card
+# that wrapped more packed its lines tighter and the deck's rhythm changed from
+# card to card. Now the pitch is the design's own on every card, and the SIZE is
+# what gives — which is the trade she chose after seeing both rendered.
+
+def _pitch_of(theme, words, front=0):
+    """The line pitch a real card would print at, and its size."""
+    cfg = config.theme(theme)
+    recipe = config.recipe_or_empty(cfg)
+    cell = (recipe.get("card") or {}).get("cell") or rp._recipe_cell(recipe, None)
+    slots = rp.deck_slots(theme, config.card_word_boxes(cfg, recipe, cell), cell)
+    face = rp._word_face(
+        config.resolve_word_font(theme, None),
+        rp.word_font_alt(theme, None),
+        alt_scale=config.word_alt_scale(cfg, rp._WORD_ALT_SCALE),
+    )
+    svg = card_assets.read_svg(config.card_path(theme, config.fronts(cfg)[front]))
+    room = rp.room_bottom(theme, front, svg, cell,
+                          cell[3] - (cell[3] - cell[1]) * rp._CARD_SAFE)
+    icons = rp.card_obstacle_rects(theme, front, svg, cell)
+    lays = rp._word_layouts(slots, words, face, face.ref, cell=cell,
+                            word_size=cfg.get("word_size"), safe=rp._CARD_SAFE,
+                            room_bottom=room, obstacles=icons,
+                            even_lines=config.is_single_card(cfg))
+    live = [l for l in lays if l]
+    return live[0].lead * live[0].size, live[0].size
+
+
+def test_every_card_of_a_deck_prints_on_the_same_line_pitch():
+    # Three cards that used to print at three different rhythms — 30.8, 27.4 and
+    # 19.7 on this template — because each solved its own pitch against its own
+    # line count.
+    pitches = [
+        _pitch_of("grapefruit", ["ים", "אמא", "חוף", "כלב"])[0],
+        _pitch_of("grapefruit", ["קונסטרוקטיביזם", "אינטרנציונליזם",
+                                 "אימפרסיוניזם", "אינטרוספקציה"])[0],
+        _pitch_of("grapefruit", ["הטיול הגדול לתאילנד", "ארוחת בוקר בחיפה",
+                                 "בר רווקות בתל אביב", "ליל שבת אצל סבתא"])[0],
+    ]
+    assert max(pitches) - min(pitches) < 0.01, pitches
+
+
+def test_the_pitch_is_the_design_s_own_spacing():
+    # Not a number of ours: the calibrated span divided by its entry gaps, which
+    # is exactly what a card that wraps nothing has always printed at.
+    cfg = config.theme("grapefruit")
+    recipe = config.recipe_or_empty(cfg)
+    cell = (recipe.get("card") or {}).get("cell") or rp._recipe_cell(recipe, None)
+    slots = rp.deck_slots("grapefruit", config.card_word_boxes(cfg, recipe, cell), cell)
+    centers = [(s["y0"] + s["y1"]) / 2 for s in slots]
+    want = rp.design_pitch(centers)
+    pitch, _ = _pitch_of("grapefruit", ["ים", "אמא", "חוף", "כלב"])
+    assert abs(pitch - want) < 0.01, (pitch, want)
+
+
+def test_the_size_is_what_pays_for_a_card_that_wraps():
+    # The trade, stated as a test so nobody "fixes" it later: a card of four long
+    # phrases keeps the deck's rhythm and sets smaller for it.
+    _, plain = _pitch_of("grapefruit", ["ים", "אמא", "חוף", "כלב"])
+    _, heavy = _pitch_of("grapefruit", ["הטיול הגדול לתאילנד", "ארוחת בוקר בחיפה",
+                                        "בר רווקות בתל אביב", "ליל שבת אצל סבתא"])
+    assert heavy < plain
+
+
+def test_a_sheet_template_keeps_its_own_pitch():
+    # The limit, and it is not a compromise but a measurement: eight cards share
+    # one page on the old sheet templates, so there is no paper under the last
+    # line to put an extra line into. Held to a fixed pitch, bachelorette card 2
+    # fell from 10.4 to 2.5 — unreadable. Those templates keep what they had.
+    assert not config.is_single_card(config.theme("bachelorette"))

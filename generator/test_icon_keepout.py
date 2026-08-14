@@ -405,7 +405,10 @@ def test_the_frame_scan_did_not_inherit_the_obstacle_scan_s_appetite():
     # And it IS an obstacle — the same element, the other question. It carries
     # no fill and no stroke, so this also pins that a raster is not read as
     # invisible (see ``_paints``).
-    assert rp.card_obstacles(raster, card).rects == [[10, 10, 40, 40]], (
+    # Compared by VALUE: an obstacle is a tuple that also remembers the pieces it
+    # was merged from (rp.Obstacle), so a list/tuple identity check would be
+    # testing the container rather than the geometry.
+    assert [list(b) for b in rp.card_obstacles(raster, card).rects] == [[10, 10, 40, 40]], (
         "a placed raster is artwork the words must stay off")
 
 
@@ -456,3 +459,52 @@ def test_maracana_keeps_its_panel_and_loses_only_its_badges():
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))
+
+
+# --- AN ICON IS NOT AS WIDE AT THE TOP AS AT THE BOTTOM -----------------------
+#
+# The owner, looking at her palm card with the keep-out drawn on it: "you can do
+# better in the red areas, because the upper part of the icon is smaller than the
+# lower part."
+#
+# She is right, and it was costing real paper. The palm is 145 separate shapes,
+# merged into ONE rectangle so the icon counts as one thing — and that rectangle
+# then claims the empty sky above the fronds. Measured on her card: 29% of the
+# rectangle is painted, and the line beside it was pushed off 31 units of blank
+# paper, which (one size per card) shrank all four entries from 18.7 to 11.6.
+
+def test_a_merged_icon_remembers_the_pieces_it_was_merged_from():
+    # Two boxes near enough to merge: the union is one obstacle, and it still
+    # knows it is two — that is what makes a per-height answer possible.
+    merged = rp._merge_boxes([[0, 0, 10, 10], [2, 12, 30, 20]], 4, keep_parts=True)
+    assert len(merged) == 1
+    assert list(merged[0]) == [0, 0, 30, 20]
+    assert len(merged[0].parts) == 2
+
+
+def test_the_reach_is_asked_at_the_height_of_the_line():
+    # A narrow piece on top, a wide one below — a palm in miniature. A line up in
+    # the fronds is stopped by the fronds; a line down in the sand is stopped by
+    # the sand.
+    icon = rp._merge_boxes([[0, 0, 10, 10], [0, 12, 30, 20]], 4, keep_parts=True)
+    assert rp._obstacle_left(icon, (2, 8), right=100) == 10      # the narrow top
+    assert rp._obstacle_left(icon, (14, 18), right=100) == 30    # the wide bottom
+    # …and the merged rectangle would have said 30 for both.
+    assert max(o[2] for o in icon) == 30
+
+
+def test_an_icon_of_one_piece_behaves_exactly_as_before():
+    # A real rectangle has one piece, and it IS the box — so nothing about a
+    # plain icon changes.
+    icon = rp._merge_boxes([[0, 0, 30, 20]], 4, keep_parts=True)
+    assert rp._obstacle_left(icon, (2, 8), right=100) == 30
+    assert rp._obstacle_left(icon, (14, 18), right=100) == 30
+
+
+def test_the_clear_air_is_added_to_the_pieces_too():
+    # Clear air the outer box has and the pieces do not is clear air the words
+    # would never actually get.
+    icon = rp._merge_boxes([[0, 0, 10, 10], [0, 12, 30, 20]], 4, keep_parts=True)
+    grown = rp._grown(icon, 2)
+    assert rp._obstacle_left(grown, (2, 8), right=100) == 12     # 10 + the air
+    assert rp._obstacle_left(grown, (14, 18), right=100) == 32   # 30 + the air
