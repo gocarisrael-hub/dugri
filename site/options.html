@@ -1475,6 +1475,23 @@
       }
       /* Non-blocking "may print small" note for a long custom title (F7). Amber,
          advisory — never a hard block; the live preview is the real safety net. */
+      .title-break {
+        align-self: flex-start;
+        margin-top: 4px;
+        padding: 6px 10px;
+        border: 1px solid var(--ink, #111);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+        white-space: pre-wrap;
+        text-align: start;
+      }
+      .title-break:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
+
       .custom-title-warn {
         color: #b26a00;
         font-weight: 600;
@@ -2359,6 +2376,16 @@
             data-testid="custom-title-warn"
             hidden
           ></span>
+          <!-- The suggested break, as a button: one tap puts the Enter in for
+               her. It is a SUGGESTION and never applied on its own — the title is
+               her sentence, and where it breaks is her phrasing, not ours. -->
+          <button
+            type="button"
+            class="title-break"
+            id="customTitleBreak"
+            data-testid="custom-title-break"
+            hidden
+          ></button>
           <!-- The emoji REFUSAL. Deliberately a .wiz-err and not the amber
                .custom-title-warn beside it: the warning above is advisory ("this
                will print small"), this one BLOCKS "הבא". The card fonts have no
@@ -4890,10 +4917,41 @@
          small" note (the live preview is the real safety net). */
       const customTitleInput = document.getElementById('customTitleInput');
       const customTitleWarn = document.getElementById('customTitleWarn');
+      const customTitleBreak = document.getElementById('customTitleBreak');
       // Heuristic thresholds (chars) that correlate with the auto-fit shrinking a
       // title below a comfortably readable size — advisory only.
       const TITLE_SMALL_LINE = 18; // a single line this long starts to print small
       const TITLE_SMALL_WORD = 12; // one unbreakable word this long forces a small fit
+      // WHERE A LONG TITLE WOULD BREAK, if it were broken in two.
+      //
+      // The renderer never breaks a title itself — it breaks exactly where the
+      // buyer pressed Enter and nowhere else (a title is her sentence, and
+      // choosing its break for her is choosing her phrasing). But it can SAY
+      // where, which is the owner's ask: "maybe it should suggest a new line if
+      // the font in the title gets too small?"
+      //
+      // The split point is the space that leaves the two halves closest in
+      // length, because the title is sized by its WIDEST line — an even split is
+      // what buys back the most size. Null when there is no space to break at,
+      // which is exactly the case a suggestion cannot help with.
+      function titleBreakSuggestion(text) {
+        const line = String(text || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!line || line.includes('\n')) return null;
+        const words = line.split(' ');
+        if (words.length < 2) return null;
+        let best = null;
+        for (let i = 1; i < words.length; i += 1) {
+          const a = words.slice(0, i).join(' ');
+          const b = words.slice(i).join(' ');
+          const score = Math.abs(a.length - b.length);
+          if (!best || score < best.score) best = { a, b, score };
+        }
+        // Only worth offering when it actually shortens the widest line.
+        return best && Math.max(best.a.length, best.b.length) < line.length ? best : null;
+      }
+
       function refreshCustomTitleWarn() {
         if (!customTitleWarn) return;
         const lines = customTitle
@@ -4907,10 +4965,25 @@
           .reduce((m, w) => Math.max(m, w.length), 0);
         const small = longestLine > TITLE_SMALL_LINE || longestWord > TITLE_SMALL_WORD;
         customTitleWarn.hidden = !small;
-        if (small) {
-          customTitleWarn.textContent =
-            'כותרת ארוכה - היא תודפס קטן יותר. כדאי לבדוק בתצוגה שהיא נראית טוב.';
-        }
+        customTitleBreak.hidden = true;
+        if (!small) return;
+        // A title already on two lines, or one long unbreakable word, has nothing
+        // to suggest — say only the part that is true.
+        const split = lines.length > 1 ? null : titleBreakSuggestion(customTitle);
+        customTitleWarn.textContent = split
+          ? 'כותרת ארוכה - היא תודפס קטן יותר. ירידת שורה תגדיל אותה:'
+          : 'כותרת ארוכה - היא תודפס קטן יותר. כדאי לבדוק בתצוגה שהיא נראית טוב.';
+        if (!split) return;
+        customTitleBreak.hidden = false;
+        customTitleBreak.textContent = split.a + ' / ' + split.b;
+        customTitleBreak.onclick = () => {
+          customTitle = split.a + '\n' + split.b;
+          customTitleInput.value = customTitle;
+          refreshCustomTitleWarn();
+          refreshTitleError();
+          renderExtraFields();
+          requestPreview();
+        };
       }
       /* The emoji REFUSAL on the title — the rule the owner asked for: "refuse
          for emojis in title and words". Unlike refreshCustomTitleWarn above this
