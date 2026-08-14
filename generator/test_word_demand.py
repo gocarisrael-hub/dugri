@@ -45,34 +45,37 @@ def test_measuring_never_raises_on_a_theme_it_cannot_read():
     assert wd.measure([], THEME) == {}
 
 
-def test_hard_entries_are_put_together_not_spread_apart():
-    # Four awful entries and plenty of ordinary ones: they should end up sharing
-    # ONE card, so one card is small instead of four.
+def test_hard_entries_are_spread_one_per_card():
+    # THE RULE, and it is the SECOND answer this has had. While every card solved
+    # its own line spacing, clustering the hard entries was better: one card
+    # absorbed them by tightening its rhythm. The deck-wide rhythm removed that
+    # escape (render_page.design_pitch), so several hard entries on one card have
+    # nowhere to go but down in size — and they compound.
     hard = ["קונסטרוקטיביזם", "אינטרנציונליזם", "אינטרוספקציה", "אימפרסיוניזם"]
     easy = ["ים", "אמא", "דוד", "שוק", "חוף", "כלב", "עץ", "אור", "גן", "רון", "נר", "תה"]
     words = hard + easy
     sizes = _sizes(words)
     rows = pack.deal(words, 4, random.Random(3), sizes=sizes)
-    on_one_card = max(sum(1 for w in row if w in set(hard)) for row in rows)
-    assert on_one_card == 4, rows
+    per_card = [sum(1 for w in row if w in set(hard)) for row in rows]
+    assert max(per_card) == 1, rows
 
 
-def test_it_costs_the_deck_fewer_small_cards_than_the_old_rule():
-    # The claim in deal_measured's docstring, measured here so it cannot rot:
-    # clustering yields FEWER noticeably-small cards than the shuffle it replaced.
+def test_the_worst_card_of_the_deck_is_no_worse_than_the_shuffle():
+    # The owner's question — "doesn't it make some few cards font super small?" —
+    # asked of the measurement rather than of intuition. Spreading may not beat
+    # the plain shuffle on every list, but it must never be WORSE: the whole
+    # point is that no card carries two demanding entries.
     words = (["קונסטרוקטיביזם", "אינטרנציונליזם", "אינטרוספקציה", "אימפרסיוניזם"]
              + [f"מילה{i}" for i in range(40)])
     sizes = _sizes(words)
     n = 11
 
-    def small(rows):
-        per = [min(sizes.get(w, 99) for w in r if w) for r in rows if any(r)]
-        med = statistics.median(per)
-        return sum(1 for p in per if p < med * 0.75)
+    def worst(rows):
+        return min(min(sizes.get(w, 99) for w in r if w) for r in rows if any(r))
 
     old = pack.deal(words, n, random.Random(5))
     new = pack.deal(words, n, random.Random(5), sizes=sizes)
-    assert small(new) <= small(old)
+    assert worst(new) >= worst(old)
 
 
 def test_no_word_is_lost_or_duplicated_by_the_measured_deal():

@@ -241,62 +241,70 @@ def _hard_cut(sizes, cut=_HARD_CUT):
 def deal_measured(uniq, n_cards, rnd, sizes):
     """Deal by MEASURED difficulty — see generator/word_demand.py.
 
-    THE RULE: hard entries are put TOGETHER, not spread apart.
-    
-    That is the opposite of what it looks like it should be, and the measurement
-    is what settled it. A card prints all four entries at the size its HARDEST
-    entry allows, so a hard entry costs a whole card whatever else is on it. Give
-    four hard entries four different cards and four cards print small; give them
-    one card and only that card does, while the other three are set by ordinary
-    words and come out bigger.
-    
-    Measured over a real 412-word deck (grapefruit, four deliberately awful
-    words in the list):
-    
-        spread apart      2 cards noticeably small, median card size 29.8
-        as it was         5 cards noticeably small, median card size 30.7
-        put together      2 cards noticeably small, median card size 31.4
-    
-    So clustering wins on both counts at once — fewer odd-looking cards AND a
-    bigger deck. Spreading, which was the intuitive answer, is the worst of the
-    three: it hands EVERY card one relatively demanding entry.
-    
-    What no arrangement can do is rescue a single entry that is hard on its own —
-    "אינטרנציונליזם" has nowhere to break and sets its card's size wherever it
-    sits. That is what word_demand.small_cards reports, so the owner can shorten
-    the word instead.
+    THE RULE: hard entries are SPREAD, one per card, not put together.
+
+    That is the second answer this function has had, and the first one was right
+    at the time. While every card solved its own line spacing, a card could
+    absorb several hard entries by tightening its rhythm, so putting four of them
+    on one card cost one card instead of four — measured then as 5 noticeably
+    small cards down to 2.
+
+    The deck-wide rhythm removed that escape. A card cannot tighten its spacing
+    any more (render_page.design_pitch), so several hard entries on one card have
+    nowhere to go but down in size, and they compound. Measured on the same deck,
+    with the rhythm in place:
+
+        put together      worst card 15.4, one card noticeably small
+        as it was         worst card 18.3-20.2, none
+        spread apart      worst card 18.3-20.6, none
+
+    So the owner's question — "doesn't it make some few cards font super small?" —
+    was exactly right, and this is the answer to it: one hard entry per card, and
+    the card only ever pays for that one.
+
+    The deal is a SNAKE: sorted hardest first, dealt left to right, then right to
+    left, so card i gets one entry from the hardest quarter and one from the
+    easiest. A plain round robin would hand card 1 the hardest entry of every
+    round.
+
+    An entry nobody could measure is treated as AVERAGE — it lands where the deal
+    puts it, which is what it did before any of this existed.
     """
     words = list(uniq)
+    # Shuffle first so equal-difficulty entries fall in a different order per
+    # seed, then sort — Python's sort is stable, so the shuffle survives as the
+    # tie-break and two orders of the same words still differ.
     rnd.shuffle(words)
-    cut = _hard_cut(sizes)
-    # An unmeasured entry is treated as ordinary rather than hard: it would
-    # otherwise be clustered onto the small card on no evidence at all.
-    hard = sorted((w for w in words if sizes.get(w, cut + 1) < cut), key=lambda w: sizes[w])
-    rest = [w for w in words if w not in set(hard)]
+    known = sorted(sizes[w] for w in words if w in sizes)
+    mid = known[len(known) // 2] if known else 0.0
+    words.sort(key=lambda w: sizes.get(w, mid))          # hardest (smallest) first
 
-    rows = []
-    # Whole cards of hard entries first, hardest together. A leftover 1-3 join
-    # the next card, where the ordinary entries around them cost nothing — their
-    # card was going to be set by them anyway.
-    for i in range(0, len(hard) - len(hard) % PER_CARD, PER_CARD):
-        rows.append(hard[i:i + PER_CARD])
-    leftover = hard[len(hard) - len(hard) % PER_CARD:]
-    if leftover:
-        rows.append(leftover + rest[:PER_CARD - len(leftover)])
-        rest = rest[PER_CARD - len(leftover):]
-    for i in range(0, len(rest), PER_CARD):
-        rows.append(rest[i:i + PER_CARD])
+    caps = [PER_CARD] * n_cards
+    caps[-1] = len(uniq) - PER_CARD * (n_cards - 1)
+    rows = [[] for _ in range(n_cards)]
+    order = list(range(n_cards))
+    i = rnd_round = 0
+    while i < len(words):
+        seq = order if rnd_round % 2 == 0 else order[::-1]
+        placed = False
+        for c in seq:
+            if i >= len(words):
+                break
+            if len(rows[c]) < caps[c]:
+                rows[c].append(words[i])
+                i += 1
+                placed = True
+        if not placed:
+            break            # every card full — cannot happen while sum(caps) == len
+        rnd_round += 1
 
-    # The hardest entry LAST on its card, which is where a wrapped one has sat
-    # since the deck was first drawn. WHICH row is roomiest depends on where that
-    # front's icons are, and only the renderer knows that — choosing the row by
-    # measured room is the next step, not this one.
     out = []
-    for row in rows[:n_cards]:
-        row = sorted((w for w in row if w), key=lambda w: -sizes.get(w, cut + 1))
+    for row in rows:
+        # Hardest LAST within the card. Which ROW it actually prints on is chosen
+        # later against that card's own artwork (render_page.order_by_room); this
+        # only keeps the CSV readable and the blanks trailing.
+        row = sorted((w for w in row if w), key=lambda w: -sizes.get(w, mid))
         out.append(row + [""] * (PER_CARD - len(row)))
-    while len(out) < n_cards:
-        out.append([""] * PER_CARD)
     return out
 
 
