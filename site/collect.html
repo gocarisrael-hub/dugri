@@ -1234,12 +1234,6 @@
         margin-top: 4px;
         display: block;
       }
-      .was {
-        text-decoration: line-through;
-        opacity: 0.55;
-        font-weight: 700;
-        font-size: 0.85em;
-      }
       /* Delivery address — a titled sub-panel of the pay card, not bare inputs.
          The inline margin is restated here on purpose: the generic
          `.pay-collapse > :not(.pay-summary)` inset loses to this ID rule, and
@@ -1319,7 +1313,10 @@
         justify-content: center;
         align-items: baseline;
         flex-wrap: wrap;
-        gap: 6px;
+        /* This row's gap IS the air around the struck price, so it doesn't also
+           take its own margin (see .was in css/tokens.css). */
+        gap: var(--price-gap);
+        --was-gap: 0;
         font-weight: 900;
         font-size: 19px;
         margin: 14px 0;
@@ -4133,17 +4130,20 @@
             const priceEl = label.querySelector('.opt-price');
             if (priceEl) {
               // Stamp the live "now" price but PRESERVE any struck "was" anchor
-              // (e.g. <s class="was">₪129</s>) that ships in the option's HTML —
+              // (e.g. <s class="was">129</s>) that ships in the option's HTML —
               // overwriting textContent would delete it and lose the discount cue.
               const was = priceEl.querySelector('.was');
               priceEl.textContent = '';
-              if (was) priceEl.appendChild(was);
               // The printed game's price follows the tick: unticked it is the
               // pickup price, ticked it is the delivery per-copy price (the
               // shipping itself is priced on the tick, not here). Both are what
               // renderTotal will sum, so the option and the total never disagree.
               const shown = v === 'pickup' ? (shipOn() ? 'delivery' : 'pickup') : v;
               priceEl.appendChild(amountNode(priceFor(shown)));
+              // The struck price goes back AFTER the live one, like every other
+              // surface: it is what makes RTL lay it out to the left, and what
+              // puts its --was-gap between the two instead of outside the pair.
+              if (was) priceEl.appendChild(was);
             }
           }
           // Keep a valid (enabled) radio selected — but only if something is on
