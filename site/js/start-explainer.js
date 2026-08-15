@@ -325,8 +325,11 @@
       '.sx-step{display:block;border-top:1px solid var(--line,#e6e6e6);padding-top:0.85em;}',
       '.sx-step:first-child{border-top:0;padding-top:0;}',
       /* The numeral is the one splash of warm sand. float:right = the inline start in
-         this RTL sheet. */
-      '.sx-num{float:right;margin-inline-start:0.5em;font-family:var(--display,sans-serif);',
+         this RTL sheet — so the side the TEXT wraps against is the inline END, and
+         that is where the gap has to be. It used to be margin-inline-START, which in
+         RTL is the right-hand container edge: half an em spent on the outside margin
+         while "1" and "התאמה אישית" sat flush against each other on every step. */
+      '.sx-num{float:right;margin-inline-end:0.5em;font-family:var(--display,sans-serif);',
       'font-size:2em;line-height:1;font-weight:300;color:var(--accent,#b7a389);}',
       '.sx-body h3{font-family:var(--display,sans-serif);font-weight:400;font-size:1.3em;',
       'letter-spacing:0.02em;color:var(--ink,#141414);margin-bottom:0.3em;line-height:1.3;}',
