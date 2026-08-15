@@ -632,7 +632,13 @@ function refuseEmojiTitle(res, { title, name } = {}) {
 // Create a collection -> returns the secret owner_token (only time it's sent).
 app.post('/api/collections', (req, res) => {
   const b = req.body || {};
-  const name = (b.honoree_name || '').trim();
+  // THE TITLE is the order's only free-text input now ("no name no gender only
+  // free text title"): it is what prints on the cards and the board. The name is
+  // the order's LABEL — the admin table, the emails, the collection heading —
+  // and when the client doesn't send one we take the title's first line, so a
+  // title-only caller (and every wizard order) still has something to be called.
+  const title = String(b.custom_title == null ? '' : b.custom_title).trim();
+  const name = (b.honoree_name || '').trim() || title.split('\n')[0].trim().slice(0, 60);
   if (!name) return res.status(400).json({ error: 'honoree_name required' });
   // Refuse an emoji BEFORE the collection exists. Once it is stored the buyer has
   // moved on to paying, and the next person to look at the title is the printer.

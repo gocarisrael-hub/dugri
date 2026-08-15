@@ -52,30 +52,36 @@ async function gotoNameStep(page) {
   await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
-test.describe('custom title (F7) on the name step', () => {
-  test('the custom-title input is present and OPTIONAL (empty => no title sent)', async ({
+test.describe('the title on step 3', () => {
+  test('the title input is the step, and nothing is previewed until it is typed', async ({
     page,
   }) => {
+    // It used to be an OPTIONAL override on top of a title the theme composed, and
+    // an empty box meant "use the design's own". There is no design title behind
+    // it any more — the buyer's text IS the title — so an empty box has nothing to
+    // preview and the step cannot be left.
     const reqs = await mockPreview(page);
     await gotoNameStep(page);
 
     const titleInput = page.getByTestId('custom-title-input');
     await expect(titleInput).toBeVisible();
-    await expect(titleInput).toHaveValue(''); // optional: empty by default
+    await expect(titleInput).toHaveValue(''); // empty on arrival
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
+    // Nothing was asked of the server for an empty title.
+    await page.waitForTimeout(600);
+    expect(reqs).toHaveLength(0);
 
-    // Entering only a name (no title) still previews, and the body carries no
-    // meaningful title — the design's own title is used.
-    await page.getByTestId('honoree-input').fill('Shira');
+    // The moment there IS a title, it is what the preview renders.
+    await titleInput.fill('ליאת חוגגת 40');
     await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
-    const last = reqs[reqs.length - 1];
-    expect(last.title == null || last.title === '').toBe(true);
+    expect(reqs[reqs.length - 1].title).toBe('ליאת חוגגת 40');
   });
 
   test('editing the title re-requests the preview with the typed title', async ({ page }) => {
     const reqs = await mockPreview(page);
     await gotoNameStep(page);
 
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
     await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
 
     const before = reqs.length;
@@ -91,7 +97,7 @@ test.describe('custom title (F7) on the name step', () => {
   }) => {
     const reqs = await mockPreview(page);
     await gotoNameStep(page);
-    await page.getByTestId('honoree-input').fill('Shira');
+    await page.getByTestId('custom-title-input').fill('Shira');
 
     const warn = page.getByTestId('custom-title-warn');
     await expect(warn).toBeHidden(); // no warning for an empty / short title

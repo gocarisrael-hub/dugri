@@ -362,65 +362,55 @@ test.describe('order wizard', () => {
     );
   });
 
-  test('step 3 blocks Next until a name is entered', async ({ page }) => {
+  test('step 3 blocks Next until a title is entered', async ({ page }) => {
     await mockPreview(page);
-    await page.goto('/options.html?step=3'); // deep-link straight to the name step
+    await page.goto('/options.html?step=3'); // deep-link straight to the title step
     await expect(page.getByTestId('step-3')).toBeVisible();
     await expect(page.getByTestId('next-btn')).toBeDisabled();
-    await expect(page.getByTestId('step-3')).toContainText('יופיע על הקלפים');
-    // Default design is bachelorette (an ENGLISH-language theme), so a valid name
-    // here is an English single word.
-    await page.fill('#honoreeInput', 'Shira');
+    await expect(page.getByTestId('step-3')).toContainText('יודפס על הקלפים');
+    await page.fill('#customTitleInput', 'ליאת חוגגת 40');
     await expect(page.getByTestId('next-btn')).toBeEnabled();
   });
 
-  // The honoree name drives the printed cards, so it must be a real SINGLE-word
-  // name: letters plus hyphen / apostrophe only (no spaces, digits or symbols),
-  // AND in the language the chosen design requires. The default design here is
-  // bachelorette (english), so digits/symbols/spaces AND Hebrew are all rejected
-  // with an inline error that blocks advancing; a single English word is accepted.
-  test('step 3 rejects digits/symbols/spaces and the wrong language, accepts a single English name', async ({
-    page,
-  }) => {
+  // THE TITLE IS FREE TEXT. It used to be a NAME — one word, letters plus hyphen
+  // and apostrophe only, in the language the design demanded — because the theme
+  // composed a title around it. The owner removed all of that ("no name no gender
+  // only free text title"), so everything that name validation rejected is now
+  // perfectly ordinary: digits, spaces, punctuation, either script, two lines.
+  // The ONLY thing that still blocks is an emoji, and it blocks for a reason that
+  // has nothing to do with names — no card font can draw it.
+  test('step 3 accepts any text as a title, and blocks only on an emoji', async ({ page }) => {
     await mockPreview(page);
     await page.goto('/options.html?step=3');
     await expect(page.getByTestId('step-3')).toBeVisible();
     const next = page.getByTestId('next-btn');
-    const err = page.getByTestId('name-err');
 
-    // A name containing digits -> inline error + Next blocked (can't advance).
-    await page.fill('#honoreeInput', 'Hadar123');
-    await expect(err).toBeVisible();
+    // Every shape the old name rule refused — on an ENGLISH design, which used to
+    // refuse Hebrew outright.
+    for (const title of [
+      'Hadar123',
+      'Hadar@',
+      'Anne Marie',
+      'הדר',
+      'ליאת חוגגת 40',
+      'החגיגה של\nשירה',
+    ]) {
+      await page.fill('#customTitleInput', title);
+      await expect(next).toBeEnabled();
+    }
+
+    // The one refusal left, and it names the character to remove.
+    await page.fill('#customTitleInput', 'ליאת חוגגת 40 🎉');
+    await expect(page.getByTestId('custom-title-err')).toBeVisible();
+    await expect(page.getByTestId('custom-title-err')).toContainText('🎉');
     await expect(next).toBeDisabled();
 
-    // A name containing a symbol -> same rejection.
-    await page.fill('#honoreeInput', 'Hadar@');
-    await expect(err).toBeVisible();
-    await expect(next).toBeDisabled();
-
-    // Two words (a space) -> rejected: the honoree name must be a single word.
-    await page.fill('#honoreeInput', 'Anne Marie');
-    await expect(err).toBeVisible();
-    await expect(next).toBeDisabled();
-
-    // A Hebrew name on an ENGLISH design -> rejected, with a language hint.
-    await page.fill('#honoreeInput', 'הדר');
-    await expect(err).toBeVisible();
-    await expect(err).toContainText('אנגלית');
-    await expect(next).toBeDisabled();
-
-    // A hyphenated single English name -> allowed (single name, right language).
-    await page.fill('#honoreeInput', 'Anne-Marie');
-    await expect(err).toBeHidden();
+    // Drop it and the step continues normally.
+    await page.fill('#customTitleInput', 'ליאת חוגגת 40');
+    await expect(page.getByTestId('custom-title-err')).toBeHidden();
     await expect(next).toBeEnabled();
-
-    // A plain single English word -> accepted, and advances normally (with gender).
-    await page.fill('#honoreeInput', 'Hadar');
-    await expect(err).toBeHidden();
-    await expect(next).toBeEnabled();
-    await page.getByTestId('gender-female').check();
     await next.click();
-    // optional pawn-photos step sits between the name and details steps
+    // optional pawn-photos step sits between the title and details steps
     await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
@@ -429,8 +419,7 @@ test.describe('order wizard', () => {
   test('step 4 validates email + phone, then creates the collection', async ({ page }) => {
     await mockPreview(page);
     await page.goto('/options.html?step=3');
-    await page.fill('#honoreeInput', 'Shira');
-    await page.getByTestId('gender-female').check(); // gender is required to advance
+    await page.fill('#customTitleInput', 'Shira');
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click();
@@ -474,8 +463,7 @@ test.describe('order wizard', () => {
   }) => {
     await mockPreview(page);
     await page.goto('/options.html?step=3');
-    await page.fill('#honoreeInput', 'Shira');
-    await page.getByTestId('gender-female').check();
+    await page.fill('#customTitleInput', 'Shira');
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click();

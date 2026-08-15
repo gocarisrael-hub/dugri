@@ -61,8 +61,7 @@ test('chasers add-on flows from the wizard into the order and admin', async ({ p
   // admin row can be found by it.
   const honoree = 'Chaser' + String(Date.now()).replace(/[0-9]/g, (d) => 'abcdefghij'[+d]);
   await page.getByTestId('next-btn').click();
-  await page.fill('#honoreeInput', honoree);
-  await page.getByTestId('gender-female').check(); // gender is required to advance
+  await page.fill('#customTitleInput', honoree);
   await page.getByTestId('next-btn').click();
   await expect(page.getByTestId('step-pawns')).toBeVisible(); // optional pawn step
   await page.getByTestId('next-btn').click();

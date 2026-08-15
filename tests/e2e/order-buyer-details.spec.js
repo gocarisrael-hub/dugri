@@ -61,8 +61,7 @@ async function toNameStep(page) {
 // that gets printed — and it is deliberately different from every buyer name
 // typed below, so a test that passed by confusing the two would fail here.
 async function toDetailsStep(page) {
-  await page.getByTestId('honoree-input').fill('Shira'); // this design asks for a Latin name
-  await page.getByTestId('gender-female').check();
+  await page.getByTestId('custom-title-input').fill('Shira'); // this design asks for a Latin name
   await page.getByTestId('next-btn').click(); // -> pawn photos
   await expect(page.getByTestId('step-pawns')).toBeVisible();
   await page.getByTestId('next-btn').click(); // -> details

@@ -90,8 +90,7 @@ test.describe('buyer wizard feature flags', () => {
     // off), so Next enables on a valid name.
     await page.getByTestId('next-btn').click(); // step 1 -> step 3
     await expect(page.getByTestId('step-3')).toBeVisible();
-    await page.fill('#honoreeInput', 'Shira');
-    await page.getByTestId('gender-female').check();
+    await page.fill('#customTitleInput', 'Shira');
     await page.getByTestId('next-btn').click(); // step 3 -> pawn step
     await expect(page.getByTestId('step-pawns')).toBeVisible();
     await page.getByTestId('next-btn').click(); // pawn step -> step 4
@@ -163,7 +162,7 @@ test.describe('buyer wizard feature flags', () => {
     // Step 3 shows the live name preview + the word-font picker.
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-3')).toBeVisible();
-    await page.fill('#honoreeInput', 'Shira');
+    await page.fill('#customTitleInput', 'Shira');
     await expect(page.getByTestId('name-preview')).toBeVisible();
     await expect(page.locator('.wiz-fontpicker')).toBeVisible();
   });

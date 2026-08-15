@@ -188,10 +188,10 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     await assertStepFits(page, '[data-testid="chasers-card"]');
   });
 
-  test('step 3 (name + gender): the last control clears the sticky bar', async ({ page }) => {
+  test('step 3 (title): the last control clears the sticky bar', async ({ page }) => {
     await page.goto('/options.html?step=3');
     await expect(page.getByTestId('step-3')).toBeVisible();
-    await assertStepFits(page, '[data-testid="gender-group"]');
+    await assertStepFits(page, '[data-testid="custom-title-field"]');
   });
 
   // STEP 3 IS ALLOWED TO SCROLL — the owner's decision, 2026-08-06.
@@ -201,7 +201,7 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
   // plain step-3 test above runs with NO row and passes however tall the row would
   // have been, while the row's own spec (wizard-deck-pictures) stubs the pictures
   // but never measures height. Between the two, nobody was watching: with pictures
-  // the gender control sits ~11px BELOW the bar's top on a 390×844 phone.
+  // the step's last control sits ~11px BELOW the bar's top on a 390×844 phone.
   //
   // What that costs was measured before deciding, not assumed: the page scrolls
   // 194px, scrolling brings the control clear of the bar, and it taps. Nothing is
@@ -252,8 +252,8 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
 
     // Scrolling is permitted here, so reach the control the way a buyer does…
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    const gender = page.getByTestId('gender-group');
-    await expect(gender).toBeVisible();
+    const titleField = page.getByTestId('custom-title-field');
+    await expect(titleField).toBeVisible();
 
     // …and it must genuinely clear the fixed bar once scrolled, not merely exist.
     await expect
@@ -261,8 +261,8 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
         page.evaluate(() => {
           const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
           return Math.round(
-            document.querySelector('[data-testid="gender-group"]').getBoundingClientRect().bottom -
-              bar.top
+            document.querySelector('[data-testid="custom-title-field"]').getBoundingClientRect()
+              .bottom - bar.top
           );
         })
       )
@@ -270,7 +270,7 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
 
     // toBeVisible() would pass on a control the bar covers, so prove the tap lands
     // on the control itself and not on the bar sitting over it.
-    await gender.locator('button, label').first().click({ timeout: 5000 });
+    await titleField.locator('textarea').click({ timeout: 5000 });
   });
 
   // STEP 4 IS A SCROLLING STEP — and this is not a new trade, it is the one the
@@ -646,33 +646,34 @@ test.describe('the deck pictures never bury a control', () => {
   //
   // Not assertTappable(): with the big picture this step scrolls to its very end,
   // and there the site's floating WhatsApp button (.wa-help, fixed at 287..374 ×
-  // 718..762) covers the RIGHT half of the first gender option — the option is
-  // still tappable, and the second one is untouched, but the centre pixel is not
-  // free. That overlap is the help button meeting the page's last control, not the
+  // 718..762) covers the RIGHT half of the step's last control — it is still
+  // tappable, but the centre pixel is not free. That overlap is the help button meeting the page's last control, not the
   // deck row burying it, and it is out of this change's hands (a separate owner).
   // What this test refuses to let slip is the thing the row DOES control: the
   // sticky bar swallowing the control the way it did on steps 4 and 5.
-  test('step 3 (name): the control clears the sticky bar once scrolled to', async ({ page }) => {
+  test('step 3 (title): the control clears the sticky bar once scrolled to', async ({ page }) => {
     await withDeckPictures(page);
     await page.goto('/options.html?design=bachelorette&step=3');
     await expect(page.getByTestId('step-3')).toBeVisible();
     await assertRowWorthLookingAt(page);
     await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
 
-    const gender = page.locator('[data-testid="gender-group"]');
-    await expect(gender).toBeInViewport({ ratio: 1 });
+    const titleField = page.locator('[data-testid="custom-title-field"]');
+    await expect(titleField).toBeInViewport({ ratio: 1 });
     await expect
       .poll(async () =>
         page.evaluate(() => {
           const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
-          const el = document.querySelector('[data-testid="gender-group"]').getBoundingClientRect();
+          const el = document
+            .querySelector('[data-testid="custom-title-field"]')
+            .getBoundingClientRect();
           return Math.round(el.bottom - bar.top);
         })
       )
       .toBeLessThanOrEqual(0);
     // Nothing of the sticky bar is over either option …
     const overBar = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('[data-testid="gender-group"] label')).some((el) => {
+      Array.from(document.querySelectorAll('[data-testid="custom-title-input"]')).some((el) => {
         const r = el.getBoundingClientRect();
         for (const x of [r.left + 4, r.left + r.width / 2, r.right - 4]) {
           const at = document.elementFromPoint(x, r.top + r.height / 2);
@@ -681,9 +682,9 @@ test.describe('the deck pictures never bury a control', () => {
         return false;
       })
     );
-    expect(overBar, 'the sticky bar must not sit on a gender option').toBe(false);
+    expect(overBar, 'the sticky bar must not sit on the title box').toBe(false);
     // … and the tap lands.
-    await page.locator('[data-testid="gender-group"] label').last().click({ timeout: 5000 });
+    await page.locator('[data-testid="custom-title-input"]').last().click({ timeout: 5000 });
   });
 
   // The small phone loses the pictures on NO step. Step 3 may scroll and keeps the
@@ -711,11 +712,13 @@ test.describe('the deck pictures never bury a control', () => {
       .poll(async () =>
         page.evaluate(() => {
           const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
-          const el = document.querySelector('[data-testid="gender-group"]').getBoundingClientRect();
+          const el = document
+            .querySelector('[data-testid="custom-title-field"]')
+            .getBoundingClientRect();
           return Math.round(el.bottom - bar.top);
         })
       )
       .toBeLessThanOrEqual(0);
-    await page.locator('[data-testid="gender-group"] label').last().click({ timeout: 5000 });
+    await page.locator('[data-testid="custom-title-input"]').last().click({ timeout: 5000 });
   });
 });

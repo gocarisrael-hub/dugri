@@ -1475,6 +1475,23 @@
       }
       /* Non-blocking "may print small" note for a long custom title (F7). Amber,
          advisory — never a hard block; the live preview is the real safety net. */
+      .title-break {
+        align-self: flex-start;
+        margin-top: 4px;
+        padding: 6px 10px;
+        border: 1px solid var(--ink, #111);
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: 14px;
+        cursor: pointer;
+        white-space: pre-wrap;
+        text-align: start;
+      }
+      .title-break:hover {
+        background: rgba(0, 0, 0, 0.06);
+      }
+
       .custom-title-warn {
         color: #b26a00;
         font-weight: 600;
@@ -2321,129 +2338,21 @@
 
       <!-- STEP 3 — honoree name -->
       <section class="wiz-step" data-step="3" data-testid="step-3">
-        <h2 class="wiz-title" id="nameStepTitle">שם בעל/ת השמחה</h2>
+        <h2 class="wiz-title" id="nameStepTitle">הכותרת על הקלפים</h2>
         <p class="wiz-sub" id="nameStepSub">
-          השם הזה יופיע על הקלפים - כתבו אותו בדיוק כפי שתרצו שיופיע.
-        </p>
-        <input
-          class="wiz-input"
-          type="text"
-          id="honoreeInput"
-          data-testid="honoree-input"
-          aria-label="שם בעל/ת השמחה"
-          maxlength="60"
-          autocomplete="name"
-        />
-        <span class="wiz-err" id="nameErr" data-testid="name-err" hidden
-          >אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש
-          (').</span
-        >
-        <div
-          class="gender-group"
-          id="genderGroup"
-          role="radiogroup"
-          aria-label="מין בעל/ת השמחה"
-          data-testid="gender-group"
-        >
-          <label class="gender-opt">
-            <input type="radio" name="gender" value="female" data-testid="gender-female" />
-            <span>נקבה</span>
-          </label>
-          <label class="gender-opt">
-            <input type="radio" name="gender" value="male" data-testid="gender-male" />
-            <span>זכר</span>
-          </label>
-        </div>
-
-        <!-- theme-specific extra fields: shown only when the chosen design's
-             generator theme needs them (AGE for japanese/kids; YEARS + two names
-             on a couple deck). Which ones a theme needs is OWNER-EDITABLE in the
-             admin, so the set is resolved live (see renderExtraFields) rather than
-             from the bundled mirror; every field a theme can ask for has its markup
-             here and is toggled by renderExtraFields(). -->
-        <div class="wiz-extra" id="extraFields" data-testid="extra-fields" hidden>
-          <label class="wiz-field" data-extra-field="AGE" hidden>
-            <span class="wiz-lbl">גיל</span>
-            <input
-              class="wiz-input"
-              type="number"
-              min="0"
-              max="120"
-              step="1"
-              inputmode="numeric"
-              id="extraAge"
-              data-testid="extra-age"
-              data-extra-input="AGE"
-            />
-            <span class="wiz-err" data-extra-err="AGE" data-testid="extra-age-err" hidden
-              >אפשר להזין מספר שלם בלבד (גיל בין 0 ל-120).</span
-            >
-          </label>
-          <label class="wiz-field" data-extra-field="YEARS" hidden>
-            <span class="wiz-lbl">שנות נישואין</span>
-            <input
-              class="wiz-input"
-              type="number"
-              min="0"
-              max="120"
-              step="1"
-              inputmode="numeric"
-              id="extraYears"
-              data-testid="extra-years"
-              data-extra-input="YEARS"
-            />
-            <span class="wiz-err" data-extra-err="YEARS" data-testid="extra-years-err" hidden
-              >אפשר להזין מספר שלם בלבד (שנים בין 0 ל-120).</span
-            >
-          </label>
-          <label class="wiz-field" data-extra-field="NAME1" hidden>
-            <span class="wiz-lbl">שם בן/בת הזוג הראשון</span>
-            <input
-              class="wiz-input"
-              type="text"
-              maxlength="40"
-              id="extraName1"
-              data-testid="extra-name1"
-              data-extra-input="NAME1"
-              autocomplete="name"
-            />
-            <span class="wiz-err" data-extra-err="NAME1" data-testid="extra-name1-err" hidden
-              >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
-            >
-          </label>
-          <label class="wiz-field" data-extra-field="NAME2" hidden>
-            <span class="wiz-lbl">שם בן/בת הזוג השני</span>
-            <input
-              class="wiz-input"
-              type="text"
-              maxlength="40"
-              id="extraName2"
-              data-testid="extra-name2"
-              data-extra-input="NAME2"
-              autocomplete="name"
-            />
-            <span class="wiz-err" data-extra-err="NAME2" data-testid="extra-name2-err" hidden
-              >אפשר להזין שם אחד בעברית בלבד (בלי רווחים, ספרות או אנגלית).</span
-            >
-          </label>
-        </div>
-
-        <!-- When the buyer sets their OWN custom title, the theme's extra fields
-             (AGE / wedding YEARS / partner NAMES) only ever fed the DEFAULT title,
-             so they are no longer needed. renderExtraFields() shows this note in
-             their place whenever a custom title is present on an extras-theme. -->
-        <p class="wiz-hint" id="extraFieldsSkipNote" data-testid="extra-fields-skip-note" hidden>
-          בחרת כותרת משלך - אין צורך למלא גיל / שנות נישואין / שמות (הם לא ישמשו בכותרת).
+          מה שתכתבו כאן הוא בדיוק מה שיודפס על הקלפים ועל הלוח - שם, ברכה, בדיחה פנימית, מה שתרצו.
         </p>
 
-        <!-- OPTIONAL custom title (F7): overrides the design's own title on the
-             cards + board. Empty = the design's default title (current behavior).
+        <!-- THE title. It used to be an optional override on top of a title the
+             THEME composed from the honoree's name, their gender and a per-theme
+             extra field ("{NAME} {m:בן|f:בת} {AGE}"). The owner removed all of
+             that: "no name no gender only free text title". So this box is the
+             single input that decides what prints, it is REQUIRED, and there is
+             no default behind it to fall back to.
              The title auto-fits, so a long one just prints smaller — the live
              preview below shows the exact result so the buyer can self-correct. -->
         <label class="wiz-field" id="customTitleField" data-testid="custom-title-field">
-          <span class="wiz-lbl" data-edit="options-customtitle-label"
-            >מוזמנים להזין כותרת אחרת לגמרי!</span
-          >
+          <span class="wiz-lbl" data-edit="options-customtitle-label">הכותרת שתודפס על הקלפים</span>
           <textarea
             class="wiz-input"
             id="customTitleInput"
@@ -2451,13 +2360,15 @@
             rows="2"
             maxlength="63"
             placeholder="למשל: ליאת חוגגת 40"
-            aria-label="כותרת מותאמת אישית (רשות)"
+            required
+            aria-label="הכותרת שתודפס על הקלפים"
           ></textarea>
           <span
             class="wiz-hint"
             data-testid="custom-title-hint"
             data-edit="options-customtitle-hint"
-            >משאירים ריק - והכותרת של העיצוב תופיע. אפשר לכתוב כותרת משלכם והיא תחליף אותה.</span
+            >אפשר בשתי שורות. הכותרת מתאימה את עצמה לגודל הקלף - כותרת ארוכה פשוט תודפס קטנה יותר,
+            וההצצה למטה מראה בדיוק איך זה ייראה.</span
           >
           <span
             class="wiz-hint custom-title-warn"
@@ -2465,13 +2376,23 @@
             data-testid="custom-title-warn"
             hidden
           ></span>
+          <!-- The suggested break, as a button: one tap puts the Enter in for
+               her. It is a SUGGESTION and never applied on its own — the title is
+               her sentence, and where it breaks is her phrasing, not ours. -->
+          <button
+            type="button"
+            class="title-break"
+            id="customTitleBreak"
+            data-testid="custom-title-break"
+            hidden
+          ></button>
           <!-- The emoji REFUSAL. Deliberately a .wiz-err and not the amber
                .custom-title-warn beside it: the warning above is advisory ("this
                will print small"), this one BLOCKS "הבא". The card fonts have no
                emoji glyphs, so an emoji here is a blank box on 104 printed cards
                — and stripping it silently would be worse than refusing, because
                she typed it on purpose and would never be told it had gone. Text
-               is filled in by refreshCustomTitleEmoji() so it can name the exact
+               is filled in by refreshTitleError() so it can name the exact
                character to remove. -->
           <span class="wiz-err" id="customTitleErr" data-testid="custom-title-err" hidden></span>
         </label>
@@ -3702,23 +3623,6 @@
       </div>
     </div>
 
-    <!-- gender-required prompt (shown when advancing without a gender choice) -->
-    <div class="wiz-modal" id="genderModal" data-testid="gender-modal" hidden>
-      <div
-        class="wiz-modal-card"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="genderModalMsg"
-      >
-        <p class="wiz-modal-msg" id="genderModalMsg" data-testid="gender-modal-msg">
-          רגע! צריך לבחור אם חוגגים לבעל השמחה או לבעלת השמחה 💜
-        </p>
-        <button class="btn" type="button" id="genderModalOk" data-testid="gender-modal-ok">
-          הבנתי
-        </button>
-      </div>
-    </div>
-
     <!-- FULLSCREEN ZOOM OVERLAY — opened by the ⤢ button or by tapping the live
          preview; shows the current tab at the current colours (see zoom JS). -->
     <div class="zoom" id="zoomOverlay" data-testid="zoom-overlay" hidden>
@@ -3836,7 +3740,6 @@
         pageTint,
         validateManifest,
         isValidIlMobile,
-        isValidHonoreeName,
         isValidIntegerField,
         normalizeIlPhone,
         previewViewList,
@@ -4887,36 +4790,60 @@
       const backBtn = document.getElementById('backBtn');
       const nextBtn = document.getElementById('nextBtn');
 
-      const nameInput = document.getElementById('honoreeInput');
       const emailInput = document.getElementById('ownerEmail');
       const phoneInput = document.getElementById('ownerPhone');
-      const nameErr = document.getElementById('nameErr');
       const emailErr = document.getElementById('emailErr');
       const phoneErr = document.getElementById('phoneErr');
       const createErr = document.getElementById('createErr');
-      const genderModal = document.getElementById('genderModal');
-      const genderModalOk = document.getElementById('genderModalOk');
 
-      // Honoree gender captured on the name step. No default: exactly
-      // 'female' | 'male' once the user actively picks, otherwise null. A choice
-      // is required to advance past the name step, so the value sent with the
-      // collection is always the user's real pick (never a defaulted one).
+      // --- ONE input decides what prints -------------------------------------
+      // The step used to ask three things — the honoree's name, their gender, and
+      // whatever extra field the theme's title template named (AGE / YEARS /
+      // NAME1+NAME2) — and compose a title out of them ("{NAME} {m:בן|f:בת}
+      // {AGE}"). The owner removed all of it: "no name no gender only free text
+      // title". The buyer types the title; that IS the title, on the cards, on the
+      // board and in the preview.
+      //
+      // The functions below are what is left of that machinery. They are kept
+      // (rather than deleted at every call site) because half the wizard asks them
+      // questions — is the step valid, what do we send, what does the preview
+      // draw — and collapsing them here keeps that plumbing honest while the
+      // theme-side cleanup lands separately.
+
+      // Gender is no longer collected anywhere. Null is what the order carries,
+      // and the generator's {m:…|f:…} markers resolve to their first form — which
+      // is exactly what a title with no marker (every title now) does anyway.
       function selectedGender() {
-        const el = document.querySelector('input[name="gender"]:checked');
-        return el ? el.value : null;
+        return null;
       }
 
-      // --- theme extra fields (AGE / YEARS + two names) ----------------------
-      // Once a design is chosen its generator theme may need extra inputs. We
-      // reveal only the fields that theme requires, require them before leaving
-      // the name step, and send them (plus the resolved theme) with the order.
-      const extraFieldsBox = document.getElementById('extraFields');
-      const extraFieldEls = Array.from(document.querySelectorAll('[data-extra-field]'));
-      const extraInputEls = Array.from(document.querySelectorAll('[data-extra-input]'));
-      const nameStepTitle = document.getElementById('nameStepTitle');
-      const nameStepSub = document.getElementById('nameStepSub');
-      const genderGroup = document.getElementById('genderGroup');
-      const extraFieldsSkipNote = document.getElementById('extraFieldsSkipNote');
+      // The order's internal LABEL — the admin table, the collection page heading,
+      // the emails and the WhatsApp share text all need something to call the
+      // order. It is the title's first line, because that is the only thing the
+      // buyer told us. It is never printed on a card: the title is.
+      function honoreeNameValue() {
+        return customTitle.split('\n')[0].trim().slice(0, 60);
+      }
+
+      // A non-empty title. Required now — there is no theme-composed default left
+      // to fall back to, so an empty box is simply an order that cannot print.
+      function hasCustomTitle() {
+        return customTitle.trim() !== '';
+      }
+
+      // The theme's extra fields (AGE / YEARS / NAME1 / NAME2) only ever fed the
+      // title template. With the template gone nothing consumes them, so the
+      // wizard asks for none and the order carries none. The function stays as the
+      // single place that says so.
+      function currentExtraFields() {
+        return [];
+      }
+      function extraFieldsValid() {
+        return true;
+      }
+      function renderExtraFields() {
+        refreshControls();
+      }
 
       // The generator theme key for the currently selected design (or null).
       function currentTheme() {
@@ -4927,154 +4854,13 @@
         return themeForDesign(d);
       }
 
-      // The name LANGUAGE ('english' | 'hebrew') the current design requires, from
-      // its theme's `language` in themes.json (mirrored in designs.js). The honoree
-      // name (and the couple NAME1/NAME2 fields) must be written in this script.
-      function currentLanguage() {
-        const d = DESIGNS[designIndex] || {};
-        return languageForDesign(d);
-      }
-
-      // A COUPLE deck asks for the two partners' names once (the NAME1/NAME2 extra
-      // fields) instead of a single honoree name + gender: the lone name box and the
-      // gender picker are hidden, and the honoree name sent with the order is
-      // synthesized from the two names ("דנה ויוסי").
-      //
-      // Decided by the FIELDS the design actually collects, never by the theme's
-      // NAME. This used to read `currentTheme() === 'anniversary'`, and that is a
-      // trap with a live fuse: the owner changed סנטוריני (theme `anniversary`) in
-      // the admin from a couple deck to a ONE-PERSON deck, so its NAME1/NAME2 are
-      // gone — but a name-based check would still hide the single name box and go
-      // on composing the honoree name out of two inputs that are no longer shown.
-      // The composed name is then always empty and NOBODY can complete an order for
-      // that design. Reading the fields means couple mode switches itself off the
-      // moment the two name fields do, and no theme is ever special-cased again.
-      //
-      // Deliberately NOT currentExtraFields(): that one returns [] under a custom
-      // title, which is what coupleMode() layers on top.
-      function isCoupleTheme() {
-        const fields = extraFieldsForDesign(DESIGNS[designIndex] || {});
-        return fields.includes('NAME1') && fields.includes('NAME2');
-      }
-      // A non-empty free-form custom title (F7) makes the theme's extra fields
-      // (AGE / YEARS / NAME1 / NAME2) irrelevant — they only ever fed the DEFAULT
-      // title. When present we drop the required extras and, on the couple theme,
-      // fall back from the two-partner ask to the single honoree-name ask.
-      function hasCustomTitle() {
-        return customTitle.trim() !== '';
-      }
-      // EFFECTIVE couple mode: a couple deck drives the two-partner name step ONLY
-      // while the default title is in use. A custom title reverts it to the
-      // single-name ask (one order identity is still captured for emails/admin).
-      function coupleMode() {
-        return isCoupleTheme() && !hasCustomTitle();
-      }
-      // The honoree name to send / preview: the two partners' names for a couple,
-      // otherwise the single name box value.
-      function honoreeNameValue() {
-        if (coupleMode()) {
-          const a = (extraInput('NAME1') || {}).value || '';
-          const b = (extraInput('NAME2') || {}).value || '';
-          const n1 = a.trim();
-          const n2 = b.trim();
-          if (n1 && n2) return n1 + ' ו' + n2;
-          return n1 || n2;
-        }
-        return nameInput.value.trim();
-      }
-      // The extra-field keys the current design's theme requires ([] if none).
-      // A custom title makes them unnecessary, so none are required in that case.
-      function currentExtraFields() {
-        if (hasCustomTitle()) return [];
-        const d = DESIGNS[designIndex] || {};
-        return extraFieldsForDesign(d);
-      }
-      function extraInput(key) {
-        return document.querySelector('[data-extra-input="' + key + '"]');
-      }
-      // Show exactly the inputs the current theme needs; hide the whole box when
-      // the theme needs none, so most designs see the name step unchanged.
-      function renderExtraFields() {
-        const needed = currentExtraFields();
-        const need = new Set(needed);
-        extraFieldEls.forEach((el) => {
-          el.hidden = !need.has(el.dataset.extraField);
-        });
-        extraFieldsBox.hidden = needed.length === 0;
-        // A custom title makes the theme's extras (currently hidden above) pointless
-        // — surface a note in their place explaining why they aren't asked for.
-        if (extraFieldsSkipNote) {
-          const d = DESIGNS[designIndex] || {};
-          const designNeedsExtras = extraFieldsForDesign(d).length > 0;
-          extraFieldsSkipNote.hidden = !(hasCustomTitle() && designNeedsExtras);
-        }
-        // Couple mode: swap the single-name ask for the two partner names. Hide the
-        // lone name box + gender picker and retitle the step so the two NAME fields
-        // ARE the ask — no redundant "name, then two names". A custom title reverts
-        // this to the single-name ask (coupleMode() is then false).
-        const couple = coupleMode();
-        nameInput.hidden = couple;
-        // Gender is a property of the EVENT type, not the title: a couple has no
-        // single gender whether or not a custom title is used, so the gender picker
-        // hides for any couple DECK (isCoupleTheme, not coupleMode()).
-        if (genderGroup) genderGroup.hidden = isCoupleTheme();
-        if (nameStepTitle) {
-          nameStepTitle.textContent = couple ? 'שמות בני הזוג' : 'שם בעל/ת השמחה';
-        }
-        if (nameStepSub) {
-          nameStepSub.textContent = couple
-            ? 'השמות יופיעו על הקלפים - כתבו אותם בדיוק כפי שתרצו שיופיעו.'
-            : 'השם הזה יופיע על הקלפים - כתבו אותו בדיוק כפי שתרצו שיופיע.';
-        }
-        refreshControls();
-      }
-      // Numeric extra fields (AGE / YEARS) must be a digits-only integer within the
-      // input's own min/max; name extra fields (NAME1 / NAME2, on a couple deck) must
-      // be a single name in the design's language. Empty is always invalid — every
-      // shown extra field is required.
-      const NUMERIC_EXTRA_FIELDS = new Set(['AGE', 'YEARS']);
-      function isValidExtraField(key, input) {
-        if (!input) return false;
-        const raw = input.value.trim();
-        if (!raw) return false;
-        if (NUMERIC_EXTRA_FIELDS.has(key)) {
-          return isValidIntegerField(raw, input.min, input.max);
-        }
-        return isValidHonoreeName(raw, currentLanguage());
-      }
-      // Every required extra field holds a valid value (type + language enforced).
-      function extraFieldsValid() {
-        return currentExtraFields().every((key) => isValidExtraField(key, extraInput(key)));
-      }
-      // Inline errors for the extra fields: shown only once the user has typed a
-      // value that fails validation (empty just disables Next, like the name box).
-      function refreshExtraErrors() {
-        currentExtraFields().forEach((key) => {
-          const errEl = document.querySelector('[data-extra-err="' + key + '"]');
-          if (!errEl) return;
-          const input = extraInput(key);
-          const raw = input ? input.value.trim() : '';
-          errEl.hidden = !(raw.length && !isValidExtraField(key, input));
-        });
-      }
-      // The required extra fields as a { KEY: value } object ({} when none).
+      // What the order carries for the theme's extra fields: nothing. They fed the
+      // title template, and the title is now typed. Kept as a function because the
+      // create + preview payloads both name it, and one place saying "{}" is
+      // clearer than two places quietly omitting a key.
       function collectedExtraFields() {
-        const out = {};
-        currentExtraFields().forEach((key) => {
-          const input = extraInput(key);
-          if (input) out[key] = input.value.trim();
-        });
-        return out;
+        return {};
       }
-      // Re-validate Next as the user fills the extra fields on the name step.
-      extraInputEls.forEach((el) =>
-        el.addEventListener('input', () => {
-          if (currentStep === 3) {
-            refreshControls();
-            requestPreview();
-          }
-        })
-      );
 
       /* ---- live rendered preview + word-font picker (name step) -------------
          Once a valid name is entered we POST it (with the resolved theme, extra
@@ -5131,10 +4917,41 @@
          small" note (the live preview is the real safety net). */
       const customTitleInput = document.getElementById('customTitleInput');
       const customTitleWarn = document.getElementById('customTitleWarn');
+      const customTitleBreak = document.getElementById('customTitleBreak');
       // Heuristic thresholds (chars) that correlate with the auto-fit shrinking a
       // title below a comfortably readable size — advisory only.
       const TITLE_SMALL_LINE = 18; // a single line this long starts to print small
       const TITLE_SMALL_WORD = 12; // one unbreakable word this long forces a small fit
+      // WHERE A LONG TITLE WOULD BREAK, if it were broken in two.
+      //
+      // The renderer never breaks a title itself — it breaks exactly where the
+      // buyer pressed Enter and nowhere else (a title is her sentence, and
+      // choosing its break for her is choosing her phrasing). But it can SAY
+      // where, which is the owner's ask: "maybe it should suggest a new line if
+      // the font in the title gets too small?"
+      //
+      // The split point is the space that leaves the two halves closest in
+      // length, because the title is sized by its WIDEST line — an even split is
+      // what buys back the most size. Null when there is no space to break at,
+      // which is exactly the case a suggestion cannot help with.
+      function titleBreakSuggestion(text) {
+        const line = String(text || '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!line || line.includes('\n')) return null;
+        const words = line.split(' ');
+        if (words.length < 2) return null;
+        let best = null;
+        for (let i = 1; i < words.length; i += 1) {
+          const a = words.slice(0, i).join(' ');
+          const b = words.slice(i).join(' ');
+          const score = Math.abs(a.length - b.length);
+          if (!best || score < best.score) best = { a, b, score };
+        }
+        // Only worth offering when it actually shortens the widest line.
+        return best && Math.max(best.a.length, best.b.length) < line.length ? best : null;
+      }
+
       function refreshCustomTitleWarn() {
         if (!customTitleWarn) return;
         const lines = customTitle
@@ -5148,10 +4965,25 @@
           .reduce((m, w) => Math.max(m, w.length), 0);
         const small = longestLine > TITLE_SMALL_LINE || longestWord > TITLE_SMALL_WORD;
         customTitleWarn.hidden = !small;
-        if (small) {
-          customTitleWarn.textContent =
-            'כותרת ארוכה - היא תודפס קטן יותר. כדאי לבדוק בתצוגה שהיא נראית טוב.';
-        }
+        customTitleBreak.hidden = true;
+        if (!small) return;
+        // A title already on two lines, or one long unbreakable word, has nothing
+        // to suggest — say only the part that is true.
+        const split = lines.length > 1 ? null : titleBreakSuggestion(customTitle);
+        customTitleWarn.textContent = split
+          ? 'כותרת ארוכה - היא תודפס קטן יותר. ירידת שורה תגדיל אותה:'
+          : 'כותרת ארוכה - היא תודפס קטן יותר. כדאי לבדוק בתצוגה שהיא נראית טוב.';
+        if (!split) return;
+        customTitleBreak.hidden = false;
+        customTitleBreak.textContent = split.a + ' / ' + split.b;
+        customTitleBreak.onclick = () => {
+          customTitle = split.a + '\n' + split.b;
+          customTitleInput.value = customTitle;
+          refreshCustomTitleWarn();
+          refreshTitleError();
+          renderExtraFields();
+          requestPreview();
+        };
       }
       /* The emoji REFUSAL on the title — the rule the owner asked for: "refuse
          for emojis in title and words". Unlike refreshCustomTitleWarn above this
@@ -5164,14 +4996,21 @@
          it's out. The server refuses the same string (POST /api/collections and
          POST /api/preview) — this is the courtesy, that is the authority. */
       const customTitleErr = document.getElementById('customTitleErr');
-      function refreshCustomTitleEmoji() {
+      // The one line on this step that explains a disabled "הבא" — there is no
+      // other hint, so it has to speak for BOTH blocking cases: an empty box (the
+      // title is required now; nothing composes one behind it any more) and an
+      // emoji in it. Empty is stated plainly rather than left silent, which is
+      // what the name box used to do before it was removed.
+      const TITLE_REQUIRED_ERR = 'כתבו כותרת כדי להמשיך';
+      function refreshTitleError() {
         if (!customTitleErr) return;
-        const msg = titleEmojiMessage(customTitle);
+        const msg = titleEmojiMessage(customTitle) || (hasCustomTitle() ? '' : TITLE_REQUIRED_ERR);
         customTitleErr.hidden = !msg;
         if (msg) customTitleErr.textContent = msg;
       }
-      // True when the title is clean enough to move on. Empty is fine (the design
-      // keeps its own title); only an emoji blocks.
+      // True when the title is clean enough to move on. Emptiness is handled by
+      // validateStep (which needs hasCustomTitle anyway); this is only about the
+      // emoji, so the two reasons stay separately answerable.
       function customTitleOk() {
         return !hasEmoji(customTitle);
       }
@@ -5179,7 +5018,7 @@
         customTitleInput.addEventListener('input', () => {
           customTitle = customTitleInput.value;
           refreshCustomTitleWarn();
-          refreshCustomTitleEmoji();
+          refreshTitleError();
           // A custom title relaxes the theme's extra fields + reverts couple mode to
           // the single-name ask, so re-render the extra-fields area (and the skip
           // note) and refresh Next live as the buyer types or clears the title.
@@ -5394,16 +5233,14 @@
         return instantShown || previewShown || previewFallbackFired;
       }
 
-      // A preview can be requested only on the name step, for a resolved theme,
-      // with a VALID name (right script for the design's language, single word)
-      // and any required extra fields filled — so we never render (server-side) a
-      // name that validateStep would reject anyway.
+      // A preview can be requested only on the title step, for a resolved theme,
+      // with a title actually typed — so we never render (server-side) something
+      // validateStep would reject anyway.
       function previewReady() {
         return (
           currentStep === 3 &&
           !!currentTheme() &&
-          (coupleMode() || isValidHonoreeName(honoreeNameValue(), currentLanguage())) &&
-          extraFieldsValid() &&
+          hasCustomTitle() &&
           // A title with an emoji is not previewable: the server refuses it (it
           // would render a blank box and call the result WYSIWYG), so asking is
           // a guaranteed 400 and a preview area that spins for no stated reason.
@@ -5665,12 +5502,10 @@
               name,
               extra_fields: collectedExtraFields(),
               word_font: chosenWordFont,
-              // The honoree's gender, picked one control above this preview.
-              // Hebrew titles are gendered ("{NAME} {בת|בן} {AGE}"), so without
-              // it the buyer would approve a card that prints the wrong word —
-              // and the whole point of this step is that what she sees is what
-              // gets printed. null until she picks (the step can't be left
-              // without picking), which renders the feminine form.
+              // Always null: gender is not collected any more. It only ever chose
+              // between the forms of a title the THEME composed, and the title is
+              // now typed by the buyer — what she sees here is literally what she
+              // wrote. Sent explicitly so the payload still says so out loud.
               gender: selectedGender(),
               // The chasers add-on toggle (step 2) drives which board variant the
               // server renders, so the name-step board preview matches the order.
@@ -5948,63 +5783,17 @@
       function validateStep(n) {
         if (n <= 2) return true; // design / color+add-ons all have safe defaults
         // name step: require the name (in the design's language) AND any extra
-        // fields the theme needs. Couple mode has no single-name box — the two
-        // NAME extra fields (validated in extraFieldsValid) cover it. A custom
-        // title reverts couple to the single-name ask, so require the name then.
-        // The custom title is optional, but an emoji in it is a hard block: it
-        // would be printed as a blank box on every card, so there is no version
-        // of "continue anyway" that ends well. (The name box needs no equivalent
-        // — isValidHonoreeName already allows letters, hyphen and apostrophe
-        // only, so an emoji can never satisfy it.)
-        if (n === 3)
-          return (
-            (coupleMode() || isValidHonoreeName(nameInput.value, currentLanguage())) &&
-            extraFieldsValid() &&
-            customTitleOk()
-          );
+        // The title step: a title, and no emoji in it. Required, because nothing
+        // composes a title any more — an empty box is an order that cannot print.
+        // The emoji block is hard for the same reason it always was: the card
+        // fonts have no emoji glyphs, so it would print as a blank box on every
+        // card and there is no version of "continue anyway" that ends well.
+        if (n === 3) return hasCustomTitle() && customTitleOk();
         // pawn photos are OPTIONAL and free — the step is always skippable.
         if (n === 5) return true;
         if (n === 4)
           return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
         return true;
-      }
-
-      // The single-word format error (also the HTML default) vs. the language
-      // mismatch hint, kept in sync with the #nameErr default text.
-      const NAME_FORMAT_ERR =
-        "אפשר להזין שם אחד בלבד באותיות (עברית או אנגלית), ללא רווחים - מותר מקף (-) וגרש (').";
-
-      // Inline name error on step 3: the ONLY thing on this step that explains why
-      // "הבא" is disabled (there is no longer a static hint), so it must surface for
-      // EVERY blocking case — empty, wrong format, or wrong language. Couple themes
-      // hide the single name box (their two names are validated as extra fields), so
-      // there's nothing to validate here. The message distinguishes an EMPTY field,
-      // a wrong SCRIPT (right format, wrong language), and a general format problem,
-      // so the buyer knows exactly what to fix.
-      function refreshNameError() {
-        if (coupleMode()) {
-          nameErr.hidden = true;
-          return;
-        }
-        const v = nameInput.value.trim();
-        const lang = currentLanguage();
-        if (isValidHonoreeName(v, lang)) {
-          nameErr.hidden = true;
-          return;
-        }
-        if (!v.length) {
-          // empty — say plainly that a name is required to continue
-          nameErr.textContent = 'כתבו את שם בעל/ת השמחה כדי להמשיך';
-        } else if (isValidHonoreeName(v)) {
-          // format is fine → the only failing rule is the design's language
-          nameErr.textContent =
-            lang === 'english'
-              ? 'העיצוב הזה דורש שם באותיות אנגלית'
-              : 'העיצוב הזה דורש שם באותיות עברית';
-        } else {
-          nameErr.textContent = NAME_FORMAT_ERR;
-        }
-        nameErr.hidden = false;
       }
 
       // Inline field errors on the details step (only once the user has typed something).
@@ -6034,12 +5823,9 @@
         }
         nextBtn.disabled = disabled;
         if (currentStep === 3) {
-          refreshNameError();
-          refreshExtraErrors();
-          // Keep the emoji refusal visible whenever the step is: it is the only
-          // thing that can disable "הבא" without the name or the extras being at
-          // fault, so a silent Next would be unexplainable.
-          refreshCustomTitleEmoji();
+          // The emoji refusal is the only thing that can disable "הבא" while the
+          // box has text in it, so it must be visible whenever the step is.
+          refreshTitleError();
         }
         if (currentStep === 4) refreshStep5Errors();
       }
@@ -6372,9 +6158,6 @@
       }
 
       function goStep(n, opts = {}) {
-        // any step change dismisses the gender prompt so its full-screen overlay
-        // never lingers on top of an unrelated step (e.g. after navigating back).
-        closeGenderModal();
         // Snap to the nearest ACTIVE step so a hidden step (2) is never landed on
         // — e.g. a shared/restored ?step=2 with colour+chasers gated off jumps to 3.
         currentStep = normalizeStep(Math.min(TOTAL_STEPS, Math.max(1, n | 0)));
@@ -6423,14 +6206,8 @@
           track('begin_checkout');
         }
         if (currentStep === 3) {
-          // couple mode hides the single-name box — focus the first partner name.
-          if (coupleMode()) {
-            const first = extraInput('NAME1');
-            if (first) first.focus();
-          } else {
-            nameInput.focus();
-          }
-          // render (or refresh) the live preview for the current name/theme
+          if (customTitleInput) customTitleInput.focus();
+          // render (or refresh) the live preview for the current title/theme
           requestPreview({ immediate: true });
         }
         if (currentStep === 4) {
@@ -6440,54 +6217,8 @@
         window.scrollTo({ top: 0, behavior: 'auto' });
       }
 
-      // Gender is required to leave the name step. Unlike the name (which just
-      // disables Next), a missing gender pops a small prompt so the user knows a
-      // choice is needed — the pick is what the collection is gendered by.
-      function openGenderModal() {
-        genderModal.hidden = false;
-        genderModalOk.focus();
-      }
-      function closeGenderModal() {
-        genderModal.hidden = true;
-      }
-      genderModalOk.addEventListener('click', closeGenderModal);
-      genderModal.addEventListener('click', (e) => {
-        if (e.target === genderModal) closeGenderModal();
-      });
-      // Picking a gender clears the prompt if it's up — and RE-RENDERS the
-      // preview: a gendered Hebrew title ("{NAME} {m:בן|f:בת} {AGE}") prints a
-      // different word per gender, so the card on screen is stale the moment the
-      // pick changes.
-      //
-      // Deliberately NOT requestPreview(): that re-closes the create gate
-      // (resetPreviewGate), which would DISABLE "הבא" on this very step until a
-      // second render landed — so every buyer would pick a gender and find the
-      // wizard locked behind another spinner. The gate exists so nobody creates a
-      // game having seen NO preview; this buyer has already seen one for this name
-      // and design, and a gender swaps at most one word of the title. So we bump
-      // the sequence (making any in-flight render inert) and fetch the new image
-      // straight away, leaving the current card on screen until it swaps in.
-      function refreshPreviewForGender() {
-        if (!FEATURES.name_preview || !previewReady()) return;
-        clearTimeout(previewTimer);
-        doPreview(0, ++previewSeq);
-      }
-      document.querySelectorAll('input[name="gender"]').forEach((el) =>
-        el.addEventListener('change', () => {
-          closeGenderModal();
-          refreshPreviewForGender();
-        })
-      );
-
       function next() {
         if (!validateStep(currentStep)) return;
-        // name step: block advancing until a gender is actively chosen. A couple
-        // deck has no single gender (custom title or not), so gender is never asked
-        // for it — isCoupleTheme(), not coupleMode().
-        if (currentStep === 3 && !isCoupleTheme() && !selectedGender()) {
-          openGenderModal();
-          return;
-        }
         if (currentStep === lastActive) {
           createCollection();
           return;
@@ -6505,18 +6236,6 @@
       backBtn.addEventListener('click', back);
       nextBtn.addEventListener('click', next);
 
-      // Live-validate so Next / "צרו את המשחק" enables as the user types.
-      nameInput.addEventListener('input', () => {
-        if (currentStep === 3) {
-          refreshControls();
-          requestPreview();
-        }
-      });
-      // Surface the name error on blur too (e.g. the user leaves an invalid
-      // value without further typing).
-      nameInput.addEventListener('blur', () => {
-        if (currentStep === 3) refreshNameError();
-      });
       [emailInput, phoneInput].forEach((el) =>
         el.addEventListener('input', () => {
           if (currentStep === 4) refreshControls();
@@ -6793,28 +6512,12 @@
           goStep(3);
           return;
         }
-        // Reject a single honoree name that isn't letters/spaces/-/' (couple
-        // themes have no single name box — their two names are validated as
-        // extra fields).
-        if (!coupleMode() && !isValidHonoreeName(nameInput.value, currentLanguage())) {
+        // A title with an emoji never leaves this page: it would print as a blank
+        // box on every card. (An EMPTY title is caught by the `!name` bounce
+        // above — the order's name IS the title's first line now.)
+        if (!customTitleOk()) {
           goStep(3);
-          refreshNameError();
-          nameInput.focus();
-          return;
-        }
-        if (!isCoupleTheme() && !selectedGender()) {
-          goStep(3);
-          openGenderModal();
-          return;
-        }
-        // theme extra fields (AGE / YEARS + names) are required when the theme
-        // needs them — bounce back to the name step and focus the first blank.
-        if (!extraFieldsValid()) {
-          goStep(3);
-          const firstEmpty = currentExtraFields()
-            .map((k) => extraInput(k))
-            .find((el) => el && !el.value.trim());
-          if (firstEmpty) firstEmpty.focus();
+          if (customTitleInput) customTitleInput.focus();
           return;
         }
         if (!isValidEmail(email)) {
@@ -6836,13 +6539,18 @@
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
+              // The order's LABEL (admin table, emails, the collection page
+              // heading), not anything printed: it is the title's first line.
               honoree_name: name,
+              // Always null — see the preview payload above.
               gender: selectedGender(),
               email,
               phone,
               design: s.designName || null,
               color: s.colorName || null,
-              // resolved generator theme + the theme's required extra fields
+              // resolved generator theme. extra_fields is always {} now: the
+              // theme's AGE / YEARS / NAME1 / NAME2 only ever fed the title
+              // template, and the buyer types the title.
               theme: currentTheme(),
               extra_fields: collectedExtraFields(),
               // the card word-font the customer picked in the preview (or null)
@@ -7318,7 +7026,7 @@
           // A title restored from localStorage gets the same refusal a typed one
           // does — it was saved before the rule shipped, or typed in another tab,
           // and it is on its way to the same printed card either way.
-          refreshCustomTitleEmoji();
+          refreshTitleError();
         }
         if (orderCommentInput) orderCommentInput.value = orderComment;
         if (buyerNameInput) buyerNameInput.value = buyerName;
