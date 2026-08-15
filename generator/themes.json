@@ -275,6 +275,16 @@
      0.3,
      0.06
     ]
+   },
+   "front_align": {
+    "2": "right",
+    "3": "left",
+    "4": "right",
+    "5": "left",
+    "6": "right",
+    "7": "left",
+    "8": "right",
+    "9": "left"
    }
   },
   "board": {

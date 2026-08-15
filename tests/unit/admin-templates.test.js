@@ -804,6 +804,55 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(after.title_style.align).toBe('right');
   });
 
+  // …and keeps it through the NEXT save, which is where it was actually lost.
+  // The calibration form has no field for the per-front knobs, so it posts a
+  // title_style without them — and a wholesale replace then wiped alignment the
+  // owner never touched. That is how טוקיו lost its alternating title in
+  // production: half the deck printed the honoree's name flush against the koi,
+  // and nothing on the screen that saved it mentioned alignment at all.
+  it('a later save that says nothing about the per-front knobs leaves them alone', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-fa2');
+    templates.updateTemplateSettings({
+      root,
+      key: 'cal-fa2',
+      patch: {
+        title_style: { ...CAL.title_style, front_align: { 3: 'left', 5: 'left' } },
+      },
+    });
+    // A colour nudge from the form: the whole style, minus the knobs it has no
+    // field for.
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-fa2',
+      patch: { title_style: { ...CAL.title_style, fill: '#123456' } },
+    });
+    expect(r.error).toBeFalsy();
+    const after = templates.loadThemes(templates.themesPathFor(root))['cal-fa2'];
+    expect(after.title_style.fill).toBe('#123456');
+    expect(after.title_style.front_align).toEqual({ 3: 'left', 5: 'left' });
+  });
+
+  // Carrying forward must not make a knob unclearable: MENTIONING it, even as an
+  // empty object, is still the owner's answer and wins.
+  it('an explicit empty front_align clears it', () => {
+    const root = makeScaffold();
+    onboard(root, 'cal-fa3');
+    templates.updateTemplateSettings({
+      root,
+      key: 'cal-fa3',
+      patch: { title_style: { ...CAL.title_style, front_align: { 3: 'left' } } },
+    });
+    const r = templates.updateTemplateSettings({
+      root,
+      key: 'cal-fa3',
+      patch: { title_style: { ...CAL.title_style, front_align: {} } },
+    });
+    expect(r.error).toBeFalsy();
+    const after = templates.loadThemes(templates.themesPathFor(root))['cal-fa3'];
+    expect(after.title_style.front_align).toBeUndefined();
+  });
+
   it("updateTemplateSettings keeps a variable face's measured weight instance", () => {
     const root = makeScaffold();
     onboard(root, 'cal-fw');
