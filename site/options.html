@@ -3388,11 +3388,14 @@
             position: absolute;
             inset-inline: 0;
             bottom: 0;
-            padding: 2px 3px;
-            font-size: 10px;
-            line-height: 1.2;
+            /* Bigger than it was (10px/2px): this line carries the one thing the
+               buyer can act on — swap the photo — and at 10px on a phone it read
+               as a caption nobody was meant to look at. */
+            padding: 4px 5px;
+            font-size: 12px;
+            line-height: 1.25;
             text-align: center;
-            background: rgba(0, 0, 0, 0.62);
+            background: rgba(0, 0, 0, 0.68);
             color: #fff;
           }
           .pawn-status[hidden] {
@@ -6287,7 +6290,10 @@
       const PAWN_CUT_LABEL = {
         working: 'מסירים רקע…',
         done: 'הרקע הוסר',
-        failed: 'נסיר את הרקע ידנית',
+        // The owner's words. "נסיר את הרקע ידנית" was a promise about OUR work;
+        // this says what actually happened to HER photo and what to do about it,
+        // which is the only part she can act on while the picker is still open.
+        failed: 'לא הוסר הרקע, עדיף תמונות פנים של בן אדם',
       };
 
       function renderPawnSlot(idx) {
