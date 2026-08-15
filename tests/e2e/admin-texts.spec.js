@@ -51,7 +51,9 @@ test.describe('admin texts editor', () => {
     // group headings (WhatsApp heading text is matched specifically — the new
     // reminders section title also contains "וואטסאפ")
     await expect(page.locator('.section-title', { hasText: 'הודעות ותזמון' })).toBeVisible();
-    await expect(page.locator('.section-title', { hasText: 'מיילים' })).toBeVisible();
+    // Anchored: the page now also has a "ביקשו להפסיק מיילים" section, and a
+    // substring match would resolve to both.
+    await expect(page.locator('.section-title', { hasText: /^מיילים$/ })).toBeVisible();
     await expect(page.locator('.section-title', { hasText: 'תזכורות' })).toBeVisible();
 
     // WhatsApp arming banner — the e2e server runs with no WHAPI env, so the bot
