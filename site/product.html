@@ -509,7 +509,10 @@
       .pdp-price {
         display: flex;
         align-items: baseline;
+        /* This row's gap IS the air around the struck price, so it doesn't also
+           take its own margin (see .was in css/tokens.css). */
         gap: 10px;
+        --was-gap: 0;
         margin-top: 10px;
         flex-wrap: wrap;
       }
@@ -520,10 +523,10 @@
         color: var(--sage-deep);
         letter-spacing: -0.02em;
       }
+      /* Size only. The look (strike, muted, light weight, digits) is the shared
+         .was rule in css/tokens.css — but its 0.86em is relative to a 34px live
+         price here, which would put the struck one at 29px. */
       .pdp-price .was {
-        color: var(--muted);
-        text-decoration: line-through;
-        font-weight: 700;
         font-size: 18px;
       }
 

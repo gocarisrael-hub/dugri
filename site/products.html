@@ -359,15 +359,15 @@
         display: flex;
         justify-content: center;
         align-items: baseline;
-        gap: 6px;
+        /* This row's only two children ARE the pair, so its gap is the air
+           between them — hence --was-gap: 0, or the struck price would take the
+           gap and its own margin (see .was in css/tokens.css). */
+        gap: var(--price-gap);
+        --was-gap: 0;
         margin-top: 3px;
         font-weight: 600;
         font-size: 14.5px;
         color: var(--ink);
-      }
-      .product-price s {
-        color: var(--muted);
-        font-weight: 600;
       }
 
       /* graceful fallback if the catalog module can't load */

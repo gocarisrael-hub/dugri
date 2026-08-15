@@ -95,7 +95,11 @@
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        gap: 9px;
+        /* The CTAs carry the price inside the button, and this gap already
+           spaces the struck price from it — so it doesn't also take its own
+           margin (see .was in css/tokens.css). */
+        gap: var(--price-gap);
+        --was-gap: 0;
         font-family: var(--display);
         font-weight: 800;
         font-size: 17.5px;
@@ -846,14 +850,6 @@
         font-size: 15px;
         text-decoration: line-through;
         margin-top: 8px;
-      }
-      .was {
-        text-decoration: line-through;
-        opacity: 0.55;
-        font-weight: 700;
-        /* No inline margin: the CTA .btn is inline-flex with gap:9px, so the
-           struck price already gets a uniform 9px gap from the current price. */
-        font-size: 0.85em;
       }
       .price {
         font-family: var(--display);

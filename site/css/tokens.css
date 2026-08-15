@@ -50,6 +50,15 @@
   --h-spacing: 0.1em; /* headline letter-spacing — airy */
   --sub-weight: 200; /* subtitle weight — extra-light */
 
+  /* The air between a live price and the struck old price beside it (see .was).
+     --price-gap is the number; --was-gap is how the struck price claims it, and
+     is the one a container that already spaces its children sets to 0. Two
+     tokens, because a container that zeroes --was-gap ON ITSELF still needs to
+     read the number for its own `gap` — and a custom property redeclared on an
+     element resolves to the new value in that element's own declarations. */
+  --price-gap: 9px;
+  --was-gap: var(--price-gap);
+
   /* shape & motion — sharp corners, minimal neutral shadows */
   --radius: 0px;
   --radius-pill: 0px;
@@ -81,14 +90,46 @@
 }
 
 /* ============================================================
+   THE STRUCK OLD PRICE — ONE TREATMENT, EVERY SURFACE.
+
+   Six pages each declared their own `.was` and they drifted: 0.82em/700 here,
+   0.85em/700 there, opacity .55 or .6, and three different ideas about spacing.
+   On the home rail the air even landed on the wrong side of the number
+   (`margin-inline-end` in an RTL row), so the struck price touched the live one
+   and the pair read as a single number — "239199". This is that one rule.
+
+   It carries DIGITS ONLY (the JS on every surface stamps `String(WAS)`): the ₪
+   belongs to the price actually being charged, and a second sign next to the
+   first put the strike-through straight through it.
+
+   Spacing: the struck price ALWAYS trails the live one in the DOM, which in RTL
+   renders it to the LEFT, so the air belongs on its INLINE-START side and can
+   never end up outside the pair. A container that already spaces its children
+   (a flex row with its own `gap`) sets `--was-gap: 0` on itself rather than
+   re-declaring anything here — one number, one place.
+   ============================================================ */
+.was {
+  text-decoration: line-through;
+  /* Dimmed from whatever colour it sits on, NOT a fixed grey: this price rides
+     inside the dark CTA buttons on how.html as well as on white product cards,
+     and --muted would all but vanish on the dark one. On white, 0.6 of --ink is
+     --muted anyway, which is what the cards used before. */
+  opacity: 0.6;
+  font-weight: 400;
+  font-size: 0.86em;
+  font-variant-numeric: tabular-nums;
+  margin-inline-start: var(--was-gap);
+}
+
+/* ============================================================
    SALE MODE — one owner switch, every surface.
 
    js/pricing.js applySale() stamps data-sale="on"/"off" on <html> once
    /api/pricing resolves; these three states decide what every page paints. The
    rules live HERE, in the one stylesheet every storefront page already links, so
    a page gets the whole behaviour by calling applySale() — no per-page copy of
-   the hiding logic to keep in sync (collect/options/how carry their own .was
-   styling and still follow the switch).
+   the hiding logic to keep in sync. The struck price's own styling lives here
+   too (see .was above), so a page gets the look and the switch together.
 
    The pre-resolve state uses `visibility`, not `display`: the struck price
    occupies its space from first paint, so turning the sale on doesn't shove the
