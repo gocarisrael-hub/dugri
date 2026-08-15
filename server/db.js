@@ -905,6 +905,34 @@ const db = {
     return c.pawn_images;
   },
 
+  // The buyer picks WHICH SEED POOL tops her deck up to 412, owner-token gated.
+  //
+  // `pool` is a wordlist file name the ROUTE has already resolved from the owner's
+  // buyer-facing menu and confirmed exists — this function never takes a name from
+  // the client. null/'' means "no per-order pool", i.e. back to whatever her design
+  // implies, which is the behaviour every order had before the menu existed.
+  //
+  // Changing it DISCARDS a frozen word bank, exactly as the admin edit path does:
+  // the bank is the 412 words already chosen for this order, so a bank frozen from
+  // the old pool no longer matches the pool the order now names, and it would go on
+  // printing while looking authoritative. Only on a real change — re-picking the
+  // same option must not cost an order its bank.
+  //
+  // Returns the stored pool (string or null), or 'forbidden' for a bad token /
+  // unknown collection — a string rather than null, because null is a legitimate
+  // stored value here.
+  setWordlistForOwner(id, ownerToken, pool) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return 'forbidden';
+    const next = pool ? String(pool) : null;
+    if ((c.wordlist || '') !== (next || '')) {
+      if (c.word_bank) delete c.word_bank;
+      c.wordlist = next;
+      saveDb();
+    }
+    return c.wordlist || null;
+  },
+
   // The buyer RETITLES her own deck, owner-token gated. Sanitized with the very
   // same sanitizeCustomTitle the order flow uses, so what she is shown in the
   // preview is what the generator will print — one rule, not two that can drift.

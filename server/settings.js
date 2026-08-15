@@ -29,6 +29,9 @@ const { DEFAULT_REMINDERS, validateReminders } = require('./reminders');
 // Same arrangement for the home-page FAQ list: server/faq.js is pure and
 // dependency-free, so settings -> faq adds no cycle.
 const { DEFAULT_FAQ, validateFaq } = require('./faq');
+// Same arrangement again for the buyer-facing word-pool menu: the module is pure
+// and owns the shape, the store owns persistence.
+const { DEFAULT_OPTIONS, validateOptions } = require('./wordlist-options');
 const { backupFile } = require('./store-backup');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -622,6 +625,13 @@ const REGISTRY = {
   faq: {
     list: { kind: 'faq', tokens: [], default: DEFAULT_FAQ },
   },
+  // The menu of seed pools a BUYER may choose between, and what each is called in
+  // front of her. Shape + safety rules live in server/wordlist-options.js (wired
+  // in via kind:'wlopts' below); that the pool still EXISTS is checked by the
+  // route, which is the only layer that can see the volume.
+  wordlists: {
+    buyer_options: { kind: 'wlopts', tokens: [], default: DEFAULT_OPTIONS },
+  },
 };
 
 // --- small object helpers -----------------------------------------------------
@@ -882,6 +892,11 @@ function validateValue(section, key, value) {
     // pure engine (single source of truth), so a bad list can never be stored and
     // reach the scheduler.
     return validateReminders(value);
+  }
+  if (kind === 'wlopts') {
+    // The buyer-facing pool menu. Full shape validation — including the pool
+    // name's no-separator/no-traversal rule — lives in the pure module.
+    return validateOptions(value);
   }
   if (kind === 'faq') {
     // The owner-managed FAQ ARRAY. Full shape validation — including the

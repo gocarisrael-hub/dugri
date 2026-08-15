@@ -722,6 +722,33 @@
         opacity: 0.45;
         cursor: default;
       }
+      /* The pool chooser. Full-width rows rather than a <select>: there are only a
+         few, each is a promise about what her cards will say, and a native select
+         on a phone hides all but the chosen one behind a tap. */
+      .pool-opts {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .pool-opt {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        border: 1px solid var(--line);
+        padding: 9px 11px;
+        cursor: pointer;
+      }
+      .pool-opt.active {
+        border-color: var(--ink);
+      }
+      .pool-opt input {
+        accent-color: var(--ink);
+        flex: 0 0 auto;
+      }
+      .pool-opt.disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
       .sheet-note {
         color: var(--muted);
         font-size: 13px;
@@ -2228,6 +2255,21 @@
             <div class="pawn-err hidden" id="pawnErr" role="alert"></div>
           </div>
 
+          <!-- WHICH WORDS WE ADD. Her own words come first and always print; this
+               says what the REST of the deck is about, since a full deck is 412
+               and almost nobody writes that many. Hidden entirely until the owner
+               has built the menu in admin-wordlists — an empty chooser would
+               advertise a choice that does not exist. -->
+          <div class="sheet-fld hidden" id="poolFld" data-testid="pool-field">
+            <span class="fld" data-edit="collect-sheet-pool-label">איזה סגנון נשלים לכם?</span>
+            <small class="muted" data-edit="collect-sheet-pool-hint"
+              >המילים שלכם תמיד נכנסות ראשונות. את השאר, עד 412 מילים בחפיסה מלאה, נשלים מהסגנון
+              שתבחרו.</small
+            >
+            <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
+            <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
+          </div>
+
           <p class="sheet-note" id="sheetFixedNote" data-edit="collect-sheet-fixed">
             העיצוב והצבע נבחרו בהזמנה ואי אפשר לשנות אותם כאן.
           </p>
@@ -2574,6 +2616,69 @@
         previewTimer = setTimeout(renderPreview, 600);
       }
 
+      // ---- which words we add ------------------------------------------------
+      // The owner's menu, fetched once per page load. Empty (or a failed fetch)
+      // means no chooser at all: the deck then fills the way it always has, by
+      // her design, and she is not shown a control with nothing behind it.
+      let poolOptions = null;
+      function poolPick() {
+        return (state && state.wordlist_option) || '';
+      }
+      function renderPoolOpts() {
+        const fld = $('#poolFld');
+        const box = $('#poolOpts');
+        if (!fld || !box) return;
+        const opts = Array.isArray(poolOptions) ? poolOptions : [];
+        fld.classList.toggle('hidden', !opts.length);
+        if (!opts.length) return;
+        const open = state.status === 'open';
+        const picked = poolPick();
+        box.textContent = '';
+        // "Whatever suits my design" first, and selected when she has made no
+        // pick — the state every existing order is already in.
+        const rows = [{ id: '', label: 'שנבחר בשבילכם (לפי העיצוב)' }].concat(opts);
+        for (const o of rows) {
+          const label = document.createElement('label');
+          label.className =
+            'pool-opt' + (o.id === picked ? ' active' : '') + (open ? '' : ' disabled');
+          const radio = document.createElement('input');
+          radio.type = 'radio';
+          radio.name = 'poolOption';
+          radio.value = o.id;
+          radio.checked = o.id === picked;
+          radio.disabled = !open;
+          radio.setAttribute('data-testid', 'pool-opt-' + (o.id || 'default'));
+          radio.addEventListener('change', () => savePool(o.id));
+          const txt = document.createElement('span');
+          txt.textContent = o.label;
+          label.appendChild(radio);
+          label.appendChild(txt);
+          box.appendChild(label);
+        }
+      }
+      async function savePool(optionId) {
+        const err = $('#poolErr');
+        err.classList.add('hidden');
+        try {
+          const r = await api('/wordlist?k=' + encodeURIComponent(ownerToken), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ option_id: optionId }),
+          });
+          state.wordlist_option = r.option_id;
+          renderPoolOpts();
+        } catch (e) {
+          // Re-render from `state`, which is still the server's answer — so a
+          // refused pick visibly snaps back to what the order really has rather
+          // than leaving a radio ticked on a choice that did not take.
+          err.textContent =
+            (e.body && e.body.message) ||
+            (e.status === 409 ? 'האיסוף נסגר - אי אפשר לשנות עכשיו' : 'לא הצלחנו לשמור, נסו שוב');
+          err.classList.remove('hidden');
+          renderPoolOpts();
+        }
+      }
+
       async function openGameSheet() {
         const sheet = $('#gameSheet');
         const open = state.status === 'open';
@@ -2584,7 +2689,17 @@
         $('#sheetFixedNote').classList.toggle('hidden', !open);
         $('#sheetClosedNote').classList.toggle('hidden', open);
         $('#titleErr').classList.add('hidden');
+        $('#poolErr').classList.add('hidden');
         renderPawns();
+        if (poolOptions === null) {
+          try {
+            const r = await fetch('/api/wordlist-options').then((res) => res.json());
+            poolOptions = Array.isArray(r.options) ? r.options : [];
+          } catch (e) {
+            poolOptions = []; // no menu rather than a broken one
+          }
+        }
+        renderPoolOpts();
         sheet.classList.remove('hidden');
         $('#gameSheetClose').focus();
         // The render inputs are the collection's own, fetched once per page load.
