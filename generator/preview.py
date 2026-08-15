@@ -43,6 +43,44 @@ CARD_MAX_W = 700
 BOARD_MAX_W = 1000
 
 
+def pawn_card(theme, photos, workdir=None):
+    """The buyer's OWN photo card, composed exactly as the deck prints it.
+
+    The pawn card is a card like any other — it ships inside the deck, on the
+    front card's paper (``card_paper``) and cut to the deck's own frame
+    (``card_frame``) — so the only honest way to show a buyer what her four
+    photos will look like is to render the real thing. A strip of thumbnails
+    answers a different question ("which files did I send?") than the one she is
+    actually asking ("what will my guests hold?").
+
+    Composed through the SAME helper the deck uses (``render_page.photo_card_svg``
+    via ``build_single_card_svg(kind="photo")``) and topped up the same way
+    (``build.resolve_photos``: her photos first, squared, then the shipped Dugri
+    pawns for the slots she left empty), so the picture cannot drift from the
+    print.
+
+    Returns ``{"pawns": png_path}``. One Chrome page for the card, plus whatever
+    measuring its paper costs — no board, no back, no words.
+    """
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    own_workdir = workdir is None
+    if own_workdir:
+        workdir = tempfile.mkdtemp(prefix="dugri-pawns-")
+    os.makedirs(workdir, exist_ok=True)
+    try:
+        paths = buildmod.resolve_photos(theme, photos, workdir=workdir)
+        png = rp.render_single_card(
+            theme, config.photo_card_path(theme), [], [],
+            os.path.join(workdir, "pawns.png"), kind="photo", photos=paths)
+        _downscale(png, CARD_MAX_W)
+        return {"pawns": png}
+    except Exception:
+        if own_workdir:
+            shutil.rmtree(workdir, ignore_errors=True)
+        raise
+
+
 def _recipe(cfg):
     return config.load_recipe(cfg["recipe"])
 
@@ -446,6 +484,15 @@ def main():
                     help="path to a JSON file of UNSAVED calibration knobs "
                          "(title_style/board/back/word_size) to render with, so an "
                          "uncalibrated template can be previewed before saving")
+    ap.add_argument("--pawn-card", action="store_true",
+                    help="render ONLY the buyer's photo (pawn) card, from the "
+                         "--photo files, and print {\"pawns\": path}. Nothing "
+                         "else is rendered: no front, no back, no board")
+    ap.add_argument("--photo", action="append", default=[], metavar="FILE",
+                    help="one of the buyer's pawn photos, in order (repeatable, "
+                         "up to the four the card holds). Short lists are topped "
+                         "up from the shipped Dugri pawns, exactly as the deck "
+                         "does. Only read with --pawn-card")
     ap.add_argument("--no-board", action="store_true",
                     help="skip the game board entirely (card + back only). The "
                          "board is the most expensive image in a preview, so a "
@@ -456,6 +503,13 @@ def main():
     if args.calibration:
         with open(args.calibration, encoding="utf-8") as f:
             calibration = json.load(f)
+
+    if args.pawn_card:
+        # The photo card alone. It carries no title and no words, so none of the
+        # title arguments apply to it — passing them would only invite the
+        # question of why they change nothing.
+        print(json.dumps(pawn_card(args.theme, args.photo, workdir=args.out_dir)))
+        return
 
     imgs = preview(
         args.theme, args.name, _parse_fields(args.field),

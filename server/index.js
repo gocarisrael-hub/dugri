@@ -547,6 +547,74 @@ function runPreview({
   });
 }
 
+// Spawn ONE preview.py run for the buyer's PHOTO CARD and resolve it as a PNG
+// data URL. The pawn card is a card like any other — it prints on the front
+// card's paper, cut to the deck's frame — so the only honest way to show her
+// what her photos will look like is to render the real thing; the generator
+// composes it through the same helper the deck does. Nothing else is rendered:
+// no front, no back, no board.
+function runPawnCard({ theme, photos }) {
+  return new Promise((resolve, reject) => {
+    let outDir;
+    try {
+      outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-pawns-'));
+    } catch (e) {
+      return reject(e);
+    }
+    const cleanup = () => {
+      try {
+        fs.rmSync(outDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    };
+    // The name argument is required by the CLI and unused by this mode: the
+    // photo card carries no title.
+    const args = [PREVIEW_SCRIPT, theme, '-', outDir, '--pawn-card'];
+    for (const file of photos || []) args.push('--photo', file);
+    const child = spawnGenerator(args);
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGenerator(child);
+    }, PREVIEW_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      cleanup();
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        cleanup();
+        return reject(new Error('pawn card render timed out'));
+      }
+      if (code !== 0) {
+        cleanup();
+        return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
+      }
+      try {
+        const produced = JSON.parse(stdout.trim().split('\n').pop() || '{}');
+        const file = produced.pawns;
+        if (!file || !fs.existsSync(file)) {
+          cleanup();
+          return reject(new Error('pawn card render produced no image'));
+        }
+        const url = 'data:image/png;base64,' + fs.readFileSync(file).toString('base64');
+        cleanup();
+        resolve({ card: url });
+      } catch (e) {
+        cleanup();
+        reject(e);
+      }
+    });
+  });
+}
+
 function publicView(c, { owner = false } = {}) {
   const words = db.listWords(c.id);
   const order = c.order;
@@ -1658,6 +1726,42 @@ app.put('/api/collections/:id/pawns', express.json({ limit: '16kb' }), (req, res
   // bad token, on purpose: both are "that is not yours to edit".
   if (imgs == null) return res.status(403).json({ error: 'forbidden' });
   res.json({ ok: true, pawn_images: imgs });
+});
+
+// HER PHOTO CARD, RENDERED — the card her four photos actually become.
+//
+// The collection page used to show the photos as a strip of thumbnails, which
+// answers "which files did I send?" when what she is deciding is "what will my
+// guests hold?". The pawn card ships inside her deck: it prints on the front
+// card's paper, cut to the deck's frame, with the photos in its four slots and
+// the shipped Dugri pawns filling any she left empty. So this renders the real
+// thing, through the generator path the deck itself uses.
+//
+// OWNER ONLY (owner_token), because the photos are.
+//
+// Cached on (theme + the exact photo files), so returning to the tab is free and
+// yet a photo added or removed is a different key and re-renders at once — no
+// staleness to reason about. Shares the preview LRU: this is a preview, and the
+// two together should be bounded once rather than twice.
+app.get('/api/collections/:id/pawn-card', async (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  const theme = c.theme || '';
+  if (!validate.getTheme(theme)) return res.status(400).json({ error: 'unknown theme' });
+  const photos = pawnPhotoFiles(c);
+  const cacheKey = 'pawn-card:' + theme + ':' + photos.join('|');
+  const cached = previewCache.get(cacheKey);
+  if (cached) return res.json(cached);
+  try {
+    const out = await runPawnCard({ theme, photos });
+    previewCache.set(cacheKey, out);
+    res.json(out);
+  } catch (e) {
+    // A render that fails must not read as "you have no photos": the page keeps
+    // the strip either way, and says the picture is what is missing.
+    console.error('pawn card render failed:', (e && e.message) || e);
+    res.status(502).json({ error: 'pawn card render failed' });
+  }
 });
 
 // Which buyer-facing option a stored pool corresponds to, or null. The order
