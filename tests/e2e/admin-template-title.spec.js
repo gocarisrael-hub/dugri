@@ -388,7 +388,15 @@ test.describe('admin templates — the onboarding form', () => {
     await page.goto(`/admin-templates.html?key=${KEY}`);
     await page.fill('#form input[name="slug"]', 'titleless-shell');
     await page.fill('#form input[name="display_he"]', 'בלי שם');
+    // The composed title lives behind a disclosure now — it is legacy, only ever
+    // reached by orders placed before the buyer started typing her own title —
+    // so a test that sets one has to open it, the way the owner would.
+    await page.locator('#form details.legacy-title > summary').click();
     await page.fill('#form textarea[name="title_text"]', "'s Birthday");
+    // A composed title needs a name_form beside it — it decides how {NAME} is
+    // cast. The select defaults to "—" now, because a template without a title
+    // has no name to cast.
+    await page.selectOption('#form select[name="name_form"]', 'hebrew');
     await page.click('#createShell');
     await expect.poll(() => posts.length).toBe(2);
     expect(posts[1].allow_titleless).toBe(true);

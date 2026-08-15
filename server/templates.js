@@ -932,10 +932,20 @@ function normalizeMetadata({ root, fields }) {
   }
   const displayHe = String((fields && fields.display_he) || '').trim();
   if (!displayHe) return { error: 'display_he (Hebrew name) is required' };
+  // A TITLE TEMPLATE IS OPTIONAL NOW. It existed to compose a title out of the
+  // honoree's name, their gender and a per-theme extra field; the buyer types the
+  // title and nothing else, so a template registered today has nothing to
+  // compose and declares none. Themes that predate the change keep theirs and
+  // keep rendering it — that is what makes the orders placed before it print
+  // exactly as they did.
   const titleText = String((fields && fields.title_text) || '').trim();
-  if (!titleText) return { error: 'title_text is required' };
+  // name_form casts {NAME} into the design's script. With no {NAME} to cast it
+  // is meaningless, so it is required only alongside a title template.
   const nameForm = String((fields && fields.name_form) || '').trim();
-  if (!NAME_FORMS.includes(nameForm)) {
+  if (titleText && !NAME_FORMS.includes(nameForm)) {
+    return { error: 'name_form must be one of: ' + NAME_FORMS.join(', ') };
+  }
+  if (nameForm && !NAME_FORMS.includes(nameForm)) {
     return { error: 'name_form must be one of: ' + NAME_FORMS.join(', ') };
   }
   const language =
@@ -954,11 +964,13 @@ function normalizeMetadata({ root, fields }) {
   // here is what stops the broken template from being created in the first place;
   // `allow_titleless` is the explicit confirmation for the legitimate case of a
   // deck whose artwork carries no name at all.
-  const titleCheck = validateTitle({
-    titleText,
-    extraFields,
-    allowNoName: isTruthyFlag(fields && fields.allow_titleless),
-  });
+  const titleCheck = titleText
+    ? validateTitle({
+        titleText,
+        extraFields,
+        allowNoName: isTruthyFlag(fields && fields.allow_titleless),
+      })
+    : { title_text: '', title_lines: [] };
   if (titleCheck.error) {
     return { error: titleCheck.error, ...(titleCheck.titleless ? { titleless: true } : {}) };
   }
@@ -2942,7 +2954,26 @@ function updateTemplateSettings({ root, key, patch }) {
     'extra_fields' in changed &&
     (changed.extra_fields.length !== (entry.extra_fields || []).length ||
       changed.extra_fields.some((f, i) => f !== (entry.extra_fields || [])[i]));
-  if (titleInPatch || extraFieldsChanged) {
+  // CLEARING the title is a legitimate edit now, on an old template as much as a
+  // new one: "i want also the old templates to be with title only from now on.
+  // but also keep backward compatibility". Every order placed since the buyer
+  // started typing her own title carries one, and a carried title replaces the
+  // composed one everywhere — so a template's own title only ever reaches the
+  // page for an order from BEFORE that. Dropping it is how the owner says "this
+  // design has no title of its own any more".
+  //
+  // Backward compatibility is what makes this a choice rather than a default: an
+  // order that predates the change and has no title of its own prints the
+  // composed one, and after this edit it would print none. So the template keeps
+  // its title until the owner clears it deliberately — this only stops REFUSING
+  // the clear.
+  const clearingTitle =
+    titleInPatch && !titleLinesFrom('title_lines' in p ? p.title_lines : p.title_text).length;
+  if (clearingTitle) {
+    changed.title_text = '';
+    changed.title_lines = [];
+  }
+  if (!clearingTitle && (titleInPatch || extraFieldsChanged)) {
     const v = validateTitle({
       titleText: p.title_text,
       titleLines: 'title_lines' in p ? p.title_lines : titleInPatch ? undefined : entry.title_lines,

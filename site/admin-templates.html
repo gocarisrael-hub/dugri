@@ -774,40 +774,57 @@
               <input type="text" name="display_he" required placeholder="דוגרי בת מצווה" />
             </label>
           </div>
-          <!-- A TEXTAREA, not a text input: the hint has always said "a new line is
-               another title line" (that is exactly how title_lines is derived) but a
-               single-line input made a multi-line title impossible to type. -->
-          <label
-            >טקסט כותרת (title_text)
-            <span class="hint"
-              >חובה <code>{NAME}</code> כדי שהשם יודפס. אפשר גם שדות שהתבנית אוספת
-              (<code>{AGE}</code>, <code>{YEARS}</code>, <code>{NAME1}</code>, <code>{NAME2}</code>)
-              — כל אחד מהם חייב להופיע גם ב-extra_fields. שורה חדשה = שורת כותרת נוספת.</span
-            >
-            <textarea name="title_text" rows="2" required placeholder="{NAME}'S B-DAY"></textarea>
-          </label>
-          <div class="row">
+          <!-- THE TITLE TEMPLATE IS OPTIONAL, and for a new template it should
+               simply be left empty. It exists to COMPOSE a title out of the
+               honoree's name, their gender and a per-theme extra field, and the
+               buyer types the title herself now — so a template registered today
+               has nothing to compose. The three fields below are kept because the
+               designs that predate the change still carry them and still render
+               them, which is what keeps orders placed before it printing exactly
+               as they did. -->
+          <details class="legacy-title">
+            <summary>כותרת אוטומטית (לא נדרש — הלקוח/ה כותב/ת את הכותרת)</summary>
+            <p class="hint">
+              פעם התבנית הרכיבה את הכותרת מהשם, מהמגדר ומשדה כמו גיל. היום הלקוח/ה כותב/ת את הכותרת
+              בעצמה והיא זו שמודפסת, ולכן אפשר להשאיר את כל השדות כאן ריקים. הם נשמרים כדי שעיצובים
+              ותיקים והזמנות שנוצרו לפני השינוי ימשיכו להיראות בדיוק אותו דבר.
+            </p>
+            <label
+              >טקסט כותרת (title_text)
+              <span class="hint"
+                >אם ממלאים — חובה <code>{NAME}</code>. אפשר גם שדות שהתבנית אוספת
+                (<code>{AGE}</code>, <code>{YEARS}</code>, <code>{NAME1}</code>,
+                <code>{NAME2}</code>) — כל אחד מהם חייב להופיע גם ב-extra_fields. שורה חדשה = שורת
+                כותרת נוספת.</span
+              >
+              <textarea name="title_text" rows="2" placeholder="{NAME}'S B-DAY"></textarea>
+            </label>
             <label
               >צורת שם (name_form)
-              <select name="name_form" required>
+              <span class="hint">איך {NAME} נכתב. רלוונטי רק אם יש טקסט כותרת.</span>
+              <select name="name_form">
+                <option value="">—</option>
                 <option value="hebrew">hebrew (עברית)</option>
                 <option value="english">english (Title Case)</option>
                 <option value="english-caps">english-caps (UPPER)</option>
               </select>
             </label>
             <label
+              >שדות נוספים (extra_fields)
+              <span class="hint"
+                >מופרדים בפסיק, למשל <code>AGE</code> או <code>YEARS,NAME1,NAME2</code>. נאספים
+                מהלקוח/ה רק בהזמנות שנוצרו לפני שהכותרת החליפה את השם.</span
+              >
+              <input type="text" name="extra_fields" dir="ltr" placeholder="AGE" />
+            </label>
+          </details>
+          <div class="row">
+            <label
               >שפה (language)
-              <span class="hint">אופציונלי — ברירת מחדל לפי צורת השם.</span>
+              <span class="hint">אופציונלי — ברירת מחדל אנגלית.</span>
               <input type="text" name="language" dir="ltr" placeholder="english" />
             </label>
           </div>
-          <label
-            >שדות נוספים (extra_fields)
-            <span class="hint"
-              >מופרדים בפסיק, למשל <code>AGE</code> או <code>YEARS,NAME1,NAME2</code></span
-            >
-            <input type="text" name="extra_fields" dir="ltr" placeholder="AGE" />
-          </label>
           <label
             >נראות (visibility)
             <span class="hint"
@@ -1182,8 +1199,8 @@
           // Omitted (disabled) on the sheet layout, which has no fronts to narrow.
           card_fronts: fd.get('card_fronts') || 'all',
         };
-        if (!payload.slug || !payload.display_he || !payload.title_text) {
-          show('err', 'מלאו slug, שם (display_he) וטקסט כותרת (title_text) כדי ליצור תבנית ריקה.');
+        if (!payload.slug || !payload.display_he) {
+          show('err', 'מלאו slug ושם (display_he) כדי ליצור תבנית ריקה.');
           return;
         }
         createShellBtn.disabled = true;
@@ -2010,8 +2027,20 @@
         const box = document.createElement('div');
         box.className = 'tpl-title-ed';
         const head = document.createElement('b');
-        head.textContent = 'כותרת הקלף (title_lines) — שורה לכל שורת כותרת';
+        head.textContent = 'כותרת אוטומטית (title_lines) — רק להזמנות ישנות';
         box.append(head);
+        // WHY THIS IS NOT THE TITLE ANY MORE. The buyer types her own, and a typed
+        // title replaces this one everywhere it renders — so these lines only ever
+        // reach a card for an order placed BEFORE she started typing one. Leaving
+        // the box unexplained would read as "this is what the design prints",
+        // which is exactly wrong on a design that has shipped for months.
+        const why = document.createElement('div');
+        why.className = 'hint';
+        why.textContent =
+          'הלקוח/ה כותב/ת את הכותרת, והיא זו שמודפסת. השורות כאן משמשות רק הזמנות שנוצרו לפני ' +
+          'השינוי ואין להן כותרת משלהן. אפשר למחוק את כל השורות — ואז לעיצוב הזה אין כותרת ' +
+          'משלו, ואותן הזמנות ישנות יודפסו בלי כותרת.';
+        box.append(why);
 
         const rows = document.createElement('div');
         rows.className = 'title-lines';

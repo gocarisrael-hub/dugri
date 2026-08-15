@@ -482,7 +482,15 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     // is added: register the shell, then upload each asset one at a time.
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'ריק E2E');
+    // The composed title lives behind a disclosure now — it is legacy, only ever
+    // reached by orders placed before the buyer started typing her own title —
+    // so a test that sets one has to open it, the way the owner would.
+    await page.locator('#form details.legacy-title > summary').click();
     await page.fill('#form textarea[name="title_text"]', '{NAME}');
+    // A composed title needs a name_form beside it — it decides how {NAME} is
+    // cast. The select defaults to "—" now, because a template without a title
+    // has no name to cast.
+    await page.selectOption('#form select[name="name_form"]', 'hebrew');
     // The form defaults to the single-card layout; this test covers the LEGACY
     // sheet path (fronts/backs/board), so it picks that explicitly.
     await page.selectOption('#form select[name="card_structure"]', 'sheet');
@@ -532,7 +540,15 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     // Register an uncalibrated shell.
     await page.fill('#form input[name="slug"]', slug);
     await page.fill('#form input[name="display_he"]', 'כיול E2E');
+    // The composed title lives behind a disclosure now — it is legacy, only ever
+    // reached by orders placed before the buyer started typing her own title —
+    // so a test that sets one has to open it, the way the owner would.
+    await page.locator('#form details.legacy-title > summary').click();
     await page.fill('#form textarea[name="title_text"]', '{NAME}');
+    // A composed title needs a name_form beside it — it decides how {NAME} is
+    // cast. The select defaults to "—" now, because a template without a title
+    // has no name to cast.
+    await page.selectOption('#form select[name="name_form"]', 'hebrew');
     // LEGACY sheet layout — this test is the backward-compatibility guarantee for
     // the calibration that shipped before single cards existed.
     await page.selectOption('#form select[name="card_structure"]', 'sheet');

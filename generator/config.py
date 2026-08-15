@@ -1258,6 +1258,15 @@ def title_lines(cfg, name, extra_fields_dict=None, custom_title=None, gender=Non
         # {NAME}/{AGE} are still not substituted there and its other braces are
         # left exactly as typed.
         return [resolve_gender_markers(ln, gender) for ln in custom]
+    # NO TEMPLATE AT ALL is a normal answer now, not a broken theme. The buyer
+    # types the title (there is no name and no gender to compose one from), so a
+    # template uploaded since that change carries no `title_lines` — and a deck
+    # whose order somehow reaches here without a title of its own simply prints
+    # none, which is the only honest thing left to draw. Themes that predate the
+    # change still carry their template and still render it, which is what keeps
+    # the orders placed before it printing exactly as they did.
+    if not cfg.get("title_lines"):
+        return []
     extra = dict(extra_fields_dict or {})
     name_form = cfg.get("name_form")
     values = {"NAME": _form_name(name, name_form) if name is not None else ""}

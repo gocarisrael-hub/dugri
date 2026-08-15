@@ -1356,3 +1356,53 @@ def test_a_substituted_value_is_never_re_read_as_a_marker():
     # ...and a value carrying braces is still treated as the unfillable
     # placeholder it looks like (unchanged), not as a marker to resolve.
     assert config.title_lines(cfg, "{a|b}", {}, gender="male") == [""]
+
+
+def test_a_theme_with_no_title_template_prints_no_title():
+    # A template registered since the buyer started typing her own title carries
+    # no `title_lines` at all — there is nothing for it to compose, because there
+    # is no name and no gender to compose from. That must be an empty title, not
+    # a KeyError that takes the whole render down.
+    cfg = dict(config.theme("bachelorette"))
+    cfg.pop("title_lines", None)
+    assert config.title_lines(cfg, "Shira") == []
+    assert config.title_lines(cfg, "Shira", {"AGE": "40"}) == []
+    # …and the buyer's own title still prints, which is the only path that
+    # matters for such a theme.
+    assert config.title_lines(cfg, "Shira", custom_title="ליאת חוגגת 40") == ["ליאת חוגגת 40"]
+
+
+def test_a_theme_that_still_has_a_template_still_composes_it():
+    # The other half of the same promise: designs that predate the change keep
+    # their template, because the orders placed before it have no title of their
+    # own and print the composed one.
+    cfg = config.theme("bachelorette")
+    assert config.title_lines(cfg, "Shira") == ["Shira's", "Bachelorette"]
+
+
+def test_an_old_template_prints_the_buyers_title_not_its_own():
+    # "i want also the old templates to be with title only from now on."
+    #
+    # The designs that have shipped for months carry a title template — some of
+    # them gendered and hungry for an extra field ("{NAME} {m:בן|f:בת} {AGE}").
+    # A buyer's own title replaces ALL of it: the name is not substituted, the
+    # extra field is not consulted, and the marker is not resolved from a gender
+    # nobody collects any more.
+    cfg = config.theme("birthday-boys-basketball")
+    assert "{NAME}" in "\n".join(cfg["title_lines"])  # the template really is there
+    assert config.title_lines(
+        cfg, "דני", {"AGE": "30"}, custom_title="החגיגה של דני"
+    ) == ["החגיגה של דני"]
+    # …including its line breaks, which are the buyer's and not the template's.
+    assert config.title_lines(
+        cfg, "דני", {"AGE": "30"}, custom_title="החגיגה\nשל דני"
+    ) == ["החגיגה", "של דני"]
+
+
+def test_an_order_from_before_still_prints_the_composed_title():
+    # The other half — "but also keep backward compatibility". An order placed
+    # before the change carries no title of its own, and its deck must still print
+    # exactly what it printed then, gendered marker and extra field included.
+    cfg = config.theme("birthday-boys-basketball")
+    assert config.title_lines(cfg, "דני", {"AGE": "30"}, gender="male") == ["דני בן 30"]
+    assert config.title_lines(cfg, "שירה", {"AGE": "30"}, gender="female") == ["שירה בת 30"]
