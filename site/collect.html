@@ -597,6 +597,48 @@
       /* THE SHEET. Full-screen on a phone (it holds a card-shaped picture, and a
          picture that has to compete with a keyboard needs the room), centred and
          bounded on a desktop. */
+      .close-ask-card {
+        max-width: 420px;
+        height: auto;
+        max-height: 92%;
+        border-width: 2px;
+      }
+      .close-ask-body {
+        padding: 26px 22px 18px;
+      }
+      .close-ask-title {
+        margin: 0 0 10px;
+        font-size: 24px;
+        line-height: 1.25;
+        font-weight: 600;
+      }
+      .close-ask-lead {
+        margin: 0 0 8px;
+        font-size: 17px;
+      }
+      .close-ask-list {
+        margin: 0 0 14px;
+        padding-inline-start: 20px;
+        font-size: 17px;
+        line-height: 1.6;
+      }
+      .close-ask-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .close-ask-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 0 22px 22px;
+      }
+      .close-ask-actions button {
+        width: 100%;
+        padding: 14px 12px;
+        font-size: 17px;
+      }
+
       .game-sheet {
         position: fixed;
         inset: 0;
@@ -2194,6 +2236,48 @@
          WYSIWYG. Design and colour are deliberately absent: they were chosen at
          order time and one line says so, rather than leaving her to hunt for a
          control that is not there. -->
+    <!-- CLOSING IS THE POINT OF NO RETURN, so it is asked as a real dialog and not
+         as the browser's one-line confirm. Everything the buyer can still change —
+         her words, her title, her photos — stops being changeable the moment this
+         is confirmed, because the deck goes to the print shop. The native confirm
+         said only "no more words", in system type nobody reads, and it could not
+         say the rest. -->
+    <div
+      id="closeAsk"
+      class="game-sheet hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="closeAskTitle"
+      data-testid="close-ask"
+    >
+      <div class="game-sheet-card close-ask-card">
+        <div class="close-ask-body">
+          <p class="close-ask-title" id="closeAskTitle" data-edit="collect-close-ask-title">
+            סוגרים את האיסוף ושולחים לדפוס
+          </p>
+          <p class="close-ask-lead" data-edit="collect-close-ask-lead">
+            מרגע זה כבר אי אפשר לשנות שום דבר במשחק:
+          </p>
+          <ul class="close-ask-list">
+            <li data-edit="collect-close-ask-words">להוסיף או למחוק מילים</li>
+            <li data-edit="collect-close-ask-deck-title">לשנות את הכותרת שמודפסת על הקלפים</li>
+            <li data-edit="collect-close-ask-photos">להחליף את התמונות של הפיונים</li>
+          </ul>
+          <p class="close-ask-note" data-edit="collect-close-ask-note">
+            כדאי לעבור על הכול פעם אחרונה. אם משהו חסר - אפשר לסגור מאוחר יותר.
+          </p>
+        </div>
+        <div class="close-ask-actions">
+          <button type="button" class="ghost" id="closeAskNo" data-testid="close-ask-no">
+            עוד לא, אני רוצה לבדוק
+          </button>
+          <button type="button" class="danger" id="closeAskYes" data-testid="close-ask-yes">
+            סוגרים ושולחים לדפוס
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div
       id="gameSheet"
       class="game-sheet hidden"
@@ -2235,7 +2319,7 @@
                  from the admin. -->
             <textarea id="titleInput" rows="2" maxlength="63" data-testid="title-input"></textarea>
             <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
-              >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י · השאירו ריק לכותרת ברירת המחדל</small
+              >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י</small
             >
             <div class="sheet-err hidden" id="titleErr" role="alert" data-testid="title-err"></div>
             <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">
@@ -2267,9 +2351,6 @@
             <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
           </div>
 
-          <p class="sheet-note" id="sheetFixedNote" data-edit="collect-sheet-fixed">
-            העיצוב והצבע נבחרו בהזמנה ואי אפשר לשנות אותם כאן.
-          </p>
           <p class="sheet-note hidden" id="sheetClosedNote" data-edit="collect-sheet-closed">
             האיסוף נסגר והמשחק בהפקה - אי אפשר לשנות עכשיו.
           </p>
@@ -2683,7 +2764,6 @@
         $('#titleInput').value = savedTitle();
         $('#titleInput').disabled = !open;
         $('#titleSaveBtn').classList.toggle('hidden', !open);
-        $('#sheetFixedNote').classList.toggle('hidden', !open);
         $('#sheetClosedNote').classList.toggle('hidden', open);
         $('#titleErr').classList.add('hidden');
         $('#poolErr').classList.add('hidden');
@@ -3678,8 +3758,33 @@
         $('#copyOwner').onclick = () => copy(location.href, $('#copyOwner'), 'owner');
         // סיום: closes the collection. Shared by the pre-pay close card and the
         // post-payment "start production" CTA — closing is what starts production.
+        // The dialog above, as a promise: resolves true only on the destructive
+        // button. Escape and the backdrop mean "not yet", which is the answer a
+        // dismissed dialog should always give when the action cannot be undone.
+        function askToClose() {
+          const box = $('#closeAsk');
+          return new Promise((resolve) => {
+            const done = (answer) => {
+              box.classList.add('hidden');
+              document.removeEventListener('keydown', onKey);
+              resolve(answer);
+            };
+            const onKey = (e) => {
+              if (e.key === 'Escape') done(false);
+            };
+            box.classList.remove('hidden');
+            $('#closeAskYes').onclick = () => done(true);
+            $('#closeAskNo').onclick = () => done(false);
+            box.onclick = (e) => {
+              if (e.target === box) done(false);
+            };
+            document.addEventListener('keydown', onKey);
+            $('#closeAskNo').focus();
+          });
+        }
+
         async function closeCollection() {
-          if (!confirm('לסגור את האיסוף? אחרי הסגירה לא ניתן להוסיף עוד מילים.')) return;
+          if (!(await askToClose())) return;
           let closed = false;
           await api('/close', {
             method: 'POST',

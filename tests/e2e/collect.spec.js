@@ -116,8 +116,9 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   await expect(page.locator('#toast')).toContainText('2 מילים');
 
   // owner closes the collection
-  page.once('dialog', (d) => d.accept());
+  // Closing is asked as a real dialog now, not the browser's confirm.
   await page.click('#closeBtn');
+  await page.getByTestId('close-ask-yes').click();
   await expect(page.locator('#banner')).toBeVisible();
   await expect(page.locator('#addCard')).toBeHidden();
 });
@@ -1061,9 +1062,10 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
   await expect(page.locator('#paidCard')).toContainText('התשלום התקבל');
   await expect(page.locator('#paidCloseBtn')).toBeVisible();
 
-  // The primary CTA closes the collection (= starts production).
-  page.once('dialog', (d) => d.accept());
+  // The primary CTA closes the collection (= starts production), through the
+  // same dialog the pre-payment close uses.
   await page.locator('#paidCloseBtn').click();
+  await page.getByTestId('close-ask-yes').click();
   await expect(page.locator('#banner')).toBeVisible();
   await expect(page.locator('#addCard')).toBeHidden();
 });
@@ -1715,8 +1717,9 @@ test('contributor (no owner key) sees words but cannot add after close', async (
   await page.fill('#wordInput', 'בדיחה פנימית');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
-  page.once('dialog', (d) => d.accept());
+  // Closing is asked as a real dialog now, not the browser's confirm.
   await page.click('#closeBtn');
+  await page.getByTestId('close-ask-yes').click();
 
   const friend = await context.newPage();
   await friend.goto(friendsUrl);
@@ -2220,4 +2223,48 @@ test('the shipping tick lays out like an option: price on its own end, notes bel
 
   // The note is on its OWN line, below them both.
   expect(nb.y).toBeGreaterThan(lb.y + lb.height - 2);
+});
+
+// CLOSING IS THE POINT OF NO RETURN — the words, the title and the photos all
+// stop being changeable, because the deck goes to the print shop. The browser's
+// one-line confirm said only "no more words", in system type nobody reads, and
+// it could not have said the rest.
+test('closing asks in a real dialog that names everything it freezes', async ({ page }) => {
+  await createCollection(page, 'Shira');
+  await page.fill('#wordInput', 'בדיחה פנימית');
+  await page.click('#addBtn');
+
+  await page.click('#closeBtn');
+  const ask = page.getByTestId('close-ask');
+  await expect(ask).toBeVisible();
+  // All three, by name: this is the whole reason it is not a confirm().
+  await expect(ask).toContainText('מילים');
+  await expect(ask).toContainText('כותרת');
+  await expect(ask).toContainText('תמונות');
+  await expect(ask).toContainText('לדפוס');
+
+  // Bigger than the body text it sits in — it is a warning, not a caption.
+  const size = await ask
+    .locator('.close-ask-title')
+    .evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+  expect(size).toBeGreaterThanOrEqual(22);
+});
+
+test('a dismissed close dialog leaves the collection open', async ({ page }) => {
+  // Escape, the backdrop and "not yet" all mean the same thing when the action
+  // cannot be undone.
+  await createCollection(page, 'Shira');
+  await page.fill('#wordInput', 'בדיחה פנימית');
+  await page.click('#addBtn');
+
+  await page.click('#closeBtn');
+  await page.getByTestId('close-ask-no').click();
+  await expect(page.getByTestId('close-ask')).toBeHidden();
+  await expect(page.locator('#addCard')).toBeVisible();
+
+  await page.click('#closeBtn');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('close-ask')).toBeHidden();
+  await expect(page.locator('#addCard')).toBeVisible();
+  await expect(page.locator('#banner')).toBeHidden();
 });
