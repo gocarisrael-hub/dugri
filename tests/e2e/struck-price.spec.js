@@ -167,6 +167,7 @@ test('no struck price in the checkout total carries a ₪', async ({ page }) => 
 
   await createCollection(page, 'Shira');
 
+  await page.getByTestId('tab-pay').click(); // the checkout is on the תשלום tab
   await page.locator('#payPanel summary').click();
   await page.fill('#couponInput', 'STRUCK50');
   await page.click('#couponApplyBtn');

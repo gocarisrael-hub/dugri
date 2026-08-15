@@ -70,6 +70,25 @@ async function withCardEnabled(page) {
   });
 }
 
+// THE CHECKOUT IS ON THE תשלום TAB (the four-tab collection page). A buyer gets
+// there by tapping the tab, or by pressing any pay button — the sticky bar, the
+// top card, the free-quota CTA — every one of which switches to it. A test has to
+// do the same: a panel on a tab that is not showing is display:none, and clicking
+// through that would be testing something no buyer can do.
+//
+// The tab strip is the OWNER's; a contributor's page has none, so the click is
+// conditional and this helper works on both.
+async function openPayPanel(page) {
+  const tab = page.getByTestId('tab-pay');
+  if (await tab.isVisible().catch(() => false)) await tab.click();
+  await openPayPanel(page);
+}
+
+async function showPayTab(page) {
+  const tab = page.getByTestId('tab-pay');
+  if (await tab.isVisible().catch(() => false)) await tab.click();
+}
+
 async function stubPricing(page, pricing) {
   const body = pricing || {
     store: { now: 79, was: 129 },
@@ -367,7 +386,7 @@ test('owner pay panel: select delivery → address fields appear + total 199', a
   // Owner sees the pay panel; it's collapsed by default — open it first.
   await expect(page.locator('#payPanel')).toBeVisible();
   await expect(page.locator('#payTotal')).toBeHidden();
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('#payTotal')).toHaveText('79');
   await expect(page.locator('#addressForm')).toBeHidden();
 
@@ -388,7 +407,7 @@ test('owner pay panel: delivery address uses a two-column layout, not stacked bo
   await stubPricing(page);
   await createCollection(page, 'Shira');
 
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await page.check('input[name="payVersion"][value="pickup"]');
   await page.check('#shipToggle');
   await expect(page.locator('#addressForm')).toBeVisible();
@@ -442,7 +461,7 @@ test('owner pay panel: all options disabled → paused notice, not a dead-end bu
   });
   await createCollection(page, 'Shira');
 
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   // The paused notice replaces the actionable area: options + pay button hidden.
   await expect(page.locator('#paySoldOutNote')).toBeVisible();
   await expect(page.locator('#payOpts')).toBeHidden();
@@ -483,7 +502,7 @@ test('owner pay panel: applyPricing preserves an option\'s struck "was" anchor w
     });
   });
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   // While pricing is still loading (applyPricing has NOT stamped the options yet),
   // inject a struck "was" anchor into the pdf option, as a discounted option would
@@ -514,9 +533,9 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   await expect(page.locator('#payOpts')).toBeHidden();
   await expect(page.locator('#payPanel summary')).toContainText('שלמו וקבלו את המשחק');
   // Click the summary → options reveal; click again → collapse.
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('#payOpts')).toBeVisible();
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('#payOpts')).toBeHidden();
 });
 
@@ -609,7 +628,7 @@ test('the top pay card follows a coupon discount', async ({ page }) => {
   // A pdf order starts at ₪79 — quoted at the top before anything is opened.
   await expect(page.getByTestId('pay-top-amount')).toHaveText('79 ₪');
 
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await page.fill('#couponInput', 'TEST25');
   await page.click('#couponApplyBtn');
 
@@ -686,7 +705,7 @@ test('card disabled: no dead pay CTA, neutral note instead, and no top nag', asy
   await createCollection(page, 'Shira');
   await expect(page.getByTestId('pay-bar')).toBeHidden();
   await expect(page.getByTestId('pay-top')).toBeHidden();
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('#cardPayBtn')).toBeHidden();
   await expect(page.locator('#bitPayLink')).toHaveCount(0);
   await expect(page.locator('#cardSoonNote')).toBeVisible();
@@ -775,7 +794,7 @@ test('each option price is rendered from the pricing endpoint', async ({ page })
   // Per-option prices now come from /api/pricing (not baked into the label HTML).
   await stubPricing(page);
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   // pdf is first + enabled in the stub → ₪79; pickup shows the stubbed ₪149.
   await expect(page.locator('#payPanel .opt-price').first()).toContainText('79 ₪');
   await expect(page.locator('#payPanel')).toContainText('149 ₪');
@@ -797,7 +816,7 @@ test('launch defaults: checkout offers ONLY self-pickup at ₪199', async ({ pag
     },
   });
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   const label = (v) => page.locator(`.pay-opt:has(input[value="${v}"])`);
   await expect(label('pickup')).toBeVisible();
@@ -829,7 +848,7 @@ test('an admin custom order LOCKS checkout to custom @599 — no client downgrad
   expect(res.ok()).toBeTruthy();
 
   await page.reload();
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   const label = (v) => page.locator(`.pay-opt:has(input[value="${v}"])`);
   // Only the custom option is shown, at its stored 599 — no cheaper option.
   await expect(label('custom')).toBeVisible();
@@ -851,7 +870,7 @@ test('pricing fetch failure disables pay and offers a refresh (never a guessed p
     route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
   );
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   await expect(page.locator('#priceLoadErr')).toBeVisible();
   await expect(page.locator('#priceLoadErr [data-role="retry"]')).toBeVisible();
@@ -897,7 +916,7 @@ test('pay stays disabled (no guessed total) until pricing RESOLVES, then enables
     });
   });
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   // Before pricing resolves: pay disabled, a "loading prices" note, no number.
   await expect(page.locator('#cardPayBtn')).toBeDisabled();
@@ -928,7 +947,7 @@ test('no version enabled → checkout shows "orders closed", no pay button, no t
     },
   });
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   await expect(page.locator('#priceLoadErr')).toBeVisible();
   await expect(page.locator('#priceLoadErr')).toContainText('סגור');
@@ -988,7 +1007,7 @@ test("a stored delivery address prefills the checkout form so the buyer isn't fo
   expect(switched.ok()).toBeTruthy();
 
   await page.reload();
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   // Re-tick shipping; the stored address is prefilled (no re-typing to pay).
   await page.locator('#shipToggle').check();
   await expect(page.locator('#addrStreet')).toHaveValue('הרצל 1');
@@ -1142,7 +1161,7 @@ test('owner applies a valid coupon → discounted total with the struck full pri
   await createCollection(page, 'Shira');
 
   // Open the (collapsed) pay panel — a pdf order starts at ₪79.
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('#payTotal')).toHaveText('79');
   await expect(page.locator('#payWas')).toBeHidden();
 
@@ -1175,7 +1194,7 @@ test('the struck full price sits to the LEFT of the discounted total (RTL)', asy
   await seedCoupon(page, 'TEST25', 25);
   await createCollection(page, 'Shira');
 
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await page.fill('#couponInput', 'TEST25');
   await page.click('#couponApplyBtn');
 
@@ -1195,7 +1214,7 @@ test('unknown coupon code shows a not-found message and leaves the total full', 
 }) => {
   await stubPricing(page);
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('#payTotal')).toHaveText('79');
 
   await page.fill('#couponInput', 'NOPE999');
@@ -1237,7 +1256,7 @@ test('free coupon: pay/init free:true skips the iframe and still confirms on the
 
   await createCollection(page, 'Shira');
   const collectUrl = new URL(page.url());
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('#cardPayBtn')).toBeVisible();
 
   // Attempt 1 → 429 → a stale red error is shown in the pay panel.
@@ -1283,7 +1302,7 @@ test('returning from the confirmation page waits for the paid state, not the che
   );
 
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await page.click('#cardPayBtn');
   await page.waitForURL(/pay-success\.html/);
 
@@ -1318,7 +1337,7 @@ test('pay/init coupon errors: 400 clears the coupon, 409 and 429 show their mess
   });
 
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   // Apply a real coupon (79 → 59), then pay/init rejects it → the coupon-invalid
   // message shows AND the coupon is cleared (total back to full, input freed).
@@ -1738,7 +1757,7 @@ test('delivery address is an inset sub-panel, not boxes pressed to the card edge
   await stubPricing(page);
   await createCollection(page, 'Shira');
 
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await page.check('input[name="payVersion"][value="pickup"]');
   await page.check('#shipToggle');
   await expect(page.locator('#addressForm')).toBeVisible();
@@ -1779,7 +1798,7 @@ test('the pay button reads as the primary CTA (large, heavy, full width)', async
   await enableCardButton(page);
   await stubPricing(page);
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   const btn = page.locator('#cardPayBtn');
   await expect(btn).toBeVisible();
@@ -1818,7 +1837,7 @@ test('a successful card payment lands on the confirmation page and back to the w
 
   await createCollection(page, 'Shira');
   const collectUrl = new URL(page.url());
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await page.click('#cardPayBtn');
 
   // pay-done.html (in the iframe) reports success → we leave for the page that
@@ -1867,7 +1886,7 @@ test('the confirmation page shows the order number, what was ordered and a way t
   });
   expect(placed.status()).toBe(200);
 
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await page.click('#cardPayBtn');
   await page.waitForURL(/pay-success\.html/);
 
@@ -2084,7 +2103,7 @@ test('shipping is a tick on the printed game, and it is what the server is told'
     },
   });
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   // Unticked: the printed game alone, no address asked for.
   await expect(page.locator('#payTotal')).toHaveText('199');
@@ -2151,7 +2170,7 @@ test('the shipping tick is offered on arrival, without touching a radio', async 
     await route.fallback(); // hand it to the stub registered above
   });
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
   await expect(page.locator('html')).toHaveAttribute('data-sale', 'on');
 
   // No click on any radio between here and the assertion — and a SHORT window,
@@ -2188,7 +2207,7 @@ test('the shipping tick lays out like an option: price on its own end, notes bel
     },
   });
   await createCollection(page, 'Shira');
-  await page.locator('#payPanel summary').click();
+  await openPayPanel(page);
 
   // Wait for pricing to RESOLVE before measuring: until it does, applyPricing
   // hides the whole option list, so the tick is legitimately not there yet.

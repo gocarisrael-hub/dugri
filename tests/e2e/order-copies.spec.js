@@ -58,6 +58,7 @@ async function createCollection(page, name) {
   await page.fill('#ownerPhone', '0521234567');
   await page.getByTestId('next-btn').click();
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
+  await page.getByTestId('tab-pay').click(); // the checkout is on the תשלום tab
   await page.locator('#payPanel summary').click();
 }
 
@@ -123,6 +124,7 @@ test('copies: the count reaches the server and survives a reload', async ({ page
 
   // A reload (and the 5s poll) must not reset the buyer's count to 1.
   await page.reload();
+  await page.getByTestId('tab-pay').click(); // the checkout is on the תשלום tab
   await page.locator('#payPanel summary').click();
   await expect(page.getByTestId('qty-val')).toHaveText('3');
   await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 3));
@@ -171,6 +173,7 @@ test('copies: a locked order shows its stored total, never total × copies', asy
   expect(made.ok()).toBeTruthy();
 
   await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await page.getByTestId('tab-pay').click(); // the checkout is on the תשלום tab
   await page.locator('#payPanel summary').click();
 
   // Whatever the locked total is, the page must show exactly it — not a figure

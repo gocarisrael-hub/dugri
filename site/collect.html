@@ -1661,8 +1661,9 @@
       </header>
 
       <!-- FOUR TABS, one job each — the owner's layout: "מילים · העיצוב · חיילי
-           המשחק · תשלום", with the payment reachable from all of them (the
-           sticky bar at the foot of this file never leaves).
+           המשחק · תשלום". The payment is on all of them AND has one of its own:
+           the sticky bar and the CTA card carry no tab and never leave, while
+           the תשלום tab holds the checkout itself.
            OWNER ONLY. A contributor arrives from a WhatsApp group to add a word;
            three of these four tabs are not hers, and a tab strip advertising them
            would be three dead ends. She sees the page exactly as she does today,
@@ -1762,7 +1763,7 @@
            that said "the payment is waiting below ⬇" — it pointed at the
            checkout instead of being it, and that is the mistake this replaces:
            the amount is stated here and the button opens the checkout itself. -->
-      <div class="pay-top owner-only hidden" data-panel="pay" id="payTop" data-testid="pay-top">
+      <div class="pay-top owner-only hidden" id="payTop" data-testid="pay-top">
         <div class="pay-top-head" data-edit="collect-pay-top-head">כאן משלמים 👇</div>
         <span class="pay-top-amt amt" id="payTopAmt" data-testid="pay-top-amount">-</span>
         <span class="pay-top-lbl" data-edit="collect-pay-top-label"
@@ -2031,7 +2032,7 @@
       </div>
 
       <!-- OWNER, paid only: replaces the pay panel — keep adding, then סיום -->
-      <div class="card paid-card owner-only hidden" data-panel="pay" id="paidCard">
+      <div class="card paid-card owner-only hidden" id="paidCard">
         <div class="paid-title" data-edit="collect-paid-title">התשלום התקבל ✓</div>
         <p class="paid-body" data-edit="collect-paid-body">
           עכשיו הכי חשוב: הוסיפו כמה שיותר מילים. כשתסיימו - לחצו על ‘סיום’, וזהו: אנחנו מתחילים
@@ -2059,7 +2060,7 @@
            blocks (top card, sticky bar, checkout panel), which are the only
            filled-black elements on the page — hence the outline here. -->
       <!-- owner / closing controls -->
-      <div class="card owner-only hidden" data-panel="pay" id="ownerControls">
+      <div class="card owner-only hidden" data-panel="words" id="ownerControls">
         <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
         <p class="muted" data-edit="collect-owner-hint">
           סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.
@@ -3953,6 +3954,12 @@
         // to the viewport instead — on a phone the open panel is taller than the
         // screen, and centering it pushes the version options off the top.
         const openPayPanel = (block = 'center') => {
+          // The checkout lives on the תשלום tab, so SHOW that tab first: every
+          // one of the callers below is a button that means "pay now", and a
+          // panel opened on a tab she is not looking at is a button that does
+          // nothing. The sticky bar is on every tab precisely so this can be
+          // pressed from anywhere.
+          showTab('pay');
           payPanel.open = true;
           payPanel.scrollIntoView({ behavior: 'smooth', block });
         };

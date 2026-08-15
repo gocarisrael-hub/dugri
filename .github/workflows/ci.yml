@@ -17,8 +17,12 @@ jobs:
     name: Format + Lint + Unit + E2E
     runs-on: ubuntu-latest
     # Bound worst-case cost: a hung E2E/webServer can otherwise burn the default
-    # 6-hour job cap. The whole suite finishes well under this.
-    timeout-minutes: 20
+    # 6-hour job cap. Not a target — a BACKSTOP. It was 20, and the suite grew
+    # into it: a run that finished test 900 of ~900 was cancelled one minute from
+    # the end and reported as a failure, twice, on a branch whose tests all pass.
+    # A cap that fires on healthy runs teaches everyone to re-run reds, which is
+    # exactly how a real one gets waved through.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
