@@ -212,3 +212,30 @@ describe('createCollection persists word_font', () => {
     expect(db.createCollection('y', { word_font: '' }).word_font).toBeNull();
   });
 });
+
+describe('the preview no longer warns a buyer about her own title', () => {
+  // The warning existed because the honoree's NAME was printed on the card,
+  // through the theme's title template — so a Hebrew name on an English design
+  // was something she had to know before paying. She types the whole title now,
+  // and the name the preview route still takes is only the order's LABEL (the
+  // title's first line), which is never printed. Telling her that text must be
+  // in English would be a warning about something the card does not show.
+  it('is silent when the order carries its own title', async () => {
+    // A HEBREW label on an English-name design — exactly what used to be
+    // flagged. The render itself is stubbed here; the WARNING is what this
+    // asserts, and it must be absent.
+    const r = await post('/api/preview', {
+      theme: 'trip comeback',
+      name: 'שירה',
+      custom_title: 'החגיגה של שירה',
+    });
+    expect(r.body.warning == null || r.body.warning === '').toBe(true);
+  });
+
+  it('still answers for an order with no title of its own', () => {
+    // Those orders print a title the theme composes from the name, so the check
+    // is still true for them — it just speaks to production now, not to a buyer.
+    const hebrew = { name_form: 'hebrew' };
+    expect(validate.checkNameLanguage('Shira', hebrew)).toMatch(/עברית/);
+  });
+});

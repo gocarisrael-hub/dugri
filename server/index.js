@@ -2177,8 +2177,19 @@ app.post('/api/preview', async (req, res) => {
     if (v.error) return res.status(400).json({ error: v.error });
     calibration = v.value;
   }
-  // Surfaced to the customer immediately (doesn't block rendering the preview).
-  const warning = validate.checkNameLanguage(name, themeConfig);
+  // THE NAME'S LANGUAGE IS NOT A WARNING ANY MORE. It was: the honoree's name
+  // was printed on the card through the theme's title template, so a Hebrew name
+  // on an English design was something the buyer had to know about before she
+  // paid. She types the whole title now, and the `name` this route still takes is
+  // only the order's label (the title's first line) — never printed. Telling her
+  // "שם החוגג/ת צריך להיות באנגלית" about text that does not appear on the card
+  // is worse than saying nothing.
+  //
+  // An order that predates the change carries no title of its own and still
+  // prints a composed one, so the check itself stays in validate.js and still
+  // gates PRODUCTION for those (validateOrderForProduction) — it just no longer
+  // speaks to a buyer whose title is her own.
+  const warning = customTitle ? null : validate.checkNameLanguage(name, themeConfig);
   const themeWordFont = themeConfig.word_font || null;
 
   // 1) CACHE lookup FIRST, keyed by the raw inputs (identical requests map to the
