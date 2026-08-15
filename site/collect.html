@@ -1743,6 +1743,21 @@
            printed card like any other, and what she needs to judge is how her
            photos sit inside it, not how four thumbnails look in a strip. -->
       <section class="card owner-only hidden" data-panel="pawns" id="pawnsPanel" hidden>
+        <!-- THE CARD THEY BECOME, not four thumbnails. The pawn card ships inside
+             her deck: it prints on the front card's paper, cut to the deck's own
+             frame, with her photos in its four slots and the shipped Dugri pawns
+             filling any she left empty. A strip answers "which files did I
+             send?"; this answers the question she is actually asking, which is
+             what her guests will be holding. Rendered by the generator through
+             the same path the deck uses (GET .../pawn-card). -->
+        <div class="prev-box" id="pawnPrevBox">
+          <img id="pawnPrevImg" alt="קלף החיילים שלכם" data-testid="pawn-card-preview" />
+          <span class="prev-busy" data-edit="collect-pawn-card-rendering">מעדכן…</span>
+          <span class="prev-fail hidden" id="pawnPrevFail" data-edit="collect-pawn-card-fail"
+            >לא הצלחנו להציג את הקלף כרגע</span
+          >
+        </div>
+
         <div class="sheet-fld">
           <span class="fld" data-edit="collect-sheet-photos-label">התמונות שלכם (עד 4)</span>
           <div class="pawn-strip" id="pawnStrip" data-testid="pawn-strip"></div>
@@ -2657,6 +2672,35 @@
           if (seq === previewSeq) box.classList.remove('busy');
         }
       }
+      // HER PAWN CARD, rendered by the server through the deck's own composition
+      // (GET .../pawn-card). Asked for when the photos tab is first opened and
+      // after every add or removal — never on the 5s poll, which would be a
+      // browser run on the server every five seconds for a picture that did not
+      // change. The server caches on the exact photo list, so a re-ask after a
+      // change re-renders and a re-ask after none is free.
+      let pawnCardSeq = 0;
+      async function renderPawnCard() {
+        const box = $('#pawnPrevBox');
+        const img = $('#pawnPrevImg');
+        const fail = $('#pawnPrevFail');
+        if (!box || !isOwner) return;
+        const seq = ++pawnCardSeq;
+        box.classList.add('busy');
+        fail.classList.add('hidden');
+        try {
+          const r = await api('/pawn-card?k=' + encodeURIComponent(ownerToken));
+          if (seq !== pawnCardSeq) return; // a newer render is already on its way
+          if (r && r.card) img.src = r.card;
+        } catch (e) {
+          if (seq !== pawnCardSeq) return;
+          // Keep whatever card is on screen — a stale picture of her deck beats an
+          // empty box — and say the PICTURE is what is missing, not the photos.
+          fail.classList.remove('hidden');
+        } finally {
+          if (seq === pawnCardSeq) box.classList.remove('busy');
+        }
+      }
+
       // Redraw a beat after she stops typing, never per keystroke: every render
       // spawns Chrome on the server.
       function schedulePreview() {
@@ -2749,6 +2793,16 @@
         renderPoolOpts();
       }
 
+      // The photo card is drawn once per page load, when she first opens the tab
+      // that shows it — it is a browser run on the server, and most owners come
+      // to this page to add words.
+      let pawnCardLoaded = false;
+      function loadPawnCard() {
+        if (pawnCardLoaded) return;
+        pawnCardLoaded = true;
+        renderPawnCard();
+      }
+
       // What the DESIGN tab needs, fetched once and only when she first asks for
       // it: the render inputs cost a round trip and the card itself costs a
       // Chrome run on the server, and most owners open this page to add words.
@@ -2831,7 +2885,8 @@
         // Nothing is redrawing while it is off screen: a preview she cannot see is
         // a Chrome run on the server for nobody.
         if (name !== 'design') clearTimeout(previewTimer);
-        if (name === 'design' || name === 'pawns') loadGameTabs();
+        if (name === 'design') loadGameTabs();
+        if (name === 'pawns') loadPawnCard();
       }
       (function wireTabs() {
         const tabs = document.getElementById('tabs');
@@ -2864,6 +2919,7 @@
           });
           state.pawn_images = r.pawn_images;
           renderPawns();
+          renderPawnCard();
         } catch (e) {
           showPawnErr('לא הצלחנו להסיר את התמונה, נסו שוב');
         }
@@ -2888,6 +2944,7 @@
           });
           state.pawn_images = r.pawn_images;
           renderPawns();
+          renderPawnCard();
         } catch (e) {
           showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
         }

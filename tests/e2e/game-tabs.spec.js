@@ -175,6 +175,49 @@ test('the pay bar stays on screen in every tab, and the pay tab holds the checko
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
+// THE PHOTOS ARE SHOWN AS THE CARD THEY BECOME. The pawn card ships inside her
+// deck — the front card's paper, the deck's own frame, her photos in its four
+// slots — so what she has to judge is how they sit inside it. A strip of
+// thumbnails answers a different question.
+//
+// The RENDER is the generator's (its own pytest); what this holds is that the
+// page asks for it at the right moments: when the tab is first opened, and again
+// after a photo changes — never on the 5s poll, which would be a browser run on
+// the server every five seconds for a picture that did not move.
+test('the photos tab shows the rendered card, and redraws it when a photo goes', async ({
+  page,
+}) => {
+  const { url, id, k } = await createCollection(page);
+  await attachPhotos(page, id, k, 2);
+  const asked = [];
+  await page.route('**/pawn-card**', (route) => {
+    asked.push(route.request().url());
+    return route.fulfill({ json: { card: PNG } });
+  });
+  await page.goto(url);
+
+  // Not on the words tab: the card costs a Chrome run on the server, and most
+  // owners open this page to add words.
+  await page.waitForTimeout(300);
+  expect(asked).toHaveLength(0);
+
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('pawn-card-preview')).toHaveAttribute('src', /^data:image\/png/);
+  await expect.poll(() => asked.length).toBe(1);
+
+  // Leaving and returning does not re-ask — the card cannot have changed.
+  await page.getByTestId('tab-words').click();
+  await page.getByTestId('tab-pawns').click();
+  await page.waitForTimeout(300);
+  expect(asked).toHaveLength(1);
+
+  // Removing one does: the card is now a different card.
+  await page.getByTestId('pawn-remove').first().click();
+  await page.locator('#msgModalOk').click();
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(1);
+  await expect.poll(() => asked.length).toBe(2);
+});
+
 test('she removes a photo and it stays removed', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 3);
