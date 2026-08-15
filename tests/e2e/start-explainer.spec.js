@@ -110,6 +110,38 @@ test.describe('the 4-step explainer on the product page', () => {
     await expect(page.getByTestId(OVERLAY)).not.toContainText('אליאס');
   });
 
+  // The step numeral is FLOATED, and a float's gap has to sit on the side the text
+  // wraps against. In this RTL sheet that is the inline END; the rule had it on the
+  // inline START, which is the right-hand container edge — so half an em went to the
+  // outside margin and "1" sat flush against "התאמה אישית" on every step.
+  //
+  // Measured off a Range over the heading's own text, not the h3's box: a float does
+  // not shrink the block, only the line boxes inside it, so the h3 rect spans the
+  // full column and would report a gap that isn't there (it reads -29px, on both the
+  // broken and the fixed rule — a box comparison here proves nothing).
+  test('every step numeral is clear of its title, not touching it', async ({ page }) => {
+    await page.getByTestId('pdp-buy').click();
+    await expect(page.getByTestId(OVERLAY)).toBeVisible();
+    await page.evaluate(() => (document.fonts ? document.fonts.ready : true));
+
+    const gaps = await page.evaluate(() =>
+      [...document.querySelectorAll('.sx-step')].map((li) => {
+        const num = li.querySelector('.sx-num').getBoundingClientRect();
+        const range = document.createRange();
+        range.selectNodeContents(li.querySelector('.sx-body h3'));
+        const text = range.getClientRects()[0];
+        // RTL: the numeral floats to the right, the title runs to its LEFT.
+        return Math.round(num.left - text.right);
+      })
+    );
+    expect(gaps).toHaveLength(4);
+    for (const gap of gaps) {
+      expect(gap, `numeral-to-title gap was ${gap}px in ${JSON.stringify(gaps)}`).toBeGreaterThan(
+        6
+      );
+    }
+  });
+
   test('continue enters the wizard with the design preselection intact', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
     const go = page.getByTestId(CONTINUE);
