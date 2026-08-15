@@ -581,6 +581,23 @@ const REGISTRY = {
   // Arrays REPLACE on override (get() returns the owner's whole list, or the seed
   // default), so add/delete is just saving the new array. Validated on write by
   // reminders.validateReminders (wired into validateValue via kind:'reminders').
+  // --- SMS, sent from the owner's own phone -----------------------------------
+  // An SMS gateway app on an Android handset with her SIM polls the outbox and
+  // sends. The server never talks to a carrier and never pays per message; what
+  // it owns is WHEN and WHAT. Both are here, so a text can be reworded without a
+  // deploy — the same posture as the email templates above.
+  sms: {
+    // The master switch. Off means nothing is ever queued, so a phone that is not
+    // set up yet cannot leave a customer waiting for a text that never comes.
+    enabled: { kind: 'flag', tokens: [], default: false },
+    // Sent when the owner marks an order ready. {honoree} and {link} are the same
+    // tokens the email uses.
+    order_ready: {
+      kind: 'text',
+      tokens: ['honoree', 'link'],
+      default: 'היי! המשחק של {honoree} מוכן 🎉 כל הפרטים כאן: {link}',
+    },
+  },
   reminders: {
     list: { kind: 'reminders', tokens: ['honoree', 'link'], default: DEFAULT_REMINDERS },
     // THE CEILING. However the list above is configured, one buyer gets at most
