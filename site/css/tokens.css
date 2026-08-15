@@ -60,6 +60,27 @@
 }
 
 /* ============================================================
+   A PRICE AND ITS ₪ ARE ONE RUN.
+
+   ₪ is a bidi "European Terminator": on an RTL page it has no direction of its
+   own and takes it from the numbers around it. So "199 ₪" with a struck old
+   price beside it reordered into "₪ 239 199" — the sign torn off its own number
+   and parked on the far side of BOTH, which is what the owner reported.
+
+   Isolating the amount and running it LTR welds the sign to its digits and puts
+   it at the right-hand (reading) end of the pair: "239  199 ₪".
+
+   Wrap THE NUMBER AND ITS SIGN, nothing else. A Hebrew prefix inside the
+   isolate ("מ-", "החל מ-") flips with it, so leave those outside. The struck
+   price stays a plain sibling — isolating it too puts the sign back in the
+   middle of the pair.
+   ============================================================ */
+.amt {
+  unicode-bidi: isolate;
+  direction: ltr;
+}
+
+/* ============================================================
    SALE MODE — one owner switch, every surface.
 
    js/pricing.js applySale() stamps data-sale="on"/"off" on <html> once

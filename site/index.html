@@ -1160,7 +1160,13 @@
       // after /api/pricing resolves — two copies drifted apart the moment the
       // struck price was added (the re-stamp's textContent assignment wiped it).
       function stampRailPrice(el) {
-        el.textContent = `${PRICE} ₪`;
+        el.textContent = '';
+        // .amt = the number and its ₪ as one isolated run, or the struck price
+        // beside it drags the sign to the far side of both (see css/tokens.css).
+        const now = document.createElement('span');
+        now.className = 'amt';
+        now.textContent = `${PRICE} ₪`;
+        el.appendChild(now);
         const was = document.createElement('s');
         was.className = 'was';
         // Digits only. The ₪ belongs to the price being charged; repeating it on

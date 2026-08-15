@@ -476,7 +476,7 @@ function renderInfo(d, overrides) {
   document.title = `${name} · דוגרי`;
 
   const now = document.getElementById('pdpPriceNow');
-  if (now) now.textContent = `מ-${PRICE} ₪`;
+  if (now) stampFrom(now, PRICE);
   const was = document.getElementById('pdpPriceWas');
   // Digits only — the ₪ stays on the live price beside it (see index.html).
   if (was) was.textContent = String(WAS);
@@ -883,16 +883,28 @@ function switchToDesign(d) {
   syncDesignNames((names) => applyDesignNames(d, names));
 }
 
+// Write "מ-<price> ₪" into `el` with the amount as its OWN isolated run: on this
+// RTL page a bare "199 ₪" lets the shekel drift away from its digits — beside a
+// struck old price it lands on the far side of both numbers. The "מ-" prefix
+// stays outside the isolate, or it flips with it. See .amt in css/tokens.css.
+function stampFrom(el, price) {
+  el.textContent = 'מ-';
+  const amt = document.createElement('span');
+  amt.className = 'amt';
+  amt.textContent = `${price} ₪`;
+  el.appendChild(amt);
+}
+
 // Re-stamp every rendered store price (the PDP now/was + each related card) from
 // the current PRICE/WAS. Safe to call before or after related renders.
 function restampPrices() {
   const now = document.getElementById('pdpPriceNow');
-  if (now) now.textContent = `מ-${PRICE} ₪`;
+  if (now) stampFrom(now, PRICE);
   const was = document.getElementById('pdpPriceWas');
   // Digits only — the ₪ stays on the live price beside it (see index.html).
   if (was) was.textContent = String(WAS);
   for (const el of document.querySelectorAll('.pdp-rel-price')) {
-    el.textContent = `מ-${PRICE} ₪`;
+    stampFrom(el, PRICE);
   }
 }
 

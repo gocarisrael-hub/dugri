@@ -1347,7 +1347,7 @@
            the amount is stated here and the button opens the checkout itself. -->
       <div class="pay-top owner-only hidden" id="payTop" data-testid="pay-top">
         <div class="pay-top-head" data-edit="collect-pay-top-head">כאן משלמים 👇</div>
-        <span class="pay-top-amt" id="payTopAmt" data-testid="pay-top-amount">₪-</span>
+        <span class="pay-top-amt amt" id="payTopAmt" data-testid="pay-top-amount">-</span>
         <span class="pay-top-lbl" data-edit="collect-pay-top-label"
           >תשלום מאובטח בכרטיס אשראי · אפשר להמשיך להוסיף מילים גם אחרי התשלום</span
         >
@@ -1638,7 +1638,7 @@
             <span class="opt-body">
               <span class="opt-title"
                 ><span data-edit="collect-ver-pdf-title">דיגיטלי (PDF)</span
-                ><span class="opt-price">₪79</span></span
+                ><span class="opt-price"><span class="amt">79 ₪</span></span></span
               >
               <span class="opt-note" data-edit="collect-ver-pdf-note"
                 >מורידים, מדפיסים לבד, ומתפוצצים מצחוק 🎉</span
@@ -1657,7 +1657,7 @@
             <span class="opt-body">
               <span class="opt-title"
                 ><span data-edit="collect-ver-pickup-title">משחק מוכן ומודפס</span
-                ><span class="opt-price">₪199</span></span
+                ><span class="opt-price"><span class="amt">199 ₪</span></span></span
               >
               <span class="opt-note" data-edit="collect-ver-pickup-note"
                 >מוכן תוך כ-3 ימי עסקים · איסוף מבית דפוס גלאור, ת״א</span
@@ -1670,7 +1670,7 @@
               <span class="opt-title"
                 ><span data-edit="collect-ver-custom-title"
                   >עיצוב אישי בהתאמה מלאה ✨ · מעוצב ביד במיוחד עבורכם</span
-                ><span class="opt-price">₪599</span></span
+                ><span class="opt-price"><span class="amt">599 ₪</span></span></span
               >
               <span class="opt-note" data-edit="collect-ver-custom-note"
                 >בלי תבנית מוכנה - עיצוב ייחודי שנבנה מאפס סביב הסיפור שלכם</span
@@ -1690,7 +1690,7 @@
             <span class="opt-body">
               <span class="opt-title"
                 ><span data-edit="collect-ship-title">שלחו לי עד הבית</span
-                ><span class="opt-price" id="shipPrice">₪40</span></span
+                ><span class="opt-price" id="shipPrice"><span class="amt">40 ₪</span></span></span
               >
               <span class="opt-note" data-edit="collect-ship-note">מגיע תוך כ-7 ימי עסקים</span>
               <span class="opt-note" data-edit="collect-ship-note2"
@@ -1804,7 +1804,7 @@
         </div>
 
         <div class="pay-total">
-          לתשלום: <span class="pay-now">₪<span id="payTotal">79</span></span
+          לתשלום: <span class="pay-now amt"><span id="payTotal">79</span> ₪</span
           ><span class="was hidden" id="payWas"></span>
           <!-- The arithmetic behind the total ("₪199 × 5 + ₪39 משלוח"), so a
                multi-copy sum is never a number the buyer has to take on trust. -->
@@ -2937,6 +2937,22 @@
         payAutoOpened = true;
         openPayPanelRef();
       }
+      // A price and its ₪ as ONE element: "199 ₪" inside a .amt run (isolated and
+      // LTR — see css/tokens.css). Every price on this page goes through these two,
+      // because a bare "199 ₪" in RTL lets the shekel drift onto a neighbouring
+      // number: with the struck full price beside the total it ended up on the far
+      // side of both, reading as "₪ 239 199".
+      function amountNode(n) {
+        const el = document.createElement('span');
+        el.className = 'amt';
+        el.textContent = n + ' ₪';
+        return el;
+      }
+      // Replace an element's contents with one amount.
+      function setAmount(el, n) {
+        el.textContent = '';
+        el.appendChild(amountNode(n));
+      }
       function priceFor(v) {
         if (lockVersion && v === lockVersion && Number.isInteger(lockTotal)) return lockTotal;
         const info = pricing.versions && pricing.versions[v];
@@ -3147,7 +3163,7 @@
           box.disabled = !canCollect;
           if (!canCollect && canShip) box.checked = true;
           if (!canShip) box.checked = false;
-          if (price) price.textContent = '₪' + deliveryFee();
+          if (price) setAmount(price, deliveryFee());
         }
 
         // Render the total for the selected version, applying the coupon discount
@@ -3207,7 +3223,7 @@
         function syncPayBarAmount() {
           const total = document.getElementById('payTotal');
           if (!total) return;
-          const text = '₪' + total.textContent;
+          const text = total.textContent + ' ₪';
           ['payBarAmt', 'payTopAmt'].forEach((id) => {
             const amt = document.getElementById(id);
             if (amt) amt.textContent = text;
@@ -3217,6 +3233,12 @@
         // Spell out a total that isn't self-evident. A single copy with no shipping
         // needs no explanation; anything else does, because the buyer can otherwise
         // only verify our sum by trusting it.
+        //
+        // Built from NODES, not one string: each amount is its own .amt run (see
+        // css/tokens.css). Written as plain text, the two prices and the Hebrew
+        // between them are one bidi paragraph, and the shekel signs migrate to
+        // whichever number the algorithm hands them — the same reordering that put
+        // the sign on the wrong side of the struck price.
         function renderPayMath(unit, fee) {
           const el = $('#payMath');
           // unit 0 => a locked order, whose total is final and needs no breakdown.
@@ -3225,10 +3247,14 @@
             el.classList.add('hidden');
             return;
           }
-          const parts = ['₪' + unit];
-          if (copies > 1) parts.push(' × ' + copies + ' עותקים');
-          if (fee) parts.push(' + ₪' + fee + ' משלוח (פעם אחת)');
-          el.textContent = parts.join('');
+          el.textContent = '';
+          el.appendChild(amountNode(unit));
+          if (copies > 1) el.appendChild(document.createTextNode(' × ' + copies + ' עותקים'));
+          if (fee) {
+            el.appendChild(document.createTextNode(' + '));
+            el.appendChild(amountNode(fee));
+            el.appendChild(document.createTextNode(' משלוח (פעם אחת)'));
+          }
           el.classList.remove('hidden');
         }
 
@@ -3325,7 +3351,7 @@
               radio.disabled = !isLock;
               radio.checked = isLock;
               const priceEl = label.querySelector('.opt-price');
-              if (priceEl && isLock) priceEl.textContent = '₪' + lockTotal;
+              if (priceEl && isLock) setAmount(priceEl, lockTotal);
             }
             // A locked DELIVERY order shows the tick, on and frozen: the order was
             // placed with shipping and cannot be changed into a pickup here. A
@@ -3419,7 +3445,7 @@
               // shipping itself is priced on the tick, not here). Both are what
               // renderTotal will sum, so the option and the total never disagree.
               const shown = v === 'pickup' ? (shipOn() ? 'delivery' : 'pickup') : v;
-              priceEl.appendChild(document.createTextNode('₪' + priceFor(shown)));
+              priceEl.appendChild(amountNode(priceFor(shown)));
             }
           }
           // Keep a valid (enabled) radio selected — but only if something is on
@@ -3875,7 +3901,7 @@
          "the whatsapp button need to be available always". -->
     <div class="pay-bar owner-only hidden" id="payBar" data-testid="pay-bar">
       <div class="pay-bar-sum">
-        <span class="pay-bar-amt" id="payBarAmt" data-testid="pay-bar-amount">₪-</span>
+        <span class="pay-bar-amt amt" id="payBarAmt" data-testid="pay-bar-amount">-</span>
         <span class="pay-bar-lbl" data-edit="collect-pay-bar-label">המשחק שלכם מוכן</span>
       </div>
       <button
