@@ -3022,9 +3022,34 @@ function updateTemplateSettings({ root, key, patch }) {
     if (p.title_style === null) {
       changed.title_style = null;
     } else {
+      // A knob the patch does not MENTION is carried forward, exactly as the
+      // calibration pass carries one (see applyCalibration: "absent is unknown,
+      // never clear it"). Without this, every save from the calibration form
+      // replaced the style wholesale — and the form has no field for the
+      // per-front knobs, so `front_align`/`front_offset` were wiped by an owner
+      // who only nudged a colour. That is not hypothetical: it is how טוקיו lost
+      // its alternating title alignment in production and printed half a deck
+      // with the honoree's name flush against the koi.
+      //
+      // Keyed off the RAW patch, not the validated result, so an explicit
+      // `front_align: {}` still CLEARS it — "mentioned" is the test, not "kept".
       const v = validateTitleStyle(p.title_style);
       if (v.error) return { error: v.error, httpStatus: 400 };
-      changed.title_style = v.value;
+      const old =
+        entry.title_style &&
+        typeof entry.title_style === 'object' &&
+        !Array.isArray(entry.title_style)
+          ? entry.title_style
+          : null;
+      const carried = old ? Object.keys(old).filter((k) => !(k in p.title_style)) : [];
+      if (carried.length) {
+        const merged = validateTitleStyle({ ...old, ...p.title_style });
+        // If carrying the old knobs forward makes the whole style illegal, the
+        // owner's new one still wins — a save must not fail on history.
+        changed.title_style = merged.error ? v.value : merged.value;
+      } else {
+        changed.title_style = v.value;
+      }
     }
   }
   if ('board' in p) {
