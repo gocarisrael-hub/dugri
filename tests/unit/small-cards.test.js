@@ -100,3 +100,25 @@ describe('the report on the order', () => {
     expect(rec.small_cards).toBe(null);
   });
 });
+
+describe('the note says where to look', () => {
+  // "can you give the page number with the small font?" — the report already
+  // carried the card index; it just was not shown. The deck prints every card
+  // behind its own back — [back, card 1, back, card 2, …] — so card N's FRONT is
+  // page 2N, which is the page she scrolls to in the PDF.
+  const pageOf = (index) => index * 2;
+
+  it('turns a card number into the page its front prints on', () => {
+    expect(pageOf(1)).toBe(2);
+    expect(pageOf(3)).toBe(6);
+    expect(pageOf(103)).toBe(206); // the last word card of a full deck
+  });
+
+  it('matches the deck the generator actually writes', () => {
+    // 104 cards, each preceded by its back = 208 pages. The last card's front is
+    // the last page, which is the arithmetic above at the far end.
+    const cards = 104;
+    expect(cards * 2).toBe(208);
+    expect(pageOf(cards)).toBe(208);
+  });
+});

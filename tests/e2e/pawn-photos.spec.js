@@ -310,7 +310,9 @@ test.describe('pawn photos: the background cut', () => {
     // stays usable (no error box, Next enabled).
     await expect(slot0).toHaveClass(/is-filled/);
     await expect(slot0).not.toHaveClass(/is-cut/);
-    await expect(page.getByTestId('pawn-status-0')).toHaveText('נסיר את הרקע ידנית');
+    await expect(page.getByTestId('pawn-status-0')).toHaveText(
+      'לא הוסר הרקע, עדיף תמונות פנים של בן אדם'
+    );
     await expect(page.getByTestId('pawn-err')).toBeHidden();
     await expect(page.getByTestId('next-btn')).toBeEnabled();
 
@@ -338,7 +340,9 @@ test.describe('pawn photos: the background cut', () => {
     await page
       .getByTestId('pawn-input-0')
       .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
-    await expect(page.getByTestId('pawn-status-0')).toHaveText('נסיר את הרקע ידנית');
+    await expect(page.getByTestId('pawn-status-0')).toHaveText(
+      'לא הוסר הרקע, עדיף תמונות פנים של בן אדם'
+    );
 
     // Second pick, this time the cut succeeds: the slot must follow the NEW
     // photo's result rather than keeping the old one.
@@ -369,9 +373,12 @@ test.describe('pawn photos: the background cut', () => {
 
     // A 1x1 PNG has no person in it, so the cut legitimately misses — the point is
     // that it RAN: the wasm and the model were fetched, from us, and answered 200.
-    await expect(page.getByTestId('pawn-status-0')).toHaveText('נסיר את הרקע ידנית', {
-      timeout: 25000,
-    });
+    await expect(page.getByTestId('pawn-status-0')).toHaveText(
+      'לא הוסר הרקע, עדיף תמונות פנים של בן אדם',
+      {
+        timeout: 25000,
+      }
+    );
     const paths = vendor.map(([p]) => p);
     expect(paths).toContain('/vendor/mediapipe/vision_bundle.mjs');
     expect(paths).toContain('/vendor/mediapipe/vision_wasm_internal.wasm');
