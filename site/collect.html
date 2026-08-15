@@ -3128,6 +3128,19 @@
           }
           const canShip = isEnabled('delivery');
           const canCollect = isEnabled('pickup');
+          console.log(
+            'SYNCSHIP ' +
+              JSON.stringify({
+                canShip,
+                canCollect,
+                resolved: pricingResolved,
+                ok: pricingOk,
+                dv: JSON.stringify((pricing.versions || {}).delivery || null),
+                checked:
+                  (document.querySelector('input[name=\"payVersion\"]:checked') || {}).value ||
+                  null,
+              })
+          );
           const printedPicked =
             (document.querySelector('input[name="payVersion"]:checked') || {}).value === 'pickup';
           opt.classList.toggle('hidden', !(canShip && printedPicked));
@@ -3275,6 +3288,7 @@
         //   4. CLOSED: no version is enabled → no pay button, "orders closed".
         //   5. NORMAL: show the enabled versions at their endpoint prices.
         function applyPricing() {
+          console.log('APPLY resolved=' + pricingResolved + ' ok=' + pricingOk);
           // Only an admin-created / paid order LOCKS checkout (server `locked`
           // flag). An ordinary UNPAID public order is NOT locked — the buyer keeps
           // the full enabled menu and can switch versions (re-priced server-side).
@@ -3330,6 +3344,13 @@
             if (optsBox) optsBox.style.display = 'none';
             setPayable(false);
             showPriceErr('loading');
+            // The tick is a CHILD of #payOpts, so hiding the box hides it too —
+            // but its own class would stay whatever an earlier state left, and
+            // this branch used to return without touching it. Sync it here so the
+            // moment the box comes back the tick is already right, rather than
+            // showing a stale answer for a frame (or, when this branch runs LAST,
+            // leaving it hidden on a checkout that does offer delivery).
+            syncShipOption({ locked: false });
             refreshPay();
             return;
           }
@@ -3339,6 +3360,11 @@
             if (optsBox) optsBox.style.display = 'none';
             setPayable(false);
             showPriceErr('load');
+            // Same reason as above — and here it also matters for what the tick
+            // MEANS: prices could not be read, so nothing is orderable, and a
+            // live "ship it to me" left over from the last good load would be a
+            // control on a checkout that cannot take the order.
+            syncShipOption({ locked: false });
             refreshPay();
             return;
           }
@@ -3351,6 +3377,10 @@
             setPayable(false);
             showPriceErr('closed');
             syncSalesPaused();
+            // Orders are closed, so there is nothing to ship either. syncSalesPaused
+            // has just cleared every checked radio, so this reads "no printed game
+            // selected" and takes the tick down with the rest.
+            syncShipOption({ locked: false });
             refreshPay();
             return;
           }
