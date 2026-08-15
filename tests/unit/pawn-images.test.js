@@ -274,3 +274,216 @@ describe('POST /api/collections/:id/pawns', () => {
     expect(body.error).toMatch(/multipart/);
   });
 });
+
+// SHE TAKES ONE BACK OUT. The wizard asked for these photos on a step she can
+// never return to, so the collection page now shows them with a remove control —
+// PUT /api/collections/:id/pawns, owner-token gated, carrying the photos she is
+// KEEPING.
+//
+// The rule that makes it safe is that it can only ever REMOVE: every path in the
+// body must already be attached to this collection. Otherwise a link to your own
+// order would be enough to graft any /content-uploads path onto it — including a
+// photo belonging to somebody else's order, which is a stranger's face on your
+// printed deck.
+async function putPawns(id, k, pawn_images) {
+  const res = await fetch(base + '/api/collections/' + id + '/pawns?k=' + encodeURIComponent(k), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pawn_images }),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+describe('db.setPawnImagesForOwner', () => {
+  it('removes one photo and keeps the order of the rest', () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png', '/b.png', '/c.png']);
+    const out = db.setPawnImagesForOwner(c.id, c.owner_token, ['/a.png', '/c.png']);
+    expect(out).toEqual(['/a.png', '/c.png']);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png', '/c.png']);
+  });
+
+  it('refuses a path that is not already attached (no grafting)', () => {
+    const mine = db.createCollection('בדיקה', {});
+    const yours = db.createCollection('בדיקה', {});
+    db.addPawnImages(mine.id, mine.owner_token, ['/mine.png']);
+    db.addPawnImages(yours.id, yours.owner_token, ['/yours.png']);
+    expect(db.setPawnImagesForOwner(mine.id, mine.owner_token, ['/mine.png', '/yours.png'])).toBe(
+      null
+    );
+    // …and the refusal changed nothing.
+    expect(db.getCollection(mine.id).pawn_images).toEqual(['/mine.png']);
+  });
+
+  it('refuses a wrong owner token and leaves the list alone', () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png', '/b.png']);
+    expect(db.setPawnImagesForOwner(c.id, 'not-the-token', ['/a.png'])).toBe(null);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png', '/b.png']);
+  });
+
+  // Real upload paths here, not the '/a.png' shorthand the append tests use:
+  // setPawnCutout re-validates the cutout against pawnPathOk, so a made-up path
+  // is simply not recorded and the test would pass on an empty map either way.
+  it("drops a removed photo's cutout and keeps the survivors'", () => {
+    const A = '/content-uploads/aaaaaaaaaaaaaaaa.png';
+    const B = '/content-uploads/bbbbbbbbbbbbbbbb.png';
+    const ACUT = '/content-uploads/aaaaaaaaaaaaaaaa-cut.png';
+    const BCUT = '/content-uploads/bbbbbbbbbbbbbbbb-cut.png';
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, [A, B]);
+    db.setPawnCutout(c.id, c.owner_token, A, ACUT);
+    db.setPawnCutout(c.id, c.owner_token, B, BCUT);
+    expect(db.getCollection(c.id).pawn_cutouts).toEqual({ [A]: ACUT, [B]: BCUT });
+    db.setPawnImagesForOwner(c.id, c.owner_token, [B]);
+    expect(db.getCollection(c.id).pawn_cutouts).toEqual({ [B]: BCUT });
+  });
+
+  it('an empty list removes them all', () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    expect(db.setPawnImagesForOwner(c.id, c.owner_token, [])).toEqual([]);
+  });
+});
+
+describe('PUT /api/collections/:id/pawns', () => {
+  it('removes a photo for the owner and answers with the new list', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png', '/b.png']);
+    const r = await putPawns(c.id, c.owner_token, ['/b.png']);
+    expect(r.status).toBe(200);
+    expect(r.body.pawn_images).toEqual(['/b.png']);
+  });
+
+  it('403 on a wrong owner token', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    const r = await putPawns(c.id, 'nope', []);
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png']);
+  });
+
+  it("403 on a path that isn't this collection's", async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    const r = await putPawns(c.id, c.owner_token, ['/a.png', '/somebody-elses.png']);
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).pawn_images).toEqual(['/a.png']);
+  });
+
+  it('400 when the body carries no pawn_images array', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const res = await fetch(
+      base + '/api/collections/' + c.id + '/pawns?k=' + encodeURIComponent(c.owner_token),
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nope: true }),
+      }
+    );
+    expect(res.status).toBe(400);
+  });
+});
+
+// The photos are OWNER-ONLY on the read side too. The collection link is meant to
+// be forwarded to everyone at the party, and these are photographs of her people.
+describe('GET /api/collections/:id — pawn_images visibility', () => {
+  it('ships the list to the owner and omits it entirely for a contributor', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.addPawnImages(c.id, c.owner_token, ['/a.png']);
+    const owner = await fetch(
+      base + '/api/collections/' + c.id + '?k=' + encodeURIComponent(c.owner_token)
+    ).then((r) => r.json());
+    expect(owner.pawn_images).toEqual(['/a.png']);
+    const guest = await fetch(base + '/api/collections/' + c.id).then((r) => r.json());
+    expect('pawn_images' in guest).toBe(false);
+  });
+});
+
+// SHE RETITLES HER OWN DECK. Same sheet, same owner token — but a different rule
+// about WHEN: the title is what gets printed, and closing the collection is what
+// starts the printing. Until then it is hers to change, paid or not; after it the
+// deck is being made and the title it is made with is fixed.
+async function putTitle(id, k, custom_title) {
+  const res = await fetch(base + '/api/collections/' + id + '/title?k=' + encodeURIComponent(k), {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ custom_title }),
+  });
+  return { status: res.status, body: await res.json().catch(() => ({})) };
+}
+
+describe('PUT /api/collections/:id/title', () => {
+  it('stores the buyer’s title and answers with what was stored', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, c.owner_token, '30 שנה לשירה שלנו');
+    expect(r.status).toBe(200);
+    expect(r.body.custom_title).toBe('30 שנה לשירה שלנו');
+    expect(db.getCollection(c.id).custom_title).toBe('30 שנה לשירה שלנו');
+  });
+
+  it('a blank title restores the theme’s own title rather than printing nothing', async () => {
+    const c = db.createCollection('בדיקה', {});
+    await putTitle(c.id, c.owner_token, 'כותרת');
+    const r = await putTitle(c.id, c.owner_token, '   ');
+    expect(r.status).toBe(200);
+    expect(r.body.custom_title).toBe(null);
+    expect(db.getCollection(c.id).custom_title).toBe(null);
+  });
+
+  it('caps at 120 characters, the same cap the order flow applies', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, c.owner_token, 'א'.repeat(200));
+    expect(r.status).toBe(200);
+    expect(Array.from(r.body.custom_title)).toHaveLength(120);
+  });
+
+  it('refuses an emoji title, names the field, and stores nothing', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, c.owner_token, 'שירה בת 30 🎉');
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('emoji');
+    expect(r.body.field).toBe('custom_title');
+    expect(db.getCollection(c.id).custom_title).toBe(null);
+  });
+
+  it('403 on a wrong owner token', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await putTitle(c.id, 'nope', 'לא שלי');
+    expect(r.status).toBe(403);
+    expect(db.getCollection(c.id).custom_title).toBe(null);
+  });
+
+  // The rule the owner chose: editable until she closes, and closing is the
+  // moment production starts. Enforced HERE, not only in the page.
+  it('409 once the collection is closed, and the stored title is untouched', async () => {
+    const c = db.createCollection('בדיקה', {});
+    await putTitle(c.id, c.owner_token, 'לפני הסגירה');
+    db.closeCollection(c.id, c.owner_token);
+    const r = await putTitle(c.id, c.owner_token, 'אחרי הסגירה');
+    expect(r.status).toBe(409);
+    expect(db.getCollection(c.id).custom_title).toBe('לפני הסגירה');
+  });
+
+  it('a PAID but still-open order can be retitled', async () => {
+    const c = db.createCollection('בדיקה', {});
+    db.setOrder(c.id, { version: 'pickup', total: 199, source: 'public' });
+    db.markPaid(c.id);
+    const r = await putTitle(c.id, c.owner_token, 'שיניתי אחרי התשלום');
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).custom_title).toBe('שיניתי אחרי התשלום');
+  });
+});
+
+describe('GET /api/collections/:id — custom_title visibility', () => {
+  it('ships the title to the owner and omits it for a contributor', async () => {
+    const c = db.createCollection('בדיקה', {});
+    await putTitle(c.id, c.owner_token, 'הכותרת שלי');
+    const owner = await fetch(
+      base + '/api/collections/' + c.id + '?k=' + encodeURIComponent(c.owner_token)
+    ).then((r) => r.json());
+    expect(owner.custom_title).toBe('הכותרת שלי');
+    const guest = await fetch(base + '/api/collections/' + c.id).then((r) => r.json());
+    expect('custom_title' in guest).toBe(false);
+  });
+});

@@ -549,6 +549,279 @@
         font-weight: 800;
         margin-bottom: 8px;
       }
+      /* "המשחק שלי" — the one row that stands in for a whole card. Outlined,
+         never filled: the filled black blocks on this page are the payment ones
+         (top card, sticky bar, checkout), and a second black block competing with
+         them would read as a second thing to pay for. */
+      .game-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        text-align: start;
+        background: var(--surface);
+        color: var(--ink);
+        border: 1.5px solid var(--ink);
+        border-radius: 0;
+        padding: 10px 12px;
+        margin-bottom: 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+      /* A slice of her own card, so the row says "my game" at a glance. Empty
+         until the preview lands — sized either way so nothing jumps. */
+      .game-row-thumb {
+        width: 38px;
+        height: 52px;
+        flex: 0 0 auto;
+        object-fit: cover;
+        background: var(--section);
+        border: 1px solid var(--line);
+      }
+      .game-row-lbl {
+        flex: 1;
+        font-weight: 700;
+      }
+      .game-row-lbl small {
+        display: block;
+        font-weight: 400;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .game-row-go {
+        color: var(--muted);
+        font-size: 20px;
+        line-height: 1;
+      }
+
+      /* THE SHEET. Full-screen on a phone (it holds a card-shaped picture, and a
+         picture that has to compete with a keyboard needs the room), centred and
+         bounded on a desktop. */
+      .game-sheet {
+        position: fixed;
+        inset: 0;
+        z-index: 80;
+        background: rgba(0, 0, 0, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+      }
+      .game-sheet-card {
+        background: var(--surface);
+        width: 100%;
+        height: 100%;
+        max-width: 460px;
+        max-height: 100%;
+        overflow-y: auto;
+        border: 1px solid var(--ink);
+        display: flex;
+        flex-direction: column;
+      }
+      @media (min-width: 520px) {
+        .game-sheet {
+          padding: 24px;
+        }
+        .game-sheet-card {
+          height: auto;
+          max-height: calc(100vh - 48px);
+        }
+      }
+      .game-sheet-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        font-weight: 800;
+        position: sticky;
+        top: 0;
+        background: var(--surface);
+      }
+      .sheet-x {
+        background: none;
+        border: 0;
+        font-size: 26px;
+        line-height: 1;
+        padding: 0 4px;
+        color: var(--ink);
+        cursor: pointer;
+      }
+      .game-sheet-body {
+        padding: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      /* The card keeps its shape whether or not a render has arrived, so the
+         sheet never resizes under her thumb mid-edit. */
+      .prev-box {
+        position: relative;
+        aspect-ratio: 5 / 7;
+        /* Bounded, and sized from the HEIGHT. A 5:7 card given the full sheet
+           width is ~500px tall on a phone, which pushes the title field and the
+           photos under the fold — she would have to scroll to find the two things
+           she came to change. align-self stops the flex column stretching it back
+           to full width. */
+        max-height: 42vh;
+        width: auto;
+        align-self: center;
+        background: var(--section);
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .prev-box img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .prev-busy,
+      .prev-fail {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.5);
+        color: #fff;
+        font-size: 14px;
+        letter-spacing: 0.06em;
+      }
+      .prev-fail {
+        background: rgba(0, 0, 0, 0.72);
+      }
+      .prev-box:not(.busy) .prev-busy {
+        display: none;
+      }
+      .sheet-fld {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      /* The title box. Two lines by default — the shape a title actually has —
+         and NOT resizable horizontally, which would break out of the sheet. */
+      .sheet-fld textarea {
+        width: 100%;
+        resize: vertical;
+        line-height: 1.5;
+      }
+      .sheet-err {
+        color: #b00020;
+        font-size: 13px;
+      }
+      .sheet-save {
+        align-self: flex-start;
+        padding: 9px 20px;
+        font-size: 15px;
+      }
+      .sheet-save:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .sheet-note {
+        color: var(--muted);
+        font-size: 13px;
+        border-top: 1px solid var(--line);
+        padding-top: 12px;
+      }
+      /* THE PAWN PHOTOS she sent with the order. A row of square thumbs, sized so
+         four sit side by side on the narrowest phone (4 × 68 + gaps < 320). Each
+         one opens full-size on tap, because "let me see what I sent" is half of
+         why this card exists. */
+      .pawn-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 12px;
+      }
+      .pawn-cell {
+        position: relative;
+        width: 68px;
+        height: 68px;
+        flex: 0 0 auto;
+      }
+      .pawn-cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border: 1px solid var(--line);
+        background: var(--section);
+        cursor: zoom-in;
+        display: block;
+      }
+      /* The remove control sits ON the photo, at the corner the thumb's own
+         content is least likely to matter (a face is centred). Big enough to hit
+         with a thumb — 26px, over the 24px floor — without covering the picture. */
+      .pawn-x {
+        position: absolute;
+        top: -8px;
+        inset-inline-end: -8px;
+        width: 26px;
+        height: 26px;
+        line-height: 1;
+        padding: 0;
+        font-size: 15px;
+        font-weight: 700;
+        border-radius: 50%;
+        background: var(--ink);
+        color: #fff;
+        border: 2px solid var(--surface);
+        cursor: pointer;
+      }
+      /* The add slot reads as an empty frame, not a button: it is the same square
+         as a photo so the row keeps its rhythm as photos come and go. */
+      .pawn-add {
+        width: 68px;
+        height: 68px;
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 26px;
+        font-weight: 300;
+        color: var(--muted);
+        background: var(--surface);
+        border: 1px dashed var(--line);
+        cursor: pointer;
+        padding: 0;
+      }
+      .pawn-add:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .pawn-empty {
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .pawn-err {
+        color: #b00020;
+        font-size: 14px;
+        margin-top: 10px;
+      }
+      /* Full-size view. Deliberately plain: a dark sheet, the photo, and any tap
+         closes it — nothing to learn, and no way to get stuck in it. */
+      .pawn-view {
+        position: fixed;
+        inset: 0;
+        /* ABOVE the sheet (80). The thumbs live inside the sheet, so a full-size
+           view underneath it would open where she cannot see or dismiss it. */
+        z-index: 90;
+        background: rgba(0, 0, 0, 0.82);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        cursor: zoom-out;
+      }
+      .pawn-view img {
+        max-width: 100%;
+        max-height: 100%;
+        object-fit: contain;
+      }
       /* Compact segmented control — small enough to read as a switcher, not a
          primary action. Tighter padding + smaller type than the old chunky tabs. */
       .tabs {
@@ -1606,6 +1879,37 @@
         </button>
       </div>
 
+      <!-- OWNER: the pawn photos she sent with the order.
+           The wizard asked for them once, on a step she can never reach again —
+           so until now a wrong photo, or a photo she simply wanted to see, meant
+           writing to us. This is that step, reachable from the page she is
+           already on for days.
+           Add/remove while the collection is OPEN; once it is closed the deck is
+           in production and the photos are read-only, but still visible. -->
+      <!-- OWNER: everything about the deck itself that she can still change —
+           the photos she sent and the title that gets printed — behind ONE row.
+           It was a full card, and this page is already a stack of them; the card
+           cost ~300px for something she opens twice in an order. The row is one
+           line, and it carries MORE than the card did.
+           Placed right after the word counter: the first thing she passes once
+           she has seen how the collecting is going, and clear of the payment
+           blocks (top card, sticky bar, checkout panel), which are the only
+           filled-black elements on the page — hence the outline here. -->
+      <button
+        type="button"
+        class="game-row owner-only hidden"
+        id="gameRow"
+        data-testid="game-row"
+        aria-haspopup="dialog"
+      >
+        <img class="game-row-thumb" id="gameRowThumb" alt="" />
+        <span class="game-row-lbl">
+          <span data-edit="collect-game-row-title">המשחק שלי</span>
+          <small id="gameRowSub" data-testid="game-row-sub"></small>
+        </span>
+        <span class="game-row-go" aria-hidden="true">‹</span>
+      </button>
+
       <!-- owner / closing controls -->
       <div class="card owner-only hidden" id="ownerControls">
         <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
@@ -1858,6 +2162,90 @@
       </div>
     </div>
 
+    <!-- "המשחק שלי" — the sheet the row opens. Everything about the DECK that is
+         still hers to change, with the real card above it so she is approving a
+         picture rather than a string.
+         The preview is the SAME renderer the wizard used and the press file uses
+         (POST /api/preview), fed from this collection's own stored spec, so it is
+         WYSIWYG. Design and colour are deliberately absent: they were chosen at
+         order time and one line says so, rather than leaving her to hunt for a
+         control that is not there. -->
+    <div
+      id="gameSheet"
+      class="game-sheet hidden"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="gameSheetTitle"
+      data-testid="game-sheet"
+    >
+      <div class="game-sheet-card">
+        <div class="game-sheet-head">
+          <span id="gameSheetTitle" data-edit="collect-sheet-title">המשחק שלי</span>
+          <button type="button" class="sheet-x" id="gameSheetClose" aria-label="סגירה">×</button>
+        </div>
+        <div class="game-sheet-body">
+          <!-- The card. Its own aspect box so the sheet doesn't jump when the
+               render lands, and an overlay while a new title is drawing. -->
+          <div class="prev-box" id="prevBox">
+            <img id="prevImg" alt="הקלף שלכם" data-testid="game-preview" />
+            <span class="prev-busy" id="prevBusy" data-edit="collect-sheet-rendering">מעדכן…</span>
+            <span class="prev-fail hidden" id="prevFail" data-edit="collect-sheet-preview-fail"
+              >לא הצלחנו להציג את הקלף כרגע</span
+            >
+          </div>
+
+          <div class="sheet-fld">
+            <label class="fld" for="titleInput" data-edit="collect-sheet-title-label"
+              >כותרת המשחק</label
+            >
+            <!-- A TEXTAREA, like the wizard's — never <input type="text">.
+                 The line break in a title is real: the generator splits on \n and
+                 prints each line as its own title line, and db.sanitizeCustomTitle
+                 keeps them (it trims each line and rejoins). A text input runs the
+                 HTML value sanitization algorithm, which STRIPS U+000A rather than
+                 converting it, so a stored "החגיגה של\nשירה" would both display and
+                 save as "החגיגה שלשירה" — two words fused, no warning, and the
+                 buyer need not even touch the field to lose it.
+                 maxlength matches the wizard's 63 so the two doors onto the same
+                 field agree; the store's own cap (120) still bounds anything set
+                 from the admin. -->
+            <textarea id="titleInput" rows="2" maxlength="63" data-testid="title-input"></textarea>
+            <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
+              >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י · השאירו ריק לכותרת ברירת המחדל</small
+            >
+            <div class="sheet-err hidden" id="titleErr" role="alert" data-testid="title-err"></div>
+            <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">
+              שמירה
+            </button>
+          </div>
+
+          <div class="sheet-fld">
+            <span class="fld" data-edit="collect-sheet-photos-label">התמונות שלכם (עד 4)</span>
+            <div class="pawn-strip" id="pawnStrip" data-testid="pawn-strip"></div>
+            <small class="muted hidden" id="pawnNone" data-edit="collect-sheet-photos-none"
+              >לא שלחתם תמונות - נדפיס את החיילים הרגילים של דוגרי.</small
+            >
+            <div class="pawn-err hidden" id="pawnErr" role="alert"></div>
+          </div>
+
+          <p class="sheet-note" id="sheetFixedNote" data-edit="collect-sheet-fixed">
+            העיצוב והצבע נבחרו בהזמנה ואי אפשר לשנות אותם כאן.
+          </p>
+          <p class="sheet-note hidden" id="sheetClosedNote" data-edit="collect-sheet-closed">
+            האיסוף נסגר והמשחק בהפקה - אי אפשר לשנות עכשיו.
+          </p>
+        </div>
+      </div>
+      <input
+        type="file"
+        id="pawnAddInput"
+        accept="image/*"
+        multiple
+        hidden
+        data-testid="pawn-add-input"
+      />
+    </div>
+
     <!-- Shared dialog. Serves both a simple info notice ("word already in the
          list", OK only) and an "are you sure?" confirm (cancel + confirm). The
          cancel button is hidden in info mode. Driven by openDialog(). -->
@@ -2012,6 +2400,311 @@
           return body;
         });
       }
+
+      // ---- the buyer's pawn photos -------------------------------------------
+      // Four photos, sent once in the order wizard, on a step she can never get
+      // back to. This card is that step, on the page she actually revisits.
+      //
+      // The list is the SERVER's (state.pawn_images, owner-only) — every action
+      // re-renders from what the server answered, never from an optimistic local
+      // copy, so a rejected removal cannot leave the page showing a photo the
+      // order no longer has (or hiding one it still does).
+      const PAWN_MAX = 4;
+      function pawnList() {
+        return Array.isArray(state && state.pawn_images) ? state.pawn_images : [];
+      }
+      function showPawnErr(msg) {
+        const el = $('#pawnErr');
+        el.textContent = msg || '';
+        el.hidden = !msg;
+      }
+      // Full-size view of one photo. Any tap (or Esc) closes it — see .pawn-view.
+      function openPawnView(src) {
+        const sheet = document.createElement('div');
+        sheet.className = 'pawn-view';
+        sheet.setAttribute('data-testid', 'pawn-view');
+        const img = document.createElement('img');
+        img.src = src;
+        img.alt = '';
+        sheet.appendChild(img);
+        const close = () => {
+          sheet.remove();
+          document.removeEventListener('keydown', onKey);
+        };
+        const onKey = (e) => {
+          if (e.key === 'Escape') close();
+        };
+        sheet.addEventListener('click', close);
+        document.addEventListener('keydown', onKey);
+        document.body.appendChild(sheet);
+      }
+      function renderPawns() {
+        const strip = $('#pawnStrip');
+        if (!strip) return;
+        const photos = pawnList();
+        const open = state.status === 'open';
+        $('#pawnNone').classList.toggle('hidden', !(open && !photos.length));
+        strip.textContent = '';
+        for (const src of photos) {
+          const cell = document.createElement('div');
+          cell.className = 'pawn-cell';
+          const img = document.createElement('img');
+          img.src = src;
+          img.alt = 'תמונה שנשלחה עם ההזמנה';
+          img.setAttribute('data-testid', 'pawn-thumb');
+          img.addEventListener('click', () => openPawnView(src));
+          cell.appendChild(img);
+          if (open) {
+            const x = document.createElement('button');
+            x.type = 'button';
+            x.className = 'pawn-x';
+            x.textContent = '×';
+            x.setAttribute('aria-label', 'הסרת התמונה');
+            x.setAttribute('data-testid', 'pawn-remove');
+            // Confirm first: a photo she took at the party is not re-uploadable
+            // from this page in one tap, and the file itself is gone from her
+            // order the moment the server answers.
+            x.addEventListener('click', () =>
+              openDialog('להסיר את התמונה מההזמנה?', { onOk: () => removePawn(src) })
+            );
+            cell.appendChild(x);
+          }
+          strip.appendChild(cell);
+        }
+        if (open) {
+          const add = document.createElement('button');
+          add.type = 'button';
+          add.className = 'pawn-add';
+          add.textContent = '+';
+          add.setAttribute('data-testid', 'pawn-add');
+          add.setAttribute('aria-label', 'הוספת תמונה');
+          // At four the slot stays VISIBLE but disabled, so the cap is something
+          // she can see rather than a control that silently vanished.
+          add.disabled = photos.length >= PAWN_MAX;
+          add.title = add.disabled ? 'אפשר עד 4 תמונות' : '';
+          add.addEventListener('click', () => $('#pawnAddInput').click());
+          strip.appendChild(add);
+        }
+      }
+
+      // ---- "המשחק שלי": the row, and the sheet it opens ------------------------
+      // The row is a summary; the sheet is the only place anything changes. Both
+      // read from `state`, which is the server's answer — so a rejected edit can
+      // never leave either of them showing something the order does not have.
+      let previewSpec = null; // this collection's own render inputs (from /summary)
+      let previewSeq = 0; // guards against a slow render landing after a newer one
+      let previewTimer = null;
+      // What she has TYPED but not yet saved. null = nothing in flight, so the
+      // stored title is the truth. Kept apart from `state` on purpose: the page
+      // re-reads the collection every 5s, and letting a draft live in `state`
+      // would mean the poll quietly reverts what she is typing — or worse, that
+      // the row advertises a custom title she never saved.
+      let draftTitle = null;
+
+      // The title to PREVIEW: her draft while she is editing, else the stored one.
+      function titleValue() {
+        if (draftTitle !== null) return draftTitle;
+        return (state && state.custom_title) || '';
+      }
+      // The title that is actually SAVED — what the row reports and what prints.
+      function savedTitle() {
+        return (state && state.custom_title) || '';
+      }
+      function renderGameRow() {
+        const row = $('#gameRow');
+        if (!row) return;
+        row.classList.toggle('hidden', !isOwner);
+        if (!isOwner) return;
+        const photos = pawnList().length;
+        const open = state.status === 'open';
+        // The subtitle reports what is actually in there, so she can tell whether
+        // it is worth opening without opening it.
+        const parts = [];
+        parts.push(photos ? photos + ' תמונות' : 'אין תמונות');
+        // The TITLE ITSELF, not "custom/default". Since #449 the wizard is
+        // title-only — it is the one thing the buyer writes, so every order she
+        // creates has one and "כותרת מותאמת" would be true of all of them and tell
+        // her nothing. Showing the words means she can spot a wrong title without
+        // opening the sheet. One line, trimmed: a two-line title is legal and this
+        // is a summary. The fallback still matters for an admin-created order,
+        // which can genuinely carry no title of its own.
+        const t = savedTitle().split('\n')[0].trim();
+        parts.push(t ? (t.length > 22 ? t.slice(0, 22) + '…' : t) : 'כותרת ברירת מחדל');
+        if (!open) parts.push('לצפייה בלבד');
+        $('#gameRowSub').textContent = parts.join(' · ');
+      }
+
+      // The card, rendered by the SAME endpoint the wizard and the press file use.
+      // `board: false` because this sheet shows the card only, and the board is by
+      // far the heaviest thing that endpoint can produce.
+      async function renderPreview() {
+        const box = $('#prevBox');
+        const img = $('#prevImg');
+        const fail = $('#prevFail');
+        if (!previewSpec) return;
+        const seq = ++previewSeq;
+        box.classList.add('busy');
+        fail.classList.add('hidden');
+        try {
+          const r = await fetch('/api/preview', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...previewSpec, title: titleValue() || null, board: false }),
+          }).then((res) => (res.ok ? res.json() : Promise.reject(new Error(res.status))));
+          // A stale render (she typed again while this one was drawing) must not
+          // overwrite the newer card.
+          if (seq !== previewSeq) return;
+          if (r && r.card) {
+            img.src = r.card;
+            $('#gameRowThumb').src = r.card;
+          }
+        } catch (e) {
+          if (seq !== previewSeq) return;
+          // Keep whatever card is already on screen — a stale picture of her deck
+          // is far better than an empty box — and say so quietly.
+          fail.classList.remove('hidden');
+        } finally {
+          if (seq === previewSeq) box.classList.remove('busy');
+        }
+      }
+      // Redraw a beat after she stops typing, never per keystroke: every render
+      // spawns Chrome on the server.
+      function schedulePreview() {
+        clearTimeout(previewTimer);
+        previewTimer = setTimeout(renderPreview, 600);
+      }
+
+      async function openGameSheet() {
+        const sheet = $('#gameSheet');
+        const open = state.status === 'open';
+        draftTitle = null; // reopening starts from what is stored, not last time's typing
+        $('#titleInput').value = savedTitle();
+        $('#titleInput').disabled = !open;
+        $('#titleSaveBtn').classList.toggle('hidden', !open);
+        $('#sheetFixedNote').classList.toggle('hidden', !open);
+        $('#sheetClosedNote').classList.toggle('hidden', open);
+        $('#titleErr').classList.add('hidden');
+        renderPawns();
+        sheet.classList.remove('hidden');
+        $('#gameSheetClose').focus();
+        // The render inputs are the collection's own, fetched once per page load.
+        if (!previewSpec) {
+          try {
+            const sum = await api('/summary?k=' + encodeURIComponent(ownerToken));
+            previewSpec = sum && sum.preview ? sum.preview : null;
+          } catch (e) {
+            previewSpec = null;
+          }
+        }
+        if (previewSpec) renderPreview();
+        else $('#prevFail').classList.remove('hidden');
+      }
+      function closeGameSheet() {
+        $('#gameSheet').classList.add('hidden');
+        clearTimeout(previewTimer);
+      }
+      async function saveTitle() {
+        const btn = $('#titleSaveBtn');
+        const err = $('#titleErr');
+        err.classList.add('hidden');
+        btn.disabled = true;
+        try {
+          const r = await api('/title?k=' + encodeURIComponent(ownerToken), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ custom_title: $('#titleInput').value }),
+          });
+          state.custom_title = r.custom_title;
+          draftTitle = null; // saved: the stored title is the truth again
+          $('#titleInput').value = savedTitle();
+          renderGameRow();
+          renderPreview();
+        } catch (e) {
+          // The server's own Hebrew message when it has one (the emoji refusal
+          // names the problem far better than a generic failure would), and her
+          // text is left in the field to fix rather than wiped.
+          err.textContent =
+            (e.body && e.body.message) ||
+            (e.status === 409 ? 'האיסוף נסגר - אי אפשר לשנות כותרת' : 'לא הצלחנו לשמור, נסו שוב');
+          err.classList.remove('hidden');
+        } finally {
+          btn.disabled = false;
+        }
+      }
+      (function wireGameSheet() {
+        const row = document.getElementById('gameRow');
+        if (!row) return;
+        row.addEventListener('click', () => {
+          track('game_sheet_open', {});
+          openGameSheet();
+        });
+        $('#gameSheetClose').addEventListener('click', closeGameSheet);
+        $('#gameSheet').addEventListener('click', (e) => {
+          if (e.target === $('#gameSheet')) closeGameSheet();
+        });
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && !$('#gameSheet').classList.contains('hidden')) closeGameSheet();
+        });
+        $('#titleSaveBtn').addEventListener('click', saveTitle);
+        // Typing only redraws the picture; nothing is stored until שמירה.
+        $('#titleInput').addEventListener('input', () => {
+          draftTitle = $('#titleInput').value;
+          schedulePreview();
+        });
+      })();
+
+      async function removePawn(src) {
+        showPawnErr('');
+        try {
+          const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ pawn_images: pawnList().filter((p) => p !== src) }),
+          });
+          state.pawn_images = r.pawn_images;
+          renderPawns();
+        } catch (e) {
+          showPawnErr('לא הצלחנו להסיר את התמונה, נסו שוב');
+        }
+      }
+      // Upload goes to the SAME route the wizard uses, in the same shape, so the
+      // server has one way to attach a photo. What it does not send is a cutout:
+      // the wizard cuts the background out in the browser before uploading, and a
+      // photo added here arrives uncut — the server records that as "never
+      // attempted", which is the state an older browser produces too, and the
+      // orders table flags it for a manual cut.
+      async function addPawns(files) {
+        showPawnErr('');
+        const room = PAWN_MAX - pawnList().length;
+        const picked = Array.from(files || []).slice(0, Math.max(0, room));
+        if (!picked.length) return;
+        try {
+          const fd = new FormData();
+          picked.forEach((f, i) => fd.append('pawn' + i, f, f.name || 'pawn' + i));
+          const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
+            method: 'POST',
+            body: fd,
+          });
+          state.pawn_images = r.pawn_images;
+          renderPawns();
+        } catch (e) {
+          showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
+        }
+      }
+      (function wirePawnInput() {
+        const input = document.getElementById('pawnAddInput');
+        if (!input) return;
+        input.addEventListener('change', () => {
+          // COPY the picks out FIRST. `input.files` is a live FileList: clearing
+          // the input empties it, so holding the reference across the line below
+          // hands addPawns an empty list and the upload silently does nothing.
+          const files = Array.from(input.files || []);
+          // Cleared so picking the SAME file twice in a row still fires `change`
+          // the second time.
+          input.value = '';
+          addPawns(files);
+        });
+      })();
 
       // Honoree gender drives phrasing on the prompts. publicView ships `gender`
       // on every read now (owner AND contributor), so this is the buyer's own
@@ -2251,6 +2944,11 @@
         if (isOwner) {
           const paid = isPaid();
           const cardEnabled = !!state.card_enabled;
+          // The row, which summarises the photos + title. The sheet's own
+          // contents are rendered when it opens (and after each edit), so the 5s
+          // poll never rebuilds a strip she is in the middle of using.
+          renderGameRow();
+          if (!$('#gameSheet').classList.contains('hidden')) renderPawns();
           // Paid: drop the pay panel + the pay bar, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,
           // which is what actually starts production.

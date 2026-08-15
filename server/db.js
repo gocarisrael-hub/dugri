@@ -905,6 +905,64 @@ const db = {
     return c.pawn_images;
   },
 
+  // The buyer RETITLES her own deck, owner-token gated. Sanitized with the very
+  // same sanitizeCustomTitle the order flow uses, so what she is shown in the
+  // preview is what the generator will print — one rule, not two that can drift.
+  //
+  // An empty/blank title stores null, which means "use the theme's own title"
+  // rather than "print nothing". Returns the stored value (string or null), or
+  // the string 'forbidden' for a bad token / unknown collection — distinguishable
+  // from a legitimately-null title, which is why it is not simply null.
+  setCustomTitleForOwner(id, ownerToken, title) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return 'forbidden';
+    c.custom_title = sanitizeCustomTitle(title);
+    saveDb();
+    return c.custom_title;
+  },
+
+  // REMOVE / REORDER the buyer's own pawn photos, owner-token gated. The buyer's
+  // half of adminSetPawnImages: she reopens her collection page, sees the faces
+  // she sent, and takes one out.
+  //
+  // The new list can only ever be a SUBSET of what is already attached. Attaching
+  // happens through addPawnImages, behind the upload route that writes the file —
+  // so a caller here cannot point her collection at another collection's photo by
+  // pasting its /content-uploads path, which is what an "arbitrary paths" setter
+  // would allow with nothing but the link to her own order.
+  //
+  // Returns the updated array, or null on a bad owner token, an unknown
+  // collection, or a path that is not already hers.
+  setPawnImagesForOwner(id, ownerToken, paths) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    const current = Array.isArray(c.pawn_images) ? c.pawn_images : [];
+    const seen = new Set();
+    const out = [];
+    for (const raw of Array.isArray(paths) ? paths : []) {
+      const p = String(raw);
+      if (!current.includes(p)) return null; // not hers (or already gone)
+      if (seen.has(p)) continue;
+      seen.add(p);
+      out.push(p);
+    }
+    c.pawn_images = out;
+    // Same pruning as the admin setter: a cutout is keyed by the photo it belongs
+    // to, so survivors keep theirs and a removed photo takes its own with it.
+    const cuts = c.pawn_cutouts;
+    if (cuts && typeof cuts === 'object' && !Array.isArray(cuts)) {
+      const kept = {};
+      for (const p of out) {
+        if (Object.prototype.hasOwnProperty.call(cuts, p)) kept[p] = cuts[p];
+      }
+      c.pawn_cutouts = kept;
+    } else {
+      c.pawn_cutouts = {};
+    }
+    saveDb();
+    return c.pawn_images;
+  },
+
   // Record the background-removed cutout for ONE stored pawn photo, owner-token
   // gated exactly like addPawnImages. `cutPath` is our own "/content-uploads/…"
   // path on success, or null to record "we tried and could not cut this one" —
