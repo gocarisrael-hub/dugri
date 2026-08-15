@@ -134,11 +134,13 @@ describe('the pure rules', () => {
     expect(reminders.wordRemindersStopped({ status: 'open', order: { ready_at: 'x' } })).toBe(true);
   });
 
-  it('money: stopped by ready or a cancellation — but NOT by closing the words', () => {
+  it('money: stopped by the close too — production is where automated chasing ends', () => {
     expect(reminders.paymentRemindersStopped({ status: 'open' })).toBe(false);
-    // Words in, money still owed: the two are separate debts, and a buyer often
-    // finishes her list before she pays.
-    expect(reminders.paymentRemindersStopped({ status: 'closed' })).toBe(false);
+    // The owner's correction to where this first landed: once the list is closed
+    // the order is being MADE, and anything still outstanding is a conversation
+    // with a person, not a scheduler.
+    expect(reminders.paymentRemindersStopped({ status: 'closed' })).toBe(true);
+    expect(reminders.paymentRemindersStopped({ status: 'expired' })).toBe(true);
     expect(reminders.paymentRemindersStopped({ order: { ready_at: 'x' } })).toBe(true);
     expect(reminders.paymentRemindersStopped({ cancelled: true })).toBe(true);
   });
@@ -192,12 +194,19 @@ describe('the reminder list', () => {
 });
 
 describe('payment reminders', () => {
-  it('keep going after the words are in — a closed list is not a paid order', async () => {
+  it('run while the list is still open and nothing has started', async () => {
     const c = seed('רותם');
     order(c);
-    db.closeCollection(c.id, c.owner_token);
     expect(await app.runPaymentReminderScan(NOW)).toBe(1);
     expect(paySpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('stop the moment the buyer closes her list — production has begun', async () => {
+    const c = seed('אביב');
+    order(c);
+    db.closeCollection(c.id, c.owner_token);
+    expect(await app.runPaymentReminderScan(NOW)).toBe(0);
+    expect(paySpy).not.toHaveBeenCalled();
   });
 
   it('stop once the order is ready — that conversation is the owner’s to have', async () => {
