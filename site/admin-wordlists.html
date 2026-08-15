@@ -353,6 +353,34 @@
         <h2>כל הרשימות</h2>
         <div id="lists"></div>
 
+        <!-- THE BUYER'S MENU. The panel below decides the pool by DESIGN; this one
+             lets the customer choose it herself from her collection page, under
+             names she understands. Two separate questions: which pools are worth
+             offering at all, and what to call them in front of a customer. -->
+        <div class="panel" style="margin-top: 26px">
+          <h2>מה הלקוחה יכולה לבחור</h2>
+          <p class="status" id="optsNote">
+            הרשימות שמופיעות ללקוחה במסך "המשחק שלי", והשם שהיא רואה. מה שלא מסומן "פעיל" לא מוצג לה
+            ולא ניתן לבחירה. בלי אף שורה - אין בכלל בחירה והחפיסה מתמלאת לפי העיצוב, כמו היום.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>השם שהלקוחה רואה</th>
+                <th>מאיזו רשימה נמלא</th>
+                <th>פעיל</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="buyerOpts" data-testid="buyer-opts"></tbody>
+          </table>
+          <div class="row" style="margin-top: 10px">
+            <button class="btn" id="addOpt" data-testid="add-opt">הוספת שורה</button>
+            <button class="btn primary" id="saveOpts" data-testid="save-opts">שמירה</button>
+            <span class="status" id="optsStatus"></span>
+          </div>
+        </div>
+
         <div class="panel" style="margin-top: 26px">
           <h2>איזה עיצוב משתמש באיזו רשימה</h2>
           <p class="status" id="linkNote">
@@ -515,9 +543,86 @@
         el.className = 'status' + (cls ? ' ' + cls : '');
       }
 
+      // ---- the buyer's menu ---------------------------------------------------
+      // Held as a plain array and written back whole (settings stores it as one
+      // value), so a row removed here is removed there.
+      let buyerOpts = [];
+      // A stable id per row, derived from the label the first time it is saved.
+      // The ORDER uses the pool, and the collection payload maps back by id — so
+      // an id must not change under a customer who already picked it. Existing
+      // rows keep theirs; only new rows get one.
+      function slugFor(label, taken) {
+        const base =
+          String(label || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')
+            .slice(0, 24) || 'opt';
+        let id = base;
+        let n = 2;
+        while (taken.has(id)) id = base + '-' + n++;
+        return id;
+      }
+      function renderBuyerOpts() {
+        const pools = data.wordlists.map((w) => w.name);
+        qs('buyerOpts').innerHTML = buyerOpts
+          .map((o, i) => {
+            const sel = pools
+              .map(
+                (p) =>
+                  '<option value="' +
+                  esc(p) +
+                  '"' +
+                  (p === o.pool ? ' selected' : '') +
+                  '>' +
+                  esc(p) +
+                  '</option>'
+              )
+              .join('');
+            return (
+              '<tr data-i="' +
+              i +
+              '">' +
+              '<td><input class="opt-label" data-testid="opt-label" value="' +
+              esc(o.label || '') +
+              '" maxlength="60" /></td>' +
+              '<td><select class="opt-pool" data-testid="opt-pool">' +
+              sel +
+              '</select></td>' +
+              '<td><input type="checkbox" class="opt-on" data-testid="opt-on"' +
+              (o.enabled ? ' checked' : '') +
+              ' /></td>' +
+              '<td><button class="btn danger opt-del" data-testid="opt-del">מחיקה</button></td>' +
+              '</tr>'
+            );
+          })
+          .join('');
+      }
+      // Read the table back into the array before saving, so an edit that was
+      // never blurred is not lost.
+      function collectBuyerOpts() {
+        const taken = new Set();
+        return Array.from(qs('buyerOpts').querySelectorAll('tr')).map((tr, i) => {
+          const label = tr.querySelector('.opt-label').value.trim();
+          const existing = buyerOpts[i] && buyerOpts[i].id;
+          const id = existing || slugFor(label, taken);
+          taken.add(id);
+          return {
+            id,
+            label,
+            pool: tr.querySelector('.opt-pool').value,
+            enabled: tr.querySelector('.opt-on').checked,
+          };
+        });
+      }
+
       async function load() {
         try {
           data = await api('GET', '/api/admin/wordlists');
+          const st = await api('GET', '/api/admin/settings');
+          const eff = (st && st.effective && st.effective.wordlists) || {};
+          buyerOpts = Array.isArray(eff.buyer_options) ? eff.buyer_options : [];
           if (openName) {
             const full = await api('GET', '/api/admin/wordlists/' + encodeURIComponent(openName));
             const i = data.wordlists.findIndex((w) => w.name === openName);
@@ -525,11 +630,54 @@
             else openName = null;
           }
           render();
+          renderBuyerOpts();
         } catch (e) {
           qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message + ' (מפתח שגוי?)';
           qs('loadErr').hidden = false;
         }
       }
+
+      // Add / delete / save for the buyer's menu.
+      document.addEventListener('click', async (e) => {
+        if (e.target.id === 'addOpt') {
+          buyerOpts = collectBuyerOpts();
+          buyerOpts.push({
+            id: '',
+            label: '',
+            pool: (data.wordlists[0] || {}).name || '',
+            enabled: true,
+          });
+          renderBuyerOpts();
+          return;
+        }
+        if (e.target.classList && e.target.classList.contains('opt-del')) {
+          const i = Number(e.target.closest('tr').dataset.i);
+          buyerOpts = collectBuyerOpts().filter((_, n) => n !== i);
+          renderBuyerOpts();
+          return;
+        }
+        if (e.target.id === 'saveOpts') {
+          const next = collectBuyerOpts();
+          // The one rule worth catching HERE rather than as a server error: an
+          // unnamed row is a menu entry the customer would see as blank.
+          if (next.some((o) => !o.label)) {
+            setMsg(qs('optsStatus'), 'לכל שורה צריך שם שהלקוחה רואה', 'err');
+            return;
+          }
+          try {
+            await api('POST', '/api/admin/settings', {
+              section: 'wordlists',
+              key: 'buyer_options',
+              value: next,
+            });
+            buyerOpts = next;
+            renderBuyerOpts();
+            setMsg(qs('optsStatus'), 'נשמר ✓', 'ok');
+          } catch (err) {
+            setMsg(qs('optsStatus'), 'שמירה נכשלה: ' + err.message, 'err');
+          }
+        }
+      });
 
       async function createList() {
         const name = qs('newName').value.trim();

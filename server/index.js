@@ -25,6 +25,7 @@ const waState = require('./wa-state');
 const reminders = require('./reminders');
 const faq = require('./faq');
 const wordlists = require('./wordlists');
+const wordlistOptions = require('./wordlist-options');
 const unsubscribe = require('./unsubscribe');
 const sms = require('./sms');
 const pdfName = require('./pdf-name');
@@ -609,6 +610,11 @@ function publicView(c, { owner = false } = {}) {
           // …and the title she chose, so the same sheet can show and change it.
           // null means she never set one and the theme's own title is printed.
           custom_title: c.custom_title || null,
+          // Which entry of the owner's buyer-facing pool menu this order is on,
+          // by OPTION ID — never the pool's file name, which is a production
+          // detail she is not choosing and has no use for. null = no pick, so the
+          // deck fills the way her design says.
+          wordlist_option: optionIdForPool(c.wordlist),
         }
       : {}),
     // Free word quota. The buyer is meant to discover the cap by REACHING it, so
@@ -1652,6 +1658,59 @@ app.put('/api/collections/:id/pawns', express.json({ limit: '16kb' }), (req, res
   // bad token, on purpose: both are "that is not yours to edit".
   if (imgs == null) return res.status(403).json({ error: 'forbidden' });
   res.json({ ok: true, pawn_images: imgs });
+});
+
+// Which buyer-facing option a stored pool corresponds to, or null. The order
+// stores the POOL (that is what the generator needs); the menu is keyed by option
+// id, and the sheet needs the id back to show which one is ticked. Resolved on
+// read rather than stored twice, so renaming a pool in one place cannot leave the
+// two disagreeing.
+function optionIdForPool(pool) {
+  if (!pool) return null;
+  const list = settings.get('wordlists', 'buyer_options') || [];
+  const found = list.find((o) => o && o.enabled && o.pool === pool);
+  return found ? found.id : null;
+}
+
+// The buyer-facing pool menu, public. Labels only — the pool file names behind
+// them are production detail (see server/wordlist-options.js). Empty until the
+// owner builds the menu, which is exactly when the chooser should not appear.
+app.get('/api/wordlist-options', (req, res) => {
+  res.json({ options: wordlistOptions.publicOptions(settings.get('wordlists', 'buyer_options')) });
+});
+
+// The buyer picks which pool fills the rest of her deck. Body: { option_id } —
+// null/'' clears the pick and lets her design decide, as before.
+//
+// Allowed until she CLOSES the collection, the same rule as her title and photos:
+// closing freezes the 412-word bank and starts production, and this choice is one
+// of the inputs that bank is frozen FROM.
+app.put('/api/collections/:id/wordlist', express.json({ limit: '4kb' }), (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  if (db.effectiveStatus(c) !== 'open') {
+    return res.status(409).json({ error: 'closed', message: 'האיסוף נסגר והמשחק בהפקה' });
+  }
+  const raw = (req.body || {}).option_id;
+  const optionId = raw == null ? '' : String(raw).trim();
+  let pool = null;
+  if (optionId) {
+    // Resolved through the OWNER'S MENU, never taken from the client: the body
+    // names a menu entry, and the pool it maps to is ours. A disabled option
+    // resolves to nothing, so switching one off stops it being choosable rather
+    // than merely hiding it.
+    pool = wordlistOptions.poolForOption(settings.get('wordlists', 'buyer_options'), optionId);
+    if (!pool) return res.status(400).json({ error: 'unknown option' });
+    // …and the pool it names must still be a real pool. The menu is settings, the
+    // pools are files on the volume, and a deleted pool would otherwise reach
+    // topup.py as a name it cannot resolve — at print time, on a paid order.
+    if (!wordlists.list().some((w) => w.name === pool)) {
+      return res.status(409).json({ error: 'pool missing', message: 'הרשימה הזו כבר לא קיימת' });
+    }
+  }
+  const stored = db.setWordlistForOwner(req.params.id, req.query.k, pool);
+  if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  res.json({ ok: true, option_id: optionIdForPool(stored) });
 });
 
 // The buyer RETITLES her own deck from the collection page. Body: { custom_title }
