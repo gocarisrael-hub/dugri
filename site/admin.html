@@ -941,24 +941,6 @@
       const stageTabsEl = document.getElementById('tabs-stage');
       const sortSelect = document.getElementById('sort');
 
-      // A download link for an order's BOARD — the second artifact, produced as
-      // its own file next to the card-deck PDF. Callers add it only when the
-      // order actually has one (production.board_file).
-      function boardLink(id, label) {
-        const a = document.createElement('a');
-        a.className = 'act';
-        a.textContent = label || 'לוח';
-        a.href =
-          location.origin +
-          '/api/admin/collections/' +
-          id +
-          '/board?key=' +
-          encodeURIComponent(key);
-        a.target = '_blank';
-        a.rel = 'noopener';
-        return a;
-      }
-
       // THE PRINT SHOP COPY is not something to press a button for any more.
       // "צור PDF" builds it along with the deck (generator/press_marks.py), so
       // this is a download: bleed, crop marks and a TrimBox over the very deck
@@ -968,6 +950,12 @@
       // produce could not make it ('failed'). An order produced before this
       // existed has neither, and gets the plain link — the download itself
       // answers honestly (404) if there is nothing behind it.
+      //
+      // This is THE download of a produced order — the only one the row offers.
+      // The deck's own RGB PDF and the board file are still produced and still
+      // served by their routes, but nothing is sent anywhere except the shop
+      // copy, and three near-identical "הורד" links were three chances to mail
+      // the wrong one.
       function pressLink(id, state) {
         if (state === 'failed') {
           const span = document.createElement('span');
@@ -978,8 +966,8 @@
         }
         const a = document.createElement('a');
         a.className = 'act';
-        a.textContent = 'הורד PDF לבית דפוס';
-        a.title = 'עם בליד, סימוני חיתוך ו-TrimBox — נוצר יחד עם ה-PDF';
+        a.textContent = 'הורד PDF';
+        a.title = 'הקובץ לבית הדפוס — עם בליד, סימוני חיתוך ו-TrimBox. נוצר יחד עם ההפקה';
         a.href =
           location.origin +
           '/api/admin/collections/' +
@@ -2752,26 +2740,13 @@
             return span;
           };
 
-          const showPdf = (hasBoard) => {
+          // ONE download per produced order: the print-shop copy. `press` is
+          // passed in rather than read off `prod`, because after a re-produce
+          // `prod` is the state this row was BUILT with — a stale 'failed' there
+          // would hide the file the re-produce just made.
+          const showPdf = (press) => {
             pdfWrap.textContent = ' ';
-            const a = document.createElement('a');
-            a.className = 'act';
-            a.textContent = 'הורד PDF';
-            a.href =
-              location.origin +
-              '/api/admin/collections/' +
-              c.id +
-              '/pdf?key=' +
-              encodeURIComponent(key);
-            a.target = '_blank';
-            a.rel = 'noopener';
-            pdfWrap.appendChild(a);
-            if (hasBoard) {
-              pdfWrap.appendChild(document.createTextNode(' '));
-              pdfWrap.appendChild(boardLink(c.id, 'הורד לוח'));
-            }
-            pdfWrap.appendChild(document.createTextNode(' '));
-            pdfWrap.appendChild(pressLink(c.id, prod && prod.press));
+            pdfWrap.appendChild(pressLink(c.id, press));
             const note = smallCardsNote(prod);
             if (note) pdfWrap.appendChild(note);
           };
@@ -2799,8 +2774,7 @@
               if (r.ok) {
                 genBtn.textContent = 'צור PDF מחדש';
                 genBtn.disabled = false;
-                const madeBoard = !!(data.production && data.production.board_file);
-                showPdf(madeBoard);
+                showPdf(data.production && data.production.press);
               } else {
                 genBtn.textContent = orig;
                 genBtn.disabled = false;
@@ -2817,7 +2791,7 @@
           td.appendChild(pdfWrap);
           if (prod && prod.state === 'generated') {
             genBtn.textContent = 'צור PDF מחדש';
-            showPdf(!!prod.board_file);
+            showPdf(prod.press);
           }
 
           // Cancel / restore (soft) + hard delete.

@@ -271,8 +271,10 @@ test('WhatsApp column links into the group when one exists', async ({ page, requ
 // Report ONE seeded collection as produced, by patching the admin list response
 // on its way to the browser (same trick as markRowPaid, and for the same reason:
 // there is no way to actually run the generator from an E2E run). `board`
-// controls whether that production also yielded the separate board file.
-async function markRowGenerated(page, honoreeName, board) {
+// controls whether that production also yielded the separate board file, and
+// `press` is the print-shop file's state ('ready' | 'failed' | undefined for an
+// order produced before that file existed).
+async function markRowGenerated(page, honoreeName, board, press = 'ready') {
   await page.route('**/api/admin/collections*', async (route) => {
     const resp = await route.fetch();
     const body = await resp.json();
@@ -282,6 +284,7 @@ async function markRowGenerated(page, honoreeName, board) {
         state: 'generated',
         pdf_file: c.id + '.pdf',
         board_file: board ? c.id + '-board.pdf' : null,
+        press,
       };
       c.production = production;
       if (c.order) c.order.production = production;
@@ -290,31 +293,40 @@ async function markRowGenerated(page, honoreeName, board) {
   });
 }
 
-// The board is a SECOND deliverable now — the admin row has to offer it next to
-// the deck, and only when that order actually produced one.
-test('a produced order offers the board file alongside the PDF', async ({ page, request }) => {
+// A produced order offers exactly ONE download, and it is the print-shop copy.
+// The deck's own RGB PDF and the board are still produced and still served by
+// their routes — the row just doesn't offer them, so there is nothing to pick
+// wrongly from. Asserted even when a board WAS produced: having one is not a
+// reason to show it.
+test('a produced order offers only the print-shop PDF', async ({ page, request }) => {
   const name = uniq('לוח');
   await seed(request, { name, email: 'board@example.com', phone: '0521234567', words: ['א', 'ב'] });
   await markRowGenerated(page, name, true);
 
   await page.goto(`/admin.html?key=${KEY}`);
   const row = page.locator('tbody tr', { hasText: name });
-  await expect(row.locator('a[href*="/pdf?key="]').first()).toBeVisible();
-  await expect(row.locator('a[href*="/board?key="]').first()).toBeVisible();
+  const press = row.locator('a[href*="/press?key="]');
+  await expect(press).toHaveCount(1);
+  await expect(press).toHaveText('הורד PDF');
+  await expect(row.locator('a[href*="/board?key="]')).toHaveCount(0);
+  await expect(row.locator('a[href*="/pdf?key="]')).toHaveCount(0);
 });
 
-test('a produced order with no board file offers only the PDF', async ({ page, request }) => {
-  const name = uniq('בלילוח');
+// The one state that is NOT a download: the deck produced but the marks pass
+// didn't. It says so instead of handing over a link to a file that isn't there.
+test('a produced order whose press file failed offers no download', async ({ page, request }) => {
+  const name = uniq('נכשל');
   await seed(request, {
     name,
-    email: 'noboard@example.com',
+    email: 'nopress@example.com',
     phone: '0521234567',
     words: ['א', 'ב'],
   });
-  await markRowGenerated(page, name, false);
+  await markRowGenerated(page, name, false, 'failed');
 
   await page.goto(`/admin.html?key=${KEY}`);
   const row = page.locator('tbody tr', { hasText: name });
-  await expect(row.locator('a[href*="/pdf?key="]').first()).toBeVisible();
-  await expect(row.locator('a[href*="/board?key="]')).toHaveCount(0);
+  await expect(row.getByText('קובץ לבית דפוס נכשל')).toBeVisible();
+  await expect(row.locator('a[href*="/press?key="]')).toHaveCount(0);
+  await expect(row.locator('a[href*="/pdf?key="]')).toHaveCount(0);
 });
