@@ -2719,6 +2719,34 @@
           genBtn.textContent = 'צור PDF';
           const pdfWrap = document.createElement('span');
           // `hasBoard` adds the second artifact's download beside the deck's.
+          // Cards that came out noticeably smaller than the rest of the deck, and
+          // the entry that decided each one. The packer already puts demanding
+          // entries together so they cost ONE card instead of four; what reaches
+          // here is the entry that is hard on its own, which only a shorter word
+          // can fix. A note beside the file, never a block: the deck is correct.
+          const smallCardsNote = (prod) => {
+            const small = (prod && prod.small_cards) || [];
+            if (!small.length) return null;
+            const span = document.createElement('span');
+            span.className = 'muted';
+            const words = small
+              .slice(0, 3)
+              .map((c) => '"' + c.word + '"')
+              .join(', ');
+            span.textContent =
+              ' · ' +
+              small.length +
+              (small.length === 1 ? ' קלף קטן מהרגיל' : ' קלפים קטנים מהרגיל') +
+              ' (' +
+              words +
+              (small.length > 3 ? ' ועוד' : '') +
+              ')';
+            span.title =
+              'המילים האלה ארוכות מדי לשורה אחת, ולכן הקלף שלהן מודפס קטן. ' +
+              'אפשר לקצר אותן ולהפיק מחדש — או להשאיר.';
+            return span;
+          };
+
           const showPdf = (hasBoard) => {
             pdfWrap.textContent = ' ';
             const a = document.createElement('a');
@@ -2739,6 +2767,8 @@
             }
             pdfWrap.appendChild(document.createTextNode(' '));
             pdfWrap.appendChild(pressLink(c.id, prod && prod.press));
+            const note = smallCardsNote(prod);
+            if (note) pdfWrap.appendChild(note);
           };
           genBtn.onclick = async () => {
             // Default to the RESOLVED generator theme key stored on the order/

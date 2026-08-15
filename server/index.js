@@ -365,7 +365,26 @@ function runGenerator({
       // file and prints its path on its own line; v1 keeps the board inside the
       // deck and prints nothing, so board stays null there.
       const b = /^board (.+)$/m.exec(stdout);
-      resolve({ pages: m ? Number(m[1]) : null, board: b ? b[1].trim() : null });
+      // The cards that will print noticeably smaller than the rest of this deck,
+      // each with the entry that decided it (generator/word_demand.py). A deck
+      // with nothing to report prints nothing, so absent means "even deck", not
+      // "not checked" — an older generator would also print nothing, and reading
+      // that as "no problems" is the same answer it always gave.
+      const sc = /^smallcards (.+)$/m.exec(stdout);
+      let smallCards = [];
+      if (sc) {
+        try {
+          const parsed = JSON.parse(sc[1]);
+          if (Array.isArray(parsed)) smallCards = parsed.slice(0, 12);
+        } catch {
+          /* a report we cannot read is not a reason to fail a produced deck */
+        }
+      }
+      resolve({
+        pages: m ? Number(m[1]) : null,
+        board: b ? b[1].trim() : null,
+        smallCards,
+      });
     });
   });
 }
@@ -992,7 +1011,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   const outPdf = path.join(GENERATED_DIR, c.id + '.pdf');
 
   try {
-    const { pages } = await runGenerator({
+    const { pages, smallCards } = await runGenerator({
       theme,
       name: c.honoree_name || '',
       words,
@@ -1061,6 +1080,14 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       // Whether the shop's copy is on disk. There is only ONE kind of press file
       // now, so this is a fact rather than a mode: 'ready' or 'failed'.
       press: marks.ok ? 'ready' : 'failed',
+      // Cards that will print noticeably smaller than the rest, and the entry
+      // responsible for each. The owner asked for this after finding decks with
+      // "1 card that the font size of the words is super tiny because of 1
+      // fucked up word": the packer already puts such entries together so they
+      // cost one card instead of four, and what is left is a word only she can
+      // shorten. A NOTE, never a block — the deck is correct, it is one card she
+      // may want to rewrite.
+      small_cards: smallCards && smallCards.length ? smallCards : null,
     });
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:

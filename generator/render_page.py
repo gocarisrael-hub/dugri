@@ -1612,9 +1612,39 @@ def _opaque(shape):
     return True
 
 
-def _merge_boxes(boxes, pad):
-    """Union every group of boxes that touches within ``pad``."""
+class Obstacle(tuple):
+    """A merged icon: the outer box, plus the PIECES it was merged from.
+
+    THE OWNER'S POINT: "the upper part of the icon is smaller than the lower
+    part." A palm tree is 145 separate paths, merged into one rectangle so the
+    icon is treated as one thing — and that rectangle then claims the empty sky
+    above the fronds and the paper beside the trunks. Measured on her card, only
+    29% of the rectangle is painted at all.
+
+    The pieces are what answer it. The box still says WHERE the icon is (that is
+    what decides which lines meet it), but how far it REACHES at the height of a
+    particular line is asked of the pieces that are actually at that height. A
+    round icon then gives back its corners, a palm gives back its sky, and a real
+    rectangle behaves exactly as it did — its one piece IS the box.
+
+    A tuple, so every existing reader (o[0]..o[3]) keeps working unchanged.
+    """
+
+    def __new__(cls, box, parts=()):
+        self = super().__new__(cls, tuple(box))
+        self.parts = tuple(tuple(p) for p in parts) or (tuple(box),)
+        return self
+
+
+def _merge_boxes(boxes, pad, keep_parts=False):
+    """Union every group of boxes that touches within ``pad``.
+
+    ``keep_parts`` returns each union as an ``Obstacle`` that still carries the
+    boxes it swallowed, so a later reader can ask how far the icon reaches at one
+    particular height instead of taking the whole rectangle's word for it.
+    """
     out = [list(b) for b in boxes]
+    parts = [[tuple(b)] for b in boxes]
     merged = True
     while merged:
         merged = False
@@ -1628,10 +1658,13 @@ def _merge_boxes(boxes, pad):
                     out[i] = [min(a[0], b[0]), min(a[1], b[1]),
                               max(a[2], b[2]), max(a[3], b[3])]
                     out.pop(j)
+                    parts[i] = parts[i] + parts.pop(j)
                     merged = True
                 else:
                     j += 1
             i += 1
+    if keep_parts:
+        return [Obstacle(b, ps) for b, ps in zip(out, parts)]
     return out
 
 
@@ -1685,7 +1718,7 @@ def card_obstacles(svg_text, cell):
                        and c[2] >= b[2] - slop and c[3] >= b[3] - slop
                        for c, o in painted[i + 1:])]
     rects = [b for b in _merge_boxes([b for b in kept if not scenery(b)],
-                                     _OBSTACLE_MERGE * small)
+                                     _OBSTACLE_MERGE * small, keep_parts=True)
              if not scenery(b)
              and (b[2] - b[0] >= _OBSTACLE_MIN * small
                   or b[3] - b[1] >= _OBSTACLE_MIN * small)]
@@ -1912,6 +1945,37 @@ def _grid_pitch(centers, gaps, lead, size, cap=None):
     if cap is not None:
         pitch = max(lead * size, min(pitch, cap))
     return pitch
+
+
+# ONE LINE RHYTHM FOR THE WHOLE DECK — the owner's rule, in her words: "between
+# each line i want even spaces, even if it is in between rows of the same
+# number… let's say 1. is one line, then that line should be of height x. now
+# let's say 2. is two lines, the height of 2 should be 2x."
+#
+# So the constant is the LINE, not the entry: every printed line steps by one
+# pitch, and an entry of two lines is simply twice as tall as one of one. Within
+# a card that was already true. What was not true is ACROSS cards — the pitch was
+# solved per card against the paper its own line count left, so a card that
+# wrapped more packed them tighter. Measured on one grapefruit deck:
+#
+#     4 lines   pitch 30.8      (nothing wraps)
+#     6 lines   pitch 27.4      (two entries wrap)
+#     8 lines   pitch 19.7      (every entry wraps)
+#
+# Flip through that deck and the rhythm changes card to card. Now the pitch is
+# the DESIGN's own on every card, and the size is what gives — see _fit_card,
+# which is where it has to be decided rather than imposed afterwards.
+def design_pitch(centers):
+    """The design's own line pitch: the calibrated span over its entry gaps.
+
+    ONE number per template — which is exactly what makes the rhythm identical on
+    every card of the deck instead of solved per card. A card with a single live
+    entry has no span to divide and returns 0, which reads as "no rhythm to keep"
+    and leaves that card to the font's own leading.
+    """
+    if not centers or len(centers) < 2:
+        return 0.0
+    return (max(centers) - min(centers)) / (len(centers) - 1)
 
 
 def _grid_centers(centers, counts, pitch, anchor_top=False):
@@ -2264,7 +2328,8 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
 
 
 def _fit_card(cands, centers, uniform, font=None, ref=None,
-              vbounds=None, room=None, count=None, bold_w=0.0, rows=None):
+              vbounds=None, room=None, count=None, bold_w=0.0, rows=None,
+              pitch=None):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -2328,7 +2393,33 @@ def _fit_card(cands, centers, uniform, font=None, ref=None,
         live_c = [centers[i] for i in live]
         lead = _card_lead(font, ref, flat, count=count, bold_w=bold_w)
         span = max(live_c) - min(live_c)
-        if room:
+        if pitch and pitch > 0:
+            # THE DECK'S RHYTHM IS FIXED, so the SIZE is what gives. Two limits,
+            # and a combination that satisfies neither simply cannot be set:
+            #   * the letters must not touch — lead x size <= pitch;
+            #   * the block must not pass the floor — the first line is pinned to
+            #     the first calibrated centre and the run is (lines-1) x pitch
+            #     tall plus the last line's ink.
+            # Which is the trade in the docstring pointed the other way: with a
+            # free pitch a wrapped line is paid for in PAPER; at a fixed pitch
+            # there is no paper to pay with, so it is paid for in TYPE.
+            if lead > 0:
+                size = min(size, pitch / lead)
+            first = min(live_c)
+            below = _ink_reach(font, ref, flat[-1])[1] if font is not None else 0.0
+            above = _ink_reach(font, ref, flat[0])[0] if font is not None else 0.0
+            run = (len(flat) - 1) * pitch
+            floor = room[1] if room else (max(live_c) if live_c else None)
+            ceiling = room[0] if room else (vbounds[0] if vbounds else None)
+            if floor is not None and below > 0:
+                size = min(size, (floor - first - run) / below)
+            if ceiling is not None and above > 0:
+                size = min(size, (first - ceiling) / above)
+            if size <= 0:
+                # No paper for this wrapping at this rhythm. A combination that
+                # wraps less will win; if none does, the fallback below runs.
+                continue
+        elif room:
             # The card's real envelope: the first calibrated line down to the
             # printed frame. Applied whether the card wraps or not, because
             # the fixed font pitch can spread a plain card too.
@@ -2354,16 +2445,35 @@ def _fit_card(cands, centers, uniform, font=None, ref=None,
             # exactly ``lead * size``.
             i = live[0]
             lines = cands[i][counts[i]][0]
-            grow = (counts[i] - 1) * lead / 2
-            up = grow + _ink_reach(font, ref, lines[0])[0]
-            down = grow + _ink_reach(font, ref, lines[-1])[1]
-            for reach, need in ((centers[i] - rows[i][0], up),
-                                (rows[i][1] - centers[i], down)):
-                if need > 0:
-                    size = min(size, max(reach, 0.0) / need)
+            if pitch and pitch > 0:
+                # At a fixed pitch half the run is ABSOLUTE; only the ink scales.
+                grow_abs = (counts[i] - 1) * pitch / 2
+                for reach, ink in ((centers[i] - rows[i][0],
+                                    _ink_reach(font, ref, lines[0])[0]),
+                                   (rows[i][1] - centers[i],
+                                    _ink_reach(font, ref, lines[-1])[1])):
+                    if ink > 0:
+                        size = min(size, max(reach - grow_abs, 0.0) / ink)
+            else:
+                grow = (counts[i] - 1) * lead / 2
+                up = grow + _ink_reach(font, ref, lines[0])[0]
+                down = grow + _ink_reach(font, ref, lines[-1])[1]
+                for reach, need in ((centers[i] - rows[i][0], up),
+                                    (rows[i][1] - centers[i], down)):
+                    if need > 0:
+                        size = min(size, max(reach, 0.0) / need)
         key = (size, -sum(combo))
         if best is None or key > best[0]:
             best = (key, size, counts, lead)
+    if best is None:
+        # Every wrapping was refused by the fixed pitch — a card with more lines
+        # than its paper can hold at that rhythm. Solve it again with the pitch
+        # free: a card that keeps the deck's rhythm by being unprintable is not
+        # the trade anyone asked for, and this is the one card in a deck that
+        # will not match. It cannot recurse twice (pitch=None takes the old path).
+        return _fit_card(cands, centers, uniform, font=font, ref=ref,
+                         vbounds=vbounds, room=room, count=count,
+                         bold_w=bold_w, rows=rows, pitch=None)
     return best[1], best[2], best[3]
 
 
@@ -2481,9 +2591,19 @@ _ICON_CLEAR_MM = float(os.environ.get("DUGRI_ICON_CLEAR_MM", "0.5"))
 
 
 def _grown(obstacles, pad):
-    """``obstacles`` with ``pad`` of clear air added on every side."""
-    return [[o[0] - pad, o[1] - pad, o[2] + pad, o[3] + pad]
-            for o in obstacles or []]
+    """``obstacles`` with ``pad`` of clear air added on every side.
+
+    The PIECES are grown too, and by the same margin: they are what says how far
+    the icon reaches at a given height (see ``Obstacle``), so clear air that the
+    outer box has and they do not would be clear air the words never get.
+    """
+    out = []
+    for o in obstacles or []:
+        box = [o[0] - pad, o[1] - pad, o[2] + pad, o[3] + pad]
+        parts = getattr(o, "parts", None)
+        out.append(Obstacle(box, [[p[0] - pad, p[1] - pad, p[2] + pad, p[3] + pad]
+                                  for p in parts]) if parts else box)
+    return out
 
 
 # A BOX IS NOT A SILHOUETTE, and at the anchor that difference decides a card.
@@ -2538,9 +2658,21 @@ def _obstacle_left(obstacles, band, right):
 
     ``band`` is the entry's row ``(top, bottom)``; ``right`` is the anchor its
     lines are set from.
+
+    ASKED OF THE PIECES, not of the merged rectangle — the owner's point, and the
+    reason ``Obstacle`` keeps them: an icon is rarely as wide at the top as it is
+    at the bottom, and the rectangle around it claims the difference. A line
+    passing beside the fronds of a palm is stopped by the fronds, not by the
+    trunks two centimetres below it. An icon of one piece is unaffected, because
+    then the piece is the box.
     """
-    edges = [o[2] for o in obstacles or []
-             if o[1] < band[1] and band[0] < o[3] and o[2] < right]
+    edges = []
+    for o in obstacles or []:
+        if not (o[1] < band[1] and band[0] < o[3]):
+            continue
+        for p in getattr(o, "parts", None) or (o,):
+            if p[1] < band[1] and band[0] < p[3] and p[2] < right:
+                edges.append(p[2])
     return max(edges) if edges else None
 
 
@@ -2567,9 +2699,132 @@ def unclearable_icons(obstacles, band, center, right, width):
                   if o[1] < center < o[3])[::-1]
 
 
+def order_by_room(slots, words, font, cell=None, obstacles=None, safe=_CELL_SAFE,
+                  room_bottom=None, floor=None):
+    """Put each entry on the ROW that suits it, instead of the row it arrived on.
+
+    THE RULE THIS REPLACES: the packer always sent the hardest entry to the
+    bottom row, on the reasoning that a wrapped entry has somewhere to go there.
+    The owner's question was whether that rule is worth keeping — "sometimes the
+    icon is down the card and sometimes not" — and it is not, because the rows of
+    a card are identical to each other and it is the ARTWORK that differs. An
+    icon beside row 3 takes a bite out of row 3; on the next front it takes it
+    out of row 1. A fixed rule cannot know that, and only the renderer can: the
+    packer has no idea which front a card will be printed on.
+
+    So every entry is measured against every row of THIS card — the same
+    measurement the fit will make — and the arrangement that leaves the card's
+    smallest entry as large as possible wins. Four entries over four rows is 24
+    arrangements, so the best one is found by trying them all rather than by a
+    rule of thumb that would need its own exceptions.
+
+    Ties are broken by the total, which keeps the arrangement stable when the
+    rows are equally roomy (a card with no icons beside its words): the entries
+    then stay in the order they arrived, and the deck looks exactly as it did.
+
+    Blanks stay TRAILING. Only the live entries are permuted, among the rows they
+    already occupy — the renderer numbers the rows 1..4 downwards, so a blank
+    between two entries would print an empty numbered line.
+    """
+    live = [w for w in words if w]
+    if len(live) < 2 or not slots:
+        return list(words)
+    centers = [(sl["y0"] + sl["y1"]) / 2 for sl in slots]
+    vbounds = ((cell[1] + (cell[3] - cell[1]) * safe,
+                cell[3] - (cell[3] - cell[1]) * safe) if cell else None)
+    rows = slot_rows(slots, centers, vbounds, room_bottom)
+    # The fit meets the icons with their clear air already on them, so the choice
+    # has to meet the same boxes — otherwise an entry is placed against one
+    # geometry and set against a tighter one.
+    obstacles = _grown(obstacles, _ICON_CLEAR_MM * _PT_PER_MM)
+
+    ref = font.ref
+    # ONE digit column for the whole card, exactly as the fit and the render use
+    # (see the anchor note in _words_overlay). Measuring each row against its own
+    # digit would make the choice turn on whether "4" is wider than "1" — a
+    # fraction of a millimetre that has nothing to do with the artwork, and
+    # enough to reshuffle a card that has no icons at all.
+    advance = _marker_advance(_primary(font), len(slots))
+    size = {}
+    for wi in range(len(live)):
+        right, left, _ = row_bounds(slots, slots[wi], rows[wi], cell, obstacles, floor)
+        avail = max(0.0, right - left)
+        for w in live:
+            try:
+                cands = _candidates(font, ref, 1, w, avail, advance=advance)
+                best = max((c[2] for c in cands.values() if c and c[2] is not None),
+                           default=0.0)
+            except Exception:
+                best = 0.0
+            size[(w, wi)] = best
+
+    best_order, best_key = None, None
+    for perm in itertools.permutations(live):
+        got = [size[(w, i)] for i, w in enumerate(perm)]
+        # The card is set at its smallest entry, so that is what is maximised;
+        # the sum only settles ties.
+        key = (min(got), sum(got))
+        if best_key is None or key > best_key:
+            best_order, best_key = perm, key
+    return list(best_order) + [""] * (len(words) - len(best_order))
+
+
+def slot_rows(slots, centers, vbounds=None, room_bottom=None):
+    """THE ROW each entry owns: its centre plus and minus half the way to the
+    nearest neighbouring slot, held inside the card's safe area and above the
+    printed frame's clear air.
+
+    It answers both halves of the icon question — which icons this entry can
+    meet, and how far its own block may grow before it reaches the next row's.
+    Extracted so the ROW CHOICE reads the same rows the fit will use.
+    """
+    rows = {}
+    for wi in range(len(slots)):
+        half = _slot_pitch(slots, wi) / 2
+        top, bottom = centers[wi] - half, centers[wi] + half
+        if vbounds:
+            top, bottom = max(top, vbounds[0]), min(bottom, vbounds[1])
+        if room_bottom is not None and room_bottom > centers[wi]:
+            bottom = min(bottom, room_bottom)
+        rows[wi] = (min(top, centers[wi]), max(bottom, centers[wi]))
+    return rows
+
+
+def row_bounds(slots, slot, row, cell, obstacles, floor=None):
+    """One row's ``(right, left, on_icon)`` — the paper an entry there may use.
+
+    Extracted from the fit so the ROW CHOICE can ask the same question the fit
+    will answer later: how much room does row 3 of this card actually have? The
+    two must agree, or an entry is placed by one measurement and set by another.
+
+    The rows of a card are the same size as each other; what makes them differ is
+    the artwork. An icon beside a row pushes its left edge in, and how far
+    depends on which front this card is — which is why this cannot be decided
+    when the deck is packed.
+    """
+    right = _card_right_edge(slots, cell)
+    # ONE left line for the card, whether or not the template states its column:
+    # see ``_card_left_edge``. The trim-safe floor still holds it off the paper
+    # edge on a card with no cell to mirror against.
+    left = _card_left_edge(slots, cell)
+    if floor is not None:
+        left = max(left, floor)
+    if left >= right:                 # degenerate slot: fall back to the floor
+        left = floor if floor is not None else slot["x0"]
+    # The row is shortened first, because an icon it no longer reaches is an icon
+    # this entry no longer has to be narrow for.
+    clipped = _row_clip(obstacles, row, row[0] / 2 + row[1] / 2,
+                        right, cell[2] - cell[0] if cell else 0.0)
+    edge = _obstacle_left(obstacles, clipped, right)
+    on_icon = edge is not None and edge > left
+    if on_icon:
+        left = edge
+    return right, left, on_icon
+
+
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
-                  obstacles=None, title_box=None):
+                  obstacles=None, title_box=None, even_lines=False):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -2628,15 +2883,7 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # printed frame's clear air. It answers both halves of the icon question —
     # which icons this entry can meet, and how far its own block may grow before
     # it reaches the next row's.
-    rows = {}
-    for wi in range(len(slots)):
-        half = _slot_pitch(slots, wi) / 2
-        top, bottom = centers[wi] - half, centers[wi] + half
-        if vbounds:
-            top, bottom = max(top, vbounds[0]), min(bottom, vbounds[1])
-        if room_bottom is not None and room_bottom > centers[wi]:
-            bottom = min(bottom, room_bottom)
-        rows[wi] = (min(top, centers[wi]), max(bottom, centers[wi]))
+    rows = slot_rows(slots, centers, vbounds, room_bottom)
     # Each live entry's band, before and after the icons beside it have taken
     # their bite. Measured for the whole card first, because whether ANY entry is
     # blocked decides whether THIS CARD may wrap at all (see AND ONLY WHERE THERE
@@ -2657,24 +2904,8 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
             word = words[wi] if wi < len(words) else ""
             if not word:
                 continue
-            right = _card_right_edge(slots, cell)
-            # ONE left line for the card, whether or not the template states
-            # its column: see ``_card_left_edge``. The trim-safe floor still
-            # holds it off the paper edge on a card with no cell to mirror
-            # against.
-            left = _card_left_edge(slots, cell)
-            if floor is not None:
-                left = max(left, floor)
-            if left >= right:             # degenerate slot: fall back to the floor
-                left = floor if floor is not None else slot["x0"]
-            # The row is shortened first, because an icon it no longer reaches is
-            # an icon this entry no longer has to be narrow for.
-            row = _row_clip(obstacles, rows[wi], rows[wi][0] / 2 + rows[wi][1] / 2,
-                            right, cell[2] - cell[0] if cell else 0.0)
-            edge = _obstacle_left(obstacles, row, right)
-            on_icon = edge is not None and edge > left
-            if on_icon:
-                left = edge
+            right, left, on_icon = row_bounds(slots, slot, rows[wi], cell,
+                                              obstacles, floor)
             bands[wi] = (word, right, left, on_icon)
         return bands
 
@@ -2740,10 +2971,17 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                  for wi, (word, right, left, on_icon) in _bands(rows).items()}
         live_c = [centers[i] for i in sorted(cands)]
         room = _room(live_c, rows)
+        # THE DECK'S RHYTHM — the design's own line pitch, identical on every card
+        # (design_pitch). It goes INTO the fit rather than being applied after it,
+        # because the pitch, the size and the wrapping are one circle: fixing the
+        # pitch afterwards leaves the size and the line counts solved for a
+        # different one, which is how a block ends up over an icon or past the
+        # bottom margin.
+        want = design_pitch(live_c) if even_lines else 0.0
         size, counts, lead = _fit_card(cands, centers, cap, font=font, ref=ref,
                                        vbounds=vbounds, room=room,
                                        count=len(slots), bold_w=bold_w,
-                                       rows=rows)
+                                       rows=rows, pitch=want)
         lines = sum(counts.values())
         # With a card to measure, the pitch floor is the origin's ENTRY spacing (a
         # constant per template) and the ceiling is the paper left below the first
@@ -3996,10 +4234,26 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     alt_scale = config.word_alt_scale(cfg, _WORD_ALT_SCALE)
     face = _word_face(word_font, word_font_alt, alt_scale=alt_scale)
     bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
+    # WHICH ROW each entry takes, decided against THIS card's artwork — see
+    # order_by_room. The packer chooses which entries share a card; only here is
+    # it known which front they are printed on, and therefore which of the four
+    # rows an icon has taken a bite out of.
+    words = order_by_room(slots, words, face, cell=cell, obstacles=obstacles,
+                          safe=_CARD_SAFE, room_bottom=room)
     layouts = _word_layouts(slots, words, face, face.ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                             room_bottom=room, bold_w=bold_w,
-                            obstacles=obstacles, title_box=title_box)
+                            obstacles=obstacles, title_box=title_box,
+                            # THE DECK'S RHYTHM applies to the CARD templates only
+                            # — see design_pitch. A v1 sheet card has no paper
+                            # below its last line to put an extra line into (eight
+                            # cards share one page), so holding it to a fixed
+                            # pitch does not cost it type size, it destroys it:
+                            # measured on bachelorette card 2, 10.4 -> 2.5. Those
+                            # templates keep the per-card pitch they have always
+                            # had; every card template, which is everything built
+                            # since, gets the uniform rhythm.
+                            even_lines=config.is_single_card(cfg))
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was

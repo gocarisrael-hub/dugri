@@ -89,6 +89,9 @@ import sys
 PER_CARD = 4
 # Word cards in a standard deck; + the photo card = 104 cards = 208 pages.
 WORD_CARDS = 103
+
+# An entry below this fraction of the deck's median is HARD — see _hard_cut.
+_HARD_CUT = 0.75
 # How many front styles a v2 template ships (2.svg..9.svg).
 FRONTS = 8
 
@@ -220,7 +223,92 @@ def card_groups(uniq, order, personal_count=None):
     return [words]
 
 
-def deal(uniq, n_cards, rnd):
+def _hard_cut(sizes, cut=_HARD_CUT):
+    """The size below which an entry counts as HARD, for this deck.
+
+    Relative to the deck's own median entry, never an absolute number: what
+    counts as small depends on the template and the font, and a deck of long
+    Hebrew phrases has a different comfortable size from a deck of one-word
+    English names.
+    """
+    vals = sorted(sizes.values())
+    if not vals:
+        return 0.0
+    med = vals[len(vals) // 2]
+    return med * cut
+
+
+def deal_measured(uniq, n_cards, rnd, sizes):
+    """Deal by MEASURED difficulty — see generator/word_demand.py.
+
+    THE RULE: hard entries are SPREAD, one per card, not put together.
+
+    That is the second answer this function has had, and the first one was right
+    at the time. While every card solved its own line spacing, a card could
+    absorb several hard entries by tightening its rhythm, so putting four of them
+    on one card cost one card instead of four — measured then as 5 noticeably
+    small cards down to 2.
+
+    The deck-wide rhythm removed that escape. A card cannot tighten its spacing
+    any more (render_page.design_pitch), so several hard entries on one card have
+    nowhere to go but down in size, and they compound. Measured on the same deck,
+    with the rhythm in place:
+
+        put together      worst card 15.4, one card noticeably small
+        as it was         worst card 18.3-20.2, none
+        spread apart      worst card 18.3-20.6, none
+
+    So the owner's question — "doesn't it make some few cards font super small?" —
+    was exactly right, and this is the answer to it: one hard entry per card, and
+    the card only ever pays for that one.
+
+    The deal is a SNAKE: sorted hardest first, dealt left to right, then right to
+    left, so card i gets one entry from the hardest quarter and one from the
+    easiest. A plain round robin would hand card 1 the hardest entry of every
+    round.
+
+    An entry nobody could measure is treated as AVERAGE — it lands where the deal
+    puts it, which is what it did before any of this existed.
+    """
+    words = list(uniq)
+    # Shuffle first so equal-difficulty entries fall in a different order per
+    # seed, then sort — Python's sort is stable, so the shuffle survives as the
+    # tie-break and two orders of the same words still differ.
+    rnd.shuffle(words)
+    known = sorted(sizes[w] for w in words if w in sizes)
+    mid = known[len(known) // 2] if known else 0.0
+    words.sort(key=lambda w: sizes.get(w, mid))          # hardest (smallest) first
+
+    caps = [PER_CARD] * n_cards
+    caps[-1] = len(uniq) - PER_CARD * (n_cards - 1)
+    rows = [[] for _ in range(n_cards)]
+    order = list(range(n_cards))
+    i = rnd_round = 0
+    while i < len(words):
+        seq = order if rnd_round % 2 == 0 else order[::-1]
+        placed = False
+        for c in seq:
+            if i >= len(words):
+                break
+            if len(rows[c]) < caps[c]:
+                rows[c].append(words[i])
+                i += 1
+                placed = True
+        if not placed:
+            break            # every card full — cannot happen while sum(caps) == len
+        rnd_round += 1
+
+    out = []
+    for row in rows:
+        # Hardest LAST within the card. Which ROW it actually prints on is chosen
+        # later against that card's own artwork (render_page.order_by_room); this
+        # only keeps the CSV readable and the blanks trailing.
+        row = sorted((w for w in row if w), key=lambda w: -sizes.get(w, mid))
+        out.append(row + [""] * (PER_CARD - len(row)))
+    return out
+
+
+def deal(uniq, n_cards, rnd, sizes=None):
     """Deal ``uniq`` into ``n_cards`` rows of PER_CARD slots (blank-padded).
 
     The guarantee, for any word list: every card ends up within ONE phrase of
@@ -235,7 +323,15 @@ def deal(uniq, n_cards, rnd):
     Only the last card can be short, and its blanks stay TRAILING — the card
     renderer numbers the slots 1..4 top-down, so a blank between two words would
     print an empty numbered line.
+
+    ``sizes`` is the MEASURED difficulty of each entry (word_demand.measure). When
+    it is given the deal is made from it instead — see ``deal_measured``, which is
+    the better rule and the default for any order the fonts could be read for.
+    The space-counting deal below is what runs when no measurement was possible
+    (an unreadable font, a template we cannot load), and it is unchanged.
     """
+    if sizes:
+        return deal_measured(uniq, n_cards, rnd, sizes)
     singles = [w for w in uniq if not is_multi(w)]
     multis = [w for w in uniq if is_multi(w)]
     # Shuffled independently, but both from the one seeded RNG. When a list is
@@ -258,7 +354,7 @@ def deal(uniq, n_cards, rnd):
 
 
 def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
-         order=ORDER_RANDOM, personal_count=None):
+         order=ORDER_RANDOM, personal_count=None, sizes=None):
     """Write the deck CSV and return ``(unique_words, card_count)``.
 
     ``card_count`` INCLUDES the photo card when one is emitted, so it is the
@@ -287,7 +383,7 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     groups = card_groups(uniq, order, personal_count)
     rows = []
     for g in groups:
-        rows.extend(deal(g, max(1, math.ceil(len(g) / PER_CARD)), rnd))
+        rows.extend(deal(g, max(1, math.ceil(len(g) / PER_CARD)), rnd, sizes=sizes))
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(FIELDS)
