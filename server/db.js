@@ -1505,6 +1505,27 @@ const db = {
   // mirrored to the collection (c.production) so an order that was generated
   // before a version was chosen still surfaces its production state. Returns the
   // stored production object, or false when the collection is unknown.
+  // What the PRINT SHOP's copy currently is: 'rgb' (marks + TrimBox, the file
+  // that exists the moment the deck does), 'converting' (the background colour
+  // pass is running), 'cmyk' (it finished), 'failed' (the marks pass could not
+  // run — the order is still produced and the customer's deck is still correct).
+  //
+  // A MERGE, not a write, and that is the whole point of it existing: the colour
+  // pass finishes minutes after the produce request answered, and setProduction
+  // REPLACES the record — using it there would erase pdf_file, pages and the
+  // capability token the customer's download link is built from.
+  setPressState(id, press) {
+    const c = this.getCollection(id);
+    if (!c) return null;
+    const prev = (c.order && c.order.production) || c.production || null;
+    if (!prev) return null;
+    const rec = { ...prev, press };
+    c.production = rec;
+    if (c.order) c.order.production = rec;
+    saveDb();
+    return rec;
+  },
+
   setProduction(id, production) {
     const c = this.getCollection(id);
     if (!c) return false;

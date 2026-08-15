@@ -391,42 +391,6 @@ describe('feature flags (kind: flag)', () => {
   });
 });
 
-describe('press.cmyk_pass — the print-shop colour pass', () => {
-  it('ships OFF: the shop separates the colour itself', () => {
-    // The owner's decision, and the reason the switch exists at all. A default of
-    // ON would keep charging every build the ~2 minutes of Ghostscript she asked
-    // to stop paying for, and would need a deploy to change.
-    const s = loadFresh();
-    expect(s.get('press', 'cmyk_pass')).toBe(false);
-  });
-
-  it('can be switched back on and persists, with no deploy', () => {
-    // The whole point of a setting rather than an env var: restoring the full
-    // pass is a click, and it survives the restart it does not require.
-    const s = loadFresh();
-    expect(s.set('press', 'cmyk_pass', true)).toBe(true);
-    expect(loadFresh().get('press', 'cmyk_pass')).toBe(true);
-    expect(loadFresh().reset('press', 'cmyk_pass')).toBe(false);
-  });
-
-  it('rejects a non-boolean, so the build mode can never be truthy-by-accident', () => {
-    const s = loadFresh();
-    for (const bad of ['true', 1, 0, null, {}, []]) {
-      expect(s.validateValue('press', 'cmyk_pass', bad)).toBeTruthy();
-      expect(() => s.set('press', 'cmyk_pass', bad)).toThrow();
-    }
-    expect(s.all().overrides).toEqual({});
-  });
-
-  it('is NOT projected to the public features endpoint', () => {
-    // /api/features projects the `features` section only. This is an operational
-    // setting, not a buyer-visible one, so it lives in its own section.
-    const s = loadFresh();
-    expect(Object.keys(s.all().registry.features)).not.toContain('cmyk_pass');
-    expect(s.all().registry.press.cmyk_pass).toEqual({ tokens: [], kind: 'flag' });
-  });
-});
-
 describe('all()', () => {
   it('exposes defaults, overrides, effective and the registry (tokens + kind)', () => {
     const s = loadFresh();
