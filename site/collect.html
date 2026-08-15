@@ -111,6 +111,47 @@
         color: var(--muted);
         margin-top: 6px;
       }
+      /* THE PAGE'S OWN TABS. Deliberately NOT .tabs/.tab — those names are
+         already taken by the segmented control inside the add-words card
+         (single / list / file), and reusing them would paint this strip as three
+         pill buttons. */
+      .tabbar {
+        display: flex;
+        gap: 2px;
+        margin: 10px 0 4px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tabbar-btn {
+        flex: 1;
+        background: none;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        border-bottom: 2px solid transparent;
+        padding: 11px 4px;
+        font: inherit;
+        font-size: 15px;
+        color: var(--muted);
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tabbar-btn.on {
+        color: var(--ink);
+        border-bottom-color: var(--ink);
+      }
+      .tabbar-btn:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: -2px;
+      }
+      /* A section the current tab does not own. Hidden by the ATTRIBUTE rather
+         than a class, so the class each block already carries — and the .hidden
+         its own logic toggles — is left alone; the selector is specific enough to
+         beat the display those classes set. A contributor has no tabs, never
+         carries the attribute, and simply sees the words. */
+      [data-panel][hidden] {
+        display: none;
+      }
+
       .card {
         background: var(--surface);
         border: 1px solid var(--line);
@@ -207,13 +248,17 @@
       /* press: directional white wipe (RTL sweeps in from the right, 300ms).
          Solid black buttons only — light variants (ghost/soft/tab/etc.) are excluded
          so a white fill never lands on a light background. */
-      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x) {
+      button:not(.ghost):not(.soft):not(.tab):not(.tabbar-btn):not(.coupon-remove):not(
+          .pay-modal-x
+        ) {
         position: relative;
         isolation: isolate;
         overflow: hidden;
         border: 1.5px solid #141414;
       }
-      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x)::before {
+      button:not(.ghost):not(.soft):not(.tab):not(.tabbar-btn):not(.coupon-remove):not(
+          .pay-modal-x
+        )::before {
         content: '';
         position: absolute;
         inset: 0;
@@ -223,15 +268,23 @@
         transform-origin: right;
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       }
-      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x):active {
+      button:not(.ghost):not(.soft):not(.tab):not(.tabbar-btn):not(.coupon-remove):not(
+          .pay-modal-x
+        ):active {
         color: #141414;
       }
-      button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x):active::before {
+      button:not(.ghost):not(.soft):not(.tab):not(.tabbar-btn):not(.coupon-remove):not(
+          .pay-modal-x
+        ):active::before {
         transform: scaleX(1);
       }
       @media (prefers-reduced-motion: reduce) {
-        button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x),
-        button:not(.ghost):not(.soft):not(.tab):not(.coupon-remove):not(.pay-modal-x)::before {
+        button:not(.ghost):not(.soft):not(.tab):not(.tabbar-btn):not(.coupon-remove):not(
+            .pay-modal-x
+          ),
+        button:not(.ghost):not(.soft):not(.tab):not(.tabbar-btn):not(.coupon-remove):not(
+            .pay-modal-x
+          )::before {
           transition: none;
         }
       }
@@ -549,54 +602,6 @@
         font-weight: 800;
         margin-bottom: 8px;
       }
-      /* "המשחק שלי" — the one row that stands in for a whole card. Outlined,
-         never filled: the filled black blocks on this page are the payment ones
-         (top card, sticky bar, checkout), and a second black block competing with
-         them would read as a second thing to pay for. */
-      .game-row {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        width: 100%;
-        text-align: start;
-        background: var(--surface);
-        color: var(--ink);
-        border: 1.5px solid var(--ink);
-        border-radius: 0;
-        padding: 10px 12px;
-        margin-bottom: 14px;
-        font: inherit;
-        cursor: pointer;
-      }
-      /* A slice of her own card, so the row says "my game" at a glance. Empty
-         until the preview lands — sized either way so nothing jumps. */
-      .game-row-thumb {
-        width: 38px;
-        height: 52px;
-        flex: 0 0 auto;
-        object-fit: cover;
-        background: var(--section);
-        border: 1px solid var(--line);
-      }
-      .game-row-lbl {
-        flex: 1;
-        font-weight: 700;
-      }
-      .game-row-lbl small {
-        display: block;
-        font-weight: 400;
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .game-row-go {
-        color: var(--muted);
-        font-size: 20px;
-        line-height: 1;
-      }
-
-      /* THE SHEET. Full-screen on a phone (it holds a card-shaped picture, and a
-         picture that has to compete with a keyboard needs the room), centred and
-         bounded on a desktop. */
       .close-ask-card {
         max-width: 420px;
         height: auto;
@@ -639,6 +644,10 @@
         font-size: 17px;
       }
 
+      /* A FULL-SCREEN ASK. Full-screen on a phone, centred and bounded on a
+         desktop. The design and photo panels are inline tabs now; what is left
+         using this is the closing confirmation, which earns the whole screen
+         because it is the one thing on this page that cannot be undone. */
       .game-sheet {
         position: fixed;
         inset: 0;
@@ -669,34 +678,8 @@
           max-height: calc(100vh - 48px);
         }
       }
-      .game-sheet-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 14px;
-        border-bottom: 1px solid var(--line);
-        font-weight: 800;
-        position: sticky;
-        top: 0;
-        background: var(--surface);
-      }
-      .sheet-x {
-        background: none;
-        border: 0;
-        font-size: 26px;
-        line-height: 1;
-        padding: 0 4px;
-        color: var(--ink);
-        cursor: pointer;
-      }
-      .game-sheet-body {
-        padding: 14px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-      }
       /* The card keeps its shape whether or not a render has arrived, so the
-         sheet never resizes under her thumb mid-edit. */
+         tab never resizes under her thumb mid-edit. */
       .prev-box {
         position: relative;
         aspect-ratio: 5 / 7;
@@ -1677,6 +1660,101 @@
         <div class="sub" id="subtitle">כל מילה, ביטוי, בדיחה פנימית או זיכרון נחשב</div>
       </header>
 
+      <!-- FOUR TABS, one job each — the owner's layout: "מילים · העיצוב · חיילי
+           המשחק · תשלום", with the payment reachable from all of them (the
+           sticky bar at the foot of this file never leaves).
+           OWNER ONLY. A contributor arrives from a WhatsApp group to add a word;
+           three of these four tabs are not hers, and a tab strip advertising them
+           would be three dead ends. She sees the page exactly as she does today,
+           which is the words and nothing else. -->
+      <nav class="tabbar owner-only hidden" id="tabs" role="tablist" data-testid="tabs">
+        <button
+          type="button"
+          role="tab"
+          class="tabbar-btn on"
+          data-tab="words"
+          data-testid="tab-words"
+        >
+          מילים
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="tabbar-btn"
+          data-tab="design"
+          data-testid="tab-design"
+        >
+          העיצוב
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="tabbar-btn"
+          data-tab="pawns"
+          data-testid="tab-pawns"
+        >
+          חיילי המשחק
+        </button>
+        <button type="button" role="tab" class="tabbar-btn" data-tab="pay" data-testid="tab-pay">
+          תשלום
+        </button>
+      </nav>
+
+      <!-- THE DESIGN TAB. The card as it will print, and the title under it —
+           one job, not two: every keystroke in the title redraws the picture
+           above it, so they share a tab rather than a screen each. -->
+      <section class="card owner-only hidden" data-panel="design" id="designPanel" hidden>
+        <div class="prev-box" id="prevBox">
+          <img id="prevImg" alt="הקלף שלכם" data-testid="game-preview" />
+          <span class="prev-busy" id="prevBusy" data-edit="collect-sheet-rendering">מעדכן…</span>
+          <span class="prev-fail hidden" id="prevFail" data-edit="collect-sheet-preview-fail"
+            >לא הצלחנו להציג את הקלף כרגע</span
+          >
+        </div>
+
+        <div class="sheet-fld">
+          <label class="fld" for="titleInput" data-edit="collect-sheet-title-label"
+            >כותרת המשחק</label
+          >
+          <!-- A TEXTAREA, like the wizard's — never <input type="text">.
+                 The line break in a title is real: the generator splits on \n and
+                 prints each line as its own title line, and db.sanitizeCustomTitle
+                 keeps them (it trims each line and rejoins). A text input runs the
+                 HTML value sanitization algorithm, which STRIPS U+000A rather than
+                 converting it, so a stored "החגיגה של\nשירה" would both display and
+                 save as "החגיגה שלשירה" — two words fused, no warning, and the
+                 buyer need not even touch the field to lose it.
+                 maxlength matches the wizard's 63 so the two doors onto the same
+                 field agree; the store's own cap (120) still bounds anything set
+                 from the admin. -->
+          <textarea id="titleInput" rows="2" maxlength="63" data-testid="title-input"></textarea>
+          <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
+            >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י · השאירו ריק לכותרת ברירת המחדל</small
+          >
+          <div class="sheet-err hidden" id="titleErr" role="alert" data-testid="title-err"></div>
+          <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">
+            שמירה
+          </button>
+        </div>
+      </section>
+
+      <!-- THE PAWNS TAB. Shown as the CARD they become — the photo card is a
+           printed card like any other, and what she needs to judge is how her
+           photos sit inside it, not how four thumbnails look in a strip. -->
+      <section class="card owner-only hidden" data-panel="pawns" id="pawnsPanel" hidden>
+        <div class="sheet-fld">
+          <span class="fld" data-edit="collect-sheet-photos-label">התמונות שלכם (עד 4)</span>
+          <div class="pawn-strip" id="pawnStrip" data-testid="pawn-strip"></div>
+          <small class="muted hidden" id="pawnNone" data-edit="collect-sheet-photos-none"
+            >לא שלחתם תמונות - נדפיס את החיילים הרגילים של דוגרי.</small
+          >
+          <div class="pawn-err hidden" id="pawnErr" role="alert"></div>
+        </div>
+      </section>
+
+      <p class="sheet-note owner-only hidden" id="sheetClosedNote" data-edit="collect-sheet-closed">
+        האיסוף נסגר והמשחק בהפקה - אי אפשר לשנות עכשיו.
+      </p>
       <!-- OWNER, unpaid: the pay CTA, at the TOP as well as in the sticky bar at
            the foot of this file (#payBar). Two placements of ONE action, not two
            actions: the bar follows the buyer down a long list of words, this one
@@ -1684,7 +1762,7 @@
            that said "the payment is waiting below ⬇" — it pointed at the
            checkout instead of being it, and that is the mistake this replaces:
            the amount is stated here and the button opens the checkout itself. -->
-      <div class="pay-top owner-only hidden" id="payTop" data-testid="pay-top">
+      <div class="pay-top owner-only hidden" data-panel="pay" id="payTop" data-testid="pay-top">
         <div class="pay-top-head" data-edit="collect-pay-top-head">כאן משלמים 👇</div>
         <span class="pay-top-amt amt" id="payTopAmt" data-testid="pay-top-amount">-</span>
         <span class="pay-top-lbl" data-edit="collect-pay-top-label"
@@ -1704,7 +1782,7 @@
       <div class="banner" id="banner"></div>
 
       <!-- add area -->
-      <div class="card" id="addCard">
+      <div class="card" data-panel="words" id="addCard">
         <div class="nameRow">
           <label class="fld" for="byName" data-edit="collect-byname-label"
             >מי מוסיף? (לא חובה)</label
@@ -1779,7 +1857,7 @@
       </div>
 
       <!-- the words (with the live counter) -->
-      <div class="card" id="wordsCard">
+      <div class="card" data-panel="words" id="wordsCard">
         <div class="words-head">
           <span class="sec-h" data-edit="collect-words-heading">המילים שכבר נאספו</span>
           <span class="count-pill"><b id="count">0</b><span id="countMax"> מילים</span></span>
@@ -1804,7 +1882,26 @@
            words and above the help card: the moment the owner sees words landing
            is the moment she wants to invite more people. A single link only — the
            private management link lives collapsed at the bottom of this card. -->
-      <div class="card share hidden" id="sharePanel">
+      <!-- Which words fill the rest of the deck is a question about WORDS, so it
+           belongs beside them rather than beside the artwork. -->
+      <section class="card owner-only hidden" data-panel="words" id="poolPanel" hidden>
+        <!-- WHICH WORDS WE ADD. Her own words come first and always print; this
+               says what the REST of the deck is about, since a full deck is 412
+               and almost nobody writes that many. Hidden entirely until the owner
+               has built the menu in admin-wordlists — an empty chooser would
+               advertise a choice that does not exist. -->
+        <div class="sheet-fld hidden" id="poolFld" data-testid="pool-field">
+          <span class="fld" data-edit="collect-sheet-pool-label">איזה סגנון נשלים לכם?</span>
+          <small class="muted" data-edit="collect-sheet-pool-hint"
+            >המילים שלכם תמיד נכנסות ראשונות. את השאר, עד 412 מילים בחפיסה מלאה, נשלים מהסגנון
+            שתבחרו.</small
+          >
+          <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
+          <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
+        </div>
+      </section>
+
+      <div class="card share hidden" data-panel="words" id="sharePanel">
         <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
         <p class="muted" data-edit="collect-share-hint">
           שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה:
@@ -1879,7 +1976,7 @@
       </div>
 
       <!-- word-finding helpers -->
-      <div class="card" id="helpCard">
+      <div class="card" data-panel="words" id="helpCard">
         <div class="sec-h" data-edit="collect-help-heading">
           תקועים? ענו על כמה שאלות ונמלא לכם מילים 👇
         </div>
@@ -1934,7 +2031,7 @@
       </div>
 
       <!-- OWNER, paid only: replaces the pay panel — keep adding, then סיום -->
-      <div class="card paid-card owner-only hidden" id="paidCard">
+      <div class="card paid-card owner-only hidden" data-panel="pay" id="paidCard">
         <div class="paid-title" data-edit="collect-paid-title">התשלום התקבל ✓</div>
         <p class="paid-body" data-edit="collect-paid-body">
           עכשיו הכי חשוב: הוסיפו כמה שיותר מילים. כשתסיימו - לחצו על ‘סיום’, וזהו: אנחנו מתחילים
@@ -1961,23 +2058,8 @@
            she has seen how the collecting is going, and clear of the payment
            blocks (top card, sticky bar, checkout panel), which are the only
            filled-black elements on the page — hence the outline here. -->
-      <button
-        type="button"
-        class="game-row owner-only hidden"
-        id="gameRow"
-        data-testid="game-row"
-        aria-haspopup="dialog"
-      >
-        <img class="game-row-thumb" id="gameRowThumb" alt="" />
-        <span class="game-row-lbl">
-          <span data-edit="collect-game-row-title">המשחק שלי</span>
-          <small id="gameRowSub" data-testid="game-row-sub"></small>
-        </span>
-        <span class="game-row-go" aria-hidden="true">‹</span>
-      </button>
-
       <!-- owner / closing controls -->
-      <div class="card owner-only hidden" id="ownerControls">
+      <div class="card owner-only hidden" data-panel="pay" id="ownerControls">
         <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
         <p class="muted" data-edit="collect-owner-hint">
           סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.
@@ -1990,7 +2072,7 @@
       </div>
 
       <!-- OWNER: pay panel (collapsible, one button at the bottom) -->
-      <details class="card owner-only hidden pay-collapse" id="payPanel">
+      <details class="card owner-only hidden pay-collapse" data-panel="pay" id="payPanel">
         <summary class="pay-summary" data-edit="collect-pay-summary">שלמו וקבלו את המשחק</summary>
         <!-- Not data-edit: contains a child <b>, and the content editor persists
              via textContent, which would flatten the bold permanently. -->
@@ -2228,14 +2310,6 @@
       </div>
     </div>
 
-    <!-- "המשחק שלי" — the sheet the row opens. Everything about the DECK that is
-         still hers to change, with the real card above it so she is approving a
-         picture rather than a string.
-         The preview is the SAME renderer the wizard used and the press file uses
-         (POST /api/preview), fed from this collection's own stored spec, so it is
-         WYSIWYG. Design and colour are deliberately absent: they were chosen at
-         order time and one line says so, rather than leaving her to hunt for a
-         control that is not there. -->
     <!-- CLOSING IS THE POINT OF NO RETURN, so it is asked as a real dialog and not
          as the browser's one-line confirm. Everything the buyer can still change —
          her words, her title, her photos — stops being changeable the moment this
@@ -2278,93 +2352,17 @@
       </div>
     </div>
 
-    <div
-      id="gameSheet"
-      class="game-sheet hidden"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="gameSheetTitle"
-      data-testid="game-sheet"
-    >
-      <div class="game-sheet-card">
-        <div class="game-sheet-head">
-          <span id="gameSheetTitle" data-edit="collect-sheet-title">המשחק שלי</span>
-          <button type="button" class="sheet-x" id="gameSheetClose" aria-label="סגירה">×</button>
-        </div>
-        <div class="game-sheet-body">
-          <!-- The card. Its own aspect box so the sheet doesn't jump when the
-               render lands, and an overlay while a new title is drawing. -->
-          <div class="prev-box" id="prevBox">
-            <img id="prevImg" alt="הקלף שלכם" data-testid="game-preview" />
-            <span class="prev-busy" id="prevBusy" data-edit="collect-sheet-rendering">מעדכן…</span>
-            <span class="prev-fail hidden" id="prevFail" data-edit="collect-sheet-preview-fail"
-              >לא הצלחנו להציג את הקלף כרגע</span
-            >
-          </div>
-
-          <div class="sheet-fld">
-            <label class="fld" for="titleInput" data-edit="collect-sheet-title-label"
-              >כותרת המשחק</label
-            >
-            <!-- A TEXTAREA, like the wizard's — never <input type="text">.
-                 The line break in a title is real: the generator splits on \n and
-                 prints each line as its own title line, and db.sanitizeCustomTitle
-                 keeps them (it trims each line and rejoins). A text input runs the
-                 HTML value sanitization algorithm, which STRIPS U+000A rather than
-                 converting it, so a stored "החגיגה של\nשירה" would both display and
-                 save as "החגיגה שלשירה" — two words fused, no warning, and the
-                 buyer need not even touch the field to lose it.
-                 maxlength matches the wizard's 63 so the two doors onto the same
-                 field agree; the store's own cap (120) still bounds anything set
-                 from the admin. -->
-            <textarea id="titleInput" rows="2" maxlength="63" data-testid="title-input"></textarea>
-            <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
-              >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י</small
-            >
-            <div class="sheet-err hidden" id="titleErr" role="alert" data-testid="title-err"></div>
-            <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">
-              שמירה
-            </button>
-          </div>
-
-          <div class="sheet-fld">
-            <span class="fld" data-edit="collect-sheet-photos-label">התמונות שלכם (עד 4)</span>
-            <div class="pawn-strip" id="pawnStrip" data-testid="pawn-strip"></div>
-            <small class="muted hidden" id="pawnNone" data-edit="collect-sheet-photos-none"
-              >לא שלחתם תמונות - נדפיס את החיילים הרגילים של דוגרי.</small
-            >
-            <div class="pawn-err hidden" id="pawnErr" role="alert"></div>
-          </div>
-
-          <!-- WHICH WORDS WE ADD. Her own words come first and always print; this
-               says what the REST of the deck is about, since a full deck is 412
-               and almost nobody writes that many. Hidden entirely until the owner
-               has built the menu in admin-wordlists — an empty chooser would
-               advertise a choice that does not exist. -->
-          <div class="sheet-fld hidden" id="poolFld" data-testid="pool-field">
-            <span class="fld" data-edit="collect-sheet-pool-label">איזה סגנון נשלים לכם?</span>
-            <small class="muted" data-edit="collect-sheet-pool-hint"
-              >המילים שלכם תמיד נכנסות ראשונות. את השאר, עד 412 מילים בחפיסה מלאה, נשלים מהסגנון
-              שתבחרו.</small
-            >
-            <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
-            <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
-          </div>
-
-          <p class="sheet-note hidden" id="sheetClosedNote" data-edit="collect-sheet-closed">
-            האיסוף נסגר והמשחק בהפקה - אי אפשר לשנות עכשיו.
-          </p>
-        </div>
-      </div>
-      <input
-        type="file"
-        id="pawnAddInput"
-        accept="image/*"
-        multiple
-        hidden
-        data-testid="pawn-add-input"
-      />
-    </div>
+    <!-- The photo picker the pawns tab opens. Outside every panel on purpose: a
+         file input inside a hidden panel is display:none, and a display:none
+         input cannot open a picker. -->
+    <input
+      type="file"
+      id="pawnAddInput"
+      accept="image/*"
+      multiple
+      hidden
+      data-testid="pawn-add-input"
+    />
 
     <!-- Shared dialog. Serves both a simple info notice ("word already in the
          list", OK only) and an "are you sure?" confirm (cancel + confirm). The
@@ -2607,18 +2605,16 @@
         }
       }
 
-      // ---- "המשחק שלי": the row, and the sheet it opens ------------------------
-      // The row is a summary; the sheet is the only place anything changes. Both
-      // read from `state`, which is the server's answer — so a rejected edit can
-      // never leave either of them showing something the order does not have.
+      // ---- the four tabs, and what each of them shows -------------------------
+      // Every tab reads from `state`, which is the server's answer — so a rejected
+      // edit can never leave one of them showing something the order does not have.
       let previewSpec = null; // this collection's own render inputs (from /summary)
       let previewSeq = 0; // guards against a slow render landing after a newer one
       let previewTimer = null;
       // What she has TYPED but not yet saved. null = nothing in flight, so the
       // stored title is the truth. Kept apart from `state` on purpose: the page
       // re-reads the collection every 5s, and letting a draft live in `state`
-      // would mean the poll quietly reverts what she is typing — or worse, that
-      // the row advertises a custom title she never saved.
+      // would mean the poll quietly reverts what she is typing.
       let draftTitle = null;
 
       // The title to PREVIEW: her draft while she is editing, else the stored one.
@@ -2626,34 +2622,10 @@
         if (draftTitle !== null) return draftTitle;
         return (state && state.custom_title) || '';
       }
-      // The title that is actually SAVED — what the row reports and what prints.
+      // The title that is actually SAVED — what prints.
       function savedTitle() {
         return (state && state.custom_title) || '';
       }
-      function renderGameRow() {
-        const row = $('#gameRow');
-        if (!row) return;
-        row.classList.toggle('hidden', !isOwner);
-        if (!isOwner) return;
-        const photos = pawnList().length;
-        const open = state.status === 'open';
-        // The subtitle reports what is actually in there, so she can tell whether
-        // it is worth opening without opening it.
-        const parts = [];
-        parts.push(photos ? photos + ' תמונות' : 'אין תמונות');
-        // The TITLE ITSELF, not "custom/default". Since #449 the wizard is
-        // title-only — it is the one thing the buyer writes, so every order she
-        // creates has one and "כותרת מותאמת" would be true of all of them and tell
-        // her nothing. Showing the words means she can spot a wrong title without
-        // opening the sheet. One line, trimmed: a two-line title is legal and this
-        // is a summary. The fallback still matters for an admin-created order,
-        // which can genuinely carry no title of its own.
-        const t = savedTitle().split('\n')[0].trim();
-        parts.push(t ? (t.length > 22 ? t.slice(0, 22) + '…' : t) : 'כותרת ברירת מחדל');
-        if (!open) parts.push('לצפייה בלבד');
-        $('#gameRowSub').textContent = parts.join(' · ');
-      }
-
       // The card, rendered by the SAME endpoint the wizard and the press file use.
       // `board: false` because this sheet shows the card only, and the board is by
       // far the heaviest thing that endpoint can produce.
@@ -2674,10 +2646,7 @@
           // A stale render (she typed again while this one was drawing) must not
           // overwrite the newer card.
           if (seq !== previewSeq) return;
-          if (r && r.card) {
-            img.src = r.card;
-            $('#gameRowThumb').src = r.card;
-          }
+          if (r && r.card) img.src = r.card;
         } catch (e) {
           if (seq !== previewSeq) return;
           // Keep whatever card is already on screen — a stale picture of her deck
@@ -2708,14 +2677,20 @@
         if (!fld || !box) return;
         const opts = Array.isArray(poolOptions) ? poolOptions : [];
         fld.classList.toggle('hidden', !opts.length);
+        // The panel around it too, or an owner with no menu built gets an empty
+        // card sitting under her words.
+        $('#poolPanel').classList.toggle('hidden', !opts.length || !isOwner);
         if (!opts.length) return;
         const open = state.status === 'open';
         const picked = poolPick();
         box.textContent = '';
-        // "Whatever suits my design" first, and selected when she has made no
-        // pick — the state every existing order is already in.
-        const rows = [{ id: '', label: 'שנבחר בשבילכם (לפי העיצוב)' }].concat(opts);
-        for (const o of rows) {
+        // NO "whatever suits my design" row: she picks, or nothing is ticked. It
+        // used to lead the list and be selected by default, which meant the
+        // commonest outcome was a deck filled by a choice she never made and
+        // never saw. The server still falls back to the design when no pick was
+        // stored — an old order, or one closed without touching this — so the
+        // absent row costs nobody their deck; it just stops standing in for her.
+        for (const o of opts) {
           const label = document.createElement('label');
           label.className =
             'pool-opt' + (o.id === picked ? ' active' : '') + (open ? '' : ' disabled');
@@ -2757,29 +2732,29 @@
         }
       }
 
-      async function openGameSheet() {
-        const sheet = $('#gameSheet');
-        const open = state.status === 'open';
-        draftTitle = null; // reopening starts from what is stored, not last time's typing
-        $('#titleInput').value = savedTitle();
-        $('#titleInput').disabled = !open;
-        $('#titleSaveBtn').classList.toggle('hidden', !open);
-        $('#sheetClosedNote').classList.toggle('hidden', open);
-        $('#titleErr').classList.add('hidden');
-        $('#poolErr').classList.add('hidden');
-        renderPawns();
-        if (poolOptions === null) {
-          try {
-            const r = await fetch('/api/wordlist-options').then((res) => res.json());
-            poolOptions = Array.isArray(r.options) ? r.options : [];
-          } catch (e) {
-            poolOptions = []; // no menu rather than a broken one
-          }
+      // The chooser sits WITH the words, which is the tab she lands on, so its
+      // menu is fetched as soon as we know she is the owner. It is a small JSON
+      // read — nothing like the card, which is a browser run on the server.
+      let poolLoaded = false;
+      async function loadPoolOptions() {
+        if (poolLoaded) return;
+        poolLoaded = true;
+        try {
+          const r = await fetch('/api/wordlist-options').then((res) => res.json());
+          poolOptions = Array.isArray(r.options) ? r.options : [];
+        } catch (e) {
+          poolOptions = []; // no menu rather than a broken one
         }
         renderPoolOpts();
-        sheet.classList.remove('hidden');
-        $('#gameSheetClose').focus();
-        // The render inputs are the collection's own, fetched once per page load.
+      }
+
+      // What the DESIGN tab needs, fetched once and only when she first asks for
+      // it: the render inputs cost a round trip and the card itself costs a
+      // Chrome run on the server, and most owners open this page to add words.
+      let gameLoaded = false;
+      async function loadGameTabs() {
+        if (gameLoaded) return;
+        gameLoaded = true;
         if (!previewSpec) {
           try {
             const sum = await api('/summary?k=' + encodeURIComponent(ownerToken));
@@ -2791,9 +2766,22 @@
         if (previewSpec) renderPreview();
         else $('#prevFail').classList.remove('hidden');
       }
-      function closeGameSheet() {
-        $('#gameSheet').classList.add('hidden');
-        clearTimeout(previewTimer);
+
+      // What the design and photo tabs show, from `state`. Called on every render
+      // of the owner's state, so a collection that closes while she is looking at
+      // it locks these fields where she can see it happen.
+      function renderGameTabs() {
+        if (!isOwner) return;
+        const open = state.status === 'open';
+        // Her typing wins over the poll; only a field she is NOT editing is
+        // refilled from the store.
+        if (draftTitle === null) $('#titleInput').value = savedTitle();
+        $('#titleInput').disabled = !open;
+        $('#titleSaveBtn').classList.toggle('hidden', !open);
+        $('#sheetClosedNote').classList.toggle('hidden', open);
+        renderPawns();
+        loadPoolOptions();
+        renderPoolOpts();
       }
       async function saveTitle() {
         const btn = $('#titleSaveBtn');
@@ -2809,7 +2797,6 @@
           state.custom_title = r.custom_title;
           draftTitle = null; // saved: the stored title is the truth again
           $('#titleInput').value = savedTitle();
-          renderGameRow();
           renderPreview();
         } catch (e) {
           // The server's own Hebrew message when it has one (the emoji refusal
@@ -2823,19 +2810,40 @@
           btn.disabled = false;
         }
       }
-      (function wireGameSheet() {
-        const row = document.getElementById('gameRow');
-        if (!row) return;
-        row.addEventListener('click', () => {
-          track('game_sheet_open', {});
-          openGameSheet();
-        });
-        $('#gameSheetClose').addEventListener('click', closeGameSheet);
-        $('#gameSheet').addEventListener('click', (e) => {
-          if (e.target === $('#gameSheet')) closeGameSheet();
-        });
-        document.addEventListener('keydown', (e) => {
-          if (e.key === 'Escape' && !$('#gameSheet').classList.contains('hidden')) closeGameSheet();
+      // ---- the tab strip ------------------------------------------------------
+      // One tab is showing at any moment and the rest are `hidden`. The PAYMENT is
+      // the exception the owner asked for twice over: it is a tab of its own AND
+      // the sticky bar at the foot, which lives outside every panel and therefore
+      // never leaves — so wherever she is, the price and the way to pay it are on
+      // screen.
+      let currentTab = 'words';
+      function showTab(name) {
+        currentTab = name;
+        for (const btn of document.querySelectorAll('#tabs .tabbar-btn')) {
+          const on = btn.dataset.tab === name;
+          btn.classList.toggle('on', on);
+          btn.setAttribute('aria-selected', on ? 'true' : 'false');
+        }
+        for (const el of document.querySelectorAll('[data-panel]')) {
+          el.hidden = el.dataset.panel !== name;
+        }
+        // Nothing is redrawing while it is off screen: a preview she cannot see is
+        // a Chrome run on the server for nobody.
+        if (name !== 'design') clearTimeout(previewTimer);
+        if (name === 'design' || name === 'pawns') loadGameTabs();
+      }
+      (function wireTabs() {
+        const tabs = document.getElementById('tabs');
+        if (!tabs) return;
+        // Words first, and hide the rest NOW — before the owner's state renders
+        // and drops the `hidden` class off the payment blocks, which would
+        // otherwise land them in the middle of the words.
+        showTab('words');
+        tabs.addEventListener('click', (e) => {
+          const btn = e.target.closest('.tabbar-btn');
+          if (!btn || btn.dataset.tab === currentTab) return;
+          track('collect_tab', { tab: btn.dataset.tab });
+          showTab(btn.dataset.tab);
         });
         $('#titleSaveBtn').addEventListener('click', saveTitle);
         // Typing only redraws the picture; nothing is stored until שמירה.
@@ -3136,11 +3144,13 @@
         if (isOwner) {
           const paid = isPaid();
           const cardEnabled = !!state.card_enabled;
-          // The row, which summarises the photos + title. The sheet's own
-          // contents are rendered when it opens (and after each edit), so the 5s
-          // poll never rebuilds a strip she is in the middle of using.
-          renderGameRow();
-          if (!$('#gameSheet').classList.contains('hidden')) renderPawns();
+          // The tabs are hers alone — a contributor arriving from a WhatsApp group
+          // to add one word has no design, no photos and no payment, and a strip
+          // advertising three of them would be three dead ends.
+          $('#tabs').classList.remove('hidden');
+          $('#designPanel').classList.remove('hidden');
+          $('#pawnsPanel').classList.remove('hidden');
+          renderGameTabs();
           // Paid: drop the pay panel + the pay bar, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,
           // which is what actually starts production.
