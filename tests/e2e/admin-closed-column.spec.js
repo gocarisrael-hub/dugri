@@ -106,11 +106,11 @@ test('every phone-card label is the heading of its own column', async ({ page, r
   expect(labels).toEqual(heads);
 });
 
-// The owner's layout for this table: the buttons lead, the honoree and the title
-// she typed are read side by side, and four columns she never used are gone. The
-// four are worth pinning by NAME — "הפקה" in particular carried the PDF/board/
-// press controls, and those had to survive its removal (they live in ניהול).
-test('the row leads with ניהול, pairs השמחה with כותרת, and drops the four unused columns', async ({
+// The owner's layout for this table: the buttons lead, ONE identity column says
+// what the deck prints, and four columns she never used are gone. The four are
+// worth pinning by NAME — "הפקה" in particular carried the PDF/board/press
+// controls, and those had to survive its removal (they live in ניהול).
+test('the row leads with ניהול, then the title, and drops the unused columns', async ({
   page,
   request,
 }) => {
@@ -124,9 +124,10 @@ test('the row leads with ניהול, pairs השמחה with כותרת, and drops
 
   const heads = await page.$$eval('thead th', (ths) => ths.map((th) => th.textContent.trim()));
   expect(heads[0]).toBe('ניהול');
-  expect(heads[1]).toBe('בעל/ת השמחה');
-  // Adjacent, in that order — the point of the pairing.
-  expect(heads[2]).toBe('כותרת');
+  // ONE identity column now: the printed title. The honoree column beside it was
+  // the same fact told twice, once the buyer stopped giving us a name at all.
+  expect(heads[1]).toBe('כותרת');
+  expect(heads).not.toContain('בעל/ת השמחה');
   for (const gone of ['צ׳ייסרים', 'הפקה', 'צבע', 'סכום']) {
     expect(heads, `${gone} should be gone`).not.toContain(gone);
   }
@@ -138,9 +139,13 @@ test('the row leads with ניהול, pairs השמחה with כותרת, and drops
   // which is now the first cell.
   await expect(page.locator('tbody tr td:first-child').first()).toContainText('צור PDF');
 
-  // The buyer's title is shown, in its own cell beside the honoree.
+  // The title IS the identity cell.
   const titled = page.locator('tbody tr', { hasText: title }).first();
-  await expect(titled.locator('td:nth-child(3)')).toHaveText(title);
+  await expect(titled.locator('td:nth-child(2)')).toHaveText(title);
+  // …and an order from before the change, which has no title of its own, falls
+  // back to its name rather than reading as an empty row.
+  const legacy = page.locator('tbody tr', { hasText: name }).last();
+  await expect(legacy.locator('td:nth-child(2)')).toHaveText(name);
 });
 
 // The buttons the owner reported: squeezed into slivers, one letter per line.
