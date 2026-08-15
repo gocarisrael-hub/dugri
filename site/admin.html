@@ -2729,21 +2729,26 @@
             if (!small.length) return null;
             const span = document.createElement('span');
             span.className = 'muted';
-            const words = small
+            // WHICH PAGE to open, not just which word. The deck prints every
+            // card behind its own back — [back, card 1, back, card 2, …] — so
+            // card N's front is page 2N, and that is the page she scrolls to in
+            // the PDF to look at it. The card number is there too, because that
+            // is what the CSV and any conversation about the deck call it.
+            const where = small
               .slice(0, 3)
-              .map((c) => '"' + c.word + '"')
+              .map((c) => 'קלף ' + c.index + ' (עמ׳ ' + c.index * 2 + ') "' + c.word + '"')
               .join(', ');
             span.textContent =
               ' · ' +
               small.length +
-              (small.length === 1 ? ' קלף קטן מהרגיל' : ' קלפים קטנים מהרגיל') +
-              ' (' +
-              words +
-              (small.length > 3 ? ' ועוד' : '') +
-              ')';
+              (small.length === 1 ? ' קלף קטן מהרגיל: ' : ' קלפים קטנים מהרגיל: ') +
+              where +
+              (small.length > 3 ? ' ועוד' : '');
             span.title =
               'המילים האלה ארוכות מדי לשורה אחת, ולכן הקלף שלהן מודפס קטן. ' +
-              'אפשר לקצר אותן ולהפיק מחדש — או להשאיר.';
+              'המספר בסוגריים הוא העמוד בקובץ — כל קלף מודפס אחרי הגב שלו, ' +
+              'ולכן הפנים של קלף N נמצאים בעמוד 2N. אפשר לקצר את המילה ולהפיק ' +
+              'מחדש — או להשאיר.';
             return span;
           };
 
