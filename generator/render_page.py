@@ -39,10 +39,32 @@ GEOMETRIC_TEXT_STYLE = "text{text-rendering:geometricPrecision;}"
 
 
 def dims(svg):
-    head = open(svg, encoding="utf-8").read(2000)
-    w = int(re.search(r'width="(\d+)"', head).group(1))
-    h = int(re.search(r'height="(\d+)"', head).group(1))
-    return w, h
+    """The canvas size an SVG declares, in points: ``(width, height)``.
+
+    READ OFF THE <svg> TAG, and only off it. This used to scan the first 2000
+    characters for `width="(\d+)"` — digits only, anywhere in the file — which is
+    wrong twice over. The photo card declares `width="223.92"`, a decimal the
+    pattern cannot match, so the search ran on into the artwork and found
+    `stroke-width="8"` on a child element: the card was screenshotted 8 points
+    wide, a sliver of orange. Any template whose clean SVG carries a decimal
+    width has the same fault waiting in the preview path.
+
+    So: the opening tag is isolated first (a child's stroke-width can no longer
+    be mistaken for the canvas), decimals are accepted, and the viewBox answers
+    when the tag states no size at all — which is legal SVG and, for a file we
+    are about to rasterise at a fixed pixel size, the same question.
+    """
+    head = open(svg, encoding="utf-8").read(4000)
+    m = re.search(r"<svg\b[^>]*>", head, re.S)
+    tag = m.group(0) if m else head
+    w = re.search(r'\bwidth="([\d.]+)', tag)
+    h = re.search(r'\bheight="([\d.]+)', tag)
+    if w and h:
+        return round(float(w.group(1))), round(float(h.group(1)))
+    vb = re.search(r'\bviewBox="\s*([-\d.]+)[\s,]+([-\d.]+)[\s,]+([\d.]+)[\s,]+([\d.]+)', tag)
+    if vb:
+        return round(float(vb.group(3))), round(float(vb.group(4)))
+    raise ValueError("cannot read a canvas size from %s" % svg)
 
 
 @functools.lru_cache(maxsize=32)
@@ -4186,8 +4208,61 @@ def _nudge_title_box(tbox, cell, offset):
     return {"x0": x0, "x1": x1, "y0": y0, "y1": y1}
 
 
+def title_box_clear_of(tbox, obstacles, right=None):
+    """``tbox`` trimmed to paper the artwork does not already occupy.
+
+    THE GAP THIS CLOSES: the words dodge the icons (THE WORDS' SIDE OF THE ICON
+    RULE); the title never did. It trusts its calibrated box, which was measured
+    around the ORIGIN's own title — one line, in the origin's language. A buyer's
+    two-line Hebrew title fills that box's full height, and if an icon sits at the
+    edge of it the title simply prints over the artwork. The owner found it on a
+    card whose title crossed a rubik's cube.
+
+    So the box is trimmed before the title is fitted into it, and only ever
+    trimmed: the tallest horizontal band of the box that no icon crosses, then
+    narrowed on the left by how far the icons in that band actually reach (their
+    PIECES, not their bounding rectangle — see ``Obstacle``).
+
+    A box with nothing free is returned UNCHANGED. That is deliberate: a title
+    squeezed to nothing is not better than a title over an icon, and a template
+    whose title box is genuinely buried is a calibration problem for the owner to
+    see, not something to hide by printing an unreadable title.
+    """
+    if not obstacles:
+        return tbox
+    hits = [o for o in obstacles
+            if o[0] < tbox["x1"] and tbox["x0"] < o[2]
+            and o[1] < tbox["y1"] and tbox["y0"] < o[3]]
+    if not hits:
+        return tbox
+    # The bands the icons leave: between the box top and the first icon, between
+    # icons, and below the last. The tallest one wins.
+    edges = [tbox["y0"]]
+    for o in sorted(hits, key=lambda o: o[1]):
+        edges += [max(tbox["y0"], o[1]), min(tbox["y1"], o[3])]
+    edges.append(tbox["y1"])
+    bands = []
+    for i in range(0, len(edges) - 1, 2):
+        top, bottom = edges[i], edges[i + 1]
+        if bottom - top > 0:
+            bands.append((top, bottom))
+    if not bands:
+        return tbox
+    top, bottom = max(bands, key=lambda b: b[1] - b[0])
+    out = dict(tbox)
+    out["y0"], out["y1"] = top, bottom
+    # …and the icons still beside that band push the box in from the left, by
+    # their real reach at that height.
+    edge = _obstacle_left(obstacles, (top, bottom), right if right is not None else tbox["x1"])
+    if edge is not None and tbox["x0"] < edge < tbox["x1"]:
+        out["x0"] = edge
+    if out["x1"] - out["x0"] <= 0 or out["y1"] - out["y0"] <= 0:
+        return tbox
+    return out
+
+
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
-                   fixed_size=None, align=None):
+                   fixed_size=None, align=None, obstacles=None):
     """The stacked-title markup for one card, or "" when there is nothing to draw.
 
     ``tbox_list`` may hold ONE BOX PER TITLE LINE (birthday-girls records two);
@@ -4202,6 +4277,9 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
     tbox = {"x0": min(b["x0"] for b in tbox_list), "y0": min(b["y0"] for b in tbox_list),
             "x1": max(b["x1"] for b in tbox_list), "y1": max(b["y1"] for b in tbox_list)}
     tbox = _nudge_title_box(tbox, cell, offset)
+    # AFTER the nudge, because the nudge is what decides which paper the box
+    # actually covers on this front.
+    tbox = title_box_clear_of(tbox, obstacles)
     return title_block(tbox, title_lines, ts["fill"], ts["outline"], title_font,
                        ts["outline_w"], ts["arch"], ts["shadow"],
                        rtl=title_is_rtl(cfg),
@@ -4330,7 +4408,11 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     return (_title_overlay(tboxes,
                            title_lines, cfg, title_font_path, cell,
                            offset=config.front_offset(cfg, front_index),
-                           align=config.front_align(cfg, front_index))
+                           align=config.front_align(cfg, front_index),
+                           # The same icons the words are held off — see
+                           # title_box_clear_of. Grown by the same clear air, so
+                           # the title keeps the margin the words keep.
+                           obstacles=_grown(icons, _ICON_CLEAR_MM * _PT_PER_MM))
             + _words_overlay(word_boxes, words,
                              cfg, word_font_path, cell, room=room,
                              obstacles=icons,
