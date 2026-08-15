@@ -25,6 +25,7 @@ const waState = require('./wa-state');
 const reminders = require('./reminders');
 const faq = require('./faq');
 const wordlists = require('./wordlists');
+const unsubscribe = require('./unsubscribe');
 const pdfName = require('./pdf-name');
 const wordBank = require('./word-bank');
 const messagePreview = require('./message-preview');
@@ -736,7 +737,14 @@ function clientKey(req) {
 }
 app.get('/api/admin/collections', (req, res) => {
   if (!requireAdmin(req, res)) return;
-  res.json({ collections: db.listAllCollections() });
+  // `unsubscribed` rides along per row: a buyer who has stopped her mail gets no
+  // receipt, no "ready" and no reminder, and the owner needs to see WHY rather
+  // than discover that email is "broken" for one customer.
+  res.json({
+    collections: db
+      .listAllCollections()
+      .map((c) => ({ ...c, unsubscribed: unsubscribe.isUnsubscribed(c.owner_email) })),
+  });
 });
 
 // NOTE: there is deliberately NO admin "mark this order paid" route. An order
@@ -3891,6 +3899,68 @@ app.post('/api/admin/templates/:key/revert', (req, res) => {
 // server/content.js) and overlay the shipped defaults for EVERY visitor. The
 // public GET is unauthenticated on purpose — every visitor must render the
 // current copy — while all writes are behind requireAdmin.
+// --- "stop emailing me" -------------------------------------------------------
+// PUBLIC and unauthenticated, gated by a signature instead: the whole point is a
+// person with an email and no account being able to stop the mail in one tap. The
+// token is an HMAC of their own address (server/unsubscribe.js), so a query
+// string cannot be edited to silence somebody else.
+//
+// Suppression is TOTAL — receipts and "your order is ready" included. See the
+// gate in notify.send() for why that is the strict reading.
+
+// The state of one address, for the landing page to render (and to say "you are
+// already unsubscribed" rather than pretending the tap did something).
+app.get('/api/unsubscribe/status', (req, res) => {
+  const email = String(req.query.e || '');
+  if (!unsubscribe.verify(email, req.query.t)) return res.status(403).json({ error: 'bad token' });
+  res.json({ email: unsubscribe.norm(email), unsubscribed: unsubscribe.isUnsubscribed(email) });
+});
+
+// STOP. Answers both the page's button and the one-click POST that Gmail/Outlook
+// send from their own unsubscribe control (RFC 8058) — same route, so the two can
+// never drift apart.
+app.post('/api/unsubscribe', (req, res) => {
+  const body = req.body || {};
+  const email = String(body.email || req.query.e || '');
+  const token = body.token || req.query.t;
+  if (!unsubscribe.verify(email, token)) return res.status(403).json({ error: 'bad token' });
+  unsubscribe.unsubscribe(email, 'link');
+  res.json({ ok: true, email: unsubscribe.norm(email), unsubscribed: true });
+});
+
+// …and back. One tap in a mail client is easy to do by accident, and without this
+// the only way back is a phone call.
+app.post('/api/resubscribe', (req, res) => {
+  const body = req.body || {};
+  const email = String(body.email || req.query.e || '');
+  const token = body.token || req.query.t;
+  if (!unsubscribe.verify(email, token)) return res.status(403).json({ error: 'bad token' });
+  unsubscribe.resubscribe(email);
+  res.json({ ok: true, email: unsubscribe.norm(email), unsubscribed: false });
+});
+
+// Admin: who has stopped their mail. The orders table annotates its rows from
+// this too (see /api/admin/collections), because an owner who cannot see it just
+// finds out that "the emails stopped working".
+app.get('/api/admin/unsubscribed', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ addresses: unsubscribe.list() });
+});
+
+// Admin: stop (or resume) mail to an address BY HAND. People ask on WhatsApp, in
+// a reply, or on the phone — and the owner should be able to honour that without
+// asking them to go and find the link in an email they may have deleted. Also the
+// way back for someone who pressed it by accident and cannot find the mail again.
+app.post('/api/admin/unsubscribed', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const body = req.body || {};
+  const email = unsubscribe.norm(body.email);
+  if (!email || !email.includes('@')) return res.status(400).json({ error: 'bad email' });
+  if (body.unsubscribed === false) unsubscribe.resubscribe(email);
+  else unsubscribe.unsubscribe(email, 'admin');
+  res.json({ ok: true, email, unsubscribed: unsubscribe.isUnsubscribed(email) });
+});
+
 app.get('/api/content', (req, res) => {
   res.json({ overrides: content.getPage(req.query.page) });
 });
