@@ -2521,7 +2521,15 @@
         // it is worth opening without opening it.
         const parts = [];
         parts.push(photos ? photos + ' תמונות' : 'אין תמונות');
-        parts.push(savedTitle() ? 'כותרת מותאמת' : 'כותרת ברירת מחדל');
+        // The TITLE ITSELF, not "custom/default". Since #449 the wizard is
+        // title-only — it is the one thing the buyer writes, so every order she
+        // creates has one and "כותרת מותאמת" would be true of all of them and tell
+        // her nothing. Showing the words means she can spot a wrong title without
+        // opening the sheet. One line, trimmed: a two-line title is legal and this
+        // is a summary. The fallback still matters for an admin-created order,
+        // which can genuinely carry no title of its own.
+        const t = savedTitle().split('\n')[0].trim();
+        parts.push(t ? (t.length > 22 ? t.slice(0, 22) + '…' : t) : 'כותרת ברירת מחדל');
         if (!open) parts.push('לצפייה בלבד');
         $('#gameRowSub').textContent = parts.join(' · ');
       }
