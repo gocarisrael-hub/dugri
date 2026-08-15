@@ -702,8 +702,12 @@
         flex-direction: column;
         gap: 6px;
       }
-      .sheet-fld input[type='text'] {
+      /* The title box. Two lines by default — the shape a title actually has —
+         and NOT resizable horizontally, which would break out of the sheet. */
+      .sheet-fld textarea {
         width: 100%;
+        resize: vertical;
+        line-height: 1.5;
       }
       .sheet-err {
         color: #b00020;
@@ -2194,9 +2198,20 @@
             <label class="fld" for="titleInput" data-edit="collect-sheet-title-label"
               >כותרת המשחק</label
             >
-            <input type="text" id="titleInput" maxlength="120" data-testid="title-input" />
+            <!-- A TEXTAREA, like the wizard's — never <input type="text">.
+                 The line break in a title is real: the generator splits on \n and
+                 prints each line as its own title line, and db.sanitizeCustomTitle
+                 keeps them (it trims each line and rejoins). A text input runs the
+                 HTML value sanitization algorithm, which STRIPS U+000A rather than
+                 converting it, so a stored "החגיגה של\nשירה" would both display and
+                 save as "החגיגה שלשירה" — two words fused, no warning, and the
+                 buyer need not even touch the field to lose it.
+                 maxlength matches the wizard's 63 so the two doors onto the same
+                 field agree; the store's own cap (120) still bounds anything set
+                 from the admin. -->
+            <textarea id="titleInput" rows="2" maxlength="63" data-testid="title-input"></textarea>
             <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
-              >עד 120 תווים · בלי אימוג׳י · השאירו ריק לכותרת ברירת המחדל</small
+              >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י · השאירו ריק לכותרת ברירת המחדל</small
             >
             <div class="sheet-err hidden" id="titleErr" role="alert" data-testid="title-err"></div>
             <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">

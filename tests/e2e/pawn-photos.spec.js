@@ -518,3 +518,98 @@ test.describe('pawn photos: the helper copy', () => {
     expect(styled.text).toBe('נוסח חדש של הבעלים');
   });
 });
+
+// A TWO-LINE TITLE MUST SURVIVE THIS SHEET.
+//
+// The break is real everywhere else: the generator splits the title on \n and
+// prints each line as its own title line, the store's sanitizer deliberately
+// keeps \n (it trims each line and rejoins), and the wizard collects it in a
+// <textarea rows="2"> for exactly that reason.
+//
+// An <input type="text"> would run the HTML value sanitization algorithm, which
+// STRIPS U+000A instead of converting it — so "החגיגה של\nשירה" both displays and
+// saves as "החגיגה שלשירה", two words fused, with nothing said to the buyer. She
+// need not even touch the field: opening the sheet and saving anything is enough.
+test('a stored two-line title survives opening and saving the sheet', async ({ page }) => {
+  const { url, id, k } = await createCollection(page);
+  const seeded = 'החגיגה של\nשירה';
+  const put = await page.request.put(`/api/collections/${id}/title?k=${encodeURIComponent(k)}`, {
+    data: { custom_title: seeded },
+  });
+  expect(put.status()).toBe(200);
+  expect((await put.json()).custom_title).toBe(seeded);
+
+  await page.goto(url);
+  await page.getByTestId('game-row').click();
+  // The break is IN the box — not flattened on the way in.
+  await expect(page.getByTestId('title-input')).toHaveValue(seeded);
+
+  // Saving without touching the field must be a no-op, not a silent rewrite.
+  await page.getByTestId('title-save').click();
+  await expect(page.getByTestId('title-err')).toBeHidden();
+  const state = await page.request
+    .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
+    .then((r) => r.json());
+  expect(state.custom_title).toBe(seeded);
+});
+
+test('she can type a two-line title, and the card is drawn with both lines', async ({ page }) => {
+  const { url, id, k } = await createCollection(page);
+  const asked = [];
+  await page.route('**/api/preview', (route) => {
+    asked.push(JSON.parse(route.request().postData() || '{}'));
+    return route.fulfill({
+      json: {
+        card: PNG,
+        back: PNG,
+        board: PNG,
+        warning: null,
+        word_font: null,
+        word_font_options: [],
+      },
+    });
+  });
+  await page.goto(url);
+  await page.getByTestId('game-row').click();
+
+  // Enter inserts a line, it does not submit.
+  const box = page.getByTestId('title-input');
+  await box.click();
+  await page.keyboard.type('החגיגה של');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('שירה');
+  await expect(box).toHaveValue('החגיגה של\nשירה');
+
+  await page.getByTestId('title-save').click();
+  const state = await page.request
+    .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
+    .then((r) => r.json());
+  expect(state.custom_title).toBe('החגיגה של\nשירה');
+  // …and the preview asked for the card with both lines, not the fused string.
+  await expect.poll(() => asked[asked.length - 1].title).toBe('החגיגה של\nשירה');
+});
+
+// The same failure mode as the newline, from the other direction: this sheet caps
+// typing at the wizard's 63, but the STORE allows 120 and the admin can use them.
+// A longer title she never touched must come back out whole — the box may refuse
+// new characters, it must not quietly shorten what is already there.
+test('a title longer than the box allows is not truncated by saving it untouched', async ({
+  page,
+}) => {
+  const { url, id, k } = await createCollection(page);
+  const long = 'כותרת ארוכה שנקבעה מהאדמין '.repeat(3).trim(); // ~80 chars, over the box's 63
+  await page.request.put(`/api/collections/${id}/title?k=${encodeURIComponent(k)}`, {
+    data: { custom_title: long },
+  });
+
+  await page.goto(url);
+  await page.getByTestId('game-row').click();
+  await expect(page.getByTestId('title-input')).toHaveValue(long);
+  await page.getByTestId('title-save').click();
+  await expect(page.getByTestId('title-err')).toBeHidden();
+
+  const state = await page.request
+    .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
+    .then((r) => r.json());
+  expect(state.custom_title).toBe(long);
+});
