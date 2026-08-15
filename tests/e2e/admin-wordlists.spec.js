@@ -6,6 +6,11 @@ import { FIXTURE_SENTINEL } from './tpl-fixture.js';
 // anything created here lands in the throwaway volume store — never in the
 // shipped content/wordlists baseline.
 const KEY = 'dugri-admin';
+// The device projects share ONE server and ONE store, so a test that WRITES to
+// the pool store has to pin itself to a single project or it races the other
+// project — and, since #462, the buyer-facing pool menu's spec, which writes to
+// the same store from its own file. The reads below are safe on both.
+const ONLY = 'Desktop Chrome';
 
 test.describe('admin wordlists', () => {
   test('without a key the page reveals nothing and asks for ?key=', async ({ page }) => {
@@ -27,7 +32,8 @@ test.describe('admin wordlists', () => {
 
   test('the owner can create a list, edit it, and it persists across a reload', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'writes to the shared pool store: one project only');
     // Random, not Date.now(): the projects run in parallel against ONE server
     // and would otherwise collide on the same millisecond (a 409 "already exists").
     const name = 'e2e-' + Math.random().toString(36).slice(2, 10);
@@ -63,7 +69,8 @@ test.describe('admin wordlists', () => {
 
   test('a shipped pool in use cannot be deleted and the message names the design', async ({
     page,
-  }) => {
+  }, testInfo) => {
+    test.skip(testInfo.project.name !== ONLY, 'writes to the shared pool store: one project only');
     await page.goto(`/admin-wordlists.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
     page.on('dialog', (d) => d.accept());
