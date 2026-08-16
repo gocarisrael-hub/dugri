@@ -393,6 +393,33 @@
         justify-content: space-between;
         margin-bottom: 14px;
       }
+      .ctl-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      /* An <a>, not a <button>: the sheet is a GET the browser downloads on its
+         own, so there is nothing to intercept and nothing to keep in sync. */
+      .sticker-btn {
+        display: inline-block;
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        color: #fff;
+        background: #5c7357;
+        border: 1px solid #5c7357;
+        border-radius: 6px;
+        padding: 6px 12px;
+        white-space: nowrap;
+      }
+      .sticker-btn:hover {
+        background: #4c6047;
+        border-color: #4c6047;
+      }
+      .sticker-btn[hidden] {
+        display: none;
+      }
       /* Same trap as .fgrid[hidden] below: `display: flex` on the class outranks
          the UA's [hidden] rule, so hideControls() would leave the bar on screen
          — an empty one for the tabs, and a press-mode switch showing a state
@@ -757,15 +784,26 @@
             <div class="tabs" id="tabs-stage"></div>
           </div>
         </div>
-        <label class="sortwrap"
-          >מיון:
-          <select id="sort">
-            <option value="created">נוצר</option>
-            <option value="closed">נסגר (הוותיקה קודם)</option>
-            <option value="words">מס׳ מילים</option>
-            <option value="total">סכום</option>
-          </select>
-        </label>
+        <div class="ctl-right">
+          <!-- THE NIGHT'S STICKER SHEET. Every printed game the customer collects
+               herself gets a label on its box, and that sheet was being typed by
+               hand every night. It sits with the filters because it is about the
+               orders currently on screen, and it carries its own COUNT so it is
+               never a button you press to find out there was nothing to press it
+               for. Hidden entirely when the count is zero. -->
+          <a class="sticker-btn" id="stickerBtn" data-testid="pickup-stickers" href="#" hidden>
+            🏷️ מדבקות איסוף עצמי (<span id="stickerCount">0</span>)
+          </a>
+          <label class="sortwrap"
+            >מיון:
+            <select id="sort">
+              <option value="created">נוצר</option>
+              <option value="closed">נסגר (הוותיקה קודם)</option>
+              <option value="words">מס׳ מילים</option>
+              <option value="total">סכום</option>
+            </select>
+          </label>
+        </div>
       </div>
       <!-- Per-column filters live in the column headings (see COLUMNS), which the
            phone layout hides — it stacks each row into a labelled card and takes the
@@ -2946,6 +2984,7 @@
       function renderAll(opts) {
         renderStats(allCols);
         renderTabs();
+        renderStickerBtn();
         renderColFilterBar();
         const rows = rowsFor(null);
         // What the pair actually narrowed to. Without it a combination with no
@@ -2977,6 +3016,31 @@
         controlsEl.hidden = true;
         closeMenu();
         document.getElementById('colfilters').hidden = true;
+      }
+
+      // THE NIGHT'S STICKER SHEET. The same rule the server applies (see
+      // pickupStickerOrders): self-collection, at the printer, not yet ready.
+      // Counted from the orders already on this page rather than fetched, so the
+      // button costs nothing and cannot disagree with the table under it.
+      //
+      // Deliberately NOT narrowed by the table's filters: this is the whole
+      // night's work, and a sheet that quietly shrank because a filter chip was
+      // left on is a customer whose box goes out unlabelled.
+      function pickupStickerCount() {
+        return allCols.filter((c) => {
+          const o = c.order;
+          return !!(o && o.version === 'pickup' && o.sent_to_print_at && !o.ready_at);
+        }).length;
+      }
+      function renderStickerBtn() {
+        const btn = document.getElementById('stickerBtn');
+        if (!btn) return;
+        const n = pickupStickerCount();
+        document.getElementById('stickerCount').textContent = n;
+        // Hidden at zero: a button that answers "there was nothing to print" is
+        // a button that wasted a press.
+        btn.hidden = n === 0;
+        btn.href = '/api/admin/pickup-stickers?key=' + encodeURIComponent(key);
       }
 
       sortSelect.onchange = () => {

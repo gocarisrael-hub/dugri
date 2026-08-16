@@ -1,0 +1,206 @@
+#!/usr/bin/env python3
+"""The self-collection sticker sheet: one label per order waiting at the printer.
+
+    python3 generator/pickup_stickers.py <orders.json> <out.pdf>
+
+Every printed game that the customer collects herself gets a sticker on its box,
+and until now the owner built the sheet by hand every night: open a document,
+type eleven names, print. This is that document, from the orders.
+
+ONE STICKER, four lines of it:
+
+    איסוף עצמי          ← the same on every label; it is what the shelf is for
+    <the game's title>   ← what she looks for when the customer walks in
+    שם מלא:  <buyer>     ← who is collecting
+    עיצוב:   <design>    ← which game, when two boxes look alike
+    טלפון:   <phone>     ← the one thing needed to chase a no-show
+
+EIGHT TO A PAGE — a 2x4 grid on A4, which is the 105x74 mm label the sheets are
+cut to. Filled RIGHT to LEFT and then down, because the page is Hebrew and that
+is the order the eye reads them in; a left-to-right fill would put sticker #1
+where she looks for #2.
+
+The fonts are INLINED from site/assets/fonts rather than named and hoped for:
+this renders in a container whose font situation is not ours to assume, and a
+missing Hebrew face does not fail loudly — it prints a page of boxes.
+"""
+import base64
+import html
+import json
+import os
+import sys
+
+import chrome
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+REPO = os.path.dirname(HERE)
+FONT_DIR = os.path.join(REPO, "site", "assets", "fonts")
+
+# The two halves of one face: Heebo covers Hebrew and Latin in separate files,
+# and a sticker sheet carries both ("סבא חוגג 80" and "Bride To Be" were on the
+# same page of the sheet this replaces).
+FONT_FILES = [
+    ("heebo-300-hebrew.f1f7cfae.woff2",
+     "U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F"),
+    ("heebo-300-latin.50dae2e1.woff2",
+     "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, "
+     "U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, "
+     "U+2212, U+2215, U+FEFF, U+FFFD"),
+]
+
+PER_PAGE = 8
+
+# The heading size, and the sizes a long title steps down to. A title is the
+# customer's own words and can be one syllable ("אחיה") or five
+# ("Reut's Bachelorette Bash"); one fixed size either wastes the label or runs
+# off it, so the size is chosen from the length. Measured against the sheet the
+# owner has been making by hand.
+TITLE_STEPS = [(14, "19pt"), (24, "16pt"), (34, "13pt"), (999, "11pt")]
+
+
+def title_size(text):
+    """The font size for a title of this length."""
+    n = len(str(text or ""))
+    for limit, size in TITLE_STEPS:
+        if n <= limit:
+            return size
+    return TITLE_STEPS[-1][1]
+
+
+def font_faces():
+    """@font-face rules with the woff2 payloads inlined as data URIs."""
+    out = []
+    for name, unicode_range in FONT_FILES:
+        path = os.path.join(FONT_DIR, name)
+        try:
+            with open(path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+        except OSError:
+            # Best-effort: a missing font file leaves the sheet to the container's
+            # own fonts rather than failing the night's stickers outright.
+            continue
+        out.append(
+            "@font-face{font-family:'Heebo';font-style:normal;font-weight:300;"
+            f"src:url(data:font/woff2;base64,{b64}) format('woff2');"
+            f"unicode-range:{unicode_range};}}"
+        )
+    return "".join(out)
+
+
+def pages(stickers, per_page=PER_PAGE):
+    """``stickers`` split into pages, the last one padded with blanks.
+
+    Padding is not cosmetic: the grid has to keep its shape or the last page's
+    cut lines land somewhere other than where the guillotine is set.
+    """
+    out = []
+    for i in range(0, max(len(stickers), 1), per_page):
+        page = list(stickers[i:i + per_page])
+        page += [None] * (per_page - len(page))
+        out.append(page)
+    return out
+
+
+def _row(label, value):
+    if not value:
+        return ""
+    return (f'<div class="row"><span class="lab">{html.escape(str(label))}</span>'
+            f'<span class="val">{html.escape(str(value))}</span></div>')
+
+
+def cell_html(sticker):
+    """One label. ``None`` is an empty cell — the sheet keeps its grid."""
+    if not sticker:
+        return '<div class="cell"></div>'
+    title = str(sticker.get("title") or "").strip()
+    return (
+        '<div class="cell">'
+        '<div class="head">איסוף עצמי</div>'
+        f'<div class="title" style="font-size:{title_size(title)}">'
+        f'{html.escape(title)}</div>'
+        '<div class="rows">'
+        + _row("שם מלא:", sticker.get("buyer_name"))
+        + _row("עיצוב:", sticker.get("design"))
+        + _row("טלפון:", sticker.get("phone"))
+        + "</div></div>"
+    )
+
+
+def sheet_html(stickers):
+    """The whole sheet as one printable HTML document."""
+    body = "".join(
+        '<div class="page">' + "".join(cell_html(s) for s in page) + "</div>"
+        for page in pages(stickers)
+    )
+    return (
+        "<!doctype html><html lang='he' dir='rtl'><head><meta charset='utf-8'>"
+        "<style>"
+        + font_faces() +
+        # No page margin: the grid IS the label sheet, and a printer margin would
+        # shift every cut line by however much the driver felt like.
+        "@page{size:A4;margin:0}"
+        "html,body{margin:0;padding:0}"
+        "body{font-family:'Heebo',Arial,sans-serif;color:#000;"
+        "-webkit-print-color-adjust:exact;print-color-adjust:exact}"
+        ".page{width:210mm;height:297mm;display:grid;"
+        "grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);"
+        "box-sizing:border-box;break-after:page;overflow:hidden}"
+        ".page:last-child{break-after:auto}"
+        # The dashed guide is where she cuts. Drawn on every cell's inner edges
+        # so the shared lines do not double in weight.
+        ".cell{box-sizing:border-box;padding:5mm 7mm 4mm;display:flex;"
+        "flex-direction:column;overflow:hidden;"
+        "border-inline-start:1px dashed #8a8a8a;border-bottom:1px dashed #8a8a8a}"
+        ".cell:nth-child(odd){border-inline-start:0}"
+        ".cell:nth-child(7),.cell:nth-child(8){border-bottom:0}"
+        # Heebo ships here at weight 300 only, so a requested 700 is SYNTHESISED
+        # and comes out lighter than the hand-made sheet's bold. The hairline
+        # stroke puts that weight back: on a 300-DPI label it reads as a bold
+        # face, and it costs no second font file to carry into the container.
+        ".head{text-align:center;font-weight:700;font-size:19pt;line-height:1.15;"
+        "-webkit-text-stroke:0.4px currentColor}"
+        ".title{text-align:center;font-weight:700;line-height:1.15;"
+        "margin-top:1.5mm;overflow-wrap:anywhere;"
+        "-webkit-text-stroke:0.4px currentColor}"
+        # The three facts sit at the FOOT of the label, right-aligned: the title
+        # is what she reads across the room and these are what she reads with the
+        # box in her hand. Label and value on ONE line, next to each other —
+        # pushed to opposite edges they stop reading as a pair.
+        ".rows{margin-top:auto;display:flex;flex-direction:column;gap:0.8mm}"
+        ".row{display:flex;justify-content:flex-start;align-items:baseline;"
+        "gap:2mm;font-size:11pt;line-height:1.3}"
+        ".lab{font-weight:700;white-space:nowrap;"
+        "-webkit-text-stroke:0.25px currentColor}"
+        ".val{overflow-wrap:anywhere;min-width:0;"
+        # A phone number is Latin digits in an RTL line; pinning its direction
+        # keeps "0521234567" from being reordered around a leading zero.
+        "unicode-bidi:plaintext}"
+        "</style></head><body>" + body + "</body></html>"
+    )
+
+
+def build(stickers, out_pdf, workdir=None):
+    """Render the sheet to ``out_pdf`` and return the path."""
+    workdir = workdir or os.path.dirname(os.path.abspath(out_pdf))
+    os.makedirs(workdir, exist_ok=True)
+    html_path = os.path.join(workdir, "pickup-stickers.html")
+    with open(html_path, "w", encoding="utf-8") as f:
+        f.write(sheet_html(stickers))
+    chrome.print_pdf(html_path, out_pdf, what="pickup stickers")
+    return out_pdf
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("usage: pickup_stickers.py <orders.json> <out.pdf>", file=sys.stderr)
+        return 2
+    with open(sys.argv[1], encoding="utf-8") as f:
+        stickers = json.load(f)
+    out = build(stickers, sys.argv[2])
+    print(json.dumps({"pdf": out, "stickers": len(stickers),
+                      "pages": len(pages(stickers))}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
