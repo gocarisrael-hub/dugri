@@ -2886,11 +2886,19 @@ function ilPhoneToWaId(phone) {
 }
 
 // The interpolation values shared by every group-scoped trigger: the honoree's
-// name and the public "add words" (friends) collect link — NOT the owner link, so
-// the token is never shared into a group. `base` is the normalized public origin.
+// name and the collect link. That link is the MANAGING one now — the owner token
+// and all — because the product has stopped keeping two: the buyer pastes the
+// same URL into the group herself the moment she shares it, so a bot posting a
+// token-free variant only meant the group held two links with different powers
+// and no way to tell them apart. What it costs (anyone in the group can delete a
+// word or close the collection) is the owner's decision; see friendsUrl() in
+// site/collect.html. `base` is the normalized public origin.
 function waGroupValues(collection, base) {
   const honoree = (collection && collection.honoree_name) || 'בעל/ת השמחה';
-  const link = base && collection && collection.id ? base + '/collect.html?c=' + collection.id : '';
+  const link =
+    base && collection && collection.id && collection.owner_token
+      ? base + '/collect.html?c=' + collection.id + '&k=' + collection.owner_token
+      : '';
   return { honoree, link };
 }
 

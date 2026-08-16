@@ -562,24 +562,6 @@
       /* The owner's private management link: present but deliberately quiet, so
          the share card reads as ONE link. Smaller and muted, collapsed by
          default, and separated from the share link by a hairline. */
-      .owner-private {
-        margin-top: 14px;
-        border-top: 1px solid var(--line);
-        padding-top: 10px;
-        font-size: 13px;
-      }
-      .owner-private summary {
-        cursor: pointer;
-        color: var(--muted);
-        list-style: none;
-      }
-      .owner-private summary::-webkit-details-marker {
-        display: none;
-      }
-      .owner-private p {
-        margin: 8px 0;
-        font-size: 13px;
-      }
       .cats {
         display: grid;
         grid-template-columns: 1fr;
@@ -2129,14 +2111,15 @@
         </div>
       </div>
 
-      <!-- OWNER: the ONE share link (public). Sits directly under the collected
-           words and above the help card: the moment the owner sees words landing
-           is the moment she wants to invite more people. A single link only — the
-           private management link lives collapsed at the bottom of this card. -->
+      <!-- OWNER: THE link. Sits directly under the collected words and above the
+           help card: the moment the owner sees words landing is the moment she
+           wants to invite more people. There is only one link now and it is the
+           managing one — see friendsUrl() for what that costs and why. -->
       <div class="card share hidden" data-panel="words" id="sharePanel">
         <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
         <p class="muted" data-edit="collect-share-hint">
-          שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה:
+          שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה. זה אותו קישור שקיבלתם במייל, וכל מי
+          שיפתח אותו יוכל גם להוסיף מילים וגם לנהל את האיסוף:
         </p>
         <a
           class="share-wa"
@@ -2187,24 +2170,10 @@
             <span data-edit="collect-wa-group-label">הצטרפו לקבוצת המילים</span>
           </a>
         </div>
-        <!-- The owner's PRIVATE management link. Deliberately NOT a second link
-             box next to the share link: two links side by side is what confused
-             buyers, and this one grants owner powers (delete/edit words, close
-             the collection, open checkout and pay, read the delivery address) —
-             pasted into a friends group it would let anyone wipe the list. It
-             stays reachable, collapsed and labelled as private, because it is
-             also the page the owner is standing on and the link in her
-             confirmation email; the copy button copies the current URL. -->
-        <details class="owner-private" data-testid="owner-private-link">
-          <summary data-edit="collect-owner-link-summary">🔑 הקישור הפרטי שלי לניהול</summary>
-          <p class="muted" data-edit="collect-owner-link-hint">
-            זה בדיוק הקישור שפתוח אצלכם עכשיו, והוא נשלח אליכם גם במייל האישור. אל תשתפו אותו - דרכו
-            אפשר למחוק מילים, לסגור את האיסוף ולשלם.
-          </p>
-          <button class="ghost" id="copyOwner" type="button" data-edit="collect-copy-owner-btn">
-            העתיקו את הקישור הפרטי
-          </button>
-        </details>
+        <!-- There is no second link box here any more. The "private management
+             link" this used to hold was the same URL as the one above, kept apart
+             because sharing it granted owner powers; the owner has decided that
+             sharing them is the point. One link, one box. -->
       </div>
 
       <!-- word-finding helpers -->
@@ -4430,8 +4399,26 @@
       }
 
       // ---- owner: close + share + deliver ----
+      // THE LINK. There is exactly one, and it is the MANAGING link.
+      //
+      // This reverses a deliberate earlier decision, so it is worth saying what
+      // was traded. There used to be two: a public one to share, and a private
+      // one that granted owner powers — delete a word, close the collection, open
+      // the checkout, read the delivery address. Two links confused buyers, and
+      // then the "private" one went into the group anyway, because it is the link
+      // in her confirmation email and the page she is standing on.
+      //
+      // The owner's call: one link, and everybody who has it can help run the
+      // collection. What that costs is real and is not hidden here — anyone the
+      // link reaches can delete words and send the game to production, and they
+      // see her photos, her title and her payment state. It is the same trust she
+      // is already extending by inviting them to write about the honoree.
+      //
+      // Falls back to the token-free URL for a contributor, who has no token to
+      // put in it — this is a formatter, not a source of authority.
       function friendsUrl() {
-        return location.origin + '/collect.html?c=' + id;
+        const url = location.origin + '/collect.html?c=' + id;
+        return ownerToken ? url + '&k=' + encodeURIComponent(ownerToken) : url;
       }
       // Build the WhatsApp share href, personalized with the celebrant name(s).
       // For a couple the honoree name is already the joined form ("דנה ויוסי"),
@@ -4466,21 +4453,19 @@
       }
       function setupOwner() {
         $('#sharePanel').classList.remove('hidden');
-        // ONE link in the share card, and it is the PUBLIC one. The owner's own
-        // URL (with the owner token) is never rendered as a shareable box here —
-        // #copyOwner reads location.href on demand instead.
+        // ONE link in the share card, and it is the managing one — the same URL
+        // the confirmation email carries and the same page she is standing on.
         $('#friendsLink').value = friendsUrl();
         // Primary share: open WhatsApp with a friendly Hebrew invite + the SAME
-        // friends link the copy button uses. The href is (re)built by
-        // updateShareInvite() once the collection state (and its honoree name) is
-        // loaded; seed a generic default here so the button always has a target.
+        // link the copy button uses. The href is (re)built by updateShareInvite()
+        // once the collection state (and its honoree name) is loaded; seed a
+        // generic default here so the button always has a target.
         updateShareInvite();
         updateWaGroupLink();
-        $('#shareWhatsapp').onclick = () => track('share_link_whatsapp', { link_type: 'friends' });
+        $('#shareWhatsapp').onclick = () => track('share_link_whatsapp', { link_type: 'manage' });
         $('#joinWaGroup').onclick = () => track('join_wa_group', { link_type: 'group_invite' });
         $('#copyFriends').onclick = () =>
-          copy($('#friendsLink').value, $('#copyFriends'), 'friends');
-        $('#copyOwner').onclick = () => copy(location.href, $('#copyOwner'), 'owner');
+          copy($('#friendsLink').value, $('#copyFriends'), 'manage');
         // סיום: closes the collection. Shared by the pre-pay close card and the
         // post-payment "start production" CTA — closing is what starts production.
         // The dialog above, as a promise: resolves true only on the destructive

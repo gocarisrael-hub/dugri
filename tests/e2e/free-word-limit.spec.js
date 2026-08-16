@@ -95,13 +95,13 @@ test('quota: nothing hints at the cap, then the add box locks at the limit', asy
   await expect(page.locator('[data-testid="word-text"]').first()).toBeVisible();
 
   // The sharing card is still there while locked: inviting friends is the whole
-  // point of the collection and must not depend on payment. It is the single
-  // PUBLIC link here too — the lock must never push the owner token out.
+  // point of the collection and must not depend on payment. Still the single
+  // managing link here too — the lock must not change which link is offered.
   await expect(page.getByTestId('share-whatsapp')).toBeVisible();
   await expect(page.locator('#sharePanel input')).toHaveCount(1);
   const shared = await page.locator('#friendsLink').inputValue();
   expect(shared).toContain('/collect.html?c=');
-  expect(shared).not.toContain('k=');
+  expect(shared).toContain('k=');
 
   // The LOCKED screen is where the number would most easily creep back in — the
   // chip, the note and the counter hint all render fresh here.
