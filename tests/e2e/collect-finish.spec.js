@@ -377,3 +377,91 @@ test('an order with nothing to upgrade is offered nothing', async ({ page }) => 
   await expect(page.locator('#shipAddCard')).toBeHidden();
   await expect(page.locator('#shipDoneCard')).toBeHidden();
 });
+
+// THE CARD KEEPS UP. It used to be a server render: every adjustment queued a
+// Chrome page and the picture on screen was the move before last, which is how
+// the owner found it — "it moves so slow, and the card and the circles are not
+// synced". The empty card and its four disc positions come from the generator
+// ONCE; the photos are laid into them here, so a drag is a CSS change.
+test('the card is drawn here, so it moves with the photo instead of behind it', async ({
+  page,
+}) => {
+  const asked = [];
+  await page.route('**/pawn-card**', (route) => {
+    asked.push(route.request().url());
+    return route.continue();
+  });
+  const { url, id, k } = await createCollection(page);
+  await attachPhotos(page, id, k, 1);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.locator('.pawn-live-slot')).toHaveCount(1);
+
+  // ONE request, and it asks for the empty card — the picture that depends on
+  // the design alone and can therefore be cached and reused.
+  await expect.poll(() => asked.length).toBe(1);
+  expect(asked[0]).toContain('live=1');
+
+  const slotImg = page.locator('.pawn-live-slot img').first();
+  const before = await slotImg.evaluate((el) => el.style.left);
+  const disc = await page.locator('.pawn-disc').first().boundingBox();
+  await page.mouse.move(disc.x + disc.width / 2, disc.y + disc.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(disc.x + disc.width / 2 + 20, disc.y + disc.height / 2 + 12, { steps: 4 });
+  await page.mouse.up();
+
+  // The card moved WITH the circle — same number, because it is the same maths —
+  // and nothing was asked of the server to make it happen.
+  const after = await slotImg.evaluate((el) => el.style.left);
+  expect(after).not.toBe(before);
+  expect(
+    await page
+      .getByTestId('pawn-thumb')
+      .first()
+      .evaluate((el) => el.style.left)
+  ).toBe(after);
+  await page.waitForTimeout(900); // past the save debounce
+  expect(asked).toHaveLength(1);
+});
+
+// A slider with no label is a mystery, and a 4px thumb is a mystery you cannot
+// grab on a trackpad. Both were the owner's words.
+test('the size control says what it is and can be stepped', async ({ page }) => {
+  const { url, id, k } = await createCollection(page);
+  const [photo] = await attachPhotos(page, id, k, 1);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  await expect(page.locator('.pawn-zoom-row')).toHaveCount(1);
+  await expect(page.locator('.pawn-zoom-lab')).toHaveText('גודל');
+
+  const zoom = page.getByTestId('pawn-zoom');
+  await zoom.fill('1.2');
+  await page.getByTestId('pawn-zoom-in').click();
+  await expect(zoom).toHaveValue('1.3');
+  await page.getByTestId('pawn-zoom-out').click();
+  await page.getByTestId('pawn-zoom-out').click();
+  await expect(zoom).toHaveValue('1.1');
+  // …and the steps reach the order, like the slider does.
+  await expect
+    .poll(async () => (await owned(page, id, k)).pawn_view[photo]?.zoom)
+    .toBeCloseTo(1.1, 5);
+});
+
+// Nothing on screen said the photo could be moved at all.
+test('the circle says it can be dragged, until it has been', async ({ page }) => {
+  const { url, id, k } = await createCollection(page);
+  await attachPhotos(page, id, k, 1);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  const badge = page.locator('.pawn-grab');
+  await expect(badge).toBeVisible();
+  const disc = await page.locator('.pawn-disc').first().boundingBox();
+  await page.mouse.move(disc.x + disc.width / 2, disc.y + disc.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(disc.x + disc.width / 2 + 15, disc.y + disc.height / 2, { steps: 3 });
+  await page.mouse.up();
+  // An instruction that stays after it has been followed is noise.
+  await expect(badge).toBeHidden();
+});

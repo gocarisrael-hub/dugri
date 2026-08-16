@@ -822,11 +822,82 @@
       .pawn-pad:active {
         cursor: grabbing;
       }
+      /* THE CARD, DRAWN HERE. The empty card comes from the generator once; the
+         four photos are laid into its discs by this page, with the same framing
+         maths the printer uses. That is what makes it keep up with a drag —
+         asking the server to re-render was a second per adjustment, so the card
+         was always showing the move before last. */
+      .pawn-live-slots {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+      .pawn-live-slot {
+        position: absolute;
+        border-radius: 50%;
+        overflow: hidden;
+      }
+      .pawn-live-slot img {
+        position: absolute;
+        display: block;
+      }
+      .pawn-zoom-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .pawn-zoom-lab {
+        font-size: 13px;
+        color: var(--muted);
+        flex: 0 0 auto;
+      }
+      .pawn-zoom-row .pawn-zoom {
+        flex: 1;
+      }
+      .pawn-step {
+        flex: 0 0 auto;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--ink);
+        font-size: 17px;
+        line-height: 1;
+        padding: 0;
+        cursor: pointer;
+      }
+      .pawn-step:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      /* "You can move this." Shown until the first drag, then gone for good. */
+      .pawn-grab {
+        position: absolute;
+        left: 50%;
+        bottom: 6%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.62);
+        color: #fff;
+        font-size: 11px;
+        line-height: 1;
+        padding: 4px 8px;
+        border-radius: 99px;
+        white-space: nowrap;
+        pointer-events: none;
+      }
       .pawn-disc {
         position: absolute;
         inset: 5%;
         border-radius: 50%;
         overflow: hidden;
+      }
+      .pawn-disc {
+        cursor: grab;
+      }
+      .pawn-disc:active {
+        cursor: grabbing;
       }
       .pawn-disc img {
         position: absolute;
@@ -1935,8 +2006,9 @@
              send?"; this answers the question she is actually asking, which is
              what her guests will be holding. Rendered by the generator through
              the same path the deck uses (GET .../pawn-card). -->
-        <div class="prev-box" id="pawnPrevBox">
+        <div class="prev-box pawn-live" id="pawnPrevBox">
           <img id="pawnPrevImg" alt="קלף החיילים שלכם" data-testid="pawn-card-preview" />
+          <div class="pawn-live-slots" id="pawnLiveSlots" aria-hidden="true"></div>
           <span class="prev-busy" data-edit="collect-pawn-card-rendering">מעדכן…</span>
           <span class="prev-fail hidden" id="pawnPrevFail" data-edit="collect-pawn-card-fail"
             >לא הצלחנו להציג את הקלף כרגע</span
@@ -3031,9 +3103,11 @@
             );
           }
         }
-        // One re-render for the whole batch: the card is a browser run on the
-        // server, and every view in a drag would otherwise ask for its own.
-        if (saved) renderPawnCard();
+        // The CARD is not re-fetched here any more: the page draws it (see
+        // paintPawnCard), so the picture was already correct before this write
+        // left. What the write is for is the ORDER — the printer reads it, and
+        // the next visitor to this page reads it back.
+        void saved;
       }
 
       // Cut this photo's background out ON THIS DEVICE and attach it to the
@@ -3064,6 +3138,9 @@
       // True while she is dragging or waiting on a cut — the 5s poll must not
       // rebuild the strip out from under her thumb.
       let pawnBusy = false;
+      // Has she moved a photo yet on this page? The "drag me" badge is for
+      // someone who has not.
+      let pawnDragged = false;
       // What the strip was last built from. Rebuilding it on every poll would
       // re-measure every photo and reset a slider mid-adjustment, so it is only
       // rebuilt when the ANSWER changed.
@@ -3113,6 +3190,15 @@
         img.draggable = false;
         img.setAttribute('data-testid', 'pawn-thumb');
         disc.appendChild(img);
+        // NOBODY DRAGS WHAT LOOKS LIKE A PICTURE. The badge sits on the disc
+        // until the first drag on this page, then never again — an instruction
+        // that stays after it has been followed is noise.
+        const grab = document.createElement('span');
+        grab.className = 'pawn-grab';
+        grab.textContent = '✥ גררו למיקום';
+        grab.setAttribute('aria-hidden', 'true');
+        if (pawnDragged) grab.hidden = true;
+        disc.appendChild(grab);
         const line = document.createElement('span');
         line.className = 'pawn-cut-line';
         line.setAttribute('aria-hidden', 'true');
@@ -3138,7 +3224,9 @@
           // Another toggle may have landed while this was decoding.
           if (pawnPrintSrcFor(src, view) !== printSrc) return;
           frame = measured;
+          pawnLiveFrames.set(src, measured);
           paint();
+          paintPawnCard();
         };
         paint();
         remeasure();
@@ -3192,6 +3280,7 @@
             savePawnView(src, view);
             await remeasure();
             paint();
+            pawnShowView(src, view);
           });
           return b;
         };
@@ -3203,6 +3292,27 @@
 
         // HOW BIG. A slider rather than pinch-only: pinch is invisible until you
         // try it, and half the people who open this page are doing it on a laptop.
+        // A bare slider says nothing about what it does. It is a labelled row
+        // now, with a − and a + at its ends: the label answers "what is this",
+        // and the buttons answer "how do I nudge it" for anyone on a trackpad or
+        // a phone who cannot land on a 4px thumb.
+        const zoomRow = document.createElement('div');
+        zoomRow.className = 'pawn-zoom-row';
+        const zoomLab = document.createElement('span');
+        zoomLab.className = 'pawn-zoom-lab';
+        zoomLab.textContent = 'גודל';
+        const zoomOut = document.createElement('button');
+        zoomOut.type = 'button';
+        zoomOut.className = 'pawn-step';
+        zoomOut.textContent = '−';
+        zoomOut.setAttribute('aria-label', 'להקטין את התמונה');
+        zoomOut.setAttribute('data-testid', 'pawn-zoom-out');
+        const zoomIn = document.createElement('button');
+        zoomIn.type = 'button';
+        zoomIn.className = 'pawn-step';
+        zoomIn.textContent = '+';
+        zoomIn.setAttribute('aria-label', 'להגדיל את התמונה');
+        zoomIn.setAttribute('data-testid', 'pawn-zoom-in');
         const zoom = document.createElement('input');
         zoom.type = 'range';
         zoom.className = 'pawn-zoom';
@@ -3213,12 +3323,23 @@
         zoom.disabled = !open;
         zoom.setAttribute('aria-label', 'גודל התמונה בעיגול');
         zoom.setAttribute('data-testid', 'pawn-zoom');
-        zoom.addEventListener('input', () => {
-          view = clampView({ ...view, zoom: Number(zoom.value) });
+        const setZoom = (z) => {
+          view = clampView({ ...view, zoom: z });
+          zoom.value = String(view.zoom);
           placePawn(img, frame, view);
+          pawnShowView(src, view);
           savePawnView(src, view);
-        });
-        ctl.appendChild(zoom);
+        };
+        zoom.addEventListener('input', () => setZoom(Number(zoom.value)));
+        zoomOut.disabled = !open;
+        zoomIn.disabled = !open;
+        zoomOut.addEventListener('click', () => setZoom(view.zoom - 0.1));
+        zoomIn.addEventListener('click', () => setZoom(view.zoom + 0.1));
+        zoomRow.appendChild(zoomLab);
+        zoomRow.appendChild(zoomOut);
+        zoomRow.appendChild(zoom);
+        zoomRow.appendChild(zoomIn);
+        ctl.appendChild(zoomRow);
 
         const hint = document.createElement('small');
         hint.className = 'pawn-ctl-hint';
@@ -3237,6 +3358,7 @@
           view = clampView({ ...VIEW_DEFAULT, bg: view.bg });
           zoom.value = String(view.zoom);
           placePawn(img, frame, view);
+          pawnShowView(src, view);
           savePawnView(src, view);
         });
         actions.appendChild(reset);
@@ -3267,6 +3389,8 @@
           if (state.status !== 'open') return;
           drag = { id: e.pointerId, x: e.clientX, y: e.clientY, view, moved: 0 };
           pawnBusy = true;
+          pawnDragged = true;
+          for (const b of document.querySelectorAll('.pawn-grab')) b.hidden = true;
           try {
             disc.setPointerCapture(e.pointerId);
           } catch (err) {
@@ -3286,6 +3410,8 @@
             dy: drag.view.dy - dyPx / slot / drag.view.zoom,
           });
           placePawn(img, frame, view);
+          // …and the card at the top moves with it, in the same frame.
+          pawnShowView(src, view);
         });
         const endDrag = (e) => {
           if (!drag || (e && e.pointerId !== drag.id)) return;
@@ -3358,6 +3484,57 @@
       // change. The server caches on the exact photo list, so a re-ask after a
       // change re-renders and a re-ask after none is free.
       let pawnCardSeq = 0;
+      // What each photo's frame RESOLVED to, so the card can be drawn from the
+      // same numbers as the row that set them. (measureFrame's own cache holds
+      // promises keyed by cut-or-original; this holds the answer, per photo, for
+      // whichever of the two is currently printing.) Filled by pawnCell.
+      const pawnLiveFrames = new Map();
+      // …and what she is doing to a photo RIGHT NOW. A drag does not touch the
+      // order until it ends (and then only after a debounce), so the card cannot
+      // read the STORED view or it would draw the position before last — which is
+      // exactly what it used to do, one server render behind.
+      const pawnLiveViews = new Map();
+      function pawnShowView(src, view) {
+        pawnLiveViews.set(src, view);
+        paintPawnCard();
+      }
+      // The card's four discs, as fractions of the card picture (from the
+      // generator — see preview.pawn_slots). Null until the card has loaded.
+      let pawnSlots = null;
+
+      // Draw the buyer's photos into the card's discs. Called on every drag frame,
+      // so it does nothing but move CSS: no fetch, no decode, no server.
+      function paintPawnCard() {
+        const box = $('#pawnLiveSlots');
+        if (!box || !pawnSlots) return;
+        const photos = pawnList().slice(0, pawnSlots.length);
+        // One element per disc, reused — rebuilding four <img> per pointer move
+        // would decode the photos again and again.
+        while (box.children.length > photos.length) box.lastChild.remove();
+        while (box.children.length < photos.length) {
+          const slot = document.createElement('div');
+          slot.className = 'pawn-live-slot';
+          slot.appendChild(document.createElement('img'));
+          box.appendChild(slot);
+        }
+        photos.forEach((src, i) => {
+          const geo = pawnSlots[i];
+          const el = box.children[i];
+          const img = el.firstChild;
+          const view = pawnLiveViews.get(src) || pawnViewFor(src);
+          // The DISC is DISC_FILL of the slot square, centred in it — the same
+          // relation the row's own circle has, so placePawn can be shared.
+          const d = DISC_FILL;
+          el.style.left = ((geo.x + (geo.w * (1 - d)) / 2) * 100).toFixed(3) + '%';
+          el.style.top = ((geo.y + (geo.h * (1 - d)) / 2) * 100).toFixed(3) + '%';
+          el.style.width = (geo.w * d * 100).toFixed(3) + '%';
+          el.style.height = (geo.h * d * 100).toFixed(3) + '%';
+          const want = pawnPrintSrcFor(src, view);
+          if (img.getAttribute('src') !== want) img.src = want;
+          placePawn(img, pawnLiveFrames.get(src) || null, view);
+        });
+      }
+
       async function renderPawnCard() {
         const box = $('#pawnPrevBox');
         const img = $('#pawnPrevImg');
@@ -3367,9 +3544,14 @@
         box.classList.add('busy');
         fail.classList.add('hidden');
         try {
-          const r = await api('/pawn-card?k=' + encodeURIComponent(ownerToken));
+          // ?live=1: the card with its discs EMPTY, plus where they are. It
+          // depends on the design alone, so this is asked ONCE per page — every
+          // change after it is drawn here rather than rendered there.
+          const r = await api('/pawn-card?live=1&k=' + encodeURIComponent(ownerToken));
           if (seq !== pawnCardSeq) return; // a newer render is already on its way
           if (r && r.card) img.src = r.card;
+          if (r && Array.isArray(r.slots) && r.slots.length) pawnSlots = r.slots;
+          paintPawnCard();
         } catch (e) {
           if (seq !== pawnCardSeq) return;
           // Keep whatever card is on screen — a stale picture of her deck beats an
