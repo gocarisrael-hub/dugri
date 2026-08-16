@@ -39,7 +39,16 @@ const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 // `order_seq` is the high-water mark behind the human order number (see
 // nextOrderNo) — a plain counter so numbers are never reused, even after a
 // collection is deleted.
-const DEFAULTS = { collections: [], words: [], coupons: [], design_codes: [], order_seq: 0 };
+const DEFAULTS = {
+  collections: [],
+  words: [],
+  coupons: [],
+  design_codes: [],
+  order_seq: 0,
+  // Physical stock — see the block near stockSnapshot. Absent in every file
+  // written before this existed, which is why nothing here may assume its shape.
+  stock: {},
+};
 
 // Human-quotable order numbers: "DG-1001", "DG-1002", … A collection id is a
 // UUID — fine as a database key, useless on a receipt or in a WhatsApp message
@@ -284,6 +293,62 @@ function pushPaySession(
   p.last_transaction_id = transactionId || p.last_transaction_id || null;
   p.initiated_at = nowIso();
   return p;
+}
+
+// --- PHYSICAL STOCK -----------------------------------------------------------
+// The things that run out. Boards are printed in batches per design and a deck
+// cannot ship without one; boxes, thank-you notes and stickers are the packing.
+// Nothing in the software consumed any of it before, so "how many Santorini
+// boards are left?" was a question answered by walking to the shelf.
+//
+// WHAT COUNTS AS USING ONE: marking an order READY. That is the moment the deck
+// comes back from Galor and gets packed, which is when a board, a box and a note
+// physically leave the shelf. It is a TOGGLE (db.setOrderReady), so un-marking a
+// row pressed by mistake puts the same things back — see applyOrderStock.
+//
+// THE OPENING COUNT, as the owner counted the shelf. Keyed by the design's
+// HEBREW NAME because that is what she counted, not by theme key: two of these
+// designs do not exist in this checkout at all (their templates live on the
+// Railway volume), so a key-based seed would silently skip them. Resolved
+// against the live theme list the first time each design is seen, and stored by
+// THEME KEY from then on — so renaming a design afterwards moves its stock with
+// it rather than starting a second pile.
+const INITIAL_BOARD_STOCK = {
+  סנטוריני: 40,
+  קליפורניה: 40,
+  פריז: 40,
+  דני: 30,
+  אואזיס: 20,
+  סיישל: 15,
+  טוקיו: 5,
+  טריפה: 5,
+  ברוקלין: 5,
+  מרקאנה: 5,
+};
+
+// The packing supplies, and how many of each one order eats.
+//
+// `per_order` is a NUMBER the owner can change, not a rule baked into the code,
+// because the packing changes faster than a deploy does. It is also how the one
+// genuine ambiguity in the brief is left to her rather than guessed at: she named
+// boxes, stickers and thank-you notes, and then said an order uses "a thank-you
+// note, a packaging and the board" — so stickers start at 0 per order, visibly,
+// with a field she can put a 1 in if they should have been counted all along. A
+// wrong guess here would drift her count quietly, which is the one thing an
+// inventory must never do.
+const SUPPLY_DEFAULTS = [
+  { key: 'packaging', label: 'קופסאות אריזה', count: 139, per_order: 1 },
+  { key: 'thankyou', label: 'פתקי תודה', count: 80, per_order: 1 },
+  { key: 'stickers', label: 'מדבקות', count: 80, per_order: 0 },
+];
+
+// Stock is allowed to go NEGATIVE. That is deliberate: a negative number is the
+// truthful statement "you have shipped more of these than you told me you had",
+// which is a thing the owner needs to see and correct. Clamping at zero would
+// hide it and then quietly under-count every restock afterwards.
+function stockInt(v, dflt = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.trunc(n) : dflt;
 }
 
 // Coerce anything a client might send into a usable copy count. Absent/garbage
@@ -2139,6 +2204,180 @@ const db = {
     _db.design_codes.push(rec);
     saveDb();
     return rec;
+  },
+
+  // --- stock ------------------------------------------------------------------
+
+  // Everything on the shelf, with the boards resolved against the designs that
+  // actually exist right now.
+  //
+  // `designs` is [{ theme, name }] — the live theme list, passed IN rather than
+  // read here, because this module knows nothing about themes.json (which lives
+  // on the volume in production and is the templates module's to read).
+  //
+  // Seeds on FIRST SIGHT of each design: a theme with no record yet gets its
+  // opening count from INITIAL_BOARD_STOCK by display name, or 0 for a design
+  // that was not on the shelf when it was counted. Seeding once per theme key is
+  // what makes it safe to call on every page load — a board the owner has since
+  // set to 0 has a record, so it is never re-seeded back to 40.
+  stockSnapshot(designs = []) {
+    if (!_db.stock || typeof _db.stock !== 'object' || Array.isArray(_db.stock)) _db.stock = {};
+    const st = _db.stock;
+    if (!st.boards || typeof st.boards !== 'object' || Array.isArray(st.boards)) st.boards = {};
+    if (!st.supplies || typeof st.supplies !== 'object' || Array.isArray(st.supplies)) {
+      st.supplies = {};
+    }
+    let dirty = false;
+    for (const d of Array.isArray(designs) ? designs : []) {
+      const theme = d && d.theme;
+      if (!theme) continue;
+      if (!Object.prototype.hasOwnProperty.call(st.boards, theme)) {
+        const seeded = INITIAL_BOARD_STOCK[String((d && d.name) || '').trim()];
+        st.boards[theme] = { count: stockInt(seeded, 0) };
+        dirty = true;
+      }
+    }
+    for (const def of SUPPLY_DEFAULTS) {
+      if (!Object.prototype.hasOwnProperty.call(st.supplies, def.key)) {
+        st.supplies[def.key] = { count: def.count, per_order: def.per_order };
+        dirty = true;
+      }
+    }
+    if (dirty) saveDb();
+    // The boards are answered in the order the designs came in, so the page shows
+    // them the way every other admin screen lists designs.
+    const boards = (Array.isArray(designs) ? designs : [])
+      .filter((d) => d && d.theme)
+      .map((d) => ({
+        theme: d.theme,
+        name: d.name || d.theme,
+        count: stockInt(st.boards[d.theme] && st.boards[d.theme].count, 0),
+      }));
+    // A board with stock whose design has vanished (a template deleted off the
+    // volume) is still shown — the boards are on the shelf whether or not the
+    // template is still installed, and silently dropping them would look like
+    // stock that evaporated.
+    const known = new Set(boards.map((b) => b.theme));
+    for (const [theme, rec] of Object.entries(st.boards)) {
+      if (known.has(theme)) continue;
+      boards.push({ theme, name: theme, count: stockInt(rec && rec.count, 0), orphan: true });
+    }
+    const supplies = SUPPLY_DEFAULTS.map((def) => {
+      const rec = st.supplies[def.key] || {};
+      return {
+        key: def.key,
+        label: def.label,
+        count: stockInt(rec.count, 0),
+        per_order: Math.max(0, stockInt(rec.per_order, 0)),
+      };
+    });
+    return { boards, supplies };
+  },
+
+  // Admin: set one board's count by hand — a restock, or a correction after a
+  // physical recount. Returns the stored number, or null for an unknown theme
+  // (one with no record and not among the live designs the caller passed).
+  setBoardStock(theme, count, designs = []) {
+    this.stockSnapshot(designs);
+    const key = String(theme || '');
+    if (!key) return null;
+    const known =
+      Object.prototype.hasOwnProperty.call(_db.stock.boards, key) ||
+      (Array.isArray(designs) && designs.some((d) => d && d.theme === key));
+    if (!known) return null;
+    _db.stock.boards[key] = { count: stockInt(count, 0) };
+    saveDb();
+    return _db.stock.boards[key].count;
+  },
+
+  // Admin: set a supply's count and/or how many of it an order uses. Either
+  // field may be omitted ("restock the boxes" must not reset the per-order
+  // number, and vice versa). Returns the stored record, or null for a supply
+  // this build does not have.
+  setSupplyStock(key, { count, per_order } = {}) {
+    this.stockSnapshot();
+    const k = String(key || '');
+    if (!SUPPLY_DEFAULTS.some((d) => d.key === k)) return null;
+    const rec = _db.stock.supplies[k];
+    if (count != null) rec.count = stockInt(count, rec.count);
+    if (per_order != null) rec.per_order = Math.max(0, stockInt(per_order, rec.per_order));
+    saveDb();
+    return { ...rec };
+  },
+
+  // Take this order's things off the shelf, or put them back.
+  //
+  // Called from the ready toggle. `take` is true on the way in and false on the
+  // way back out, and the two have to be exact opposites — so what was taken is
+  // RECORDED ON THE ORDER (order.stock_taken) and the restore reverses that
+  // record rather than recomputing it. Recomputing would return the wrong board
+  // if the design was edited in between, and the wrong number of boxes if the
+  // owner changed `per_order` in between; both are quiet errors that only show
+  // up as a shelf that does not match the screen weeks later.
+  //
+  // Idempotent in both directions: taking twice takes once, and putting back
+  // something that was never taken does nothing.
+  //
+  // Never fails the caller. Marking an order ready is the step that emails the
+  // customer, and a stock record must not be able to stand in the way of it.
+  applyOrderStock(id, take, designs = []) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return null;
+    const order = c.order;
+    if (take && order.stock_taken) return order.stock_taken;
+    if (!take && !order.stock_taken) return null;
+    // A DIGITAL order ships nothing: no board, no box, no note. It can still go
+    // through the print/ready pipeline (that is how the owner tracks "the file
+    // went out"), so without this every PDF sale would quietly drain a shelf it
+    // never touched. Checked on the way in only — an order that took nothing has
+    // no record to give back, so the way out is already a no-op.
+    if (take && order.version === 'pdf') return null;
+    this.stockSnapshot(designs);
+    const st = _db.stock;
+    if (take) {
+      const theme = c.theme || null;
+      // COPIES. An order may be several identical decks printed from one word
+      // list, and each of them is a whole game: its own board, its own box, its
+      // own note. The brief said "one" because one is what an order usually is —
+      // but shipping five decks with one board between them is not a rounding
+      // error, it is four games that cannot be played.
+      const copies = sanitizeQuantity(order.quantity);
+      const supplies = {};
+      for (const def of SUPPLY_DEFAULTS) {
+        const n = Math.max(0, stockInt(st.supplies[def.key].per_order, 0)) * copies;
+        if (n > 0) supplies[def.key] = n;
+      }
+      // A board for a design we hold no record of is still a board off the
+      // shelf: the record is created (going negative if need be) rather than the
+      // deduction being dropped, because a missing row is a bookkeeping gap and
+      // the board is gone either way.
+      if (theme) {
+        const rec = st.boards[theme] || { count: 0 };
+        rec.count = stockInt(rec.count, 0) - copies;
+        st.boards[theme] = rec;
+      }
+      for (const [k, n] of Object.entries(supplies)) {
+        st.supplies[k].count = stockInt(st.supplies[k].count, 0) - n;
+      }
+      order.stock_taken = { at: nowIso(), board: theme, boards: copies, supplies };
+      saveDb();
+      return order.stock_taken;
+    }
+    const taken = order.stock_taken;
+    // `boards` is absent on a record written before copies were counted; one is
+    // what those took, so one is what they give back.
+    const backBoards = stockInt(taken.boards, 1);
+    if (taken.board && st.boards[taken.board]) {
+      st.boards[taken.board].count = stockInt(st.boards[taken.board].count, 0) + backBoards;
+    } else if (taken.board) {
+      st.boards[taken.board] = { count: backBoards };
+    }
+    for (const [k, n] of Object.entries(taken.supplies || {})) {
+      if (st.supplies[k]) st.supplies[k].count = stockInt(st.supplies[k].count, 0) + stockInt(n, 0);
+    }
+    order.stock_taken = null;
+    saveDb();
+    return null;
   },
 
   listDesignCodes() {

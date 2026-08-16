@@ -1682,6 +1682,52 @@ app.get('/api/admin/pickup-stickers', async (req, res) => {
   });
 });
 
+// --- physical stock -----------------------------------------------------------
+// Boards, boxes, thank-you notes, stickers. See the block above db.stockSnapshot
+// for what counts as using one and why the counts may go negative.
+
+// Every design that exists RIGHT NOW, as { theme, name }. Read from themes.json
+// (the volume's copy in production, so a template the owner uploaded is in here
+// too) and deliberately NOT filtered to public designs: a private template's
+// boards are on the same shelf as everyone else's.
+function stockDesigns() {
+  try {
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT)) || {};
+    return Object.entries(themes)
+      .filter(([, v]) => v && typeof v === 'object')
+      .map(([theme, v]) => ({ theme, name: (v.display_he || '').trim() || theme }));
+  } catch {
+    // No theme list is not an error here — the stored counts are still the truth,
+    // and stockSnapshot answers with them (as orphans) rather than nothing.
+    return [];
+  }
+}
+
+app.get('/api/admin/stock', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(db.stockSnapshot(stockDesigns()));
+});
+
+// Admin: correct a count, restock a shelf, or change how many of a supply an
+// order uses. One route for both kinds of row, because they are one screen.
+app.put('/api/admin/stock', express.json({ limit: '8kb' }), (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  const designs = stockDesigns();
+  if (b.kind === 'board') {
+    const stored = db.setBoardStock(b.theme, b.count, designs);
+    if (stored == null) return res.status(404).json({ error: 'unknown design' });
+  } else if (b.kind === 'supply') {
+    const stored = db.setSupplyStock(b.key, { count: b.count, per_order: b.per_order });
+    if (stored == null) return res.status(404).json({ error: 'unknown supply' });
+  } else {
+    return res.status(400).json({ error: 'expected kind board|supply' });
+  }
+  // The whole shelf back, so the page redraws from the store rather than from
+  // what it hoped the store did.
+  res.json(db.stockSnapshot(designs));
+});
+
 app.post('/api/admin/collections/:id/ready', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const ready = !(req.body && req.body.undo);
@@ -1692,6 +1738,19 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
       error: 'not_sent_to_print',
       message: 'צריך קודם לסמן שההזמנה נשלחה לדפוס.',
     });
+  }
+  // The shelf. Marking an order ready is the moment the deck is packed, so this
+  // is where a board, a box and a note physically leave — and un-marking a row
+  // pressed by mistake puts back exactly what that press took (db.applyOrderStock
+  // reverses its own record, never a recomputation). Only on a REAL transition,
+  // and never allowed to fail the press: this is the step that emails the
+  // customer, and a bookkeeping error must not stand in the way of it.
+  if (r.changed) {
+    try {
+      db.applyOrderStock(req.params.id, ready, stockDesigns());
+    } catch (e) {
+      console.warn('[stock] could not update:', (e && e.message) || e);
+    }
   }
   if (ready && r.changed) {
     const fresh = db.getCollection(req.params.id);
