@@ -1183,11 +1183,14 @@ def test_wide_script_title_not_enlarged():
     assert size <= old_cap + 0.3, "title must be capped by the old height, not enlarged"
 
 
-def test_shipped_normal_title_not_enlarged_or_shrunk():
-    # birthday-girls (CooperLtBTBold) is a NORMAL-height face whose real ink runs
-    # ~10% past its approximate recipe box; the ink-fit-only rewrite SHRANK it ~10%
-    # below its calibrated size. It must render at the original pre-PR size.
-    # Finding #1: a title that already fit keeps its prior size.
+def test_the_painted_title_stays_inside_its_box():
+    # THE BOX BINDS. birthday-girls (CooperLtBTBold) is the case that used to
+    # prove the opposite: a normal-height face whose ink runs ~10% past its
+    # approximate box, kept at the origin-matching size by a 25% tolerance. The
+    # owner asked for the box to be exact — a rectangle that is not a boundary
+    # cannot be used to decide where a title goes, which is what she was trying
+    # to do with it — so the tolerance is 0 and this title is now SMALLER than
+    # the old height cap, by however much its own ink overruns.
     cfg = config.theme("birthday-girls")
     fp = config.font_path("birthday-girls", cfg["title_font"])
     ts = cfg["title_style"]
@@ -1196,11 +1199,34 @@ def test_shipped_normal_title_not_enlarged_or_shrunk():
     svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
                          ts["outline_w"], ts["arch"], ts["shadow"])
     size = _title_size(svg)
-    pre, width_fit, old_cap = _pre_pr_size(fp, lines, box)
-    assert abs(size - pre) < 0.3, "normal-height title must keep its pre-PR size"
-    # it is height-bound here (old_cap < width_fit); the ~10% ink overrun is within
-    # the box-approximation tolerance, so it is NOT shrunk to the metric ink-fit.
-    assert size > old_cap - 0.3
+    _pre, _width_fit, old_cap = _pre_pr_size(fp, lines, box)
+    assert size < old_cap, "the old height cap let the ink overrun; it may not now"
+    # The whole PAINTED footprint — stacked ink, the ring around every glyph and
+    # the drop shadow under it — inside the box, which is the promise the drawn
+    # rectangle now makes.
+    f = ImageFont.truetype(fp, 200)
+    stack = rp._title_ink_stack(f, 200, lines) / 200 * size
+    pad = (2 * ts["outline_w"] + (0.06 if ts["shadow"] else 0.0)) * size
+    assert stack + pad <= (box["y1"] - box["y0"]) + 0.5
+
+
+def test_the_ring_comes_out_of_the_width_not_the_artwork():
+    # The ring is painted OUTSIDE the glyph advance, so a width-bound title used
+    # to fit its letters in the box and hang its outline over the neighbouring
+    # artwork. The width budget counts it now.
+    cfg = config.theme("birthday-girls")
+    fp = config.font_path("birthday-girls", cfg["title_font"])
+    ts = cfg["title_style"]
+    box = {"x0": 20.0, "y0": 28.9, "x1": 150.0, "y1": 100.0}   # wide-open height
+    lines = ["Alexandra-Margarita"]
+    svg = rp.title_block(box, lines, ts["fill"], ts["outline"], fp,
+                         ts["outline_w"], ts["arch"], ts["shadow"])
+    size = _title_size(svg)
+    f = ImageFont.truetype(fp, 200)
+    advance = f.getlength(lines[0]) / 200 * size
+    ring = 2 * rp.title_paint_grow(ts["outline_w"],
+                                   ring_visible=ts["outline"] != ts["fill"]) * size
+    assert advance + ring <= (box["x1"] - box["x0"]) + 0.5
 
 
 def test_extreme_tall_face_shrinks_to_fit_when_overflow_exceeds_tolerance():
@@ -1666,7 +1692,22 @@ def _title_font_size(lines, fixed_size):
 
 
 def test_a_pinned_title_size_is_kept_when_it_fits():
-    assert _title_font_size(["רווקות לדנה"], 28) == 28
+    # "Fits" now means the PAINTED footprint fits, height included — the box
+    # binds a pin on both axes (see _TITLE_OVERFLOW_TOL). 20 does; 28 does not.
+    assert _title_font_size(["רווקות לדנה"], 20) == 20
+
+
+def test_a_pinned_size_taller_than_its_box_is_brought_down_to_it():
+    # It used to be kept: a pin skipped the height fit entirely, so the number in
+    # themes.json printed whatever it printed and the box was decoration. The
+    # owner asked for the box to be exact, so a pin is a target and the box is
+    # the limit.
+    box_h = _TITLE_BOX["y1"] - _TITLE_BOX["y0"]
+    size = _title_font_size(["רווקות לדנה"], 28)
+    assert size < 28
+    font, ref = _cafe()
+    stack = rp._title_ink_stack(font, ref, ["רווקות לדנה"]) / ref * size
+    assert stack <= box_h + 0.5, (stack, box_h)
 
 
 def test_a_pinned_title_size_shrinks_rather_than_overflowing():
@@ -1706,10 +1747,14 @@ def test_bold_off_paints_at_true_outline_weight():
 
 
 def test_a_theme_can_set_its_own_bold_weight():
+    # The stroke is a share of the RENDERED size, and the rendered size is now the
+    # box-clamped one rather than the pin — so the weight is measured against what
+    # actually prints, not against the number asked for.
     default = _title_stroke(bold=True)
     heavier = _title_stroke(bold=True, bold_w=0.05)
     assert heavier > default, (default, heavier)
-    assert abs(heavier - 28 * 0.05) < 0.01, heavier
+    drawn = _title_font_size(["רווקות לדנה"], 28)
+    assert abs(heavier - drawn * 0.05) < 0.01, (heavier, drawn)
 
 
 def test_bold_w_is_ignored_when_bold_is_off():

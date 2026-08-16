@@ -23,7 +23,7 @@
    "outline_w": 0.07,
    "arch": 0.11,
    "shadow": true,
-   "size": 22.3,
+   "size": 22.0,
    "offset": [
     0,
     0.009
@@ -77,7 +77,7 @@
    "outline_w": 0,
    "arch": 0,
    "shadow": false,
-   "size": 21.9
+   "size": 16.1
   },
   "board": {
    "frac": {
