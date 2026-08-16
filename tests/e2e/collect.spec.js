@@ -384,6 +384,7 @@ test('owner pay panel: select delivery → address fields appear + total 199', a
   await createCollection(page, 'Shira');
 
   // Owner sees the pay panel; it's collapsed by default — open it first.
+  await showPayTab(page); // the checkout lives on the תשלום tab
   await expect(page.locator('#payPanel')).toBeVisible();
   await expect(page.locator('#payTotal')).toBeHidden();
   await openPayPanel(page);
@@ -527,6 +528,7 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   page,
 }) => {
   await createCollection(page, 'Shira');
+  await showPayTab(page); // the checkout lives on the תשלום tab
   const panel = page.locator('#payPanel');
   await expect(panel).toBeVisible();
   // Collapsed by default: the inner options are hidden behind one button.
@@ -569,6 +571,7 @@ test('the pay bar carries the price, sticks to the screen and opens the checkout
   await expect(bar).toBeVisible();
   // The amount is the panel's own number, not a second computation of it.
   await expect(page.getByTestId('pay-bar-amount')).toHaveText('199 ₪');
+  await showPayTab(page); // the checkout lives on the תשלום tab
   await expect(page.locator('#payTotal')).toHaveText('199');
 
   // STICKY: still on screen at the foot of a long page, which is the whole point.
@@ -608,6 +611,7 @@ test('the top pay card states the price on arrival and opens the checkout', asyn
   // One price, three places: the panel's total, the bar, and this card.
   await expect(page.getByTestId('pay-top-amount')).toHaveText('199 ₪');
   await expect(page.getByTestId('pay-bar-amount')).toHaveText('199 ₪');
+  await showPayTab(page); // the checkout lives on the תשלום tab
   await expect(page.locator('#payTotal')).toHaveText('199');
 
   // It IS the checkout, not a signpost to it.
@@ -1025,6 +1029,7 @@ test('?pay=1 (the order email pay button) opens the checkout on arrival', async 
   const url = new URL(page.url());
 
   // Same page WITHOUT the flag: the panel is there but collapsed.
+  await showPayTab(page); // the checkout lives on the תשלום tab
   await expect(page.locator('#payPanel')).toBeVisible();
   await expect(page.locator('#payPanel')).not.toHaveAttribute('open', /.*/);
 
@@ -1050,6 +1055,7 @@ test('?pay=1 on an ALREADY-PAID order does not force a dead panel open', async (
 
   await page.goto(url.pathname + url.search + '&pay=1');
   await expect(page.locator('#paidCard')).toBeVisible();
+  await showPayTab(page); // the checkout lives on the תשלום tab
   await expect(page.locator('#payPanel')).toBeHidden();
 });
 
@@ -1074,6 +1080,7 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
 
   await page.reload();
   // Pay panel + both pay CTAs gone; the "keep adding, then סיום" card is shown.
+  await showPayTab(page); // the checkout lives on the תשלום tab
   await expect(page.locator('#payPanel')).toBeHidden();
   await expect(page.getByTestId('pay-bar')).toBeHidden();
   await expect(page.getByTestId('pay-top')).toBeHidden();
@@ -1105,6 +1112,7 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
     },
   });
   await createCollection(page, 'Shira');
+  await showPayTab(page); // the checkout lives on the תשלום tab
   const panel = page.locator('#payPanel');
   await expect(panel).toContainText('דיגיטלי (PDF)');
   await expect(panel).toContainText('מורידים, מדפיסים לבד');
