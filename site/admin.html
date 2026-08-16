@@ -2536,6 +2536,23 @@
             // looks identical to a one-copy order gets fulfilled as one deck.
             tdVersion.textContent = qty > 1 ? label + ' · ' + qty + ' עותקים' : label;
             if (qty > 1) tdVersion.style.fontWeight = '700';
+            // Delivery bought AFTER the order was paid. The row already reads
+            // "משלוח" and carries the address, because the order genuinely is a
+            // delivery order now — but the money arrived in TWO transactions, and
+            // the owner reconciling her PeleCard statement needs to know that
+            // before she goes looking for one charge that is not there.
+            if (order.shipping && order.shipping.paid) {
+              const extra = document.createElement('div');
+              extra.className = 'muted';
+              extra.style.fontSize = '11px';
+              extra.textContent =
+                '+ משלוח נוסף אחרי התשלום (' +
+                (order.shipping.charged_total != null
+                  ? order.shipping.charged_total
+                  : order.shipping.fee) +
+                ' ₪, חיוב נפרד)';
+              tdVersion.appendChild(extra);
+            }
           } else {
             tdVersion.textContent = '—';
           }

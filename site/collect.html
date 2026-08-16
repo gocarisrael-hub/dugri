@@ -921,6 +921,15 @@
         opacity: 0.45;
         cursor: default;
       }
+      /* The delivery-upgrade form sits inside a card rather than inside the pay
+         panel, so it needs the panel's insets taken back off. */
+      #shipAddCard .addr-form {
+        margin: 12px 0 4px;
+      }
+      .ship-add-cta {
+        width: 100%;
+        margin-top: 14px;
+      }
       /* THE SIGN-OFF ROWS. Each is one decision, its current answer, and the way
          back to the tab that owns it — a label/value/action line rather than a
          card, because three cards would bury the button underneath them. */
@@ -1437,14 +1446,14 @@
          The inline margin is restated here on purpose: the generic
          `.pay-collapse > :not(.pay-summary)` inset loses to this ID rule, and
          without it the inputs ran edge-to-edge past the option cards above. */
-      #addressForm {
+      .addr-form {
         display: block;
         margin: 16px 16px 4px;
         padding: 14px;
         border: 1px solid var(--line);
         background: #fafafa;
       }
-      #addressForm .addr-head {
+      .addr-form .addr-head {
         font-family: var(--display);
         font-weight: 700;
         font-size: 14px;
@@ -1457,32 +1466,32 @@
          apartment + floor) instead of stacking one box under another. Works in
          RTL as-is: the grid follows the writing direction, so column 1 is the
          right one. */
-      #addressForm .addr-grid {
+      .addr-form .addr-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 14px 10px;
       }
-      #addressForm .addr-field {
+      .addr-form .addr-field {
         display: flex;
         flex-direction: column;
         min-width: 0;
       }
-      #addressForm .addr-field .fld {
+      .addr-form .addr-field .fld {
         font-size: 13px;
         margin: 0 0 6px;
       }
       /* "not required" reads as a quiet aside next to the label, not as part of
          the field name — so the eye skips it and lands on the real fields. */
-      #addressForm .opt-tag {
+      .addr-form .opt-tag {
         font-weight: 600;
         font-size: 12px;
         color: var(--muted);
       }
-      #addressForm input[type='text'] {
+      .addr-form input[type='text'] {
         background: #fff;
       }
       /* Street + house number is the longest field — give it the whole row. */
-      #addressForm .addr-street {
+      .addr-form .addr-street {
         grid-column: 1 / -1;
       }
       /* Sales paused (every checkout option switched off): hide the whole
@@ -1985,6 +1994,90 @@
         </div>
       </section>
 
+      <!-- ADD DELIVERY TO AN ORDER SHE HAS ALREADY PAID FOR.
+           "I chose pickup, the party moved, can you send it?" used to be a
+           WhatsApp message and a manual charge. It is the shipping fee, on its
+           own card payment, and when it lands the order simply IS a delivery
+           order — see db.markShippingPaid.
+           On the sign-off tab because that is where she is deciding what the
+           finished game is, and gone the moment the collection closes: by then
+           the deck is at the printer and where it goes is already decided. -->
+      <section class="card owner-only hidden" data-panel="finish" id="shipAddCard" hidden>
+        <div class="sec-h" data-edit="collect-shipadd-heading">רוצים משלוח עד הבית?</div>
+        <p class="muted" id="shipAddHint">
+          <span data-edit="collect-shipadd-hint"
+            >נוסיף משלוח עד הבית להזמנה ששילמתם עליה. תוספת של</span
+          >
+          <b><span id="shipAddFee">-</span> ₪</b>.
+        </p>
+        <div class="addr-form" id="shipAddrForm">
+          <div class="addr-head" data-edit="collect-shipadd-addr-head">כתובת למשלוח</div>
+          <div class="addr-grid">
+            <div class="addr-field addr-street">
+              <label class="fld" for="shipStreet">רחוב ומספר</label>
+              <input
+                type="text"
+                id="shipStreet"
+                autocomplete="street-address"
+                placeholder="הרצל 12"
+                data-testid="ship-street"
+              />
+            </div>
+            <div class="addr-field addr-city">
+              <label class="fld" for="shipCity">עיר</label>
+              <input
+                type="text"
+                id="shipCity"
+                autocomplete="address-level2"
+                placeholder="תל אביב"
+                data-testid="ship-city"
+              />
+            </div>
+            <div class="addr-field addr-postal">
+              <label class="fld" for="shipPostal">מיקוד</label>
+              <input
+                type="text"
+                id="shipPostal"
+                autocomplete="postal-code"
+                inputmode="numeric"
+                maxlength="7"
+                placeholder="6100000"
+                data-testid="ship-postal"
+              />
+            </div>
+            <div class="addr-field addr-apt">
+              <label class="fld" for="shipApt">דירה <span class="opt-tag">לא חובה</span></label>
+              <input type="text" id="shipApt" />
+            </div>
+            <div class="addr-field addr-floor">
+              <label class="fld" for="shipFloor">קומה <span class="opt-tag">לא חובה</span></label>
+              <input type="text" id="shipFloor" inputmode="numeric" />
+            </div>
+          </div>
+        </div>
+        <div class="sheet-err hidden" id="shipAddErr" role="alert" data-testid="ship-add-err"></div>
+        <button
+          type="button"
+          id="shipAddBtn"
+          class="ship-add-cta"
+          data-testid="ship-add-btn"
+          data-edit="collect-shipadd-cta"
+        >
+          💳 הוסיפו משלוח ושלמו
+        </button>
+      </section>
+
+      <!-- …and once it is paid, the same slot says so. Not a disabled form: the
+           answer to "did the delivery go through?" is a sentence with her address
+           in it, which is the one thing she would check. -->
+      <section class="card owner-only hidden" data-panel="finish" id="shipDoneCard" hidden>
+        <div class="sec-h" data-edit="collect-shipdone-heading">✓ המשחק יישלח אליכם הביתה</div>
+        <p class="muted">
+          <span data-edit="collect-shipdone-hint">הוספתם משלוח להזמנה. הכתובת שנשלח אליה:</span>
+          <b id="shipDoneAddr" data-testid="ship-done-addr"></b>
+        </p>
+      </section>
+
       <p class="sheet-note owner-only hidden" id="sheetClosedNote" data-edit="collect-sheet-closed">
         האיסוף נסגר והמשחק בהפקה - אי אפשר לשנות עכשיו.
       </p>
@@ -2364,7 +2457,7 @@
         <!-- The address block is a titled sub-panel, not loose inputs: it groups
              the fields, keeps them off the panel's edges, and makes it obvious
              they belong to the delivery option selected above. -->
-        <div id="addressForm" class="hidden">
+        <div id="addressForm" class="addr-form hidden">
           <div class="addr-head" data-edit="collect-addr-head">כתובת למשלוח</div>
           <div class="addr-grid">
             <div class="addr-field addr-street">
@@ -3390,6 +3483,7 @@
         loadPoolOptions();
         renderPoolOpts();
         renderFinish();
+        renderShippingUpgrade();
       }
 
       // ---- the sign-off tab ---------------------------------------------------
@@ -3410,6 +3504,98 @@
           ? n + (n === 1 ? ' תמונה שלכם' : ' תמונות שלכם') + ' - השאר חיילי דוגרי'
           : 'בלי תמונות - נדפיס את חיילי דוגרי';
       }
+      // ---- delivery, added to an order she has already paid for ---------------
+      // The offer itself is the SERVER's answer (state.shipping_upgrade): whether
+      // it is on, what it costs, and whether it has already been bought. Nothing
+      // here decides any of that — the same computation gates the charge, so the
+      // card cannot offer something the payment would refuse.
+      function shipUpgrade() {
+        return (state && state.shipping_upgrade) || null;
+      }
+      function renderShippingUpgrade() {
+        const card = $('#shipAddCard');
+        const done = $('#shipDoneCard');
+        if (!card || !done) return;
+        const up = shipUpgrade();
+        const paid = !!(up && up.paid);
+        // Card payment has to actually work before we offer to take one — the
+        // same condition the checkout's own button is under.
+        const offer = !!(up && up.offered && state.card_enabled);
+        card.classList.toggle('hidden', !offer);
+        done.classList.toggle('hidden', !paid);
+        if (offer) $('#shipAddFee').textContent = up.fee;
+        if (paid) {
+          const a = up.address || {};
+          $('#shipDoneAddr').textContent = [
+            a.street,
+            a.apartment ? 'דירה ' + a.apartment : '',
+            a.floor ? 'קומה ' + a.floor : '',
+            a.city,
+            a.postal,
+          ]
+            .filter(Boolean)
+            .join(', ');
+        }
+      }
+      function shipAddress() {
+        return {
+          street: $('#shipStreet').value.trim(),
+          city: $('#shipCity').value.trim(),
+          postal: $('#shipPostal').value.trim(),
+          apartment: $('#shipApt').value.trim(),
+          floor: $('#shipFloor').value.trim(),
+        };
+      }
+      (function wireShippingUpgrade() {
+        const btn = $('#shipAddBtn');
+        if (!btn) return;
+        const err = $('#shipAddErr');
+        btn.addEventListener('click', async () => {
+          err.classList.add('hidden');
+          const address = shipAddress();
+          // The same three the server insists on (db.sanitizeAddress). Caught
+          // here so the person who can fix it is the one who hears about it.
+          if (!address.street || !address.city || !address.postal) {
+            err.textContent = 'נא למלא רחוב, עיר ומיקוד למשלוח.';
+            err.classList.remove('hidden');
+            return;
+          }
+          btn.disabled = true;
+          track('shipping_upgrade_started');
+          try {
+            const res = await api('/shipping/init', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ owner_token: ownerToken, address }),
+            });
+            // Remember the way back before handing over to PeleCard, exactly as
+            // the checkout does — the confirmation page needs it if the gateway
+            // ever redirects the whole tab rather than the iframe.
+            try {
+              sessionStorage.setItem('dugri:payReturn', location.pathname + location.search);
+            } catch (e) {
+              /* private mode — the in-iframe path carries ?back= explicitly */
+            }
+            if (openPayFrameRef) openPayFrameRef(res.url);
+            else location.href = res.url;
+          } catch (e) {
+            // 409 is the collection closing (or a second press after it went
+            // through) — both are "this is no longer on offer", and the server's
+            // own Hebrew is better than a generic line when it sends one.
+            err.textContent =
+              e.status === 409
+                ? (e.body && e.body.message) || 'המשלוח כבר נוסף להזמנה'
+                : 'לא הצלחנו לפתוח את התשלום, נסו שוב';
+            err.classList.remove('hidden');
+            // …and re-read the offer, so a card that is no longer on offer goes
+            // away rather than sitting there refusing.
+            refresh();
+          } finally {
+            btn.disabled = false;
+          }
+        });
+      })();
+
       // The two review rows are shortcuts, not editors.
       (function wireFinishLinks() {
         for (const btn of document.querySelectorAll('#finishPanel [data-goto]')) {
@@ -3834,6 +4020,12 @@
           $('#designPanel').classList.remove('hidden');
           $('#pawnsPanel').classList.remove('hidden');
           $('#finishPanel').classList.remove('hidden');
+          // The two delivery-upgrade cards are deliberately NOT unhidden here.
+          // Every other panel is owner-only-and-then-always-shown; these two are
+          // shown only when the server says the upgrade is on offer (or already
+          // bought), so renderShippingUpgrade — called from renderGameTabs on the
+          // next line — is their single owner. Taking the class off here first
+          // would flash both of them on every poll.
           renderGameTabs();
           // Paid: drop the pay panel + the pay bar, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,
@@ -4545,6 +4737,11 @@
       // Set by setupPayPanel so render() can re-apply the checkout state (esp. the
       // LOCKED state) each time the collection reloads.
       let applyPricingRef = null;
+      // Open the PeleCard iframe modal on a URL. Set by setupPayPanel, which owns
+      // the modal; published here because there are TWO things a buyer can pay
+      // for on this page now — the order, and delivery added to an order she has
+      // already paid for — and they should not be two modals.
+      let openPayFrameRef = null;
       // Same idiom for "open the checkout and scroll to it" — the top reminder's
       // click behaviour, reused by the ?pay=1 arrival below.
       let openPayPanelRef = null;
@@ -5260,6 +5457,15 @@
         const cardBtn = $('#cardPayBtn');
         const modal = $('#payModal');
         const frame = $('#payFrame');
+        function openPayFrame(url) {
+          frame.src = url;
+          modal.classList.remove('hidden');
+        }
+        // …and the same modal for the delivery upgrade, which is a separate
+        // purchase but the same window. Its completion runs through the same
+        // postMessage handler at the foot of this function, so there is one path
+        // out of a card charge no matter which of the two started it.
+        openPayFrameRef = openPayFrame;
         // Tell the server the payment window is gone, so its session stops
         // counting as "in flight". Fire-and-forget: the buyer's checkout must
         // never depend on this cleanup call succeeding.
@@ -5425,8 +5631,7 @@
             } catch (e) {
               /* private mode — the in-iframe path passes ?back= explicitly */
             }
-            frame.src = res.url;
-            modal.classList.remove('hidden');
+            openPayFrame(res.url);
           } catch (err) {
             if (err.status === 400 && appliedCoupon) {
               // A coupon was sent and re-validated server-side as no longer valid.
