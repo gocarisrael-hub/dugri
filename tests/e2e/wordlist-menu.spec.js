@@ -79,8 +79,6 @@ test('no menu, no chooser — the deck fills by her design as before', async ({ 
   await setMenu(page, []);
   const { url } = await createCollection(page);
   await page.goto(url);
-  await page.getByTestId('game-row').click();
-  await expect(page.getByTestId('game-sheet')).toBeVisible();
   // The section is absent entirely rather than empty: an empty chooser would
   // advertise a choice that does not exist.
   await expect(page.getByTestId('pool-field')).toBeHidden();
@@ -95,15 +93,19 @@ test('she picks which words fill the rest, and it sticks', async ({ page }) => {
   ]);
   const { url, id, k } = await createCollection(page);
   await page.goto(url);
-  await page.getByTestId('game-row').click();
 
+  // It sits WITH the words — the tab she lands on — because which words fill the
+  // rest of her deck is a question about words, not about artwork.
   const fld = page.getByTestId('pool-field');
   await expect(fld).toBeVisible();
-  // Only the enabled ones, plus the "choose for me" default she starts on.
+  // Only the enabled ones. There is NO "we\'ll choose for you" row: she picks,
+  // or nothing is ticked. It used to lead the list and be selected by default,
+  // which made the commonest outcome a deck filled by a choice she never made.
   await expect(fld).toContainText('בדיחות פנימיות');
   await expect(fld).toContainText('רומנטי');
   await expect(fld).not.toContainText('עוד לא מוכן');
-  await expect(page.getByTestId('pool-opt-default')).toBeChecked();
+  await expect(page.getByTestId('pool-opt-default')).toHaveCount(0);
+  await expect(page.getByTestId('pool-opt-jokes')).not.toBeChecked();
 
   await page.getByTestId('pool-opt-jokes').check();
   // The server holds it, and holds it as the OPTION she picked.
@@ -118,7 +120,6 @@ test('she picks which words fill the rest, and it sticks', async ({ page }) => {
 
   // …and it is still ticked after a reload, not just in this tab.
   await page.reload();
-  await page.getByTestId('game-row').click();
   await expect(page.getByTestId('pool-opt-jokes')).toBeChecked();
 });
 
@@ -127,7 +128,6 @@ test('a closed collection shows the pick, frozen', async ({ page }) => {
   await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
   const { url, id, k } = await createCollection(page);
   await page.goto(url);
-  await page.getByTestId('game-row').click();
   await page.getByTestId('pool-opt-jokes').check();
   await expect
     .poll(async () =>
@@ -140,7 +140,6 @@ test('a closed collection shows the pick, frozen', async ({ page }) => {
 
   await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
   await page.goto(url);
-  await page.getByTestId('game-row').click();
   await expect(page.getByTestId('pool-opt-jokes')).toBeChecked();
   await expect(page.getByTestId('pool-opt-jokes')).toBeDisabled();
   // …and the API refuses too, so the freeze is a rule and not a disabled radio.

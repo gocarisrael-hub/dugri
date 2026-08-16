@@ -1,28 +1,29 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 
-// "המשחק שלי" — HER DECK, ON THE PAGE SHE COMES BACK TO.
+// HER DECK, ON THE PAGE SHE COMES BACK TO — FOUR TABS.
 //
 // The order wizard asks for the title and the photos on steps that exist exactly
 // once: after "צרו את המשחק" there is no route back to them. So a photo picked by
 // mistake, or a title she thought better of, meant writing to us.
 //
-// They live behind ONE ROW on the collection page now — the page she actually
-// reopens for days while words come in. The row is a summary; the sheet it opens
-// is the only place anything changes, and it shows her real card while she edits,
-// rendered by the same endpoint that draws the printed deck.
+// They are tabs on the collection page now — the page she actually reopens for
+// days while words come in: מילים · העיצוב · חיילי המשחק · תשלום. One is showing
+// at a time, the payment is BOTH its own tab and the sticky bar that never
+// leaves, and the design tab shows her real card, rendered by the same endpoint
+// that draws the printed deck.
 //
-// This file covers the COLLECTION-PAGE sheet. The wizard's own pawn step keeps its
+// This file covers the COLLECTION-PAGE tabs. The wizard's own pawn step keeps its
 // own spec (pawn-photos.spec.js) — they share an API and nothing else.
 //
 // What these tests hold:
-//   • the ROW reports what is actually there, and opens the sheet,
+//   • the tabs show ONE section at a time, and the pay bar survives all of them,
 //   • she can SEE the photos (thumbs, full-size on tap) and the card preview,
 //   • she can REMOVE a photo and ADD one, up to the four the card has room for,
 //   • she can RETITLE the deck, including a two-line title, and the preview
 //     redraws with it,
 //   • a refused title (emoji) keeps her text and saves nothing,
-//   • a CONTRIBUTOR sees no row, no sheet and no photos/title in the payload,
+//   • a CONTRIBUTOR sees no tabs and no photos/title in the payload,
 //   • once CLOSED the deck is in production: visible, frozen, and the API says no.
 
 const PNG =
@@ -98,27 +99,50 @@ async function attachPhotos(page, id, k, n) {
   return (await res.json()).pawn_images;
 }
 
-test('the row reports the deck, and opens the sheet with photos and the card', async ({ page }) => {
+// The e2e server runs without PELECARD_* credentials, so the API reports
+// `card_enabled: false` and every pay affordance is correctly hidden — including
+// the sticky bar this file cares about. Flip that one field and leave the rest of
+// the server's answer alone, exactly as collect.spec.js does.
+async function withCardEnabled(page) {
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, async (route) => {
+    const res = await route.fetch();
+    let body = await res.text();
+    try {
+      const j = JSON.parse(body);
+      j.card_enabled = true;
+      body = JSON.stringify(j);
+    } catch {
+      /* not json — hand it back untouched */
+    }
+    return route.fulfill({ response: res, body });
+  });
+}
+
+test('the tabs open her photos and her card, one section at a time', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 2);
   await page.goto(url);
 
-  // The row is a summary: it says what is inside without being opened.
-  const row = page.getByTestId('game-row');
-  await expect(row).toBeVisible();
-  await expect(page.getByTestId('game-row-sub')).toContainText('2 תמונות');
-  // The title itself, so a wrong one is visible without opening the sheet.
-  await expect(page.getByTestId('game-row-sub')).toContainText('Shira');
-  // …and nothing is editable until it is opened.
-  await expect(page.getByTestId('pawn-thumb')).toHaveCount(0);
+  // She lands on the WORDS, which is what she opens this page for — the rest is
+  // one tap away and none of it is in the way.
+  await expect(page.getByTestId('tabs')).toBeVisible();
+  await expect(page.locator('#addCard')).toBeVisible();
+  await expect(page.locator('#designPanel')).toBeHidden();
+  await expect(page.locator('#pawnsPanel')).toBeHidden();
 
-  await row.click();
-  await expect(page.getByTestId('game-sheet')).toBeVisible();
+  await page.getByTestId('tab-pawns').click();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(2);
+  await expect(page.getByTestId('pawn-thumb').first()).toBeVisible();
+  // One section at a time: the words are gone while the photos are up.
+  await expect(page.locator('#addCard')).toBeHidden();
+
+  await page.getByTestId('tab-design').click();
+  await expect(page.locator('#pawnsPanel')).toBeHidden();
   // Her own card, from the same renderer the printed deck uses.
   await expect(page.getByTestId('game-preview')).toHaveAttribute('src', /^data:image\/png/);
 
   // "Watch them" — tapping a thumb opens the full-size view, and any tap closes it.
+  await page.getByTestId('tab-pawns').click();
   await page.getByTestId('pawn-thumb').first().click();
   const view = page.getByTestId('pawn-view');
   await expect(view).toBeVisible();
@@ -126,11 +150,79 @@ test('the row reports the deck, and opens the sheet with photos and the card', a
   await expect(view).toHaveCount(0);
 });
 
+// THE PAYMENT IS EVERYWHERE. It is a tab of its own AND the sticky bar at the
+// foot — "any payment is also a section and also in every section", as the owner
+// put it. A price that only exists on one tab is a price she has to go looking
+// for, on the one page where she is deciding whether to pay at all.
+test('the pay bar stays on screen in every tab, and the pay tab holds the checkout', async ({
+  page,
+}) => {
+  const { url } = await createCollection(page);
+  await withCardEnabled(page);
+  await page.goto(url);
+
+  const bar = page.locator('#payBar');
+  await expect(bar).toBeVisible();
+  for (const tab of ['design', 'pawns', 'pay', 'words']) {
+    await page.getByTestId('tab-' + tab).click();
+    await expect(bar).toBeVisible();
+  }
+
+  await page.getByTestId('tab-pay').click();
+  await expect(page.getByTestId('pay-top')).toBeVisible();
+  await expect(page.locator('#payPanel')).toBeVisible();
+  // …and the words are not underneath it.
+  await expect(page.locator('#addCard')).toBeHidden();
+});
+
+// THE PHOTOS ARE SHOWN AS THE CARD THEY BECOME. The pawn card ships inside her
+// deck — the front card's paper, the deck's own frame, her photos in its four
+// slots — so what she has to judge is how they sit inside it. A strip of
+// thumbnails answers a different question.
+//
+// The RENDER is the generator's (its own pytest); what this holds is that the
+// page asks for it at the right moments: when the tab is first opened, and again
+// after a photo changes — never on the 5s poll, which would be a browser run on
+// the server every five seconds for a picture that did not move.
+test('the photos tab shows the rendered card, and redraws it when a photo goes', async ({
+  page,
+}) => {
+  const { url, id, k } = await createCollection(page);
+  await attachPhotos(page, id, k, 2);
+  const asked = [];
+  await page.route('**/pawn-card**', (route) => {
+    asked.push(route.request().url());
+    return route.fulfill({ json: { card: PNG } });
+  });
+  await page.goto(url);
+
+  // Not on the words tab: the card costs a Chrome run on the server, and most
+  // owners open this page to add words.
+  await page.waitForTimeout(300);
+  expect(asked).toHaveLength(0);
+
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('pawn-card-preview')).toHaveAttribute('src', /^data:image\/png/);
+  await expect.poll(() => asked.length).toBe(1);
+
+  // Leaving and returning does not re-ask — the card cannot have changed.
+  await page.getByTestId('tab-words').click();
+  await page.getByTestId('tab-pawns').click();
+  await page.waitForTimeout(300);
+  expect(asked).toHaveLength(1);
+
+  // Removing one does: the card is now a different card.
+  await page.getByTestId('pawn-remove').first().click();
+  await page.locator('#msgModalOk').click();
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(1);
+  await expect.poll(() => asked.length).toBe(2);
+});
+
 test('she removes a photo and it stays removed', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 3);
   await page.goto(url);
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-pawns').click();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(3);
 
   // Removal is confirmed first — the photo leaves the order the moment the
@@ -141,8 +233,7 @@ test('she removes a photo and it stays removed', async ({ page }) => {
 
   // The server holds it, not just this tab.
   await page.reload();
-  await expect(page.getByTestId('game-row-sub')).toContainText('2 תמונות');
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-pawns').click();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(2);
   const state = await page.request
     .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
@@ -154,7 +245,7 @@ test('she adds a photo back, and the fourth fills the card', async ({ page }) =>
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 3);
   await page.goto(url);
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-pawns').click();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(3);
 
   const add = page.getByTestId('pawn-add');
@@ -169,8 +260,10 @@ test('she adds a photo back, and the fourth fills the card', async ({ page }) =>
   // Four is what the printed photo card holds. The slot stays on screen but
   // disabled, so the cap is visible rather than a control that vanished.
   await expect(add).toBeDisabled();
+  // …and the fourth is the server's, not this page's.
   await page.reload();
-  await expect(page.getByTestId('game-row-sub')).toContainText('4 תמונות');
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(4);
 });
 
 test('a contributor never sees her photos', async ({ page }) => {
@@ -180,7 +273,10 @@ test('a contributor never sees her photos', async ({ page }) => {
   // The link she forwards to the party carries no owner token.
   await page.goto(`/collect.html?c=${id}`);
   await expect(page.locator('#addCard')).toBeVisible();
-  await expect(page.getByTestId('game-row')).toBeHidden();
+  // No tab strip at all: three of the four tabs are not hers, and offering them
+  // would be three dead ends.
+  await expect(page.getByTestId('tabs')).toBeHidden();
+  await expect(page.locator('#designPanel')).toBeHidden();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(0);
 
   // …and the payload itself doesn't carry them, so there is nothing to find in
@@ -201,8 +297,7 @@ test('once the collection is closed the photos are visible but frozen', async ({
   expect(closed.status()).toBe(200);
   await page.goto(url);
 
-  await expect(page.getByTestId('game-row-sub')).toContainText('לצפייה בלבד');
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-pawns').click();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(2);
   await expect(page.getByTestId('pawn-remove')).toHaveCount(0);
   await expect(page.getByTestId('pawn-add')).toHaveCount(0);
@@ -241,7 +336,7 @@ test('she retitles the deck and the card redraws with the new title', async ({ p
     });
   });
   await page.goto(url);
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-design').click();
 
   const preview = page.getByTestId('game-preview');
   await expect(preview).toHaveAttribute('src', /^data:image\/png/);
@@ -253,9 +348,7 @@ test('she retitles the deck and the card redraws with the new title', async ({ p
   await page.getByTestId('title-input').fill('30 שנה לשירה שלנו');
   await page.getByTestId('title-save').click();
 
-  // The row picks up the new title…
-  await expect(page.getByTestId('game-row-sub')).toContainText('30 שנה לשירה שלנו');
-  // …the server holds it…
+  // The server holds it…
   const state = await page.request
     .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
     .then((r) => r.json());
@@ -271,7 +364,7 @@ test('she retitles the deck and the card redraws with the new title', async ({ p
 test('an emoji title is refused, and her text stays in the field to fix', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   await page.goto(url);
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-design').click();
 
   await page.getByTestId('title-input').fill('שירה בת 30 🎉');
   await page.getByTestId('title-save').click();
@@ -310,7 +403,7 @@ test('a stored two-line title survives opening and saving the sheet', async ({ p
   expect((await put.json()).custom_title).toBe(seeded);
 
   await page.goto(url);
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-design').click();
   // The break is IN the box — not flattened on the way in.
   await expect(page.getByTestId('title-input')).toHaveValue(seeded);
 
@@ -340,7 +433,7 @@ test('she can type a two-line title, and the card is drawn with both lines', asy
     });
   });
   await page.goto(url);
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-design').click();
 
   // Enter inserts a line, it does not submit.
   const box = page.getByTestId('title-input');
@@ -374,7 +467,7 @@ test('a title longer than the box allows is not truncated by saving it untouched
   });
 
   await page.goto(url);
-  await page.getByTestId('game-row').click();
+  await page.getByTestId('tab-design').click();
   await expect(page.getByTestId('title-input')).toHaveValue(long);
   await page.getByTestId('title-save').click();
   await expect(page.getByTestId('title-err')).toBeHidden();

@@ -84,6 +84,12 @@ test('quota: nothing hints at the cap, then the add box locks at the limit', asy
   await expect(payBtn).toBeVisible();
   await payBtn.click();
   await expect(page.locator('#payPanel')).toHaveAttribute('open', '');
+  // …and it took her there: the checkout is the תשלום tab, and a CTA that opened
+  // a panel she cannot see would be a CTA that does nothing.
+  await expect(page.getByTestId('tab-pay')).toHaveClass(/\bon\b/);
+
+  // Back on her words — one tap, and nothing was taken away.
+  await page.getByTestId('tab-words').click();
 
   // Words already collected stay on the page — nothing is taken away.
   await expect(page.locator('[data-testid="word-text"]').first()).toBeVisible();
