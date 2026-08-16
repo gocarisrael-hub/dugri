@@ -79,14 +79,22 @@ async function withCardEnabled(page) {
 // The tab strip is the OWNER's; a contributor's page has none, so the click is
 // conditional and this helper works on both.
 async function openPayPanel(page) {
-  const tab = page.getByTestId('tab-pay');
-  if (await tab.isVisible().catch(() => false)) await tab.click();
-  await openPayPanel(page);
+  await showPayTab(page);
+  await page.locator('#payPanel summary').click();
 }
 
+// WAIT for the tab, never just look: the strip appears when the owner's state
+// lands, so a point-in-time isVisible() is a race — it wins on a warm local
+// server and loses on a fresh CI one, and losing means clicking nothing and then
+// waiting out the timeout on a panel that was never shown. A contributor's page
+// has no strip at all, so the wait is allowed to expire and the click skipped.
 async function showPayTab(page) {
   const tab = page.getByTestId('tab-pay');
-  if (await tab.isVisible().catch(() => false)) await tab.click();
+  const shown = await tab
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
+  if (shown) await tab.click();
 }
 
 async function stubPricing(page, pricing) {

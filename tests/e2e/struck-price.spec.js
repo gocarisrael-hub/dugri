@@ -167,7 +167,10 @@ test('no struck price in the checkout total carries a ₪', async ({ page }) => 
 
   await createCollection(page, 'Shira');
 
-  await page.getByTestId('tab-pay').click(); // the checkout is on the תשלום tab
+  // The checkout is on the תשלום tab; WAIT for the strip rather than assuming it
+  // has rendered — it appears when the owner's state lands.
+  await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
+  await page.getByTestId('tab-pay').click();
   await page.locator('#payPanel summary').click();
   await page.fill('#couponInput', 'STRUCK50');
   await page.click('#couponApplyBtn');
