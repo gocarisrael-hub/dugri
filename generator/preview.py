@@ -27,6 +27,7 @@ import tempfile
 from PIL import Image
 
 import config
+import deck_html
 import render_page as rp
 import build as buildmod
 
@@ -41,6 +42,39 @@ PLACEHOLDER_WORDS = ["מסיבה", "חברים", "ריקודים", "צחוקים
 # render itself is full-res; we only down-sample the delivered image).
 CARD_MAX_W = 700
 BOARD_MAX_W = 1000
+
+
+def pawn_slots(theme):
+    """Where the four photo discs sit on this theme's pawn card, as fractions.
+
+    ``[{"x", "y", "w", "h"}, ...]`` in slot order, each a fraction of the card —
+    which is what a BROWSER needs to lay the buyer's photos onto a picture of the
+    card itself. It exists so the collection page can show her the card moving
+    under her finger: asking the server to re-render a Chrome page for every
+    drag is a second per adjustment, and the version she was looking at was
+    always one adjustment behind.
+
+    The printed card is still the generator's. This is the same geometry, handed
+    over so the preview can keep up.
+    """
+    import re
+    import card_assets
+    svg = card_assets.read_svg(config.photo_card_path(theme))
+    vb = deck_html.view_box(svg)
+    w, h = vb[2] or 1, vb[3] or 1
+    out = []
+    for m in re.finditer(r'<image\b[^>]*\bid="photo-slot-([1-9])"[^>]*>', svg):
+        a = dict(re.findall(r'([a-zA-Z:-]+)\s*=\s*"([^"]*)"', m.group(0)))
+        try:
+            x, y = float(a["x"]), float(a["y"])
+            sw, sh = float(a["width"]), float(a["height"])
+        except (KeyError, ValueError):
+            continue
+        out.append({"n": int(m.group(1)),
+                    "x": (x - vb[0]) / w, "y": (y - vb[1]) / h,
+                    "w": sw / w, "h": sh / h})
+    out.sort(key=lambda s: s["n"])
+    return out
 
 
 def pawn_card(theme, photos, workdir=None, views=None):
@@ -80,7 +114,9 @@ def pawn_card(theme, photos, workdir=None, views=None):
             theme, config.photo_card_path(theme), [], [],
             os.path.join(workdir, "pawns.png"), kind="photo", photos=paths)
         _downscale(png, CARD_MAX_W)
-        return {"pawns": png}
+        # The disc geometry rides along: it costs a regex over a file already
+        # read, and it is what lets the caller place photos itself.
+        return {"pawns": png, "slots": pawn_slots(theme)}
     except Exception:
         if own_workdir:
             shutil.rmtree(workdir, ignore_errors=True)
@@ -494,6 +530,11 @@ def main():
                     help="render ONLY the buyer's photo (pawn) card, from the "
                          "--photo files, and print {\"pawns\": path}. Nothing "
                          "else is rendered: no front, no back, no board")
+    ap.add_argument("--no-photos", action="store_true",
+                    help="with --pawn-card: render the card with its discs EMPTY "
+                         "and report the disc geometry. That is the picture a "
+                         "browser composites the buyer's photos onto, so it "
+                         "depends on the theme alone and is cached as such")
     ap.add_argument("--photo", action="append", default=[], metavar="FILE",
                     help="one of the buyer's pawn photos, in order (repeatable, "
                          "up to the four the card holds). Short lists are topped "
@@ -513,6 +554,16 @@ def main():
     if args.calibration:
         with open(args.calibration, encoding="utf-8") as f:
             calibration = json.load(f)
+
+    if args.pawn_card and args.no_photos:
+        # The card as the design ships it, discs and all, plus where they are.
+        out = os.path.join(args.out_dir, "pawns-empty.png")
+        os.makedirs(args.out_dir, exist_ok=True)
+        rp.render_single_card(args.theme, config.photo_card_path(args.theme), [], [],
+                              out, kind="photo", photos=[])
+        _downscale(out, CARD_MAX_W)
+        print(json.dumps({"pawns": out, "slots": pawn_slots(args.theme)}))
+        return
 
     if args.pawn_card:
         # The photo card alone. It carries no title and no words, so none of the

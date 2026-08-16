@@ -118,6 +118,23 @@ async function withCardEnabled(page) {
   });
 }
 
+// The e2e server has no card credentials, so `card_enabled` is false and `paid`
+// is never set by a real money event. Both are flipped on the collection GET —
+// the same trick collect.spec.js uses — because these tests are about what the
+// page RENDERS in that state, not about how it got there.
+async function enableCardButton(page) {
+  const ctl = { paid: false };
+  await page.route('**/api/collections/*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const resp = await route.fetch();
+    const body = await resp.json();
+    body.card_enabled = true;
+    if (ctl.paid) body.paid = true;
+    return route.fulfill({ json: body });
+  });
+  return ctl;
+}
+
 test('the tabs open her photos and her card, one section at a time', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 2);
@@ -476,4 +493,58 @@ test('a title longer than the box allows is not truncated by saving it untouched
     .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
     .then((r) => r.json());
   expect(state.custom_title).toBe(long);
+});
+
+// SENDING TO PRINT IS ATTESTED, NOT ASSUMED. The sign-off tab lists the three
+// things that stop being changeable — the title, the photos, the filler style —
+// and the owner asked for something she has to TICK, so a deck can never go to
+// the press with "I never looked at that" as the explanation. The dialog that
+// follows asks "are you sure"; this asks "did you look", which is a different
+// question and the only one that can still change the outcome.
+test('the collection cannot be closed until she confirms she went over it', async ({ page }) => {
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-finish').click();
+
+  const close = page.locator('#closeBtn');
+  const ack = page.getByTestId('finish-ack');
+  await expect(close).toBeVisible();
+  await expect(close).toBeDisabled();
+  await expect(ack).not.toBeChecked();
+
+  await ack.check();
+  await expect(close).toBeEnabled();
+
+  // …and unticking puts it back, so this is a live gate rather than a one-way
+  // door she can trip by accident.
+  await ack.uncheck();
+  await expect(close).toBeDisabled();
+
+  // With the tick, the close still goes through the confirmation dialog — the
+  // gate is in ADDITION to it, not instead of it.
+  await ack.check();
+  await close.click();
+  await expect(page.getByTestId('close-ask')).toBeVisible();
+  await page.getByTestId('close-ask-no').click();
+  await expect(page.getByTestId('close-ask')).toBeHidden();
+});
+
+// The payment tab is the one thing on this page that stops being a question the
+// moment it is answered. Leaving it up sends her back to a checkout that has
+// nothing left to take.
+test('the payment tab disappears once the order is paid', async ({ page }) => {
+  const ctl = await enableCardButton(page);
+  const { url, id, k } = await createCollection(page);
+  await page.request.post(`/api/collections/${id}/order`, {
+    data: { owner_token: k, version: 'pickup' },
+  });
+  await page.goto(url);
+  await expect(page.getByTestId('tab-pay')).toBeVisible();
+
+  ctl.paid = true;
+  await page.reload();
+  await expect(page.getByTestId('tab-pay')).toBeHidden();
+  // …and the tabs that still mean something are all there.
+  await expect(page.getByTestId('tab-words')).toBeVisible();
+  await expect(page.getByTestId('tab-finish')).toBeVisible();
 });

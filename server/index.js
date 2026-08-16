@@ -605,7 +605,7 @@ function runPreview({
 // what her photos will look like is to render the real thing; the generator
 // composes it through the same helper the deck does. Nothing else is rendered:
 // no front, no back, no board.
-function runPawnCard({ theme, photos, photoFrames }) {
+function runPawnCard({ theme, photos, photoFrames, empty = false }) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -623,6 +623,11 @@ function runPawnCard({ theme, photos, photoFrames }) {
     // The name argument is required by the CLI and unused by this mode: the
     // photo card carries no title.
     const args = [PREVIEW_SCRIPT, theme, '-', outDir, '--pawn-card'];
+    // EMPTY: the card as the design ships it, with its four discs bare, plus
+    // where they are. That picture depends on the THEME alone, so it is rendered
+    // once and the browser lays her photos onto it — which is what lets the card
+    // move under her finger instead of a second behind it.
+    if (empty) args.push('--no-photos');
     // Photos and their frames, paired exactly as the deck run pairs them — this
     // preview only earns its place by being the same picture the printer makes,
     // and a preview that ignored her framing would be the one thing worse than
@@ -665,8 +670,9 @@ function runPawnCard({ theme, photos, photoFrames }) {
           return reject(new Error('pawn card render produced no image'));
         }
         const url = 'data:image/png;base64,' + fs.readFileSync(file).toString('base64');
+        const slots = Array.isArray(produced.slots) ? produced.slots : null;
         cleanup();
-        resolve({ card: url });
+        resolve(slots ? { card: url, slots } : { card: url });
       } catch (e) {
         cleanup();
         reject(e);
@@ -2050,14 +2056,26 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
   const theme = c.theme || '';
   if (!validate.getTheme(theme)) return res.status(400).json({ error: 'unknown theme' });
-  const photos = pawnPhotoFiles(c);
-  const photoFrames = pawnPhotoFrames(c);
-  const cacheKey =
-    'pawn-card:' + theme + ':' + photos.join('|') + ':' + photoFrames.map((f) => f || '').join('|');
+  // LIVE: the card with its discs EMPTY, and where they are. The page then draws
+  // her photos into them itself, so dragging one is a CSS change rather than a
+  // browser run on the server — the editor moved at the speed of a render before
+  // this, which is to say it was always showing the adjustment before last.
+  // Keyed by theme alone: no photo can change this picture.
+  const live = req.query.live === '1';
+  const photos = live ? [] : pawnPhotoFiles(c);
+  const photoFrames = live ? [] : pawnPhotoFrames(c);
+  const cacheKey = live
+    ? 'pawn-base:' + theme
+    : 'pawn-card:' +
+      theme +
+      ':' +
+      photos.join('|') +
+      ':' +
+      photoFrames.map((f) => f || '').join('|');
   const cached = previewCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
-    const out = await runPawnCard({ theme, photos, photoFrames });
+    const out = await runPawnCard({ theme, photos, photoFrames, empty: live });
     previewCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {

@@ -97,6 +97,18 @@ async function showPayTab(page) {
   if (shown) await tab.click();
 }
 
+// CLOSING IS ATTESTED NOW. The sign-off tab carries a tick — "I went over the
+// title, the pawns and the word style" — and the close button is dead until it
+// is set (see collect-finish.spec.js for the gate's own tests). Every test that
+// closes a collection through the UI goes through it, the way she does.
+async function closeFromUi(page) {
+  const tab = page.getByTestId('tab-finish');
+  if (await tab.isVisible().catch(() => false)) await tab.click();
+  const ack = page.getByTestId('finish-ack');
+  if (await ack.isVisible().catch(() => false)) await ack.check();
+  await page.click('#closeBtn');
+}
+
 async function stubPricing(page, pricing) {
   const body = pricing || {
     store: { now: 79, was: 129 },
@@ -147,7 +159,7 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   // where she spends the days before the party, not where she ends them.
   // Closing is asked as a real dialog now, not the browser's confirm.
   await page.getByTestId('tab-finish').click();
-  await page.click('#closeBtn');
+  await closeFromUi(page);
   await page.getByTestId('close-ask-yes').click();
   await expect(page.locator('#banner')).toBeVisible();
   await page.getByTestId('tab-words').click();
@@ -1100,8 +1112,15 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
   await expect(page.locator('#paidCard')).toContainText('התשלום התקבל');
   await expect(page.locator('#paidCloseBtn')).toBeVisible();
 
-  // The primary CTA closes the collection (= starts production), through the
-  // same dialog the pre-payment close uses.
+  // The primary CTA closes the collection (= starts production) — through the
+  // same sign-off gate as the pre-payment close: press it without having ticked
+  // and it takes her TO the tick rather than to the press.
+  await page.locator('#paidCloseBtn').click();
+  await expect(page.getByTestId('finish-ack')).toBeVisible();
+  await expect(page.getByTestId('close-ask')).toBeHidden();
+  await page.getByTestId('finish-ack').check();
+
+  // …and with it ticked, the same button asks the same confirmation it always did.
   await page.locator('#paidCloseBtn').click();
   await page.getByTestId('close-ask-yes').click();
   await expect(page.locator('#banner')).toBeVisible();
@@ -1569,7 +1588,7 @@ test('whoever opens the shared link can delete a word and close the collection',
   await expect(guest.locator('#count')).toHaveText('0');
 
   await guest.getByTestId('tab-finish').click();
-  await guest.click('#closeBtn');
+  await closeFromUi(guest);
   await guest.getByTestId('close-ask-yes').click();
   await expect(guest.locator('#banner')).toBeVisible();
   await guest.close();
@@ -1783,7 +1802,7 @@ test('contributor (no owner key) sees words but cannot add after close', async (
   // Closing is asked as a real dialog now, not the browser's confirm, and it
   // lives on the sign-off tab.
   await page.getByTestId('tab-finish').click();
-  await page.click('#closeBtn');
+  await closeFromUi(page);
   await page.getByTestId('close-ask-yes').click();
 
   const friend = await context.newPage();
@@ -2300,7 +2319,7 @@ test('closing asks in a real dialog that names everything it freezes', async ({ 
   await page.click('#addBtn');
 
   await page.getByTestId('tab-finish').click();
-  await page.click('#closeBtn');
+  await closeFromUi(page);
   const ask = page.getByTestId('close-ask');
   await expect(ask).toBeVisible();
   // All three, by name: this is the whole reason it is not a confirm().
@@ -2324,14 +2343,14 @@ test('a dismissed close dialog leaves the collection open', async ({ page }) => 
   await page.click('#addBtn');
 
   await page.getByTestId('tab-finish').click();
-  await page.click('#closeBtn');
+  await closeFromUi(page);
   await page.getByTestId('close-ask-no').click();
   await expect(page.getByTestId('close-ask')).toBeHidden();
   await page.getByTestId('tab-words').click();
   await expect(page.locator('#addCard')).toBeVisible();
 
   await page.getByTestId('tab-finish').click();
-  await page.click('#closeBtn');
+  await closeFromUi(page);
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('close-ask')).toBeHidden();
   await page.getByTestId('tab-words').click();
