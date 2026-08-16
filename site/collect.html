@@ -118,7 +118,7 @@
       .tabbar {
         display: flex;
         gap: 2px;
-        margin: 10px 0 4px;
+        margin: 12px 0 4px;
         border-bottom: 1px solid var(--line);
         /* Five tabs do not fit across a small phone at a readable size, and the
            two ways out of that are both worse: shrinking the type until the last
@@ -133,23 +133,40 @@
       .tabbar::-webkit-scrollbar {
         display: none;
       }
+      /* LOUD ENOUGH TO BE SEEN. The owner opened her own page and missed this
+         strip entirely — which is not surprising on a screen whose heading is
+         25px and whose pay bar is a solid black slab: the tabs were the lightest
+         thing on it, 14px of #6b6b6b under a 2px hairline.
+         So: bigger, darker, heavier, and the live tab is FILLED rather than
+         merely underlined. Nothing moves and nothing new has to be learned — the
+         same five buttons, turned up. */
       .tabbar-btn {
         flex: 1 0 auto;
         background: none;
         border: 0;
         border-radius: 0;
         box-shadow: none;
-        border-bottom: 2px solid transparent;
-        padding: 11px 6px;
+        border-bottom: 3px solid transparent;
+        padding: 12px 8px;
         font: inherit;
-        font-size: 14px;
-        color: var(--muted);
+        font-size: 15px;
+        font-weight: 500;
+        /* Between --ink and --muted, and a literal because there is no token for
+           it: --muted (#6b6b6b) is the colour of things you are meant to skim
+           past, which is exactly what happened to these. Not a new token, since
+           css/tokens.css is the shared palette and this is one strip's business. */
+        color: #4a4a4a;
         cursor: pointer;
         white-space: nowrap;
       }
       .tabbar-btn.on {
         color: var(--ink);
+        font-weight: 700;
         border-bottom-color: var(--ink);
+        /* The fill is what makes the live tab findable at a glance rather than
+           at a read: an underline says "this one" only once you are already
+           looking at the row. */
+        background: var(--section);
       }
       .tabbar-btn:focus-visible {
         outline: 2px solid var(--ink);

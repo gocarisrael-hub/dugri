@@ -142,6 +142,62 @@ test('the last tab reads the game back to her, and it is where production starts
   await expect(page.locator('#pawnsPanel')).toBeVisible();
 });
 
+// THE STRIP HAS TO BE SEEN, WHICH IS NOT THE SAME AS BEING PRESENT.
+//
+// The owner opened her own collection page and missed the tabs entirely. They
+// were the lightest thing on a screen whose heading is 25px and whose pay bar is
+// a solid black slab: 14px of #6b6b6b under a 2px hairline. Everything asserted
+// here is the volume, not the layout — a future tidy-up that quietly returns the
+// strip to a row of grey words is the regression this exists to catch.
+test('the tabs are loud enough to be found without looking for them', async ({ page }) => {
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await expect(page.getByTestId('tabs')).toBeVisible();
+
+  const read = (testid) =>
+    page.getByTestId(testid).evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        size: parseFloat(s.fontSize),
+        weight: Number(s.fontWeight),
+        color: s.color,
+        fill: s.backgroundColor,
+        rule: parseFloat(s.borderBottomWidth),
+      };
+    });
+
+  const live = await read('tab-words');
+  const sleeping = await read('tab-design');
+
+  // Big enough to read at arm's length, on both.
+  expect(live.size).toBeGreaterThanOrEqual(15);
+  expect(sleeping.size).toBeGreaterThanOrEqual(15);
+
+  // The live tab is heavy, filled, and underscored — three signals, not one, so
+  // it survives a glance rather than needing a read.
+  expect(live.weight).toBeGreaterThanOrEqual(700);
+  expect(live.rule).toBeGreaterThanOrEqual(3);
+  expect(live.fill).not.toBe('rgba(0, 0, 0, 0)');
+
+  // A sleeping tab is quieter than the live one but is no longer --muted
+  // (#6b6b6b), which is the colour of things the page means you to skim past.
+  expect(sleeping.weight).toBeLessThan(live.weight);
+  expect(sleeping.color).not.toBe('rgb(107, 107, 107)');
+  const lum = (c) =>
+    c
+      .match(/\d+/g)
+      .slice(0, 3)
+      .reduce((a, n) => a + Number(n), 0) / 3;
+  expect(lum(sleeping.color)).toBeLessThan(lum('rgb(107, 107, 107)'));
+
+  // …and the strip still fits without wrapping into a second row, which would
+  // stop it reading as one control.
+  const rows = await page
+    .getByTestId('tabs')
+    .evaluate((el) => new Set([...el.children].map((b) => b.getBoundingClientRect().top)).size);
+  expect(rows).toBe(1);
+});
+
 test('with no title of her own, the sign-off says which title WILL print', async ({ page }) => {
   const { url, id, k } = await createCollection(page, 'זמני');
   // Clear it: an empty custom title means the design's own title is printed, and
