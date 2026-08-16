@@ -933,6 +933,22 @@
       /* THE SIGN-OFF ROWS. Each is one decision, its current answer, and the way
          back to the tab that owns it — a label/value/action line rather than a
          card, because three cards would bury the button underneath them. */
+      .finish-ack {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        margin: 12px 0 4px;
+        font-size: 15px;
+        line-height: 1.5;
+        cursor: pointer;
+      }
+      .finish-ack input {
+        width: 20px;
+        height: 20px;
+        margin: 2px 0 0;
+        flex: 0 0 auto;
+        accent-color: var(--ink);
+      }
       .finish-step {
         display: flex;
         align-items: center;
@@ -1987,7 +2003,8 @@
                was being asked. What she wants to know here is that she is done
                once she picks: the rest happens without her. -->
           <small class="muted" data-edit="collect-sheet-pool-hint"
-            >מכאן זה אוטומטי - נשלים לבד את החפיסה עד 412 מילים, מהסגנון שתבחרו.</small
+            >בחרו את הרשימה בעזרת נשלים לכם מילים על מנת להגיע ל412 מילים (עבור חבילה מלאה של קלפים
+            למשחק ארוך וכיפי יותר)</small
           >
           <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
           <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
@@ -2081,6 +2098,35 @@
       <p class="sheet-note owner-only hidden" id="sheetClosedNote" data-edit="collect-sheet-closed">
         האיסוף נסגר והמשחק בהפקה - אי אפשר לשנות עכשיו.
       </p>
+      <!-- FINISHING COMES BEFORE PAYING, on the screen as in her head: she is on
+           the sign-off tab because she is done collecting, and the button that
+           says so should not sit under the checkout. -->
+      <div class="card owner-only hidden" data-panel="finish" id="ownerControls">
+        <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
+        <p class="muted" data-edit="collect-owner-hint">
+          סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.
+        </p>
+        <!-- SHE CONFIRMS SHE LOOKED. Closing sends the deck to print and nothing
+             above it can be changed afterwards, so the three things on this tab —
+             the title, the photos, the style of the filler words — are attested
+             rather than assumed. A dialog after the fact asks "are you sure?"
+             about a decision already made; this asks BEFORE the button is live,
+             which is the only moment the answer can still change anything.
+             Deliberately NOT stored on the order: it is a statement about this
+             moment, and a reload is a new moment. -->
+        <label class="finish-ack" for="finishAck">
+          <input type="checkbox" id="finishAck" data-testid="finish-ack" />
+          <span data-edit="collect-finish-ack"
+            >עברתי על הכותרת, על חיילי המשחק ועל סגנון המילים - הכול נכון ואפשר להדפיס.</span
+          >
+        </label>
+        <div class="actions">
+          <button id="closeBtn" type="button" data-edit="collect-close-btn" disabled>
+            מספיק! סיימנו לאסוף ✅
+          </button>
+        </div>
+      </div>
+
       <!-- OWNER, unpaid: the pay CTA, at the TOP as well as in the sticky bar at
            the foot of this file (#payBar). Two placements of ONE action, not two
            actions: the bar follows the buyer down a long list of words, this one
@@ -2353,18 +2399,6 @@
            blocks (top card, sticky bar, checkout panel), which are the only
            filled-black elements on the page — hence the outline here. -->
       <!-- owner / closing controls -->
-      <div class="card owner-only hidden" data-panel="finish" id="ownerControls">
-        <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
-        <p class="muted" data-edit="collect-owner-hint">
-          סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.
-        </p>
-        <div class="actions">
-          <button id="closeBtn" type="button" data-edit="collect-close-btn">
-            מספיק! סיימנו לאסוף ✅
-          </button>
-        </div>
-      </div>
-
       <!-- OWNER: pay panel (collapsible, one button at the bottom) -->
       <details class="card owner-only hidden pay-collapse" data-panel="pay" id="payPanel">
         <summary class="pay-summary" data-edit="collect-pay-summary">שלמו וקבלו את המשחק</summary>
@@ -4027,6 +4061,16 @@
           // next line — is their single owner. Taking the class off here first
           // would flash both of them on every poll.
           renderGameTabs();
+          // PAID MEANS THE PAYMENT IS OVER, including the tab. The panel behind
+          // it is already dropped below; leaving the button up advertises a
+          // checkout that answers nothing, on the one page she keeps coming back
+          // to for days after paying. If she is standing on it when the payment
+          // lands, she is moved to the sign-off tab, which is what is left to do.
+          const payTab = document.querySelector('#tabs .tabbar-btn[data-tab="pay"]');
+          if (payTab) {
+            payTab.hidden = paid;
+            if (paid && currentTab === 'pay') showTab('finish');
+          }
           // Paid: drop the pay panel + the pay bar, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,
           // which is what actually starts production.
@@ -4700,9 +4744,36 @@
           if (closed) track('collection_closed');
           await refresh();
         }
-        $('#closeBtn').onclick = closeCollection;
+        // The button is dead until she has ticked the line above it. Wired here
+        // rather than in the markup so a page that somehow renders without the
+        // checkbox still has a usable button.
+        const ack = $('#finishAck');
+        const closeBtn = $('#closeBtn');
+        if (ack && closeBtn) {
+          const sync = () => {
+            closeBtn.disabled = !ack.checked;
+            closeBtn.title = ack.checked ? '' : 'צריך לאשר שעברתם על הפרטים למעלה';
+          };
+          ack.addEventListener('change', sync);
+          sync();
+        } else if (closeBtn) {
+          closeBtn.disabled = false;
+        }
+        closeBtn.onclick = closeCollection;
+        // The paid card carries the same סיום, so it goes through the same gate:
+        // if she has not ticked the sign-off, this takes her TO it rather than
+        // closing. One attestation, wherever the button is pressed.
         const paidCloseBtn = $('#paidCloseBtn');
-        if (paidCloseBtn) paidCloseBtn.onclick = closeCollection;
+        if (paidCloseBtn) {
+          paidCloseBtn.onclick = () => {
+            if (ack && !ack.checked) {
+              showTab('finish');
+              ack.focus();
+              return;
+            }
+            closeCollection();
+          };
+        }
       }
       // ---- owner: pay panel ----
       // Checkout pricing is owner-editable (server settings) and fetched from
