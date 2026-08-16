@@ -277,3 +277,103 @@ test('a contributor sees none of it', async ({ page }) => {
   expect(guest.pawn_cutouts).toBeUndefined();
   expect(k).toBeTruthy();
 });
+
+// ---- delivery, bought after the order was already paid ----------------------
+//
+// There is no admin "mark as paid" route (an order goes paid only on a real money
+// event) and the e2e server runs without card credentials, so the SERVER's answer
+// about whether the upgrade is on offer is injected into the collection GET. What
+// is under test here is the page: which card it shows, what it sends, and where
+// it sends the buyer next. The offer's own rules — paid, not already delivery,
+// not closed, a fee to charge — are held by tests/unit/shipping-upgrade.test.js
+// against the real store.
+async function stubUpgrade(page, upgrade) {
+  await page.route('**/api/collections/*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const resp = await route.fetch();
+    const body = await resp.json();
+    body.card_enabled = true;
+    body.shipping_upgrade = upgrade;
+    return route.fulfill({ json: body });
+  });
+}
+
+const OFFERED = { offered: true, reason: null, fee: 39, paid: false, address: null };
+
+test('she adds delivery to an order she has already paid for', async ({ page }) => {
+  await stubUpgrade(page, OFFERED);
+  // The gateway is not reachable from a test, so the init answer is stubbed —
+  // the page's job is to send the address and open the payment window on the URL
+  // it is handed back.
+  let sent = null;
+  // The URL is deliberately inert. Handing back the REAL pay-done.html would be
+  // a race, not a test: that page posts its result to the parent the moment it
+  // loads, which closes the modal and navigates away — so whether the assertion
+  // below saw the frame at all would depend on how fast the machine is.
+  await page.route('**/shipping/init**', async (route) => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ json: { url: 'about:blank#dugri-stub', charged: 39 } });
+  });
+
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-finish').click();
+
+  const card = page.locator('#shipAddCard');
+  await expect(card).toBeVisible();
+  // The price is the server's, not a number the page decided.
+  await expect(card).toContainText('39');
+  await expect(page.locator('#shipDoneCard')).toBeHidden();
+
+  // The three fields the server insists on are insisted on here too, so the
+  // person who can fix it is the one who hears about it.
+  await page.getByTestId('ship-add-btn').click();
+  await expect(page.getByTestId('ship-add-err')).toContainText('רחוב');
+  expect(sent).toBeNull();
+
+  await page.getByTestId('ship-street').fill('הרצל 12');
+  await page.getByTestId('ship-city').fill('תל אביב');
+  await page.getByTestId('ship-postal').fill('6100000');
+  await page.getByTestId('ship-add-btn').click();
+
+  // The address goes with it, and the payment window opens on what came back.
+  await expect.poll(() => sent && sent.address && sent.address.city).toBe('תל אביב');
+  expect(sent.address.street).toBe('הרצל 12');
+  expect(sent.address.postal).toBe('6100000');
+  await expect(page.locator('#payModal')).toBeVisible();
+  await expect(page.locator('#payFrame')).toHaveAttribute('src', 'about:blank#dugri-stub');
+});
+
+test('once it is bought the card is replaced by the address it ships to', async ({ page }) => {
+  await stubUpgrade(page, {
+    offered: false,
+    reason: 'paid',
+    fee: 39,
+    paid: true,
+    address: { street: 'הרצל 12', city: 'תל אביב', postal: '6100000', apartment: '4' },
+  });
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-finish').click();
+
+  await expect(page.locator('#shipAddCard')).toBeHidden();
+  const done = page.locator('#shipDoneCard');
+  await expect(done).toBeVisible();
+  // The answer to "did it go through?" is her own address, which is the one
+  // thing she would check.
+  await expect(page.getByTestId('ship-done-addr')).toContainText('הרצל 12');
+  await expect(page.getByTestId('ship-done-addr')).toContainText('תל אביב');
+  await expect(page.getByTestId('ship-done-addr')).toContainText('דירה 4');
+});
+
+test('an order with nothing to upgrade is offered nothing', async ({ page }) => {
+  // The commonest case by far: an unpaid order, whose own checkout is where
+  // delivery is a tick. Neither card appears — no dead offer, no empty box.
+  await stubUpgrade(page, { offered: false, reason: 'no paid order', fee: 39, paid: false });
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-finish').click();
+  await expect(page.locator('#finishPanel')).toBeVisible();
+  await expect(page.locator('#shipAddCard')).toBeHidden();
+  await expect(page.locator('#shipDoneCard')).toBeHidden();
+});

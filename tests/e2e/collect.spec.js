@@ -1479,7 +1479,7 @@ test('owner share panel: WhatsApp button is the primary action, placed before th
   const wa = page.getByTestId('share-whatsapp');
   await expect(wa).toBeVisible();
 
-  // Uses the SAME friends link the copy button shows.
+  // Uses the SAME link the copy button shows.
   const friendsLink = await page.locator('#friendsLink').inputValue();
   expect(friendsLink).toContain('/collect.html?c=');
 
@@ -1505,7 +1505,17 @@ test('owner share panel: WhatsApp button is the primary action, placed before th
   expect(waBeforeCopy).toBe(true);
 });
 
-test('owner share card: ONE link only, it is the PUBLIC one, and it sits between the words and the help card', async ({
+// ONE LINK, AND IT IS THE MANAGING ONE.
+//
+// This reverses what this file used to assert, and the reversal is the owner's:
+// there were two links, a public one to share and a private one that granted
+// owner powers, and the private one ended up in the group anyway — it is the URL
+// in her confirmation email and the page she is standing on. Two links with
+// different powers and no way to tell them apart is worse than one link everyone
+// can use. What it costs is that anyone the link reaches can delete a word and
+// close the collection; that is the same trust she extends by inviting them to
+// write about the honoree in the first place.
+test('owner share card: ONE link, it is the MANAGING one, and it sits between the words and the help card', async ({
   page,
 }) => {
   await createCollection(page, 'Shira');
@@ -1514,40 +1524,55 @@ test('owner share card: ONE link only, it is the PUBLIC one, and it sits between
   const panel = page.locator('#sharePanel');
   await expect(panel).toBeVisible();
 
-  // Exactly ONE link box in the share card. Two links (public + management) is
-  // what confused buyers, so the second box is gone for good.
+  // Exactly ONE link box in the share card, and no second one hiding anywhere.
   await expect(panel.locator('input')).toHaveCount(1);
   await expect(page.locator('#ownerLink')).toHaveCount(0);
+  await expect(page.getByTestId('owner-private-link')).toHaveCount(0);
 
-  // And the one that survived is the PUBLIC link — no owner token. Sharing the
-  // token would let any recipient delete words, close the collection and open
-  // the owner's checkout.
   const link = await page.locator('#friendsLink').inputValue();
   expect(link).toContain('/collect.html?c=');
-  expect(link).not.toContain('k=');
-  expect(link).not.toContain(ownerToken);
+  expect(link).toContain('k=' + ownerToken);
 
-  // WhatsApp shares that same public link, token-free.
+  // WhatsApp shares that same link, token and all.
   const href = await page.getByTestId('share-whatsapp').getAttribute('href');
   expect(href).toContain(encodeURIComponent(link));
-  const inviteText = new URL(href).searchParams.get('text');
-  expect(inviteText).not.toContain('k=');
-  expect(inviteText).not.toContain(ownerToken);
+  expect(new URL(href).searchParams.get('text')).toContain(ownerToken);
 
   // Placement: collected words → share → "stuck? answer a few questions".
   const order = await page.evaluate(() =>
     [...document.querySelectorAll('#wordsCard, #sharePanel, #helpCard')].map((el) => el.id)
   );
   expect(order).toEqual(['wordsCard', 'sharePanel', 'helpCard']);
+});
 
-  // The owner's private link is not lost — it is reachable, collapsed by
-  // default, and labelled as private rather than offered as a second share link.
-  const priv = page.getByTestId('owner-private-link');
-  await expect(priv).toBeVisible();
-  await expect(priv).not.toHaveAttribute('open', '');
-  await expect(page.locator('#copyOwner')).toBeHidden();
-  await priv.locator('summary').click();
-  await expect(page.locator('#copyOwner')).toBeVisible();
+// The powers the link carries, exercised rather than asserted about: somebody who
+// arrives on the shared link is looking at the owner's page, and the two actions
+// the owner named — delete a word, close the collection — work for them.
+test('whoever opens the shared link can delete a word and close the collection', async ({
+  page,
+  context,
+}) => {
+  await createCollection(page, 'Shira');
+  await page.fill('#wordInput', 'בדיחה פנימית');
+  await page.click('#addBtn');
+  await expect(page.locator('#count')).toHaveText('1');
+
+  const shared = await page.locator('#friendsLink').inputValue();
+  const guest = await context.newPage();
+  await guest.goto(shared);
+
+  // The guest gets the owner's page — tabs and all — not the contributor's.
+  await expect(guest.getByTestId('tabs')).toBeVisible();
+
+  await guest.getByTestId('word-del').click();
+  await guest.getByTestId('msg-modal-ok').click();
+  await expect(guest.locator('#count')).toHaveText('0');
+
+  await guest.getByTestId('tab-finish').click();
+  await guest.click('#closeBtn');
+  await guest.getByTestId('close-ask-yes').click();
+  await expect(guest.locator('#banner')).toBeVisible();
+  await guest.close();
 });
 
 test('owner WhatsApp invite: a two-name couple honoree carries both names (URL-encoded) in the text', async ({
@@ -1721,8 +1746,7 @@ test('newly-tagged collect copy + the logo image become editable in owner edit m
     'collect-cat-people-title',
     'collect-cat-people-eg',
     'collect-share-wa-label',
-    'collect-owner-link-summary',
-    'collect-owner-link-hint',
+    'collect-share-hint',
     'collect-coupon-label',
     'collect-card-pay-btn',
     'collect-wa-help-label',

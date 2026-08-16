@@ -1358,6 +1358,9 @@ module.exports = {
   buildReminderEmail,
   buildSystemAlert,
   sendSystemAlert,
+  // Exported so a caller that has an address and no email template to put it in
+  // (the shipping-upgrade alert) formats it the same way every mail does.
+  formatAddress,
   sendOrderPaid,
   sendCustomOrderAlert,
   sendBuyerConfirmation,

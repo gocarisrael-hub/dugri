@@ -750,6 +750,11 @@ function publicView(c, { owner = false } = {}) {
           // detail she is not choosing and has no use for. null = no pick, so the
           // deck fills the way her design says.
           wordlist_option: optionIdForPool(c.wordlist),
+          // Can she still add door-to-door delivery to an order she has already
+          // paid for, and what would it cost? Computed by the store (one place,
+          // so the offer on screen and the charge behind it cannot disagree) and
+          // owner-only, like the order it is about.
+          shipping_upgrade: db.shippingUpgrade(c.id),
         }
       : {}),
     // Free word quota. The buyer is meant to discover the cap by REACHING it, so
@@ -2825,6 +2830,37 @@ function onOrderPaid(collectionId, base, amountCharged) {
   sendPaidNotifications(collectionId, base, amountCharged).catch(() => {});
 }
 
+// A PAID order just became a DELIVERY order, because the buyer bought shipping
+// after the fact. The owner now has a parcel to send that she did not have this
+// morning, and an address she has never seen.
+//
+// Deliberately a SYSTEM ALERT and not a new customer-facing email template. The
+// buyer needs no letter: she paid on screen, saw it succeed, and the collection
+// page tells her the game is being shipped. The person who has to DO something is
+// the owner — and an alert reaches her through the operational channel that is
+// already there, rather than adding a template, a settings key and an on/off
+// toggle to a mail catalog that is not this change's to grow.
+//
+// Fire-and-forget, like every other notification on the payment path: a failed
+// send must never turn a successful charge into a failed callback.
+function onShippingAdded(collectionId, base, amountCharged) {
+  const c = db.getCollection(collectionId);
+  if (!c || !c.order) return;
+  const addr = notify.formatAddress(c.order.address);
+  const lines = [
+    'הזמנה: ' + db.orderRef(c),
+    'בעל/ת השמחה: ' + (c.honoree_name || '—'),
+    'הלקוח/ה הוסיפ/ה משלוח עד הבית אחרי התשלום, ושילמ/ה ' +
+      (Number.isFinite(amountCharged) ? amountCharged : c.order.delivery_fee) +
+      ' ₪ נוספים.',
+    addr ? 'כתובת למשלוח: ' + addr : 'כתובת למשלוח: —',
+    base && ADMIN_KEY
+      ? 'לוח ההזמנות: ' + base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY)
+      : '',
+  ].filter(Boolean);
+  notify.sendSystemAlert('נוסף משלוח להזמנה קיימת', lines).catch(() => {});
+}
+
 // =========================================================================
 // WhatsApp bot (Phase B) — inbound webhook, paid-order group creation, and the
 // nudge scheduler. EVERYTHING below is gated on whatsapp.isConfigured(): with the
@@ -2886,11 +2922,19 @@ function ilPhoneToWaId(phone) {
 }
 
 // The interpolation values shared by every group-scoped trigger: the honoree's
-// name and the public "add words" (friends) collect link — NOT the owner link, so
-// the token is never shared into a group. `base` is the normalized public origin.
+// name and the collect link. That link is the MANAGING one now — the owner token
+// and all — because the product has stopped keeping two: the buyer pastes the
+// same URL into the group herself the moment she shares it, so a bot posting a
+// token-free variant only meant the group held two links with different powers
+// and no way to tell them apart. What it costs (anyone in the group can delete a
+// word or close the collection) is the owner's decision; see friendsUrl() in
+// site/collect.html. `base` is the normalized public origin.
 function waGroupValues(collection, base) {
   const honoree = (collection && collection.honoree_name) || 'בעל/ת השמחה';
-  const link = base && collection && collection.id ? base + '/collect.html?c=' + collection.id : '';
+  const link =
+    base && collection && collection.id && collection.owner_token
+      ? base + '/collect.html?c=' + collection.id + '&k=' + collection.owner_token
+      : '';
   return { honoree, link };
 }
 
@@ -3521,6 +3565,73 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   }
 });
 
+// Owner-only: buy DELIVERY for an order that is already paid.
+//
+// She picked pickup, the party moved, and now she wants it sent. The paid order
+// is immutable to public callers on purpose (setOrder refuses outright — it is
+// the only thing between a paid order and a client re-posting a cheaper
+// version), so this is its own small purchase: the shipping fee, charged once,
+// on its own PeleCard session. db.markShippingPaid then converges the order onto
+// version 'delivery' with the address, which is what makes every reader
+// downstream — the orders table, the emails, the press run — need to know
+// nothing about upgrades.
+//
+// NO COUPONS here, deliberately: a discount code buys a game, not postage.
+//
+// Refused once the collection is CLOSED (db.shippingUpgrade), which is the
+// owner's rule and the honest one — by then the deck is at the printer and where
+// it goes has already been decided.
+app.post('/api/collections/:id/shipping/init', async (req, res) => {
+  if (!pelecard.isConfigured()) {
+    return res.status(503).json({ error: 'card payment not configured' });
+  }
+  const base = paymentBaseUrl();
+  if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+
+  const b = req.body || {};
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== b.owner_token) return res.status(403).json({ error: 'forbidden' });
+
+  // Stage it (address sanitized, fee re-read from settings, availability
+  // re-checked — the collection can close between rendering the offer and
+  // pressing the button).
+  const shipping = db.startShippingUpgrade(req.params.id, b.owner_token, { address: b.address });
+  if (shipping.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  if (shipping.error === 'already paid') return res.status(409).json({ error: 'already paid' });
+  if (shipping.error === 'closed') {
+    return res.status(409).json({ error: 'closed', message: 'האיסוף נסגר והמשחק בהפקה' });
+  }
+  if (shipping.error) return res.status(400).json({ error: shipping.error });
+
+  const charged = shipping.fee;
+  // The fee is validated as a positive integer before the upgrade is ever
+  // offered, so this is unreachable — and it is here because a 0-charge PeleCard
+  // init is the one failure mode that would look like a free upgrade.
+  if (!(charged > 0)) return res.status(400).json({ error: 'invalid order total' });
+
+  const paramToken = newPayToken();
+  try {
+    const { url, transactionId } = await pelecard.init({
+      amountNis: charged,
+      paramToken,
+      urls: {
+        goodUrl: base + '/pay-done.html',
+        errorUrl: base + '/pay-done.html?error=1',
+        serverGoodUrl: base + '/api/payment/callback',
+        serverErrorUrl: base + '/api/payment/callback?error=1',
+      },
+    });
+    db.recordShippingInit(req.params.id, {
+      paramToken,
+      transactionId,
+      charged_total: charged,
+    });
+    res.json({ url, charged });
+  } catch {
+    res.status(502).json({ error: 'payment init failed' });
+  }
+});
+
 // PeleCard server-side callback (ServerSideGoodFeedbackURL). The body is
 // UNTRUSTED — we take only the TransactionId from it, then re-fetch the
 // transaction from PeleCard with our secret credentials (getTransaction) and
@@ -3535,12 +3646,15 @@ app.post('/api/payment/callback', async (req, res) => {
   if (!transactionId && parsed.paramX) {
     // Fall back to the id we stored for that session (located via the echoed
     // ParamX token), then the per-order last_transaction_id as a last resort.
-    const match = db.getPaymentSessionByToken(parsed.paramX);
+    const match = db.findPaySession(parsed.paramX);
+    const holder =
+      match &&
+      (match.kind === 'shipping'
+        ? match.collection.order.shipping.pelecard
+        : match.collection.order.pelecard);
     transactionId =
       (match && match.session && match.session.transaction_id) ||
-      (match &&
-        match.collection.order.pelecard &&
-        match.collection.order.pelecard.last_transaction_id) ||
+      (holder && holder.last_transaction_id) ||
       null;
   }
   if (!transactionId) return res.json({ ok: true });
@@ -3558,12 +3672,39 @@ app.post('/api/payment/callback', async (req, res) => {
   // Verify tx against THAT session's own charged_total (sessions opened with
   // different coupons must each verify against their own price) — never a shared
   // order-level amount. On success mark paid + credit THAT session's coupon.
-  const match = db.getPaymentSessionByToken(tx.paramX);
+  //
+  // Two kinds of purchase arrive here now: the ORDER, and a SHIPPING upgrade
+  // bought on top of an already-paid one. PeleCard has one callback URL and one
+  // token space, so the token is what tells them apart — and it must, because the
+  // "is it already paid?" guard is a different flag for each and the shipping
+  // charge is a different (smaller) amount than the order's.
+  const match = db.findPaySession(tx.paramX);
   const c = match && match.collection;
   const session = match && match.session;
   if (
     c &&
     session &&
+    match.kind === 'shipping' &&
+    !c.order.shipping.paid &&
+    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
+  ) {
+    db.markShippingPaid(c.id, {
+      method: 'pelecard',
+      transactionId: tx.transactionId,
+      approvalNo: tx.approvalNo,
+      token: session.token,
+      charged_total: session.charged_total,
+    });
+    // The order is a DELIVERY order from this moment (db.markShippingPaid), so
+    // the owner is told the same way she is told about any other change of
+    // fulfilment — she has a parcel to send that she did not have this morning.
+    onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
+    return res.json({ ok: true });
+  }
+  if (
+    c &&
+    session &&
+    match.kind === 'order' &&
     !c.order.paid &&
     pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
   ) {

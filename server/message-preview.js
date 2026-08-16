@@ -51,7 +51,14 @@ const SAMPLE_COLLECTION = Object.freeze({
 // use {honoree}/{link}/{name}/{count}/{wordCount}, so supply them all — an unknown
 // token would otherwise render literally and look like a bug in the preview.
 function sampleWaValues(baseUrl) {
-  const link = (baseUrl || '') + '/collect.html?c=' + SAMPLE_COLLECTION.id;
+  // The MANAGING link, like every link the product hands out now — the group
+  // gets the same URL the buyer does, so the preview has to show that.
+  const link =
+    (baseUrl || '') +
+    '/collect.html?c=' +
+    SAMPLE_COLLECTION.id +
+    '&k=' +
+    SAMPLE_COLLECTION.owner_token;
   return {
     honoree: SAMPLE_COLLECTION.honoree_name,
     link,

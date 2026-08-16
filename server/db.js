@@ -240,6 +240,52 @@ function deliveryFee() {
   return 0;
 }
 
+// Add one PeleCard init handshake to a session holder and hand the holder back.
+//
+// Factored out because there are two holders now: the order itself, and the
+// shipping upgrade a buyer can buy on top of an already-paid order. They are
+// separate purchases with separate amounts, so they need separate session lists —
+// but the rules for keeping a list (dedupe by token, never evict an unresolved
+// session, per-session timestamp and amount) are the payment protocol and must
+// not be able to drift between the two.
+function pushPaySession(
+  holder,
+  { paramToken, transactionId, charged_total, coupon, discount_pct }
+) {
+  const p = holder || { sessions: [] };
+  if (!Array.isArray(p.sessions)) p.sessions = [];
+  if (paramToken && !p.sessions.some((s) => s.token === paramToken)) {
+    p.sessions.push({
+      token: paramToken,
+      // Always a real number so the callback never verifies against undefined.
+      charged_total: Number(charged_total),
+      coupon: coupon ? normCode(coupon) : null,
+      discount_pct: discount_pct != null ? discount_pct : null,
+      transaction_id: transactionId || null,
+      resolved: false,
+      // Per-session timestamp: bounds the in-flight window (see TTL) and is the
+      // basis for evicting only OLD, RESOLVED sessions when over the cap.
+      initiated_at: nowIso(),
+    });
+    // Bound growth, but NEVER evict an unresolved session — a payment completed
+    // on any still-open modal must always find its own amount to verify. Drop
+    // oldest RESOLVED sessions only; if all are unresolved, keep them all.
+    if (p.sessions.length > MAX_SESSIONS) {
+      let toDrop = p.sessions.length - MAX_SESSIONS;
+      p.sessions = p.sessions.filter((s) => {
+        if (toDrop > 0 && s.resolved) {
+          toDrop -= 1;
+          return false;
+        }
+        return true;
+      });
+    }
+  }
+  p.last_transaction_id = transactionId || p.last_transaction_id || null;
+  p.initiated_at = nowIso();
+  return p;
+}
+
 // Coerce anything a client might send into a usable copy count. Absent/garbage
 // means 1 — never 0 (a 0-copy order would charge only shipping) and never a
 // float (0.5 copies would undercharge).
@@ -1405,38 +1451,145 @@ const db = {
   recordPaymentInit(id, { paramToken, transactionId, charged_total, coupon, discount_pct } = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
-    const p = c.order.pelecard || { sessions: [] };
-    if (!Array.isArray(p.sessions)) p.sessions = [];
-    if (paramToken && !p.sessions.some((s) => s.token === paramToken)) {
-      p.sessions.push({
-        token: paramToken,
-        // Always a real number so the callback never verifies against undefined.
-        charged_total: Number(charged_total),
-        coupon: coupon ? normCode(coupon) : null,
-        discount_pct: discount_pct != null ? discount_pct : null,
-        transaction_id: transactionId || null,
-        resolved: false,
-        // Per-session timestamp: bounds the in-flight window (see TTL) and is the
-        // basis for evicting only OLD, RESOLVED sessions when over the cap.
-        initiated_at: nowIso(),
-      });
-      // Bound growth, but NEVER evict an unresolved session — a payment completed
-      // on any still-open modal must always find its own amount to verify. Drop
-      // oldest RESOLVED sessions only; if all are unresolved, keep them all.
-      if (p.sessions.length > MAX_SESSIONS) {
-        let toDrop = p.sessions.length - MAX_SESSIONS;
-        p.sessions = p.sessions.filter((s) => {
-          if (toDrop > 0 && s.resolved) {
-            toDrop -= 1;
-            return false;
-          }
-          return true;
-        });
-      }
+    c.order.pelecard = pushPaySession(c.order.pelecard, {
+      paramToken,
+      transactionId,
+      charged_total,
+      coupon,
+      discount_pct,
+    });
+    saveDb();
+    return true;
+  },
+
+  // --- shipping bought AFTER the order was paid -------------------------------
+  //
+  // "She picked pickup, the party moved, now she wants it delivered." The paid
+  // order is immutable to public callers — setOrder refuses outright — and that
+  // is not a rule to loosen: it is the only thing between a paid order and a
+  // client re-posting a cheaper version. So the upgrade is its own small
+  // purchase: the shipping fee, charged once, on its own PeleCard session.
+  //
+  // Only when that charge LANDS does the order converge onto the shape it would
+  // have had if she had ticked delivery at checkout — version 'delivery', the
+  // address, the fee in the total. Everything downstream (the orders table, the
+  // emails, the press run, the admin's own edit dialog) then needs to know
+  // nothing about upgrades at all.
+
+  // Can this collection still add delivery, and what would it cost? ONE place,
+  // so the route, the payload the page renders from and the charge itself cannot
+  // disagree about whether it is on offer. Null for an unknown collection.
+  shippingUpgrade(id) {
+    const c = this.getCollection(id);
+    if (!c) return null;
+    const order = c.order || null;
+    const cur = (order && order.shipping) || null;
+    const fee = deliveryFee();
+    const paid = !!(cur && cur.paid);
+    let reason = null;
+    if (paid) reason = 'paid';
+    // Nothing to add shipping TO. An unpaid order still has its own checkout,
+    // where delivery is a tick — this is not a second way to buy the game.
+    else if (!order || !order.paid) reason = 'no paid order';
+    else if (order.version === 'pdf') reason = 'digital';
+    else if (order.version === 'delivery') reason = 'already delivery';
+    // The owner's rule, and the honest one: once the collection is closed the
+    // deck is at the printer and where it goes has already been decided.
+    else if (this.effectiveStatus(c) !== 'open') reason = 'closed';
+    else if (!versionEnabled('delivery')) reason = 'unavailable';
+    else if (!(fee > 0)) reason = 'unavailable';
+    return {
+      offered: !reason,
+      reason,
+      fee,
+      paid,
+      address: (cur && cur.address) || null,
+      charged_total: cur && cur.charged_total != null ? cur.charged_total : null,
+      paid_at: (cur && cur.paid_at) || null,
+    };
+  },
+
+  // Stage the upgrade with the address it ships to, ready for a charge. Owner
+  // gated and re-checked against shippingUpgrade, because the page that renders
+  // the offer and the request that acts on it are minutes apart — the collection
+  // can close in between. Returns the record, or { error }.
+  startShippingUpgrade(id, ownerToken, { address } = {}) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return { error: 'forbidden' };
+    const state = this.shippingUpgrade(id);
+    if (state.paid) return { error: 'already paid' };
+    if (!state.offered) return { error: state.reason === 'closed' ? 'closed' : 'unavailable' };
+    const addr = sanitizeAddress(address);
+    if (!addr) return { error: 'address required' };
+    // Keep an in-flight handshake across a re-stage, for the same reason setOrder
+    // does: she may fix a typo in the address with the pay window still open.
+    const prev = c.order.shipping && !c.order.shipping.paid ? c.order.shipping.pelecard : null;
+    c.order.shipping = {
+      // The fee is re-read here and CHARGED from here, so a price change between
+      // rendering the offer and paying it can never bill yesterday's number.
+      fee: state.fee,
+      address: addr,
+      requested_at: nowIso(),
+      paid: false,
+      paid_at: null,
+      pelecard: prev || null,
+    };
+    saveDb();
+    return c.order.shipping;
+  },
+
+  // The upgrade's own PeleCard handshake. Same protocol as the order's, on its
+  // own session list — the two charges are different amounts and each callback
+  // must verify against its own.
+  recordShippingInit(id, { paramToken, transactionId, charged_total } = {}) {
+    const c = this.getCollection(id);
+    if (!c || !c.order || !c.order.shipping) return false;
+    c.order.shipping.pelecard = pushPaySession(c.order.shipping.pelecard, {
+      paramToken,
+      transactionId,
+      charged_total,
+      // No coupons on shipping: a discount code buys a game, not postage.
+      coupon: null,
+      discount_pct: null,
+    });
+    saveDb();
+    return true;
+  },
+
+  // The upgrade is paid — and the order BECOMES a delivery order.
+  //
+  // Idempotent on the paid flag, because a PeleCard callback can arrive twice and
+  // the second one must not add the fee to the total a second time.
+  markShippingPaid(id, meta = {}) {
+    const c = this.getCollection(id);
+    if (!c || !c.order || !c.order.shipping || c.order.shipping.paid) return false;
+    const sh = c.order.shipping;
+    sh.paid = true;
+    sh.paid_at = nowIso();
+    if (meta.method) sh.paid_method = meta.method;
+    if (meta.transactionId) sh.paid_transaction_id = meta.transactionId;
+    if (meta.approvalNo) sh.paid_approval_no = meta.approvalNo;
+    if (meta.charged_total != null) sh.charged_total = Number(meta.charged_total);
+    if (meta.token && sh.pelecard && Array.isArray(sh.pelecard.sessions)) {
+      const s = sh.pelecard.sessions.find((x) => x.token === meta.token);
+      if (s) s.resolved = true;
     }
-    p.last_transaction_id = transactionId || p.last_transaction_id || null;
-    p.initiated_at = nowIso();
-    c.order.pelecard = p;
+    // CONVERGE. From here this is a delivery order like any other, and the record
+    // of how it got that way lives in `order.shipping` rather than in a special
+    // case every reader would have to know about.
+    c.order.version = 'delivery';
+    c.order.address = sh.address;
+    c.order.delivery_fee = sh.fee;
+    c.order.total = Number(c.order.total || 0) + sh.fee;
+    // What the customer has actually paid us, across both transactions. The
+    // per-transaction amounts are still separable — the order's own charge is on
+    // each pay session, the upgrade's on `order.shipping.charged_total` — but the
+    // one number a receipt or a summary page shows has to be the sum, or it
+    // understates what was taken from her card.
+    if (c.order.charged_total != null) {
+      const extra = sh.charged_total != null ? sh.charged_total : sh.fee;
+      c.order.charged_total = Number(c.order.charged_total) + Number(extra);
+    }
     saveDb();
     return true;
   },
@@ -1514,7 +1667,32 @@ const db = {
     const c = this.getCollectionByPayToken(token);
     if (!c) return null;
     const session = c.order.pelecard.sessions.find((s) => s.token === token) || null;
-    return session ? { collection: c, session } : null;
+    return session ? { collection: c, session, kind: 'order' } : null;
+  },
+
+  // The same lookup across BOTH kinds of charge — the order, and a shipping
+  // upgrade bought on top of an already-paid one. PeleCard has one callback URL
+  // and one token space, so the callback cannot know which purchase it is being
+  // told about; this is what tells it. `kind` is 'order' or 'shipping', and the
+  // caller marks the matching one paid.
+  //
+  // The order is searched FIRST so nothing about the original charge changes.
+  findPaySession(token) {
+    if (!token) return null;
+    const own = this.getPaymentSessionByToken(token);
+    if (own) return own;
+    const c =
+      _db.collections.find(
+        (x) =>
+          x.order &&
+          x.order.shipping &&
+          x.order.shipping.pelecard &&
+          Array.isArray(x.order.shipping.pelecard.sessions) &&
+          x.order.shipping.pelecard.sessions.some((s) => s.token === token)
+      ) || null;
+    if (!c) return null;
+    const session = c.order.shipping.pelecard.sessions.find((s) => s.token === token) || null;
+    return session ? { collection: c, session, kind: 'shipping' } : null;
   },
 
   // Admin: flip an order between "still here" and SENT TO THE PRINT SHOP. The
