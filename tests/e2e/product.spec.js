@@ -48,9 +48,9 @@ test.describe('product detail page', () => {
 
     await expect(page.getByTestId('pdp-gallery')).toBeVisible();
     await expect(page.locator('#pdpTitle')).not.toHaveText('');
-    // The now-price is an anchor: "from ₪199" (מ-199) with the crossed-out was.
-    await expect(page.locator('#pdpPriceNow')).toContainText('מ-199 ₪');
-    await expect(page.locator('#pdpPriceWas')).toHaveText('239');
+    // The live price stands alone — no "מ-" ("from") opener — with the struck was beside it.
+    await expect(page.locator('#pdpPriceNow')).toContainText('199 ₪');
+    await expect(page.locator('#pdpPriceWas')).toHaveText('239 ₪');
 
     // Buy now carries the chosen design into the order flow and jumps straight
     // to the colour + add-ons step (step 2).
@@ -89,8 +89,8 @@ test.describe('product detail page', () => {
 
     const now = page.locator('#pdpPriceNow');
     const was = page.locator('#pdpPriceWas');
-    await expect(now).toContainText('מ-199 ₪');
-    await expect(was).toHaveText('239');
+    await expect(now).toContainText('199 ₪');
+    await expect(was).toHaveText('239 ₪');
 
     const nb = await now.boundingBox();
     const wb = await was.boundingBox();
@@ -599,7 +599,7 @@ test.describe('per-product photo carousel + editable content', () => {
     // Gallery (default renders), price and buy CTA are all present + correct.
     await expect(page.locator('#galleryTrack .pdp-gallery-slide img').first()).toBeVisible();
     await expect(page.locator('#pdpTitle')).not.toHaveText('');
-    await expect(page.locator('#pdpPriceNow')).toContainText('מ-199 ₪');
+    await expect(page.locator('#pdpPriceNow')).toContainText('199 ₪');
     await expect(page.getByTestId('pdp-buy')).toHaveAttribute(
       'href',
       'options.html?design=bachelorette&step=2'

@@ -1,19 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 
-// ONE ₪ PER PRICE.
+// EVERY PRICE CARRIES ITS OWN ₪.
 //
 // Every sale price on this site renders as a pair: the live price and, beside
-// it, the old one struck through. Both used to carry the shekel sign, so the
-// buyer met "199 ₪ 239 ₪" — two signs in one glance, with the strike-through
-// running straight through the second one, which reads as a broken glyph rather
-// than as a discount.
+// it, the old one struck through. This spec used to pin the opposite rule —
+// struck prices were digits only, on the reasoning that one sign per row reads
+// cleaner. The owner overruled it: a bare number beside a signed one doesn't
+// read as a price at all, so BOTH carry the ₪.
 //
-// The rule this pins: the ₪ belongs to the price being CHARGED. A struck price
-// is digits only. It is a per-page rule in practice — the six surfaces below
-// each build their own price row, and four of them stamp it from
-// /api/pricing — so it is worth asserting on all of them at once rather than
-// trusting one page's fix to describe the others.
+// That is the arrangement bidi handles worst — two signs, two numbers, one RTL
+// row — which is why the pixel checks below matter more than the text ones. It
+// is a per-page rule in practice: the six surfaces each build their own price
+// row, and four of them stamp it from /api/pricing, so it is worth asserting on
+// all of them at once rather than trusting one page's fix to describe the rest.
 
 const VERSIONS = {
   pdf: { enabled: true, price: 79 },
@@ -79,7 +79,7 @@ for (const [where, url] of [
   ['how-it-works', '/how.html', '.hero-cta a.btn'],
   ['the order wizard', '/options.html?plan=base', '[data-testid="plan-pill"]'],
 ]) {
-  test(`no struck price on ${where} carries a ₪`, async ({ page }) => {
+  test(`every struck price on ${where} carries its own ₪`, async ({ page }) => {
     await page.goto(url);
     // At least one struck price must actually be on the page — otherwise this
     // test passes by finding nothing, which is exactly how a price-row rewrite
@@ -87,11 +87,15 @@ for (const [where, url] of [
     const struck = page.locator('.was');
     await expect.poll(async () => struck.count()).toBeGreaterThan(0);
 
-    const texts = await struck.allTextContents();
-    for (const t of texts) {
-      expect(t, `a struck price on ${where} still carries a ₪`).not.toContain('₪');
-      // …and it is still a price, not an emptied element.
-      expect(t.trim(), `a struck price on ${where} rendered blank`).toMatch(/\d/);
+    // Polled: four of these surfaces re-stamp the row once /api/pricing lands.
+    await expect
+      .poll(async () => await struck.allTextContents(), {
+        message: `every struck price on ${where} must read "<digits> ₪"`,
+      })
+      // Digits, a space, one sign — and nothing rendered blank.
+      .toEqual(expect.arrayContaining([expect.stringMatching(/^\s*\d+ ₪\s*$/)]));
+    for (const t of await struck.allTextContents()) {
+      expect(t.trim(), `a struck price on ${where} is malformed`).toMatch(/^\d+ ₪$/);
     }
   });
 }
@@ -106,8 +110,9 @@ for (const [where, url] of [
 //
 // So: walk the price row's text nodes, ask the browser for each digit's and each
 // ₪'s x-position, and sort by it. That yields what a reader's eye meets, left to
-// right, with struck characters in brackets. The row must end in `<digits>₪` —
-// the amount whole, its sign at the right-hand (reading) end.
+// right, with struck characters in brackets. Each amount must come out whole,
+// its own sign at its right-hand (reading) end — `[239₪]199₪` — rather than the
+// two signs pooling between or past the numbers.
 const GLYPH_ORDER = `(() => {
   const row = document.querySelector(SEL);
   if (!row) return 'NO ROW';
@@ -151,15 +156,16 @@ for (const [where, url, sel] of [
       .poll(async () => glyphOrder(page, sel), {
         message: `on ${where} the ₪ must end the live price, after its own digits`,
       })
-      // struck digits first (each bracketed), then the live amount, sign last.
-      .toMatch(/^(\[\d\])+\d+₪$/);
+      // The struck amount first, sign included and bracketed with it, then the
+      // live amount with its own sign last.
+      .toMatch(/^(\[\d\])+\[₪\]\d+₪$/);
   });
 }
 
 // The checkout's own struck price is written by a different code path: it is the
 // coupon discount, computed in collect.html rather than stamped from
 // /api/pricing, so the storefront loop above says nothing about it.
-test('no struck price in the checkout total carries a ₪', async ({ page }) => {
+test('the checkout total signs both prices, each with its own ₪', async ({ page }) => {
   const res = await page.request.post('/api/admin/coupons?key=dugri-admin', {
     data: { code: 'STRUCK50', discount_pct: 50, valid_until: null },
   });
@@ -177,16 +183,14 @@ test('no struck price in the checkout total carries a ₪', async ({ page }) => 
 
   const was = page.locator('#payWas');
   await expect(was).toBeVisible();
-  await expect(was).not.toContainText('₪');
-  await expect(was).toHaveText(/\d/);
-  // The live total keeps its sign — this is about the struck price only.
+  await expect(was).toHaveText(/^\d+ ₪$/);
   await expect(page.locator('.pay-total .pay-now')).toContainText('₪');
   // …and the same pixel rule as the storefront: struck price, then the live
   // amount, then its ₪. This row is where the reordering was worst, because the
   // struck price sits between the total and the Hebrew "לתשלום:" before it.
   await expect
     .poll(async () => glyphOrder(page, '.pay-total'), {
-      message: 'the ₪ must end the checkout total, after its own digits',
+      message: 'each price in the checkout total must end in its own ₪',
     })
-    .toMatch(/^(\[\d\])+\d+₪$/);
+    .toMatch(/^(\[\d\])+\[₪\]\d+₪$/);
 });

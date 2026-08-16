@@ -670,9 +670,8 @@
         el.textContent = '';
         const now = document.createElement('span');
         now.className = 'now';
-        // "מ-" stays OUTSIDE the isolated amount — a Hebrew prefix inside it
-        // flips with the run (see .amt in css/tokens.css).
-        now.textContent = 'מ-';
+        // The price, plain: no "מ-" ("from") anchor in front of it. The owner
+        // wants the number the card is sold at, not a range opener.
         const amt = document.createElement('span');
         amt.className = 'amt';
         amt.textContent = `${PRICE} ₪`;
@@ -680,9 +679,13 @@
         el.appendChild(now);
         const was = document.createElement('s');
         // .was is what css/tokens.css keys sale mode off — without the class this
-        // struck price would keep showing after the owner ends the sale.
+        // struck price would keep showing after the owner ends the sale. Its own
+        // .amt keeps its ₪ welded to its digits (see css/tokens.css).
         was.className = 'was';
-        was.textContent = String(WAS);
+        const wasAmt = document.createElement('span');
+        wasAmt.className = 'amt';
+        wasAmt.textContent = `${WAS} ₪`;
+        was.appendChild(wasAmt);
         el.appendChild(was);
       }
 

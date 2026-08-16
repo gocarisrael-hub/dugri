@@ -2140,7 +2140,7 @@
       <div class="cfg-head">
         <div class="plan-pill" data-testid="plan-pill">
           החל מ- <span class="amt"><span id="planPrice" data-testid="plan-price">199</span> ₪</span>
-          <s class="was" id="planWas">239</s>
+          <s class="was" id="planWas"><span class="amt" id="planWasAmt">239 ₪</span></s>
         </div>
         <div class="wiz-progress">
           <div class="wiz-steplabel">
@@ -3866,8 +3866,11 @@
 
       function paintPlan() {
         document.getElementById('planPrice').textContent = PLANS[plan].price;
-        const wasEl = document.getElementById('planWas');
-        if (wasEl) wasEl.textContent = String(PLANS[plan].was);
+        // Write the SIGNED amount into the isolated .amt inside the struck price,
+        // never over the <s> itself — replacing that would drop the isolate and
+        // let the two ₪ reorder between the numbers (see .amt in css/tokens.css).
+        const wasEl = document.getElementById('planWasAmt');
+        if (wasEl) wasEl.textContent = `${PLANS[plan].was} ₪`;
       }
       paintPlan();
 

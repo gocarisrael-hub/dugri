@@ -1437,7 +1437,7 @@
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="how-hero"
             >בונים את המשחק ·
             <span class="amt" style="white-space: nowrap" data-price-now>199 ₪</span
-            ><s class="was" data-price-was>239</s></a
+            ><s class="was"><span class="amt" data-price-was>239 ₪</span></s></a
           >
           <a class="btn ghost" href="index.html" data-edit="how-hero-back">חזרה לעמוד הבית</a>
         </div>
@@ -1537,7 +1537,7 @@
           <a class="btn" href="products.html" data-ga="order_started" data-ga-cta="final"
             >בונים את המשחק ·
             <span class="amt" style="white-space: nowrap" data-price-now>199 ₪</span
-            ><s class="was" data-price-was>239</s></a
+            ><s class="was"><span class="amt" data-price-was>239 ₪</span></s></a
           >
           <a
             class="btn wa"
@@ -1633,7 +1633,7 @@
         data-ga="order_started"
         data-ga-cta="sticky"
         >מזמינים · <span class="amt" style="white-space: nowrap" data-price-now>199 ₪</span
-        ><s class="was" data-price-was>239</s></a
+        ><s class="was"><span class="amt" data-price-was>239 ₪</span></s></a
       >
       <a
         class="btn wa"
@@ -1773,7 +1773,9 @@
           if (Number.isInteger(p.store.was)) {
             document
               .querySelectorAll('[data-price-was]')
-              .forEach((el) => (el.textContent = String(p.store.was)));
+              // Signed like the live price beside it. The attribute sits on the
+              // isolated .amt inside the <s>, so each ₪ stays with its own digits.
+              .forEach((el) => (el.textContent = `${p.store.was} ₪`));
           }
         })
         .catch(() => {

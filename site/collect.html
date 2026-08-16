@@ -4187,7 +4187,10 @@
           const base = locked ? unit : unit * copies + fee;
           if (appliedCoupon) {
             const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
-            was.textContent = String(base);
+            // Signed, like the price beside it — and through setAmount, so its ₪
+            // is isolated with its own digits instead of drifting to the far side
+            // of both numbers (see .amt in css/tokens.css).
+            setAmount(was, base);
             was.classList.remove('hidden');
             $('#payTotal').textContent = discounted;
           } else {
