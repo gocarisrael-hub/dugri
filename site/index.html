@@ -1161,10 +1161,13 @@
         el.appendChild(now);
         const was = document.createElement('s');
         was.className = 'was';
-        // Digits only. The ₪ belongs to the price being charged; repeating it on
-        // the struck one put two signs side by side, and the strike-through runs
-        // straight through the second glyph.
-        was.textContent = String(WAS);
+        // The struck price is signed too (owner's call), and needs its OWN .amt:
+        // two signed prices side by side without a second isolate reorder into
+        // "239 199 ₪ ₪". Each sign stays welded to its own digits.
+        const wasAmt = document.createElement('span');
+        wasAmt.className = 'amt';
+        wasAmt.textContent = `${WAS} ₪`;
+        was.appendChild(wasAmt);
         el.appendChild(was);
       }
 

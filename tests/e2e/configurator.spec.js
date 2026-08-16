@@ -293,7 +293,7 @@ test.describe('order wizard', () => {
     );
     await page.goto('/options.html?plan=base');
     await expect(page.getByTestId('plan-price')).toHaveText('259');
-    await expect(page.locator('#planWas')).toHaveText('299');
+    await expect(page.locator('#planWas')).toHaveText('299 ₪');
   });
 
   // Buy-now deep-link (#8a): the product page links every design to

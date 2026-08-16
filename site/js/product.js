@@ -476,10 +476,11 @@ function renderInfo(d, overrides) {
   document.title = `${name} · דוגרי`;
 
   const now = document.getElementById('pdpPriceNow');
-  if (now) stampFrom(now, PRICE);
+  if (now) stampAmount(now, PRICE);
   const was = document.getElementById('pdpPriceWas');
-  // Digits only — the ₪ stays on the live price beside it (see index.html).
-  if (was) was.textContent = String(WAS);
+  // The struck price is signed too, and gets the same isolated-amount treatment
+  // so its ₪ stays welded to its own digits (see .amt in css/tokens.css).
+  if (was) stampAmount(was, WAS);
 
   // About: tag it editable per-design and show the saved override if any.
   const about = document.getElementById('pdpAbout');
@@ -572,7 +573,9 @@ function renderRelated(current) {
     const name = el('span', 'pdp-rel-name');
     name.textContent = d.name;
     const price = el('span', 'pdp-rel-price');
-    price.textContent = `מ-${PRICE} ₪`;
+    // Through the shared stamper: same isolated amount, same no-"מ-" copy as the
+    // price above it — a raw string here painted "מ-199 ₪" until the re-stamp.
+    stampAmount(price, PRICE);
 
     card.append(thumb, name, price);
     track.appendChild(card);
@@ -883,12 +886,13 @@ function switchToDesign(d) {
   syncDesignNames((names) => applyDesignNames(d, names));
 }
 
-// Write "מ-<price> ₪" into `el` with the amount as its OWN isolated run: on this
-// RTL page a bare "199 ₪" lets the shekel drift away from its digits — beside a
-// struck old price it lands on the far side of both numbers. The "מ-" prefix
-// stays outside the isolate, or it flips with it. See .amt in css/tokens.css.
-function stampFrom(el, price) {
-  el.textContent = 'מ-';
+// Write "<price> ₪" into `el` as its OWN isolated run: on this RTL page a bare
+// "199 ₪" lets the shekel drift away from its digits — beside a struck old price
+// it lands on the far side of both numbers. See .amt in css/tokens.css.
+// No "מ-" ("from") in front of it any more: the owner wants the price, not a
+// range opener.
+function stampAmount(el, price) {
+  el.textContent = '';
   const amt = document.createElement('span');
   amt.className = 'amt';
   amt.textContent = `${price} ₪`;
@@ -899,12 +903,13 @@ function stampFrom(el, price) {
 // the current PRICE/WAS. Safe to call before or after related renders.
 function restampPrices() {
   const now = document.getElementById('pdpPriceNow');
-  if (now) stampFrom(now, PRICE);
+  if (now) stampAmount(now, PRICE);
   const was = document.getElementById('pdpPriceWas');
-  // Digits only — the ₪ stays on the live price beside it (see index.html).
-  if (was) was.textContent = String(WAS);
+  // The struck price is signed too, and gets the same isolated-amount treatment
+  // so its ₪ stays welded to its own digits (see .amt in css/tokens.css).
+  if (was) stampAmount(was, WAS);
   for (const el of document.querySelectorAll('.pdp-rel-price')) {
-    stampFrom(el, PRICE);
+    stampAmount(el, PRICE);
   }
 }
 

@@ -1192,7 +1192,7 @@ test('owner applies a valid coupon → discounted total with the struck full pri
   // price actually being charged.
   const was = page.locator('#payWas');
   await expect(was).toBeVisible();
-  await expect(was).toHaveText('79');
+  await expect(was).toHaveText('79 ₪');
   // Apply is swapped for a remove control; the input is locked while applied.
   await expect(page.locator('#couponApplyBtn')).toBeHidden();
   await expect(page.locator('#couponRemoveBtn')).toBeVisible();
@@ -1216,7 +1216,7 @@ test('the struck full price sits to the LEFT of the discounted total (RTL)', asy
 
   const was = page.locator('#payWas');
   await expect(was).toBeVisible();
-  await expect(was).toHaveText('79');
+  await expect(was).toHaveText('79 ₪');
 
   const now = page.locator('.pay-total .pay-now');
   const wb = await was.boundingBox();

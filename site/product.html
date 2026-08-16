@@ -511,7 +511,7 @@
         align-items: baseline;
         /* This row's gap IS the air around the struck price, so it doesn't also
            take its own margin (see .was in css/tokens.css). */
-        gap: 10px;
+        gap: var(--price-gap);
         --was-gap: 0;
         margin-top: 10px;
         flex-wrap: wrap;
@@ -957,8 +957,8 @@
         <div class="pdp-head">
           <h1 id="pdpTitle">המשחק המותאם אישית</h1>
           <div class="pdp-price">
-            <span class="now" id="pdpPriceNow">מ-<span class="amt">79 ₪</span></span>
-            <span class="was" id="pdpPriceWas">129</span>
+            <span class="now" id="pdpPriceNow"><span class="amt">79 ₪</span></span>
+            <span class="was" id="pdpPriceWas"><span class="amt">129 ₪</span></span>
           </div>
 
           <!-- BUY — directly under the price, the moment the shopper knows what it

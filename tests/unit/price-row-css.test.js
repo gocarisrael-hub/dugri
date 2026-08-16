@@ -44,7 +44,7 @@ describe('the struck price is styled in exactly one place', () => {
   });
 
   it('the gap is one number, and --was-gap defaults to it', () => {
-    expect(tokens).toMatch(/--price-gap:\s*9px/);
+    expect(tokens).toMatch(/--price-gap:\s*14px/);
     expect(tokens).toMatch(/--was-gap:\s*var\(--price-gap\)/);
   });
 

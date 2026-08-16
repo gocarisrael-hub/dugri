@@ -56,7 +56,7 @@
      tokens, because a container that zeroes --was-gap ON ITSELF still needs to
      read the number for its own `gap` — and a custom property redeclared on an
      element resolves to the new value in that element's own declarations. */
-  --price-gap: 9px;
+  --price-gap: 14px;
   --was-gap: var(--price-gap);
 
   /* shape & motion — sharp corners, minimal neutral shadows */
@@ -87,6 +87,8 @@
 .amt {
   unicode-bidi: isolate;
   direction: ltr;
+  /* A price never breaks between its digits and its sign — it is one word. */
+  white-space: nowrap;
 }
 
 /* ============================================================
@@ -98,15 +100,20 @@
    (`margin-inline-end` in an RTL row), so the struck price touched the live one
    and the pair read as a single number — "239199". This is that one rule.
 
-   It carries DIGITS ONLY (the JS on every surface stamps `String(WAS)`): the ₪
-   belongs to the price actually being charged, and a second sign next to the
-   first put the strike-through straight through it.
+   BOTH prices carry the ₪ — the owner's call: a bare old number beside a signed
+   one didn't read as a price. So the struck price wraps its amount in its own
+   `.amt` too (`<s class="was"><span class="amt">239 ₪</span></s>`), which welds
+   each sign to its own digits; without that isolate the two signs reorder and
+   land between the numbers.
 
-   Spacing: the struck price ALWAYS trails the live one in the DOM, which in RTL
-   renders it to the LEFT, so the air belongs on its INLINE-START side and can
-   never end up outside the pair. A container that already spaces its children
-   (a flex row with its own `gap`) sets `--was-gap: 0` on itself rather than
-   re-declaring anything here — one number, one place.
+   Spacing: with two signed prices side by side, the air BETWEEN them has to beat
+   the space INSIDE each one, or the row reads as four separate things — hence
+   --price-gap at 14px against a ~4px word space. The struck price ALWAYS trails
+   the live one in the DOM, which in RTL renders it to the LEFT, so the air
+   belongs on its INLINE-START side and can never end up outside the pair. A
+   container that already spaces its children (a flex row with its own `gap`)
+   sets `--was-gap: 0` on itself rather than re-declaring anything here — one
+   number, one place.
    ============================================================ */
 .was {
   text-decoration: line-through;

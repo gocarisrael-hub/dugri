@@ -37,7 +37,7 @@ test('the hero CTA struck was-price sits to the LEFT of the current price (RTL)'
   const now = cta.locator('[data-price-now]');
   const was = cta.locator('[data-price-was]');
   await expect(now).toHaveText('199 ₪');
-  await expect(was).toHaveText('239');
+  await expect(was).toHaveText('239 ₪');
 
   const nb = await now.boundingBox();
   const wb = await was.boundingBox();
@@ -74,5 +74,5 @@ test('a failing /api/pricing leaves the seeded default prices in place (fail-sof
 
   const cta = page.locator('.hero-cta a.btn').first();
   await expect(cta.locator('[data-price-now]')).toHaveText('199 ₪');
-  await expect(cta.locator('[data-price-was]')).toHaveText('239');
+  await expect(cta.locator('[data-price-was]')).toHaveText('239 ₪');
 });
