@@ -444,6 +444,7 @@ function runGenerator({
 // --- Order preview (public) ---------------------------------------------------
 // The generator preview script + the shared word-font pool it draws from.
 const PREVIEW_SCRIPT = path.join(REPO_ROOT, 'generator', 'preview.py');
+const PICKUP_STICKERS_SCRIPT = path.join(REPO_ROOT, 'generator', 'pickup_stickers.py');
 const WORD_FONTS_DIR = path.join(REPO_ROOT, 'generator', 'word-fonts');
 // One preview render is a single Python process that renders card + board + back;
 // keep the cap short so a public request can't tie up the box. The child is
@@ -1532,6 +1533,148 @@ function queueReadySms(collection) {
     return null;
   }
 }
+
+// --- self-collection stickers -------------------------------------------------
+// Every printed game the customer collects herself gets a label on its box, and
+// the owner has been typing that sheet by hand every night: open a document,
+// type eleven names, print. This is that sheet, from the orders.
+
+// The design's Hebrew name — what goes on the label, because "which of these two
+// boxes is the Paris one" is a question about a picture and not about a theme
+// key. Falls back to the key rather than to nothing: a label with no design is
+// worse than a label with an odd-looking one.
+function designNameFor(theme) {
+  const key = String(theme || '');
+  if (!key) return '';
+  try {
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT)) || {};
+    const entry = themes[key];
+    return (entry && String(entry.display_he || '').trim()) || key;
+  } catch {
+    return key;
+  }
+}
+
+// The orders a sticker is printed for TONIGHT: self-collection, at the printer,
+// not yet marked ready. That is the owner's own rule ("all the pickup orders
+// that are בדפוס"), and each half of it earns its place — a delivered order is
+// posted rather than collected, an order not yet sent has no box to label, and
+// one already marked ready has been labelled and handed over.
+//
+// Oldest first, so the sheet comes out in the order the orders table shows and a
+// sticker can be found in it.
+function pickupStickerOrders() {
+  return db
+    .listAllCollections()
+    .filter((c) => {
+      const o = c.order;
+      return !!(o && o.version === 'pickup' && o.sent_to_print_at && !o.ready_at);
+    })
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
+    .map((c) => ({
+      order_no: db.orderRef(c),
+      // What the deck is CALLED — her own title when she wrote one, else the
+      // honoree's name, which is the same thing the cards print.
+      title: (c.custom_title || c.honoree_name || '').trim(),
+      // The person COLLECTING, who is the buyer and not the honoree. Blank when
+      // the order never captured one: an empty line is honest, and the phone
+      // underneath still identifies them.
+      buyer_name: (c.buyer_name || '').trim(),
+      design: designNameFor(c.theme),
+      phone: (c.owner_phone || '').trim(),
+    }));
+}
+
+// Spawn ONE pickup_stickers.py run and resolve the PDF's path plus a cleanup.
+// The sheet is a single Chrome print — the same path the deck uses — so it goes
+// through spawnGenerator and inherits its concurrency slot and its kill.
+function runPickupStickers(stickers) {
+  return new Promise((resolve, reject) => {
+    let outDir;
+    try {
+      outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-stickers-'));
+    } catch (e) {
+      return reject(e);
+    }
+    const cleanup = () => {
+      try {
+        fs.rmSync(outDir, { recursive: true, force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+    };
+    const jsonPath = path.join(outDir, 'stickers.json');
+    const outPdf = path.join(outDir, 'pickup-stickers.pdf');
+    try {
+      fs.writeFileSync(jsonPath, JSON.stringify(stickers), 'utf8');
+    } catch (e) {
+      cleanup();
+      return reject(e);
+    }
+    const child = spawnGenerator([PICKUP_STICKERS_SCRIPT, jsonPath, outPdf]);
+    let stdout = '';
+    let stderr = '';
+    let timedOut = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGenerator(child);
+    }, PREVIEW_TIMEOUT_MS);
+    child.stdout.on('data', (d) => (stdout += d));
+    child.stderr.on('data', (d) => (stderr += d));
+    child.on('error', (e) => {
+      clearTimeout(timer);
+      cleanup();
+      reject(e);
+    });
+    child.on('close', (code) => {
+      clearTimeout(timer);
+      if (timedOut) {
+        cleanup();
+        return reject(new Error('sticker sheet render timed out'));
+      }
+      if (code !== 0 || !fs.existsSync(outPdf)) {
+        cleanup();
+        return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
+      }
+      resolve({ pdf: outPdf, cleanup });
+    });
+  });
+}
+
+// Admin: the night's sticker sheet, as a PDF to print.
+//
+// A GET so the button can be a plain link and the browser's own download does
+// the work — there is nothing to post, and the sheet is derived entirely from
+// orders that already exist.
+app.get('/api/admin/pickup-stickers', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const stickers = pickupStickerOrders();
+  if (!stickers.length) {
+    // Not an error page: "there are none tonight" is a normal night, and it
+    // should read as one rather than as something that failed.
+    return res.status(409).json({
+      error: 'none',
+      message: 'אין כרגע הזמנות איסוף עצמי בדפוס.',
+    });
+  }
+  let out;
+  try {
+    out = await runPickupStickers(stickers);
+  } catch (e) {
+    console.error('pickup stickers failed:', (e && e.message) || e);
+    return res.status(502).json({ error: 'render failed' });
+  }
+  const name = 'מדבקות איסוף עצמי ' + new Date().toISOString().slice(0, 10) + '.pdf';
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    'attachment; filename="pickup-stickers.pdf"; filename*=UTF-8\'\'' + encodeURIComponent(name)
+  );
+  res.sendFile(out.pdf, (err) => {
+    out.cleanup();
+    if (err) console.error('pickup stickers send failed:', (err && err.message) || err);
+  });
+});
 
 app.post('/api/admin/collections/:id/ready', (req, res) => {
   if (!requireAdmin(req, res)) return;
@@ -5981,6 +6124,7 @@ module.exports.buyerLandedInGroup = buyerLandedInGroup;
 // Which pawn files the generator is handed for a collection (the cutout when we
 // have one, the original otherwise) — exposed so the choice can be asserted
 // directly instead of through a full generation run.
+module.exports.pickupStickerOrders = pickupStickerOrders;
 module.exports.pawnPhotoFiles = pawnPhotoFiles;
 module.exports.pawnPhotoFrames = pawnPhotoFrames;
 module.exports.orderArgs = orderArgs;
