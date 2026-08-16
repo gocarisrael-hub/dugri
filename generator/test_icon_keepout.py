@@ -508,3 +508,82 @@ def test_the_clear_air_is_added_to_the_pieces_too():
     grown = rp._grown(icon, 2)
     assert rp._obstacle_left(grown, (2, 8), right=100) == 12     # 10 + the air
     assert rp._obstacle_left(grown, (14, 18), right=100) == 32   # 30 + the air
+
+
+# ---- the title's box: narrow first, band only when narrowing is worse -------
+
+def test_an_icon_clipping_the_edge_narrows_the_box_instead_of_collapsing_it():
+    # קליפורניה card 7, to the point: the rubik cube starts at x=139.3 and the
+    # title box ends at 139.7 — four tenths of a point of overlap, at the very
+    # edge. Banding on that left a 3.7pt strip, which printed the title either
+    # ON the cube (when the fit gave up and used the whole box) or at 1.5mm tall
+    # (once the box began to bind). Narrowing costs those four tenths.
+    import render_page as rp
+    box = {"x0": 39.0, "y0": 42.4, "x1": 139.7, "y1": 84.4}
+    icon = (139.3, 38.1, 189.1, 80.7)
+    out = rp.title_box_clear_of(dict(box), [icon])
+    assert out["y1"] - out["y0"] == box["y1"] - box["y0"], "the height must survive"
+    assert out["x1"] <= icon[0] + 1e-9, "and it must stop at the icon"
+    assert out["x1"] - out["x0"] > 0.9 * (box["x1"] - box["x0"])
+
+
+def test_an_icon_lying_across_the_box_still_bands():
+    # The other shape of the problem, where narrowing has nothing to offer: an
+    # icon spanning the full width leaves no column, so the tallest free strip is
+    # the only answer.
+    import render_page as rp
+    box = {"x0": 10.0, "y0": 10.0, "x1": 110.0, "y1": 60.0}
+    icon = (0.0, 20.0, 200.0, 30.0)          # right across it
+    out = rp.title_box_clear_of(dict(box), [icon])
+    assert out["x0"] == box["x0"] and out["x1"] == box["x1"]
+    assert (out["y0"], out["y1"]) == (30.0, 60.0), out   # the taller strip below
+
+
+def test_a_box_an_icon_buries_is_returned_untouched():
+    # Nothing free either way. A title squeezed to nothing is not better than a
+    # title over an icon, and the owner should SEE that the box is buried.
+    import render_page as rp
+    box = {"x0": 10.0, "y0": 10.0, "x1": 110.0, "y1": 60.0}
+    icon = (0.0, 0.0, 200.0, 200.0)
+    assert rp.title_box_clear_of(dict(box), [icon]) == box
+
+
+def test_a_decoration_half_off_the_card_is_judged_on_the_half_that_prints():
+    # The artwork sits on a bleed, so a decoration at the edge is partly trimmed
+    # away. The part that survives is under the card's own face and therefore
+    # invisible — but the WHOLE rect was not contained by that face, so the burial
+    # test kept it and the words and title dodged a ghost. Two of those cost
+    # מרקאנה and קליפורניה a third of their title size. Clipping to the printed
+    # frame FIRST is what lets the existing burial test see it.
+    import render_page as rp
+    card = [0, 0, 224, 312]
+    svg = ('<svg viewBox="0 0 224 312">'
+           '<rect x="0" y="0" width="224" height="312" fill="#0033aa"/>'
+           '<rect x="-16" y="120" width="60" height="60" fill="#333"/>'   # straddles the trim
+           '<rect x="24" y="22" width="176" height="266" rx="10" fill="#cfe8ff"/>'
+           '<rect x="24" y="22" width="176" height="266" rx="10" fill="none" '
+           'stroke="#c00" stroke-width="2"/>'
+           '<rect x="130" y="50" width="40" height="40" fill="#333"/>'    # a real icon, on the face
+           '</svg>')
+    rp._OBSTACLES.clear()
+    rects = rp.card_obstacle_rects("t-clip", 1, svg, card)
+    assert len(rects) == 1, [list(r[:4]) for r in rects]
+    x0, y0, x1, y1 = rects[0][:4]
+    assert (x0, y0, x1, y1) == (130, 50, 170, 90), rects
+
+
+def test_an_icon_fully_on_the_card_is_still_reserved():
+    # The clip must not become a licence to ignore artwork: an icon that prints
+    # is an obstacle wherever it sits.
+    import render_page as rp
+    card = [0, 0, 224, 312]
+    svg = ('<svg viewBox="0 0 224 312">'
+           '<rect x="24" y="22" width="176" height="266" rx="10" fill="#cfe8ff"/>'
+           '<rect x="24" y="22" width="176" height="266" rx="10" fill="none" '
+           'stroke="#c00" stroke-width="2"/>'
+           '<rect x="40" y="40" width="40" height="40" fill="#333"/>'
+           '<rect x="150" y="240" width="30" height="30" fill="#333"/>'
+           '</svg>')
+    rp._OBSTACLES.clear()
+    rects = rp.card_obstacle_rects("t-keep", 1, svg, card)
+    assert len(rects) == 2, [list(r[:4]) for r in rects]

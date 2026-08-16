@@ -1715,6 +1715,25 @@ def card_obstacles(svg_text, cell):
                 and box[3] - box[1] >= _OBSTACLE_SPAN * h)
 
     small = min(w, h)
+    # THE CARD IS SMALLER THAN THE FILE. The artwork sits on a bleed, so a
+    # decoration at the edge is partly cut away — and the part that survives is
+    # the only part anything can collide with. Clipping to the printed frame here,
+    # BEFORE the burial test below, is what makes that test work at the edge: a
+    # ball half off the card is not contained by the card's own face and so
+    # survived as an obstacle, even though the half that prints is under the face
+    # and invisible. Two of those cost קליפורניה and מרקאנה a third of their title.
+    # An unmeasurable frame changes nothing (clip = the cell, as before).
+    try:
+        import card_frame
+        drawn = card_frame.frame(svg_text, cell)
+    except Exception:                                    # noqa: BLE001 - never fatal
+        drawn = None
+    printed = cell
+    if drawn:
+        printed = _intersect(cell, (drawn["x"], drawn["y"],
+                                    drawn["x"] + drawn["w"], drawn["y"] + drawn["h"]))
+        if printed[2] - printed[0] <= 0 or printed[3] - printed[1] <= 0:
+            printed = cell
     painted, unreadable = [], 0
     for shape in svg_shapes(svg_text):
         if not _paints(shape):
@@ -1722,7 +1741,7 @@ def card_obstacles(svg_text, cell):
         if shape.box is None:
             unreadable += 1
             continue
-        box = _intersect(_intersect(shape.box, shape.clip), cell)
+        box = _intersect(_intersect(shape.box, shape.clip), printed)
         if box[2] - box[0] <= 0 or box[3] - box[1] <= 0:
             continue              # clipped away, or on another card of the sheet
         opaque = _opaque(shape)
@@ -3650,11 +3669,18 @@ def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False
 
 # How far a title's real glyph ink may overrun its calibrated box height before we
 # stop trusting the original ``old_cap`` size and shrink to the metric ink-fit.
-# The recipe title boxes are approximate regions (the origin's own ink/outline
-# overrun them by ~10%), so anything up to this tolerance keeps the origin-matching
-# size; only a genuine display face whose ink is FAR taller (japanese-class,
-# ~2x) crosses it and gets shrunk to fit. (Finding #1.)
-_TITLE_OVERFLOW_TOL = float(os.environ.get("DUGRI_TITLE_OVERFLOW_TOL", "0.25"))
+#
+# ZERO, by the owner's decision: "make the box exact". It was 0.25 — the recipe
+# title boxes are approximate regions and the ORIGIN's own ink overran them by
+# ~10%, so a tolerance kept every shipped deck matching the design it was traced
+# from. The cost was that the box drew one rectangle and the press printed
+# another: measured over the 59 live cards, 41 of them painted outside their box,
+# typically 2mm and up to 10mm. A box that is not a boundary cannot be used to
+# decide anything, which is what the owner was trying to do with it.
+#
+# So the box binds now, and a title that would overrun it is set smaller. Titles
+# on existing designs come down by up to ~20% where they were height-bound.
+_TITLE_OVERFLOW_TOL = float(os.environ.get("DUGRI_TITLE_OVERFLOW_TOL", "0"))
 
 
 # ---- the title path, and the letters that fall off the end of it ------------
@@ -4001,7 +4027,15 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     old_cap = bh / (max(0.80, pitch) * n) * 1.02
     size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
     denom_w = max(ratios)
-    size = min(bw * 0.89 / denom_w, size_h) if denom_w > 0 else size_h
+    # WIDTH, with the paint counted. 0.89 is the side margin the box has always
+    # kept; the second term is the ring itself, which is painted OUTSIDE the
+    # glyph advance (``title_paint_grow`` is the spread per unit of size, at each
+    # edge) and therefore has to come out of the same width or the box binds the
+    # letters while the ring hangs over the artwork.
+    if denom_w > 0:
+        size = min(bw * 0.89 / denom_w, bw / (denom_w + 2 * paint_grow), size_h)
+    else:
+        size = size_h
     # A theme may pin the title to an EXACT size (the Canva point size, in the
     # recipe's user units) instead of auto-fitting to the box — the box then only
     # positions (centres) the title. Used where auto-fit over/under-shoots.
@@ -4028,7 +4062,14 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         # untouched and only genuine overflow is reined in.
         size = fixed_size
         if denom_w > 0:
-            size = min(size, bw * 0.89 / denom_w * (1 + _TITLE_OVERFLOW_TOL))
+            size = min(size, bw * 0.89 / denom_w * (1 + _TITLE_OVERFLOW_TOL),
+                       bw / (denom_w + 2 * paint_grow))
+        # ...and the box binds a pin VERTICALLY too. It never used to: a pinned
+        # theme skipped the height fit entirely, so bachelorette's pin printed a
+        # title up to 36% taller than the rectangle it was supposedly placed in.
+        # A pin is the origin's number for the origin's own title; the box is the
+        # promise made to whoever is looking at it.
+        size = min(size, size_h)
     gap = size * pitch
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
@@ -4219,9 +4260,10 @@ def title_box_clear_of(tbox, obstacles, right=None):
     card whose title crossed a rubik's cube.
 
     So the box is trimmed before the title is fitted into it, and only ever
-    trimmed: the tallest horizontal band of the box that no icon crosses, then
-    narrowed on the left by how far the icons in that band actually reach (their
-    PIECES, not their bounding rectangle — see ``Obstacle``).
+    trimmed — by whichever of two moves leaves more paper: NARROWING it to the
+    widest column no icon stands in, or BANDING it to the tallest strip no icon
+    crosses (then pushed in from the left by the icons' real reach at that
+    height — their PIECES, not their bounding rectangle, see ``Obstacle``).
 
     A box with nothing free is returned UNCHANGED. That is deliberate: a title
     squeezed to nothing is not better than a title over an icon, and a template
@@ -4235,30 +4277,57 @@ def title_box_clear_of(tbox, obstacles, right=None):
             and o[1] < tbox["y1"] and tbox["y0"] < o[3]]
     if not hits:
         return tbox
-    # The bands the icons leave: between the box top and the first icon, between
-    # icons, and below the last. The tallest one wins.
-    edges = [tbox["y0"]]
+    # TWO WAYS to get out of an icon's way, and the bigger one wins.
+    #
+    # Banding alone — the tallest horizontal strip no icon crosses — is right
+    # when an icon lies ACROSS the box, and catastrophic when one merely clips a
+    # corner: קליפורניה's rubik cube overlapped a title box by four tenths of a
+    # point at the edge and the band that survived was 3.7pt tall, which is not a
+    # title. Narrowing is right in that case and useless when the icon spans the
+    # width. So both are measured and the larger area is taken; on a tie the
+    # taller one wins, because a title is fitted by height first.
+    x0, x1, y0, y1 = tbox["x0"], tbox["x1"], tbox["y0"], tbox["y1"]
+
+    # (a) FULL HEIGHT, narrowed: the widest column of the box no icon occupies.
+    cuts = sorted((max(x0, o[0]), min(x1, o[2])) for o in hits)
+    free, edge = [], x0
+    for a, b in cuts:
+        if a > edge:
+            free.append((edge, a))
+        edge = max(edge, b)
+    if edge < x1:
+        free.append((edge, x1))
+    narrow = None
+    if free:
+        a, b = max(free, key=lambda f: f[1] - f[0])
+        narrow = {"x0": a, "x1": b, "y0": y0, "y1": y1}
+
+    # (b) FULL WIDTH, banded: the tallest strip between the icons.
+    edges = [y0]
     for o in sorted(hits, key=lambda o: o[1]):
-        edges += [max(tbox["y0"], o[1]), min(tbox["y1"], o[3])]
-    edges.append(tbox["y1"])
-    bands = []
-    for i in range(0, len(edges) - 1, 2):
-        top, bottom = edges[i], edges[i + 1]
-        if bottom - top > 0:
-            bands.append((top, bottom))
-    if not bands:
+        edges += [max(y0, o[1]), min(y1, o[3])]
+    edges.append(y1)
+    bands = [(edges[i], edges[i + 1]) for i in range(0, len(edges) - 1, 2)
+             if edges[i + 1] - edges[i] > 0]
+    band = None
+    if bands:
+        top, bottom = max(bands, key=lambda b: b[1] - b[0])
+        band = {"x0": x0, "x1": x1, "y0": top, "y1": bottom}
+        # …and the icons still beside that band push the box in from the left, by
+        # their real reach at that height.
+        edge_x = _obstacle_left(obstacles, (top, bottom),
+                                right if right is not None else x1)
+        if edge_x is not None and x0 < edge_x < x1:
+            band["x0"] = edge_x
+
+    def area(b):
+        return (b["x1"] - b["x0"]) * (b["y1"] - b["y0"]) if b else 0
+
+    out = max((c for c in (narrow, band) if c),
+              key=lambda c: (area(c), c["y1"] - c["y0"]), default=None)
+    if not out or out["x1"] - out["x0"] <= 0 or out["y1"] - out["y0"] <= 0:
         return tbox
-    top, bottom = max(bands, key=lambda b: b[1] - b[0])
-    out = dict(tbox)
-    out["y0"], out["y1"] = top, bottom
-    # …and the icons still beside that band push the box in from the left, by
-    # their real reach at that height.
-    edge = _obstacle_left(obstacles, (top, bottom), right if right is not None else tbox["x1"])
-    if edge is not None and tbox["x0"] < edge < tbox["x1"]:
-        out["x0"] = edge
-    if out["x1"] - out["x0"] <= 0 or out["y1"] - out["y0"] <= 0:
-        return tbox
-    return out
+    return dict(tbox, **out)
 
 
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
