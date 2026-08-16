@@ -277,7 +277,8 @@ def _fmt(v):
 
 
 def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
-                  progress=False, workdir=None, press_geom=None, paper=None):
+                  progress=False, workdir=None, press_geom=None, paper=None,
+                  photo_views=None):
     """Assemble the whole deck as a ``(DeckDocument, viewBox_string)`` pair.
 
     Split out from ``build_deck`` so the deck's STRUCTURE — page count, duplex
@@ -353,7 +354,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                                   back_index=i)
                for i in dict.fromkeys(backs)}
     photo_paths = resolve_photos(
-        theme, photos,
+        theme, photos, views=photo_views,
         workdir=os.path.join(workdir, "photos") if workdir else None)
     for n, card in enumerate(cards, 1):
         # Resolve this card's FRONT before emitting anything: with per-front backs
@@ -390,7 +391,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
                workdir="/tmp/gen/deck", progress=True, chasers=False,
                custom_title=None, photos=None, press_icc=None, press_bleed=None,
-               press_cmyk=True, gender=None):
+               press_cmyk=True, gender=None, photo_views=None):
     """Assemble a v2 order: the card deck PDF + the board PDF.
 
     Returns ``(out_pdf, page_count, board_pdf)``. The deck is
@@ -399,6 +400,9 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
 
     ``photos`` are absolute paths to the customer's pawn photos for the final
     card; short/empty is topped up from the theme's generic fallback set.
+    ``photo_views`` optionally carries the framing the BUYER set for each of
+    them, one entry per photo (see :func:`apply_photo_view`); ``None`` entries —
+    and an absent list — leave the automatic framing in charge.
     ``gender`` ('male'/'female'/None) resolves the title's {feminine|masculine}
     markers (config.resolve_gender_markers); a title without one is unaffected.
     """
@@ -450,7 +454,8 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     # matches the deck it ships in. One render, cached on the front's content
     # (docs/photo-card.md); an unmeasurable front leaves the card as shipped.
     doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
-                             photos=photos, progress=progress, workdir=workdir,
+                             photos=photos, photo_views=photo_views,
+                             progress=progress, workdir=workdir,
                              press_geom=geom,
                              paper=card_paper.front_paper(theme, workdir=workdir))
     print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="deck")
@@ -800,7 +805,57 @@ def subject_window(box, disc_fill=None, alpha=None):
             int(round(left + side)), int(round(top + side)))
 
 
-def square_photo(path, workdir, index=0):
+def parse_photo_view(text):
+    """``"zoom,dx,dy"`` from the CLI as a ``(zoom, dx, dy)`` tuple, or ``None``.
+
+    Anything unparseable is ``None`` — the automatic framing then stands, which
+    is the behaviour every order had before the buyer could move her photos.
+    Bounds mirror site/js/pawn-frame.js (and the store's own clamp): the slider
+    that produces these cannot leave them, and a hand-made value must not either.
+    """
+    if not text:
+        return None
+    parts = str(text).split(",")
+    if len(parts) != 3:
+        return None
+    try:
+        zoom, dx, dy = (float(p) for p in parts)
+    except ValueError:
+        return None
+    zoom = min(2.5, max(0.5, zoom))
+    dx = min(1.0, max(-1.0, dx))
+    dy = min(1.0, max(-1.0, dy))
+    if (zoom, dx, dy) == (1.0, 0.0, 0.0):
+        return None
+    return (zoom, dx, dy)
+
+
+def apply_photo_view(crop, view):
+    """``crop`` moved and scaled the way the BUYER placed this photo.
+
+    The window is what moves, not the picture: ``zoom`` above 1 shrinks the
+    window (closer in), and ``dx``/``dy`` slide it across the source in units of
+    the window's OWN side, so the same numbers mean the same thing on a 900px
+    photo and a 4000px one. site/js/pawn-frame.js applyView is the identical
+    transform expressed in percent-of-slot, which is why what she lines up on her
+    phone is what the printer cuts.
+
+    Always square, because the slot is: the window's x-side wins, so a rounding
+    difference between the two axes cannot stretch the face.
+    """
+    if not view:
+        return crop
+    zoom, dx, dy = view
+    x0, y0, x1, y1 = crop
+    side = float(x1 - x0)
+    new = side / zoom
+    cx = (x0 + x1) / 2.0 + dx * side
+    cy = (y0 + y1) / 2.0 + dy * side
+    return (int(round(cx - new / 2)), int(round(cy - new / 2)),
+            int(round(cx + new / 2)), int(round(cy + new / 2)))
+
+
+def square_photo(path, workdir, index=0, view=None):
     """A square copy of a customer photo, framed on the subject.
 
     With a cutout (the normal case — the wizard cuts the background out on the
@@ -863,6 +918,13 @@ def square_photo(path, workdir, index=0):
                     # Landscape: people are usually centred left-to-right.
                     left = (w - side) // 2
                     crop = (left, 0, left + side, side)
+            # …and then the buyer's own adjustment, if she made one. Applied to
+            # whichever square the rules above chose, so "move it a bit left" is
+            # relative to a frame she was already looking at rather than to the
+            # raw photo. Everything downstream — the resize, the disc clip — runs
+            # exactly as before, which is why she can push the subject past the
+            # circle if she wants to and it comes out cropped rather than broken.
+            crop = apply_photo_view(crop, view)
             # Cropping PAST the edge of the photo is intended when the subject
             # runs off it: Pillow pads with zeros, which on RGBA is transparent —
             # the sticker simply has empty space there.
@@ -896,18 +958,28 @@ def square_photo(path, workdir, index=0):
         return path
 
 
-def resolve_photos(theme, photos, workdir=None):
+def resolve_photos(theme, photos, workdir=None, views=None):
     """The four photo-card images: the customer's, topped up from the fallbacks.
 
     A customer who uploaded nothing gets the generic Dugri set; one who uploaded
     two gets those two plus two generics, so the card is never half-empty. Paths
     that do not exist are dropped rather than rendered as a broken image.
+
+    ``views`` is the buyer's own framing, one entry per entry of ``photos`` (see
+    :func:`apply_photo_view`); ``None`` anywhere in it means "frame this one
+    automatically". A photo dropped for not existing takes its view with it, so
+    the two lists cannot slide against each other and put one face's framing on
+    another's.
     """
     # Only the CUSTOMER's photos are squared; the shipped pawns are already
     # square sticker art and re-encoding them would only lose quality.
-    given = [p for p in (photos or []) if p and os.path.isfile(p)]
+    views = list(views or [])
+    pairs = [(p, views[i] if i < len(views) else None)
+             for i, p in enumerate(photos or []) if p and os.path.isfile(p)]
+    given = [p for p, _ in pairs]
     if workdir:
-        given = [square_photo(p, workdir, i) for i, p in enumerate(given)]
+        given = [square_photo(p, workdir, i, view=v)
+                 for i, (p, v) in enumerate(pairs)]
     out = list(given)
     if len(out) >= 4:
         return out[:4]

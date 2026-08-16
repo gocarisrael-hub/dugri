@@ -120,17 +120,29 @@
         gap: 2px;
         margin: 10px 0 4px;
         border-bottom: 1px solid var(--line);
+        /* Five tabs do not fit across a small phone at a readable size, and the
+           two ways out of that are both worse: shrinking the type until the last
+           tab is unreadable, or wrapping the strip onto a second line, which
+           stops reading as one control. So it SCROLLS — the buttons keep their
+           own width (flex-basis 0 with no shrink, so they still share the row
+           evenly when there IS room) and showTab scrolls the current one into
+           view, which means the strip is never parked on a tab you cannot see. */
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+      .tabbar::-webkit-scrollbar {
+        display: none;
       }
       .tabbar-btn {
-        flex: 1;
+        flex: 1 0 auto;
         background: none;
         border: 0;
         border-radius: 0;
         box-shadow: none;
         border-bottom: 2px solid transparent;
-        padding: 11px 4px;
+        padding: 11px 6px;
         font: inherit;
-        font-size: 15px;
+        font-size: 14px;
         color: var(--muted);
         cursor: pointer;
         white-space: nowrap;
@@ -690,6 +702,14 @@
            to full width. */
         max-height: 42vh;
         width: auto;
+        max-width: 100%;
+        /* CENTRED, by margins rather than by align-self. The panel around this is
+           a plain block .card, so `align-self` — a FLEX-ITEM property — was never
+           doing anything: sized from its height, the box came out narrower than
+           the card and sat flush against the inline start, which in RTL is the
+           right-hand edge. Auto margins centre a block box whatever decided its
+           width, and are a no-op in the case where it fills the line anyway. */
+        margin-inline: auto;
         align-self: center;
         background: var(--section);
         border: 1px solid var(--line);
@@ -784,26 +804,171 @@
          four sit side by side on the narrowest phone (4 × 68 + gaps < 320). Each
          one opens full-size on tap, because "let me see what I sent" is half of
          why this card exists. */
+      /* ONE ROW PER PHOTO, not a strip of thumbs. Each row is the pawn itself —
+         the circle the card cuts, at the framing the printer uses — plus the two
+         decisions she can make about it: how it sits, and whether it keeps its
+         background. A wrapped grid of 68px squares had no room for either. */
       .pawn-strip {
         display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
+        flex-direction: column;
+        gap: 14px;
         margin-top: 12px;
       }
       .pawn-cell {
         position: relative;
-        width: 68px;
-        height: 68px;
-        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 14px;
       }
-      .pawn-cell img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        border: 1px solid var(--line);
-        background: var(--section);
-        cursor: zoom-in;
+      /* THE PAWN. The card's own paper behind it, the dashed line she cuts along,
+         and the photo clipped to the disc INSIDE that line — the same 90% of the
+         square that build._disc_mask cuts. The wizard's slot clips to its square
+         instead, which it can afford to: there, the framing rule guarantees the
+         subject is inside the circle already. Here she can push it past the edge
+         on purpose, so the preview has to cut where the printer cuts or it would
+         be showing her ink that never reaches the card. */
+      .pawn-pad {
+        position: relative;
+        width: 116px;
+        height: 116px;
+        flex: 0 0 auto;
+        background: var(--pawn-card, #f2cbd6);
+        touch-action: none;
+        cursor: grab;
+        overflow: hidden;
+      }
+      .pawn-pad:active {
+        cursor: grabbing;
+      }
+      .pawn-disc {
+        position: absolute;
+        inset: 5%;
+        border-radius: 50%;
+        overflow: hidden;
+      }
+      .pawn-disc img {
+        position: absolute;
         display: block;
+        /* Every offset pawn-frame.js answers with is a percentage of the SLOT
+           (the padded square), never of this disc — and the disc is 90% of the
+           slot, so placePawn() rescales them against a box 100/90 its size.
+           LEFT/TOP, deliberately physical: the drag reads clientX, which grows
+           rightwards in RTL too, and inset-inline-start would flip one of the two
+           and not the other. */
+        object-fit: contain;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-drag: none;
+      }
+      /* The white sticker ring, approximated by stacked shadows exactly as the
+         wizard's slot approximates it (the card gets a real feMorphology dilate). */
+      .pawn-disc.is-cut img {
+        filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 1.5px #fff);
+      }
+      .pawn-cut-line {
+        position: absolute;
+        inset: 5%;
+        border: 1.5px dashed rgba(20, 20, 20, 0.32);
+        border-radius: 50%;
+        pointer-events: none;
+      }
+      .pawn-ctl {
+        flex: 1 1 auto;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .pawn-ctl-hint {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .pawn-zoom {
+        width: 100%;
+        margin: 0;
+        accent-color: var(--ink);
+      }
+      /* Background on / off. A segmented pair rather than a checkbox: "with" and
+         "without" are two pictures, and naming both is how she knows there is a
+         choice at all. */
+      .pawn-bg {
+        display: flex;
+        gap: 0;
+      }
+      .pawn-bg button {
+        flex: 1;
+        padding: 6px 4px;
+        font: inherit;
+        font-size: 13px;
+        background: var(--surface);
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 0;
+        box-shadow: none;
+        cursor: pointer;
+      }
+      .pawn-bg button + button {
+        border-inline-start: 0;
+      }
+      .pawn-bg button.on {
+        background: var(--ink);
+        color: #fff;
+        border-color: var(--ink);
+      }
+      .pawn-bg button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .pawn-row-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .pawn-mini {
+        background: none;
+        border: 0;
+        box-shadow: 0 0 0 1px var(--line) inset;
+        border-radius: 0;
+        padding: 5px 9px;
+        font: inherit;
+        font-size: 12px;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .pawn-mini:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      /* THE SIGN-OFF ROWS. Each is one decision, its current answer, and the way
+         back to the tab that owns it — a label/value/action line rather than a
+         card, because three cards would bury the button underneath them. */
+      .finish-step {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .finish-h {
+        flex: 0 0 auto;
+        font-weight: 600;
+      }
+      .finish-val {
+        flex: 1 1 auto;
+        min-width: 0;
+        color: var(--muted);
+        font-size: 14px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* "This is what prints." Said once, under the card, because the card above
+         it is not a mock-up of the deck — it IS the page the deck carries. */
+      .pawn-final {
+        text-align: center;
+        font-size: 13px;
+        color: var(--muted);
+        margin: 8px 0 0;
       }
       /* The remove control sits ON the photo, at the corner the thumb's own
          content is least likely to matter (a face is centred). Big enough to hit
@@ -824,11 +989,11 @@
         border: 2px solid var(--surface);
         cursor: pointer;
       }
-      /* The add slot reads as an empty frame, not a button: it is the same square
-         as a photo so the row keeps its rhythm as photos come and go. */
+      /* The add slot reads as an empty frame, not a button — a dashed row under
+         the pawns, the width of the ones it will become. */
       .pawn-add {
-        width: 68px;
-        height: 68px;
+        width: 100%;
+        height: 54px;
         flex: 0 0 auto;
         display: flex;
         align-items: center;
@@ -1699,6 +1864,19 @@
         <button type="button" role="tab" class="tabbar-btn" data-tab="pay" data-testid="tab-pay">
           תשלום
         </button>
+        <!-- THE LAST TAB, and the only one with an ending in it. Everything before
+             it is a thing she can change; this is where she looks at what she
+             changed, decides which words fill the rest of the deck, and says go.
+             Last in the strip because production is last in the order. -->
+        <button
+          type="button"
+          role="tab"
+          class="tabbar-btn"
+          data-tab="finish"
+          data-testid="tab-finish"
+        >
+          שליחה לייצור
+        </button>
       </nav>
 
       <!-- THE DESIGN TAB. The card as it will print, and the title under it —
@@ -1730,7 +1908,7 @@
                  from the admin. -->
           <textarea id="titleInput" rows="2" maxlength="63" data-testid="title-input"></textarea>
           <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
-            >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י · השאירו ריק לכותרת ברירת המחדל</small
+            >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י</small
           >
           <div class="sheet-err hidden" id="titleErr" role="alert" data-testid="title-err"></div>
           <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">
@@ -1757,14 +1935,71 @@
             >לא הצלחנו להציג את הקלף כרגע</span
           >
         </div>
+        <p class="pawn-final" data-edit="collect-pawn-final-note" data-testid="pawn-final-note">
+          זו התוצאה הסופית - בדיוק ככה הקלף יודפס וייצא אליכם.
+        </p>
 
         <div class="sheet-fld">
           <span class="fld" data-edit="collect-sheet-photos-label">התמונות שלכם (עד 4)</span>
+          <small class="muted" data-edit="collect-sheet-photos-hint"
+            >גררו את התמונה בתוך העיגול כדי להזיז אותה, והזיזו את המחוון כדי להגדיל או להקטין. אפשר
+            גם לבחור אם להשאיר את הרקע.</small
+          >
           <div class="pawn-strip" id="pawnStrip" data-testid="pawn-strip"></div>
           <small class="muted hidden" id="pawnNone" data-edit="collect-sheet-photos-none"
             >לא שלחתם תמונות - נדפיס את החיילים הרגילים של דוגרי.</small
           >
           <div class="pawn-err hidden" id="pawnErr" role="alert"></div>
+        </div>
+      </section>
+
+      <!-- THE LAST TAB: look at it, then send it.
+           Everything the buyer can still change lives on a tab of its own, which
+           is right while she is changing it and wrong at the end — at the end the
+           question is not "what would I like to edit?" but "is this the game I
+           want printed?". So this repeats the two things she chose (the title,
+           the pawns) as ANSWERS rather than as fields, asks the one question
+           nothing else asks (which words fill the rest of the deck), and carries
+           the button that starts production. The two review rows link back to the
+           tab that owns each thing — this panel never edits anything itself, so
+           there is exactly one place each decision is made. -->
+      <section class="card owner-only hidden" data-panel="finish" id="finishPanel" hidden>
+        <div class="sec-h" data-edit="collect-finish-heading">שליחה לייצור וסיום</div>
+        <p class="muted" data-edit="collect-finish-hint">
+          רגע לפני שמתחילים להפיק - עברו על שלושת הדברים האלה. אחרי השליחה לייצור כבר אי אפשר לשנות.
+        </p>
+        <div class="finish-step" data-testid="finish-title">
+          <b class="finish-h" data-edit="collect-finish-title-h">1. הכותרת שתודפס</b>
+          <span class="finish-val" id="finishTitle" data-testid="finish-title-val"></span>
+          <button class="pawn-mini" type="button" data-goto="design" data-testid="finish-go-design">
+            לעריכה
+          </button>
+        </div>
+        <div class="finish-step" data-testid="finish-pawns">
+          <b class="finish-h" data-edit="collect-finish-pawns-h">2. חיילי המשחק</b>
+          <span class="finish-val" id="finishPawns" data-testid="finish-pawns-val"></span>
+          <button class="pawn-mini" type="button" data-goto="pawns" data-testid="finish-go-pawns">
+            לעריכה
+          </button>
+        </div>
+        <!-- WHICH WORDS WE ADD. A full deck is 412 words and almost nobody writes
+             that many, so most of the deck is filler — and this is the only place
+             she is asked what KIND. Hidden entirely until the owner has built the
+             menu in admin-wordlists: an empty chooser would advertise a choice
+             that does not exist. It used to sit beside the collected words; it is
+             a decision about the finished game, so it belongs with the rest of
+             them, in the tab she signs off from. -->
+        <div class="sheet-fld hidden" id="poolFld" data-testid="pool-field">
+          <span class="fld" data-edit="collect-sheet-pool-label">3. איזה סגנון נשלים לכם?</span>
+          <!-- The old copy explained the ORDER of the words ("yours always go in
+               first"), which is a fact about our packing and not a question she
+               was being asked. What she wants to know here is that she is done
+               once she picks: the rest happens without her. -->
+          <small class="muted" data-edit="collect-sheet-pool-hint"
+            >מכאן זה אוטומטי - נשלים לבד את החפיסה עד 412 מילים, מהסגנון שתבחרו.</small
+          >
+          <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
+          <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
         </div>
       </section>
 
@@ -1898,25 +2133,6 @@
            words and above the help card: the moment the owner sees words landing
            is the moment she wants to invite more people. A single link only — the
            private management link lives collapsed at the bottom of this card. -->
-      <!-- Which words fill the rest of the deck is a question about WORDS, so it
-           belongs beside them rather than beside the artwork. -->
-      <section class="card owner-only hidden" data-panel="words" id="poolPanel" hidden>
-        <!-- WHICH WORDS WE ADD. Her own words come first and always print; this
-               says what the REST of the deck is about, since a full deck is 412
-               and almost nobody writes that many. Hidden entirely until the owner
-               has built the menu in admin-wordlists — an empty chooser would
-               advertise a choice that does not exist. -->
-        <div class="sheet-fld hidden" id="poolFld" data-testid="pool-field">
-          <span class="fld" data-edit="collect-sheet-pool-label">איזה סגנון נשלים לכם?</span>
-          <small class="muted" data-edit="collect-sheet-pool-hint"
-            >המילים שלכם תמיד נכנסות ראשונות. את השאר, עד 412 מילים בחפיסה מלאה, נשלים מהסגנון
-            שתבחרו.</small
-          >
-          <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
-          <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
-        </div>
-      </section>
-
       <div class="card share hidden" data-panel="words" id="sharePanel">
         <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
         <p class="muted" data-edit="collect-share-hint">
@@ -2075,7 +2291,7 @@
            blocks (top card, sticky bar, checkout panel), which are the only
            filled-black elements on the page — hence the outline here. -->
       <!-- owner / closing controls -->
-      <div class="card owner-only hidden" data-panel="words" id="ownerControls">
+      <div class="card owner-only hidden" data-panel="finish" id="ownerControls">
         <div class="sec-h" data-edit="collect-owner-heading">ניהול האיסוף</div>
         <p class="muted" data-edit="collect-owner-hint">
           סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.
@@ -2436,6 +2652,20 @@
       } from './js/niqqud.js';
       import { track } from './js/analytics.js';
       import { fetchPricing, applySale, PRICING_FALLBACK } from './js/pricing.js';
+      // The pawn geometry, shared with the wizard and mirrored in the generator:
+      // where a subject sits inside the printed circle, and how the buyer's own
+      // adjustment moves it. Static (a few hundred bytes) unlike the CUTTER,
+      // which is 18MB of model and is only imported when a photo needs cutting.
+      import {
+        frameFromBlob,
+        plainFrame,
+        applyView,
+        clampView,
+        VIEW_DEFAULT,
+        ZOOM_MIN,
+        ZOOM_MAX,
+        DISC_FILL,
+      } from './js/pawn-frame.js';
 
       const params = new URLSearchParams(location.search);
       const id = params.get('c');
@@ -2547,10 +2777,15 @@
       function pawnList() {
         return Array.isArray(state && state.pawn_images) ? state.pawn_images : [];
       }
+      // The photo card's one error line. The CLASS has to come off as well as the
+      // `hidden` attribute: it is `display: none !important`, so setting the
+      // attribute alone left every message on this card invisible — an upload
+      // that failed simply looked like nothing happened.
       function showPawnErr(msg) {
         const el = $('#pawnErr');
         el.textContent = msg || '';
         el.hidden = !msg;
+        el.classList.toggle('hidden', !msg);
       }
       // Full-size view of one photo. Any tap (or Esc) closes it — see .pawn-view.
       function openPawnView(src) {
@@ -2572,39 +2807,183 @@
         document.addEventListener('keydown', onKey);
         document.body.appendChild(sheet);
       }
+      // WHAT EACH PHOTO LOOKS LIKE ON THE CARD, and what she can do about it.
+      //
+      // `pawn_cutouts` maps each original to its background-removed PNG (or to
+      // null when a cut was tried and missed); `pawn_view` maps it to how she
+      // placed it — zoom, pan, and whether she wants the background kept. Both
+      // are the SERVER's, like the photo list itself, so nothing on screen can
+      // outlive a refused change.
+      function pawnCutouts() {
+        const m = state && state.pawn_cutouts;
+        return m && typeof m === 'object' ? m : {};
+      }
+      function pawnViews() {
+        const m = state && state.pawn_view;
+        return m && typeof m === 'object' ? m : {};
+      }
+      function pawnViewFor(src) {
+        return clampView(pawnViews()[src]);
+      }
+      // The cutout we hold for this photo, or null. `null` in the map is a
+      // recorded MISS (we tried on some device and could not), which is a
+      // different thing from an absent key — but both mean "no cutout to show".
+      function pawnCutFor(src) {
+        return pawnCutouts()[src] || null;
+      }
+      // The file that actually prints: her cutout, unless she asked to keep the
+      // background or we have no cutout at all. Mirrors pawnPhotoFiles on the
+      // server — if these two ever disagree the preview is lying.
+      //
+      // Takes the view EXPLICITLY, because the answer has to change the instant
+      // she taps and the store only catches up when the save lands: reading
+      // `state` here would leave the old picture on screen for a round trip,
+      // which reads as "the button did nothing".
+      function pawnPrintSrcFor(src, view) {
+        const cut = pawnCutFor(src);
+        return !view.bg && cut ? cut : src;
+      }
+
+      // Where the subject sits, measured ONCE per image and cached: the answer
+      // depends on the file alone, and measuring means decoding a photo and
+      // scanning it. A cutout is measured from its alpha (the printer's own
+      // rule); anything opaque falls back to the head-anchored square, which is
+      // the same degraded path build.square_photo takes for it.
+      const pawnFrames = new Map();
+      function naturalSize(src) {
+        return new Promise((resolve, reject) => {
+          const im = new Image();
+          im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+          im.onerror = () => reject(new Error('decode failed'));
+          im.src = src;
+        });
+      }
+      function measureFrame(src, alpha) {
+        const key = (alpha ? 'a:' : 'p:') + src;
+        if (!pawnFrames.has(key)) {
+          pawnFrames.set(
+            key,
+            (async () => {
+              try {
+                if (alpha) {
+                  const blob = await fetch(src).then((r) => r.blob());
+                  const f = await frameFromBlob(blob);
+                  if (f) return f;
+                }
+                const size = await naturalSize(src);
+                return plainFrame(size.w, size.h);
+              } catch (e) {
+                return null; // unmeasurable: the slot shows the photo as it is
+              }
+            })()
+          );
+        }
+        return pawnFrames.get(key);
+      }
+
+      // Put one image where the printer will put it. pawn-frame.js answers in
+      // percentages of the SLOT; the element these land on is the DISC, which is
+      // DISC_FILL of the slot, so every number is rebased onto it here — once,
+      // rather than in each of the three callers.
+      const DISC_INSET = (100 - 100 * DISC_FILL) / 2;
+      function placePawn(img, frame, view) {
+        if (!frame) {
+          // Nothing to measure. Fill the circle and let it be cropped — the same
+          // "we could not frame this" outcome the wizard's slot shows.
+          img.style.width = '100%';
+          img.style.height = '100%';
+          img.style.left = '0';
+          img.style.top = '0';
+          img.style.objectFit = 'cover';
+          return;
+        }
+        const f = applyView(frame, view);
+        const k = 1 / DISC_FILL;
+        img.style.objectFit = 'contain';
+        img.style.width = (f.widthPct * k).toFixed(3) + '%';
+        img.style.height = (f.heightPct * k).toFixed(3) + '%';
+        img.style.left = ((f.leftPct - DISC_INSET) * k).toFixed(3) + '%';
+        img.style.top = ((f.topPct - DISC_INSET) * k).toFixed(3) + '%';
+      }
+
+      // Saving is DEBOUNCED and batched by photo: a drag emits a view per pointer
+      // move, and each one is a write plus a re-render of the card. The last one
+      // wins, which is the only one that was ever true.
+      const pawnViewQueue = new Map();
+      let pawnViewTimer = null;
+      function savePawnView(src, view) {
+        pawnViewQueue.set(src, view);
+        clearTimeout(pawnViewTimer);
+        pawnViewTimer = setTimeout(flushPawnViews, 400);
+      }
+      async function flushPawnViews() {
+        const batch = Array.from(pawnViewQueue.entries());
+        pawnViewQueue.clear();
+        let saved = false;
+        for (const [src, view] of batch) {
+          try {
+            const r = await api('/pawn-view?k=' + encodeURIComponent(ownerToken), {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ path: src, ...view }),
+            });
+            state.pawn_view = r.pawn_view;
+            saved = true;
+          } catch (e) {
+            showPawnErr(
+              (e.body && e.body.message) || 'לא הצלחנו לשמור את המיקום של התמונה, נסו שוב'
+            );
+          }
+        }
+        // One re-render for the whole batch: the card is a browser run on the
+        // server, and every view in a drag would otherwise ask for its own.
+        if (saved) renderPawnCard();
+      }
+
+      // Cut this photo's background out ON THIS DEVICE and attach it to the
+      // order. The wizard does this as the photo is picked; this is the same cut
+      // for a photo that is already on the order — one added from this page, or
+      // one whose cut missed on the phone that sent it. Best-effort like every
+      // other cut: a failure leaves the original in place and says so.
+      async function cutExistingPawn(src) {
+        try {
+          const file = await fetch(src).then((r) => r.blob());
+          const mod = await import('./js/pawn-cutout.js');
+          const cut = await mod.cutPawnPhoto(file);
+          if (!cut) return null;
+          const fd = new FormData();
+          fd.append('path', src);
+          fd.append('cut', cut, 'cut.png');
+          const r = await api('/pawn-cut?k=' + encodeURIComponent(ownerToken), {
+            method: 'POST',
+            body: fd,
+          });
+          state.pawn_cutouts = r.pawn_cutouts;
+          return state.pawn_cutouts[src] || null;
+        } catch (e) {
+          return null;
+        }
+      }
+
+      // True while she is dragging or waiting on a cut — the 5s poll must not
+      // rebuild the strip out from under her thumb.
+      let pawnBusy = false;
+      // What the strip was last built from. Rebuilding it on every poll would
+      // re-measure every photo and reset a slider mid-adjustment, so it is only
+      // rebuilt when the ANSWER changed.
+      let pawnSig = null;
+
       function renderPawns() {
         const strip = $('#pawnStrip');
         if (!strip) return;
         const photos = pawnList();
         const open = state.status === 'open';
         $('#pawnNone').classList.toggle('hidden', !(open && !photos.length));
+        const sig = JSON.stringify([photos, pawnCutouts(), pawnViews(), open]);
+        if (pawnBusy || (sig === pawnSig && strip.childElementCount)) return;
+        pawnSig = sig;
         strip.textContent = '';
-        for (const src of photos) {
-          const cell = document.createElement('div');
-          cell.className = 'pawn-cell';
-          const img = document.createElement('img');
-          img.src = src;
-          img.alt = 'תמונה שנשלחה עם ההזמנה';
-          img.setAttribute('data-testid', 'pawn-thumb');
-          img.addEventListener('click', () => openPawnView(src));
-          cell.appendChild(img);
-          if (open) {
-            const x = document.createElement('button');
-            x.type = 'button';
-            x.className = 'pawn-x';
-            x.textContent = '×';
-            x.setAttribute('aria-label', 'הסרת התמונה');
-            x.setAttribute('data-testid', 'pawn-remove');
-            // Confirm first: a photo she took at the party is not re-uploadable
-            // from this page in one tap, and the file itself is gone from her
-            // order the moment the server answers.
-            x.addEventListener('click', () =>
-              openDialog('להסיר את התמונה מההזמנה?', { onOk: () => removePawn(src) })
-            );
-            cell.appendChild(x);
-          }
-          strip.appendChild(cell);
-        }
+        for (const src of photos) strip.appendChild(pawnCell(src, open));
         if (open) {
           const add = document.createElement('button');
           add.type = 'button';
@@ -2619,6 +2998,210 @@
           add.addEventListener('click', () => $('#pawnAddInput').click());
           strip.appendChild(add);
         }
+      }
+
+      // ONE PHOTO'S ROW: the pawn as it prints, and the two things she decides
+      // about it. Everything here draws from `view`, a LOCAL copy — a drag has to
+      // move the picture at 60fps and the server is not in that loop; it is
+      // written back (debounced) and the server's answer is what the next render
+      // reads.
+      function pawnCell(src, open) {
+        const cell = document.createElement('div');
+        cell.className = 'pawn-cell';
+        const pad = document.createElement('div');
+        pad.className = 'pawn-pad';
+        const disc = document.createElement('div');
+        disc.className = 'pawn-disc';
+        const img = document.createElement('img');
+        img.alt = 'תמונה שנשלחה עם ההזמנה';
+        img.draggable = false;
+        img.setAttribute('data-testid', 'pawn-thumb');
+        disc.appendChild(img);
+        const line = document.createElement('span');
+        line.className = 'pawn-cut-line';
+        line.setAttribute('aria-hidden', 'true');
+        pad.appendChild(disc);
+        pad.appendChild(line);
+        cell.appendChild(pad);
+
+        let view = pawnViewFor(src);
+        let frame = null;
+        // Paint from whatever we have, then again once the frame is measured —
+        // the picture appears immediately and settles into its real placement,
+        // rather than the row sitting empty while a photo is decoded.
+        const paint = () => {
+          const printSrc = pawnPrintSrcFor(src, view);
+          const cut = printSrc !== src;
+          disc.classList.toggle('is-cut', cut);
+          if (img.getAttribute('src') !== printSrc) img.src = printSrc;
+          placePawn(img, frame, view);
+        };
+        const remeasure = async () => {
+          const printSrc = pawnPrintSrcFor(src, view);
+          const measured = await measureFrame(printSrc, printSrc !== src);
+          // Another toggle may have landed while this was decoding.
+          if (pawnPrintSrcFor(src, view) !== printSrc) return;
+          frame = measured;
+          paint();
+        };
+        paint();
+        remeasure();
+
+        const ctl = document.createElement('div');
+        ctl.className = 'pawn-ctl';
+        cell.appendChild(ctl);
+
+        // BACKGROUND, ON OR OFF. The card cuts every photo to a circle either
+        // way; what this decides is whether the circle is filled with the person
+        // alone (a die-cut sticker, which is what the deck is drawn for) or with
+        // the photo as it was taken. Some photos ARE the place.
+        const bg = document.createElement('div');
+        bg.className = 'pawn-bg';
+        bg.setAttribute('role', 'group');
+        const mkBg = (label, wantBg, testid) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = label;
+          b.setAttribute('data-testid', testid);
+          b.className = view.bg === wantBg ? 'on' : '';
+          b.disabled = !open;
+          b.addEventListener('click', async () => {
+            if (view.bg === wantBg) return;
+            view = clampView({ ...view, bg: wantBg });
+            for (const other of bg.querySelectorAll('button')) other.classList.remove('on');
+            b.classList.add('on');
+            // Asking for "no background" on a photo we never cut is a request to
+            // cut it NOW, on this device — she has one, and the alternative is
+            // telling her to delete the photo and send it again.
+            if (!wantBg && !pawnCutFor(src)) {
+              pawnBusy = true;
+              hint.textContent = 'מסירים רקע…';
+              hint.hidden = false;
+              const cut = await cutExistingPawn(src);
+              pawnBusy = false;
+              hint.textContent = cut
+                ? ''
+                : 'לא הצלחנו להסיר את הרקע מהתמונה הזו - עדיף תמונת פנים של בן אדם.';
+              hint.hidden = !hint.textContent;
+              if (!cut) {
+                // Nothing to show without a background, so the choice snaps back
+                // rather than leaving a button ticked on a picture that is not
+                // what prints.
+                view = clampView({ ...view, bg: true });
+                for (const other of bg.querySelectorAll('button')) {
+                  other.classList.toggle('on', other === bgOn);
+                }
+              }
+            }
+            savePawnView(src, view);
+            await remeasure();
+            paint();
+          });
+          return b;
+        };
+        const bgOff = mkBg('בלי רקע', false, 'pawn-bg-off');
+        const bgOn = mkBg('עם רקע', true, 'pawn-bg-on');
+        bg.appendChild(bgOff);
+        bg.appendChild(bgOn);
+        ctl.appendChild(bg);
+
+        // HOW BIG. A slider rather than pinch-only: pinch is invisible until you
+        // try it, and half the people who open this page are doing it on a laptop.
+        const zoom = document.createElement('input');
+        zoom.type = 'range';
+        zoom.className = 'pawn-zoom';
+        zoom.min = String(ZOOM_MIN);
+        zoom.max = String(ZOOM_MAX);
+        zoom.step = '0.02';
+        zoom.value = String(view.zoom);
+        zoom.disabled = !open;
+        zoom.setAttribute('aria-label', 'גודל התמונה בעיגול');
+        zoom.setAttribute('data-testid', 'pawn-zoom');
+        zoom.addEventListener('input', () => {
+          view = clampView({ ...view, zoom: Number(zoom.value) });
+          placePawn(img, frame, view);
+          savePawnView(src, view);
+        });
+        ctl.appendChild(zoom);
+
+        const hint = document.createElement('small');
+        hint.className = 'pawn-ctl-hint';
+        hint.hidden = true;
+        ctl.appendChild(hint);
+
+        const actions = document.createElement('div');
+        actions.className = 'pawn-row-actions';
+        const reset = document.createElement('button');
+        reset.type = 'button';
+        reset.className = 'pawn-mini';
+        reset.textContent = 'איפוס מיקום';
+        reset.disabled = !open;
+        reset.setAttribute('data-testid', 'pawn-reset');
+        reset.addEventListener('click', () => {
+          view = clampView({ ...VIEW_DEFAULT, bg: view.bg });
+          zoom.value = String(view.zoom);
+          placePawn(img, frame, view);
+          savePawnView(src, view);
+        });
+        actions.appendChild(reset);
+        ctl.appendChild(actions);
+
+        if (open) {
+          const x = document.createElement('button');
+          x.type = 'button';
+          x.className = 'pawn-x';
+          x.textContent = '×';
+          x.setAttribute('aria-label', 'הסרת התמונה');
+          x.setAttribute('data-testid', 'pawn-remove');
+          // Confirm first: a photo she took at the party is not re-uploadable
+          // from this page in one tap, and the file itself is gone from her
+          // order the moment the server answers.
+          x.addEventListener('click', () =>
+            openDialog('להסיר את התמונה מההזמנה?', { onOk: () => removePawn(src) })
+          );
+          cell.appendChild(x);
+        }
+
+        // DRAG TO MOVE. The window is what moves, not the picture, so the sign
+        // flips: dragging the photo right shows a piece of it further LEFT.
+        // A press that never moved is not a drag — it is the old "let me see the
+        // whole thing" tap, which still opens the photo full size.
+        let drag = null;
+        disc.addEventListener('pointerdown', (e) => {
+          if (state.status !== 'open') return;
+          drag = { id: e.pointerId, x: e.clientX, y: e.clientY, view, moved: 0 };
+          pawnBusy = true;
+          try {
+            disc.setPointerCapture(e.pointerId);
+          } catch (err) {
+            /* a browser that won't capture still gets the moves via bubbling */
+          }
+        });
+        disc.addEventListener('pointermove', (e) => {
+          if (!drag || e.pointerId !== drag.id) return;
+          const slot = disc.getBoundingClientRect().width / DISC_FILL;
+          if (!(slot > 0)) return;
+          const dxPx = e.clientX - drag.x;
+          const dyPx = e.clientY - drag.y;
+          drag.moved = Math.max(drag.moved, Math.hypot(dxPx, dyPx));
+          view = clampView({
+            ...drag.view,
+            dx: drag.view.dx - dxPx / slot / drag.view.zoom,
+            dy: drag.view.dy - dyPx / slot / drag.view.zoom,
+          });
+          placePawn(img, frame, view);
+        });
+        const endDrag = (e) => {
+          if (!drag || (e && e.pointerId !== drag.id)) return;
+          const tapped = drag.moved < 4;
+          drag = null;
+          pawnBusy = false;
+          if (tapped) openPawnView(pawnPrintSrcFor(src, view));
+          else savePawnView(src, view);
+        };
+        disc.addEventListener('pointerup', endDrag);
+        disc.addEventListener('pointercancel', endDrag);
+        return cell;
       }
 
       // ---- the four tabs, and what each of them shows -------------------------
@@ -2721,10 +3304,10 @@
         const box = $('#poolOpts');
         if (!fld || !box) return;
         const opts = Array.isArray(poolOptions) ? poolOptions : [];
-        fld.classList.toggle('hidden', !opts.length);
-        // The panel around it too, or an owner with no menu built gets an empty
-        // card sitting under her words.
-        $('#poolPanel').classList.toggle('hidden', !opts.length || !isOwner);
+        // Hidden when the owner has built no menu — an empty chooser advertises
+        // a choice that does not exist. The panel AROUND it stays, because it is
+        // the sign-off tab and it has two other things to say.
+        fld.classList.toggle('hidden', !opts.length || !isOwner);
         if (!opts.length) return;
         const open = state.status === 'open';
         const picked = poolPick();
@@ -2837,7 +3420,33 @@
         renderPawns();
         loadPoolOptions();
         renderPoolOpts();
+        renderFinish();
       }
+
+      // ---- the sign-off tab ---------------------------------------------------
+      // What she chose, read back as a sentence rather than as a field. This panel
+      // edits nothing: each row links to the tab that owns the thing, so there is
+      // one place per decision and no second copy to drift.
+      function renderFinish() {
+        const title = $('#finishTitle');
+        const pawns = $('#finishPawns');
+        if (!title || !pawns) return;
+        const saved = savedTitle();
+        // The default title is not a blank: it is the one the theme prints, and
+        // saying "כותרת ברירת המחדל" is the honest answer to "what will it say?"
+        // when she never wrote one.
+        title.textContent = saved ? saved.split('\n').join(' · ') : 'כותרת ברירת המחדל של העיצוב';
+        const n = pawnList().length;
+        pawns.textContent = n
+          ? n + (n === 1 ? ' תמונה שלכם' : ' תמונות שלכם') + ' - השאר חיילי דוגרי'
+          : 'בלי תמונות - נדפיס את חיילי דוגרי';
+      }
+      // The two review rows are shortcuts, not editors.
+      (function wireFinishLinks() {
+        for (const btn of document.querySelectorAll('#finishPanel [data-goto]')) {
+          btn.addEventListener('click', () => showTab(btn.dataset.goto));
+        }
+      })();
       async function saveTitle() {
         const btn = $('#titleSaveBtn');
         const err = $('#titleErr');
@@ -2882,11 +3491,22 @@
         for (const el of document.querySelectorAll('[data-panel]')) {
           el.hidden = el.dataset.panel !== name;
         }
+        // Five tabs do not fit across a phone, so the strip scrolls — and a strip
+        // parked on a tab you cannot see is worse than no strip. `nearest` only
+        // moves it when the button is actually off screen.
+        const active = document.querySelector('#tabs .tabbar-btn.on');
+        if (active && active.scrollIntoView) {
+          active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
         // Nothing is redrawing while it is off screen: a preview she cannot see is
         // a Chrome run on the server for nobody.
         if (name !== 'design') clearTimeout(previewTimer);
         if (name === 'design') loadGameTabs();
         if (name === 'pawns') loadPawnCard();
+        // The sign-off tab reads back the title and the photos, so it needs the
+        // same state the other two tabs load — and the photos are shown as a
+        // COUNT here, which the collection payload already carries.
+        if (name === 'finish') renderFinish();
       }
       (function wireTabs() {
         const tabs = document.getElementById('tabs');
@@ -2925,29 +3545,65 @@
         }
       }
       // Upload goes to the SAME route the wizard uses, in the same shape, so the
-      // server has one way to attach a photo. What it does not send is a cutout:
-      // the wizard cuts the background out in the browser before uploading, and a
-      // photo added here arrives uncut — the server records that as "never
-      // attempted", which is the state an older browser produces too, and the
-      // orders table flags it for a manual cut.
+      // server has one way to attach a photo — and now with the same CUTOUT, which
+      // is what it used to be missing. A photo added here arrived uncut, so it
+      // printed with its background inside the circle while every photo sent
+      // through the wizard printed as a die-cut sticker: the same order, two
+      // different-looking pawns, for no reason the buyer could see. Each file is
+      // cut on this device before it is sent, exactly as the wizard cuts it, and a
+      // cut that MISSES is reported (`cutfail`) so the miss is recorded rather
+      // than looking like a photo nobody tried.
       async function addPawns(files) {
         showPawnErr('');
         const room = PAWN_MAX - pawnList().length;
         const picked = Array.from(files || []).slice(0, Math.max(0, room));
         if (!picked.length) return;
+        pawnBusy = true;
         try {
+          const cuts = await cutForUpload(picked);
           const fd = new FormData();
-          picked.forEach((f, i) => fd.append('pawn' + i, f, f.name || 'pawn' + i));
+          const failed = [];
+          picked.forEach((f, i) => {
+            const name = 'pawn' + i;
+            fd.append(name, f, f.name || name);
+            if (cuts[i]) fd.append('cut:' + name, cuts[i], name + '-cut.png');
+            else failed.push(name);
+          });
+          if (failed.length) fd.append('cutfail', failed.join(','));
           const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
             method: 'POST',
             body: fd,
           });
           state.pawn_images = r.pawn_images;
+          state.pawn_cutouts = r.pawn_cutouts || state.pawn_cutouts;
+          pawnBusy = false;
           renderPawns();
           renderPawnCard();
         } catch (e) {
+          pawnBusy = false;
           showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
         }
+      }
+      // The cutouts for a batch, in the same order, with null for every miss.
+      // Entirely best-effort: a browser too old for the segmenter, a phone that
+      // runs out of memory, or a photo with no person in it all resolve to null
+      // and the original is uploaded on its own. A cut never fails an upload.
+      async function cutForUpload(files) {
+        let cut = null;
+        try {
+          cut = (await import('./js/pawn-cutout.js')).cutPawnPhoto;
+        } catch (e) {
+          return files.map(() => null);
+        }
+        const out = [];
+        for (const f of files) {
+          try {
+            out.push(await cut(f));
+          } catch (e) {
+            out.push(null);
+          }
+        }
+        return out;
       }
       (function wirePawnInput() {
         const input = document.getElementById('pawnAddInput');
@@ -3208,6 +3864,7 @@
           $('#tabs').classList.remove('hidden');
           $('#designPanel').classList.remove('hidden');
           $('#pawnsPanel').classList.remove('hidden');
+          $('#finishPanel').classList.remove('hidden');
           renderGameTabs();
           // Paid: drop the pay panel + the pay bar, and put a prominent
           // "keep adding, then סיום" card in their place. סיום = closeCollection,

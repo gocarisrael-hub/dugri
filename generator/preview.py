@@ -43,7 +43,7 @@ CARD_MAX_W = 700
 BOARD_MAX_W = 1000
 
 
-def pawn_card(theme, photos, workdir=None):
+def pawn_card(theme, photos, workdir=None, views=None):
     """The buyer's OWN photo card, composed exactly as the deck prints it.
 
     The pawn card is a card like any other — it ships inside the deck, on the
@@ -59,6 +59,11 @@ def pawn_card(theme, photos, workdir=None):
     pawns for the slots she left empty), so the picture cannot drift from the
     print.
 
+    ``views`` is the framing the buyer set for each photo, one entry per photo
+    (``build.apply_photo_view``). Passing it is what keeps this preview honest
+    once she can move her photos: a preview that ignored her framing would be
+    worse than none, because she would believe it.
+
     Returns ``{"pawns": png_path}``. One Chrome page for the card, plus whatever
     measuring its paper costs — no board, no back, no words.
     """
@@ -69,7 +74,8 @@ def pawn_card(theme, photos, workdir=None):
         workdir = tempfile.mkdtemp(prefix="dugri-pawns-")
     os.makedirs(workdir, exist_ok=True)
     try:
-        paths = buildmod.resolve_photos(theme, photos, workdir=workdir)
+        paths = buildmod.resolve_photos(theme, photos, workdir=workdir,
+                                        views=views)
         png = rp.render_single_card(
             theme, config.photo_card_path(theme), [], [],
             os.path.join(workdir, "pawns.png"), kind="photo", photos=paths)
@@ -493,6 +499,10 @@ def main():
                          "up to the four the card holds). Short lists are topped "
                          "up from the shipped Dugri pawns, exactly as the deck "
                          "does. Only read with --pawn-card")
+    ap.add_argument("--photo-frame", action="append", default=[], metavar="ZOOM,DX,DY",
+                    help="how the buyer placed the Nth --photo in its circle "
+                         "(zoom,dx,dy). Repeatable and POSITIONAL against --photo; "
+                         "omit it to keep the automatic subject framing")
     ap.add_argument("--no-board", action="store_true",
                     help="skip the game board entirely (card + back only). The "
                          "board is the most expensive image in a preview, so a "
@@ -508,7 +518,9 @@ def main():
         # The photo card alone. It carries no title and no words, so none of the
         # title arguments apply to it — passing them would only invite the
         # question of why they change nothing.
-        print(json.dumps(pawn_card(args.theme, args.photo, workdir=args.out_dir)))
+        views = [buildmod.parse_photo_view(f) for f in args.photo_frame]
+        print(json.dumps(pawn_card(args.theme, args.photo, workdir=args.out_dir,
+                                   views=views)))
         return
 
     imgs = preview(

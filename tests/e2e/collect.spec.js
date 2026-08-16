@@ -142,11 +142,15 @@ test('create → add words (one-by-one + paste, deduped) → idea generator → 
   // toast reflects the 2 newly-added (1 duplicate skipped)
   await expect(page.locator('#toast')).toContainText('2 מילים');
 
-  // owner closes the collection
+  // owner closes the collection — from the LAST tab, which is where the game is
+  // signed off and sent to production. It used to sit under the words, which is
+  // where she spends the days before the party, not where she ends them.
   // Closing is asked as a real dialog now, not the browser's confirm.
+  await page.getByTestId('tab-finish').click();
   await page.click('#closeBtn');
   await page.getByTestId('close-ask-yes').click();
   await expect(page.locator('#banner')).toBeVisible();
+  await page.getByTestId('tab-words').click();
   await expect(page.locator('#addCard')).toBeHidden();
 });
 
@@ -1752,7 +1756,9 @@ test('contributor (no owner key) sees words but cannot add after close', async (
   await page.fill('#wordInput', 'בדיחה פנימית');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
-  // Closing is asked as a real dialog now, not the browser's confirm.
+  // Closing is asked as a real dialog now, not the browser's confirm, and it
+  // lives on the sign-off tab.
+  await page.getByTestId('tab-finish').click();
   await page.click('#closeBtn');
   await page.getByTestId('close-ask-yes').click();
 
@@ -2269,6 +2275,7 @@ test('closing asks in a real dialog that names everything it freezes', async ({ 
   await page.fill('#wordInput', 'בדיחה פנימית');
   await page.click('#addBtn');
 
+  await page.getByTestId('tab-finish').click();
   await page.click('#closeBtn');
   const ask = page.getByTestId('close-ask');
   await expect(ask).toBeVisible();
@@ -2292,14 +2299,18 @@ test('a dismissed close dialog leaves the collection open', async ({ page }) => 
   await page.fill('#wordInput', 'בדיחה פנימית');
   await page.click('#addBtn');
 
+  await page.getByTestId('tab-finish').click();
   await page.click('#closeBtn');
   await page.getByTestId('close-ask-no').click();
   await expect(page.getByTestId('close-ask')).toBeHidden();
+  await page.getByTestId('tab-words').click();
   await expect(page.locator('#addCard')).toBeVisible();
 
+  await page.getByTestId('tab-finish').click();
   await page.click('#closeBtn');
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('close-ask')).toBeHidden();
+  await page.getByTestId('tab-words').click();
   await expect(page.locator('#addCard')).toBeVisible();
   await expect(page.locator('#banner')).toBeHidden();
 });

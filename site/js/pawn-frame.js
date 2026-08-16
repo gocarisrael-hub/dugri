@@ -117,6 +117,101 @@ export function subjectFrame(image, opts = {}) {
   };
 }
 
+// Where a face sits in a portrait photo, as a fraction of its height. Mirrors
+// build.PHOTO_SUBJECT_Y — the DEGRADED path, taken when there is no alpha to
+// measure: an opaque phone photo (which is exactly what "keep the background"
+// sends to the printer) or a cut that collapsed.
+export const SUBJECT_Y = 0.3;
+
+/**
+ * The frame for a photo with NO usable alpha, mirroring build.square_photo's
+ * fallback: the biggest square that fits, anchored on the head in portrait and
+ * centred left-to-right in landscape. Same answer shape as `subjectFrame`.
+ *
+ * `width`/`height` are the photo's natural pixel dimensions. Returns null when
+ * they are not usable.
+ */
+export function plainFrame(width, height) {
+  if (!(width > 0) || !(height > 0)) return null;
+  const side = Math.min(width, height);
+  let left = 0;
+  let top = 0;
+  if (height > width) {
+    top = Math.round(SUBJECT_Y * height - side / 2);
+    top = Math.max(0, Math.min(top, height - side));
+  } else {
+    left = Math.floor((width - side) / 2);
+  }
+  // The square maps onto the whole slot; the disc clips it afterwards, exactly
+  // as _disc_mask does on the printed card.
+  const k = 100 / side;
+  return {
+    widthPct: width * k,
+    heightPct: height * k,
+    leftPct: -left * k,
+    topPct: -top * k,
+  };
+}
+
+// THE BUYER'S OWN ADJUSTMENT, on top of whichever frame the rules above chose.
+//
+// The framing rules answer "where is the subject?", which is not always the same
+// question as "which part of this photo do I want on the pawn". A group shot, a
+// photo where the cut kept an arm, a face the buyer wants larger — none of those
+// are framing bugs, they are choices, and this is the buyer making them.
+//
+// zoom > 1 moves closer; dx/dy slide the window across the photo in units of the
+// window's own side, so the numbers mean the same thing at every zoom and on
+// every photo size. build.apply_photo_view applies the identical transform to
+// the crop rectangle, so what she lines up here is what the printer cuts.
+export const ZOOM_MIN = 0.5;
+export const ZOOM_MAX = 2.5;
+export const PAN_MAX = 1;
+export const VIEW_DEFAULT = { zoom: 1, dx: 0, dy: 0, bg: false };
+
+const clampNum = (v, lo, hi, dflt) => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return dflt;
+  return Math.min(hi, Math.max(lo, n));
+};
+
+/** A stored view coerced into range. Anything unusable falls back to the default. */
+export function clampView(view) {
+  const v = view || {};
+  return {
+    zoom: clampNum(v.zoom, ZOOM_MIN, ZOOM_MAX, 1),
+    dx: clampNum(v.dx, -PAN_MAX, PAN_MAX, 0),
+    dy: clampNum(v.dy, -PAN_MAX, PAN_MAX, 0),
+    bg: !!v.bg,
+  };
+}
+
+/** True when this view asks for nothing the automatic framing wouldn't do. */
+export function isDefaultView(view) {
+  const v = clampView(view);
+  return v.zoom === 1 && v.dx === 0 && v.dy === 0;
+}
+
+/**
+ * `frame` seen through `view` — still in percent-of-slot units, so the caller
+ * positions the image exactly as it did before.
+ *
+ * The window is what moves, not the picture: sliding it right (dx > 0) shows a
+ * part of the photo further right, which walks the picture LEFT under the slot.
+ * That inversion is why this lives here rather than in the drag handler.
+ */
+export function applyView(frame, view) {
+  if (!frame) return frame;
+  const v = clampView(view);
+  const z = v.zoom;
+  return {
+    widthPct: frame.widthPct * z,
+    heightPct: frame.heightPct * z,
+    leftPct: 50 - z * (50 - frame.leftPct) - 100 * z * v.dx,
+    topPct: 50 - z * (50 - frame.topPct) - 100 * z * v.dy,
+  };
+}
+
 /**
  * The same answer for a Blob, doing the canvas work this time.
  *

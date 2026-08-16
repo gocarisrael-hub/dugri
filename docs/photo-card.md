@@ -162,6 +162,41 @@ What that costs, since it is no longer visible on the card: the circle is full o
 original background, and it is a guess rather than a measurement, so a subject standing off to one
 side or low in the frame can be badly framed. Point 1 covers how the miss is recorded instead.
 
+### …and then the buyer's own adjustment
+
+Everything above answers **"where is the person?"**, which stops being the right question the
+moment there are two of them in the shot, or the buyer simply wants a face bigger than the rule
+would draw it. She can see the pawn on her collection page now (the photos tab renders the real
+card), so she can also move it: drag inside the circle to pan, a slider to zoom, and a
+with/without-background switch.
+
+Her answer is stored on the collection as `pawn_view[<original path>] = { zoom, dx, dy, bg }` and
+reaches the generator as `--photo-frame=zoom,dx,dy`, positional against its own `--photo`.
+`apply_photo_view()` applies it to whichever square steps 1–2 (or the fallback) chose:
+
+- `zoom` (0.5–2.5) divides the window's side — above 1 is closer in;
+- `dx`/`dy` (±1) slide the window across the source **in units of the window's own side**, so the
+  same numbers mean the same thing on a 900 px photo and a 4000 px one, and a drag feels identical
+  at every zoom.
+
+Step 3 is untouched: the disc still clips, so a subject she pushes past the circle comes out
+cropped rather than square. That is the one thing her adjustment can do that the automatic rules
+never will — **"a subject that does not fit is made smaller, never trimmed"** is the rule for
+_our_ framing, not a rule for hers.
+
+`bg` does not reach the generator at all: it decides which FILE is passed as `--photo`
+(`pawnPhotoFiles` in `server/index.js` sends the original instead of the cutout), so a photo she
+wants with its background takes the no-alpha path above and comes out round with the background
+inside the circle. The admin orders table reads `bg` too, so a deliberate keep-the-background is
+not flagged red as a cut that needs doing by hand.
+
+**Two implementations, one transform.** `site/js/pawn-frame.js` `applyView()` is the same
+arithmetic expressed in percent-of-slot, because the circle on her phone has to be the circle on
+the card — a preview that framed differently from the printer is worse than no preview, since she
+believes it. `tests/unit/pawn-view.test.js` holds the two together by deriving one from the other;
+`generator/test_photo_view.py` holds the Python half on its own. If either side changes, change
+both.
+
 ## Geometry
 
 Same as every other card in the new deck:

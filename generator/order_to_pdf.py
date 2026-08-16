@@ -31,7 +31,8 @@ from topup import topup
 
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  word_font=None, workdir=None, progress=False, chasers=False,
-                 custom_title=None, photos=None, press_icc=None,
+                 custom_title=None, photos=None, photo_views=None,
+                 press_icc=None,
                  press_bleed=None, press_cmyk=True, gender=None, wordlist=None,
                  order=pack.ORDER_RANDOM, personal_count=None):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
@@ -53,6 +54,10 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
     photos        absolute paths to the customer's pawn photos for the final
                   photo card (v2 only); fewer than four are topped up from the
                   theme's generic Dugri fallback set
+    photo_views   the framing the BUYER set for each of those photos, one entry
+                  per photo ((zoom, dx, dy) or None); an absent list leaves the
+                  automatic subject framing in charge, as every order did before
+                  she could move them
     press_cmyk    False builds the press copy WITHOUT the Ghostscript pass: no
                   CMYK conversion, no flattening, no outlining, and no
                   OutputIntent (nothing separated it, so nothing may claim to
@@ -148,6 +153,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                 extra_fields=extra_fields or {}, word_font=word_font,
                 workdir=os.path.join(workdir, "build"), progress=progress,
                 chasers=chasers, custom_title=custom_title, photos=photos,
+                photo_views=photo_views,
                 press_icc=press_icc, press_bleed=press_bleed,
                 press_cmyk=press_cmyk, gender=gender,
             )
@@ -240,6 +246,12 @@ def main():
                          "joined); omit it when the list IS her own words")
     ap.add_argument("--photo", action="append", default=[], metavar="PATH",
                     help="a customer pawn photo for the photo card (repeatable, up to 4)")
+    ap.add_argument("--photo-frame", action="append", default=[], metavar="ZOOM,DX,DY",
+                    help="how the buyer placed the Nth --photo in its circle: zoom "
+                         "(0.5-2.5, >1 is closer) and the pan across the photo in "
+                         "units of the frame's own side. Repeatable and POSITIONAL "
+                         "against --photo; omit it (or pass 1,0,0) to keep the "
+                         "automatic subject framing for that slot")
     args = ap.parse_args()
 
     personal = open(args.words, encoding="utf-8-sig").read().splitlines()
@@ -247,6 +259,7 @@ def main():
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
         chasers=args.chasers, custom_title=args.title, photos=args.photo,
+        photo_views=[buildmod.parse_photo_view(f) for f in args.photo_frame],
         press_icc=args.press, press_bleed=args.bleed,
         press_cmyk=not args.press_passthrough, gender=args.gender,
         wordlist=args.wordlist, order=args.order,

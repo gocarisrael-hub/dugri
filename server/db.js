@@ -494,6 +494,41 @@ function pawnPathOk(p) {
   );
 }
 
+// The pawn maps (cutouts, views) are keyed BY PHOTO PATH, so removing or
+// reordering the photos must drop exactly the entries whose photo went with them
+// — the survivors keep theirs, which is the whole point of keying by path rather
+// than by slot. A map that is missing or the wrong shape rebuilds as empty.
+function keepPawnKeys(map, paths) {
+  const kept = {};
+  if (map && typeof map === 'object' && !Array.isArray(map)) {
+    for (const p of paths) {
+      if (Object.prototype.hasOwnProperty.call(map, p)) kept[p] = map[p];
+    }
+  }
+  return kept;
+}
+
+// One buyer-set photo view, coerced into range. Mirrors clampView in
+// site/js/pawn-frame.js: the page sends what its slider produced, and the store
+// is what the generator reads, so the bounds have to hold on this side too.
+const PAWN_ZOOM_MIN = 0.5;
+const PAWN_ZOOM_MAX = 2.5;
+const PAWN_PAN_MAX = 1;
+function clampPawnView(view) {
+  const v = view && typeof view === 'object' ? view : {};
+  const num = (x, lo, hi, dflt) => {
+    const n = Number(x);
+    if (!Number.isFinite(n)) return dflt;
+    return Math.min(hi, Math.max(lo, n));
+  };
+  return {
+    zoom: num(v.zoom, PAWN_ZOOM_MIN, PAWN_ZOOM_MAX, 1),
+    dx: num(v.dx, -PAWN_PAN_MAX, PAWN_PAN_MAX, 0),
+    dy: num(v.dy, -PAWN_PAN_MAX, PAWN_PAN_MAX, 0),
+    bg: !!v.bg,
+  };
+}
+
 // 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not
 // closed and not past expiry; otherwise 'closed' / 'expired'.
 function effectiveStatus(c) {
@@ -555,6 +590,14 @@ const db = {
       //   • value = null    — attempted and FAILED; the original is used instead
       //                       and the admin table flags it for a manual cut.
       pawn_cutouts: {},
+      // HOW EACH PHOTO SITS IN ITS CIRCLE, when the buyer moved it herself.
+      // Keyed by the original's path like pawn_cutouts, and for the same reason.
+      // Each value is { zoom, dx, dy, bg }: zoom/dx/dy adjust the automatic frame
+      // (see site/js/pawn-frame.js applyView and build.apply_photo_view — the two
+      // apply the identical transform), and `bg` keeps the photo's BACKGROUND,
+      // i.e. prints the original rather than the cutout. Absent key = the frame
+      // the generator picks on its own, which is what every order had before.
+      pawn_view: {},
       // Optional free-form custom title (F7) overriding the theme's derived title
       // on the cards + board. Sanitized/capped; null when empty so the theme
       // default is used. The generator receives this via its --title CLI arg.
@@ -977,16 +1020,8 @@ const db = {
     c.pawn_images = out;
     // Same pruning as the admin setter: a cutout is keyed by the photo it belongs
     // to, so survivors keep theirs and a removed photo takes its own with it.
-    const cuts = c.pawn_cutouts;
-    if (cuts && typeof cuts === 'object' && !Array.isArray(cuts)) {
-      const kept = {};
-      for (const p of out) {
-        if (Object.prototype.hasOwnProperty.call(cuts, p)) kept[p] = cuts[p];
-      }
-      c.pawn_cutouts = kept;
-    } else {
-      c.pawn_cutouts = {};
-    }
+    c.pawn_cutouts = keepPawnKeys(c.pawn_cutouts, out);
+    c.pawn_view = keepPawnKeys(c.pawn_view, out);
     saveDb();
     return c.pawn_images;
   },
@@ -1011,6 +1046,30 @@ const db = {
     c.pawn_cutouts[origPath] = cutPath == null ? null : cutPath;
     saveDb();
     return c.pawn_cutouts;
+  },
+
+  // HOW ONE PHOTO SITS IN ITS CIRCLE, as the buyer placed it. Owner-token gated
+  // and only ever for a photo this collection actually holds, exactly like
+  // setPawnCutout — the two maps annotate the same list and must not be able to
+  // grow keys it does not have.
+  //
+  // Stored even when it is the DEFAULT view: "I looked at this and it is right"
+  // and "nobody has looked" are different states, and only the map can tell them
+  // apart. Reading code treats an absent key and a default value identically, so
+  // nothing downstream has to care.
+  //
+  // Returns the whole view map, or null on a bad owner token / unknown
+  // collection / a path we don't hold.
+  setPawnView(id, ownerToken, origPath, view) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    if (!Array.isArray(c.pawn_images) || !c.pawn_images.includes(origPath)) return null;
+    if (!c.pawn_view || typeof c.pawn_view !== 'object' || Array.isArray(c.pawn_view)) {
+      c.pawn_view = {};
+    }
+    c.pawn_view[origPath] = clampPawnView(view);
+    saveDb();
+    return c.pawn_view;
   },
 
   // Admin: soft-cancel a collection (reversible). With undo=true it restores
@@ -1165,16 +1224,8 @@ const db = {
     // Drop cutout records for photos that are no longer attached, so the map can
     // never outgrow the (max 4) list it annotates. Keyed by path, so the photos
     // that SURVIVE a removal/reorder keep their own cutout — no re-cut needed.
-    const cuts = c.pawn_cutouts;
-    if (cuts && typeof cuts === 'object' && !Array.isArray(cuts)) {
-      const kept = {};
-      for (const p of out) {
-        if (Object.prototype.hasOwnProperty.call(cuts, p)) kept[p] = cuts[p];
-      }
-      c.pawn_cutouts = kept;
-    } else {
-      c.pawn_cutouts = {};
-    }
+    c.pawn_cutouts = keepPawnKeys(c.pawn_cutouts, out);
+    c.pawn_view = keepPawnKeys(c.pawn_view, out);
     saveDb();
     return c.pawn_images;
   },
