@@ -983,6 +983,10 @@
       let allCols = [];
       // collection id -> { groupId, closed }, refreshed with the collections.
       let waGroups = {};
+      // Whether the HFD courier integration has credentials on this service.
+      // False keeps the booking button off the page entirely — a button whose
+      // only possible outcome is "not configured" is worse than no button.
+      let hfdArmed = false;
       let activeFilter = 'all';
       // The second filter axis: where the order stands (see STAGES).
       let activeStage = 'all';
@@ -1157,6 +1161,130 @@
         if (a.apartment) parts.push('דירה ' + a.apartment);
         if (a.floor) parts.push('קומה ' + a.floor);
         return parts.filter(Boolean).join(', ');
+      }
+
+      // The courier control for ONE delivery order, drawn under its address:
+      // book the parcel with HFD, then the shipment number, its sticker, the
+      // customer's tracking page, and a way to stand the van down.
+      //
+      // It redraws itself after every action instead of waiting for the
+      // fifteen-second repaint — the owner books a parcel and immediately wants
+      // the sticker, and a row that still says "שלח ל-HFD" invites a second van.
+      // The record is written back onto the row object too, so the next repaint
+      // (which rebuilds from the same objects) doesn't undo what just happened.
+      function hfdBox(c) {
+        const box = document.createElement('div');
+        box.className = 'muted';
+        box.style.fontSize = '11px';
+        box.style.marginTop = '4px';
+
+        const store = (rec) => {
+          if (c.order) c.order.hfd = rec;
+          draw(rec);
+        };
+
+        // POST/DELETE the courier routes. Keeps the button dead while in flight
+        // (booking twice is a second real van), and surfaces the server's Hebrew
+        // reason rather than a status code.
+        const call = async (btn, method, busyText) => {
+          const orig = btn.textContent;
+          btn.disabled = true;
+          btn.textContent = busyText;
+          try {
+            const r = await fetch(
+              '/api/admin/collections/' + c.id + '/hfd?key=' + encodeURIComponent(key),
+              { method }
+            );
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok) {
+              alert(data.message || data.error || 'הפעולה נכשלה');
+              // A 409 means a shipment already exists — the server sends it
+              // back, and showing it is more useful than restoring the button.
+              if (data.hfd) return store(data.hfd);
+              btn.textContent = orig;
+              btn.disabled = false;
+              return;
+            }
+            store(data.hfd || null);
+          } catch {
+            alert('שגיאת רשת מול השרת');
+            btn.textContent = orig;
+            btn.disabled = false;
+          }
+        };
+
+        const draw = (rec) => {
+          box.textContent = '';
+          const live = rec && rec.shipment_number && !rec.cancelled_at;
+
+          if (live) {
+            const line = document.createElement('div');
+            line.textContent = 'HFD ' + rec.shipment_number;
+            box.appendChild(line);
+
+            const label = document.createElement('a');
+            label.className = 'act';
+            label.textContent = 'מדבקה';
+            label.title = 'מדבקת המשלוח להדפסה';
+            label.href =
+              location.origin +
+              '/api/admin/collections/' +
+              c.id +
+              '/hfd/label?key=' +
+              encodeURIComponent(key);
+            label.target = '_blank';
+            label.rel = 'noopener';
+            box.appendChild(label);
+
+            if (rec.tracking_url) {
+              box.appendChild(document.createTextNode(' '));
+              const track = document.createElement('a');
+              track.className = 'act';
+              track.textContent = 'מעקב';
+              track.href = rec.tracking_url;
+              track.target = '_blank';
+              track.rel = 'noopener';
+              box.appendChild(track);
+            }
+
+            box.appendChild(document.createTextNode(' '));
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'act';
+            cancelBtn.textContent = 'בטל משלוח';
+            cancelBtn.onclick = () => {
+              if (!confirm('לבטל את המשלוח ב-HFD (' + rec.shipment_number + ')?')) return;
+              call(cancelBtn, 'DELETE', 'מבטל…');
+            };
+            box.appendChild(cancelBtn);
+            return;
+          }
+
+          // Not shipping (yet). Say why the last attempt didn't take, if it
+          // didn't — a bare button that failed once and says nothing is what
+          // sends the owner to the phone.
+          if (rec && rec.cancelled_at && rec.shipment_number) {
+            const line = document.createElement('div');
+            line.textContent = 'משלוח בוטל (' + rec.shipment_number + ')';
+            box.appendChild(line);
+          } else if (rec && rec.error) {
+            const line = document.createElement('div');
+            line.textContent = 'HFD סירבה: ' + rec.error;
+            box.appendChild(line);
+          }
+
+          const sendBtn = document.createElement('button');
+          sendBtn.className = 'act';
+          sendBtn.textContent = 'שלח ל-HFD';
+          sendBtn.title = 'פתיחת משלוח ב-HFD עם הכתובת של ההזמנה';
+          sendBtn.onclick = () => {
+            if (!confirm('לפתוח משלוח ב-HFD להזמנה הזו?')) return;
+            call(sendBtn, 'POST', 'שולח…');
+          };
+          box.appendChild(sendBtn);
+        };
+
+        draw((c.order && c.order.hfd) || null);
+        return box;
       }
 
       function ownerUrl(c) {
@@ -2560,6 +2688,11 @@
           const tdAddress = document.createElement('td');
           tdAddress.textContent =
             order && order.version === 'delivery' ? formatAddress(order.address) : '—';
+          // …and, under the address, the courier. Only for a delivery order, and
+          // only when HFD is armed.
+          if (hfdArmed && order && order.version === 'delivery') {
+            tdAddress.appendChild(hfdBox(c));
+          }
 
           const tdPaid = document.createElement('td');
           if (!order) {
@@ -3011,6 +3144,15 @@
             waGroups = rg.ok ? (await rg.json()).groups || {} : {};
           } catch {
             waGroups = {};
+          }
+          // Same best-effort rule for the courier: whether HFD is armed decides
+          // only whether one button is drawn, and it must never be the reason
+          // the orders table doesn't render.
+          try {
+            const rh = await fetch('/api/admin/hfd/status?key=' + encodeURIComponent(key));
+            hfdArmed = rh.ok ? !!(await rh.json()).configured : false;
+          } catch {
+            hfdArmed = false;
           }
           controlsEl.hidden = false;
           renderAll();

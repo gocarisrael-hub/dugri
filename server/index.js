@@ -28,6 +28,8 @@ const wordlists = require('./wordlists');
 const wordlistOptions = require('./wordlist-options');
 const unsubscribe = require('./unsubscribe');
 const sms = require('./sms');
+// The courier that carries a delivery order's parcel.
+const hfd = require('./hfd');
 const pdfName = require('./pdf-name');
 const wordBank = require('./word-bank');
 // The print-shop pass over a finished deck (generator/press_marks.py).
@@ -1564,6 +1566,108 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
     sent_to_print_count: db.countSentToPrintOrders(),
     ready_count: db.countReadyOrders(),
   });
+});
+
+// --- HFD shipments -----------------------------------------------------------
+// Booking a delivery order's parcel with the courier from our own admin instead
+// of retyping the address into HFD's site. See server/hfd.js for the API; every
+// route here is a no-op while the credentials are unset.
+
+// The three refusals that are OUR data being wrong, not HFD saying no. They are
+// 400s with a fix the owner can act on, and nothing is sent to the courier.
+const HFD_LOCAL_ERRORS = {
+  'no order': 'אין הזמנה על הרשומה הזו.',
+  'not a delivery order': 'זו לא הזמנת משלוח — אין מה לשלוח לשליח.',
+  'address required': 'להזמנה חסרה כתובת מלאה (רחוב, עיר).',
+};
+
+// Admin: is the courier integration armed? The admin page asks once at load and
+// hides the whole control when it isn't, rather than offering a button that can
+// only fail.
+app.get('/api/admin/hfd/status', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json(hfd.status());
+});
+
+// Admin: book this delivery order's parcel. Deliberately manual — a shipment is
+// a van and a charge, so it happens when the owner presses, never on a state
+// change.
+app.post('/api/admin/collections/:id/hfd', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  if (!hfd.isConfigured()) {
+    return res.status(503).json({
+      error: 'hfd not configured',
+      message: 'HFD לא מוגדרת — חסרים HFD_TOKEN / HFD_CLIENT_NUMBER.',
+    });
+  }
+  // A second press must not book a second van. The already-booked shipment is
+  // returned with the refusal so the page can just show it.
+  const existing = c.order && c.order.hfd;
+  if (existing && existing.shipment_number && !existing.cancelled_at) {
+    return res.status(409).json({
+      error: 'already booked',
+      message: 'כבר נוצר משלוח להזמנה הזו (' + existing.shipment_number + ').',
+      hfd: existing,
+    });
+  }
+
+  const r = await hfd.createShipment(c);
+  if (!r.ok) {
+    if (HFD_LOCAL_ERRORS[r.error]) {
+      return res.status(400).json({ error: r.error, message: HFD_LOCAL_ERRORS[r.error] });
+    }
+    // HFD refused. Remember why: the owner comes back to this row later, and
+    // "it didn't work" with no reason is what sends her to the phone.
+    const record = db.setHfdShipment(c.id, {
+      error: r.error,
+      error_at: new Date().toISOString(),
+    });
+    return res.status(502).json({ error: 'hfd refused', message: r.error, hfd: record });
+  }
+
+  const record = db.setHfdShipment(c.id, {
+    shipment_number: r.shipmentNumber,
+    rand_number: r.randNumber,
+    tracking_url: hfd.trackingUrl(r.randNumber),
+    sent_at: new Date().toISOString(),
+    cancelled_at: null,
+    error: null,
+    error_at: null,
+  });
+  res.json({ ok: true, hfd: record });
+});
+
+// Admin: the parcel's sticker, proxied so the token never reaches the browser.
+// Inline, because the owner prints it straight from the tab.
+app.get('/api/admin/collections/:id/hfd/label', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const number = c.order && c.order.hfd && c.order.hfd.shipment_number;
+  if (!number) return res.status(404).json({ error: 'no shipment' });
+  const r = await hfd.fetchLabel(number);
+  if (!r.ok) return res.status(502).json({ error: 'hfd label failed', message: r.error });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'inline; filename="hfd-' + number + '.pdf"');
+  res.send(r.pdf);
+});
+
+// Admin: cancel the booked parcel. The number is KEPT (marked cancelled) — an
+// order's shipping history is evidence, and a cleared field cannot say that a
+// van was once ordered and stood down.
+app.delete('/api/admin/collections/:id/hfd', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const record = c.order && c.order.hfd;
+  if (!record || !record.shipment_number) return res.status(404).json({ error: 'no shipment' });
+  if (record.cancelled_at) return res.json({ ok: true, hfd: record });
+  const r = await hfd.cancelShipment(record.shipment_number);
+  if (!r.ok) return res.status(502).json({ error: 'hfd refused', message: r.error, hfd: record });
+  const next = db.setHfdShipment(c.id, { cancelled_at: new Date().toISOString() });
+  res.json({ ok: true, hfd: next });
 });
 
 // Admin: soft-cancel a collection (body {undo:true} to restore).
