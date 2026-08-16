@@ -75,12 +75,23 @@ async function poolNames(page) {
   return r.wordlists.map((w) => w.name);
 }
 
+// The chooser lives on the LAST tab now — the one she signs the game off from —
+// so every test here opens it first. It used to sit with the collected words,
+// which is where she spends the days before the party and not where she decides
+// what the finished deck is.
+async function openFinishTab(page) {
+  await page.getByTestId('tab-finish').click();
+  await expect(page.getByTestId('finish-title')).toBeVisible();
+}
+
 test('no menu, no chooser — the deck fills by her design as before', async ({ page }) => {
   await setMenu(page, []);
   const { url } = await createCollection(page);
   await page.goto(url);
-  // The section is absent entirely rather than empty: an empty chooser would
-  // advertise a choice that does not exist.
+  await openFinishTab(page);
+  // The field is absent entirely rather than empty: an empty chooser would
+  // advertise a choice that does not exist. The tab around it stays — it has two
+  // other things to say.
   await expect(page.getByTestId('pool-field')).toBeHidden();
 });
 
@@ -93,9 +104,11 @@ test('she picks which words fill the rest, and it sticks', async ({ page }) => {
   ]);
   const { url, id, k } = await createCollection(page);
   await page.goto(url);
+  await openFinishTab(page);
 
-  // It sits WITH the words — the tab she lands on — because which words fill the
-  // rest of her deck is a question about words, not about artwork.
+  // It sits on the SIGN-OFF tab, beside the title and the pawns: which words
+  // fill the rest of her deck is one of the three things she confirms before the
+  // game goes to production, not something to decide while words are landing.
   const fld = page.getByTestId('pool-field');
   await expect(fld).toBeVisible();
   // Only the enabled ones. There is NO "we\'ll choose for you" row: she picks,
@@ -120,6 +133,7 @@ test('she picks which words fill the rest, and it sticks', async ({ page }) => {
 
   // …and it is still ticked after a reload, not just in this tab.
   await page.reload();
+  await openFinishTab(page);
   await expect(page.getByTestId('pool-opt-jokes')).toBeChecked();
 });
 
@@ -128,6 +142,7 @@ test('a closed collection shows the pick, frozen', async ({ page }) => {
   await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
   const { url, id, k } = await createCollection(page);
   await page.goto(url);
+  await openFinishTab(page);
   await page.getByTestId('pool-opt-jokes').check();
   await expect
     .poll(async () =>
@@ -140,6 +155,7 @@ test('a closed collection shows the pick, frozen', async ({ page }) => {
 
   await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
   await page.goto(url);
+  await openFinishTab(page);
   await expect(page.getByTestId('pool-opt-jokes')).toBeChecked();
   await expect(page.getByTestId('pool-opt-jokes')).toBeDisabled();
   // …and the API refuses too, so the freeze is a rule and not a disabled radio.
@@ -202,12 +218,22 @@ test.describe('the buyer-facing pool menu', () => {
     expect(menu.options.map((o) => o.label)).not.toContain('רשימה זמנית');
     // Still on the admin screen, ready to be switched back on. The label lives in
     // an <input>, so its text is a VALUE — read them rather than the row's text.
+    //
+    // POLLED, not read once: the table is filled by a fetch after load, and
+    // `evaluateAll` is the one locator method that does NOT wait for its
+    // elements — it answers `[]` the moment there are none. Read straight after
+    // a reload that is a few hundred ms behind (a loaded machine, a parallel
+    // worker) it therefore reported "the row is gone" for a row that simply had
+    // not arrived yet.
     await page.reload();
-    const labels = await page
-      .getByTestId('buyer-opts')
-      .locator('[data-testid="opt-label"]')
-      .evaluateAll((els) => els.map((e) => e.value));
-    expect(labels).toContain('רשימה זמנית');
+    await expect
+      .poll(() =>
+        page
+          .getByTestId('buyer-opts')
+          .locator('[data-testid="opt-label"]')
+          .evaluateAll((els) => els.map((e) => e.value))
+      )
+      .toContain('רשימה זמנית');
   });
 
   test('a row with no name is refused before it can reach the customer', async ({ page }) => {

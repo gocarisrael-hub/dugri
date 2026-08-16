@@ -1389,12 +1389,22 @@
           (editing && editing.pawn_cutouts && typeof editing.pawn_cutouts === 'object'
             ? editing.pawn_cutouts
             : null) || {};
+        const views =
+          (editing && editing.pawn_view && typeof editing.pawn_view === 'object'
+            ? editing.pawn_view
+            : null) || {};
         editPhotos.forEach((p, i) => {
           const wrap = document.createElement('div');
           wrap.className = 'photo';
           const img = document.createElement('img');
-          // Show what will PRINT: the cutout when we have one, else the original.
-          img.src = (Object.prototype.hasOwnProperty.call(cuts, p) && cuts[p]) || p;
+          // Show what will PRINT: the cutout when we have one — unless the buyer
+          // asked to keep this photo's background, in which case the ORIGINAL is
+          // what goes to the press and the cutout is just a file we still hold.
+          img.src =
+            (!(views[p] && views[p].bg) &&
+              Object.prototype.hasOwnProperty.call(cuts, p) &&
+              cuts[p]) ||
+            p;
           const x = document.createElement('button');
           x.type = 'button';
           x.textContent = '×';
@@ -2479,26 +2489,35 @@
           // that is what actually prints. A photo whose cut FAILED is flagged in
           // red: the card traces its sticker outline from the image's own alpha, so
           // an uncut photo prints as a white rectangle and needs a manual cut.
+          //
+          // …unless the BUYER asked to keep the background (pawn_view[p].bg), which
+          // she can now do from her own collection page. That is a choice, not a
+          // miss: flagging it red would send the owner off to hand-cut a photo the
+          // customer deliberately wants uncut.
           const tdPawns = document.createElement('td');
           if (Array.isArray(c.pawn_images) && c.pawn_images.length) {
             const cuts =
               (c.pawn_cutouts && typeof c.pawn_cutouts === 'object' && c.pawn_cutouts) || {};
+            const views = (c.pawn_view && typeof c.pawn_view === 'object' && c.pawn_view) || {};
             for (const p of c.pawn_images) {
+              const keepsBg = !!(views[p] && views[p].bg);
               const hasRecord = Object.prototype.hasOwnProperty.call(cuts, p);
-              const cut = hasRecord ? cuts[p] : null;
+              const cut = keepsBg ? null : hasRecord ? cuts[p] : null;
               const a = document.createElement('a');
               a.href = cut || p;
               a.target = '_blank';
-              a.title = cut
-                ? 'הרקע הוסר אוטומטית'
-                : hasRecord
-                  ? 'הסרת הרקע נכשלה - צריך חיתוך ידני'
-                  : 'לא נוסתה הסרת רקע';
+              a.title = keepsBg
+                ? 'הלקוחה ביקשה להשאיר את הרקע'
+                : cut
+                  ? 'הרקע הוסר אוטומטית'
+                  : hasRecord
+                    ? 'הסרת הרקע נכשלה - צריך חיתוך ידני'
+                    : 'לא נוסתה הסרת רקע';
               const img = document.createElement('img');
               img.src = cut || p;
               img.style.cssText =
                 'width:34px;height:34px;object-fit:cover;border-radius:4px;border:1px solid ' +
-                (cut ? '#ddd' : '#c00') +
+                (cut || keepsBg ? '#ddd' : '#c00') +
                 ';margin:2px';
               a.appendChild(img);
               tdPawns.appendChild(a);

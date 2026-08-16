@@ -187,6 +187,7 @@ function orderArgs({
   personalCount,
   gender,
   photos,
+  photoFrames,
 }) {
   const args = [
     path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
@@ -229,7 +230,17 @@ function orderArgs({
   if (gender === 'male' || gender === 'female') args.push('--gender', gender);
   // The customer's pawn photos for the deck's photo card (v2 templates). A v1
   // theme ignores them, so passing them is always safe.
-  for (const photo of photos || []) args.push('--photo', photo);
+  //
+  // Each photo may carry the frame the BUYER set on her collection page — how
+  // far in, and where — which overrides the generator's automatic framing for
+  // that slot alone. Emitted immediately after its own --photo so the pairing is
+  // readable in a log, and omitted entirely when she left the framing alone, so
+  // an order that predates this produces byte-for-byte the argv it always did.
+  const frames = photoFrames || [];
+  (photos || []).forEach((photo, i) => {
+    args.push('--photo', photo);
+    if (frames[i]) args.push('--photo-frame=' + frames[i]);
+  });
   return args;
 }
 
@@ -258,20 +269,58 @@ function uploadFileFor(p) {
 // from the image's own alpha (docs/photo-card.md), so an original prints as a
 // white-bordered rectangle — but printing that is still better than failing a
 // paid order, and the miss is recorded so the owner can cut it by hand.
-function pawnPhotoFiles(collection) {
+//
+// …unless the BUYER asked for her background (pawn_view[path].bg), which is a
+// choice and not a miss: some photos are the place as much as the person, and
+// she has seen exactly what it looks like on her collection page. The original
+// then goes to the printer deliberately, and build.square_photo rounds it into
+// the slot's disc — a photo never prints as a rectangle whatever we send.
+function pawnPhotoEntries(collection) {
   const paths = Array.isArray(collection && collection.pawn_images) ? collection.pawn_images : [];
   const cuts =
     collection && collection.pawn_cutouts && typeof collection.pawn_cutouts === 'object'
       ? collection.pawn_cutouts
       : {};
+  const views =
+    collection && collection.pawn_view && typeof collection.pawn_view === 'object'
+      ? collection.pawn_view
+      : {};
   const out = [];
   for (const p of paths) {
     const original = uploadFileFor(p);
     if (!original) continue;
+    const view = views[p] || null;
     const cutPath = Object.prototype.hasOwnProperty.call(cuts, p) ? cuts[p] : null;
-    out.push(uploadFileFor(cutPath) || original);
+    const file = view && view.bg ? original : uploadFileFor(cutPath) || original;
+    out.push({ file, view });
   }
   return out.slice(0, 4);
+}
+
+// The two halves of that answer, as PARALLEL arrays — the generator takes one
+// `--photo` and one optional `--photo-frame` per slot, and they only line up
+// because both are derived from the same entry list (a photo whose file vanished
+// drops out of BOTH or the frames slide onto the wrong faces).
+function pawnPhotoFiles(collection) {
+  return pawnPhotoEntries(collection).map((e) => e.file);
+}
+function pawnPhotoFrames(collection) {
+  return pawnPhotoEntries(collection).map((e) => photoFrameArg(e.view));
+}
+
+// The generator's `--photo-frame` value for one photo, or null when the buyer
+// never moved it and the automatic framing should stand. Kept as a separate
+// helper so "the default view is the same as no view" is stated once.
+function photoFrameArg(view) {
+  if (!view) return null;
+  const zoom = Number(view.zoom);
+  const dx = Number(view.dx);
+  const dy = Number(view.dy);
+  const z = Number.isFinite(zoom) ? zoom : 1;
+  const x = Number.isFinite(dx) ? dx : 0;
+  const y = Number.isFinite(dy) ? dy : 0;
+  if (z === 1 && x === 0 && y === 0) return null;
+  return `${z},${x},${y}`;
 }
 
 function runGenerator({
@@ -284,6 +333,7 @@ function runGenerator({
   chasers,
   customTitle,
   photos,
+  photoFrames,
   gender,
   wordlist,
   cardOrder,
@@ -312,6 +362,7 @@ function runGenerator({
       personalCount,
       gender,
       photos,
+      photoFrames,
     });
     const child = spawnGenerator(args);
     let stdout = '';
@@ -553,7 +604,7 @@ function runPreview({
 // what her photos will look like is to render the real thing; the generator
 // composes it through the same helper the deck does. Nothing else is rendered:
 // no front, no back, no board.
-function runPawnCard({ theme, photos }) {
+function runPawnCard({ theme, photos, photoFrames }) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -571,7 +622,15 @@ function runPawnCard({ theme, photos }) {
     // The name argument is required by the CLI and unused by this mode: the
     // photo card carries no title.
     const args = [PREVIEW_SCRIPT, theme, '-', outDir, '--pawn-card'];
-    for (const file of photos || []) args.push('--photo', file);
+    // Photos and their frames, paired exactly as the deck run pairs them — this
+    // preview only earns its place by being the same picture the printer makes,
+    // and a preview that ignored her framing would be the one thing worse than
+    // no preview: believed.
+    const frames = photoFrames || [];
+    (photos || []).forEach((file, i) => {
+      args.push('--photo', file);
+      if (frames[i]) args.push('--photo-frame=' + frames[i]);
+    });
     const child = spawnGenerator(args);
     let stdout = '';
     let stderr = '';
@@ -675,6 +734,14 @@ function publicView(c, { owner = false } = {}) {
     ...(owner
       ? {
           pawn_images: Array.isArray(c.pawn_images) ? [...c.pawn_images] : [],
+          // …and, per photo, the CUTOUT we hold for it (or null when a cut was
+          // tried and missed) plus how she placed it in its circle. The photo tab
+          // draws the pawn the printer will draw, and it cannot do that from the
+          // original alone: the frame is measured off the cutout's alpha, and the
+          // placement is hers.
+          pawn_cutouts:
+            c.pawn_cutouts && typeof c.pawn_cutouts === 'object' ? { ...c.pawn_cutouts } : {},
+          pawn_view: c.pawn_view && typeof c.pawn_view === 'object' ? { ...c.pawn_view } : {},
           // …and the title she chose, so the same sheet can show and change it.
           // null means she never set one and the theme's own title is printed.
           custom_title: c.custom_title || null,
@@ -1110,6 +1177,9 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       chasers: !!c.chasers,
       customTitle: c.custom_title || null,
       photos: pawnPhotoFiles(c),
+      // …each with the frame the buyer set for it on her collection page, in the
+      // same order (both come off pawnPhotoEntries).
+      photoFrames: pawnPhotoFrames(c),
       // From the STORED collection, never the request body. The wizard asks the
       // buyer for the honoree's gender once and it is validated to
       // 'male'/'female'/null at the door (db.createCollection), so the order
@@ -1728,6 +1798,89 @@ app.put('/api/collections/:id/pawns', express.json({ limit: '16kb' }), (req, res
   res.json({ ok: true, pawn_images: imgs });
 });
 
+// HOW ONE PHOTO SITS IN ITS CIRCLE, as the buyer placed it — and whether it keeps
+// its BACKGROUND. Body: { path, zoom, dx, dy, bg }.
+//
+// The automatic framing answers "where is the person?", which stops being the
+// right question the moment there are two of them in the shot, or the buyer
+// simply wants a face bigger. She can see the pawn on this page now, so she may
+// as well be able to move it; the same numbers reach build.apply_photo_view and
+// the printer cuts what she lined up.
+//
+// Owner-token gated (these are photographs of her people) and refused once the
+// collection is CLOSED, like the title: the deck is in production by then and a
+// silently-accepted change would print nothing.
+app.put('/api/collections/:id/pawn-view', express.json({ limit: '8kb' }), (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  if (db.effectiveStatus(c) !== 'open') {
+    return res.status(409).json({ error: 'closed', message: 'האיסוף נסגר והמשחק בהפקה' });
+  }
+  const body = req.body || {};
+  if (typeof body.path !== 'string' || !body.path) {
+    return res.status(400).json({ error: 'expected { path }' });
+  }
+  // The store clamps zoom/dx/dy and coerces bg, and refuses a path this
+  // collection does not hold — a null answer is "not yours", the same as a bad
+  // token, on purpose.
+  const views = db.setPawnView(req.params.id, req.query.k, body.path, body);
+  if (views == null) return res.status(403).json({ error: 'forbidden' });
+  res.json({ ok: true, pawn_view: views });
+});
+
+// THE CUTOUT FOR A PHOTO WE ALREADY HOLD. Multipart: a `path` field naming the
+// original and a `cut` file carrying the transparent PNG the browser produced.
+//
+// The upload route attaches a cutout to a photo as it ARRIVES, which covers the
+// wizard and nothing else: a photo added later from the collection page, or one
+// whose cut missed on the phone that sent it, had no second chance and printed
+// with its background. This is that second chance — the same MediaPipe cut, run
+// on whatever device she is holding now, for a photo already on the order.
+//
+// Owner-token gated in front of express.raw for the same reason the upload route
+// is: authenticate before buffering a body, never after.
+app.post(
+  '/api/collections/:id/pawn-cut',
+  (req, res, next) => {
+    const c = db.getCollection(req.params.id);
+    if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+    next();
+  },
+  express.raw({ type: () => true, limit: PAWN_UPLOAD_LIMIT }),
+  (req, res) => {
+    const id = req.params.id;
+    const ownerToken = req.query.k;
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { fields, files } = templates.parseMultipart(req.body, boundary);
+    const orig = String((fields && fields.path) || '');
+    const part = files && files.cut;
+    if (!orig || !part || !Buffer.isBuffer(part.data)) {
+      return res.status(400).json({ error: 'expected a `path` field and a `cut` file' });
+    }
+    // PNG only, exactly as storePawnCutouts insists: a JPEG cannot carry alpha,
+    // so recording one as "cut ✓" would ship a photo that still prints as a
+    // rectangle — the one silent failure this whole feature exists to prevent.
+    let saved = null;
+    try {
+      if (content.extFromMagic(part.data) === '.png') saved = content.saveImageBytes(part.data);
+    } catch {
+      saved = null;
+    }
+    if (!saved) return res.status(400).json({ error: 'expected a PNG cutout' });
+    const cuts = db.setPawnCutout(id, ownerToken, orig, saved.path);
+    if (cuts == null) {
+      // Not this collection's photo. Don't orphan the file we just wrote — unless
+      // something else already references it (content-addressed uploads are shared).
+      if (saved.created && !content.isImageReferenced(saved.path)) content.deleteUpload(saved.path);
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    res.json({ ok: true, pawn_cutouts: cuts });
+  }
+);
+
 // HER PHOTO CARD, RENDERED — the card her four photos actually become.
 //
 // The collection page used to show the photos as a strip of thumbnails, which
@@ -1739,21 +1892,24 @@ app.put('/api/collections/:id/pawns', express.json({ limit: '16kb' }), (req, res
 //
 // OWNER ONLY (owner_token), because the photos are.
 //
-// Cached on (theme + the exact photo files), so returning to the tab is free and
-// yet a photo added or removed is a different key and re-renders at once — no
-// staleness to reason about. Shares the preview LRU: this is a preview, and the
-// two together should be bounded once rather than twice.
+// Cached on (theme + the exact photo files + the frames she set), so returning
+// to the tab is free and yet a photo added, removed or MOVED is a different key
+// and re-renders at once — no staleness to reason about. Shares the preview LRU:
+// this is a preview, and the two together should be bounded once rather than
+// twice.
 app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
   const theme = c.theme || '';
   if (!validate.getTheme(theme)) return res.status(400).json({ error: 'unknown theme' });
   const photos = pawnPhotoFiles(c);
-  const cacheKey = 'pawn-card:' + theme + ':' + photos.join('|');
+  const photoFrames = pawnPhotoFrames(c);
+  const cacheKey =
+    'pawn-card:' + theme + ':' + photos.join('|') + ':' + photoFrames.map((f) => f || '').join('|');
   const cached = previewCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
-    const out = await runPawnCard({ theme, photos });
+    const out = await runPawnCard({ theme, photos, photoFrames });
     previewCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
@@ -5685,4 +5841,5 @@ module.exports.buyerLandedInGroup = buyerLandedInGroup;
 // have one, the original otherwise) — exposed so the choice can be asserted
 // directly instead of through a full generation run.
 module.exports.pawnPhotoFiles = pawnPhotoFiles;
+module.exports.pawnPhotoFrames = pawnPhotoFrames;
 module.exports.orderArgs = orderArgs;
