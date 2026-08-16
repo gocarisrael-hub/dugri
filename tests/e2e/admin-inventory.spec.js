@@ -88,9 +88,23 @@ test('nearly out and out are visible without reading the number', async ({ page 
   await expect(page.getByTestId('board-football-boys')).toContainText('נגמר');
 });
 
+// ONE PROJECT ONLY, and the reason is the whole point of the feature: the shelf
+// is a single global counter. Playwright runs every test once per device
+// project, so this one used to run TWICE AT ONCE against one server, both copies
+// setting the count to 40 and both expecting 39 — whichever finished second saw
+// 38. It is the same rule the wordlist-menu spec follows for the same reason,
+// and it was failing on main until this.
+//
+// The counting itself is held against the real store in tests/unit/stock.test.js
+// on every run; what needs a browser here is only that the READY button is what
+// moves it.
+const ONLY = 'Desktop Chrome';
+
 test('marking an order ready is what moves the shelf, and undoing it moves it back', async ({
   page,
-}) => {
+}, testInfo) => {
+  test.skip(testInfo.project.name !== ONLY, 'mutates one global counter: runs once per server');
+
   // A real order, standing where the shelf gets touched: paid and at the printer.
   const created = await page.request
     .post('/api/collections', {

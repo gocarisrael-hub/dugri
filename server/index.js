@@ -1563,20 +1563,44 @@ function designNameFor(theme) {
   }
 }
 
-// The orders a sticker is printed for TONIGHT: self-collection, at the printer,
-// not yet marked ready. That is the owner's own rule ("all the pickup orders
-// that are בדפוס"), and each half of it earns its place — a delivered order is
-// posted rather than collected, an order not yet sent has no box to label, and
-// one already marked ready has been labelled and handed over.
+// The orders a sticker is printed for TONIGHT: self-collection, the deck already
+// PRODUCED, and not yet handed over.
+//
+// This began as "pickup, and carrying the sent-to-print stamp" — which is the
+// admin's own בדפוס stage, and which matches NOTHING. Measured against the real
+// orders: 135 have been stamped to print, and every one of them is also already
+// marked ready, because the owner presses the two together. Her בדפוס is the
+// pile going to the printer tonight, not a state an order ever rests in — and in
+// the stage strip that pile is "הופקו — לשליחה לדפוס".
+//
+// So the rule is the one the label itself implies: THE BOX EXISTS AND HAS NOT
+// GONE OUT. Each clause earns its place —
+//   • pickup      — a delivery order is posted rather than collected;
+//   • paid        — an unpaid order is not being made;
+//   • produced    — there is no box to label until the deck has been built (an
+//                   order still collecting words, or closed and not yet run,
+//                   has nothing to stick a label on);
+//   • not ready   — marked ready means labelled and handed over;
+//   • not cancelled.
+//
+// An order that IS resting in בדפוס (stamped, not yet ready) still qualifies:
+// it was produced to get there, so the first clause already holds.
 //
 // Oldest first, so the sheet comes out in the order the orders table shows and a
 // sticker can be found in it.
+function orderProduced(c) {
+  const p = (c.order && c.order.production) || c.production || null;
+  return !!(p && p.state === 'generated');
+}
 function pickupStickerOrders() {
   return db
     .listAllCollections()
     .filter((c) => {
       const o = c.order;
-      return !!(o && o.version === 'pickup' && o.sent_to_print_at && !o.ready_at);
+      if (!o || c.cancelled) return false;
+      if (o.version !== 'pickup' || !o.paid) return false;
+      if (o.ready_at) return false;
+      return orderProduced(c) || !!o.sent_to_print_at;
     })
     .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
     .map((c) => ({
