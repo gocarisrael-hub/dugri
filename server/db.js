@@ -1842,6 +1842,28 @@ const db = {
     return _db.collections.filter((c) => c.order && c.order.ready_at).length;
   },
 
+  // The HFD parcel booked for a delivery order (server/hfd.js). Stored on the
+  // order because it IS part of the order: the shipment number is what the owner
+  // quotes to the courier, and the rand number is the customer's tracking link.
+  //
+  // A patch, not a replace, so cancelling keeps the number that was cancelled —
+  // an order's shipping history is evidence, and "there is no shipment" and
+  // "shipment 123 was cancelled" are different facts. Pass null to clear it
+  // outright (nothing does today; it exists so a mis-book is recoverable).
+  // Returns the stored record, or null when there is no such order.
+  setHfdShipment(id, patch) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return null;
+    if (patch === null) {
+      c.order.hfd = null;
+      saveDb();
+      return null;
+    }
+    c.order.hfd = { ...(c.order.hfd || {}), ...(patch || {}) };
+    saveDb();
+    return c.order.hfd;
+  },
+
   // Mark an existing order as paid. Used by the PeleCard callback and the
   // free-coupon path — the only two real money events. Nothing marks an order
   // paid by hand (there is no admin mark-paid route). meta carries the method +

@@ -230,6 +230,40 @@ Optional: `PELECARD_BASE_URL` overrides the gateway host (defaults to
 `https://gateway21.pelecard.biz`); set this only if PeleCard gives you a
 different test/production gateway.
 
+## Courier — HFD shipments (optional)
+
+A delivery order's parcel can be booked with **HFD** from the orders page instead
+of retyping the address into HFD's own site: the row grows a **שלח ל-HFD** button
+under the address, and once booked shows the shipment number with its **מדבקה**
+(sticker PDF), a **מעקב** tracking link for the customer, and **בטל משלוח**.
+**Off until the two credentials are set** — with no config the button is not
+drawn at all and nothing calls out.
+
+Booking is always a button press, never automatic: a shipment is a real van and a
+real charge.
+
+Get the credentials from HFD — their integration sheet has a token-issuing form
+(**"הנפקת טוקן"**), and the client number is your HFD customer number. Then set on
+the Railway service:
+
+- **`HFD_TOKEN`** — the bearer token HFD issues you.
+- **`HFD_CLIENT_NUMBER`** — your HFD customer number (`clientNumber` in their API).
+
+Optional:
+
+- **`HFD_SENDER_NAME`** — the sender the recipient sees (defaults to `דוגרי`).
+- **`HFD_SHIPMENT_TYPE_CODE`** / **`HFD_CARGO_TYPE`** — the service codes
+  (default `35` / `10` = plain delivery to an address). Change these only if HFD
+  support puts you on a different service; the other combinations in their own
+  plugin are a pickup point (`50`/`11`, needs a pudo code), cash on delivery
+  (`37`/`10`) and collecting from a customer (a returns flow).
+- **`HFD_BASE_URL`** — API host, defaults to `https://api.hfd.co.il/rest/v2`.
+- **`HFD_TRACK_URL`** — tracking page, defaults to `https://run.hfd.co.il/info`.
+
+Set these on **staging first** and book one parcel end to end before putting them
+on production: HFD has no sandbox, so every booking is a real one (cancel it from
+the same row when you're done testing).
+
 ## Email notifications (optional)
 
 The server can email on two events: a payment comes in (the owner gets an alert
