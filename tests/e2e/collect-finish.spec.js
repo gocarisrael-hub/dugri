@@ -383,43 +383,74 @@ test('an order with nothing to upgrade is offered nothing', async ({ page }) => 
 // the owner found it — "it moves so slow, and the card and the circles are not
 // synced". The empty card and its four disc positions come from the generator
 // ONCE; the photos are laid into them here, so a drag is a CSS change.
+// A pointer DRAG that works on both device profiles. page.mouse fires nothing a
+// touch context listens to, and Playwright's touchscreen only taps — so the
+// three pointer events our own handler reads are dispatched directly, which is
+// also the honest scope: this is a test of the handler, not of the browser.
+async function dragBy(locator, dx, dy) {
+  const box = await locator.boundingBox();
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  const opts = { pointerId: 1, pointerType: 'touch', isPrimary: true, bubbles: true };
+  await locator.dispatchEvent('pointerdown', { ...opts, clientX: x, clientY: y });
+  for (const step of [0.4, 0.75, 1]) {
+    await locator.dispatchEvent('pointermove', {
+      ...opts,
+      clientX: x + dx * step,
+      clientY: y + dy * step,
+    });
+  }
+  await locator.dispatchEvent('pointerup', { ...opts, clientX: x + dx, clientY: y + dy });
+}
+
+// The pawn card is a Chrome render on the server, and the CI node job has no
+// Python imaging — so the picture is stubbed here. What these tests are about is
+// what the PAGE does with it; that the generator draws it correctly has its own
+// pytest (generator/test_preview_pawn_card.py).
+const CARD_PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+const CARD_SLOTS = [
+  { n: 1, x: 0.178, y: 0.279, w: 0.295, h: 0.212 },
+  { n: 2, x: 0.527, y: 0.279, w: 0.295, h: 0.212 },
+  { n: 3, x: 0.178, y: 0.529, w: 0.295, h: 0.212 },
+  { n: 4, x: 0.527, y: 0.529, w: 0.295, h: 0.212 },
+];
+async function stubPawnCard(page, asked) {
+  await page.route('**/pawn-card**', (route) => {
+    if (asked) asked.push(route.request().url());
+    return route.fulfill({ json: { card: CARD_PNG, slots: CARD_SLOTS } });
+  });
+}
+
 test('the card is drawn here, so it moves with the photo instead of behind it', async ({
   page,
 }) => {
   const asked = [];
-  await page.route('**/pawn-card**', (route) => {
-    asked.push(route.request().url());
-    return route.continue();
-  });
+  await stubPawnCard(page, asked);
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 1);
   await page.goto(url);
   await page.getByTestId('tab-pawns').click();
   await expect(page.locator('.pawn-live-slot')).toHaveCount(1);
 
-  // ONE request, and it asks for the empty card — the picture that depends on
-  // the design alone and can therefore be cached and reused.
+  // ONE request, and it asks for the EMPTY card — the picture that depends on
+  // the design alone and can therefore be fetched once and reused.
   await expect.poll(() => asked.length).toBe(1);
   expect(asked[0]).toContain('live=1');
 
   const slotImg = page.locator('.pawn-live-slot img').first();
   const before = await slotImg.evaluate((el) => el.style.left);
-  const disc = await page.locator('.pawn-disc').first().boundingBox();
-  await page.mouse.move(disc.x + disc.width / 2, disc.y + disc.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(disc.x + disc.width / 2 + 20, disc.y + disc.height / 2 + 12, { steps: 4 });
-  await page.mouse.up();
+  await dragBy(page.locator('.pawn-disc').first(), 20, 12);
 
-  // The card moved WITH the circle — same number, because it is the same maths —
-  // and nothing was asked of the server to make it happen.
-  const after = await slotImg.evaluate((el) => el.style.left);
-  expect(after).not.toBe(before);
+  // The card moved WITH the circle — the same number, because it is the same
+  // maths on the same in-flight view — and nothing was asked of the server.
+  await expect.poll(async () => slotImg.evaluate((el) => el.style.left)).not.toBe(before);
   expect(
     await page
       .getByTestId('pawn-thumb')
       .first()
       .evaluate((el) => el.style.left)
-  ).toBe(after);
+  ).toBe(await slotImg.evaluate((el) => el.style.left));
   await page.waitForTimeout(900); // past the save debounce
   expect(asked).toHaveLength(1);
 });
@@ -427,6 +458,7 @@ test('the card is drawn here, so it moves with the photo instead of behind it', 
 // A slider with no label is a mystery, and a 4px thumb is a mystery you cannot
 // grab on a trackpad. Both were the owner's words.
 test('the size control says what it is and can be stepped', async ({ page }) => {
+  await stubPawnCard(page);
   const { url, id, k } = await createCollection(page);
   const [photo] = await attachPhotos(page, id, k, 1);
   await page.goto(url);
@@ -442,7 +474,7 @@ test('the size control says what it is and can be stepped', async ({ page }) => 
   await page.getByTestId('pawn-zoom-out').click();
   await page.getByTestId('pawn-zoom-out').click();
   await expect(zoom).toHaveValue('1.1');
-  // …and the steps reach the order, like the slider does.
+  // …and the steps reach the order, exactly as the slider does.
   await expect
     .poll(async () => (await owned(page, id, k)).pawn_view[photo]?.zoom)
     .toBeCloseTo(1.1, 5);
@@ -450,6 +482,7 @@ test('the size control says what it is and can be stepped', async ({ page }) => 
 
 // Nothing on screen said the photo could be moved at all.
 test('the circle says it can be dragged, until it has been', async ({ page }) => {
+  await stubPawnCard(page);
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 1);
   await page.goto(url);
@@ -457,11 +490,7 @@ test('the circle says it can be dragged, until it has been', async ({ page }) =>
 
   const badge = page.locator('.pawn-grab');
   await expect(badge).toBeVisible();
-  const disc = await page.locator('.pawn-disc').first().boundingBox();
-  await page.mouse.move(disc.x + disc.width / 2, disc.y + disc.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(disc.x + disc.width / 2 + 15, disc.y + disc.height / 2, { steps: 3 });
-  await page.mouse.up();
+  await dragBy(page.locator('.pawn-disc').first(), 15, 0);
   // An instruction that stays after it has been followed is noise.
   await expect(badge).toBeHidden();
 });

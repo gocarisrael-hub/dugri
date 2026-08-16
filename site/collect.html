@@ -2081,6 +2081,20 @@
           <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
           <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
         </div>
+        <!-- SHE CONFIRMS SHE LOOKED. Closing sends the deck to print and nothing
+             above it can be changed afterwards, so the three things on this tab —
+             the title, the photos, the style of the filler words — are attested
+             rather than assumed. A dialog after the fact asks "are you sure?"
+             about a decision already made; this asks BEFORE the button is live,
+             which is the only moment the answer can still change anything.
+             Deliberately NOT stored on the order: it is a statement about this
+             moment, and a reload is a new moment. -->
+        <label class="finish-ack" for="finishAck">
+          <input type="checkbox" id="finishAck" data-testid="finish-ack" />
+          <span data-edit="collect-finish-ack"
+            >עברתי על הכותרת, על חיילי המשחק ועל סגנון המילים - הכול נכון ואפשר להדפיס.</span
+          >
+        </label>
       </section>
 
       <!-- ADD DELIVERY TO AN ORDER SHE HAS ALREADY PAID FOR.
@@ -2178,20 +2192,6 @@
         <p class="muted" data-edit="collect-owner-hint">
           סיימתם לאסוף? סגרו את האיסוף ושלחו לדוגרי.
         </p>
-        <!-- SHE CONFIRMS SHE LOOKED. Closing sends the deck to print and nothing
-             above it can be changed afterwards, so the three things on this tab —
-             the title, the photos, the style of the filler words — are attested
-             rather than assumed. A dialog after the fact asks "are you sure?"
-             about a decision already made; this asks BEFORE the button is live,
-             which is the only moment the answer can still change anything.
-             Deliberately NOT stored on the order: it is a statement about this
-             moment, and a reload is a new moment. -->
-        <label class="finish-ack" for="finishAck">
-          <input type="checkbox" id="finishAck" data-testid="finish-ack" />
-          <span data-edit="collect-finish-ack"
-            >עברתי על הכותרת, על חיילי המשחק ועל סגנון המילים - הכול נכון ואפשר להדפיס.</span
-          >
-        </label>
         <div class="actions">
           <button id="closeBtn" type="button" data-edit="collect-close-btn" disabled>
             מספיק! סיימנו לאסוף ✅
