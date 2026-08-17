@@ -8,20 +8,43 @@
 // see that. So the slot now shows the pawn: on the card, inside the dashed
 // cut-line, framed exactly as generator/build.py frames it.
 //
-// THE RULE, mirrored from build.subject_window / build.subject_reach:
+// THE RULE, mirrored from build.subject_box / build.subject_window /
+// build.subject_reach:
 //
 //   1. the subject is every pixel at or above ALPHA_MIN (24 — low on purpose,
 //      a hair matte fades to zero over a few pixels and all of it is subject);
-//   2. its REACH is the distance from its bounding box's centre to its farthest
+//   2. an alpha that says nothing — nothing opaque, or nothing transparent —
+//      is NOT a subject, and the caller falls back to the plain square crop,
+//      exactly as subject_box returning None does on the generator side;
+//   3. if the cut left several blobs, ONE of them is the subject: the one whose
+//      centre of mass is nearest the middle of the frame, with specks dropped
+//      first. The others are erased before anything is measured;
+//   4. its REACH is the distance from its bounding box's centre to its farthest
 //      pixel, measured off the silhouette rather than the box, because a head
 //      leaves its box's corners empty and the corner radius would over-state the
 //      reach by up to 40% — shrinking the face to leave room nobody occupies;
-//   3. the disc covers that reach exactly, so the WHOLE subject fits inside the
+//   5. the disc covers that reach exactly, so the WHOLE subject fits inside the
 //      circle and nothing is cut. Too big means smaller, never trimmed.
 //
 // Keeping the two in step matters more than the arithmetic being clever: a
 // preview that frames differently from the printer is worse than no preview,
 // because it is believed. If build.py's framing changes, change this with it.
+//
+// Steps 2 and 3 were missing here for one release and the owner saw the cost on
+// a real order: a photo of two people previewed with BOTH of them shrunk to fit
+// the circle, and printed with the honoree alone at full size — the same picture
+// in the same tab, disagreeing with itself. The cross-check at the foot of
+// tests/unit/pawn-view.test.js now holds the two together on exactly those inputs.
+//
+// ONE DIFFERENCE REMAINS, KNOWN AND BOUNDED. The generator ERASES the blobs it
+// did not pick from the alpha before it saves the square, so a bystander leaves
+// no trace on the card. This side can only choose where to put the picture — the
+// browser draws the cutout file as it is — so a bystander who happens to fall
+// inside the honoree's disc after framing is still visible in the preview, as a
+// sliver at its edge, where the print has nothing. Closing it means compositing
+// every photo onto a canvas and holding a second copy of it in memory on a
+// phone, to remove pixels the framing has already decided not to be about. The
+// framing is what the buyer is judging, and the framing now agrees.
 //
 // EVERYTHING IS EXPRESSED AS A PERCENTAGE OF THE SLOT, never in pixels. The slot
 // is square but its size is responsive (96 px on a phone, 300 on a desktop), and
@@ -42,6 +65,140 @@ export const DISC_FILL = 0.9;
 // photo in JS is not free).
 export const MASK_PX = 200;
 
+// Below the first share of the frame there is nothing worth framing (a cut that
+// collapsed); at or above the second there is nothing transparent to frame BY (an
+// ordinary opaque photo, or a segmenter that kept everything). Either way there is
+// no silhouette and the answer is `null`, which sends the caller to plainFrame —
+// the same fork build.subject_box takes when it returns None. Without this an
+// opaque "cutout" was measured corner-to-corner and drawn to fit its own diagonal
+// inside the disc, i.e. shrunk by ~1.4x against a print that fills the slot.
+// Mirrors PHOTO_SUBJECT_MIN_COVER / PHOTO_SUBJECT_MAX_COVER.
+export const MIN_COVER = 0.005;
+export const MAX_COVER = 0.995;
+
+// A blob smaller than this share of the biggest one is a speck the segmenter left
+// behind, never the subject — dropped before the nearest-to-centre choice so a
+// stray scrap at dead centre cannot beat the person. Mirrors PHOTO_BLOB_MIN_SHARE.
+export const BLOB_MIN_SHARE = 0.08;
+
+// How far the reach measurement may miss by, in mask pixels. The mask is a
+// downscale of the photo, so the silhouette's outermost pixel can fall between
+// samples; padding the answer by one keeps the real edge inside the disc rather
+// than a fraction of a pixel outside it. Mirrors PHOTO_REACH_SLACK — where the
+// generator divides by its own downscale factor to get back to source pixels,
+// this measures on the mask itself and so needs no conversion.
+export const REACH_SLACK = 1;
+
+/**
+ * The 8-connected blobs of a subject mask, biggest first.
+ *
+ * `mask` is a Uint8Array of 0/1 over `width` x `height`. Each entry is
+ * `{ n, box: [l, t, r, b], cx, cy, seed }` — `seed` being one pixel known to
+ * belong to it, so the caller can walk it again without hunting for a way in.
+ * An iterative flood fill, mirroring build._blobs; the generator runs the same
+ * walk on a 200 px mask for the same reason (a full-resolution flood fill is not
+ * something to do on a phone's main thread).
+ */
+function blobs(mask, width, height) {
+  const seen = new Uint8Array(width * height);
+  const out = [];
+  const stack = [];
+  for (let y0 = 0; y0 < height; y0++) {
+    for (let x0 = 0; x0 < width; x0++) {
+      const at = y0 * width + x0;
+      if (!mask[at] || seen[at]) continue;
+      seen[at] = 1;
+      stack.length = 0;
+      stack.push(at);
+      let n = 0;
+      let sx = 0;
+      let sy = 0;
+      let left = x0;
+      let right = x0;
+      let top = y0;
+      let bottom = y0;
+      while (stack.length) {
+        const i = stack.pop();
+        const x = i % width;
+        const y = (i - x) / width;
+        n++;
+        sx += x;
+        sy += y;
+        if (x < left) left = x;
+        else if (x > right) right = x;
+        if (y < top) top = y;
+        else if (y > bottom) bottom = y;
+        for (let ny = Math.max(0, y - 1); ny < Math.min(height, y + 2); ny++) {
+          for (let nx = Math.max(0, x - 1); nx < Math.min(width, x + 2); nx++) {
+            const j = ny * width + nx;
+            if (mask[j] && !seen[j]) {
+              seen[j] = 1;
+              stack.push(j);
+            }
+          }
+        }
+      }
+      out.push({ n, box: [left, top, right + 1, bottom + 1], cx: sx / n, cy: sy / n, seed: at });
+    }
+  }
+  out.sort((a, b) => b.n - a.n);
+  return out;
+}
+
+/**
+ * Everything except the subject's own blob, erased from `mask` — in place.
+ *
+ * Which blob is the subject: the one whose centre of mass is nearest the centre
+ * of the frame. Not the biggest, and this is build.subject_box's reasoning
+ * verbatim — a person standing behind the honoree can easily be the larger of the
+ * two, and the one being photographed is the one in the middle.
+ *
+ * Returns the blob that was kept, or null when there was never more than one (in
+ * which case the mask is untouched, so a soft matte that reads as a single blob
+ * is measured exactly as it was before any of this existed).
+ */
+function keepSubjectBlob(mask, width, height) {
+  const found = blobs(mask, width, height);
+  if (found.length < 2) return found[0] || null;
+  const biggest = found[0].n;
+  const real = found.filter((b) => b.n >= BLOB_MIN_SHARE * biggest);
+  const pool = real.length ? real : [found[0]];
+  const mx = width / 2;
+  const my = height / 2;
+  let pick = pool[0];
+  let best = Infinity;
+  for (const b of pool) {
+    const d = (b.cx - mx) ** 2 + (b.cy - my) ** 2;
+    if (d < best) {
+      best = d;
+      pick = b;
+    }
+  }
+  // Re-walk the chosen blob and keep only it. The generator has to dilate its
+  // keep-mask because it builds it small and blows it back up; here the walk runs
+  // on the very pixels that will be measured, so the blob IS the keep-set and
+  // there is nothing to round off.
+  const keep = new Uint8Array(width * height);
+  const stack = [pick.seed];
+  keep[pick.seed] = 1;
+  while (stack.length) {
+    const i = stack.pop();
+    const x = i % width;
+    const y = (i - x) / width;
+    for (let ny = Math.max(0, y - 1); ny < Math.min(height, y + 2); ny++) {
+      for (let nx = Math.max(0, x - 1); nx < Math.min(width, x + 2); nx++) {
+        const j = ny * width + nx;
+        if (mask[j] && !keep[j]) {
+          keep[j] = 1;
+          stack.push(j);
+        }
+      }
+    }
+  }
+  mask.set(keep);
+  return pick;
+}
+
 /**
  * Where the subject sits, from raw RGBA pixels.
  *
@@ -50,9 +207,10 @@ export const MASK_PX = 200;
  *
  * Returns `{ widthPct, leftPct, topPct }` — the image's width as a percentage of
  * the slot, and the offsets of its top-left corner, also in percent — or `null`
- * when there is no subject to frame (a fully transparent image, or one with no
- * alpha at all, where there is nothing to measure and the caller should fall
- * back to showing the photo as it is).
+ * when there is no subject to frame. `null` is not a failure: it is the same
+ * fork build.subject_box takes, and the caller answers it the same way, with
+ * plainFrame — a fully transparent image, an opaque one with no silhouette in it
+ * at all, or a cut that collapsed to a speck.
  */
 export function subjectFrame(image, opts = {}) {
   const discFill = opts.discFill == null ? DISC_FILL : opts.discFill;
@@ -60,7 +218,11 @@ export function subjectFrame(image, opts = {}) {
   const { data, width, height } = image || {};
   if (!data || !width || !height) return null;
 
-  // Pass 1 — the subject's bounding box.
+  // Pass 1 — the subject mask, its bounding box and how much of the frame it
+  // covers. The mask is kept because the blob walk needs it, and because
+  // erasing a bystander from it is how the walk's answer is applied.
+  const mask = new Uint8Array(width * height);
+  let opaque = 0;
   let x0 = width;
   let y0 = height;
   let x1 = -1;
@@ -69,6 +231,8 @@ export function subjectFrame(image, opts = {}) {
     const row = y * width * 4;
     for (let x = 0; x < width; x++) {
       if (data[row + x * 4 + 3] >= alphaMin) {
+        mask[y * width + x] = 1;
+        opaque++;
         if (x < x0) x0 = x;
         if (x > x1) x1 = x;
         if (y < y0) y0 = y;
@@ -77,20 +241,46 @@ export function subjectFrame(image, opts = {}) {
     }
   }
   if (x1 < 0) return null; // nothing opaque anywhere
+  // Nothing transparent anywhere is the same non-answer: there is no silhouette
+  // in an opaque photo, only its rectangle, and framing on a rectangle's diagonal
+  // draws it 1.4x smaller than the printer will. build.subject_box refuses the
+  // same two extremes before it looks at a single blob.
+  const cover = opaque / (width * height);
+  if (cover < MIN_COVER || cover > MAX_COVER) return null;
+
+  // Pass 2 — WHICH silhouette. A cut that kept a bystander leaves two blobs, and
+  // the generator measures only the one nearest the middle of the frame; measuring
+  // both here would preview two small people where the card prints one large one.
+  // Erasing happens in the mask, so passes 3 and 4 need know nothing about it.
+  if (keepSubjectBlob(mask, width, height)) {
+    x0 = width;
+    y0 = height;
+    x1 = -1;
+    y1 = -1;
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        if (!mask[y * width + x]) continue;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
+    if (x1 < 0) return null;
+  }
 
   const cx = (x0 + x1 + 1) / 2;
   const cy = (y0 + y1 + 1) / 2;
 
-  // Pass 2 — the reach. Only a row's OUTERMOST subject pixels can be its farthest
+  // Pass 3 — the reach. Only a row's OUTERMOST subject pixels can be its farthest
   // from the centre (distance grows with |x - cx|), so two scans per row answer
   // it without measuring the interior.
   let reach = 0;
   for (let y = y0; y <= y1; y++) {
-    const row = y * width * 4;
     let first = -1;
     let last = -1;
     for (let x = x0; x <= x1; x++) {
-      if (data[row + x * 4 + 3] >= alphaMin) {
+      if (mask[y * width + x]) {
         if (first < 0) first = x;
         last = x;
       }
@@ -104,6 +294,10 @@ export function subjectFrame(image, opts = {}) {
     }
   }
   if (!(reach > 0)) return null;
+  // One mask pixel of slack, never past the box's own corner — which already
+  // contains every subject pixel by construction. build.subject_reach ends on the
+  // same two lines.
+  reach = Math.min(reach + REACH_SLACK, Math.hypot(x1 + 1 - x0, y1 + 1 - y0) / 2);
 
   // The disc's radius as a share of the slot, and the scale that maps the
   // subject's reach onto it.

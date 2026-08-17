@@ -270,19 +270,27 @@ test.describe('pawn photos: the background cut', () => {
     await expect(page.getByTestId('pawn-status-0')).toBeHidden();
 
     // The FRAMING is the promise this preview makes, so it is asserted as a
-    // number rather than as "something was set". For a 4x4 image whose subject
-    // is the middle 2x2, the subject's reach is sqrt(0.5) px, the disc radius is
-    // 45% of the slot, so the image is drawn at 4 * 45/sqrt(0.5) = 254.56% with
-    // its top-left at 50 - 2 * 45/sqrt(0.5) = -77.28%. Those are the same
-    // numbers generator/build.py arrives at for the same alpha.
+    // number rather than as "something was set". For a 4x4 image whose subject is
+    // the middle 2x2, the silhouette reaches sqrt(0.5) px from the box's centre;
+    // build.subject_reach then adds one mask pixel of slack and clamps at the
+    // box's own corner, which on an image this small is the clamp that binds:
+    // reach = hypot(2,2)/2 = 1.4142. The disc radius is 45% of the slot, so the
+    // image is drawn at 4 * 45/1.4142 = 127.28% with its top-left at
+    // 50 - 2 * 45/1.4142 = -13.64%.
+    //
+    // These numbers were 254.56 / -77.28 — the answer with the slack MISSING —
+    // under a comment claiming they were the generator's. They were not:
+    // build.subject_reach has clamped this fixture to 1.4142 all along, so the
+    // wizard was drawing this sticker at twice the size the printer does. Run
+    // build.subject_window on the same alpha if either number ever moves again.
     const style = await slot0.locator('.pawn-thumb').evaluate((el) => ({
       width: parseFloat(el.style.width),
       left: parseFloat(el.style.left),
       top: parseFloat(el.style.top),
     }));
-    expect(style.width).toBeCloseTo(254.56, 1);
-    expect(style.left).toBeCloseTo(-77.28, 1);
-    expect(style.top).toBeCloseTo(-77.28, 1);
+    expect(style.width).toBeCloseTo(127.28, 1);
+    expect(style.left).toBeCloseTo(-13.64, 1);
+    expect(style.top).toBeCloseTo(-13.64, 1);
   });
 
   test('a cut with nothing measurable in it stays a plain thumbnail', async ({ page }) => {

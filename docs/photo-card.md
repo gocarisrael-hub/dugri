@@ -515,6 +515,26 @@ Recommended fill rule:
   `photo-fallback/3.svg`. An order with zero photos therefore gets the full generic set, and an
   order with two photos gets two faces plus pawns 3 and 4.
 
+What `build.resolve_photos` actually does is take the fallbacks **in their own order** rather than
+by slot index, so a two-photo order gets pawns 1 and 2 in slots 3 and 4. That is what prints, so it
+is also what any preview has to show; `build.fallback_photos(theme, filled)` is the one place the
+rule lives and both paths read it.
+
+**The LIVE preview is the second of those paths, and it is why that matters.** `collect.html` draws
+the buyer's photos onto the card itself so the picture keeps up with a drag, and asks the generator
+only for the card underneath — `preview.py --pawn-card --no-photos --drawn N`, where `N` is how many
+discs the page will cover. Those N are left bare and **the rest carry their pawns**, which is the
+whole point: rendered with four empty discs, the preview promised an empty circle wherever a pawn
+prints, under a caption reading "this is exactly how the card will be printed".
+
+The framing of those photos is mirrored in `site/js/pawn-frame.js` rather than rendered, so that
+file is a second implementation of `subject_box` / `subject_reach` / `subject_window` and has to
+move with them. It drifted once already — it measured every blob where `subject_box` keeps only the
+one nearest the centre of the frame, so a photo of two people previewed with both of them shrunk to
+fit the circle and printed with the honoree alone at full size. The cross-check at the foot of
+`tests/unit/pawn-view.test.js` transcribes the Python and derives one answer from the other, on
+fixtures small enough that the 200 px working mask never enters into it.
+
 The fallbacks are 200 × 200 SVGs, each pawn centred on the slot and **drawn inside the cut-line —
 never outside it and never on it**, which is the owner's rule and this contract's debt now paid.
 

@@ -3621,10 +3621,19 @@
         box.classList.add('busy');
         fail.classList.add('hidden');
         try {
-          // ?live=1: the card with its discs EMPTY, plus where they are. It
-          // depends on the design alone, so this is asked ONCE per page — every
-          // change after it is drawn here rather than rendered there.
-          const r = await api('/pawn-card?live=1&k=' + encodeURIComponent(ownerToken));
+          // ?live=1: the card WITHOUT her photos, plus where its discs are. Every
+          // adjustment after it is drawn here rather than rendered there, so this
+          // is asked only when a photo is ADDED or REMOVED.
+          //
+          // &n is how many discs this page is about to cover. The rest come back
+          // carrying the shipped Dugri pawns, because that is what the printed
+          // card does — an order with two photos prints two faces and two pawns.
+          // Asking for a card with four bare discs and drawing two of them showed
+          // her two empty circles under a caption that says this is exactly how
+          // the card will be printed.
+          const r = await api(
+            '/pawn-card?live=1&n=' + pawnList().length + '&k=' + encodeURIComponent(ownerToken)
+          );
           if (seq !== pawnCardSeq) return; // a newer render is already on its way
           if (r && r.card) img.src = r.card;
           if (r && Array.isArray(r.slots) && r.slots.length) pawnSlots = r.slots;

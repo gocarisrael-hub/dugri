@@ -607,7 +607,7 @@ function runPreview({
 // what her photos will look like is to render the real thing; the generator
 // composes it through the same helper the deck does. Nothing else is rendered:
 // no front, no back, no board.
-function runPawnCard({ theme, photos, photoFrames, empty = false }) {
+function runPawnCard({ theme, photos, photoFrames, empty = false, drawn = 0 }) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -625,11 +625,17 @@ function runPawnCard({ theme, photos, photoFrames, empty = false }) {
     // The name argument is required by the CLI and unused by this mode: the
     // photo card carries no title.
     const args = [PREVIEW_SCRIPT, theme, '-', outDir, '--pawn-card'];
-    // EMPTY: the card as the design ships it, with its four discs bare, plus
-    // where they are. That picture depends on the THEME alone, so it is rendered
-    // once and the browser lays her photos onto it — which is what lets the card
-    // move under her finger instead of a second behind it.
-    if (empty) args.push('--no-photos');
+    // EMPTY: the card as the design ships it, WITHOUT her photos, plus where the
+    // discs are. The browser lays her photos onto it — which is what lets the
+    // card move under her finger instead of a second behind it.
+    //
+    // `drawn` is how many discs it will cover, and the render fills the REST with
+    // the shipped Dugri pawns, exactly as the printed card tops itself up. Leaving
+    // them bare showed her an empty circle where a pawn prints, under a caption
+    // promising this is exactly what will be printed. It is one more cache
+    // dimension, and a small one: 0..4 per theme, and a card that changes only
+    // when the number of photos does.
+    if (empty) args.push('--no-photos', '--drawn', String(drawn));
     // Photos and their frames, paired exactly as the deck run pairs them — this
     // preview only earns its place by being the same picture the printer makes,
     // and a preview that ignored her framing would be the one thing worse than
@@ -664,6 +670,12 @@ function runPawnCard({ theme, photos, photoFrames, empty = false }) {
         cleanup();
         return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
       }
+      // A run that SUCCEEDED can still have degraded: build.square_photo falls
+      // back to the untouched original when it cannot frame a photo, which prints
+      // it as a rectangle, and it says so on stderr. Dropping stderr on exit 0
+      // meant the only trace of that was the card itself — and a card is only
+      // wrong once someone looks at it closely.
+      if (stderr.trim()) console.warn('pawn card render warned:', stderr.trim().slice(0, 800));
       try {
         const produced = JSON.parse(stdout.trim().split('\n').pop() || '{}');
         const file = produced.pawns;
@@ -2243,16 +2255,21 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
   const theme = c.theme || '';
   if (!validate.getTheme(theme)) return res.status(400).json({ error: 'unknown theme' });
-  // LIVE: the card with its discs EMPTY, and where they are. The page then draws
-  // her photos into them itself, so dragging one is a CSS change rather than a
-  // browser run on the server — the editor moved at the speed of a render before
-  // this, which is to say it was always showing the adjustment before last.
-  // Keyed by theme alone: no photo can change this picture.
+  // LIVE: the card WITHOUT her photos, and where its discs are. The page then
+  // draws them in itself, so dragging one is a CSS change rather than a browser
+  // run on the server — the editor moved at the speed of a render before this,
+  // which is to say it was always showing the adjustment before last.
+  //
+  // `n` is how many discs the page will cover; the render fills the rest with the
+  // shipped Dugri pawns, which is what the printed card does. So this picture
+  // depends on the theme and that COUNT — not on which photos, and not on how she
+  // framed them, either of which would put the render back in the drag loop.
   const live = req.query.live === '1';
+  const drawn = live ? Math.max(0, Math.min(4, Number(req.query.n) || 0)) : 0;
   const photos = live ? [] : pawnPhotoFiles(c);
   const photoFrames = live ? [] : pawnPhotoFrames(c);
   const cacheKey = live
-    ? 'pawn-base:' + theme
+    ? 'pawn-base:' + theme + ':' + drawn
     : 'pawn-card:' +
       theme +
       ':' +
@@ -2262,7 +2279,7 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const cached = previewCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
-    const out = await runPawnCard({ theme, photos, photoFrames, empty: live });
+    const out = await runPawnCard({ theme, photos, photoFrames, empty: live, drawn });
     previewCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
