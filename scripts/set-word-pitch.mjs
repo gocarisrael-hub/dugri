@@ -34,7 +34,8 @@ const PITCH = {
 export async function setWordPitch({ url, key, pitch = PITCH, dry = false, log = console.log }) {
   const base = String(url || '').replace(/\/+$/, '');
   if (!base || !key) throw new Error('need --url and --key');
-  const q = `k=${encodeURIComponent(key)}`;
+  // The admin guard reads `key` (server/index.js requireAdmin).
+  const q = `key=${encodeURIComponent(key)}`;
   const listed = await fetch(`${base}/api/admin/templates?${q}`);
   if (!listed.ok) throw new Error(`GET /api/admin/templates -> ${listed.status}`);
   const have = new Set(((await listed.json()).templates || []).map((t) => t.key));

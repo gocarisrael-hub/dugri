@@ -719,7 +719,7 @@ def test_the_house_english_size_is_the_one_the_owner_picked():
 # card to card. Now the pitch is the design's own on every card, and the SIZE is
 # what gives — which is the trade she chose after seeing both rendered.
 
-def _pitch_of(theme, words, front=0):
+def _pitch_of(theme, words, front=0, deck_pitch=None):
     """The line pitch a real card would print at, and its size."""
     cfg = config.theme(theme)
     recipe = config.recipe_or_empty(cfg)
@@ -737,7 +737,8 @@ def _pitch_of(theme, words, front=0):
     lays = rp._word_layouts(slots, words, face, face.ref, cell=cell,
                             word_size=cfg.get("word_size"), safe=rp._CARD_SAFE,
                             room_bottom=room, obstacles=icons,
-                            even_lines=config.is_single_card(cfg))
+                            even_lines=config.is_single_card(cfg),
+                            deck_pitch=deck_pitch)
     live = [l for l in lays if l]
     return live[0].lead * live[0].size, live[0].size
 
@@ -871,6 +872,21 @@ def test_the_owner_s_spacing_is_what_prints_not_a_ceiling():
     assert build.deck_pitch_for(cfg, []) == 27.5
     cfg["word_pitch"] = 12.0
     assert build.deck_pitch_for(cfg, wants) == 12.0        # tighter than any need, too
+
+
+def test_the_decks_rhythm_reaches_the_cards_that_wrap_nothing():
+    # The number is for the ORDER, not for the cards that happen to wrap. A card
+    # of four short entries used to keep the design's own spacing while the card
+    # beside it printed at the deck's — one deck, two rhythms, which is exactly
+    # what the deck rhythm exists to end.
+    SHORT = ["ים", "אמא", "חוף", "כלב"]
+    loose, _ = _pitch_of("grapefruit", SHORT)
+    tight, _ = _pitch_of("grapefruit", SHORT, deck_pitch=loose * 0.7)
+    assert tight < loose * 0.75, (tight, loose)
+    # And a card that DOES wrap lands on the same number, so the deck steps once.
+    wrapped, _ = _pitch_of("grapefruit", ["הטיול הגדול לתאילנד", "אמא", "חוף", "כלב"],
+                           deck_pitch=loose * 0.7)
+    assert abs(wrapped - tight) < 0.01, (wrapped, tight)
 
 
 def test_a_deck_says_when_its_cards_wanted_tighter_than_her_number():
