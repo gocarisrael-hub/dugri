@@ -3944,6 +3944,63 @@ def title_is_rtl(cfg):
     return cfg.get("language") == "hebrew"
 
 
+def _title_split(line):
+    """``line`` broken at its most BALANCED space, or None when it cannot be.
+
+    Only spaces — a title never breaks inside a word, exactly as a card entry
+    never does. A one-word line therefore has no second line to offer and stays
+    as it is, which is why an unbreakable title still prints small.
+    """
+    parts = line.split()
+    if len(parts) < 2:
+        return None
+    best, cut = None, None
+    for i in range(1, len(parts)):
+        a, b = " ".join(parts[:i]), " ".join(parts[i:])
+        # Balance by CHARACTERS: the two halves want to be the same width, and
+        # at this point there is no size to measure a real width against.
+        gap = abs(len(a) - len(b))
+        if best is None or gap < best:
+            best, cut = gap, (a, b)
+    return cut
+
+
+def _title_wrapped(lines, fit, max_lines=4):
+    """``lines``, wrapped as far as it pays, judged by ``fit`` — the box itself.
+
+    THE SAME RULE THE WORDS FOLLOW: wrap before you shrink. A title the owner
+    typed as one long line has to fit the box's WIDTH, so a fifteen-character
+    line prints at a fraction of the size a short one does while two thirds of
+    the box's HEIGHT stays empty. Breaking that line at a space turns the empty
+    height into type size.
+
+    Her own line breaks are HARD — she typed them — so they are never undone;
+    this only ever adds breaks, and only when the box answers with a bigger
+    size. ``max_lines`` is the ceiling: past four lines a title stops reading as
+    a title.
+    """
+    best = list(lines)
+    best_size, _pitch, cap_h = fit(best)
+    # ONLY A STARVED TITLE IS REWRAPPED. A title whose size the box's HEIGHT
+    # decides is already as big as this box allows, and its line breaks are the
+    # design's own — rewrapping those would restyle every card of every template
+    # to chase a size that is not there. The width has to be what is starving it,
+    # and by a wide margin, before a line is broken that the owner did not break.
+    if best_size > cap_h * 0.75:
+        return best
+    while len(best) < max_lines:
+        widest = max(range(len(best)), key=lambda i: len(best[i]))
+        cut = _title_split(best[widest])
+        if not cut:
+            break
+        cand = best[:widest] + list(cut) + best[widest + 1:]
+        size = fit(cand)[0]
+        if size <= best_size * 1.001:
+            break
+        best, best_size = cand, size
+    return best
+
+
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
                 bold=False, bold_w=None, leading=None, one_block=False,
@@ -3994,63 +4051,56 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                                 ring_visible=visible_outline)
     paint_grow = title_paint_grow(outline_w, bold, bold_w,
                                   ring_visible=visible_outline)
-    pitch = title_pitch(f, ref, lines, leading, paint_pad,
-                        align=align, grow=paint_grow, rtl=rtl,
-                        one_block=one_block)
-    # size to fill the WIDTH, capped so the stacked lines still fit the box HEIGHT.
-    # The height cap comes from the REAL font metrics, not a fixed per-line
-    # fraction: some display title faces (e.g. the japanese font) draw
-    # glyphs far taller than their em, so a stacked title could spill well past its
-    # calibrated box. Measure the actual ink stack and scale it to fill the box.
-    #
-    # Measure the ink extent over ALL lines, not just the first/last: a 3+ line
-    # title can carry its tallest ascender or deepest descender on a MIDDLE line,
-    # which the first/last-only measure under-counts. (Finding #6.)
-    stack = _title_ink_stack(f, ref, lines, pitch)        # full stacked ink at ref
-    # The PAINTED title is taller than its raw ink: a dark outline RING of
-    # size*outline_w rings every glyph (top & bottom), and (when enabled) the drop
-    # shadow drops a further size*0.06 below. Reserve that headroom so the whole
-    # painted footprint (ink + outline + shadow) stays inside the calibrated box on
-    # a height-bound title, instead of the ink filling the box and the ring/shadow
-    # spilling onto the neighbouring artwork. (Finding #5.)
+    # WHAT THIS BOX GIVES A SET OF LINES. One implementation, asked twice: once
+    # per wrap candidate below, and once for the lines that win — so the size the
+    # wrap search chose is the size that prints.
     pad = 2 * outline_w + (0.06 if shadow else 0.0)
-    denom_h = stack + pad * ref
-    ink_fit = bh * ref / denom_h if denom_h > 0 else bh
-    # Height cap. ``old_cap`` is the ORIGINAL calibrated cap (``bh/(0.80*n)*1.02``)
-    # that matched every shipped origin: the recipe title boxes are approximate
-    # regions, not hard clips, so a normal face whose real ink runs ~10% past the
-    # box at ``old_cap`` still looks right (the origin's own ink/outline overrun
-    # the same box). Keep ``old_cap`` — so previously-correct titles are neither
-    # enlarged (the ink-fit-only regression that grew MrDafoe/bachelorette) nor
-    # shrunk (ink-fit under-sized CooperLtBT/birthday etc.). Fall to the metric
-    # ``ink_fit`` ONLY when the ink overflows ``old_cap`` by more than a wide
-    # tolerance — i.e. a genuine display face (japanese-class) whose glyphs
-    # are far taller than their em and would otherwise spill dramatically. The
-    # tolerance is well above every shipped theme's ~10% overrun and well below a
-    # real display face's ~100%, so current themes render exactly as the origin
-    # while an extreme future face is still reined in. (Findings #1, #5, #6.)
-    #
-    # The 0.80 is the per-line share of the box this cap has always assumed, and
-    # it is only right while the lines are stacked ~0.78 apart. A design that
-    # leads WIDER stacks a taller block out of the same type, so the cap has to
-    # come down with it or the auto-fit overflows the box by exactly the extra
-    # leading. Taking the larger of the two leaves the fallback path — pitch
-    # 0.78 — on the identical 0.80 it always used, and only a genuinely wide
-    # measured leading moves it. (A tighter leading is left alone: the block is
-    # then shorter than the cap assumes, so the cap is merely conservative, and
-    # ``ink_fit`` is the binding constraint anyway.)
-    old_cap = bh / (max(0.80, pitch) * n) * 1.02
-    size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
-    denom_w = max(ratios)
-    # WIDTH, with the paint counted. 0.89 is the side margin the box has always
-    # kept; the second term is the ring itself, which is painted OUTSIDE the
-    # glyph advance (``title_paint_grow`` is the spread per unit of size, at each
-    # edge) and therefore has to come out of the same width or the box binds the
-    # letters while the ring hangs over the artwork.
-    if denom_w > 0:
-        size = min(bw * 0.89 / denom_w, bw / (denom_w + 2 * paint_grow), size_h)
-    else:
-        size = size_h
+
+    def _autofit(cand):
+        """``(size, pitch, size_h)`` for ``cand`` in this box."""
+        cpitch = title_pitch(f, ref, cand, leading, paint_pad,
+                             align=align, grow=paint_grow, rtl=rtl,
+                             one_block=one_block)
+        # The height cap comes from the REAL font metrics, not a fixed per-line
+        # fraction: some display title faces (e.g. the japanese font) draw glyphs
+        # far taller than their em, so a stacked title could spill well past its
+        # calibrated box. Measure the actual ink stack and scale it to fill the
+        # box — over ALL lines, since a 3+ line title can carry its tallest
+        # ascender on a middle one. The PAINTED title is taller than its raw ink
+        # (the outline ring, and the shadow when enabled), so that headroom is
+        # reserved here rather than left to spill onto the artwork.
+        stack = _title_ink_stack(f, ref, cand, cpitch)
+        denom_h = stack + pad * ref
+        ink_fit = bh * ref / denom_h if denom_h > 0 else bh
+        # ``old_cap`` is the ORIGINAL calibrated cap that matched every shipped
+        # origin: the title boxes are approximate regions, not hard clips, so a
+        # normal face whose ink runs slightly past the box still looks right.
+        # Fall to the metric ``ink_fit`` only when the ink overflows it — a
+        # genuine display face whose glyphs are far taller than their em. The
+        # 0.80 is the per-line share of the box this cap has always assumed, and
+        # it only holds while the lines stack that tightly; a design that leads
+        # WIDER stacks a taller block out of the same type, so the cap comes down
+        # with it.
+        old_cap = bh / (max(0.80, cpitch) * len(cand)) * 1.02
+        cap_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
+        denom_w = max(f.getlength(ln) / ref for ln in cand)
+        if denom_w <= 0:
+            return cap_h, cpitch, cap_h
+        # WIDTH, with the paint counted. 0.89 is the side margin the box has
+        # always kept; the second term is the ring itself, painted OUTSIDE the
+        # glyph advance, which has to come out of the same width or the box binds
+        # the letters while the ring hangs over the artwork.
+        return (min(bw * 0.89 / denom_w, bw / (denom_w + 2 * paint_grow), cap_h),
+                cpitch, cap_h)
+
+    # WRAP BEFORE YOU SHRINK — the words' rule, now the title's. A pinned size is
+    # the origin's own number for the origin's own line breaks, so a pin is left
+    # exactly as it was.
+    if not fixed_size:
+        lines = _title_wrapped(lines, _autofit)
+        n = len(lines)
+        ratios = [f.getlength(ln) / ref for ln in lines]
+    size, pitch, size_h = _autofit(lines)
     # A theme may pin the title to an EXACT size (the Canva point size, in the
     # recipe's user units) instead of auto-fitting to the box — the box then only
     # positions (centres) the title. Used where auto-fit over/under-shoots.
@@ -4076,6 +4126,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         # own ink already overruns slightly — so every title that fits today is
         # untouched and only genuine overflow is reined in.
         size = fixed_size
+        denom_w = max(ratios)
         if denom_w > 0:
             size = min(size, bw * 0.89 / denom_w * (1 + _TITLE_OVERFLOW_TOL),
                        bw / (denom_w + 2 * paint_grow))

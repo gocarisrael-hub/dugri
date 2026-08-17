@@ -2769,6 +2769,10 @@ def test_the_row_floor_does_not_depend_on_which_pillow_wheel_is_installed():
 #     nothing else about such a title is right either.
 
 _OFFSET_RE = re.compile(r'startOffset="([^"]+)"')
+# The text each MAIN path carries, in the order the block emits them. A title may
+# be wrapped to fill its box, so the lines it actually set are read off the block
+# rather than assumed from the theme's template.
+_MAIN_TEXT_RE = re.compile(r'href="#(t\d+m\d+)"[^>]*>([^<]*)</textPath>')
 _MAIN_PATH_RE = re.compile(
     r'id="t\d+m\d+" fill="none" d="M ([-0-9.]+) ([-0-9.]+) '
     r'Q ([-0-9.]+) ([-0-9.]+) ([-0-9.]+) ([-0-9.]+)"')
@@ -3057,8 +3061,17 @@ def test_every_shipped_title_path_outruns_its_own_text_by_the_slack():
             f, ref = rp._title_metrics(fp)
             sides = 1 if align in ("left", "right") else 2
             paths = _MAIN_PATH_RE.findall(block)
-            assert len(paths) == len(lines), f"{key}/{align}: a line lost its path"
-            for line, pts in zip(lines, paths):
+            # A long title may be WRAPPED to fill its box (_title_wrapped), so the
+            # block can carry more lines than the theme's own template does. What
+            # must hold either way is that every line it set got a path, and each
+            # path outruns the text on it — so the lines are re-read off the block
+            # rather than assumed from the input.
+            # One entry per PATH: each line is drawn as several stacked layers
+            # (outline, then fill, plus a shadow where the theme has one), all
+            # pointing at that line's own path — so the text is keyed by path id.
+            set_lines = list(dict(_MAIN_TEXT_RE.findall(block)).values())
+            assert len(paths) == len(set_lines), f"{key}/{align}: a line lost its path"
+            for line, pts in zip(set_lines, paths):
                 x0, y0, x1, y1, x2, y2 = (float(v) for v in pts)
                 have = rp._quad_length((x0, y0), (x1, y1), (x2, y2))
                 need = f.getlength(line) / ref * size * (
@@ -3066,6 +3079,43 @@ def test_every_shipped_title_path_outruns_its_own_text_by_the_slack():
                 assert have >= need - 1e-6, (
                     f"{key}/{align} {line!r}: path {have:.1f} < {need:.1f} — a "
                     "glyph that falls off it is dropped without a word")
+
+
+def test_a_title_the_width_starves_wraps_instead_of_shrinking():
+    """The words' rule, now the title's: wrap before you shrink.
+
+    A buyer may type any title, and a long one has to fit its box's WIDTH — so
+    it printed at a third of the box's height with two thirds of the box empty
+    (בדיקה בלי כותרת on קליפורניה: 21 units of type in a 62-unit box). Breaking
+    the line at a space turns that empty height into size.
+    """
+    cfg = config.theme("birthday-girls")
+    fp = config.font_path("birthday-girls", cfg["title_font"])
+    box = {"x0": 33.9, "y0": 115.3, "x1": 190.0, "y1": 200.9}   # the back's name box
+    long_title = ["בדיקה בלי כותרת", "עם אנטר"]
+
+    def render(lines, wrap=True):
+        real = rp._title_wrapped
+        if not wrap:
+            rp._title_wrapped = lambda ls, fit, max_lines=4: list(ls)
+        try:
+            return rp.title_block(box, list(lines), "#fff", "#000", fp, 0.036, 0, False)
+        finally:
+            rp._title_wrapped = real
+
+    size = lambda block: float(re.search(r'font-size="([\d.]+)"', block).group(1))
+    lines_of = lambda block: list(dict(_MAIN_TEXT_RE.findall(block)).values())
+
+    grew = render(long_title)
+    assert size(grew) > size(render(long_title, wrap=False)) * 1.3
+    # Her own break is HARD — never undone — and the wrap only ever adds to it.
+    assert lines_of(grew)[-1] == "עם אנטר"
+    assert len(lines_of(grew)) > len(long_title)
+
+    # ...and a title the box's HEIGHT decides is already as big as this box
+    # allows: its breaks are the design's own and nothing rewraps them.
+    short = ["שירה's", "B-day"]
+    assert lines_of(render(short)) == short
 
 
 def test_a_starved_title_path_raises_instead_of_dropping_the_letters():
