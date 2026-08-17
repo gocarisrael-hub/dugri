@@ -1825,6 +1825,22 @@ const HFD_LOCAL_ERRORS = {
   'address required': 'להזמנה חסרה כתובת מלאה (רחוב, עיר).',
 };
 
+// The design's CURRENT public name, for the sticker — the same string
+// /api/design-names serves and the storefront shows (themes.json `display_he`),
+// resolved from the order's generator theme. NOT `c.design`, which is the name
+// stamped on the order when it was placed: a template rename leaves every older
+// order carrying a label the shop no longer uses. Falls back to the stamped name
+// if themes.json can't be read at all.
+function hfdDesignName(c) {
+  try {
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+    const theme = (c.order && c.order.theme) || c.theme || null;
+    return templates.displayNameForDesign(themes, { theme, name: c.design, id: theme });
+  } catch {
+    return (c && c.design) || '';
+  }
+}
+
 // Admin: is the courier integration armed? The admin page asks once at load and
 // hides the whole control when it isn't, rather than offering a button that can
 // only fail.
@@ -1857,7 +1873,7 @@ app.post('/api/admin/collections/:id/hfd', async (req, res) => {
     });
   }
 
-  const r = await hfd.createShipment(c);
+  const r = await hfd.createShipment(c, { designName: hfdDesignName(c) });
   if (!r.ok) {
     if (HFD_LOCAL_ERRORS[r.error]) {
       return res.status(400).json({ error: r.error, message: HFD_LOCAL_ERRORS[r.error] });

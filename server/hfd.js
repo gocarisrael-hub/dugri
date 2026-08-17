@@ -80,6 +80,37 @@ function splitStreet(street) {
   return { streetName: m[1].trim(), houseNum: m[2] };
 }
 
+// WHICH game is in this box, as one line for the sticker's note: the title
+// printed on the deck and the design it was made in. Several boxes going out on
+// the same day look identical from the outside, and the courier's sticker is the
+// only thing on them — reading it has to be enough to match a box to an order
+// without opening it.
+//
+// The title is the one the cards carry (`custom_title`), falling back to the
+// honoree's name when the buyer never set one — the same rule the orders table
+// shows. A multi-line title collapses to one line, because this is a label, and
+// the whole thing is capped: HFD prints a field, not a paragraph.
+//
+// `designName` is the design's CURRENT PUBLIC name, resolved by the caller from
+// themes.json (`display_he`) — the same string the storefront shows. It is a
+// parameter rather than something read off the collection because `c.design` is
+// the name STAMPED at order time: rename a template and every earlier order
+// still carries the old label, so a sticker built from it would name a design
+// nobody sells any more ("טיול חזרה" for what is now "סיישל"). The stamped name
+// is only the fallback, and the theme key the fallback's fallback.
+const GAME_REMARK_MAX = 120;
+function gameRemark(c, designName) {
+  const title = String((c && c.custom_title) || (c && c.honoree_name) || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const design = String(
+    designName || (c && c.design) || (c && c.order && c.order.theme) || (c && c.theme) || ''
+  ).trim();
+  const line = [title, design].filter(Boolean).join(' · ');
+  const chars = Array.from(line);
+  return chars.length > GAME_REMARK_MAX ? chars.slice(0, GAME_REMARK_MAX - 1).join('') + '…' : line;
+}
+
 // Everything about the address that HFD has no field for, as one remark line:
 // the full street as the customer typed it, the postal code, and the flat/floor.
 // The courier reads this; it is not decoration.
@@ -98,7 +129,10 @@ function addressRemarks(addr) {
 // Returns { payload } or { error } for an order that cannot ship: no order, not
 // a delivery order, or no address. Those are the owner's mistakes to fix in the
 // order editor, so they are refused here rather than sent to HFD to bounce.
-function buildShipment(c) {
+//
+// `opts.designName` — the design's current public name, resolved by the caller
+// (see gameRemark). Omitted, the order's stamped name is used.
+function buildShipment(c, opts = {}) {
   const order = c && c.order;
   if (!order) return { error: 'no order' };
   if (order.version !== 'delivery') return { error: 'not a delivery order' };
@@ -131,7 +165,8 @@ function buildShipment(c) {
       telFirst: normalizePhone(c.owner_phone),
       email: (c.owner_email && String(c.owner_email).trim()) || '',
       addressRemarks: addressRemarks(addr),
-      shipmentRemarks: '',
+      // Printed on the sticker: which game is in this box.
+      shipmentRemarks: gameRemark(c, opts.designName),
       // Our order number, so a call to HFD about a parcel can be traced back to
       // a row in the admin without guessing from the honoree's name.
       referenceNum1: String(c.order_no || c.id || ''),
@@ -204,7 +239,7 @@ function failureMessage(res, data) {
 // service with no credentials is distinguishable from one HFD refused.
 async function createShipment(c, opts = {}) {
   if (!isConfigured()) return { ok: false, skipped: true, error: 'hfd not configured' };
-  const built = buildShipment(c);
+  const built = buildShipment(c, { designName: opts.designName });
   if (built.error) return { ok: false, error: built.error };
 
   const res = await request('POST', '/shipments/create', { body: built.payload, ...opts });
@@ -266,6 +301,7 @@ module.exports = {
   isConfigured,
   status,
   buildShipment,
+  gameRemark,
   normalizePhone,
   splitStreet,
   trackingUrl,

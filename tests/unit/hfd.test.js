@@ -49,6 +49,9 @@ function order(overrides = {}) {
     order_no: 'DG-1042',
     buyer_name: 'רותם לוי',
     honoree_name: 'שירה',
+    custom_title: 'שירה בת 30',
+    design: 'טיול חזרה',
+    theme: 'trip comeback',
     owner_phone: '052-123-4567',
     owner_email: 'rotem@example.com',
     order: {
@@ -122,6 +125,14 @@ describe('buildShipment — our order in HFD’s fields', () => {
     expect(payload.addressRemarks).toBe('הרצל 5, מיקוד 6100000, דירה 3, קומה 2');
   });
 
+  it('names the game on the sticker — the printed title and the design’s CURRENT name', () => {
+    // The caller resolves the live name (themes.json display_he); the name
+    // stamped on the order is only the fallback.
+    const { payload } = hfd.buildShipment(order(), { designName: 'סיישל' });
+    expect(payload.shipmentRemarks).toBe('שירה בת 30 · סיישל');
+    expect(hfd.buildShipment(order()).payload.shipmentRemarks).toBe('שירה בת 30 · טיול חזרה');
+  });
+
   it('never asks the courier to collect money — the customer already paid us', () => {
     const { payload } = hfd.buildShipment(order({ order: { total: 289 } }));
     expect(payload.productsPrice).toBe(0);
@@ -166,6 +177,32 @@ describe('field normalization', () => {
     });
   });
 
+  it('labels the box with the title and the design’s live name, one line, capped', () => {
+    // The name passed in WINS over the one stamped on the order — a renamed
+    // template must not go out under the label it used to have.
+    expect(hfd.gameRemark({ custom_title: 'שירה בת 30', design: 'טיול חזרה' }, 'סיישל')).toBe(
+      'שירה בת 30 · סיישל'
+    );
+    // No live name resolved (themes.json unreadable): the stamped one still ships.
+    expect(hfd.gameRemark({ custom_title: 'שירה בת 30', design: 'טיול חזרה' })).toBe(
+      'שירה בת 30 · טיול חזרה'
+    );
+    // A multi-line card title becomes a single label line.
+    expect(hfd.gameRemark({ custom_title: 'שירה\nבת 30' }, 'סיישל')).toBe('שירה בת 30 · סיישל');
+    // No title set: the honoree's name is what the orders table shows too.
+    expect(hfd.gameRemark({ honoree_name: 'שירה' }, 'סיישל')).toBe('שירה · סיישל');
+    // Nothing named at all: the generator key beats an unlabelled box.
+    expect(hfd.gameRemark({ honoree_name: 'שירה', order: { theme: 'trip comeback' } })).toBe(
+      'שירה · trip comeback'
+    );
+    // Neither: an empty remark, not a stray separator.
+    expect(hfd.gameRemark({})).toBe('');
+    // A long title is cut to fit the field rather than sent whole.
+    const long = hfd.gameRemark({ custom_title: 'א'.repeat(200) }, 'סיישל');
+    expect(Array.from(long)).toHaveLength(120);
+    expect(long.endsWith('…')).toBe(true);
+  });
+
   it('links tracking by the RAND number, not the shipment number', () => {
     expect(hfd.trackingUrl('abc123')).toBe('https://run.hfd.co.il/info/abc123');
     expect(hfd.trackingUrl('')).toBe(null);
@@ -182,6 +219,14 @@ describe('createShipment', () => {
     expect(call.init.method).toBe('POST');
     expect(call.init.headers.Authorization).toBe('Bearer test-token');
     expect(call.body.referenceNum1).toBe('DG-1042');
+    // What the sticker says the box is — it has to leave with the request.
+    expect(call.body.shipmentRemarks).toBe('שירה בת 30 · טיול חזרה');
+  });
+
+  it('passes the caller’s live design name through to the request', async () => {
+    const fetchImpl = fakeFetch(jsonRes({ shipmentNumber: 1, randNumber: 'r' }));
+    await hfd.createShipment(order(), { fetchImpl, designName: 'סיישל' });
+    expect(fetchImpl.calls[0].body.shipmentRemarks).toBe('שירה בת 30 · סיישל');
   });
 
   it('reports HFD’s refusal in either shape it uses, and books nothing', async () => {
