@@ -2049,6 +2049,11 @@
                  field agree; the store's own cap (120) still bounds anything set
                  from the admin. -->
           <textarea id="titleInput" rows="2" maxlength="63" data-testid="title-input"></textarea>
+          <!-- The hint is a rule about TYPING — how long, how many lines, which
+               characters. Once the deck is at the printer nobody is typing, and a
+               field's rules under a dead field read as an invitation to try. It
+               goes with the save button; what is left is the title itself, and
+               #sheetClosedNote saying why it cannot move. -->
           <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
             >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י</small
           >
@@ -2082,15 +2087,39 @@
           זו התוצאה הסופית - בדיוק ככה הקלף יודפס וייצא אליכם.
         </p>
 
+        <!-- OPEN and CLOSED are two different sentences about the same photos, so
+             they are two elements rather than one string this file rewrites. Both
+             are owner-editable ([data-edit]), and the content editor writes
+             textContent into every tagged node once, on load — a string swapped
+             in JS afterwards would silently throw away whatever she had renamed
+             it to. Same reason #shipAddCard and #shipDoneCard are two cards. -->
         <div class="sheet-fld">
-          <span class="fld" data-edit="collect-sheet-photos-label">התמונות שלכם (עד 4)</span>
-          <small class="muted" data-edit="collect-sheet-photos-hint"
+          <span class="fld" id="photosLabel" data-edit="collect-sheet-photos-label"
+            >התמונות שלכם (עד 4)</span
+          >
+          <span class="fld hidden" id="photosLabelSent" data-edit="collect-sheet-photos-label-sent"
+            >התמונות שנשלחו לייצור</span
+          >
+          <!-- Pure instruction: drag this, slide that. It has nobody to instruct
+               once the deck is being made, and the note under the card already
+               says the picture above IS the printed thing. -->
+          <small class="muted" id="photosHint" data-edit="collect-sheet-photos-hint"
             >גררו את התמונה בתוך העיגול כדי להזיז אותה, והזיזו את המחוון כדי להגדיל או להקטין. אפשר
             גם לבחור אם להשאיר את הרקע.</small
           >
           <div class="pawn-strip" id="pawnStrip" data-testid="pawn-strip"></div>
           <small class="muted hidden" id="pawnNone" data-edit="collect-sheet-photos-none"
             >לא שלחתם תמונות - נדפיס את החיילים הרגילים של דוגרי.</small
+          >
+          <!-- …and the same fact in the past tense, so a closed order with no
+               photos of its own says what happened rather than leaving an empty
+               strip under a heading. -->
+          <small
+            class="muted hidden"
+            id="pawnNoneSent"
+            data-testid="pawn-none-sent"
+            data-edit="collect-sheet-photos-none-sent"
+            >לא שלחתם תמונות - הדפסנו את החיילים הרגילים של דוגרי.</small
           >
           <div class="pawn-err hidden" id="pawnErr" role="alert"></div>
         </div>
@@ -2107,10 +2136,34 @@
            tab that owns each thing — this panel never edits anything itself, so
            there is exactly one place each decision is made. -->
       <section class="card owner-only hidden" data-panel="finish" id="finishPanel" hidden>
-        <div class="sec-h" data-edit="collect-finish-heading">שליחה לייצור וסיום</div>
-        <p class="muted" data-edit="collect-finish-hint">
+        <!-- BEFORE and AFTER are two different pages wearing the same tab. Before,
+             this is a checklist with a button at the end of it; after, the deck is
+             at the printer and the only true thing left to say is what was sent.
+             Both headings and both intros are owner-editable, so each state gets
+             its own [data-edit] node and the render picks one — see the comment on
+             the photos label for why a string swapped in JS would not survive. -->
+        <div class="sec-h" id="finishHead" data-edit="collect-finish-heading">
+          שליחה לייצור וסיום
+        </div>
+        <div class="sec-h hidden" id="finishHeadSent" data-edit="collect-finish-heading-sent">
+          מה נשלח לייצור
+        </div>
+        <p class="muted" id="finishHint" data-edit="collect-finish-hint">
           רגע לפני שמתחילים להפיק - עברו על שלושת הדברים האלה. אחרי השליחה לייצור כבר אי אפשר לשנות.
         </p>
+        <p
+          class="muted hidden"
+          id="finishHintSent"
+          data-testid="finish-hint-sent"
+          data-edit="collect-finish-hint-sent"
+        >
+          המשחק כבר בהפקה. זה מה שנשלח לבית הדפוס - אפשר לראות הכול, אי אפשר לשנות.
+        </p>
+        <!-- The two לעריכה shortcuts are only shortcuts: they hand her to the tab
+             that owns the thing. Once nothing on that tab can move they point at a
+             room with no door — a control that cannot do anything is worse than no
+             control, because she presses it and concludes the page is broken. So
+             the whole button goes, and the row stays as the answer it always was. -->
         <div class="finish-step" data-testid="finish-title">
           <b class="finish-h" data-edit="collect-finish-title-h">1. הכותרת שתודפס</b>
           <span class="finish-val" id="finishTitle" data-testid="finish-title-val"></span>
@@ -2133,14 +2186,24 @@
              a decision about the finished game, so it belongs with the rest of
              them, in the tab she signs off from. -->
         <div class="sheet-fld hidden" id="poolFld" data-testid="pool-field">
-          <span class="fld" data-edit="collect-sheet-pool-label">3. איזה סגנון נשלים לכם?</span>
+          <span class="fld" id="poolLabel" data-edit="collect-sheet-pool-label"
+            >3. איזה סגנון נשלים לכם?</span
+          >
+          <!-- Closed, the question has an answer and asking it again is noise; the
+               ticked (and disabled) row below is the answer, and this names it. -->
+          <span class="fld hidden" id="poolLabelSent" data-edit="collect-sheet-pool-label-sent"
+            >3. סגנון המילים שהשלמנו</span
+          >
           <!-- The old copy explained the ORDER of the words ("yours always go in
                first"), which is a fact about our packing and not a question she
                was being asked. What she wants to know here is that she is done
                once she picks: the rest happens without her. -->
-          <small class="muted" data-edit="collect-sheet-pool-hint"
+          <small class="muted" id="poolHint" data-edit="collect-sheet-pool-hint"
             >בחרו את הרשימה בעזרת נשלים לכם מילים על מנת להגיע ל412 מילים (עבור חבילה מלאה של קלפים
             למשחק ארוך וכיפי יותר)</small
+          >
+          <small class="muted hidden" id="poolHintSent" data-edit="collect-sheet-pool-hint-sent"
+            >מהרשימה המסומנת השלמנו את המילים ל-412 מילים בחפיסה.</small
           >
           <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
           <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
@@ -2152,8 +2215,14 @@
              about a decision already made; this asks BEFORE the button is live,
              which is the only moment the answer can still change anything.
              Deliberately NOT stored on the order: it is a statement about this
-             moment, and a reload is a new moment. -->
-        <label class="finish-ack" for="finishAck">
+             moment, and a reload is a new moment.
+             …which is also why it goes away with the button it gates, rather than
+             standing there disabled: nothing stores that she ticked it, so on a
+             closed collection the box would come back EMPTY beside a deck that is
+             already printing - a tick she cannot make, next to a sentence saying
+             the one thing she plainly did do. Ticked-and-disabled would be worse
+             still: an attestation the order never recorded. -->
+        <label class="finish-ack" id="finishAckRow" for="finishAck">
           <input type="checkbox" id="finishAck" data-testid="finish-ack" />
           <span data-edit="collect-finish-ack"
             >עברתי על הכותרת, על חיילי המשחק ועל סגנון המילים - הכול נכון ואפשר להדפיס.</span
@@ -3229,6 +3298,7 @@
         const photos = pawnList();
         const open = state.status === 'open';
         $('#pawnNone').classList.toggle('hidden', !(open && !photos.length));
+        $('#pawnNoneSent').classList.toggle('hidden', !(!open && !photos.length));
         const sig = JSON.stringify([photos, pawnCutouts(), pawnViews(), open]);
         if (pawnBusy || (sig === pawnSig && strip.childElementCount)) return;
         pawnSig = sig;
@@ -3270,11 +3340,14 @@
         // NOBODY DRAGS WHAT LOOKS LIKE A PICTURE. The badge sits on the disc
         // until the first drag on this page, then never again — an instruction
         // that stays after it has been followed is noise.
+        // …and never at all once the deck is in production: pointerdown already
+        // refuses the drag there, so the badge would be inviting her to do the one
+        // thing the circle will not do.
         const grab = document.createElement('span');
         grab.className = 'pawn-grab';
         grab.textContent = '✥ גררו למיקום';
         grab.setAttribute('aria-hidden', 'true');
-        if (pawnDragged) grab.hidden = true;
+        if (pawnDragged || !open) grab.hidden = true;
         disc.appendChild(grab);
         const line = document.createElement('span');
         line.className = 'pawn-cut-line';
@@ -3423,23 +3496,28 @@
         hint.hidden = true;
         ctl.appendChild(hint);
 
-        const actions = document.createElement('div');
-        actions.className = 'pawn-row-actions';
-        const reset = document.createElement('button');
-        reset.type = 'button';
-        reset.className = 'pawn-mini';
-        reset.textContent = 'איפוס מיקום';
-        reset.disabled = !open;
-        reset.setAttribute('data-testid', 'pawn-reset');
-        reset.addEventListener('click', () => {
-          view = clampView({ ...VIEW_DEFAULT, bg: view.bg });
-          zoom.value = String(view.zoom);
-          placePawn(img, frame, view);
-          pawnShowView(src, view);
-          savePawnView(src, view);
-        });
-        actions.appendChild(reset);
-        ctl.appendChild(actions);
+        // RESET is pure action — unlike the slider and the two background buttons,
+        // which go on saying WHICH size and WHICH background she chose even while
+        // they are dead, it reads back nothing at all. So it is not offered on a
+        // deck in production rather than offered greyed out.
+        if (open) {
+          const actions = document.createElement('div');
+          actions.className = 'pawn-row-actions';
+          const reset = document.createElement('button');
+          reset.type = 'button';
+          reset.className = 'pawn-mini';
+          reset.textContent = 'איפוס מיקום';
+          reset.setAttribute('data-testid', 'pawn-reset');
+          reset.addEventListener('click', () => {
+            view = clampView({ ...VIEW_DEFAULT, bg: view.bg });
+            zoom.value = String(view.zoom);
+            placePawn(img, frame, view);
+            pawnShowView(src, view);
+            savePawnView(src, view);
+          });
+          actions.appendChild(reset);
+          ctl.appendChild(actions);
+        }
 
         if (open) {
           const x = document.createElement('button');
@@ -3463,11 +3541,19 @@
         // whole thing" tap, which still opens the photo full size.
         let drag = null;
         disc.addEventListener('pointerdown', (e) => {
-          if (state.status !== 'open') return;
-          drag = { id: e.pointerId, x: e.clientX, y: e.clientY, view, moved: 0 };
-          pawnBusy = true;
-          pawnDragged = true;
-          for (const b of document.querySelectorAll('.pawn-grab')) b.hidden = true;
+          // LOOKING IS NOT EDITING. A closed collection used to swallow the press
+          // whole, which took the full-size view down with the drag — so the one
+          // thing a buyer comes back to a finished order for, "let me see the
+          // photo I sent", was the thing production removed. `frozen` marks the
+          // press instead: pointermove ignores it, so nothing can move, and
+          // pointerup can only ever reach the tap branch.
+          const frozen = state.status !== 'open';
+          drag = { id: e.pointerId, x: e.clientX, y: e.clientY, view, moved: 0, frozen };
+          if (!frozen) {
+            pawnBusy = true;
+            pawnDragged = true;
+            for (const b of document.querySelectorAll('.pawn-grab')) b.hidden = true;
+          }
           try {
             disc.setPointerCapture(e.pointerId);
           } catch (err) {
@@ -3475,7 +3561,7 @@
           }
         });
         disc.addEventListener('pointermove', (e) => {
-          if (!drag || e.pointerId !== drag.id) return;
+          if (!drag || drag.frozen || e.pointerId !== drag.id) return;
           const slot = disc.getBoundingClientRect().width / DISC_FILL;
           if (!(slot > 0)) return;
           const dxPx = e.clientX - drag.x;
@@ -3493,10 +3579,14 @@
         const endDrag = (e) => {
           if (!drag || (e && e.pointerId !== drag.id)) return;
           const tapped = drag.moved < 4;
+          const frozen = drag.frozen;
           drag = null;
-          pawnBusy = false;
+          if (!frozen) pawnBusy = false;
           if (tapped) openPawnView(pawnPrintSrcFor(src, view));
-          else savePawnView(src, view);
+          // Unreachable while frozen (nothing moved it, so every press taps), and
+          // guarded anyway: a save from a closed collection is a 409 the buyer
+          // would see as a failure on a page she was only reading.
+          else if (!frozen) savePawnView(src, view);
         };
         disc.addEventListener('pointerup', endDrag);
         disc.addEventListener('pointercancel', endDrag);
@@ -3668,13 +3758,22 @@
         const box = $('#poolOpts');
         if (!fld || !box) return;
         const opts = Array.isArray(poolOptions) ? poolOptions : [];
+        const open = state.status === 'open';
+        const picked = poolPick();
         // Hidden when the owner has built no menu — an empty chooser advertises
         // a choice that does not exist. The panel AROUND it stays, because it is
         // the sign-off tab and it has two other things to say.
-        fld.classList.toggle('hidden', !opts.length || !isOwner);
+        // Hidden too on a CLOSED collection she never answered on: the server
+        // then filled the deck from her design (see savePool's note), so a menu
+        // with nothing ticked would be a list of things that did not happen.
+        fld.classList.toggle('hidden', !opts.length || !isOwner || (!open && !picked));
         if (!opts.length) return;
-        const open = state.status === 'open';
-        const picked = poolPick();
+        // Asking is over once the deck is at the printer; the ticked row below is
+        // the answer, and these two say so.
+        $('#poolLabel').classList.toggle('hidden', !open);
+        $('#poolLabelSent').classList.toggle('hidden', open);
+        $('#poolHint').classList.toggle('hidden', !open);
+        $('#poolHintSent').classList.toggle('hidden', open);
         box.textContent = '';
         // NO "whatever suits my design" row: she picks, or nothing is ticked. It
         // used to lead the list and be selected by default, which meant the
@@ -3780,6 +3879,14 @@
         if (draftTitle === null) $('#titleInput').value = savedTitle();
         $('#titleInput').disabled = !open;
         $('#titleSaveBtn').classList.toggle('hidden', !open);
+        // The typing rules go with the save button — see the comment on #titleHint.
+        $('#titleHint').classList.toggle('hidden', !open);
+        // The photos tab in the past tense: a heading that counts up to four and a
+        // hint that says "drag this" are both about a decision she has already
+        // sent, so each swaps for the sentence that describes what was sent.
+        $('#photosLabel').classList.toggle('hidden', !open);
+        $('#photosLabelSent').classList.toggle('hidden', open);
+        $('#photosHint').classList.toggle('hidden', !open);
         $('#sheetClosedNote').classList.toggle('hidden', open);
         renderPawns();
         loadPoolOptions();
@@ -3792,10 +3899,25 @@
       // What she chose, read back as a sentence rather than as a field. This panel
       // edits nothing: each row links to the tab that owns the thing, so there is
       // one place per decision and no second copy to drift.
+      // …until the collection closes, at which point it stops being a checklist
+      // and becomes the record of what went to the printer: the two rows keep
+      // their answers, and everything that offered to change them — the לעריכה
+      // shortcuts, the tick that armed the button, the button itself (dropped by
+      // renderOwnerState) — is gone rather than merely inert. A dead control is
+      // not a smaller edit; it is the same edit plus a page that looks broken.
       function renderFinish() {
         const title = $('#finishTitle');
         const pawns = $('#finishPawns');
         if (!title || !pawns) return;
+        const open = !state || state.status === 'open';
+        $('#finishHead').classList.toggle('hidden', !open);
+        $('#finishHeadSent').classList.toggle('hidden', open);
+        $('#finishHint').classList.toggle('hidden', !open);
+        $('#finishHintSent').classList.toggle('hidden', open);
+        for (const btn of document.querySelectorAll('#finishPanel [data-goto]')) {
+          btn.classList.toggle('hidden', !open);
+        }
+        $('#finishAckRow').classList.toggle('hidden', !open);
         const saved = savedTitle();
         // The default title is not a blank: it is the one the theme prints, and
         // saying "כותרת ברירת המחדל" is the honest answer to "what will it say?"
@@ -4229,6 +4351,7 @@
 
       function renderWords() {
         const wrap = $('#wordsWrap');
+        const open = state.status === 'open';
         if (!state.words.length) {
           wrap.innerHTML = '<span class="muted">עוד אין מילים - היו הראשונים!</span>';
         } else {
@@ -4244,8 +4367,16 @@
             txt.textContent = w.text;
             txt.setAttribute('data-testid', 'word-text');
             txt.setAttribute('data-word-id', w.id);
-            // Owner can tap (or keyboard-activate) the text to fix a typo in place.
-            if (isOwner) {
+            // Owner can tap (or keyboard-activate) the text to fix a typo in place
+            // — until the deck is at the printer. The dialog she pressed to send
+            // it there promises, in as many words, that "להוסיף או למחוק מילים" is
+            // over; leaving a × on every word and a "לחצו לעריכה" on every text
+            // makes the page contradict its own promise, and a word changed after
+            // the press file was built is a word that is not in the deck. The
+            // routes themselves still accept an edit (see db.editWord's note —
+            // deliberate), which is what the admin's "פתח מחדש" is for: reopen,
+            // fix, close again, exactly as with the title and the photos.
+            if (isOwner && open) {
               txt.classList.add('editable');
               txt.tabIndex = 0;
               txt.setAttribute('role', 'button');
@@ -4266,7 +4397,7 @@
               by.textContent = '· ' + w.added_by;
               el.appendChild(by);
             }
-            if (isOwner) {
+            if (isOwner && open) {
               const del = document.createElement('button');
               del.className = 'del';
               del.type = 'button';
