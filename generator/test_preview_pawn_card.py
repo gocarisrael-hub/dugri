@@ -78,6 +78,58 @@ def test_a_short_list_is_topped_up_to_four():
         assert all(os.path.exists(p) for p in out)
 
 
+# --- the LIVE base card ----------------------------------------------------
+# `--no-photos` renders the card the collection page draws the buyer's photos
+# onto itself. "Without her photos" is not "with four empty discs": the printed
+# card tops a short list up from the shipped pawns, so a base card with four bare
+# discs promised her an empty circle where a pawn prints — under a caption
+# reading "this is exactly how the card will be printed". Only the slots the
+# caller says it will cover are left bare.
+
+def test_the_top_up_is_one_rule_both_paths_read():
+    # If these ever diverge, the preview and the print disagree about slot 3 —
+    # which is precisely the bug, and it is invisible until a card comes back.
+    src = inspect.getsource(buildmod.resolve_photos)
+    assert "fallback_photos" in src
+
+
+def test_the_base_card_carries_the_pawns_the_caller_will_not_draw():
+    with tb.Store() as tmp:
+        fallbacks = list(config.photo_fallback_paths("demo"))
+        # Nothing drawn by the caller: the whole generic set, i.e. the card an
+        # order with no photos at all prints.
+        assert buildmod.fallback_photos("demo", 0) == fallbacks[:4]
+        # Two of her own: two pawns, and they are the FIRST two, exactly as
+        # resolve_photos appends them (the card an order with two photos prints).
+        assert buildmod.fallback_photos("demo", 2) == fallbacks[:2]
+        assert buildmod.fallback_photos("demo", 4) == []
+        # …and it agrees with the PRINTED card of an order with two photos, slot
+        # for slot, which is the only thing that makes the preview true. Note
+        # which pawns those are: the top-up takes the fallbacks in their own
+        # order, so slot 3 of a two-photo order gets pawn 1 — not pawn 3. Deriving
+        # the base card from anything but resolve_photos' own rule would put a
+        # different pawn on the preview than on the card.
+        src = tb._portrait(os.path.join(tmp, "hers.png"))
+        printed = buildmod.resolve_photos("demo", [src, src],
+                                          workdir=os.path.join(tmp, "sq"))
+        assert printed[2:] == buildmod.fallback_photos("demo", 2)
+
+
+def test_the_slots_the_caller_draws_are_left_bare():
+    # The CLI's own arithmetic: `drawn` slots empty, the rest topped up, and the
+    # list always four long so nothing shifts a pawn onto the wrong disc.
+    src = inspect.getsource(preview.main)
+    assert "[None] * drawn + buildmod.fallback_photos" in src, (
+        "the base card's empty slots must be exactly the ones the caller covers"
+    )
+    with tb.Store():
+        for drawn in range(5):
+            photos = [None] * drawn + buildmod.fallback_photos("demo", drawn)
+            assert len(photos) == 4, photos
+            assert photos[:drawn] == [None] * drawn
+            assert all(p for p in photos[drawn:])
+
+
 # --- with Chrome -----------------------------------------------------------
 
 def test_it_renders_a_card_shaped_png():

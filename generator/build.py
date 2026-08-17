@@ -904,6 +904,13 @@ def square_photo(path, workdir, index=0, view=None):
 
     Best-effort by design — anything unreadable returns the ORIGINAL path, so a
     photo we cannot process still prints (centred) rather than failing an order.
+    That degradation is deliberate but it is NOT free, and it is not silent: the
+    original has never been through the disc clip, so it reaches the slot as a
+    rectangle, which is the one thing docs/photo-card.md point 1 promises never
+    happens. Every fall through here therefore says so on stderr, naming the file
+    and the exception. It used to say nothing at all, and a card that quietly
+    prints the wrong picture is indistinguishable from a card that is right —
+    which is exactly how long a wrong one survives.
     """
     try:
         from PIL import Image, ImageChops, ImageOps
@@ -978,8 +985,33 @@ def square_photo(path, workdir, index=0, view=None):
                 side_px = max(PHOTO_SLOT_MIN_PX, int(side_px * 0.8))
                 square.resize((side_px, side_px), Image.LANCZOS).save(out)
             return out
-    except Exception:
+    except Exception as exc:
+        print(
+            "square_photo: could not frame %r (%s: %s) — it goes to the slot "
+            "UNFRAMED and UNCLIPPED, i.e. it prints as a rectangle"
+            % (path, type(exc).__name__, exc),
+            file=sys.stderr,
+        )
         return path
+
+
+def fallback_photos(theme, filled):
+    """The shipped Dugri pawns that fill the slots a buyer left empty.
+
+    ``filled`` is how many of the four slots her own photos already take, so the
+    answer is what goes in the rest — in the fallbacks' own order, which is what
+    the deck prints. Pulled out of :func:`resolve_photos` so the LIVE pawn-card
+    preview can render the same pawns into the same slots without going through
+    the customer-photo path: the browser draws her photos onto that card itself,
+    and a card rendered with four bare discs told her the empty ones print empty.
+    They do not — an order with two photos prints two faces and two Dugri pawns.
+    """
+    out = []
+    for path in config.photo_fallback_paths(theme):
+        if filled + len(out) >= 4:
+            break
+        out.append(path)
+    return out
 
 
 def resolve_photos(theme, photos, workdir=None, views=None):
@@ -1007,10 +1039,7 @@ def resolve_photos(theme, photos, workdir=None, views=None):
     out = list(given)
     if len(out) >= 4:
         return out[:4]
-    for path in config.photo_fallback_paths(theme):
-        if len(out) >= 4:
-            break
-        out.append(path)
+    out.extend(fallback_photos(theme, len(out)))
     return out[:4]
 
 

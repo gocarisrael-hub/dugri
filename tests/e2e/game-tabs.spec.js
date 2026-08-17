@@ -221,6 +221,12 @@ test('the photos tab shows the rendered card, and redraws it when a photo goes',
   await page.getByTestId('tab-pawns').click();
   await expect(page.getByTestId('pawn-card-preview')).toHaveAttribute('src', /^data:image\/png/);
   await expect.poll(() => asked.length).toBe(1);
+  // …and it says how many discs it is about to cover. The generator fills the
+  // REST with the shipped Dugri pawns, because that is what the printed card
+  // does — an order with two photos prints two faces and two pawns. Asking for a
+  // card with four bare discs and drawing two of them showed her two empty
+  // circles under a caption promising this is exactly how it will be printed.
+  expect(asked[0]).toContain('n=2');
 
   // Leaving and returning does not re-ask — the card cannot have changed.
   await page.getByTestId('tab-words').click();
@@ -228,11 +234,12 @@ test('the photos tab shows the rendered card, and redraws it when a photo goes',
   await page.waitForTimeout(300);
   expect(asked).toHaveLength(1);
 
-  // Removing one does: the card is now a different card.
+  // Removing one does: the card is now a different card — one more pawn on it.
   await page.getByTestId('pawn-remove').first().click();
   await page.locator('#msgModalOk').click();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(1);
   await expect.poll(() => asked.length).toBe(2);
+  expect(asked[1]).toContain('n=1');
 });
 
 test('she removes a photo and it stays removed', async ({ page }) => {

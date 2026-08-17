@@ -214,3 +214,179 @@ describe('clampView — the page and the store agree on the bounds', () => {
     expect(isDefaultView({ zoom: 1, dx: 0.01, dy: 0 })).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------
+// AND THE FRAME UNDERNEATH IT.
+//
+// applyView is the buyer's ADJUSTMENT; everything above holds the two ends of
+// that together. The frame it adjusts — where the automatic framing put the
+// photo before she touched it — had no such pin, and that is where the two
+// implementations drifted apart: build.subject_box picks ONE blob out of a cut
+// that kept two people and erases the rest, and this side measured both. On a
+// real order that showed the honoree and a bystander shrunk to fit the circle
+// between them in the preview, and the honoree alone at full size on the card.
+//
+// So the same trick again, one level down: build.subject_box + subject_reach +
+// subject_window transcribed, and the two answers derived from each other.
+//
+// The transcription drops two things ON PURPOSE, and neither can bite here:
+// the 200 px working mask (both sides measure the array they are given, and
+// every image below is smaller than that), and subject_window's rounding of the
+// crop to whole source pixels (a sub-pixel quantisation of the answer, not part
+// of the rule). Keep the fixtures small and the comparison stays exact.
+function pySubjectWindow(image) {
+  const { data, width, height } = image;
+  const at = (x, y) => data[(y * width + x) * 4 + 3];
+  // subject_box: the mask, its cover, and the box.
+  const mask = new Uint8Array(width * height);
+  let opaque = 0;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (at(x, y) >= 24) {
+        mask[y * width + x] = 1;
+        opaque++;
+      }
+    }
+  }
+  if (!opaque) return null;
+  const cover = opaque / (width * height);
+  if (cover < 0.005 || cover > 0.995) return null;
+  // …the blobs, 8-connected, biggest first.
+  const seen = new Uint8Array(width * height);
+  const found = [];
+  for (let y0 = 0; y0 < height; y0++) {
+    for (let x0 = 0; x0 < width; x0++) {
+      if (!mask[y0 * width + x0] || seen[y0 * width + x0]) continue;
+      const px = [[x0, y0]];
+      seen[y0 * width + x0] = 1;
+      const b = { n: 0, sx: 0, sy: 0, px: [] };
+      while (px.length) {
+        const [x, y] = px.pop();
+        b.n++;
+        b.sx += x;
+        b.sy += y;
+        b.px.push([x, y]);
+        for (let ny = Math.max(0, y - 1); ny < Math.min(height, y + 2); ny++) {
+          for (let nx = Math.max(0, x - 1); nx < Math.min(width, x + 2); nx++) {
+            if (mask[ny * width + nx] && !seen[ny * width + nx]) {
+              seen[ny * width + nx] = 1;
+              px.push([nx, ny]);
+            }
+          }
+        }
+      }
+      found.push(b);
+    }
+  }
+  found.sort((a, b) => b.n - a.n);
+  // …and the pick: nearest centre of mass to the middle of the frame, specks
+  // dropped first. Only when there is more than one — a single soft-edged
+  // subject is never "chosen", so nothing of it is erased.
+  let keep = found[0];
+  if (found.length > 1) {
+    const real = found.filter((b) => b.n >= 0.08 * found[0].n);
+    const pool = real.length ? real : [found[0]];
+    keep = pool.reduce((best, b) => {
+      const d = (x) => (x.sx / x.n - width / 2) ** 2 + (x.sy / x.n - height / 2) ** 2;
+      return d(b) < d(best) ? b : best;
+    }, pool[0]);
+    mask.fill(0);
+    for (const [x, y] of keep.px) mask[y * width + x] = 1;
+  }
+  let x0 = width;
+  let y0 = height;
+  let x1 = -1;
+  let y1 = -1;
+  for (const [x, y] of keep.px) {
+    if (x < x0) x0 = x;
+    if (x > x1) x1 = x;
+    if (y < y0) y0 = y;
+    if (y > y1) y1 = y;
+  }
+  const box = [x0, y0, x1 + 1, y1 + 1];
+  // subject_reach: off the silhouette, one pixel of slack, never past the corner.
+  const cx = (box[0] + box[2]) / 2;
+  const cy = (box[1] + box[3]) / 2;
+  const corner = Math.hypot(box[2] - box[0], box[3] - box[1]) / 2;
+  let best = 0;
+  for (let y = 0; y < height; y++) {
+    let first = -1;
+    let last = -1;
+    for (let x = 0; x < width; x++) {
+      if (mask[y * width + x]) {
+        if (first < 0) first = x;
+        last = x;
+      }
+    }
+    if (first < 0) continue;
+    for (const x of [first, last]) best = Math.max(best, Math.hypot(x + 0.5 - cx, y + 0.5 - cy));
+  }
+  const reach = best > 0 ? Math.min(best + 1, corner) : corner;
+  // subject_window: a square of the disc's diameter over DISC_FILL, on the box.
+  const side = (2 * reach) / DISC_FILL;
+  return frameFromCrop([cx - side / 2, cy - side / 2, cx + side / 2, cy + side / 2], width, height);
+}
+
+// Build an RGBA {data,width,height} from a paint function, as pawn-frame.test.js does.
+function img(width, height, paint) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) data[(y * width + x) * 4 + 3] = paint(x, y);
+  }
+  return { data, width, height };
+}
+
+// The photos that actually reach a pawn slot, as alpha. Named for what they ARE,
+// because a regression in any one of them is a different bug on the card.
+const CUTOUTS = {
+  'one face, head and shoulders, running off the bottom of the frame': img(90, 120, (x, y) =>
+    Math.hypot(x - 45, y - 30) <= 18 || (x >= 25 && x < 65 && y >= 45) ? 255 : 0
+  ),
+  'a subject hard against one corner': img(100, 100, (x, y) => (x < 20 && y < 20 ? 255 : 0)),
+  'two people, the honoree in the middle and a bigger bystander at the edge': img(
+    160,
+    100,
+    (x, y) =>
+      (x >= 4 && x < 54 && y >= 4 && y < 96) || (x >= 78 && x < 112 && y >= 25 && y < 75) ? 255 : 0
+  ),
+  'a person plus the speck the segmenter left behind': img(120, 120, (x, y) =>
+    (x >= 70 && x < 115 && y >= 20 && y < 100) || (x === 60 && y === 60) ? 255 : 0
+  ),
+  'a soft matte, all one blob at the alpha floor': img(80, 80, (x, y) =>
+    x >= 30 && x < 50 && y >= 30 && y < 50 ? 255 : x >= 20 && x < 60 && y >= 20 && y < 60 ? 30 : 0
+  ),
+  'a wide subject, wider than the disc': img(150, 60, (x, y) =>
+    x >= 10 && x < 140 && y >= 20 && y < 40 ? 255 : 0
+  ),
+};
+
+describe('the automatic frame agrees with the generator, photo for photo', () => {
+  it.each(Object.keys(CUTOUTS))('%s', (name) => {
+    const im = CUTOUTS[name];
+    const mine = subjectFrame(im);
+    const theirs = pySubjectWindow(im);
+    expect(mine).not.toBeNull();
+    for (const k of ['widthPct', 'heightPct', 'leftPct', 'topPct']) {
+      expect(mine[k]).toBeCloseTo(theirs[k], 6);
+    }
+  });
+
+  it('and they refuse the same photos, which is how the plain crop is reached', () => {
+    // subject_box answers None on an alpha that says nothing, and square_photo
+    // then takes the head-anchored square. subjectFrame answers null and
+    // collect.html then takes plainFrame. The FORK has to be in the same place or
+    // one side crops the head while the other shrinks the whole rectangle.
+    const opaque = img(60, 60, () => 255);
+    expect(subjectFrame(opaque)).toBeNull();
+    expect(pySubjectWindow(opaque)).toBeNull();
+    const speck = img(120, 120, (x, y) => (x < 6 && y < 6 ? 255 : 0));
+    expect(subjectFrame(speck)).toBeNull();
+    expect(pySubjectWindow(speck)).toBeNull();
+    // …and the square the generator takes instead is the one plainFrame draws.
+    const w = 900;
+    const h = 1200;
+    const side = Math.min(w, h);
+    const top = Math.max(0, Math.min(Math.round(SUBJECT_Y * h - side / 2), h - side));
+    expect(plainFrame(w, h)).toEqual(frameFromCrop([0, top, side, top + side], w, h));
+  });
+});

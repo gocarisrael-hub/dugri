@@ -531,10 +531,17 @@ def main():
                          "--photo files, and print {\"pawns\": path}. Nothing "
                          "else is rendered: no front, no back, no board")
     ap.add_argument("--no-photos", action="store_true",
-                    help="with --pawn-card: render the card with its discs EMPTY "
-                         "and report the disc geometry. That is the picture a "
-                         "browser composites the buyer's photos onto, so it "
-                         "depends on the theme alone and is cached as such")
+                    help="with --pawn-card: render the card WITHOUT the buyer's "
+                         "photos and report the disc geometry. That is the "
+                         "picture a browser composites them onto itself, so it "
+                         "depends on the theme and --drawn alone and is cached "
+                         "as such")
+    ap.add_argument("--drawn", type=int, default=0, metavar="N",
+                    help="with --no-photos: how many of the four slots the "
+                         "CALLER will fill in. Those are left bare; the rest get "
+                         "the shipped Dugri pawns, exactly as the printed card "
+                         "tops itself up. 0 (the default) is the card an order "
+                         "with no photos at all prints")
     ap.add_argument("--photo", action="append", default=[], metavar="FILE",
                     help="one of the buyer's pawn photos, in order (repeatable, "
                          "up to the four the card holds). Short lists are topped "
@@ -556,11 +563,22 @@ def main():
             calibration = json.load(f)
 
     if args.pawn_card and args.no_photos:
-        # The card as the design ships it, discs and all, plus where they are.
+        # The card as the design ships it, plus where its discs are — for a
+        # caller that will draw the buyer's photos onto it itself.
+        #
+        # "Without her photos" is NOT "with four empty discs". The printed card
+        # tops a short list up from the shipped Dugri pawns, so an order with two
+        # photos prints two faces and two pawns; a base card with four bare discs
+        # made the preview promise an empty circle where a pawn prints, under a
+        # caption reading "this is exactly how the card will be printed". Only
+        # the first --drawn slots are left bare, and they are the only ones the
+        # caller covers.
+        drawn = max(0, min(4, args.drawn))
+        photos = [None] * drawn + buildmod.fallback_photos(args.theme, drawn)
         out = os.path.join(args.out_dir, "pawns-empty.png")
         os.makedirs(args.out_dir, exist_ok=True)
         rp.render_single_card(args.theme, config.photo_card_path(args.theme), [], [],
-                              out, kind="photo", photos=[])
+                              out, kind="photo", photos=photos)
         _downscale(out, CARD_MAX_W)
         print(json.dumps({"pawns": out, "slots": pawn_slots(args.theme)}))
         return

@@ -695,6 +695,27 @@ def test_an_unreadable_photo_falls_back_to_the_original():
         assert build.square_photo(bad, os.path.join(tmp, "sq"), 0) == bad
 
 
+def test_the_fall_back_to_the_original_is_not_silent(capsys):
+    # The original has never been through the disc clip, so it reaches the slot
+    # as a RECTANGLE — the one thing docs/photo-card.md point 1 promises never
+    # happens. Degrading is the right call (an order is worth more than a
+    # perfectly framed pawn); degrading QUIETLY is not, because a card that
+    # prints the wrong picture looks exactly like a card that is right, and the
+    # only reader who ever finds out is the customer. Anything that goes wrong
+    # in here says so on stderr, naming the file and the exception.
+    with Store() as tmp:
+        bad = os.path.join(tmp, "bad.png")
+        with open(bad, "wb") as f:
+            f.write(b"not an image")
+        build.square_photo(bad, os.path.join(tmp, "sq"), 0)
+        err = capsys.readouterr().err
+    assert "bad.png" in err, err
+    assert "rectangle" in err, err
+    # Nothing on stdout: the generator's stdout is a JSON protocol, and a warning
+    # printed into it would break the caller that parses it.
+    assert "bad.png" not in capsys.readouterr().out
+
+
 def test_only_customer_photos_are_squared_not_the_shipped_pawns():
     # The shipped pawns are already square sticker art; re-encoding them would
     # only lose quality.
