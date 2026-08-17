@@ -1,0 +1,251 @@
+/* pawn.css — the buyer's photos on the collection page (site/collect.html).
+ *
+ * Lifted out of collect.html's inline <style> so the three places the same photo
+ * is drawn are all reading ONE set of rules, and so the comparison harness can
+ * read them too: generator/test_pawn_three_views.py renders the preview card,
+ * the editor circle and the PRINTED card from these very declarations and fails
+ * when any of the three drifts from the other two. A copy of the geometry pasted
+ * into a test is a copy that agrees with itself and with nothing else, which is
+ * how the preview and the editor came to disagree in the first place.
+ *
+ * The geometry itself is NOT here — the slot/disc/ring proportions live in
+ * site/js/pawn-frame.js next to the framing maths they belong with, and this
+ * file spends them through custom properties so there is still one source.
+ */
+/* THE PAWN PHOTOS she sent with the order. A row of square thumbs, sized so
+   four sit side by side on the narrowest phone (4 × 68 + gaps < 320). Each
+   one opens full-size on tap, because "let me see what I sent" is half of
+   why this card exists. */
+/* ONE ROW PER PHOTO, not a strip of thumbs. Each row is the pawn itself —
+   the circle the card cuts, at the framing the printer uses — plus the two
+   decisions she can make about it: how it sits, and whether it keeps its
+   background. A wrapped grid of 68px squares had no room for either. */
+.pawn-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 12px;
+}
+.pawn-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+/* THE PAWN. The card's own paper behind it, the dashed line she cuts along,
+   and the photo clipped to the disc INSIDE that line — the same 90% of the
+   square that build._disc_mask cuts. The wizard's slot clips to its square
+   instead, which it can afford to: there, the framing rule guarantees the
+   subject is inside the circle already. Here she can push it past the edge
+   on purpose, so the preview has to cut where the printer cuts or it would
+   be showing her ink that never reaches the card. */
+.pawn-pad {
+  position: relative;
+  width: 116px;
+  height: 116px;
+  flex: 0 0 auto;
+  background: var(--pawn-card, #f2cbd6);
+  touch-action: none;
+  cursor: grab;
+  overflow: hidden;
+}
+.pawn-pad:active {
+  cursor: grabbing;
+}
+/* THE CARD, DRAWN HERE. The empty card comes from the generator once; the
+   four photos are laid into its discs by this page, with the same framing
+   maths the printer uses. That is what makes it keep up with a drag —
+   asking the server to re-render was a second per adjustment, so the card
+   was always showing the move before last. */
+.pawn-live-slots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pawn-live-slot {
+  position: absolute;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.pawn-live-slot img {
+  position: absolute;
+  display: block;
+}
+.pawn-zoom-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pawn-zoom-lab {
+  font-size: 13px;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.pawn-zoom-row .pawn-zoom {
+  flex: 1;
+}
+.pawn-step {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 17px;
+  line-height: 1;
+  padding: 0;
+  cursor: pointer;
+}
+.pawn-step:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+/* "You can move this." Shown until the first drag, then gone for good.
+   It sits on the PAD rather than inside the disc: the disc carries the sticker
+   halo filter, which would put a white glow around this pill too. */
+.pawn-grab {
+  position: absolute;
+  left: 50%;
+  bottom: 8%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.pawn-disc {
+  position: absolute;
+  /* The DISC — DISC_FILL of the pad, which is the slot. The literal is the same
+     number pawn-frame.js hands over in --pawn-disc-inset and exists only so the
+     circle is never wrong in the instant before the module runs. */
+  inset: var(--pawn-disc-inset, 5%);
+  border-radius: 50%;
+  overflow: hidden;
+}
+.pawn-disc {
+  cursor: grab;
+}
+.pawn-disc:active {
+  cursor: grabbing;
+}
+.pawn-disc img {
+  position: absolute;
+  display: block;
+  /* Every offset pawn-frame.js answers with is a percentage of the SLOT
+     (the padded square), never of this disc — and the disc is DISC_FILL of the
+     slot, so discPhotoStyle() rebases them onto a box 1/DISC_FILL its size.
+     LEFT/TOP, deliberately physical: the drag reads clientX, which grows
+     rightwards in RTL too, and inset-inline-start would flip one of the two
+     and not the other. */
+  object-fit: contain;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* THE WHITE STICKER EDGE. Stacked shadows where the card gets a real
+   feMorphology dilate; the width and the hardness both come from pawn-frame.js
+   haloFilter(), scaled to whatever size THIS circle is drawn at — a fixed pixel
+   width is a different fraction of the 116px row circle than of the ~58px one on
+   the card beside it, which is why the two used to carry visibly different
+   edges.
+
+   ON THE CIRCLE, NOT ON THE PHOTO, and that placement is the point: the disc
+   clips with `overflow: hidden`, so a filter on the <img> inside it was cut off
+   at the same edge the photo was — no white where the subject reaches the rim,
+   while the print's dilate runs outward from there into the gap between disc and
+   cut-line. A filter applied to the clipping element itself paints outside its
+   own overflow, which is exactly the print's order of operations: clip the
+   photo, then grow the white out of what is left. */
+.pawn-disc.is-cut,
+.pawn-live-slot.is-cut {
+  filter: var(
+    --pawn-halo,
+    drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1.5px #fff)
+  );
+}
+/* THE DASHED LINE SHE CUTS ALONG — the SLOT's inscribed circle, not the disc's.
+   On the printed card that is <circle class="cut-line" r="33"> against a 66-unit
+   slot, with the photo's disc (90%) sitting inside it and the white sticker edge
+   filling the gap. This was inset 5% — the disc's own inset — which put the
+   dashes hard against the photo and made every pawn look ~11% larger here than
+   on the card above it, and larger than it prints. */
+.pawn-cut-line {
+  position: absolute;
+  inset: var(--pawn-ring-inset, 0%);
+  border: 1.5px dashed rgba(20, 20, 20, 0.32);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.pawn-ctl {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pawn-ctl-hint {
+  font-size: 12px;
+  color: var(--muted);
+}
+.pawn-zoom {
+  width: 100%;
+  margin: 0;
+  accent-color: var(--ink);
+}
+/* Background on / off. A segmented pair rather than a checkbox: "with" and
+   "without" are two pictures, and naming both is how she knows there is a
+   choice at all. */
+.pawn-bg {
+  display: flex;
+  gap: 0;
+}
+.pawn-bg button {
+  flex: 1;
+  padding: 6px 4px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+}
+.pawn-bg button + button {
+  border-inline-start: 0;
+}
+.pawn-bg button.on {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
+}
+.pawn-bg button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.pawn-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.pawn-mini {
+  background: none;
+  border: 0;
+  box-shadow: 0 0 0 1px var(--line) inset;
+  border-radius: 0;
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.pawn-mini:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

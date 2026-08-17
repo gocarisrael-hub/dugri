@@ -35,6 +35,7 @@
     <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
     <link rel="stylesheet" href="/css/wa-help.css" />
+    <link rel="stylesheet" href="/css/pawn.css" />
     <style>
       :root {
       }
@@ -809,216 +810,6 @@
         font-size: 13px;
         border-top: 1px solid var(--line);
         padding-top: 12px;
-      }
-      /* THE PAWN PHOTOS she sent with the order. A row of square thumbs, sized so
-         four sit side by side on the narrowest phone (4 × 68 + gaps < 320). Each
-         one opens full-size on tap, because "let me see what I sent" is half of
-         why this card exists. */
-      /* ONE ROW PER PHOTO, not a strip of thumbs. Each row is the pawn itself —
-         the circle the card cuts, at the framing the printer uses — plus the two
-         decisions she can make about it: how it sits, and whether it keeps its
-         background. A wrapped grid of 68px squares had no room for either. */
-      .pawn-strip {
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
-        margin-top: 12px;
-      }
-      .pawn-cell {
-        position: relative;
-        display: flex;
-        align-items: center;
-        gap: 14px;
-      }
-      /* THE PAWN. The card's own paper behind it, the dashed line she cuts along,
-         and the photo clipped to the disc INSIDE that line — the same 90% of the
-         square that build._disc_mask cuts. The wizard's slot clips to its square
-         instead, which it can afford to: there, the framing rule guarantees the
-         subject is inside the circle already. Here she can push it past the edge
-         on purpose, so the preview has to cut where the printer cuts or it would
-         be showing her ink that never reaches the card. */
-      .pawn-pad {
-        position: relative;
-        width: 116px;
-        height: 116px;
-        flex: 0 0 auto;
-        background: var(--pawn-card, #f2cbd6);
-        touch-action: none;
-        cursor: grab;
-        overflow: hidden;
-      }
-      .pawn-pad:active {
-        cursor: grabbing;
-      }
-      /* THE CARD, DRAWN HERE. The empty card comes from the generator once; the
-         four photos are laid into its discs by this page, with the same framing
-         maths the printer uses. That is what makes it keep up with a drag —
-         asking the server to re-render was a second per adjustment, so the card
-         was always showing the move before last. */
-      .pawn-live-slots {
-        position: absolute;
-        inset: 0;
-        pointer-events: none;
-      }
-      .pawn-live-slot {
-        position: absolute;
-        border-radius: 50%;
-        overflow: hidden;
-      }
-      .pawn-live-slot img {
-        position: absolute;
-        display: block;
-      }
-      .pawn-zoom-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-top: 8px;
-      }
-      .pawn-zoom-lab {
-        font-size: 13px;
-        color: var(--muted);
-        flex: 0 0 auto;
-      }
-      .pawn-zoom-row .pawn-zoom {
-        flex: 1;
-      }
-      .pawn-step {
-        flex: 0 0 auto;
-        width: 30px;
-        height: 30px;
-        border-radius: 8px;
-        border: 1px solid var(--line);
-        background: var(--surface);
-        color: var(--ink);
-        font-size: 17px;
-        line-height: 1;
-        padding: 0;
-        cursor: pointer;
-      }
-      .pawn-step:disabled {
-        opacity: 0.45;
-        cursor: default;
-      }
-      /* "You can move this." Shown until the first drag, then gone for good. */
-      .pawn-grab {
-        position: absolute;
-        left: 50%;
-        bottom: 6%;
-        transform: translateX(-50%);
-        background: rgba(0, 0, 0, 0.62);
-        color: #fff;
-        font-size: 11px;
-        line-height: 1;
-        padding: 4px 8px;
-        border-radius: 99px;
-        white-space: nowrap;
-        pointer-events: none;
-      }
-      .pawn-disc {
-        position: absolute;
-        inset: 5%;
-        border-radius: 50%;
-        overflow: hidden;
-      }
-      .pawn-disc {
-        cursor: grab;
-      }
-      .pawn-disc:active {
-        cursor: grabbing;
-      }
-      .pawn-disc img {
-        position: absolute;
-        display: block;
-        /* Every offset pawn-frame.js answers with is a percentage of the SLOT
-           (the padded square), never of this disc — and the disc is 90% of the
-           slot, so placePawn() rescales them against a box 100/90 its size.
-           LEFT/TOP, deliberately physical: the drag reads clientX, which grows
-           rightwards in RTL too, and inset-inline-start would flip one of the two
-           and not the other. */
-        object-fit: contain;
-        touch-action: none;
-        user-select: none;
-        -webkit-user-drag: none;
-      }
-      /* The white sticker ring, approximated by stacked shadows exactly as the
-         wizard's slot approximates it (the card gets a real feMorphology dilate). */
-      .pawn-disc.is-cut img {
-        filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 1.5px #fff);
-      }
-      .pawn-cut-line {
-        position: absolute;
-        inset: 5%;
-        border: 1.5px dashed rgba(20, 20, 20, 0.32);
-        border-radius: 50%;
-        pointer-events: none;
-      }
-      .pawn-ctl {
-        flex: 1 1 auto;
-        min-width: 0;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .pawn-ctl-hint {
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .pawn-zoom {
-        width: 100%;
-        margin: 0;
-        accent-color: var(--ink);
-      }
-      /* Background on / off. A segmented pair rather than a checkbox: "with" and
-         "without" are two pictures, and naming both is how she knows there is a
-         choice at all. */
-      .pawn-bg {
-        display: flex;
-        gap: 0;
-      }
-      .pawn-bg button {
-        flex: 1;
-        padding: 6px 4px;
-        font: inherit;
-        font-size: 13px;
-        background: var(--surface);
-        color: var(--muted);
-        border: 1px solid var(--line);
-        border-radius: 0;
-        box-shadow: none;
-        cursor: pointer;
-      }
-      .pawn-bg button + button {
-        border-inline-start: 0;
-      }
-      .pawn-bg button.on {
-        background: var(--ink);
-        color: #fff;
-        border-color: var(--ink);
-      }
-      .pawn-bg button:disabled {
-        opacity: 0.45;
-        cursor: default;
-      }
-      .pawn-row-actions {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-      }
-      .pawn-mini {
-        background: none;
-        border: 0;
-        box-shadow: 0 0 0 1px var(--line) inset;
-        border-radius: 0;
-        padding: 5px 9px;
-        font: inherit;
-        font-size: 12px;
-        color: var(--muted);
-        cursor: pointer;
-      }
-      .pawn-mini:disabled {
-        opacity: 0.45;
-        cursor: default;
       }
       /* The delivery-upgrade form sits inside a card rather than inside the pay
          panel, so it needs the panel's insets taken back off. */
@@ -2979,7 +2770,19 @@
         ZOOM_MIN,
         ZOOM_MAX,
         DISC_FILL,
+        pawnCssVars,
+        haloFilter,
+        liveSlotStyle,
+        discPhotoStyle,
       } from './js/pawn-frame.js';
+
+      // The circles' proportions, handed to site/css/pawn.css. Both files carry
+      // the same numbers as literal fallbacks so nothing is ever drawn wrong
+      // before this line runs; what this buys is that there is ONE place to
+      // change them, and generator/test_pawn_three_views.py reads that place.
+      for (const [k, v] of Object.entries(pawnCssVars())) {
+        document.documentElement.style.setProperty(k, v);
+      }
 
       const params = new URLSearchParams(location.search);
       const id = params.get('c');
@@ -3195,29 +2998,43 @@
         return pawnFrames.get(key);
       }
 
-      // Put one image where the printer will put it. pawn-frame.js answers in
-      // percentages of the SLOT; the element these land on is the DISC, which is
-      // DISC_FILL of the slot, so every number is rebased onto it here — once,
-      // rather than in each of the three callers.
-      const DISC_INSET = (100 - 100 * DISC_FILL) / 2;
+      // THE WHITE STICKER EDGE, sized for the circle it goes around. The row's
+      // circle is roughly twice the card's, so a fixed pixel width is a different
+      // rim on each — which is what the two used to draw.
+      //
+      // WATCHED, not read once. A circle's width is not knowable when its row is
+      // built: the whole tab is `display: none` until she opens it and every box
+      // in it measures zero, which left the stylesheet's fallback edge on every
+      // pawn on the page. It also changes afterwards, when the card picture
+      // arrives and the preview box takes its shape. So the size is observed and
+      // the halo re-sized whenever it moves.
+      const pawnHaloWatched = new WeakSet();
+      function watchHalo(el) {
+        const apply = () => {
+          const slotPx = el.getBoundingClientRect().width / DISC_FILL;
+          if (slotPx > 0) el.style.setProperty('--pawn-halo', haloFilter(slotPx));
+        };
+        apply();
+        if (pawnHaloWatched.has(el) || typeof ResizeObserver !== 'function') return;
+        pawnHaloWatched.add(el);
+        new ResizeObserver(apply).observe(el);
+      }
+
+      // Put one image where the printer will put it, and give it the same white
+      // sticker edge the print has. The arithmetic is discPhotoStyle's, in
+      // pawn-frame.js, so this page and the comparison harness
+      // (generator/pawn_three_views.py) place the photo with the very same
+      // function. Whether the photo HAS an edge to trace (the `is-cut` class)
+      // stays with the callers — they are the ones that know whether they are
+      // showing the cut-out or the original.
       function placePawn(img, frame, view) {
-        if (!frame) {
-          // Nothing to measure. Fill the circle and let it be cropped — the same
-          // "we could not frame this" outcome the wizard's slot shows.
-          img.style.width = '100%';
-          img.style.height = '100%';
-          img.style.left = '0';
-          img.style.top = '0';
-          img.style.objectFit = 'cover';
-          return;
-        }
-        const f = applyView(frame, view);
-        const k = 1 / DISC_FILL;
-        img.style.objectFit = 'contain';
-        img.style.width = (f.widthPct * k).toFixed(3) + '%';
-        img.style.height = (f.heightPct * k).toFixed(3) + '%';
-        img.style.left = ((f.leftPct - DISC_INSET) * k).toFixed(3) + '%';
-        img.style.top = ((f.topPct - DISC_INSET) * k).toFixed(3) + '%';
+        const s = discPhotoStyle(frame, view);
+        img.style.width = s.width;
+        img.style.height = s.height;
+        img.style.left = s.left;
+        img.style.top = s.top;
+        img.style.objectFit = s.objectFit;
+        if (img.parentElement) watchHalo(img.parentElement);
       }
 
       // Saving is DEBOUNCED and batched by photo: a drag emits a view per pointer
@@ -3337,23 +3154,27 @@
         img.draggable = false;
         img.setAttribute('data-testid', 'pawn-thumb');
         disc.appendChild(img);
-        // NOBODY DRAGS WHAT LOOKS LIKE A PICTURE. The badge sits on the disc
-        // until the first drag on this page, then never again — an instruction
-        // that stays after it has been followed is noise.
+        // NOBODY DRAGS WHAT LOOKS LIKE A PICTURE. The badge shows until the first
+        // drag on this page, then never again — an instruction that stays after
+        // it has been followed is noise.
         // …and never at all once the deck is in production: pointerdown already
         // refuses the drag there, so the badge would be inviting her to do the one
         // thing the circle will not do.
+        //
+        // On the PAD, not inside the disc: the disc carries the sticker-halo
+        // filter, and a filter applies to everything it contains — the badge came
+        // out with a white glow around its pill.
         const grab = document.createElement('span');
         grab.className = 'pawn-grab';
         grab.textContent = '✥ גררו למיקום';
         grab.setAttribute('aria-hidden', 'true');
         if (pawnDragged || !open) grab.hidden = true;
-        disc.appendChild(grab);
         const line = document.createElement('span');
         line.className = 'pawn-cut-line';
         line.setAttribute('aria-hidden', 'true');
         pad.appendChild(disc);
         pad.appendChild(line);
+        pad.appendChild(grab);
         cell.appendChild(pad);
 
         let view = pawnViewFor(src);
@@ -3691,13 +3512,14 @@
           const view = pawnLiveViews.get(src) || pawnViewFor(src);
           // The DISC is DISC_FILL of the slot square, centred in it — the same
           // relation the row's own circle has, so placePawn can be shared.
-          const d = DISC_FILL;
-          el.style.left = ((geo.x + (geo.w * (1 - d)) / 2) * 100).toFixed(3) + '%';
-          el.style.top = ((geo.y + (geo.h * (1 - d)) / 2) * 100).toFixed(3) + '%';
-          el.style.width = (geo.w * d * 100).toFixed(3) + '%';
-          el.style.height = (geo.h * d * 100).toFixed(3) + '%';
+          Object.assign(el.style, liveSlotStyle(geo));
           const want = pawnPrintSrcFor(src, view);
           if (img.getAttribute('src') !== want) img.src = want;
+          // A cut-out photo prints with a white sticker edge around it, and this
+          // card is the picture she signs off. It went out WITHOUT one — the row
+          // below drew the halo, the print drew the halo, and the card between
+          // them drew a bare circle, which is a third version of the same photo.
+          el.classList.toggle('is-cut', want !== src);
           placePawn(img, pawnLiveFrames.get(src) || null, view);
         });
       }
@@ -3725,7 +3547,25 @@
             '/pawn-card?live=1&n=' + pawnList().length + '&k=' + encodeURIComponent(ownerToken)
           );
           if (seq !== pawnCardSeq) return; // a newer render is already on its way
-          if (r && r.card) img.src = r.card;
+          if (r && r.card) {
+            // The discs are positioned as fractions of THE CARD, and the layer
+            // they are positioned in fills the BOX. Those are the same rectangle
+            // only if the box has the card's shape: .prev-box is 5/7 and the card
+            // is 223.92/312, which letterboxes it by half a percent and slides
+            // every circle off its ring by about that much. Take the shape from
+            // the picture that arrived rather than assuming it.
+            img.addEventListener(
+              'load',
+              () => {
+                if (img.naturalWidth && img.naturalHeight) {
+                  box.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
+                }
+                paintPawnCard();
+              },
+              { once: true }
+            );
+            img.src = r.card;
+          }
           if (r && Array.isArray(r.slots) && r.slots.length) pawnSlots = r.slots;
           paintPawnCard();
         } catch (e) {
