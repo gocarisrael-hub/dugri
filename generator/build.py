@@ -276,6 +276,39 @@ def _fmt(v):
     return f"{v:g}"
 
 
+def deck_pitch_for(cfg, wants):
+    """The ONE line spacing a whole order prints at, or None for the design's.
+
+    Two sources. Where the owner has set a number for this template
+    (``config.word_pitch``) that number IS the spacing — a pin, not a ceiling.
+    She picks it off rendered cards that show a long phrase at every candidate
+    spacing, so a number that could not carry one is a number she would not have
+    picked; overriding it here would only undo a choice made looking at the thing
+    itself. Where she has set nothing the cards decide, as they have since the
+    deck rhythm existed: the tightest spacing any card needs to wrap, so no card
+    has to pay in type size for a rhythm measured off an origin whose entries
+    were all one short word. A deck where nothing wraps wants nothing, and the
+    design's own spacing stands.
+    """
+    owner = config.word_pitch(cfg)
+    if owner:
+        return owner
+    return min(wants) if wants else None
+
+
+def _pitch_note(cfg, wants, pitch):
+    """One progress line saying where the deck's rhythm came from."""
+    if not config.word_pitch(cfg):
+        return f"deck rhythm: {pitch:.2f} (tightest of {len(wants)} card(s) that wrap)"
+    note = f"deck rhythm: {pitch:.2f} (set for this template)"
+    # Worth saying out loud rather than silently: at her number these cards get
+    # less room than they asked for, and pay for it in type size.
+    tight = [w for w in wants if w < pitch]
+    if tight:
+        note += f" — {len(tight)} card(s) wanted {min(tight):.2f}"
+    return note
+
+
 def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                   progress=False, workdir=None, press_geom=None, paper=None,
                   photo_views=None):
@@ -375,9 +408,9 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                                   card_svg=front_svgs[front])
         if need:
             wants.append(need)
-    deck_pitch = min(wants) if wants else None
+    deck_pitch = deck_pitch_for(cfg, wants)
     if progress and deck_pitch:
-        log(f"deck rhythm: {deck_pitch:.2f} (tightest of {len(wants)} card(s) that wrap)")
+        log(_pitch_note(cfg, wants, deck_pitch))
 
     for n, card in enumerate(cards, 1):
         # Resolve this card's FRONT before emitting anything: with per-front backs

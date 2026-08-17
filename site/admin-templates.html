@@ -1610,11 +1610,18 @@
           body.append(slotGroup('back', 'שם על גב הקלף (back)', t.back || null));
         }
 
-        // word_size (theme-level; empty = auto-fit)
+        // word_size (theme-level; empty = auto-fit) and word_pitch — the gap
+        // between two printed lines of words, in card units. Empty leaves the
+        // deck on the spacing measured off this design's own original card;
+        // a number here is what every deck of this template prints at.
         const wsG = document.createElement('div');
         wsG.className = 'cal-grid';
         wsG.append(
-          field('גודל מילים (word_size · ריק=אוטומטי)', num('word_size', t.word_size, 0.1, 'auto'))
+          field('גודל מילים (word_size · ריק=אוטומטי)', num('word_size', t.word_size, 0.1, 'auto')),
+          field(
+            'מרווח שורות (word_pitch · ריק=לפי העיצוב)',
+            num('word_pitch', t.word_pitch, 0.01, 'לפי העיצוב')
+          )
         );
         body.append(wsG);
 
@@ -1847,6 +1854,7 @@
           board: slot('board'),
           back: slot('back'),
           word_size: calNum(card, 'word_size'),
+          word_pitch: calNum(card, 'word_pitch'),
         };
         // Per-back slots, when the panel rendered them. A disabled one posts an
         // explicit null — "this back carries no title" is an ANSWER, and dropping

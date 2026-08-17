@@ -4733,7 +4733,7 @@ def _index_from_card_path(path):
 
 def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None,
                           word_font=None, kind="word", photos=None,
-                          back_index=None):
+                          back_index=None, deck_pitch=None):
     """A STANDALONE, self-contained SVG for one card — fonts and all.
 
     The deck path puts fonts in the document stylesheet once and shares the
@@ -4774,19 +4774,25 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
         overlay = back_overlay(theme, recipe, title_lines, card_vb=card_vb,
                                back_index=back_index)
     else:
+        # A preview is ONE card, so it has no deck to take its rhythm from.
+        # Where the owner has set a spacing for this template, that is what the
+        # printed deck prints at — so the preview prints at it too, and the card
+        # the buyer approves is the card she receives.
         overlay = card_overlay(theme, recipe, words, title_lines,
                                front_index=front_index, word_font=word_font,
-                               card_vb=card_vb, card_svg=svg)
+                               card_vb=card_vb, card_svg=svg,
+                               deck_pitch=deck_pitch or config.word_pitch(cfg))
     return svg.replace("</svg>", style + overlay + "</svg>")
 
 
 def render_single_card(theme, clean_svg, words, title_lines, out_png,
                        front_index=None, word_font=None, kind="word", photos=None,
-                       back_index=None):
+                       back_index=None, deck_pitch=None):
     """Screenshot one card to ``out_png`` (the preview path)."""
     svg = build_single_card_svg(theme, clean_svg, words, title_lines,
                                 front_index=front_index, word_font=word_font,
-                                kind=kind, photos=photos, back_index=back_index)
+                                kind=kind, photos=photos, back_index=back_index,
+                                deck_pitch=deck_pitch)
     svg_path = out_png.replace(".png", ".svg")
     with open(svg_path, "w", encoding="utf-8") as f:
         f.write(svg)

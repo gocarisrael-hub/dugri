@@ -841,3 +841,46 @@ def test_at_the_deck_s_rhythm_the_long_phrase_wraps_instead_of_shrinking_the_car
     assert max(at_deck) > max(pinned) * 1.15, (pinned, at_deck)
     # …and it is the long phrase that gave: it is set over more than one line.
     assert "הטיול הגדול שלנו לתאילנד ובחזרה" not in re.findall(r">\u202b([^<>]+)\u202c</text>", markup)
+
+
+def test_the_owner_s_own_spacing_is_used_where_she_has_set_one():
+    # The measured spacing describes the ORIGIN card, whose entries were all one
+    # short word. The owner looks at printed decks, so where she has set a number
+    # it is the one the deck starts from.
+    cfg = dict(config.theme("grapefruit"))
+    assert config.word_pitch(cfg) is None                # nothing set: the design's
+    cfg["word_pitch"] = 22.5
+    assert config.word_pitch(cfg) == 22.5
+    for bad in (0, -3, "", None, "wide"):
+        cfg["word_pitch"] = bad
+        assert config.word_pitch(cfg) is None, bad
+
+
+def test_the_owner_s_spacing_is_what_prints_not_a_ceiling():
+    # Cards that wrap ask for tight spacing. Where she has set a number for the
+    # template, that number is what the deck prints at — she picked it off
+    # rendered cards showing a long phrase at each spacing, so the trade is one
+    # she has already seen. Only where she has set nothing do the cards decide.
+    import build
+    cfg = dict(config.theme("grapefruit"))
+    wants = [19.0, 24.0]
+    assert build.deck_pitch_for(cfg, wants) == 19.0        # unset: the tightest need
+    assert build.deck_pitch_for(cfg, []) is None           # nothing wraps: the design's
+    cfg["word_pitch"] = 27.5
+    assert build.deck_pitch_for(cfg, wants) == 27.5        # hers, over the cards' 19.0
+    assert build.deck_pitch_for(cfg, []) == 27.5
+    cfg["word_pitch"] = 12.0
+    assert build.deck_pitch_for(cfg, wants) == 12.0        # tighter than any need, too
+
+
+def test_a_deck_says_when_its_cards_wanted_tighter_than_her_number():
+    # Not silent: the run log names how many cards paid type size for her rhythm,
+    # so a template set too wide is visible instead of just looking wrong.
+    import build
+    cfg = dict(config.theme("grapefruit"))
+    cfg["word_pitch"] = 28.0
+    note = build._pitch_note(cfg, [19.0, 24.0, 30.0], 28.0)
+    assert "set for this template" in note and "2 card(s) wanted 19.00" in note
+    assert "wanted" not in build._pitch_note(cfg, [30.0], 28.0)
+    cfg.pop("word_pitch")
+    assert "tightest" in build._pitch_note(cfg, [19.0], 19.0)

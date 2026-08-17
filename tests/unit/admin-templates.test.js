@@ -581,6 +581,9 @@ describe('templates.js full editing (status / rename / replace)', () => {
       board: null,
       back: null,
       word_size: null,
+      // Her line spacing for this deck; null until she sets one, and then the
+      // design's own measured spacing is what prints.
+      word_pitch: null,
       // Names no seed pool → the generic fallback (see the wordlist tests below).
       wordlist: null,
       calibrated: false,
@@ -737,6 +740,39 @@ describe('templates.js full editing (status / rename / replace)', () => {
     // Identity untouched.
     expect(after.slug).toBe(before.slug);
     expect(after.dir).toBe(before.dir);
+  });
+
+  it('stores the line spacing the owner chose for this deck, and clears it on null', () => {
+    // One number per design, in card units: the gap between two printed lines of
+    // words. She picks it off cards rendered at each candidate spacing, so it is
+    // the spacing the deck prints at — not a hint the generator may overrule.
+    const root = makeScaffold();
+    onboard(root, 'pitch-set');
+    const set = (word_pitch) =>
+      templates.updateTemplateSettings({ root, key: 'pitch-set', patch: { word_pitch } });
+    const stored = () => templates.loadThemes(templates.themesPathFor(root))['pitch-set'];
+
+    expect(set(26.84).settings.word_pitch).toBe(26.84);
+    expect(stored().word_pitch).toBe(26.84);
+
+    // A patch that never mentions it leaves it alone — the settings form saves
+    // one section at a time.
+    templates.updateTemplateSettings({ root, key: 'pitch-set', patch: { visibility: 'private' } });
+    expect(stored().word_pitch).toBe(26.84);
+
+    // Null (and the empty form field that arrives as '') puts the template back
+    // on the design's own measured spacing. Cleared means the KEY GOES, as
+    // word_size does, so an entry back on the design's spacing reads exactly
+    // like one that never carried a number.
+    expect(set(null).settings.word_pitch).toBeNull();
+    expect('word_pitch' in stored()).toBe(false);
+
+    for (const bad of [0, -4, 401, 'wide', {}]) {
+      const r = set(bad);
+      expect(r.httpStatus).toBe(400);
+      expect(r.error).toMatch(/word_pitch/);
+    }
+    expect('word_pitch' in stored()).toBe(false);
   });
 
   it('updateTemplateSettings REFUSES calibrated:true without a title_style (guards the renderer)', () => {
