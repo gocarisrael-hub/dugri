@@ -357,6 +357,161 @@ test('once the deck is in production the pawns are frozen — visible, not edita
   expect(refused.status()).toBe(409);
 });
 
+// A PAGE THAT CANNOT BE CHANGED MUST NOT KEEP OFFERING TO CHANGE.
+//
+// The owner sent a screenshot of her own closed collection: the sign-off tab
+// still carried two לעריכה buttons and a tickable "I went over everything" box,
+// on a deck already at the printer. "They can revert nothing, they can't untick
+// the 'I passed everything', they can't edit nothing — just see the order and
+// pictures and words, no edit at all (also in the wording)."
+//
+// The server had refused all of it for a long time (409 on title, pawn-view,
+// pawns and wordlist). What was wrong was the page: every one of those controls
+// was a press that would fail. So the freeze is not "disable the inputs" — it is
+// that the tab stops being a form and becomes the record of what was sent, down
+// to the sentences, and the four tests below hold each half of that.
+test('the sign-off tab stops being a checklist and becomes the record of what was sent', async ({
+  page,
+}) => {
+  const { url, id, k } = await createCollection(page, 'החגיגה של שירה');
+  await attachPhotos(page, id, k, 2);
+  await page.goto(url);
+  await page.getByTestId('tab-finish').click();
+  // While it is open it is the checklist it has always been.
+  await expect(page.getByTestId('finish-go-design')).toBeVisible();
+  await expect(page.getByTestId('finish-ack')).toBeVisible();
+  await expect(page.locator('#finishHint')).toBeVisible();
+
+  await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
+  await page.goto(url);
+  await page.getByTestId('tab-finish').click();
+
+  // The two shortcuts point at tabs where nothing can move any more. Gone, not
+  // greyed out: a button she can press and that does nothing reads as breakage.
+  await expect(page.getByTestId('finish-go-design')).toBeHidden();
+  await expect(page.getByTestId('finish-go-pawns')).toBeHidden();
+  // The tick armed the close button, which is itself gone. Nothing stores that
+  // she ticked it, so leaving the box would show it EMPTY on a deck she plainly
+  // did sign off — and she could neither tick nor untick it.
+  await expect(page.getByTestId('finish-ack')).toBeHidden();
+  await expect(page.locator('#closeBtn')).toBeHidden();
+
+  // "…also in the wording": the intro told her to go over three things before
+  // production. Production has happened.
+  await expect(page.locator('#finishHead')).toBeHidden();
+  await expect(page.locator('#finishHeadSent')).toBeVisible();
+  await expect(page.locator('#finishHint')).toBeHidden();
+  await expect(page.getByTestId('finish-hint-sent')).toBeVisible();
+  await expect(page.getByTestId('finish-hint-sent')).toContainText('אי אפשר לשנות');
+
+  // …and she can still SEE it all, which is the whole point of leaving the tab
+  // in place rather than replacing it with a notice.
+  await expect(page.getByTestId('finish-title-val')).toContainText('החגיגה של שירה');
+  await expect(page.getByTestId('finish-pawns-val')).toContainText('2');
+  await expect(page.locator('#sheetClosedNote')).toBeVisible();
+});
+
+test('the design and photo tabs drop the instructions along with the controls', async ({
+  page,
+}) => {
+  const { url, id, k } = await createCollection(page, 'החגיגה של שירה');
+  await attachPhotos(page, id, k, 1);
+  await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
+  await page.goto(url);
+
+  await page.getByTestId('tab-design').click();
+  // The title survives — she came back to look at it. Its RULES do not: "up to
+  // 63 characters, two lines allowed" is a sentence about typing, next to a box
+  // nobody can type in.
+  await expect(page.getByTestId('title-input')).toHaveValue('החגיגה של שירה');
+  await expect(page.getByTestId('title-input')).toBeDisabled();
+  await expect(page.locator('#titleSaveBtn')).toBeHidden();
+  await expect(page.locator('#titleHint')).toBeHidden();
+
+  await page.getByTestId('tab-pawns').click();
+  // "Your photos (up to 4)" counts room she no longer has, and "drag the photo
+  // inside the circle" instructs a circle that will not move.
+  await expect(page.locator('#photosLabel')).toBeHidden();
+  await expect(page.locator('#photosLabelSent')).toBeVisible();
+  await expect(page.locator('#photosHint')).toBeHidden();
+  // The drag badge is an instruction too, and the reset button is the one pawn
+  // control that reads nothing back — unlike the slider and the two background
+  // buttons, which still say WHICH size and WHICH background she chose.
+  await expect(page.locator('.pawn-grab')).toBeHidden();
+  await expect(page.getByTestId('pawn-reset')).toHaveCount(0);
+});
+
+test('a closed order with no photos of its own says so, in the past tense', async ({ page }) => {
+  const { url, id, k } = await createCollection(page);
+  await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  // Open, this line offers a fallback ("we WILL print the standard pawns"); the
+  // alternative to an empty strip under a heading is saying what happened.
+  await expect(page.locator('#pawnNone')).toBeHidden();
+  await expect(page.getByTestId('pawn-none-sent')).toBeVisible();
+});
+
+// THE PAGE HAS TO KEEP THE PROMISE ITS OWN DIALOG MADE.
+//
+// The dialog she presses to send the deck to print lists, in as many words, what
+// closing takes away — and the first line of it is "להוסיף או למחוק מילים". The
+// add box and the helper card duly disappeared; every collected word kept its ×
+// and its "לחצו לעריכה". A word changed after the press file is built is a word
+// that is not in the deck, so this is not only a wording problem.
+//
+// The ROUTES still accept an edit — db.editWord says so on purpose, and this
+// does not touch it. What the owner has instead is the admin's "פתח מחדש":
+// reopen, fix, close again, exactly as with the title and the photos.
+test('a closed collection shows every word and offers to change none of them', async ({ page }) => {
+  const { url, id, k } = await createCollection(page);
+  const added = await page.request.post(`/api/collections/${id}/words`, {
+    data: { words: ['סוכר באמא', 'ניו יורק'] },
+  });
+  expect(added.status()).toBe(200);
+  await page.goto(url);
+  // Open, they are hers to fix: the tap-to-edit and the × are the whole reason
+  // the owner's list looks different from a contributor's.
+  await expect(page.getByTestId('word-del')).toHaveCount(2);
+
+  await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
+  await page.goto(url);
+
+  // Every word still on screen — "just see the order and pictures and words".
+  await expect(page.getByTestId('word-text')).toHaveCount(2);
+  await expect(page.getByTestId('word-del')).toHaveCount(0);
+  const first = page.getByTestId('word-text').first();
+  await expect(first).not.toHaveClass(/editable/);
+  // …and a tap on one opens nothing, rather than an editor whose save would
+  // land on a deck that is already printed.
+  await first.click();
+  await expect(page.getByTestId('word-edit-input')).toHaveCount(0);
+});
+
+// Read-only is two halves, and this is the half that keeps getting lost: she can
+// still LOOK. The closed page used to swallow the press on a pawn whole — the
+// drag and the full-size view went out together — so the one thing a buyer comes
+// back to a finished order for was the thing production took away.
+test('a frozen photo still opens full size, and still does not move', async ({ page }) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  const [photo] = await attachPhotos(page, id, k, 1);
+  await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  const thumb = page.getByTestId('pawn-thumb').first();
+  const before = await thumb.evaluate((el) => el.style.left);
+  // A real drag gesture on a frozen circle: it opens the photo (every press on a
+  // closed collection is a tap, because nothing can move) and nothing shifts.
+  await dragBy(page.locator('.pawn-disc').first(), 20, 12);
+  await expect(page.getByTestId('pawn-view')).toBeVisible();
+  expect(await thumb.evaluate((el) => el.style.left)).toBe(before);
+  // …and the order never heard about it.
+  await page.waitForTimeout(900); // past the save debounce
+  expect((await owned(page, id, k)).pawn_view?.[photo]).toBeUndefined();
+});
+
 test('a contributor sees none of it', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 1);

@@ -162,12 +162,35 @@ test('a closed collection shows the pick, frozen', async ({ page }) => {
   await openFinishTab(page);
   await expect(page.getByTestId('pool-opt-jokes')).toBeChecked();
   await expect(page.getByTestId('pool-opt-jokes')).toBeDisabled();
+  // …and it stops ASKING. "בחרו את הרשימה" is an instruction to a radio group
+  // that cannot answer any more; what is left is the ticked row, and a line that
+  // names it as the choice we filled the deck from.
+  await expect(page.locator('#poolLabel')).toBeHidden();
+  await expect(page.locator('#poolLabelSent')).toBeVisible();
+  await expect(page.locator('#poolHint')).toBeHidden();
+  await expect(page.locator('#poolHintSent')).toBeVisible();
   // …and the API refuses too, so the freeze is a rule and not a disabled radio.
   const refused = await page.request.put(
     `/api/collections/${id}/wordlist?k=${encodeURIComponent(k)}`,
     { data: { option_id: '' } }
   );
   expect(refused.status()).toBe(409);
+});
+
+// The commonest closed order by far: she never opened the sign-off tab, so no
+// option was ever stored and the server filled the deck from her DESIGN. A menu
+// with nothing ticked would then be a list of things that did not happen — three
+// styles offered, on a deck that is already printed, none of them chosen.
+test('a closed collection she never answered shows no menu at all', async ({ page }) => {
+  const pools = await poolNames(page);
+  await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
+  const { url, id, k } = await createCollection(page);
+  await page.request.post(`/api/collections/${id}/close`, { data: { owner_token: k } });
+  await page.goto(url);
+  await openFinishTab(page);
+  await expect(page.getByTestId('pool-field')).toBeHidden();
+  // The rest of the tab is still there — this hides the chooser, not the record.
+  await expect(page.getByTestId('finish-title-val')).toBeVisible();
 });
 
 // THE MENU THE CUSTOMER SEES, built here.
