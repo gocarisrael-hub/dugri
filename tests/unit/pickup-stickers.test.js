@@ -9,11 +9,16 @@ import fs from 'node:fs';
 // WHICH ORDERS GET A STICKER TONIGHT.
 //
 // Every printed game the customer collects herself gets a label on its box, and
-// the owner has been typing that sheet by hand every night. The rule she works
-// to is "all the pickup orders that are בדפוס", and each half of it earns its
-// place: a delivered order is posted rather than collected, an order not yet
-// sent to print has no box to label, and one already marked ready has been
-// labelled and handed over.
+// the owner has been typing that sheet by hand every night. She describes the
+// batch as "all the pickup orders that are בדפוס" — and taking that literally
+// (the sent-to-print STAMP) matched nothing at all: measured against the real
+// orders, 135 carry that stamp and every one of them is also already marked
+// ready, because the two get pressed together. Her בדפוס is the pile going to
+// the printer tonight, not a state an order rests in.
+//
+// So the rule is the one the label itself implies — THE BOX EXISTS AND HAS NOT
+// GONE OUT: a paid self-collection order whose deck has been produced and which
+// is not yet marked ready.
 //
 // The SHEET itself — the grid, the padding, the fill order — is held in
 // generator/test_pickup_stickers.py against the real renderer. This file is the
@@ -54,7 +59,9 @@ afterAll(() => {
 // An order at whatever point in the pipeline the test needs.
 function order({
   version = 'pickup',
-  toPrint = true,
+  paid = true,
+  produced = true,
+  toPrint = false,
   ready = false,
   theme = 'anniversary',
   title = 'יובל חוגגת 23',
@@ -74,7 +81,10 @@ function order({
         ? { street: 'הרצל 12', city: 'תל אביב', postal: '6100000' }
         : undefined,
   });
-  db.markPaid(c.id, { method: 'pelecard' });
+  if (paid) db.markPaid(c.id, { method: 'pelecard' });
+  // The deck having been BUILT is what makes a box to label. This is the state
+  // the generator leaves behind on a successful run.
+  if (produced) db.setProduction(c.id, { state: 'generated', pages: 208 });
   if (toPrint) db.setOrderSentToPrint(c.id, true);
   if (ready) db.setOrderReady(c.id, true);
   return c;
@@ -83,9 +93,14 @@ function order({
 const titles = () => app.pickupStickerOrders().map((s) => s.title);
 
 describe('which orders are on tonight’s sheet', () => {
-  it('a self-collection order at the printer is', () => {
+  it('a produced self-collection order is — that is the pile going to the printer', () => {
     order({ title: 'על הסהר' });
     expect(titles()).toContain('על הסהר');
+  });
+
+  it('…and so is one resting in בדפוס, on the nights that happens', () => {
+    order({ toPrint: true, title: 'כבר נשלח לדפוס' });
+    expect(titles()).toContain('כבר נשלח לדפוס');
   });
 
   it('a DELIVERY order is not — it is posted, not collected', () => {
@@ -98,21 +113,33 @@ describe('which orders are on tonight’s sheet', () => {
     expect(titles()).not.toContain('קובץ בלבד');
   });
 
-  it('an order not yet sent to print is not — there is nothing to label', () => {
-    order({ toPrint: false, title: 'עוד לא בדפוס' });
-    expect(titles()).not.toContain('עוד לא בדפוס');
+  it('an order whose deck has not been built is not — there is nothing to label yet', () => {
+    // Still collecting words, or closed and not yet run: no box exists.
+    order({ produced: false, title: 'עוד לא הופק' });
+    expect(titles()).not.toContain('עוד לא הופק');
+  });
+
+  it('an UNPAID order is not — it is not being made', () => {
+    order({ paid: false, produced: false, title: 'לא שולם' });
+    expect(titles()).not.toContain('לא שולם');
   });
 
   it('an order already marked ready is not — it has been labelled and handed over', () => {
-    order({ ready: true, title: 'כבר מוכן' });
+    order({ ready: true, toPrint: true, title: 'כבר מוכן' });
     expect(titles()).not.toContain('כבר מוכן');
   });
 
   it('…and it comes back onto the sheet if that press is undone', () => {
-    const c = order({ ready: true, title: 'סומן בטעות' });
+    const c = order({ ready: true, toPrint: true, title: 'סומן בטעות' });
     expect(titles()).not.toContain('סומן בטעות');
     db.setOrderReady(c.id, false);
     expect(titles()).toContain('סומן בטעות');
+  });
+
+  it('a CANCELLED order is not', () => {
+    const c = order({ title: 'בוטלה' });
+    db.cancelCollection(c.id);
+    expect(titles()).not.toContain('בוטלה');
   });
 
   it('a collection with no order at all is not', () => {
@@ -140,7 +167,7 @@ describe('what each label says', () => {
     const c = db.createCollection('נועה בובר', { theme: 'anniversary' });
     db.setOrder(c.id, c.owner_token, { version: 'pickup' });
     db.markPaid(c.id, { method: 'pelecard' });
-    db.setOrderSentToPrint(c.id, true);
+    db.setProduction(c.id, { state: 'generated', pages: 208 });
     expect(titles()).toContain('נועה בובר');
   });
 

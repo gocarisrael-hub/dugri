@@ -3153,9 +3153,16 @@
       }
 
       // THE NIGHT'S STICKER SHEET. The same rule the server applies (see
-      // pickupStickerOrders): self-collection, at the printer, not yet ready.
-      // Counted from the orders already on this page rather than fetched, so the
-      // button costs nothing and cannot disagree with the table under it.
+      // pickupStickerOrders): a self-collection order whose deck has been
+      // PRODUCED and which has not been handed over — the boxes still to be
+      // packed. Counted from the orders already on this page rather than
+      // fetched, so the button costs nothing and cannot disagree with the table
+      // under it.
+      //
+      // Not "carrying the sent-to-print stamp", which is what this first said:
+      // that is the בדפוס stage, and no order ever rests in it here — the stamp
+      // and the ready mark get pressed together, so the count was always zero
+      // and the button never appeared.
       //
       // Deliberately NOT narrowed by the table's filters: this is the whole
       // night's work, and a sheet that quietly shrank because a filter chip was
@@ -3163,7 +3170,10 @@
       function pickupStickerCount() {
         return allCols.filter((c) => {
           const o = c.order;
-          return !!(o && o.version === 'pickup' && o.sent_to_print_at && !o.ready_at);
+          if (!o || c.cancelled) return false;
+          if (o.version !== 'pickup' || !isPaid(c)) return false;
+          if (o.ready_at) return false;
+          return isGenerated(c) || !!o.sent_to_print_at;
         }).length;
       }
       function renderStickerBtn() {

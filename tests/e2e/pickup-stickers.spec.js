@@ -22,9 +22,14 @@ import { test, expect } from '@playwright/test';
 
 const ADMIN = '/admin.html?key=dugri-admin';
 
-// An order at the exact point the sticker is for: paid, self-collection, sent to
-// the printer, not yet marked ready.
-async function pickupAtPrinter(page, title) {
+// An order at the exact point the sticker is for: paid, self-collection, the deck
+// PRODUCED, and not yet marked ready — the box exists and has not gone out.
+//
+// The e2e server has no admin "mark as paid" route (an order goes paid only on a
+// real money event) and no Python to run a real generator, so the two states
+// that cannot be reached through the API are injected into the collections
+// payload by `onlyMine` below.
+async function pickupAwaitingPrint(page, title) {
   const c = await page.request
     .post('/api/collections', {
       data: { honoree_name: title, theme: 'anniversary', email: 'stick@example.com' },
@@ -33,20 +38,34 @@ async function pickupAtPrinter(page, title) {
   await page.request.post(`/api/collections/${c.id}/order`, {
     data: { owner_token: c.owner_token, version: 'pickup' },
   });
-  await page.request.post(`/api/admin/collections/${c.id}/to-print?key=dugri-admin`, { data: {} });
   return c;
 }
 
-// Serve the REAL orders payload with every order but `mine` taken off tonight's
-// sheet. The page's own logic still runs on a real response — only the size of
-// the night is fixed.
-async function onlyMine(page, mine) {
+// Serve the REAL orders payload with exactly `mine` on tonight's sheet and
+// everything else off it. The page's own counting logic still runs on a real
+// response — only the size of the night is fixed.
+// `ready` names the ones among them that have already been handed over — a
+// state this server cannot be walked into (it needs a real print run), and one
+// that must be applied in the SAME handler: a second page.route on the same
+// pattern replaces the first rather than chaining onto it.
+async function onlyMine(page, mine, { ready = [] } = {}) {
   const keep = new Set(mine.map((c) => c.id));
+  const done = new Set(ready.map((c) => c.id));
   await page.route('**/api/admin/collections*', async (route) => {
     const res = await route.fetch();
     const body = await res.json();
     for (const c of body.collections || []) {
-      if (c.order && !keep.has(c.id)) c.order.sent_to_print_at = null;
+      if (!c.order) continue;
+      if (keep.has(c.id)) {
+        c.order.paid = true;
+        c.order.production = { state: 'generated' };
+        c.order.ready_at = done.has(c.id) ? '2026-08-16T00:00:00.000Z' : null;
+        c.cancelled = false;
+      } else {
+        c.order.production = null;
+        c.production = null;
+        c.order.sent_to_print_at = null;
+      }
     }
     return route.fulfill({ response: res, json: body });
   });
@@ -54,9 +73,9 @@ async function onlyMine(page, mine) {
 
 test('the button counts tonight’s stickers and points at the sheet', async ({ page }) => {
   const mine = [
-    await pickupAtPrinter(page, 'שירה א'),
-    await pickupAtPrinter(page, 'שירה ב'),
-    await pickupAtPrinter(page, 'שירה ג'),
+    await pickupAwaitingPrint(page, 'שירה א'),
+    await pickupAwaitingPrint(page, 'שירה ב'),
+    await pickupAwaitingPrint(page, 'שירה ג'),
   ];
   await onlyMine(page, mine);
   await page.goto(ADMIN);
@@ -70,12 +89,12 @@ test('the button counts tonight’s stickers and points at the sheet', async ({ 
 });
 
 test('an order already marked ready is not on tonight’s sheet', async ({ page }) => {
-  const mine = [await pickupAtPrinter(page, 'שירה ד'), await pickupAtPrinter(page, 'שירה ה')];
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה ד'),
+    await pickupAwaitingPrint(page, 'שירה ה'),
+  ];
   // Ready means the box has been labelled and handed over.
-  await page.request.post(`/api/admin/collections/${mine[1].id}/ready?key=dugri-admin`, {
-    data: {},
-  });
-  await onlyMine(page, mine);
+  await onlyMine(page, mine, { ready: [mine[1]] });
   await page.goto(ADMIN);
 
   await expect(page.getByTestId('pickup-stickers')).toBeVisible();
@@ -94,7 +113,10 @@ test('with nothing to collect the button is not there at all', async ({ page }) 
 test('the count is not narrowed by the table’s filters', async ({ page }) => {
   // The sheet is the whole night's work. A count that quietly shrank because a
   // filter chip was left on is a customer whose box goes out unlabelled.
-  const mine = [await pickupAtPrinter(page, 'שירה ו'), await pickupAtPrinter(page, 'שירה ז')];
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה ו'),
+    await pickupAwaitingPrint(page, 'שירה ז'),
+  ];
   await onlyMine(page, mine);
   await page.goto(ADMIN);
   const count = page.locator('#stickerCount');
