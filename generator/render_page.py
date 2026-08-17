@@ -1958,7 +1958,7 @@ def room_bottom(theme, front_index, svg_text, cell, safe_bottom):
 # with the flag that selected them.
 
 
-def _grid_pitch(centers, gaps, lead, size, cap=None):
+def _grid_pitch(centers, gaps, lead, size, cap=None, want=0.0):
     """The single centre-to-centre distance for every pair of lines on a card.
 
     The DESIGN's own spacing — the calibrated span divided by ``gaps`` — opened
@@ -1981,7 +1981,13 @@ def _grid_pitch(centers, gaps, lead, size, cap=None):
     paper, and had to set at 7 points to make the arithmetic work.
     """
     span = (max(centers) - min(centers)) if centers else 0.0
-    natural = span / gaps if gaps > 0 and span > 0 else 0.0
+    # ``want`` is the ONE spacing the whole order prints at, where the deck has
+    # one (build.deck_pitch_for). It replaces the design's own measurement as the
+    # floor, and that is the point: an order is opened as a deck, not as one card
+    # at a time, so a card of four short entries has to step at the same rhythm as
+    # the card next to it that wrapped. Without this the number reached only the
+    # cards that wrap, and a single deck printed at two rhythms.
+    natural = want if want > 0 else (span / gaps if gaps > 0 and span > 0 else 0.0)
     pitch = max(natural, lead * size)
     if cap is not None:
         pitch = max(lead * size, min(pitch, cap))
@@ -3042,7 +3048,7 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
             below = _ink_reach(font, ref, last)[1] * size
             pcap = (room[1] - min(live_c) - below) / (lines - 1)
         pitch = _grid_pitch(live_c, (len(live_c) - 1) if room else (lines - 1),
-                            lead, size, cap=pcap)
+                            lead, size, cap=pcap, want=want if room else 0.0)
         # Pinned to the first calibrated line, growing downward, whenever the room
         # is known — the space above belongs to the title. Without a known room
         # the block stays centred on the calibrated span, as it was placed before.
