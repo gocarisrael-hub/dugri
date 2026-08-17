@@ -49,6 +49,9 @@ function order(overrides = {}) {
     order_no: 'DG-1042',
     buyer_name: 'רותם לוי',
     honoree_name: 'שירה',
+    custom_title: 'שירה בת 30',
+    design: 'טיול חזרה',
+    theme: 'trip comeback',
     owner_phone: '052-123-4567',
     owner_email: 'rotem@example.com',
     order: {
@@ -122,6 +125,11 @@ describe('buildShipment — our order in HFD’s fields', () => {
     expect(payload.addressRemarks).toBe('הרצל 5, מיקוד 6100000, דירה 3, קומה 2');
   });
 
+  it('names the game on the sticker — the printed title and its design', () => {
+    const { payload } = hfd.buildShipment(order());
+    expect(payload.shipmentRemarks).toBe('שירה בת 30 · טיול חזרה');
+  });
+
   it('never asks the courier to collect money — the customer already paid us', () => {
     const { payload } = hfd.buildShipment(order({ order: { total: 289 } }));
     expect(payload.productsPrice).toBe(0);
@@ -166,6 +174,29 @@ describe('field normalization', () => {
     });
   });
 
+  it('labels the box with the title and design, one line, capped', () => {
+    // The title printed on the deck wins…
+    expect(hfd.gameRemark({ custom_title: 'שירה בת 30', design: 'טיול חזרה' })).toBe(
+      'שירה בת 30 · טיול חזרה'
+    );
+    // …and a multi-line one becomes a single label line.
+    expect(hfd.gameRemark({ custom_title: 'שירה\nבת 30', design: 'טיול חזרה' })).toBe(
+      'שירה בת 30 · טיול חזרה'
+    );
+    // No title set: the honoree's name is what the orders table shows too.
+    expect(hfd.gameRemark({ honoree_name: 'שירה', design: 'טיול חזרה' })).toBe('שירה · טיול חזרה');
+    // No display name yet: the generator key beats an unlabelled box.
+    expect(hfd.gameRemark({ honoree_name: 'שירה', theme: 'trip comeback' })).toBe(
+      'שירה · trip comeback'
+    );
+    // Neither: an empty remark, not a stray separator.
+    expect(hfd.gameRemark({})).toBe('');
+    // A long title is cut to fit the field rather than sent whole.
+    const long = hfd.gameRemark({ custom_title: 'א'.repeat(200), design: 'טיול חזרה' });
+    expect(Array.from(long)).toHaveLength(120);
+    expect(long.endsWith('…')).toBe(true);
+  });
+
   it('links tracking by the RAND number, not the shipment number', () => {
     expect(hfd.trackingUrl('abc123')).toBe('https://run.hfd.co.il/info/abc123');
     expect(hfd.trackingUrl('')).toBe(null);
@@ -182,6 +213,8 @@ describe('createShipment', () => {
     expect(call.init.method).toBe('POST');
     expect(call.init.headers.Authorization).toBe('Bearer test-token');
     expect(call.body.referenceNum1).toBe('DG-1042');
+    // What the sticker says the box is — it has to leave with the request.
+    expect(call.body.shipmentRemarks).toBe('שירה בת 30 · טיול חזרה');
   });
 
   it('reports HFD’s refusal in either shape it uses, and books nothing', async () => {
