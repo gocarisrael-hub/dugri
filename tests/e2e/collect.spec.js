@@ -702,8 +702,12 @@ test('a wrapped pay-bar label lifts the WhatsApp button with it', async ({ page 
   await expect(bar).toBeVisible();
 
   const before = await bar.evaluate((el) => el.getBoundingClientRect().height);
-  await page.locator('[data-edit="collect-pay-bar-label"]').evaluate((el) => {
-    el.textContent = 'המשחק שלכם מוכן ומחכה לתשלום — אפשר להמשיך להוסיף מילים גם אחרי שמשלמים';
+  // The BUTTON's label, since the bar's subtitle is gone — it said "your game is
+  // ready" on a bar that is only up while the collection is still open. The CTA
+  // is owner-editable and is what can still make this bar taller.
+  await page.locator('[data-edit="collect-pay-bar-cta"]').evaluate((el) => {
+    el.textContent =
+      'שלמו עכשיו ותקבלו את המשחק עד הבית — אפשר להמשיך להוסיף מילים גם אחרי שמשלמים';
   });
   await expect
     .poll(async () => bar.evaluate((el) => el.getBoundingClientRect().height))
