@@ -2473,12 +2473,13 @@
              just hides the panel and never blocks the wizard. -->
         <div class="name-preview" id="namePreview" data-testid="name-preview" hidden>
           <p class="name-preview-lbl" data-edit="options-namepreview-label">כך זה ייראה עם השם:</p>
-          <p
-            class="name-preview-warn"
-            id="namePreviewWarn"
-            data-testid="name-preview-warning"
-            hidden
-          ></p>
+          <!-- There is no name-language warning line here any more, and no code
+               left that could fill one. It used to print whatever `warning` the
+               preview response carried — in practice 'שם החוגג/ת צריך להיות
+               באנגלית (בהתאם לעיצוב)' on every Latin-scripted design, about a
+               name that is only the order's internal label and is never printed
+               on the card. /api/preview no longer sends it; the element goes too,
+               so no template's response can put that sentence back on this page. -->
           <!-- Font picker sits ABOVE the rendered images: pick a font here and
                see it applied on the card + board below. -->
           <div class="wiz-fontpicker">
@@ -2630,16 +2631,6 @@
             letter-spacing: 0.04em;
             color: var(--muted);
             margin: 0 0 12px;
-          }
-          .name-preview-warn {
-            color: var(--ink);
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: var(--radius);
-            padding: 8px 12px;
-            margin: 0 auto 12px;
-            max-width: 460px;
-            font-size: 14px;
           }
           /* Swipeable carousel: the viewport clips to ONE slide; the track holds
              the card/back/board figures side by side and is translated by JS.
@@ -4910,7 +4901,6 @@
       const namePreviewCard = document.getElementById('namePreviewCard');
       const namePreviewBack = document.getElementById('namePreviewBack');
       const namePreviewBoard = document.getElementById('namePreviewBoard');
-      const namePreviewWarn = document.getElementById('namePreviewWarn');
       const namePreviewEmpty = document.getElementById('namePreviewEmpty');
       const namePreviewImgs = document.getElementById('namePreviewImgs');
       const namePreviewViewport = document.getElementById('namePreviewViewport');
@@ -5351,7 +5341,6 @@
       // The graceful CSS fallback card (name in a script font) — used only when the
       // instant art itself is unavailable AND the server render can't fill in.
       function showClientFallback(name, retrying) {
-        namePreviewWarn.hidden = true;
         namePreviewImgs.hidden = true;
         namePreviewDots.hidden = true;
         if (retrying) {
@@ -5471,7 +5460,6 @@
           // the 20s backstop fires — armed here so a hung render can never leave the
           // buyer permanently stuck on the spinner.
           instantShown = false;
-          namePreviewWarn.hidden = true;
           namePreviewFallback.hidden = true;
           namePreviewImgs.hidden = true;
           namePreviewDots.hidden = true;
@@ -5572,12 +5560,10 @@
           swapServerView('card', data.card, seq);
           swapServerView('back', data.back, seq);
           swapServerView('board', data.board, seq);
-          if (data.warning) {
-            namePreviewWarn.textContent = data.warning;
-            namePreviewWarn.hidden = false;
-          } else {
-            namePreviewWarn.hidden = true;
-          }
+          // `data.warning` is READ BY NOTHING. The route stopped sending one, and
+          // this page stopped having anywhere to put it — on purpose, so that a
+          // template whose settings live only on the DATA_DIR volume cannot
+          // resurrect 'שם החוגג/ת צריך להיות באנגלית' on a buyer's screen.
           namePreviewEmpty.hidden = true;
           hideRefining();
           // the exact card is now authoritative (its instant layer is hidden)
