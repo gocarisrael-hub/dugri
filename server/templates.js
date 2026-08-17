@@ -2144,6 +2144,8 @@ function computeTemplateStatus(root, key, entry) {
     // "not a paired template" from "paired, nothing measured yet".
     backs: (entry && entry.backs) || null,
     word_size: entry && entry.word_size != null ? entry.word_size : null,
+    // The owner's line spacing for this deck, or null for the design's own.
+    word_pitch: entry && entry.word_pitch != null ? entry.word_pitch : null,
     // Asset layout + the single-card calibration it needs. `card_structure` is
     // always reported (absent on the entry reads as the legacy 'sheet'), so the
     // admin form never has to guess; `card_slots` is the shared word slots +
@@ -3076,6 +3078,21 @@ function updateTemplateSettings({ root, key, patch }) {
       return { error: 'word_size must be a positive number or null', httpStatus: 400 };
     }
   }
+  // THE DECK'S LINE SPACING, chosen by the owner rather than inherited from the
+  // origin design. In card units, alongside word_size. Null puts the template
+  // back on the measured spacing. It is a PIN, not a ceiling: every deck of this
+  // template prints at it (generator/build.deck_pitch_for). She picks it off
+  // cards rendered at each candidate spacing, a long wrapping phrase included,
+  // so the trade a wide rhythm makes is one she has already seen.
+  if ('word_pitch' in p) {
+    if (p.word_pitch === null || p.word_pitch === '') {
+      changed.word_pitch = null;
+    } else if (isFiniteNum(p.word_pitch) && p.word_pitch > 0 && p.word_pitch <= 400) {
+      changed.word_pitch = p.word_pitch;
+    } else {
+      return { error: 'word_pitch must be a positive number or null', httpStatus: 400 };
+    }
+  }
   if ('card_slots' in p) {
     const v = validateCardSlots(p.card_slots, entryFrontNumbers(entry));
     if (v.error) return { error: v.error, httpStatus: 400 };
@@ -3218,6 +3235,8 @@ function updateTemplateSettings({ root, key, patch }) {
   // word_size:null means "auto" — same as absent; drop the key so themes.json
   // stays as clean as the shipped themes (which simply omit it).
   if ('word_size' in changed && changed.word_size === null) delete entry.word_size;
+  // Same for word_pitch:null — "the design's own spacing", i.e. absent.
+  if ('word_pitch' in changed && changed.word_pitch === null) delete entry.word_pitch;
   // Same for wordlist:null — "no pool named", i.e. fall back to the generic one.
   // Dropping the key rather than storing null keeps the owner entry readable as
   // the shipped entries are, and topup's `cfg.get("wordlist") or GENERIC` treats
@@ -3253,6 +3272,8 @@ function updateTemplateSettings({ root, key, patch }) {
       board: entry.board || null,
       back: entry.back || null,
       word_size: entry.word_size == null ? null : entry.word_size,
+      // The line spacing this deck prints at, or null for the design's own.
+      word_pitch: entry.word_pitch == null ? null : entry.word_pitch,
       // null = names no pool, i.e. the generic fallback.
       wordlist: entry.wordlist || null,
       calibrated: !!entry.calibrated,

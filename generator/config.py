@@ -748,6 +748,28 @@ def front_offset(cfg, front_index):
     return [float(off[0]), float(off[1])]
 
 
+def word_pitch(cfg):
+    """The line spacing the OWNER set for this template, or None.
+
+    ``word_pitch`` on the theme entry, in card units. The deck's rhythm is one
+    number for the whole order (build.deck_document), and it has two possible
+    sources: the design's own spacing, measured off the origin card, or this — a
+    number the owner chose looking at printed cards.
+
+    Hers wins where it is set, because the measured one describes an origin whose
+    entries were all one short word and says nothing about the phrases a buyer
+    actually sends. It is a PIN, not a ceiling: the deck prints at her number and
+    the cards' own needs do not pull it tighter. She chooses it off rendered cards
+    that show a long phrase at every candidate spacing, so the trade — a wide
+    rhythm costs type size on the cards that wrap — is one she has already seen.
+    """
+    try:
+        v = float(cfg.get("word_pitch"))
+    except (TypeError, ValueError):
+        return None
+    return v if v > 0 else None
+
+
 def title_font_weight(cfg):
     """The weight instance a VARIABLE title face is drawn at, or None.
 
