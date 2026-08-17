@@ -21,11 +21,13 @@ Run: python3 -m pytest generator/test_word_band.py
 """
 import json
 import os
+import re
 
 import pytest
 
 import card_assets
 import config
+import deck_html
 import render_page as rp
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -782,3 +784,60 @@ def test_a_sheet_template_keeps_its_own_pitch():
     # line to put an extra line into. Held to a fixed pitch, bachelorette card 2
     # fell from 10.4 to 2.5 — unreadable. Those templates keep what they had.
     assert not config.is_single_card(config.theme("bachelorette"))
+
+
+# ---- the deck picks its own rhythm -----------------------------------------
+# The rule is the owner's: one spacing, evenly, on every card. The NUMBER used to
+# be the origin design's, measured from a card whose entries were all one short
+# word — so a deck carrying a long phrase had nowhere to put the extra line and
+# paid for it in type size. The deck chooses the number now.
+
+def test_a_card_that_needs_no_extra_line_asks_for_nothing():
+    cfg = config.theme("grapefruit")
+    recipe = config.recipe_or_empty(cfg)
+    svg = card_assets.read_svg(config.card_path("grapefruit", config.fronts(cfg)[0]))
+    vb = deck_html.view_box(svg)
+    need = rp.card_pitch_need("grapefruit", recipe, ["ים", "אמא", "חוף", "כלב"],
+                              front_index=config.fronts(cfg)[0], card_vb=vb, card_svg=svg)
+    assert need is None
+
+
+def test_a_card_with_a_long_phrase_asks_for_a_tighter_one():
+    cfg = config.theme("grapefruit")
+    recipe = config.recipe_or_empty(cfg)
+    front = config.fronts(cfg)[0]
+    svg = card_assets.read_svg(config.card_path("grapefruit", front))
+    vb = deck_html.view_box(svg)
+    words = ["ים", "אמא", "חוף", "הטיול הגדול שלנו לתאילנד ובחזרה"]
+    need = rp.card_pitch_need("grapefruit", recipe, words, front_index=front,
+                              card_vb=vb, card_svg=svg)
+    assert need is not None
+    # Tighter than the design's own spacing — that is the whole point — and not
+    # so tight that the lines touch.
+    cell = (recipe.get("card") or {}).get("cell") or rp._recipe_cell(recipe, vb)
+    slots = rp.deck_slots("grapefruit", config.card_word_boxes(cfg, recipe, cell), cell)
+    design = rp.design_pitch([(s["y0"] + s["y1"]) / 2 for s in slots])
+    assert 0 < need < design, (need, design)
+
+
+def test_at_the_deck_s_rhythm_the_long_phrase_wraps_instead_of_shrinking_the_card():
+    cfg = config.theme("grapefruit")
+    recipe = config.recipe_or_empty(cfg)
+    front = config.fronts(cfg)[0]
+    svg = card_assets.read_svg(config.card_path("grapefruit", front))
+    vb = deck_html.view_box(svg)
+    words = ["ים", "אמא", "חוף", "הטיול הגדול שלנו לתאילנד ובחזרה"]
+    need = rp.card_pitch_need("grapefruit", recipe, words, front_index=front,
+                              card_vb=vb, card_svg=svg)
+
+    def sizes(pitch):
+        out = rp.card_overlay("grapefruit", recipe, words, [], front_index=front,
+                              card_vb=vb, card_svg=svg, deck_pitch=pitch)
+        return sorted({float(x) for x in re.findall(r'font-size="([\d.]+)"', out)}), out
+
+    pinned, _ = sizes(None)                  # the design's own spacing
+    at_deck, markup = sizes(need)
+    # 13.7 -> 16.3 on this card: the phrase wraps and every word grows with it.
+    assert max(at_deck) > max(pinned) * 1.15, (pinned, at_deck)
+    # …and it is the long phrase that gave: it is set over more than one line.
+    assert "הטיול הגדול שלנו לתאילנד ובחזרה" not in re.findall(r">\u202b([^<>]+)\u202c</text>", markup)

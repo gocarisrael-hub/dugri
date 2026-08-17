@@ -2865,7 +2865,8 @@ def row_bounds(slots, slot, row, cell, obstacles, floor=None):
 
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
-                  obstacles=None, title_box=None, even_lines=False):
+                  obstacles=None, title_box=None, even_lines=False,
+                  deck_pitch=None):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -3018,7 +3019,15 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         # pitch afterwards leaves the size and the line counts solved for a
         # different one, which is how a block ends up over an icon or past the
         # bottom margin.
-        want = design_pitch(live_c) if even_lines else 0.0
+        # THE RHYTHM, and where it comes from. The design's own spacing was
+        # measured from an origin card whose every entry was one short word, so
+        # holding a deck to it leaves no paper for a fifth line and a long phrase
+        # can only be paid for in type size (9.1pt on קליפורניה's seventh front).
+        # A deck may therefore choose a TIGHTER number — one number, for all its
+        # cards, so every gap on every card is still identical — and hand it down
+        # here. Absent, the design's own spacing stands, which is every card that
+        # needs no more room than the origin did.
+        want = (deck_pitch if deck_pitch else design_pitch(live_c)) if even_lines else 0.0
         size, counts, lead = _fit_card(cands, centers, cap, font=font, ref=ref,
                                        vbounds=vbounds, room=room,
                                        count=len(slots), bold_w=bold_w,
@@ -4362,7 +4371,8 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
 
 
 def _words_overlay(slots, words, cfg, word_font, cell, room=None,
-                   obstacles=None, word_font_alt=None, title_box=None):
+                   obstacles=None, word_font_alt=None, title_box=None,
+                   deck_pitch=None):
     """The four numbered word lines for one card, as SVG markup.
 
     ``room`` is the lowest y a line's ink may reach (see ``room_bottom``) — the
@@ -4400,7 +4410,8 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                             # templates keep the per-card pitch they have always
                             # had; every card template, which is everything built
                             # since, gets the uniform rhythm.
-                            even_lines=config.is_single_card(cfg))
+                            even_lines=config.is_single_card(cfg),
+                            deck_pitch=deck_pitch)
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
@@ -4430,8 +4441,51 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
 # HTML document where the fonts are declared a single time (see deck_html).
 
 
+def card_pitch_need(theme, recipe, words, front_index=None, word_font=None,
+                    card_vb=None, card_svg=None):
+    """The line spacing THIS card wants, in card units — or None if it is happy.
+
+    A card is happy when it needs no more lines than the origin's own entries, so
+    the design's spacing already fits it. A card carrying a phrase long enough to
+    wrap is not: at the design's spacing there is no paper for the extra line, and
+    the only currency left is type size.
+
+    Answered by fitting the card with the pitch FREE and reporting what it chose.
+    No Chrome, no artwork rendering — the metrics the fit already reads.
+
+    The deck takes the tightest answer over all its cards and prints every card at
+    it (build.deck_pitch_for): one number for the order, so every gap on every
+    card is still identical, and the number is small enough that the long phrase
+    can wrap instead of shrinking the whole card.
+    """
+    cfg = config.theme(theme)
+    if not config.is_single_card(cfg):
+        return None
+    cell = (recipe.get("card") or {}).get("cell") or _recipe_cell(recipe, card_vb)
+    slots = deck_slots(theme, config.card_word_boxes(cfg, recipe, cell), cell)
+    if not slots:
+        return None
+    face = _word_face(config.resolve_word_font(theme, word_font),
+                      word_font_alt(theme, word_font),
+                      alt_scale=config.word_alt_scale(cfg, _WORD_ALT_SCALE))
+    safe_bottom = cell[3] - (cell[3] - cell[1]) * _CARD_SAFE
+    room = (room_bottom(theme, front_index, card_svg, cell, safe_bottom)
+            if card_svg else None)
+    icons = (card_obstacle_rects(theme, front_index, card_svg, cell)
+             if card_svg else None)
+    free = _word_layouts(slots, words, face, face.ref, cell=cell,
+                         word_size=cfg.get("word_size"), safe=_CARD_SAFE,
+                         room_bottom=room, bold_w=config.word_bold_w(cfg, _WORD_BOLD_W),
+                         obstacles=icons, even_lines=False)
+    live = [l for l in free if l]
+    if not live or all(len(l.lines) == 1 for l in live):
+        return None                      # nothing wraps: the design's own spacing stands
+    return min(l.lead * l.size for l in live)
+
+
 def card_overlay(theme, recipe, words, title_lines, front_index=None,
-                 word_font=None, kind="word", card_vb=None, card_svg=None):
+                 word_font=None, kind="word", card_vb=None, card_svg=None,
+                 deck_pitch=None):
     """Title + word markup for ONE card, in the card's own viewBox units.
 
     ``front_index`` selects which front's title box to use: the words are SHARED
@@ -4486,7 +4540,8 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
                              cfg, word_font_path, cell, room=room,
                              obstacles=icons,
                              word_font_alt=word_alt_path,
-                             title_box=title_span))
+                             title_box=title_span,
+                             deck_pitch=deck_pitch))
 
 
 def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
