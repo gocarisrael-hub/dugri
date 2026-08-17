@@ -67,6 +67,10 @@ async function createCollection(page, title = 'Shira') {
   await expect(page.getByTestId('step-4')).toBeVisible();
   await page.fill('#ownerEmail', 'test@example.com');
   await page.fill('#ownerPhone', '0521234567');
+  // The orderer's name is required on this step now ("make it must to write") —
+  // without it the create button never enables. The rule itself is tested in
+  // order-buyer-details.spec.js; here it is just part of getting to an order.
+  await page.fill('#buyerNameInput', 'דנה כהן');
   await page.getByTestId('next-btn').click(); // create
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
   const url = new URL(page.url());

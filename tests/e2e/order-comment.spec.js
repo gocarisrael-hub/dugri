@@ -47,7 +47,11 @@ async function toNameStep(page) {
   await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
-// On from the name step to the DETAILS step, where the note lives.
+// On from the name step to the DETAILS step, where the note lives. It fills every
+// REQUIRED box on the step — the mail, the number and the orderer's name — because
+// nothing in this file is about them: an order that cannot be created holds the
+// note tests hostage to a gate they are not testing. (The name became required
+// when the owner asked for it; see order-buyer-details.spec.js.)
 async function toDetailsStep(page) {
   await page.getByTestId('custom-title-input').fill('Shira'); // this design asks for a Latin name
   await page.getByTestId('next-btn').click(); // -> pawn photos
@@ -56,6 +60,7 @@ async function toDetailsStep(page) {
   await expect(page.getByTestId('step-4')).toBeVisible();
   await page.getByTestId('owner-email').fill('a@b.com');
   await page.getByTestId('owner-phone').fill('0521234567');
+  await page.getByTestId('buyer-name-input').fill('דנה כהן');
 }
 
 test.describe('the note a buyer leaves with her order', () => {
@@ -66,6 +71,21 @@ test.describe('the note a buyer leaves with her order', () => {
     // The one thing she must be able to trust about this box: what she writes
     // here does NOT end up on the cards.
     await expect(page.getByTestId('order-comment-field')).toContainText('לא מודפסת');
+  });
+
+  test('the example in the box is one that changes how the order is handled', async ({ page }) => {
+    // The placeholder IS the brief for a free-text box: a buyer answers the
+    // question the example asks. It used to ask for a fact about the party ("זו
+    // הפתעה, אל תתקשרו אליה"); the owner asked for a different one, so it now
+    // asks for a date and a by-when — the thing the owner has to know BEFORE she
+    // starts a deck rather than after. The assertion is on the deadline, not on
+    // the exact sentence, so the copy can be reworded without a red test.
+    await toNameStep(page);
+    await toDetailsStep(page);
+    await expect(page.getByTestId('order-comment-input')).toHaveAttribute(
+      'placeholder',
+      /עד ה?-?\d/
+    );
   });
 
   test('what she typed survives a refresh of the step', async ({ page }) => {

@@ -164,6 +164,10 @@ test.describe('the title is required, and the step says why', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.getByTestId('owner-email').fill('x@example.com');
     await page.getByTestId('owner-phone').fill('0521234567');
+    // The orderer's name is required on this step too, and an empty one holds the
+    // create button on its own — which would make this test pass for the wrong
+    // reason, never reaching the missing-title bounce it is here to prove.
+    await page.getByTestId('buyer-name-input').fill('דנה כהן');
     const create = page.getByTestId('next-btn');
     await expect(create).toBeEnabled();
 

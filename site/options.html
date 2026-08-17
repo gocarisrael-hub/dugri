@@ -3512,26 +3512,37 @@
             >נא להזין מספר נייד תקין (לדוגמה 0521234567).</span
           >
         </label>
-        <!-- TWO SHORT ANSWERS: WHO SHE IS, AND WHAT THE PARTY IS.
-             Both optional, like the note below and unlike the email and phone
-             above. The step's required set is exactly "what the order cannot be
-             fulfilled without" — the mail and the number are how the game is
-             delivered and how we reach her — and neither of these is that. This
-             is the last screen before the money, so a gate here costs orders to
-             buy something the owner can ask for on WhatsApp in one message.
-             THE NAME IS HERS, NOT THE HONOREE'S. Step 3 already asked for the
-             name that gets PRINTED on the cards; this is the person ordering and
-             paying, and in almost every order those are two different people. The
-             label says "שלך" and the hint spells the difference out, because a
-             buyer who answers this with the honoree's name has given us nothing
-             and we would never know.
+        <!-- TWO SHORT ANSWERS: WHO IS ORDERING, AND WHAT THE PARTY IS.
+             THE ORDERER'S NAME IS NOW REQUIRED, and it used to be optional. The
+             argument for optional was that the step's required set is exactly
+             "what the order cannot be fulfilled without", and a gate on the last
+             screen before the money costs orders. The owner overruled it —
+             "replace name with name of the person who order and make it must to
+             write" — and she is the one who opens every one of these orders: an
+             order whose buyer is a mail address and a number is an order she has
+             to greet with "היי" and chase for a name before she can say anything
+             else. The cost is one line of typing on a field the browser
+             autofills; what it buys is that every order arrives with a person
+             attached to it.
+             THE NAME IS THE ORDERER'S, NOT THE HONOREE'S. Step 3 already asked
+             for the name that gets PRINTED on the cards; this is the person
+             ordering and paying, and in almost every order those are two
+             different people. The label names the orderer outright and the hint
+             rules the other one out, because a buyer who answers this with the
+             honoree's name has given us nothing and we would never know.
+             THE EVENT TYPE STAYS OPTIONAL — it is the nice-to-have of the two,
+             and making the pair required would turn one line of typing into a
+             wall on the screen where she is about to pay.
              THEY SHARE ONE ROW because they are short answers (the owner's own
              word: "short"), and one row costs this step half of what two would.
              The row stays two columns on a phone rather than stacking — at 390px
              each column still holds "בת מצווה של אחותי" comfortably. -->
         <div class="wiz-pair">
           <label class="wiz-field" data-testid="buyer-name-field">
-            <span class="wiz-lbl" data-edit="options-buyer-name-label">השם המלא שלך (רשות)</span>
+            <!-- No "(רשות)" and no "(חובה)" either: on this step the marker is
+                 the wizard's word for OPTIONAL, so an unmarked label reads
+                 required exactly like the mail and the number above it. -->
+            <span class="wiz-lbl" data-edit="options-buyer-name-label">השם המלא של המזמין/ה</span>
             <input
               class="wiz-input"
               type="text"
@@ -3540,8 +3551,18 @@
               maxlength="80"
               autocomplete="name"
               placeholder="למשל: דנה כהן"
-              aria-label="השם המלא שלך, המזמין/ה (רשות)"
+              aria-label="השם המלא של המזמין/ה"
             />
+            <!-- WHY THIS IS A PERMANENT LINE AND NOT A POST-SUBMIT ERROR: an
+                 empty box here holds "צרו את המשחק" disabled, and a disabled
+                 button with no stated reason is the worst screen in the wizard.
+                 The title step answered the same problem the same way (see
+                 TITLE_REQUIRED_ERR) — say it plainly rather than leave it
+                 silent. Worded as an instruction, not an accusation, because she
+                 sees it the moment she lands on the step. -->
+            <span class="wiz-err" id="buyerNameErr" data-testid="buyer-name-err" hidden
+              >כתבו את שם המזמין/ה כדי להמשיך</span
+            >
             <span class="wiz-hint" data-edit="options-buyer-name-hint">לא של החוגג/ת</span>
           </label>
           <label class="wiz-field" data-testid="event-type-field">
@@ -3569,7 +3590,15 @@
              owner, she answered: "fits a phone with no scrolling - forget about
              this." So the box is a box, and the step scrolls. What the step still
              owes her is in wizard-noscroll: every control REACHABLE, which is the
-             half of that rule she kept. -->
+             half of that rule she kept.
+             THE EXAMPLE IN THE BOX IS A DEADLINE, on the owner's ask for a
+             different one. An example is not decoration — it is the whole brief
+             for a free-text box, and a buyer answers the question the example
+             asks. "זו הפתעה, אל תתקשרו אליה" asks for a fact about the party;
+             a date and a "by when" asks for the thing that actually changes how
+             the order is handled, and it is the one the owner has to know BEFORE
+             she starts rather than after. The surprise note is still welcome
+             here — it just no longer sets the ceiling for what she gets told. -->
         <label class="wiz-field" id="orderCommentField" data-testid="order-comment-field">
           <span class="wiz-lbl" data-edit="options-comment-label"
             >רוצים להוסיף לנו הערה? (רשות)</span
@@ -3580,7 +3609,7 @@
             data-testid="order-comment-input"
             rows="2"
             maxlength="500"
-            placeholder="למשל: זו הפתעה - אל תתקשרו אליה"
+            placeholder="למשל: המסיבה ב-12.9, צריך את הקובץ עד ה-9.9"
             aria-label="הערה להזמנה (רשות)"
           ></textarea>
           <span class="wiz-hint" data-edit="options-comment-hint"
@@ -3895,7 +3924,7 @@
       let chasers = false; // optional drinking-game add-on (default OFF)
       let customTitle = ''; // optional free-form title override (F7); '' = theme default
       let orderComment = ''; // optional note to US; '' = she wrote nothing
-      let buyerName = ''; // optional: who is ORDERING (never the honoree); '' = unanswered
+      let buyerName = ''; // REQUIRED: who is ORDERING (never the honoree); '' = unanswered
       let eventType = ''; // optional: the event in her words; '' = unanswered
       let currentStep = 1; // wizard position (1..5); read by persist() for the URL
 
@@ -4791,6 +4820,7 @@
       const phoneInput = document.getElementById('ownerPhone');
       const emailErr = document.getElementById('emailErr');
       const phoneErr = document.getElementById('phoneErr');
+      const buyerNameErr = document.getElementById('buyerNameErr');
       const createErr = document.getElementById('createErr');
 
       // --- ONE input decides what prints -------------------------------------
@@ -5041,17 +5071,21 @@
       }
 
       /* ---- who is ordering, and what the event is ----------------------------
-         The same deal as the note: not printed, not required, and kept with the
-         saved selection so a refresh on the last screen before the money does not
-         quietly empty what she typed. The BUYER'S name is not the honoree's — the
-         wizard already asked for that one on step 3 and prints it on the cards —
-         so the two are stored, sent and shown as separate fields end to end, and
-         nothing here ever reads or writes the honoree box. */
+         Neither is printed, and both are kept with the saved selection so a
+         refresh on the last screen before the money does not quietly empty what
+         she typed. The event type is optional like the note; THE ORDERER'S NAME
+         IS REQUIRED, so its keystrokes have to re-run refreshControls the way the
+         mail and the number do — otherwise the button she just earned would stay
+         disabled until she touched some other field. The BUYER'S name is not the
+         honoree's — the wizard already asked for that one on step 3 and prints it
+         on the cards — so the two are stored, sent and shown as separate fields
+         end to end, and nothing here ever reads or writes the honoree box. */
       const buyerNameInput = document.getElementById('buyerNameInput');
       if (buyerNameInput) {
         buyerNameInput.addEventListener('input', () => {
           buyerName = buyerNameInput.value;
           persist();
+          if (currentStep === 4) refreshControls();
         });
       }
       const eventTypeInput = document.getElementById('eventTypeInput');
@@ -5789,16 +5823,33 @@
         // pawn photos are OPTIONAL and free — the step is always skippable.
         if (n === 5) return true;
         if (n === 4)
-          return isValidEmail(emailInput.value.trim()) && isValidIlMobile(phoneInput.value.trim());
+          return (
+            isValidEmail(emailInput.value.trim()) &&
+            isValidIlMobile(phoneInput.value.trim()) &&
+            hasBuyerName()
+          );
         return true;
       }
 
-      // Inline field errors on the details step (only once the user has typed something).
+      // The orderer's name, required since the owner asked for it. Whitespace is
+      // not an answer — " " in the box would reach the server, be sanitized to
+      // null there, and leave her with the nameless order this gate exists to
+      // prevent — so the test is on the TRIMMED value, exactly like the title's.
+      function hasBuyerName() {
+        return buyerName.trim() !== '';
+      }
+
+      // Inline field errors on the details step. The mail and the number speak up
+      // only once she has typed something (a red line under a box she has not
+      // reached yet is noise); the ORDERER'S NAME is the opposite case and speaks
+      // up whenever it is empty, because an empty name is the one thing here that
+      // disables the button with nothing else on screen to explain why.
       function refreshStep5Errors() {
         const e = emailInput.value.trim();
         const p = phoneInput.value.trim();
         emailErr.hidden = !(e.length && !isValidEmail(e));
         phoneErr.hidden = !(p.length && !isValidIlMobile(p));
+        if (buyerNameErr) buyerNameErr.hidden = hasBuyerName();
       }
 
       function refreshControls() {
@@ -6528,6 +6579,18 @@
         if (!isValidIlMobile(phone)) {
           phoneErr.hidden = false;
           phoneInput.focus();
+          return;
+        }
+        // The orderer's name, held to the same bar as the mail and the number
+        // above it. "צרו את המשחק" is already disabled while this is empty, so in
+        // the normal flow we never get here — this is the backstop for the ways
+        // in that skip the button's own gate (a deep link to ?step=4, a restored
+        // tab, anything that calls createCollection directly), and it has to say
+        // what is missing and put the cursor in the box rather than silently do
+        // nothing.
+        if (!hasBuyerName()) {
+          if (buyerNameErr) buyerNameErr.hidden = false;
+          if (buyerNameInput) buyerNameInput.focus();
           return;
         }
         const prevLabel = nextBtn.textContent;
