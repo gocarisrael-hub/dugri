@@ -151,6 +151,39 @@ def test_a_per_back_entry_outranks_the_recipes_shared_null_back():
         )
 
 
+def test_the_owners_back_box_outranks_the_one_detection_traced():
+    """Her box is the answer; the recipe is what the picture used to look like.
+
+    Detection traces where the ORIGIN's own back title sat — often line by line,
+    tight around a short name. The owner then draws the room she wants the title
+    to have, and on קליפורניה the deck ignored it: 10.1 of type inside a 95-unit
+    traced box while her box, 156 wide, had 16.6 to give. Fronts have always
+    preferred her boxes (config.card_title_boxes); backs now do too.
+    """
+    with Store(backs=BACKS):
+        # Auto-fit, so the BOX is what decides the size — a pin would answer
+        # for it and the two boxes would print identically.
+        _patch_theme(title_style={"fill": "#fff", "outline": "#000",
+                                  "outline_w": 0.05, "arch": 0.06, "shadow": True},
+                     back=_slot(0.10, 0.90))          # hers: most of the card
+        _patch_recipe(back={"title": [{"x0": 90.0, "y0": 140.0,
+                                       "x1": 130.0, "y1": 160.0}]})   # traced: tiny
+        def span(overlay):
+            """How wide the room the title was given is, in card units."""
+            m = re.search(r'd="M ([-0-9.]+) [-0-9.]+ Q [-0-9.]+ [-0-9.]+ '
+                          r'([-0-9.]+) ', overlay)
+            return float(m.group(2)) - float(m.group(1))
+
+        hers = rp.back_overlay("demo", _recipe(), ["שירה"], back_index=None)
+        assert hers, "the back carries a title and must print it"
+        _patch_theme(back=None)
+        traced = rp.back_overlay("demo", _recipe(), ["שירה"], back_index=None)
+        assert span(hers) > span(traced) * 1.5, (
+            f"her box gives the title {span(hers):.1f} units of room and the "
+            f"traced one {span(traced):.1f} — the back is still being set to "
+            "artwork nobody is printing")
+
+
 def test_a_per_back_size_pins_that_backs_title():
     with Store(backs=BACKS):
         _patch_theme(backs={"10": _slot(0.3, 0.5, size=7),

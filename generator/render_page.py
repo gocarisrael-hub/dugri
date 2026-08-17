@@ -4580,18 +4580,26 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
     bk = config.theme_back_slot(cfg, back_index)
     cell = _recipe_cell(recipe, card_vb)
     boxes = config.recipe_back_title(recipe, back_index)
-    if not boxes:
-        # An explicit null/empty back is an ANSWER, not a gap — respect it,
-        # unless THIS back has since been calibrated on its own.
-        if (config.recipe_answered_back(recipe, back_index)
-                and not config.has_back_calibration(cfg, back_index)):
-            return ""
-        if not bk:
-            return ""            # theme has no personalized back -> clean art
-        frac = bk["frac"]
+    # An explicit null/empty back is an ANSWER, not a gap — respect it, unless
+    # THIS back has since been calibrated on its own.
+    if (not boxes and config.recipe_answered_back(recipe, back_index)
+            and not config.has_back_calibration(cfg, back_index)):
+        return ""
+    # THE OWNER'S BOX WINS, exactly as it does on every front
+    # (config.card_title_boxes). Detection traces where the ORIGIN's own back
+    # title happened to sit — often line by line, a box drawn tight around the
+    # design's own short name — and the owner then draws the room she wants the
+    # title to have. Reading the traced boxes over hers left the back title
+    # sized to artwork nobody is printing: on קליפורניה the deck set 10.1 in a
+    # 95-unit traced box while her box is 156 wide and had 16.6 to give. Hers is
+    # the answer; the recipe is only what the picture used to look like.
+    frac = bk.get("frac") if isinstance(bk, dict) else None
+    if frac:
         w, h = cell[2] - cell[0], cell[3] - cell[1]
         boxes = [{"x0": cell[0] + frac["x0"] * w, "x1": cell[0] + frac["x1"] * w,
                   "y0": cell[1] + frac["y0"] * h, "y1": cell[1] + frac["y1"] * h}]
+    if not boxes:
+        return ""                # theme has no personalized back -> clean art
     ts = cfg["title_style"]
     title_font = title_font_for(theme, title_lines, cfg)
     # The back's own fill/outline when the theme calibrated them (the back art is
