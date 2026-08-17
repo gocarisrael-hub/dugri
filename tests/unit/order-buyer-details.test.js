@@ -22,10 +22,24 @@ import fs from 'node:fs';
 // right up until the owner greeted the wrong person on WhatsApp, so the tests
 // below keep asserting that the two fields stay apart end to end.
 //
-// BOTH ARE OPTIONAL, matching the note and unlike the email and phone above them
-// on the same step: the mail and the number are how the game gets delivered, and
-// these two are things the owner wants to know. An order that skips them is a
-// complete order, and the last test here says so.
+// THE NAME IS REQUIRED IN THE WIZARD AND OPTIONAL ON THIS ROUTE, deliberately.
+// The owner made it mandatory to type ("make it must to write"), and the gate for
+// that lives on the last wizard step, where it can name the missing thing and put
+// the cursor in the box (tests/e2e/order-buyer-details.spec.js). The ROUTE stays
+// lenient on purpose, for three reasons that all point the same way:
+//   • hundreds of orders were taken before the rule existed. A required field
+//     here does not fix them, it only makes the admin PATCH that touches one of
+//     them — a phone number correction, a status change — fail on a field the
+//     owner never asked about.
+//   • the admin edit dialog posts every box it holds, buyer_name included, so a
+//     400 on an empty one would break correcting a legacy order.
+//   • a 400 at POST /api/collections is the wizard's dead end: it lands on the
+//     screen after the buyer pressed "צרו את המשחק", where the only thing the
+//     page can say is "משהו השתבש". A rule she can still satisfy has to be
+//     enforced where she can still see the box.
+// So an order without a name is still a complete order as far as storage is
+// concerned, and the tests below keep saying so. The event type is optional on
+// both sides — it is the nice-to-have of the two.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -86,13 +100,37 @@ describe('the buyer’s own name, on the order she is paying for', () => {
     expect(c.buyer_name).toBe('דנה כהן');
   });
 
-  it('is absent, not blank, on an order that skipped it', async () => {
-    // Optional means optional: the order is complete without it, and "she did not
-    // answer" is stored as null rather than as an empty string, so every reader
-    // (admin, the email) has one thing to test for.
+  it('is absent, not blank, on an order that arrived without one', async () => {
+    // The route does not refuse a nameless order — see the note at the top of the
+    // file — and "no name" is stored as null rather than as an empty string, so
+    // every reader (admin, the email) has one thing to test for. Whitespace is
+    // the same as nothing, which is also why the wizard's own gate tests the
+    // TRIMMED value rather than the box's length.
     expect(db.getCollection((await createOrder({})).id).buyer_name).toBeNull();
     expect(db.getCollection((await createOrder({ buyer_name: '' })).id).buyer_name).toBeNull();
     expect(db.getCollection((await createOrder({ buyer_name: '   ' })).id).buyer_name).toBeNull();
+  });
+
+  it('an order taken before the rule existed is still editable in admin', async () => {
+    // The reason the route stays lenient, as a test. An old order has no
+    // buyer_name; the owner opens it to fix something else entirely and the
+    // dialog posts every box it holds, the empty name included. That PATCH has to
+    // succeed — a required field here would lock her out of her own back office
+    // for the whole history of orders that predate the wizard's gate.
+    const { id } = await createOrder({});
+    expect(db.getCollection(id).buyer_name).toBeNull();
+    const edited = await fetch(
+      base + '/api/admin/collections/' + id + '?key=' + encodeURIComponent(ADMIN_KEY),
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ buyer_name: '', event_type: 'פרישה' }),
+      }
+    );
+    expect(edited.status).toBe(200);
+    const c = db.getCollection(id);
+    expect(c.buyer_name).toBeNull();
+    expect(c.event_type).toBe('פרישה');
   });
 
   it('lands as ONE line however she pasted it', async () => {

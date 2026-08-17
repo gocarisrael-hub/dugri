@@ -446,9 +446,16 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('phone-err')).toBeVisible();
     await expect(create).toBeDisabled();
 
-    // Valid email + valid IL mobile -> enabled, creates the collection, redirects.
+    // Valid email + valid IL mobile, and the button is STILL held — the orderer's
+    // name is required on this step too now ("make it must to write"), and this
+    // test would otherwise read as "the phone was the last thing missing".
     await page.fill('#ownerPhone', '0521234567');
     await expect(page.getByTestId('phone-err')).toBeHidden();
+    await expect(create).toBeDisabled();
+
+    // …and with the name, the step is complete: enabled, creates, redirects. The
+    // name gate itself is tested in order-buyer-details.spec.js.
+    await page.fill('#buyerNameInput', 'דנה כהן');
     await expect(create).toBeEnabled();
     await create.click();
     await page.waitForURL(/collect\.html\?c=.+&k=.+/);
@@ -469,6 +476,10 @@ test.describe('order wizard', () => {
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'owner@example.com');
+    // Everything else the step requires, so the only thing the loop below can be
+    // measuring is the phone shape (the orderer's name is required now too, and
+    // an empty one would hold the button on every iteration).
+    await page.fill('#buyerNameInput', 'דנה כהן');
 
     const create = page.getByTestId('next-btn');
     for (const phone of ['+972 54-657-7715', '+972546577715', '546577715', '054-657-7715']) {

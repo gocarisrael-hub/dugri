@@ -175,6 +175,10 @@ test.describe('optional pawn-photos step', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'a@b.com');
     await page.fill('#ownerPhone', '0521234567');
+    // The orderer's name is required on this step now ("make it must to write") —
+    // without it the create button never enables. The rule itself is tested in
+    // order-buyer-details.spec.js; here it is just part of getting to an order.
+    await page.fill('#buyerNameInput', 'דנה כהן');
     await page.getByTestId('next-btn').click(); // create + upload + redirect
 
     await page.waitForURL(/collect\.html\?c=test-col&k=test-tok/);
@@ -195,6 +199,7 @@ test.describe('optional pawn-photos step', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'a@b.com');
     await page.fill('#ownerPhone', '0521234567');
+    await page.fill('#buyerNameInput', 'דנה כהן'); // required, as above
     await page.getByTestId('next-btn').click(); // create + redirect
 
     await page.waitForURL(/collect\.html\?c=test-col&k=test-tok/);
@@ -230,6 +235,7 @@ test.describe('pawn photos: the background cut', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'a@b.com');
     await page.fill('#ownerPhone', '0521234567');
+    await page.fill('#buyerNameInput', 'דנה כהן'); // required, as above
     await page.getByTestId('next-btn').click();
     await page.waitForURL(/collect\.html\?c=test-col&k=test-tok/);
 
@@ -320,6 +326,7 @@ test.describe('pawn photos: the background cut', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'a@b.com');
     await page.fill('#ownerPhone', '0521234567');
+    await page.fill('#buyerNameInput', 'דנה כהן'); // required, as above
     await page.getByTestId('next-btn').click();
     await page.waitForURL(/collect\.html\?c=test-col&k=test-tok/);
 

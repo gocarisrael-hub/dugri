@@ -98,6 +98,10 @@ test.describe('buyer wizard feature flags', () => {
 
     await page.fill('#ownerEmail', 'owner@example.com');
     await page.fill('#ownerPhone', '0521234567');
+    // The orderer's name is required on this step now ("make it must to write") —
+    // without it the create button never enables. The rule itself is tested in
+    // order-buyer-details.spec.js; here it is just part of getting to an order.
+    await page.fill('#buyerNameInput', 'דנה כהן');
     const create = page.getByTestId('next-btn');
     await expect(create).toBeEnabled();
     await create.click();

@@ -6,16 +6,20 @@ import { ALL_ON, stubFeatures } from './feature-flags.js';
 // short) 2. type event (free text - short) 3. comments (free text - possible
 // long)." The note (3) is covered in order-comment.spec.js; these are 1 and 2.
 //
-// Both are OPTIONAL, like the note and unlike the email and phone they sit with:
-// the mail and the number are how the game reaches her, and a gate on the last
-// screen before the money costs orders to buy something the owner can ask for in
-// one WhatsApp message. So "she answered neither and checked out" is a first-class
-// case here, not an edge one.
+// THE NAME IS REQUIRED NOW and the event type is not. Both were optional when
+// they shipped, on the argument that a gate on the last screen before the money
+// costs orders; the owner overruled that for the name — "replace name with name
+// of the person who order and make it must to write" — because an order that
+// arrives as a mail address and a phone number is one she cannot even greet. So
+// this file has two jobs it did not have before: that the wizard will not create
+// an order without a name, and that it says so on screen rather than presenting a
+// dead button. The event type is still skippable, and "she skipped it and checked
+// out" is still a first-class case.
 //
-// THE NAME IS HERS, NOT THE HONOREE'S. Step 3 already asked for the name that
-// gets printed on the cards; this is the person paying, and in almost every order
-// those are two different people. Half of this file exists to prove the wizard
-// keeps them apart — a page that quietly reused the honoree box would look
+// THE NAME IS THE ORDERER'S, NOT THE HONOREE'S. Step 3 already asked for the name
+// that gets printed on the cards; this is the person paying, and in almost every
+// order those are two different people. Half of this file exists to prove the
+// wizard keeps them apart — a page that quietly reused the honoree box would look
 // perfect until the owner greeted the wrong person.
 //
 // The server side (sanitizing, the cap, the owner's email) is covered in
@@ -60,6 +64,10 @@ async function toNameStep(page) {
 // On from the name step to the DETAILS step. 'Shira' is the HONOREE — the name
 // that gets printed — and it is deliberately different from every buyer name
 // typed below, so a test that passed by confusing the two would fail here.
+//
+// It fills the mail and the number ONLY, leaving the orderer's name empty: that
+// is now the state the required-name tests need to observe, and every test that
+// goes on to create an order fills the name itself.
 async function toDetailsStep(page) {
   await page.getByTestId('custom-title-input').fill('Shira'); // this design asks for a Latin name
   await page.getByTestId('next-btn').click(); // -> pawn photos
@@ -96,25 +104,58 @@ test.describe('the buyer’s name and the event type, on the details step', () =
   test('the name field says whose name it wants', async ({ page }) => {
     // The one thing a buyer can get wrong here, and she would never find out: she
     // has just typed the honoree's name two steps ago, so a bare "שם מלא" invites
-    // her to type it again. The label claims the name as HERS and the hint rules
-    // the other one out in as many words.
+    // her to type it again. The label names the ORDERER outright and the hint
+    // rules the other one out in as many words.
     await toNameStep(page);
     await toDetailsStep(page);
     const field = page.getByTestId('buyer-name-field');
-    await expect(field).toContainText('שלך');
+    await expect(field).toContainText('המזמין');
     await expect(field).toContainText('לא של החוגג');
   });
 
-  test('neither one blocks the order — they are marked optional', async ({ page }) => {
-    // "(רשות)" is the wizard's word for optional, and it is on the note beside
-    // them. Without it, two blank boxes on the screen where she is about to pay
-    // read as work she still owes us.
+  test('the name is not marked optional, and the event type still is', async ({ page }) => {
+    // "(רשות)" is this step's word for optional and it is the ONLY marker on it,
+    // so a label carrying it is a promise she can skip the box. The name may not
+    // carry it any more; the event type beside it still must, or two blank boxes
+    // on the screen where she is about to pay read as work she still owes us.
     await toNameStep(page);
     await toDetailsStep(page);
-    await expect(page.getByTestId('buyer-name-field')).toContainText('רשות');
+    await expect(page.getByTestId('buyer-name-field')).not.toContainText('רשות');
     await expect(page.getByTestId('event-type-field')).toContainText('רשות');
-    // …and the create button is live with both of them empty.
-    await expect(page.getByTestId('next-btn')).toBeEnabled();
+  });
+
+  test('with no name there is no order — and the screen says why', async ({ page }) => {
+    // The owner's rule, from the buyer's side. The mail and the number are filled
+    // and correct, so the ONLY thing holding the button is the empty name — and a
+    // held button with nothing on screen to explain it is the failure mode this
+    // asserts against, not just the gate itself.
+    await toNameStep(page);
+    await toDetailsStep(page);
+    const create = page.getByTestId('next-btn');
+    await expect(create).toBeDisabled();
+    await expect(page.getByTestId('buyer-name-err')).toBeVisible();
+
+    // Typing a name releases it on the keystroke, with nothing else touched.
+    await page.getByTestId('buyer-name-input').fill('דנה כהן');
+    await expect(page.getByTestId('buyer-name-err')).toBeHidden();
+    await expect(create).toBeEnabled();
+
+    // …and clearing it again brings both back, so the rule is not a one-way latch
+    // that a buyer can escape by typing a character and deleting it.
+    await page.getByTestId('buyer-name-input').fill('');
+    await expect(create).toBeDisabled();
+    await expect(page.getByTestId('buyer-name-err')).toBeVisible();
+  });
+
+  test('a name made of spaces is not a name', async ({ page }) => {
+    // The way through a required box that costs nothing to try. The server trims
+    // this to null (tests/unit/order-buyer-details.test.js), so letting it pass
+    // would produce exactly the nameless order the gate exists to prevent.
+    await toNameStep(page);
+    await toDetailsStep(page);
+    await page.getByTestId('buyer-name-input').fill('   ');
+    await expect(page.getByTestId('next-btn')).toBeDisabled();
+    await expect(page.getByTestId('buyer-name-err')).toBeVisible();
   });
 
   test('what she typed in each survives a refresh of the step', async ({ page }) => {
@@ -156,13 +197,17 @@ test.describe('the buyer’s name and the event type, on the details step', () =
     expect(state.posted.honoree_name).toBe('Shira');
   });
 
-  test('an order that answers neither still goes through', async ({ page }) => {
+  test('an order that skips the event type still goes through', async ({ page }) => {
+    // The half of the old "she answered neither" case that survives: only the
+    // NAME became mandatory, and making the pair required would turn one line of
+    // typing into a wall on the screen where she is about to pay.
     await toNameStep(page);
     const state = await captureOrder(page);
     await toDetailsStep(page);
-    await page.getByTestId('next-btn').click(); // create, with both boxes untouched
-    await expect.poll(() => state.posted && state.posted.buyer_name).toBe('');
-    expect(state.posted.event_type).toBe('');
+    await page.getByTestId('buyer-name-input').fill('דנה כהן');
+    await page.getByTestId('next-btn').click(); // create, event type untouched
+    await expect.poll(() => state.posted && state.posted.event_type).toBe('');
+    expect(state.posted.buyer_name).toBe('דנה כהן');
     expect(state.posted.honoree_name).toBe('Shira');
   });
 });

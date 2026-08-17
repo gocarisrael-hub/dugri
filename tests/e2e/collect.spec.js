@@ -40,6 +40,10 @@ async function createCollection(page, name) {
   await page.getByTestId('next-btn').click(); // pawn photos -> contact
   await page.fill('#ownerEmail', 'test@example.com'); // email required
   await page.fill('#ownerPhone', '0521234567'); // valid IL mobile, required
+  // The orderer's name is required on this step now ("make it must to write") —
+  // without it the create button never enables. The rule itself is tested in
+  // order-buyer-details.spec.js; here it is just part of getting to an order.
+  await page.fill('#buyerNameInput', 'דנה כהן');
   await page.getByTestId('next-btn').click(); // "צרו את המשחק"
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
 }
