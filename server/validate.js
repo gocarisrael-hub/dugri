@@ -402,9 +402,17 @@ function effectiveExtraFields(collection, override) {
 
 // Check ONE name against a theme's expected script. Returns a human-readable
 // Hebrew warning string when the name doesn't fit the theme's name_form, or null
-// when it fits (or there is nothing to check). Shared by the pre-production
-// validator below and the live order preview (/api/preview), so the customer
-// sees the same language warning immediately while choosing.
+// when it fits (or there is nothing to check).
+//
+// PRE-PRODUCTION ONLY. /api/preview used to call this too and hand the sentence
+// to the buyer under her rendered card; it no longer does, and options.html no
+// longer has an element to show one in. The reason is that the buyer's `name` is
+// now just the order's label (the title's first line) and is never printed —
+// see the long note at the preview route in server/index.js. The one place the
+// name IS still printed is an order that predates the typed title, whose deck
+// composes a title from the theme template, and validateOrderForProduction below
+// is what guards that: there the sentence explains a real refusal about text the
+// card really does show.
 function checkNameLanguage(name, theme) {
   const n = name ? String(name).trim() : '';
   if (!n || !theme || !theme.name_form) return null;

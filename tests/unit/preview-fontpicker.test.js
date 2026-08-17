@@ -11,8 +11,8 @@ import { Buffer } from 'node:buffer';
 // so no Chrome/Python runs in unit tests. The fake writes tiny stand-in card +
 // board PNGs whose bytes ENCODE the word-font it was invoked with, and prints
 // the JSON line of their paths the route parses. That lets us prove the route
-// (a) forwards a valid word_font to the generator, (b) drops an unknown one, and
-// (c) surfaces the language warning + options.
+// (a) forwards a valid word_font to the generator, (b) drops an unknown one,
+// (c) surfaces the font options, and (d) surfaces NO name-language warning.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -166,11 +166,14 @@ describe('POST /api/preview', () => {
     expect(decode(r.body.card)).toBe('CARDwf:none');
   });
 
-  it('returns a language warning for a name that does not fit the theme', async () => {
+  // The route used to answer a wrong-script name with the name-language sentence.
+  // It does not any more, for any theme — see preview-no-name-language-note.test.js
+  // for the sweep over every template, and the note at the route for why.
+  it('never returns a name-language warning, even for a wrong-script name', async () => {
     const r = await post('/api/preview', { theme: 'trip comeback', name: 'עוז' });
     expect(r.status).toBe(200);
-    expect(r.body.warning).toMatch(/אנגלית/);
-    // the preview still renders (the warning does not block it)
+    expect(r.body.warning).toBeUndefined();
+    // ...and the preview renders exactly as it did before.
     expect(r.body.card).toMatch(/^data:image\/png;base64,/);
   });
 });

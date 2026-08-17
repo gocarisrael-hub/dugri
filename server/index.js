@@ -2554,9 +2554,11 @@ app.get('/vendor/:dir/:file', (req, res, next) => {
 // Public order PREVIEW: render a REAL sample card + board for a theme with the
 // honoree name (and an optional word-font pick), so the customer sees their card
 // right after entering the name. Rate-limited per client IP like the coupon
-// oracle (each call spawns Chrome). Also runs the name-language check and returns
-// a `warning` when the name doesn't fit the theme's script, plus the shared
-// word-font options so the client can render the picker.
+// oracle (each call spawns Chrome). It also returns the shared word-font options
+// so the client can render the picker.
+//
+// It no longer returns a name-language `warning`. See the comment where the
+// check used to run, below.
 
 // A fingerprint of everything the RENDER reads for a template, so a preview
 // cache entry can never outlive the artwork it was rendered from.
@@ -2688,8 +2690,33 @@ app.post('/api/preview', async (req, res) => {
     if (v.error) return res.status(400).json({ error: v.error });
     calibration = v.value;
   }
-  // Surfaced to the customer immediately (doesn't block rendering the preview).
-  const warning = validate.checkNameLanguage(name, themeConfig);
+  // NO NAME-LANGUAGE WARNING — for ANY theme, on ANY request. This route used to
+  // answer with 'שם החוגג/ת צריך להיות באנגלית (בהתאם לעיצוב): "…"' whenever the
+  // `name` was in the wrong script for the theme's name_form, and the wizard
+  // printed it under the rendered card.
+  //
+  // It was a true statement once. The honoree's NAME was printed on the card,
+  // composed into the theme's title template ("{NAME}'S BACHELORETTE"), so a
+  // Hebrew name on a Latin-scripted design was something the buyer had to fix
+  // before paying. That stopped being true when the buyer started typing the
+  // whole title herself: the `name` this route still takes is only the order's
+  // LABEL — the title's first line, used by the admin table, the collection page
+  // and the emails — and nothing prints it. Every buyer types a Hebrew title, so
+  // every one of the six Latin-scripted templates warned every buyer about text
+  // that does not appear on her card.
+  //
+  // Deliberately deleted rather than made conditional (on a title, on the
+  // theme's name_form, on a per-template flag). Anything conditional is a
+  // per-template answer, and per-template answers drift: themes.json exists in
+  // TWO layers — this repo's copy and the owner's own templates on the DATA_DIR
+  // volume — so a template that only exists on the volume would have kept
+  // warning long after the repo looked fixed. With no call there is no flag to
+  // get wrong and no layer to forget.
+  //
+  // `checkNameLanguage` itself stays in validate.js. It still gates PRODUCTION
+  // for an order that predates the typed title (validateOrderForProduction),
+  // where the name really is composed into the printed title — there the note
+  // explains a refusal about text the card does show.
   const themeWordFont = themeConfig.word_font || null;
 
   // 1) CACHE lookup FIRST, keyed by the raw inputs (identical requests map to the
@@ -2720,7 +2747,6 @@ app.post('/api/preview', async (req, res) => {
     const wordFont = options.some((o) => o.file === rawWordFont) ? rawWordFont : null;
     return res.json({
       ...cached,
-      warning,
       word_font: wordFont,
       word_font_options: options,
       theme_word_font: themeWordFont,
@@ -2757,7 +2783,6 @@ app.post('/api/preview', async (req, res) => {
     previewCache.set(cacheKey, imgs);
     res.json({
       ...imgs,
-      warning,
       word_font: wordFont,
       word_font_options: options,
       theme_word_font: themeWordFont,
