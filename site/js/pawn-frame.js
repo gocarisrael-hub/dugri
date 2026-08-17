@@ -436,3 +436,152 @@ export async function frameFromBlob(blob) {
     if (bitmap && typeof bitmap.close === 'function') bitmap.close();
   }
 }
+
+// ---------------------------------------------------------------------------
+// THE PAWN'S GEOMETRY, IN ONE PLACE
+//
+// The same photo is drawn three times over, and until this section existed each
+// of the three carried its own copy of the proportions: the PRINTED card (the
+// generator, `build.PHOTO_DISC_FILL` + the cut-line circles in the photo-card
+// SVG), the PREVIEW CARD at the top of the photos tab, and the EDITOR CIRCLE in
+// the row underneath it. Three copies is three chances to disagree, and they did
+// — the editor drew its dashed ring at the DISC's size rather than the SLOT's,
+// which made every photo look ~11% bigger there than on the card next to it, and
+// bigger than it prints. The owner reported that mismatch repeatedly and was
+// right every time.
+//
+// So the numbers live here, once, and generator/test_pawn_three_views.py renders
+// all three and fails when they drift apart again.
+//
+// THE THREE CIRCLES, all of them squares' worth of the SLOT — the square
+// `<image id="photo-slot-N">` occupies on the card (66 of the artwork's 223.92
+// x 312 units):
+//
+//   * the SLOT itself: the square the photo is handed. 100%.
+//   * the DISC: what the photo is actually clipped to. DISC_FILL of the slot,
+//     centred — `build._disc_mask`.
+//   * the RING: the dashed line she cuts along. The slot's INSCRIBED circle —
+//     `<circle class="cut-line" r="33">` against a 66-unit slot — so it is the
+//     full 100% and the white halo lands in the gap between the two.
+
+// The dashed cut-line, as a share of the slot. 1 and not DISC_FILL, and this is
+// the whole of the bug the harness was built to catch: on the card the ring is
+// the slot's inscribed circle and the photo sits INSIDE it, with the sticker's
+// white edge in the gap. An editor that drew the ring at the disc's size showed
+// the photo filling the circle to its rim.
+export const RING_FILL = 1;
+
+// The white sticker ring, as a share of the SLOT's width, measured on the print.
+// The card gets a real dilate — `<filter id="sticker-halo">`: feMorphology
+// radius 1.5 over that 66-unit slot, hardened from a blur by an alpha ramp — and
+// a browser's nearest cheap equivalent is a stack of white drop-shadows. What
+// matters is that it comes out the same WIDTH relative to the circle in all
+// three pictures, which is what the harness measures.
+export const HALO_FILL = 1.5 / 66;
+
+/** Percent inset of a circle that covers `fill` of the slot, centred in it. */
+export function insetPct(fill) {
+  return (100 - 100 * fill) / 2;
+}
+
+/**
+ * The CSS custom properties every pawn circle is drawn from, as a plain object.
+ *
+ * site/css/pawn.css spends these (with the same values as literal fallbacks, so
+ * the page is never wrong before the module runs); the harness sets them from
+ * here too, which is what makes it a test of the real stylesheet rather than of
+ * a copy of it.
+ */
+export function pawnCssVars() {
+  return {
+    '--pawn-disc-inset': insetPct(DISC_FILL).toFixed(4) + '%',
+    '--pawn-ring-inset': insetPct(RING_FILL).toFixed(4) + '%',
+  };
+}
+
+// How many hard shadows the halo is built from, and how far each one is offset
+// as a share of the halo's total reach. See haloFilter: chained filters compound,
+// and eight evenly-spread offsets of 1/2.5 of the reach sum to 2.414 of a step
+// along an axis and 2.61 on the diagonal — 0.97 and 1.04 of the reach, i.e. 8%
+// out of round, which is invisible at the size a pawn is drawn.
+const HALO_STEPS = 8;
+const HALO_STEP_SHARE = 1 / 2.5;
+
+/**
+ * The white sticker edge for a circle whose SLOT is `slotPx` across.
+ *
+ * TWO THINGS THIS HAS TO GET RIGHT, both of them measured by
+ * generator/pawn_three_views.py against the printed card.
+ *
+ * WIDTH. It scales with the slot. The old rule was a fixed 2px+2px+1.5px, which
+ * is a different fraction of the row's 116px circle than of the ~58px one on the
+ * card above it — so the same photo carried two different white edges in the
+ * same tab, and neither was the print's.
+ *
+ * HARDNESS. `drop-shadow` BLURS; the printed halo does not. The card's edge is an
+ * feMorphology dilate hardened by an alpha ramp — a solid white rim that stops
+ * dead. A stack of blurred shadows measured 60% too wide and only 9% of it ever
+ * reached white, which is why the row's pawn had a soft glow where the card has a
+ * sticker edge. Eight HARD shadows (no blur) spread around a circle dilate
+ * instead of smearing, and because each filter in a chain sees the previous
+ * one's output they compound to the full reach at a fraction of the offset each.
+ *
+ * Returns a `filter` value, or `'none'` for a photo with no cut-out edge to
+ * trace (a photo that keeps its background prints as a plain filled circle).
+ */
+export function haloFilter(slotPx) {
+  const reach = HALO_FILL * (slotPx || 0);
+  if (!(reach > 0.4)) return 'none'; // below half a pixel there is nothing to draw
+  const step = reach * HALO_STEP_SHARE;
+  const out = [];
+  for (let i = 0; i < HALO_STEPS; i++) {
+    const a = (2 * Math.PI * i) / HALO_STEPS;
+    const dx = (Math.cos(a) * step).toFixed(2);
+    const dy = (Math.sin(a) * step).toFixed(2);
+    out.push(`drop-shadow(${dx}px ${dy}px 0 #fff)`);
+  }
+  return out.join(' ');
+}
+
+/**
+ * Where one live slot sits on a picture of the CARD, in percent.
+ *
+ * `geo` is the generator's own slot rect (`preview.pawn_slots`), a fraction of
+ * the card — the SQUARE, ring and all. What gets positioned is the DISC inside
+ * it, because that is the element the photo is clipped by.
+ */
+export function liveSlotStyle(geo) {
+  const d = DISC_FILL;
+  return {
+    left: ((geo.x + (geo.w * (1 - d)) / 2) * 100).toFixed(3) + '%',
+    top: ((geo.y + (geo.h * (1 - d)) / 2) * 100).toFixed(3) + '%',
+    width: (geo.w * d * 100).toFixed(3) + '%',
+    height: (geo.h * d * 100).toFixed(3) + '%',
+  };
+}
+
+/**
+ * Where the PHOTO sits inside that disc, in percent of the disc.
+ *
+ * `subjectFrame`/`plainFrame` answer in percentages of the SLOT and the element
+ * these land on is the DISC, so every number is rebased by 1/DISC_FILL here —
+ * once, rather than in each of the three callers.
+ *
+ * A null `frame` is "we could not measure this photo": fill the circle and let
+ * it be cropped, which is what the printer does with it too.
+ */
+export function discPhotoStyle(frame, view) {
+  if (!frame) {
+    return { width: '100%', height: '100%', left: '0', top: '0', objectFit: 'cover' };
+  }
+  const f = applyView(frame, view);
+  const k = 1 / DISC_FILL;
+  const inset = insetPct(DISC_FILL);
+  return {
+    width: (f.widthPct * k).toFixed(3) + '%',
+    height: (f.heightPct * k).toFixed(3) + '%',
+    left: ((f.leftPct - inset) * k).toFixed(3) + '%',
+    top: ((f.topPct - inset) * k).toFixed(3) + '%',
+    objectFit: 'contain',
+  };
+}
