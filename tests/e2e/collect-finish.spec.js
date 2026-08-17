@@ -198,6 +198,39 @@ test('the tabs are loud enough to be found without looking for them', async ({ p
   expect(rows).toBe(1);
 });
 
+// ONE ROW, AND NOTHING TO DRAG TO.
+//
+// The strip used to scroll, and the fifth tab sat off the edge with nothing on
+// screen saying it was there. Measured: the old labels wanted 382px and an
+// iPhone 14 gives 358. This is the assertion that the five fit — at every phone
+// width, with the payment tab present, which is the case that overflowed.
+//
+// It measures the SCROLL WIDTH rather than counting pixels of label, so it keeps
+// holding whatever a future edit does to the words or the padding.
+test('all five tabs fit one row on every phone, with nothing to scroll to', async ({ page }) => {
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await expect(page.getByTestId('tabs')).toBeVisible();
+  // The payment tab is the one that pushed it over, and it is only present
+  // before payment — which is where this collection is.
+  await expect(page.getByTestId('tab-pay')).toBeVisible();
+
+  for (const width of [320, 360, 390, 430]) {
+    await page.setViewportSize({ width, height: 800 });
+    const fit = await page.getByTestId('tabs').evaluate((el) => ({
+      need: el.scrollWidth,
+      have: el.clientWidth,
+      rows: new Set([...el.children].map((b) => Math.round(b.getBoundingClientRect().top))).size,
+      shown: [...el.children].filter((b) => !b.hidden).length,
+    }));
+    expect(fit.shown, `${width}px: all five tabs present`).toBe(5);
+    expect(fit.rows, `${width}px: one row`).toBe(1);
+    // 1px of tolerance for sub-pixel rounding, and not a pixel more: anything
+    // above that is a tab you have to drag to.
+    expect(fit.need, `${width}px: nothing to scroll to`).toBeLessThanOrEqual(fit.have + 1);
+  }
+});
+
 test('with no title of her own, the sign-off says which title WILL print', async ({ page }) => {
   const { url, id, k } = await createCollection(page, 'זמני');
   // Clear it: an empty custom title means the design's own title is printed, and
@@ -377,9 +410,18 @@ test('she adds delivery to an order she has already paid for', async ({ page }) 
 
   const card = page.locator('#shipAddCard');
   await expect(card).toBeVisible();
-  // The price is the server's, not a number the page decided.
-  await expect(card).toContainText('39');
+  // The price is the server's, not a number the page decided — and it is in the
+  // SUMMARY, so the offer states itself without being opened.
+  await expect(page.getByTestId('ship-add-summary')).toContainText('39');
   await expect(page.locator('#shipDoneCard')).toBeHidden();
+
+  // FOLDED SHUT on arrival: most buyers here are collecting the game themselves,
+  // and an open address form would be a block of fields answering a question
+  // they never asked, directly above the button they came to press.
+  await expect(card).not.toHaveAttribute('open', '');
+  await expect(page.getByTestId('ship-street')).toBeHidden();
+  await page.getByTestId('ship-add-summary').click();
+  await expect(page.getByTestId('ship-street')).toBeVisible();
 
   // The three fields the server insists on are insisted on here too, so the
   // person who can fix it is the one who hears about it.

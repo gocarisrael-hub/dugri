@@ -120,13 +120,18 @@
         gap: 2px;
         margin: 12px 0 4px;
         border-bottom: 1px solid var(--line);
-        /* Five tabs do not fit across a small phone at a readable size, and the
-           two ways out of that are both worse: shrinking the type until the last
-           tab is unreadable, or wrapping the strip onto a second line, which
-           stops reading as one control. So it SCROLLS — the buttons keep their
-           own width (flex-basis 0 with no shrink, so they still share the row
-           evenly when there IS room) and showTab scrolls the current one into
-           view, which means the strip is never parked on a tab you cannot see. */
+        /* FIVE TABS, ONE ROW, NOTHING TO DRAG.
+           This used to scroll, and scrolling was the wrong answer: the fifth tab
+           sat off the edge with nothing on screen saying it was there. Measured
+           in a browser, the old labels wanted 382px and an iPhone 14 gives 358 —
+           and the whole overage was two of them, "חיילי המשחק" and "העיצוב",
+           at 100px and 59px. Shortening those two to "חיילים" and "עיצוב" (with
+           the tab padding below) brings the row to 279px, which fits every phone
+           down to a 320px screen with room to spare.
+           The overflow rule STAYS as a safety net: it is what a longer label
+           would degrade to if one is ever set, and a strip that scrolls is
+           better than one that clips. It simply never has anything to scroll
+           now. */
         overflow-x: auto;
         scrollbar-width: none;
       }
@@ -147,7 +152,13 @@
         border-radius: 0;
         box-shadow: none;
         border-bottom: 3px solid transparent;
-        padding: 12px 8px;
+        /* 3px, not 8. The horizontal padding is a MINIMUM and nothing else: the
+           buttons grow to fill the row (flex-grow 1), so the space between the
+           labels is set by the row's width divided five ways, and a tab is
+           exactly as wide at 3px as at 8px on any screen where both fit. What it
+           does buy is the narrowest phone — at 8px the five labels want 329px and
+           a 320px screen has 288. */
+        padding: 12px 3px;
         font: inherit;
         font-size: 15px;
         font-weight: 500;
@@ -1014,6 +1025,47 @@
       #shipAddCard .addr-form {
         margin: 12px 0 4px;
       }
+      /* The summary IS the offer: the question and the price, on one line, with a
+         chevron that turns. Quieter than the pay panel's filled bar — that one is
+         the main event on its tab, this is an extra on a tab about signing off. */
+      .ship-summary {
+        cursor: pointer;
+        list-style: none;
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        font-family: var(--display);
+        font-weight: 700;
+        font-size: 16px;
+      }
+      .ship-summary::-webkit-details-marker {
+        display: none;
+      }
+      .ship-summary::after {
+        content: '⌄';
+        margin-inline-start: auto;
+        font-size: 15px;
+        line-height: 1;
+        color: var(--muted);
+        transition: transform 0.15s ease;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ship-summary::after {
+          transition: none;
+        }
+      }
+      .ship-collapse[open] .ship-summary::after {
+        transform: rotate(180deg);
+      }
+      .ship-summary-fee {
+        font-size: 15px;
+        white-space: nowrap;
+      }
+      .ship-summary:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: 2px;
+      }
       .ship-add-cta {
         width: 100%;
         margin-top: 14px;
@@ -1325,11 +1377,6 @@
         font-weight: 900;
         font-size: 19px;
         line-height: 1.1;
-      }
-      .pay-bar-lbl {
-        display: block;
-        font-size: 13px;
-        opacity: 0.75;
       }
       .pay-bar-go {
         margin-inline-start: auto;
@@ -1945,7 +1992,7 @@
           data-tab="design"
           data-testid="tab-design"
         >
-          העיצוב
+          עיצוב
         </button>
         <button
           type="button"
@@ -1954,7 +2001,7 @@
           data-tab="pawns"
           data-testid="tab-pawns"
         >
-          חיילי המשחק
+          חיילים
         </button>
         <button type="button" role="tab" class="tabbar-btn" data-tab="pay" data-testid="tab-pay">
           תשלום
@@ -2122,13 +2169,26 @@
            On the sign-off tab because that is where she is deciding what the
            finished game is, and gone the moment the collection closes: by then
            the deck is at the printer and where it goes is already decided. -->
-      <section class="card owner-only hidden" data-panel="finish" id="shipAddCard" hidden>
-        <div class="sec-h" data-edit="collect-shipadd-heading">רוצים משלוח עד הבית?</div>
+      <!-- FOLDED SHUT. Most buyers on this tab are signing off a game they are
+           collecting themselves, so an address form standing open is a long block
+           of fields answering a question they never asked — and it sits directly
+           above the button that sends the game to production, which is what they
+           came here to press. The offer still states itself and its price in the
+           summary; opening it is one tap for the few who want it. -->
+      <details
+        class="card owner-only hidden ship-collapse"
+        data-panel="finish"
+        id="shipAddCard"
+        hidden
+      >
+        <summary class="ship-summary" data-testid="ship-add-summary">
+          <span data-edit="collect-shipadd-heading">רוצים משלוח עד הבית?</span>
+          <b class="ship-summary-fee"><span id="shipAddFee">-</span> ₪</b>
+        </summary>
         <p class="muted" id="shipAddHint">
           <span data-edit="collect-shipadd-hint"
-            >נוסיף משלוח עד הבית להזמנה ששילמתם עליה. תוספת של</span
+            >נוסיף משלוח עד הבית להזמנה ששילמתם עליה, ונשלח אותו אליכם ברגע שהמשחק מוכן.</span
           >
-          <b><span id="shipAddFee">-</span> ₪</b>.
         </p>
         <div class="addr-form" id="shipAddrForm">
           <div class="addr-head" data-edit="collect-shipadd-addr-head">כתובת למשלוח</div>
@@ -2185,7 +2245,7 @@
         >
           💳 הוסיפו משלוח ושלמו
         </button>
-      </section>
+      </details>
 
       <!-- …and once it is paid, the same slot says so. Not a disabled form: the
            answer to "did the delivery go through?" is a sentence with her address
@@ -6012,9 +6072,13 @@
          lifted clear of it by --pay-bar-h (see .wa-help). The owner's rule:
          "the whatsapp button need to be available always". -->
     <div class="pay-bar owner-only hidden" id="payBar" data-testid="pay-bar">
+      <!-- The amount, and nothing under it. "המשחק שלכם מוכן" sat here as a
+           subtitle and was not true at the moment it was read: this bar is up
+           while the collection is still OPEN and words are still arriving, so it
+           told the buyer her game was finished at exactly the point where it was
+           not. The price on a pay button needs no caption. -->
       <div class="pay-bar-sum">
         <span class="pay-bar-amt amt" id="payBarAmt" data-testid="pay-bar-amount">-</span>
-        <span class="pay-bar-lbl" data-edit="collect-pay-bar-label">המשחק שלכם מוכן</span>
       </div>
       <button
         class="pay-bar-go"
