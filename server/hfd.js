@@ -90,15 +90,22 @@ function splitStreet(street) {
 // honoree's name when the buyer never set one — the same rule the orders table
 // shows. A multi-line title collapses to one line, because this is a label, and
 // the whole thing is capped: HFD prints a field, not a paragraph.
+//
+// `designName` is the design's CURRENT PUBLIC name, resolved by the caller from
+// themes.json (`display_he`) — the same string the storefront shows. It is a
+// parameter rather than something read off the collection because `c.design` is
+// the name STAMPED at order time: rename a template and every earlier order
+// still carries the old label, so a sticker built from it would name a design
+// nobody sells any more ("טיול חזרה" for what is now "סיישל"). The stamped name
+// is only the fallback, and the theme key the fallback's fallback.
 const GAME_REMARK_MAX = 120;
-function gameRemark(c) {
+function gameRemark(c, designName) {
   const title = String((c && c.custom_title) || (c && c.honoree_name) || '')
     .replace(/\s+/g, ' ')
     .trim();
-  // c.design is the Hebrew display name the buyer chose; c.theme (the generator
-  // key) is the fallback for an order placed before that name existed, because a
-  // key on the sticker still beats nothing.
-  const design = String((c && c.design) || (c && c.theme) || '').trim();
+  const design = String(
+    designName || (c && c.design) || (c && c.order && c.order.theme) || (c && c.theme) || ''
+  ).trim();
   const line = [title, design].filter(Boolean).join(' · ');
   const chars = Array.from(line);
   return chars.length > GAME_REMARK_MAX ? chars.slice(0, GAME_REMARK_MAX - 1).join('') + '…' : line;
@@ -122,7 +129,10 @@ function addressRemarks(addr) {
 // Returns { payload } or { error } for an order that cannot ship: no order, not
 // a delivery order, or no address. Those are the owner's mistakes to fix in the
 // order editor, so they are refused here rather than sent to HFD to bounce.
-function buildShipment(c) {
+//
+// `opts.designName` — the design's current public name, resolved by the caller
+// (see gameRemark). Omitted, the order's stamped name is used.
+function buildShipment(c, opts = {}) {
   const order = c && c.order;
   if (!order) return { error: 'no order' };
   if (order.version !== 'delivery') return { error: 'not a delivery order' };
@@ -156,7 +166,7 @@ function buildShipment(c) {
       email: (c.owner_email && String(c.owner_email).trim()) || '',
       addressRemarks: addressRemarks(addr),
       // Printed on the sticker: which game is in this box.
-      shipmentRemarks: gameRemark(c),
+      shipmentRemarks: gameRemark(c, opts.designName),
       // Our order number, so a call to HFD about a parcel can be traced back to
       // a row in the admin without guessing from the honoree's name.
       referenceNum1: String(c.order_no || c.id || ''),
@@ -229,7 +239,7 @@ function failureMessage(res, data) {
 // service with no credentials is distinguishable from one HFD refused.
 async function createShipment(c, opts = {}) {
   if (!isConfigured()) return { ok: false, skipped: true, error: 'hfd not configured' };
-  const built = buildShipment(c);
+  const built = buildShipment(c, { designName: opts.designName });
   if (built.error) return { ok: false, error: built.error };
 
   const res = await request('POST', '/shipments/create', { body: built.payload, ...opts });

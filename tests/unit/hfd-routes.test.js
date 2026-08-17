@@ -91,8 +91,12 @@ async function send(method, urlPath) {
 const ADDRESS = { street: 'הרצל 5', city: 'תל אביב', postal: '6100000' };
 
 // A paid delivery order — the only kind that ever ships.
-function seedDelivery(name = 'משלוח', address = ADDRESS) {
-  const c = db.createCollection(name, { email: 'x@example.com', phone: '0521234567' });
+function seedDelivery(name = 'משלוח', address = ADDRESS, extra = {}) {
+  const c = db.createCollection(name, {
+    email: 'x@example.com',
+    phone: '0521234567',
+    ...extra,
+  });
   db.setOrder(c.id, c.owner_token, { version: 'delivery', address }, { admin: true });
   return db.getCollection(c.id);
 }
@@ -121,6 +125,20 @@ describe('POST /api/admin/collections/:id/hfd', () => {
     const stored = db.getCollection(c.id).order.hfd;
     expect(stored.shipment_number).toBe('987654');
     expect(stored.sent_at).toBeTruthy();
+  });
+
+  // The sticker has to name the design the shop sells TODAY. `c.design` is the
+  // label stamped when the order was placed, so a template renamed since would
+  // otherwise go out under a name nobody uses any more.
+  it('puts the title and the design’s CURRENT public name on the sticker', async () => {
+    const c = seedDelivery('מדבקה שם', ADDRESS, {
+      custom_title: 'שירה בת 30',
+      // Stale on purpose: themes.json calls this theme סיישל now.
+      design: 'טיול חזרה',
+      theme: 'trip comeback',
+    });
+    await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(JSON.parse(hfdCalls[0].init.body).shipmentRemarks).toBe('שירה בת 30 · סיישל');
   });
 
   it('refuses a SECOND booking — one order, one van', async () => {
