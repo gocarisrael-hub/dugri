@@ -355,6 +355,29 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     photo_paths = resolve_photos(
         theme, photos,
         workdir=os.path.join(workdir, "photos") if workdir else None)
+    # ONE RHYTHM FOR THE DECK, AND THE DECK PICKS IT. The owner's rule is that
+    # every gap between lines is the same, on every card — and the number that
+    # rule was pinned to came from the origin design, whose entries were all one
+    # short word. A deck carrying a long phrase has nowhere to put the extra line
+    # at that spacing, so the card could only pay in type size: 9.1pt against the
+    # 18pt its siblings set. Asked here instead, before a single card is drawn,
+    # because only here is the whole order visible: every card says what spacing
+    # it needs, the tightest answer wins, and every card is then printed at it.
+    # Cards that need nothing return None and the design's own spacing stands.
+    wants = []
+    for card in cards:
+        if card["kind"] == "photo":
+            continue
+        front = fronts[card["front"] % len(fronts)]
+        need = rp.card_pitch_need(theme, recipe, card["words"], front_index=front,
+                                  word_font=word_font, card_vb=vb,
+                                  card_svg=front_svgs[front])
+        if need:
+            wants.append(need)
+    deck_pitch = min(wants) if wants else None
+    if progress and deck_pitch:
+        log(f"deck rhythm: {deck_pitch:.2f} (tightest of {len(wants)} card(s) that wrap)")
+
     for n, card in enumerate(cards, 1):
         # Resolve this card's FRONT before emitting anything: with per-front backs
         # the back is chosen by the front, and the pages still have to come out in
@@ -380,7 +403,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
             doc.add_page(f"front{front}",
                          rp.card_overlay(theme, recipe, card["words"], title_lines,
                                          front_index=front, word_font=word_font,
-                                         card_vb=vb, card_svg=front_svgs[front]))
+                                         card_vb=vb, card_svg=front_svgs[front],
+                                         deck_pitch=deck_pitch))
         if progress and n % 25 == 0:
             log(f"card {n}/{len(cards)}")
 
