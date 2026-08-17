@@ -4775,8 +4775,9 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
                                back_index=back_index)
     else:
         # A preview is ONE card, so it has no deck to take its rhythm from.
-        # Where the owner has set a spacing for this template that is the number
-        # the printed deck starts from, so the preview starts from it too.
+        # Where the owner has set a spacing for this template, that is what the
+        # printed deck prints at — so the preview prints at it too, and the card
+        # the buyer approves is the card she receives.
         overlay = card_overlay(theme, recipe, words, title_lines,
                                front_index=front_index, word_font=word_font,
                                card_vb=card_vb, card_svg=svg,
