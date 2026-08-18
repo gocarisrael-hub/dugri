@@ -92,6 +92,11 @@ test.describe('admin wordlists', () => {
     await expect(page.locator('.badge')).toHaveCount(0);
     await expect(page.locator('body')).not.toContainText('מגיעה עם המערכת');
     const rows = page.locator('.list-item');
+    // The rows arrive from a fetch, and `.count()` is a SNAPSHOT — it does not
+    // retry. Under a loaded parallel run this counted the list before it
+    // rendered and failed on 0 rows (reproduced twice on a full-suite run,
+    // green in isolation). Wait for the first row the retrying way, then count.
+    await expect(rows.first()).toBeVisible();
     const n = await rows.count();
     expect(n).toBeGreaterThan(0);
     for (let i = 0; i < n; i += 1) {

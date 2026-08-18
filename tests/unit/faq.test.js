@@ -32,15 +32,25 @@ describe('DEFAULT_FAQ — the shipped seed', () => {
     expect(validateFaq(DEFAULT_FAQ)).toBeNull();
   });
 
-  it('carries the four questions the home page ships, all enabled', () => {
-    expect(DEFAULT_FAQ).toHaveLength(4);
+  it('carries the five questions the home page ships, all enabled', () => {
+    expect(DEFAULT_FAQ).toHaveLength(5);
     expect(DEFAULT_FAQ.every((r) => r.enabled)).toBe(true);
     expect(DEFAULT_FAQ.map((r) => r.id)).toEqual([
       'what-is-it',
       'how-many-words',
       'when-delivered',
       'how-to-order',
+      'business-orders',
     ]);
+  });
+
+  // The bulk-order question is the FAQ half of the B2B contact line (the other
+  // half is the footer row + the shop-heading line). It answers with a real
+  // channel, so a reader never has to hunt for how to actually ask.
+  it('answers the bulk/business question with a reachable number', () => {
+    const q = DEFAULT_FAQ.find((r) => r.id === 'business-orders');
+    expect(q).toBeTruthy();
+    expect(q.a).toContain('0546577715');
   });
 });
 

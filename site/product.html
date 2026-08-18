@@ -839,6 +839,19 @@
         color: #b9aca0;
         font-weight: 600;
       }
+      /* The B2B contact row. Deliberately a THIRD line of the contact block and
+         not a pitch: same grey `.fc-label` as "וואטסאפ / טלפון" above it, same
+         size, no button. A shopper's eye slides past it; someone who scrolled
+         all the way down looking for a way to reach us — which is exactly who a
+         bulk enquiry comes from — finds it where they are already reading.
+         Two data-edit keys, not one: the editor rewrites a bound node with
+         textContent, so wrapping the label inside the sentence would wipe it on
+         the owner's first edit (same reason .foot-contact splits them). */
+      .foot-b2b {
+        margin: 12px auto 0;
+        max-width: 38em;
+        font-size: 14.5px;
+      }
 
       @media (prefers-reduced-motion: reduce) {
         html {
@@ -1155,6 +1168,12 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
+        <p class="foot-b2b" data-testid="footer-b2b">
+          <span class="fc-label" data-edit="product-footer-b2b-label">לעסקים:</span>
+          <span data-edit="product-footer-b2b"
+            >מזמינים כמה יחידות לצוות או לאירוע גדול? דברו איתנו - 0546577715</span
+          >
+        </p>
         <p class="tag" data-edit="product-footer-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>

@@ -198,6 +198,26 @@
         font-size: 16px;
         font-weight: var(--sub-weight);
       }
+      /* The one B2B line on the shop, under the promise and above the hairline:
+         an aside to the store's subtitle, never part of it. Scoped as
+         `.store-head .store-b2b` because `.store-head p` above already sets
+         colour, size and weight and would otherwise win on specificity — a bare
+         `.store-b2b` silently loses all three. It stays muted (the label carries
+         the only extra weight) so it cannot compete with a design tile. */
+      .store-head .store-b2b {
+        margin-top: 14px;
+        font-size: 14.5px;
+        font-weight: 400;
+      }
+      .store-head .store-b2b .store-b2b-label {
+        font-weight: 600;
+      }
+      .store-head .store-b2b .store-b2b-cta {
+        color: var(--ink);
+        font-weight: 600;
+        text-decoration: none;
+        border-bottom: 1px solid var(--ink);
+      }
       @media (min-width: 720px) {
         .store-head {
           margin-bottom: 38px;
@@ -470,6 +490,19 @@
         color: #b9aca0;
         font-weight: 600;
       }
+      /* The B2B contact row. Deliberately a THIRD line of the contact block and
+         not a pitch: same grey `.fc-label` as "וואטסאפ / טלפון" above it, same
+         size, no button. A shopper's eye slides past it; someone who scrolled
+         all the way down looking for a way to reach us — which is exactly who a
+         bulk enquiry comes from — finds it where they are already reading.
+         Two data-edit keys, not one: the editor rewrites a bound node with
+         textContent, so wrapping the label inside the sentence would wipe it on
+         the owner's first edit (same reason .foot-contact splits them). */
+      .foot-b2b {
+        margin: 12px auto 0;
+        max-width: 38em;
+        font-size: 14.5px;
+      }
 
       @media (prefers-reduced-motion: reduce) {
         html {
@@ -542,6 +575,21 @@
             <h1 data-edit="products-heading">העיצובים שלנו</h1>
             <p data-edit="products-sub" data-testid="store-sub">
               בוחרים עיצוב, כותבים את הכותרת שלכם. אותו משחק - לכל אירוע וכל חגיגה.
+            </p>
+            <p class="store-b2b" data-testid="store-b2b">
+              <span class="store-b2b-label" data-edit="products-b2b-label">לעסקים:</span>
+              <span data-edit="products-b2b">מזמינים כמה יחידות לצוות או לאירוע גדול?</span>
+              <a
+                class="store-b2b-cta"
+                href="https://wa.me/972546577715?text=%D7%94%D7%99%D7%99%21%20%D7%90%D7%A0%D7%97%D7%A0%D7%95%20%D7%9E%D7%A2%D7%95%D7%A0%D7%99%D7%99%D7%A0%D7%99%D7%9D%20%D7%91%D7%94%D7%96%D7%9E%D7%A0%D7%94%20%D7%9C%D7%A2%D7%A1%D7%A7%2F%D7%90%D7%99%D7%A8%D7%95%D7%A2%20%D7%92%D7%93%D7%95%D7%9C"
+                target="_blank"
+                rel="noopener"
+                data-ga="contact_click"
+                data-ga-channel="whatsapp"
+                data-ga-where="store-b2b"
+                data-edit="products-b2b-cta"
+                >דברו איתנו ›</a
+              >
             </p>
           </div>
           <div class="store-grid" id="storeGrid" data-testid="store-grid">
@@ -617,6 +665,12 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
+        <p class="foot-b2b" data-testid="footer-b2b">
+          <span class="fc-label" data-edit="products-footer-b2b-label">לעסקים:</span>
+          <span data-edit="products-footer-b2b"
+            >מזמינים כמה יחידות לצוות או לאירוע גדול? דברו איתנו - 0546577715</span
+          >
+        </p>
         <p class="tag" data-edit="products-footer-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>

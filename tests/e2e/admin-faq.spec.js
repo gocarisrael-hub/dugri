@@ -37,7 +37,7 @@ test.describe('admin FAQ editor', () => {
     test.skip(testInfo.project.name !== ONLY, 'reads shared faq state — one project only');
     await page.goto(`/admin-faq.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
 
     const first = cards(page).first();
     await expect(first.locator('[data-f="q"]')).toHaveValue('מה זה בעצם המשחק?');
@@ -53,10 +53,10 @@ test.describe('admin FAQ editor', () => {
   }, testInfo) => {
     test.skip(testInfo.project.name !== ONLY, 'writes shared faq state — one project only');
     await page.goto(`/admin-faq.html?key=${KEY}`);
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
 
     await page.locator('#addFaq').click();
-    await expect(cards(page)).toHaveCount(5);
+    await expect(cards(page)).toHaveCount(6);
     const fresh = cards(page).last();
     await fresh.locator('[data-f="q"]').fill('יש משלוח עד הבית?');
     await fresh.locator('[data-f="a"]').fill('כרגע איסוף עצמי בלבד.\n\nמשלוחים בקרוב.');
@@ -96,13 +96,13 @@ test.describe('admin FAQ editor', () => {
     await page.locator('#saveFaq').click();
     await expect(page.locator('#faqStatus')).toHaveText(/נשמר/);
 
-    // Still four cards for the owner, one of them off.
-    await expect(cards(page)).toHaveCount(4);
+    // Still five cards for the owner, one of them off.
+    await expect(cards(page)).toHaveCount(5);
     await expect(cards(page).nth(1).locator('[data-f="enabled"]')).not.toBeChecked();
 
-    // The visitor sees three.
+    // The visitor sees four.
     await page.goto('/index.html');
-    await expect(page.locator('#faqList details')).toHaveCount(3);
+    await expect(page.locator('#faqList details')).toHaveCount(4);
     await expect(page.locator('#faqList')).not.toContainText(hiddenText);
 
     await resetFaq(request);
@@ -114,7 +114,7 @@ test.describe('admin FAQ editor', () => {
   }, testInfo) => {
     test.skip(testInfo.project.name !== ONLY, 'writes shared faq state — one project only');
     await page.goto(`/admin-faq.html?key=${KEY}`);
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
     const last = cards(page).last();
     const doomed = await last.locator('[data-f="q"]').inputValue();
 
@@ -123,17 +123,17 @@ test.describe('admin FAQ editor', () => {
     await expect(page.locator('[data-confirm]')).toBeVisible();
     await page.locator('[data-act="del-no"]').click();
     await expect(page.locator('[data-confirm]')).toHaveCount(0);
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
 
     // Confirming removes it locally; saving persists.
     await cards(page).last().locator('[data-act="del"]').click();
     await page.locator('[data-act="del-yes"]').click();
-    await expect(cards(page)).toHaveCount(3);
+    await expect(cards(page)).toHaveCount(4);
     await page.locator('#saveFaq').click();
     await expect(page.locator('#faqStatus')).toHaveText(/נשמר/);
 
     await page.goto('/index.html');
-    await expect(page.locator('#faqList details')).toHaveCount(3);
+    await expect(page.locator('#faqList details')).toHaveCount(4);
     await expect(page.locator('#faqList')).not.toContainText(doomed);
 
     await resetFaq(request);
@@ -145,9 +145,12 @@ test.describe('admin FAQ editor', () => {
   }, testInfo) => {
     test.skip(testInfo.project.name !== ONLY, 'writes shared faq state — one project only');
     await page.goto(`/admin-faq.html?key=${KEY}`);
-    await expect(cards(page)).toHaveCount(4);
+    await expect(cards(page)).toHaveCount(5);
 
-    for (let i = 0; i < 4; i++) {
+    // Deletes whatever the shipped list holds rather than a literal, so adding a
+    // question to the seed can never leave this test one card short of empty.
+    const shipped = await cards(page).count();
+    for (let i = 0; i < shipped; i++) {
       await cards(page).first().locator('[data-act="del"]').click();
       await page.locator('[data-act="del-yes"]').click();
     }
@@ -158,10 +161,10 @@ test.describe('admin FAQ editor', () => {
     await page.goto('/index.html');
     await expect(page.locator('#faq')).toBeHidden();
 
-    // Reset brings the four shipped questions (and the section) back.
+    // Reset brings the five shipped questions (and the section) back.
     await resetFaq(request);
     await page.goto('/index.html');
-    await expect(page.locator('#faqList details')).toHaveCount(4);
+    await expect(page.locator('#faqList details')).toHaveCount(5);
   });
 
   test('the arrows reorder the list and the new order reaches the site', async ({
@@ -268,9 +271,9 @@ test.describe('admin FAQ editor', () => {
       },
     });
     expect(res.status()).toBe(400);
-    // And the public list is untouched — still the four shipped questions.
+    // And the public list is untouched — still the five shipped questions.
     const api = await (await request.get('/api/faq')).json();
-    expect(api.items).toHaveLength(4);
+    expect(api.items).toHaveLength(5);
   });
 });
 
@@ -291,10 +294,10 @@ test.describe('home-page FAQ rendering', () => {
     await expect(page.locator('#faqList summary').first()).toHaveText('שאלה מהשרת');
   });
 
-  test('FAILS SOFT: a broken API leaves the four shipped questions in place', async ({ page }) => {
+  test('FAILS SOFT: a broken API leaves the five shipped questions in place', async ({ page }) => {
     await page.route('**/api/faq', (route) => route.abort('failed'));
     await page.goto('/index.html');
-    await expect(page.locator('#faqList details')).toHaveCount(4);
+    await expect(page.locator('#faqList details')).toHaveCount(5);
     await expect(page.locator('#faqList summary').first()).toHaveText('מה זה בעצם המשחק?');
     await expect(page.locator('#faq')).toBeVisible();
   });
@@ -302,12 +305,12 @@ test.describe('home-page FAQ rendering', () => {
   test('a 500 or a malformed payload also leaves the shipped questions', async ({ page }) => {
     await page.route('**/api/faq', (route) => route.fulfill({ status: 500, json: {} }));
     await page.goto('/index.html');
-    await expect(page.locator('#faqList details')).toHaveCount(4);
+    await expect(page.locator('#faqList details')).toHaveCount(5);
 
     await page.unroute('**/api/faq');
     await page.route('**/api/faq', (route) => route.fulfill({ json: { items: 'nope' } }));
     await page.goto('/index.html');
-    await expect(page.locator('#faqList details')).toHaveCount(4);
+    await expect(page.locator('#faqList details')).toHaveCount(5);
   });
 
   test('an owner answer containing markup is shown as text, not executed', async ({ page }) => {

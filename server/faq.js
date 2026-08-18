@@ -73,6 +73,23 @@ const DEFAULT_FAQ = [
     link_text: '',
     link_url: '',
   },
+  // Bulk / business enquiries. It is a QUESTION rather than a banner on purpose:
+  // someone organising for a workplace scrolls the FAQ before writing to us, and
+  // an answer never tells the bride's friend — the buyer this site is actually
+  // for — that the page is not meant for her.
+  //
+  // NOTE for the owner: this is only the shipped SEED. settings 'faq'.list is an
+  // array, and an array override replaces the default outright (settings.get),
+  // so on an install where the FAQ has already been saved from admin-faq.html
+  // this new question will NOT appear — add it there instead.
+  {
+    id: 'business-orders',
+    enabled: true,
+    q: 'אנחנו חברה או מארגני אירועים - אפשר כמה משחקים?',
+    a: 'בהחלט. לכמות, לאירוע חברה או לאירוע גדול - שלחו וואטסאפ ל-0546577715 ונתאים לכם את הפורמט והמחיר.',
+    link_text: '',
+    link_url: '',
+  },
 ];
 
 // Is `url` an acceptable href for a FAQ answer? Only two forms pass:
