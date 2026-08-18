@@ -3068,6 +3068,32 @@ def test_every_shipped_title_path_outruns_its_own_text_by_the_slack():
                     "glyph that falls off it is dropped without a word")
 
 
+def test_a_title_fills_the_box_it_was_given():
+    """The owner draws the room; the title takes it.
+
+    The fit used to hold back 11% of the box's width — a margin the TRACED boxes
+    needed, since detection drew them tight around the origin's own title. The
+    boxes are hers now, drawn on a rendered card, so that margin is already in
+    the rectangle she drew and holding back another 11% only printed the title
+    smaller than she sized it. The ring painted outside the glyphs still has to
+    fit, which is what stops the letters from spilling.
+    """
+    cfg = config.theme("birthday-girls")
+    fp = config.font_path("birthday-girls", cfg["title_font"])
+    box = {"x0": 58.6, "y0": 33.6, "x1": 165.3, "y1": 95.6}      # her front box
+    lines = ["Merav's", "birthday"]
+    block = rp.title_block(box, lines, "#a4e9ff", "#000", fp, 0.036, 0, False)
+    size = float(re.search(r'font-size="([\d.]+)"', block).group(1))
+    face = rp._title_face(fp, None)
+    widest = max(face.getlength(ln) / face.ref for ln in lines) * size
+    bw = box["x1"] - box["x0"]
+    assert 0.93 <= widest / bw <= 1.0, (
+        f"the title takes {widest / bw:.0%} of the box it was given")
+    # ...and the ring painted around the glyphs still fits inside it.
+    grow = rp.title_paint_grow(0.036, False, None, ring_visible=True)
+    assert widest + 2 * grow * size <= bw + 1e-6
+
+
 def test_a_starved_title_path_raises_instead_of_dropping_the_letters():
     """The invariant must REFUSE, the way ``calibrate._covers`` refuses a face
     that cannot draw the text, rather than degrade. A card that prints the wrong

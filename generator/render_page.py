@@ -3695,6 +3695,16 @@ def title_pitch(f, ref, lines, leading, pad, align="center", grow=0.0, rtl=False
 #
 # So the box binds now, and a title that would overrun it is set smaller. Titles
 # on existing designs come down by up to ~20% where they were height-bound.
+# HOW MUCH OF ITS BOX A TITLE FILLS, side to side. It was 0.89 — a margin the
+# traced boxes needed, because detection drew them tight around the origin's own
+# title and the ink had to be kept off the artwork beside it. The boxes are the
+# owner's now: she draws the room she wants the title to have, on a rendered
+# card, so the margin she wants is already in the rectangle. Holding back another
+# 11% only means the title she sized in the editor prints smaller than she drew
+# it. The ring painted outside the glyphs still has to fit (the second term of
+# the width fit), so the letters cannot spill even at this.
+_TITLE_BOX_FILL = 0.98
+
 _TITLE_OVERFLOW_TOL = float(os.environ.get("DUGRI_TITLE_OVERFLOW_TOL", "0"))
 
 
@@ -4042,13 +4052,14 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     old_cap = bh / (max(0.80, pitch) * n) * 1.02
     size_h = old_cap if old_cap <= ink_fit * (1 + _TITLE_OVERFLOW_TOL) else ink_fit
     denom_w = max(ratios)
-    # WIDTH, with the paint counted. 0.89 is the side margin the box has always
-    # kept; the second term is the ring itself, which is painted OUTSIDE the
-    # glyph advance (``title_paint_grow`` is the spread per unit of size, at each
-    # edge) and therefore has to come out of the same width or the box binds the
-    # letters while the ring hangs over the artwork.
+    # WIDTH, with the paint counted. ``_TITLE_BOX_FILL`` is how much of the box
+    # the letters may take; the second term is the ring itself, which is painted
+    # OUTSIDE the glyph advance (``title_paint_grow`` is the spread per unit of
+    # size, at each edge) and therefore has to come out of the same width or the
+    # box binds the letters while the ring hangs over the artwork.
     if denom_w > 0:
-        size = min(bw * 0.89 / denom_w, bw / (denom_w + 2 * paint_grow), size_h)
+        size = min(bw * _TITLE_BOX_FILL / denom_w,
+                   bw / (denom_w + 2 * paint_grow), size_h)
     else:
         size = size_h
     # A theme may pin the title to an EXACT size (the Canva point size, in the
@@ -4077,7 +4088,7 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         # untouched and only genuine overflow is reined in.
         size = fixed_size
         if denom_w > 0:
-            size = min(size, bw * 0.89 / denom_w * (1 + _TITLE_OVERFLOW_TOL),
+            size = min(size, bw * _TITLE_BOX_FILL / denom_w * (1 + _TITLE_OVERFLOW_TOL),
                        bw / (denom_w + 2 * paint_grow))
         # ...and the box binds a pin VERTICALLY too. It never used to: a pinned
         # theme skipped the height fit entirely, so bachelorette's pin printed a
