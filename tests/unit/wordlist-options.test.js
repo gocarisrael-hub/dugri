@@ -111,6 +111,37 @@ describe('the menu the owner builds', () => {
         { id: 'x', label: 'l', pool: '../../etc/passwd', enabled: true },
       ])
     ).toBe('bad pool name');
+    for (const bad of ['pool/list.txt', 'pool\\list.txt', '..txt', 'list.txt.bak', '']) {
+      expect(
+        settings.validateValue('wordlists', 'buyer_options', [
+          { id: 'x', label: 'l', pool: bad, enabled: true },
+        ])
+      ).toBeTruthy();
+    }
+  });
+
+  // The owner names her pools in Hebrew, with spaces — wordlists.js accepts
+  // exactly that, and the menu used to refuse it. A pool she can create, see in
+  // the dropdown and pick, and then cannot save, is a dead end with no way out
+  // of it from the screen.
+  it('accepts any pool name wordlists.js itself would create', () => {
+    const named = 'יום הולדת ילדים.txt';
+    expect(wordlists.safeName(named)).toBe(named);
+    expect(
+      settings.validateValue('wordlists', 'buyer_options', [
+        { id: 'kids', label: 'ילדים', pool: named, enabled: true },
+      ])
+    ).toBe(null);
+    // …and the one that started it: a real Hebrew-named pool saved onto the menu.
+    const created = wordlists.create({ name: 'בדיחות פנימיות', text: 'אחת\nשתיים\nשלוש' });
+    expect(created.error).toBeUndefined();
+    expect(created.name).toBe('בדיחות פנימיות.txt');
+    expect(
+      settings.set('wordlists', 'buyer_options', [
+        { id: 'jokes', label: 'בדיחות פנימיות', pool: created.name, enabled: true },
+      ])
+    ).toBeTruthy();
+    expect(settings.get('wordlists', 'buyer_options')[0].pool).toBe('בדיחות פנימיות.txt');
   });
 });
 
