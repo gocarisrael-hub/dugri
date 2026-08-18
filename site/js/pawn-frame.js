@@ -544,6 +544,41 @@ export function haloFilter(slotPx) {
 }
 
 /**
+ * Where `object-fit: contain` ACTUALLY draws a picture inside its element.
+ *
+ * `contain` scales the picture to fit and centres what is left over, so the
+ * drawn rectangle equals the element only when the two have the same shape.
+ * Every other time there is a band down two of the sides, and anything laid over
+ * the ELEMENT is laid over that band as well.
+ *
+ * WHY THIS IS A FUNCTION AND NOT AN ASSUMPTION. The card preview used to assume
+ * the two rectangles were the same, on the strength of the frame carrying the
+ * card's own `aspect-ratio`. Chrome honours that; SAFARI DOES NOT — given
+ * `width: auto` with `max-height`, it leaves the frame at its full inline size
+ * and centres the picture inside it. On a phone that is a 36px band down each
+ * side of a 327px frame, and the four pawn photos — positioned as percentages of
+ * the frame — came out 27% wider than tall (an ellipse where the card prints a
+ * circle) and slid 22px off the dashed cut-line they are supposed to fill. The
+ * owner reported both symptoms, in those words, and was right about both.
+ *
+ * Measuring where the picture landed costs one function call and is true in
+ * every engine, including whichever one behaves differently next.
+ *
+ * Returns `{ left, top, width, height }` in the element's own pixels, or `null`
+ * when anything needed is missing — an image that has not decoded yet has no
+ * natural size, and the caller leaves the layer where it is rather than
+ * collapsing it to nothing.
+ */
+export function containRect(elWidth, elHeight, naturalWidth, naturalHeight) {
+  if (!(elWidth > 0) || !(elHeight > 0)) return null;
+  if (!(naturalWidth > 0) || !(naturalHeight > 0)) return null;
+  const scale = Math.min(elWidth / naturalWidth, elHeight / naturalHeight);
+  const width = naturalWidth * scale;
+  const height = naturalHeight * scale;
+  return { left: (elWidth - width) / 2, top: (elHeight - height) / 2, width, height };
+}
+
+/**
  * Where one live slot sits on a picture of the CARD, in percent.
  *
  * `geo` is the generator's own slot rect (`preview.pawn_slots`), a fraction of

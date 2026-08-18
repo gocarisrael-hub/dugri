@@ -60,12 +60,19 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+      # WebKit joins Chromium here. It is a second download (cached above with it)
+      # and it runs a SHORT list of specs — playwright.config.js pins the "Mobile
+      # Safari" project to the layout checks with `testMatch` — because the whole
+      # point is engine divergence in how a box is sized, not a second pass over
+      # application logic. Everything an iPhone buyer sees was previously measured
+      # in Chromium only, which is how a pawn card that draws ellipses off their
+      # cut-lines on every iPhone passed every check we had.
       - name: Install Playwright browsers
         run: |
-          npx playwright install-deps chromium
-          npx playwright install chromium
-      - name: E2E tests (iPhone 14 + Desktop Chrome)
-        run: npx playwright test --project="iPhone 14" --project="Desktop Chrome"
+          npx playwright install-deps chromium webkit
+          npx playwright install chromium webkit
+      - name: E2E tests (iPhone 14 + Desktop Chrome + Mobile Safari)
+        run: npx playwright test --project="iPhone 14" --project="Desktop Chrome" --project="Mobile Safari"
 
   # --- The Python generator ---------------------------------------------------
   # generator/ has 279 tests and CI has never run a single one of them: the job

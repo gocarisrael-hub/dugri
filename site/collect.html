@@ -729,11 +729,37 @@
         justify-content: center;
         overflow: hidden;
       }
-      .prev-box img {
+      /* DIRECT CHILD, deliberately. The pawn card carries the buyer's four photos
+         in a layer inside this same frame, and a plain `.prev-box img` reaches
+         them too — `max-width: 100%` under .has-card below clamped every photo to
+         its own circle, cropping the framing the printer uses. */
+      .prev-box > img {
         width: 100%;
         height: 100%;
         object-fit: contain;
         display: block;
+      }
+      /* ONCE THE PICTURE HAS ARRIVED, THE PICTURE DECIDES THE SIZE.
+         Above, the frame carries the card's shape and derives its width from its
+         height — which Chrome does and SAFARI DOES NOT. Safari keeps a
+         `width: auto` box at its full inline size and centres the picture inside
+         it, so the card came out with a 36px cream band down each side on a
+         phone, drawn smaller than it should be. The rule is only a placeholder
+         anyway: it exists so the tab does not resize under her thumb while a
+         render is in flight. The moment there IS a picture, let it size itself
+         and let the frame shrink onto it — then there is no band to get wrong,
+         in any engine. */
+      .prev-box.has-card {
+        aspect-ratio: auto;
+        width: fit-content;
+        height: auto;
+        max-height: none;
+      }
+      .prev-box.has-card > img {
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        max-height: 42vh;
       }
       .prev-busy,
       .prev-fail {
@@ -2774,6 +2800,7 @@
         haloFilter,
         liveSlotStyle,
         discPhotoStyle,
+        containRect,
       } from './js/pawn-frame.js';
 
       // The circles' proportions, handed to site/css/pawn.css. Both files carry
@@ -3455,7 +3482,13 @@
           // A stale render (she typed again while this one was drawing) must not
           // overwrite the newer card.
           if (seq !== previewSeq) return;
-          if (r && r.card) img.src = r.card;
+          if (r && r.card) {
+            // Same frame as the pawn card above, so the same Safari band — there
+            // is nothing laid over this one to misplace, but the card was still
+            // being drawn smaller than the space it was given.
+            img.addEventListener('load', () => box.classList.add('has-card'), { once: true });
+            img.src = r.card;
+          }
         } catch (e) {
           if (seq !== previewSeq) return;
           // Keep whatever card is already on screen — a stale picture of her deck
@@ -3492,9 +3525,60 @@
 
       // Draw the buyer's photos into the card's discs. Called on every drag frame,
       // so it does nothing but move CSS: no fetch, no decode, no server.
+      // THE PHOTO LAYER SITS ON THE CARD PICTURE, NOT ON THE FRAME AROUND IT.
+      //
+      // Every slot below is a percentage — of this layer. So the layer has to BE
+      // the picture: if it is one pixel wider, all four photos are drawn a
+      // fraction wide (they stop being circles) and slide off the printed
+      // cut-lines by a fraction of the difference.
+      //
+      // It used to be `inset: 0` on the frame, which is the same rectangle only
+      // when the frame is exactly the shape of the card. Chrome makes it so;
+      // Safari does not (see .prev-box.has-card and pawn-frame.js containRect),
+      // and on an iPhone it left a 36px band down each side — enough to stretch
+      // every pawn into an ellipse 27% too wide and drag the left-hand pair 22px
+      // clear of their rings. Measuring beats assuming, and costs nothing.
+      function fitLiveSlots() {
+        const layer = $('#pawnLiveSlots');
+        const img = $('#pawnPrevImg');
+        const frame = $('#pawnPrevBox');
+        if (!layer || !img || !frame) return;
+        const ir = img.getBoundingClientRect();
+        const fit = containRect(ir.width, ir.height, img.naturalWidth, img.naturalHeight);
+        // No picture yet (or none that has decoded): leave the layer as the
+        // stylesheet left it. Collapsing it to nothing would blank the photos on
+        // every redraw that happens to land before the card arrives.
+        if (!fit) return;
+        // Percentages on an absolutely positioned box resolve against its
+        // container's PADDING box, and .prev-box has a border, so the offsets are
+        // measured in pixels off the frame's own border box and the border width
+        // taken back off. One read of the computed style per redraw.
+        const fr = frame.getBoundingClientRect();
+        const cs = getComputedStyle(frame);
+        const bl = parseFloat(cs.borderLeftWidth) || 0;
+        const bt = parseFloat(cs.borderTopWidth) || 0;
+        layer.style.left = (ir.left - fr.left - bl + fit.left).toFixed(2) + 'px';
+        layer.style.top = (ir.top - fr.top - bt + fit.top).toFixed(2) + 'px';
+        layer.style.width = fit.width.toFixed(2) + 'px';
+        layer.style.height = fit.height.toFixed(2) + 'px';
+      }
+
+      // The picture can change size without a redraw being asked for — a rotate,
+      // a desktop window drag, the address bar collapsing on a phone — and a
+      // layer measured at the old size is a layer in the wrong place. Watching the
+      // image is cheaper and more honest than a resize listener with a debounce.
+      function watchPawnCardSize() {
+        const img = $('#pawnPrevImg');
+        if (!img || typeof ResizeObserver === 'undefined') return;
+        new ResizeObserver(() => {
+          fitLiveSlots();
+        }).observe(img);
+      }
+
       function paintPawnCard() {
         const box = $('#pawnLiveSlots');
         if (!box || !pawnSlots) return;
+        fitLiveSlots();
         const photos = pawnList().slice(0, pawnSlots.length);
         // One element per disc, reused — rebuilding four <img> per pointer move
         // would decode the photos again and again.
@@ -3557,9 +3641,9 @@
             img.addEventListener(
               'load',
               () => {
-                if (img.naturalWidth && img.naturalHeight) {
-                  box.style.aspectRatio = img.naturalWidth + ' / ' + img.naturalHeight;
-                }
+                // The picture is here: it sizes the frame from now on, and the
+                // photo layer is measured onto wherever it actually landed.
+                box.classList.add('has-card');
                 paintPawnCard();
               },
               { once: true }
@@ -3686,6 +3770,7 @@
       function loadPawnCard() {
         if (pawnCardLoaded) return;
         pawnCardLoaded = true;
+        watchPawnCardSize();
         renderPawnCard();
       }
 
