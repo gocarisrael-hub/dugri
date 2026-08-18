@@ -69,6 +69,38 @@ def test_the_whole_title_is_one_face_never_split_per_run(deck_with_two_title_fon
     assert "TitleFontAlt" not in svg
 
 
+def test_the_second_face_takes_its_own_size_ceiling(deck_with_two_title_fonts):
+    """One template, two faces, two ceilings.
+
+    ``title_style.size`` is the design's own number, measured against the
+    design's own face and its own language. The SECOND face has different
+    proportions, so a buyer writing in the other language is a different
+    picture and needs its own cap — ``size_alt``. Unset, that title takes the
+    chain it always did.
+    """
+    import re
+    theme = deck_with_two_title_fonts
+    cfg = dict(config.theme(theme))
+    cell = [0.0, 0.0, 223.92, 312.0]
+    box = [{"x0": 20.0, "y0": 20.0, "x1": 200.0, "y1": 90.0}]
+
+    def size_of(lines, style):
+        c = {**cfg, "title_style": style}
+        block = rp._title_overlay(box, list(lines), c,
+                                  rp.title_font_for(theme, lines, c), cell)
+        return float(re.search(r'font-size="([\d.]+)"', block).group(1))
+
+    ts = {**cfg["title_style"], "size": 40}
+    own, other = size_of(ENG, ts), size_of([HEB], ts)
+    assert own > 0 and other > 0
+    # The OTHER language follows its own ceiling the moment there is one, and
+    # the design's own face never notices.
+    with_alt = {**ts, "size_alt": 12}
+    assert size_of(ENG, with_alt) == own, "the design's own face is untouched"
+    assert size_of([HEB], with_alt) == 12
+    assert other != 12, "the fixture would prove nothing if it already set 12"
+
+
 def test_a_design_with_no_second_font_is_unchanged():
     # The ordinary case: nothing to choose between.
     assert rp.title_font_for("bachelorette", ["Dana's", "Bachelorette"]) == \

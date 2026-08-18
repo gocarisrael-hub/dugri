@@ -2537,7 +2537,10 @@ function validateTitleStyle(input) {
   out.arch = input.arch;
   if (typeof input.shadow !== 'boolean') return { error: 'title_style.shadow must be a boolean' };
   out.shadow = input.shadow;
-  for (const k of ['size', 'board_size', 'back_size']) {
+  // `size_alt` is the cap for a title set in the template's SECOND face — the
+  // one a buyer's other-language title reaches (render_page.title_font_for).
+  // The two faces have different proportions, so one ceiling cannot suit both.
+  for (const k of ['size', 'board_size', 'back_size', 'size_alt']) {
     if (input[k] == null) continue;
     if (!isFiniteNum(input[k]) || input[k] <= 0 || input[k] > 400) {
       return { error: 'title_style.' + k + ' must be a positive size' };
