@@ -791,6 +791,19 @@
         color: #b9b0a2;
         font-weight: 600;
       }
+      /* The B2B contact row. Deliberately a THIRD line of the contact block and
+         not a pitch: same grey `.fc-label` as "וואטסאפ / טלפון" above it, same
+         size, no button. A shopper's eye slides past it; someone who scrolled
+         all the way down looking for a way to reach us — which is exactly who a
+         bulk enquiry comes from — finds it where they are already reading.
+         Two data-edit keys, not one: the editor rewrites a bound node with
+         textContent, so wrapping the label inside the sentence would wipe it on
+         the owner's first edit (same reason .foot-contact splits them). */
+      .foot-b2b {
+        margin: 12px auto 0;
+        max-width: 38em;
+        font-size: 14.5px;
+      }
       .foot-icons {
         display: flex;
         justify-content: center;
@@ -1570,7 +1583,7 @@
           <h2 data-edit="index-faq-heading">שאלות נפוצות</h2>
         </div>
         <!--
-          The four questions below are the SHIPPED DEFAULTS. The owner's live list
+          The five questions below are the SHIPPED DEFAULTS. The owner's live list
           is fetched from /api/faq (she edits it in admin-faq.html) and swapped in
           by js/faq.js once it arrives — a slow or failing API, or no JS at all,
           leaves exactly this markup in place, so the section is never empty. They
@@ -1606,6 +1619,13 @@
             <p>
               בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה במייל לאיסוף
               המילים, ומשם אנחנו מתחילים.
+            </p>
+          </details>
+          <details>
+            <summary>אנחנו חברה או מארגני אירועים - אפשר כמה משחקים?</summary>
+            <p>
+              בהחלט. לכמות, לאירוע חברה או לאירוע גדול - שלחו וואטסאפ ל-0546577715 ונתאים לכם את
+              הפורמט והמחיר.
             </p>
           </details>
         </div>
@@ -1709,6 +1729,12 @@
             <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
           >
         </div>
+        <p class="foot-b2b" data-testid="footer-b2b">
+          <span class="fc-label" data-edit="index-footer-b2b-label">לעסקים:</span>
+          <span data-edit="index-footer-b2b"
+            >מזמינים כמה יחידות לצוות או לאירוע גדול? דברו איתנו - 0546577715</span
+          >
+        </p>
         <p class="foot-tag" data-edit="index-footer-tag">צילמתם? תייגו אותנו</p>
       </div>
     </footer>
