@@ -3486,7 +3486,12 @@
             // Same frame as the pawn card above, so the same Safari band — there
             // is nothing laid over this one to misplace, but the card was still
             // being drawn smaller than the space it was given.
-            img.addEventListener('load', () => box.classList.add('has-card'), { once: true });
+            // Once only: renderPreview runs on every keystroke's debounce, and a
+            // listener per render is a listener left behind by every render whose
+            // picture never loads.
+            if (!box.classList.contains('has-card')) {
+              img.addEventListener('load', () => box.classList.add('has-card'), { once: true });
+            }
             img.src = r.card;
           }
         } catch (e) {
@@ -3523,8 +3528,6 @@
       // generator — see preview.pawn_slots). Null until the card has loaded.
       let pawnSlots = null;
 
-      // Draw the buyer's photos into the card's discs. Called on every drag frame,
-      // so it does nothing but move CSS: no fetch, no decode, no server.
       // THE PHOTO LAYER SITS ON THE CARD PICTURE, NOT ON THE FRAME AROUND IT.
       //
       // Every slot below is a percentage — of this layer. So the layer has to BE
@@ -3538,6 +3541,21 @@
       // and on an iPhone it left a 36px band down each side — enough to stretch
       // every pawn into an ellipse 27% too wide and drag the left-hand pair 22px
       // clear of their rings. Measuring beats assuming, and costs nothing.
+      // The frame's border, read ONCE. This runs on every frame of a drag, and
+      // getComputedStyle there forces a style recalc per pointer move on a phone
+      // — for two numbers that a stylesheet sets and nothing changes.
+      let pawnFrameBorder = null;
+      function frameBorder(frame) {
+        if (!pawnFrameBorder) {
+          const cs = getComputedStyle(frame);
+          pawnFrameBorder = {
+            left: parseFloat(cs.borderLeftWidth) || 0,
+            top: parseFloat(cs.borderTopWidth) || 0,
+          };
+        }
+        return pawnFrameBorder;
+      }
+
       function fitLiveSlots() {
         const layer = $('#pawnLiveSlots');
         const img = $('#pawnPrevImg');
@@ -3552,11 +3570,9 @@
         // Percentages on an absolutely positioned box resolve against its
         // container's PADDING box, and .prev-box has a border, so the offsets are
         // measured in pixels off the frame's own border box and the border width
-        // taken back off. One read of the computed style per redraw.
+        // taken back off.
         const fr = frame.getBoundingClientRect();
-        const cs = getComputedStyle(frame);
-        const bl = parseFloat(cs.borderLeftWidth) || 0;
-        const bt = parseFloat(cs.borderTopWidth) || 0;
+        const { left: bl, top: bt } = frameBorder(frame);
         layer.style.left = (ir.left - fr.left - bl + fit.left).toFixed(2) + 'px';
         layer.style.top = (ir.top - fr.top - bt + fit.top).toFixed(2) + 'px';
         layer.style.width = fit.width.toFixed(2) + 'px';
@@ -3575,6 +3591,8 @@
         }).observe(img);
       }
 
+      // Draw the buyer's photos into the card's discs. Called on every drag frame,
+      // so it does nothing but move CSS: no fetch, no decode, no server.
       function paintPawnCard() {
         const box = $('#pawnLiveSlots');
         if (!box || !pawnSlots) return;

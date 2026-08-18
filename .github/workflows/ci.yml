@@ -59,7 +59,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+          # `webkit` in the key on purpose: the cache is saved only when the key
+          # is NEW, so adding a browser without changing the key would restore the
+          # old chromium-only cache and re-download WebKit on every single run.
+          key: ${{ runner.os }}-playwright-webkit-${{ hashFiles('package-lock.json') }}
       # WebKit joins Chromium here. It is a second download (cached above with it)
       # and it runs a SHORT list of specs — playwright.config.js pins the "Mobile
       # Safari" project to the layout checks with `testMatch` — because the whole
