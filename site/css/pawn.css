@@ -57,9 +57,24 @@
    maths the printer uses. That is what makes it keep up with a drag —
    asking the server to re-render was a second per adjustment, so the card
    was always showing the move before last. */
+/* THE LAYER THE FOUR PHOTOS LIVE IN — the PICTURE's rectangle, not the frame's.
+   collect.html measures where `object-fit: contain` put the card and writes
+   left/top/width/height here on load, on every redraw and on resize
+   (pawn-frame.js containRect).
+
+   The four values below are only what is true before that runs, and they are
+   spelled out rather than written `inset: 0` on purpose: `inset` also sets right
+   and bottom, and this page is RTL — a box with left, right AND width all set is
+   over-constrained, and in RTL the browser resolves that by throwing away LEFT.
+   The layer would then ignore everything JS told it. */
 .pawn-live-slots {
   position: absolute;
-  inset: 0;
+  left: 0;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
 }
 .pawn-live-slot {

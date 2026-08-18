@@ -40,6 +40,26 @@ export default defineConfig({
   projects: [
     { name: 'Desktop Chrome', use: { ...devices['Desktop Chrome'] } },
     { name: 'iPhone 14', use: { ...devices['iPhone 14'], browserName: 'chromium' } },
+    // A REAL SAFARI ENGINE, on a short list of specs.
+    //
+    // Both profiles above are Chromium — "iPhone 14" is Chromium at a phone's
+    // size, not Safari — so for the whole life of this suite nothing here has
+    // ever run on WebKit, and the engine most of our buyers actually use was the
+    // one nothing was measured in. That is not academic: the pawn card's photos
+    // were drawn as an ellipse 22px off their printed cut-lines on every iPhone,
+    // green on every check, until the owner sent a photograph of it.
+    //
+    // testMatch keeps the cost proportionate. WebKit is another browser download
+    // and another full pass of the suite, and the divergences it catches are
+    // LAYOUT ones — how a box is sized, where a picture lands inside it. Those
+    // live in a handful of specs, so those are what it runs; everything else is
+    // engine-agnostic application logic that Chromium already covers. Add a file
+    // here when it measures geometry, not merely because it is new.
+    {
+      name: 'Mobile Safari',
+      use: { ...devices['iPhone 14'], browserName: 'webkit' },
+      testMatch: /pawn-card-alignment\.spec\.js/,
+    },
   ],
 
   // Start the Node server (static site + /api). Data goes to a throwaway dir, and

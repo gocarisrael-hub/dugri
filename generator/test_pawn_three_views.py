@@ -172,13 +172,19 @@ def test_the_page_places_every_photo_through_the_shared_geometry():
         assert fn in page, fn
 
 
-def test_the_preview_card_takes_its_shape_from_the_card_it_loaded():
-    # The discs are fractions of THE CARD and the layer they live in fills the
-    # BOX; those are the same rectangle only if the box has the card's shape.
-    # .prev-box is 5/7 and the card is 223.92/312, so `contain` letterboxed it and
-    # slid every circle a little off its ring.
+def test_the_preview_card_measures_where_the_card_was_actually_drawn():
+    # The discs are fractions of THE CARD and the layer they live in used to fill
+    # the FRAME; those are the same rectangle only when the frame is the card's
+    # shape. Handing the frame the card's own `aspect-ratio` was the first attempt
+    # at that, and it works in Chrome ONLY: Safari leaves a `width: auto` box at
+    # its full width and centres the picture inside it, so on an iPhone every pawn
+    # was drawn 27% wider than tall and 22px clear of its printed cut-line. The
+    # layer is measured onto the picture now (containRect / fitLiveSlots), and the
+    # frame is sized BY the picture instead of by an assumed shape.
     page = h._read(os.path.join(h.SITE, "collect.html"))
-    assert "box.style.aspectRatio = img.naturalWidth" in page
+    assert "containRect(" in page
+    assert "function fitLiveSlots(" in page
+    assert "classList.add('has-card')" in page
 
 
 # --- with Chrome: the three renderings themselves ---------------------------

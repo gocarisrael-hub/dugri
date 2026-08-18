@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { subjectFrame, DISC_FILL } from '../../site/js/pawn-frame.js';
+import { subjectFrame, containRect, liveSlotStyle, DISC_FILL } from '../../site/js/pawn-frame.js';
 
 // Build an RGBA {data,width,height} with `paint(x,y)` deciding opacity, so these
 // tests need no canvas and no browser.
@@ -177,5 +177,78 @@ describe('subjectFrame', () => {
     const tight = subjectFrame(im, { discFill: 0.5 });
     const loose = subjectFrame(im, { discFill: 1 });
     expect(loose.widthPct / tight.widthPct).toBeCloseTo(2, 5);
+  });
+});
+
+// WHERE `object-fit: contain` ACTUALLY PUT THE PICTURE.
+//
+// The pawn card's photo layer is positioned on the answer this gives, because
+// the frame around the card is not always the card's shape: Chrome derives the
+// frame's width from `aspect-ratio` + `max-height`, Safari leaves the frame at
+// full width and centres the picture inside it. Assuming the two rectangles were
+// the same is what put the buyer's photos 22px off their printed cut-lines on an
+// iPhone, and stretched each circle 27% wider than tall.
+describe('containRect', () => {
+  it('is the whole element when the shapes agree', () => {
+    const r = containRect(200, 300, 400, 600);
+    expect(r).toEqual({ left: 0, top: 0, width: 200, height: 300 });
+  });
+
+  it('bands the sides when the element is wider than the picture', () => {
+    // Exactly the Safari case measured on a phone: a 327px frame around a card
+    // that wants to be 257 wide.
+    const r = containRect(327, 357.8, 448, 624);
+    expect(r.width).toBeCloseTo(256.9, 1);
+    expect(r.height).toBeCloseTo(357.8, 1);
+    expect(r.left).toBeCloseTo((327 - r.width) / 2, 6); // centred, not flush
+    expect(r.top).toBeCloseTo(0, 6);
+  });
+
+  it('bands the top and bottom when the element is taller', () => {
+    const r = containRect(300, 400, 400, 200);
+    expect(r).toEqual({ left: 0, top: 125, width: 300, height: 150 });
+  });
+
+  it('answers null rather than a guess when a size is missing', () => {
+    // An <img> that has not decoded yet reports 0 for its natural size, and the
+    // caller leaves the layer where the stylesheet put it instead of collapsing
+    // it — which would blank all four photos on any redraw that lands early.
+    expect(containRect(200, 300, 0, 0)).toBe(null);
+    expect(containRect(0, 300, 400, 600)).toBe(null);
+    expect(containRect(200, 300, 400, undefined)).toBe(null);
+  });
+});
+
+// A pawn circle is a CIRCLE, and that is a consequence of the layer being the
+// picture rather than something the stylesheet asserts: the slot is square in the
+// card's own units, so `width` (a share of the layer's width) and `height` (a
+// share of its height) come out equal exactly when the layer has the card's
+// shape. This is the arithmetic behind the E2E check in pawn-card-alignment.
+describe('liveSlotStyle on a layer that IS the card', () => {
+  const CARD = { w: 448, h: 624 }; // the pawn card's own pixels
+  const SLOT = 132; // the square a photo is handed, in those same pixels
+  const geo = { x: 86 / CARD.w, y: 180 / CARD.h, w: SLOT / CARD.w, h: SLOT / CARD.h };
+
+  const drawn = (layerW, layerH) => {
+    const st = liveSlotStyle(geo);
+    return {
+      w: (parseFloat(st.width) / 100) * layerW,
+      h: (parseFloat(st.height) / 100) * layerH,
+    };
+  };
+
+  it('draws a square, at any size the card is shown at', () => {
+    for (const layerW of [257, 327, 640]) {
+      const { w, h } = drawn(layerW, (layerW * CARD.h) / CARD.w);
+      expect(Math.abs(w - h) / w).toBeLessThan(0.005);
+    }
+  });
+
+  it('draws an ELLIPSE the moment the layer stops being the card', () => {
+    // The regression itself, in one assertion: the layer 27% wider than the card
+    // (Safari's 327px frame around a 257px picture) turns every pawn into an oval.
+    // This is why fitLiveSlots measures instead of trusting `inset: 0`.
+    const { w, h } = drawn(327, 357.8);
+    expect(w / h).toBeGreaterThan(1.2);
   });
 });

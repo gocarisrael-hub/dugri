@@ -175,12 +175,24 @@ describe('the page and the stylesheet read that one source', () => {
     expect(css).not.toMatch(/\.pawn-disc\.is-cut img/);
   });
 
-  it('gives the preview box the shape of the card it loaded', () => {
-    // The discs are fractions of THE CARD and the layer they live in fills the
-    // BOX; those are one rectangle only if the box has the card's shape. .prev-box
-    // is 5/7 and the card is 223.92/312, so `contain` letterboxed it and slid
-    // every circle a little off its ring.
-    expect(page).toContain('box.style.aspectRatio = img.naturalWidth');
+  it('measures where the card was drawn instead of assuming it filled the frame', () => {
+    // The discs are fractions of THE CARD and the layer they live in used to fill
+    // the FRAME; those are one rectangle only when the frame is the card's shape.
+    // Handing the frame the card's `aspect-ratio` was the first attempt at that
+    // and it holds in Chrome only — Safari leaves a `width: auto` box at full
+    // width and centres the picture inside it, which stretched every pawn into an
+    // ellipse and slid it off its ring on every iPhone. So the layer is now
+    // MEASURED onto the picture (containRect), and the frame is sized BY the
+    // picture rather than by a shape it was told to assume.
+    expect(page).toContain('containRect(');
+    expect(page).toContain('function fitLiveSlots(');
+    expect(page).toContain("classList.add('has-card')");
+    // …and the frame rule reaches the CARD only. Written as a bare
+    // `.prev-box.has-card img` it also matched the four photos laid over the
+    // card, and its `max-width: 100%` clamped each one to its own circle —
+    // re-cropping every pawn tighter than the printer cuts it.
+    expect(page).toContain('.prev-box.has-card > img');
+    expect(page).not.toMatch(/\.prev-box(\.has-card)? img \{/);
   });
 
   it('re-sizes the halo when the circle does, instead of measuring it once', () => {
