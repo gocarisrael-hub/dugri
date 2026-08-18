@@ -21,7 +21,10 @@
 const PITCH = {
   'trip comeback': 27.58,
   bachelorette: 28.38,
-  'birthday-girls': 20.62,
+  // Raised from her 20.62: the spacing is also a ceiling on the word size
+  // (two rows cannot sit closer than the letters are tall), and 22.26 is the
+  // least that still lets קליפורניה's words print at their full 20.06.
+  'birthday-girls': 22.3,
   'birthday-boys-basketball': 20.11,
   anniversary: 29.23,
   japanese: 31.65,
