@@ -66,7 +66,7 @@ async function createCollection(page, name) {
   // has rendered — it appears when the owner's state lands.
   await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
   await page.getByTestId('tab-pay').click();
-  await page.locator('#payPanel summary').click();
+  await page.locator('#payPanel > summary').click();
 }
 
 test('copies: the total multiplies, and one copy shows no arithmetic to explain', async ({
@@ -135,7 +135,7 @@ test('copies: the count reaches the server and survives a reload', async ({ page
   // has rendered — it appears when the owner's state lands.
   await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
   await page.getByTestId('tab-pay').click();
-  await page.locator('#payPanel summary').click();
+  await page.locator('#payPanel > summary').click();
   await expect(page.getByTestId('qty-val')).toHaveText('3');
   await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 3));
 });
@@ -187,7 +187,7 @@ test('copies: a locked order shows its stored total, never total × copies', asy
   // has rendered — it appears when the owner's state lands.
   await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
   await page.getByTestId('tab-pay').click();
-  await page.locator('#payPanel summary').click();
+  await page.locator('#payPanel > summary').click();
 
   // Whatever the locked total is, the page must show exactly it — not a figure
   // re-derived from the copy count, and not with shipping added on top.

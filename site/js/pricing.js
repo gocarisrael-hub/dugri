@@ -33,6 +33,11 @@ export const PRICING_FALLBACK = {
   // cost of being wrong here is asymmetric: hiding a real sale for a moment is a
   // missed nudge, showing a sale that ended is a false discount.
   sale: { on: false, label: 'מחיר השקה', banner: '' },
+  // Localities where delivery takes longer, and how much longer. EMPTY in the
+  // fallback for the same reason `sale` is off in it: the note is a PROMISE
+  // about a delivery date, and a promise we could not read from the server is
+  // one we must not make. No note simply leaves the standard estimate standing.
+  delivery_exceptions: { towns: [], eta_days: 11 },
 };
 
 // A well-formed pricing payload: store.now/was are integers AND every known
@@ -65,6 +70,22 @@ function saleOf(j) {
   };
 }
 
+// Normalise the payload's optional `delivery_exceptions` block, the same way
+// and for the same reason as `saleOf`: an older server omits it entirely, and a
+// malformed one must read as "no exceptions" rather than paint `undefined` into
+// a list of towns. Every town is coerced to a trimmed non-empty string here, so
+// the renderer downstream can assume clean data.
+function exceptionsOf(j) {
+  const e = j && j.delivery_exceptions;
+  const fallback = { towns: [], eta_days: PRICING_FALLBACK.delivery_exceptions.eta_days };
+  if (!e || !Array.isArray(e.towns)) return fallback;
+  const towns = e.towns.filter((t) => typeof t === 'string' && t.trim()).map((t) => t.trim());
+  return {
+    towns,
+    eta_days: Number.isInteger(e.eta_days) && e.eta_days > 0 ? e.eta_days : fallback.eta_days,
+  };
+}
+
 export async function fetchPricing(timeoutMs = 2500) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -79,6 +100,7 @@ export async function fetchPricing(timeoutMs = 2500) {
         // Optional: an older server (or one whose settings read failed) omits it.
         delivery_fee: Number.isInteger(j.delivery_fee) ? j.delivery_fee : 0,
         sale: saleOf(j),
+        delivery_exceptions: exceptionsOf(j),
         ok: true,
       };
     }
@@ -89,6 +111,7 @@ export async function fetchPricing(timeoutMs = 2500) {
       versions: JSON.parse(JSON.stringify(PRICING_FALLBACK.versions)),
       delivery_fee: PRICING_FALLBACK.delivery_fee,
       sale: { ...PRICING_FALLBACK.sale },
+      delivery_exceptions: { towns: [], eta_days: PRICING_FALLBACK.delivery_exceptions.eta_days },
       ok: false,
     };
   } finally {

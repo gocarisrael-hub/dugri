@@ -138,8 +138,21 @@ describe('GET /api/pricing (public)', () => {
     // ELSE from settings rides along, so it stays an exact list.
     // `sale` is the storefront's display state (on/off + the owner's two
     // strings), NOT a settings dump — the raw sale_* keys stay server-side.
-    expect(Object.keys(body).sort()).toEqual(['delivery_fee', 'sale', 'store', 'versions']);
+    // `delivery_exceptions` is the localities where delivery takes longer, as
+    // the checkout needs them — a parsed { towns, eta_days }, never the raw
+    // multi-line settings string.
+    expect(Object.keys(body).sort()).toEqual([
+      'delivery_exceptions',
+      'delivery_fee',
+      'sale',
+      'store',
+      'versions',
+    ]);
     expect(Object.keys(body.sale).sort()).toEqual(['banner', 'label', 'on']);
+    expect(Object.keys(body.delivery_exceptions).sort()).toEqual(['eta_days', 'towns']);
+    // Ships EMPTY: the note only exists once the owner has filled the list, so a
+    // deploy promises nobody a delivery window.
+    expect(body.delivery_exceptions.towns).toEqual([]);
     // Exactly the four known versions, each just { enabled, price }.
     expect(Object.keys(body.versions).sort()).toEqual(['custom', 'delivery', 'pdf', 'pickup']);
     for (const v of Object.values(body.versions)) {

@@ -181,7 +181,7 @@ test('the checkout total signs both prices, each with its own ₪', async ({ pag
   // has rendered — it appears when the owner's state lands.
   await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
   await page.getByTestId('tab-pay').click();
-  await page.locator('#payPanel summary').click();
+  await page.locator('#payPanel > summary').click();
   await page.fill('#couponInput', 'STRUCK50');
   await page.click('#couponApplyBtn');
 
