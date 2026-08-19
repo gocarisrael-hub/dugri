@@ -3217,10 +3217,11 @@
       // fetched, so the button costs nothing and cannot disagree with the table
       // under it.
       //
-      // Not "carrying the sent-to-print stamp", which is what this first said:
-      // that is the בדפוס stage, and no order ever rests in it here — the stamp
-      // and the ready mark get pressed together, so the count was always zero
-      // and the button never appeared.
+      // Exactly the "הופקו — לשליחה לדפוס" chip, narrowed to self-collection:
+      // the batch about to leave for Galor is the batch that needs labels. An
+      // order already stamped to print had its sticker printed with that batch,
+      // so it is NOT counted again — see the server's pickupStickerOrders, which
+      // must stay in step with this or the button's number and its PDF disagree.
       //
       // Deliberately NOT narrowed by the table's filters: this is the whole
       // night's work, and a sheet that quietly shrank because a filter chip was
@@ -3230,8 +3231,8 @@
           const o = c.order;
           if (!o || c.cancelled) return false;
           if (o.version !== 'pickup' || !isPaid(c)) return false;
-          if (o.ready_at) return false;
-          return isGenerated(c) || !!o.sent_to_print_at;
+          if (o.ready_at || o.sent_to_print_at) return false;
+          return isGenerated(c);
         }).length;
       }
       function renderStickerBtn() {

@@ -98,9 +98,20 @@ describe('which orders are on tonight’s sheet', () => {
     expect(titles()).toContain('על הסהר');
   });
 
-  it('…and so is one resting in בדפוס, on the nights that happens', () => {
+  // The sheet is ONE stage — the pile about to leave for Galor — not everything
+  // built and not yet handed over. An order already at the printer had its
+  // sticker printed with that batch; printing it again is a duplicate label for
+  // a box that already carries one.
+  it('an order already SENT to print is not — its sticker went with the batch', () => {
     order({ toPrint: true, title: 'כבר נשלח לדפוס' });
-    expect(titles()).toContain('כבר נשלח לדפוס');
+    expect(titles()).not.toContain('כבר נשלח לדפוס');
+  });
+
+  it('…and it returns to the sheet if that stamp is taken back', () => {
+    const c = order({ toPrint: true, title: 'הוחזר מהדפוס' });
+    expect(titles()).not.toContain('הוחזר מהדפוס');
+    db.setOrderSentToPrint(c.id, false);
+    expect(titles()).toContain('הוחזר מהדפוס');
   });
 
   it('a DELIVERY order is not — it is posted, not collected', () => {
@@ -129,10 +140,14 @@ describe('which orders are on tonight’s sheet', () => {
     expect(titles()).not.toContain('כבר מוכן');
   });
 
-  it('…and it comes back onto the sheet if that press is undone', () => {
+  it('…and it comes back onto the sheet if BOTH presses are undone', () => {
     const c = order({ ready: true, toPrint: true, title: 'סומן בטעות' });
     expect(titles()).not.toContain('סומן בטעות');
     db.setOrderReady(c.id, false);
+    // Still off the sheet: undoing "ready" leaves it at the printer, which is
+    // the batch whose stickers are already printed.
+    expect(titles()).not.toContain('סומן בטעות');
+    db.setOrderSentToPrint(c.id, false);
     expect(titles()).toContain('סומן בטעות');
   });
 
