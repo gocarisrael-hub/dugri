@@ -1341,6 +1341,56 @@ app.get('/api/admin/collections/:id/pdf', (req, res) => {
   res.sendFile(file);
 });
 
+// Admin: UNDO a production run — "בטל הפקה".
+//
+// An order lands in "הופקו — לשליחה לדפוס" because a PDF exists, and until now
+// nothing could take it back out: the stage is computed from the production
+// record, and only the generate route ever wrote one. Reopening the word list
+// does not do it either (that stage checks whether a file was built, not whether
+// the list is open), so an order produced too early, or produced from the wrong
+// words, was stuck in the print queue.
+//
+// This clears the record AND removes the files it refers to. Both, deliberately:
+// the /pdf routes serve whatever is on disk without consulting the record, so a
+// cleared record beside a surviving file is a deck the shop could still be sent
+// — the exact stale-copy failure pressUnlink already exists to prevent.
+//
+// REFUSED once the order has been stamped as sent to the printer or ready. By
+// then the deck is out of our hands and un-producing it would only make the
+// dashboard disagree with the world; the stamps come off first, newest first,
+// exactly as the two stamp toggles already require of each other. 409, so a
+// stale tab cannot get past it either.
+app.delete('/api/admin/collections/:id/production', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const order = c.order || null;
+  if (order && (order.sent_to_print_at || order.ready_at)) {
+    return res.status(409).json({
+      error: 'stamped',
+      detail: order.ready_at
+        ? 'ההזמנה סומנה כמוכנה — בטלו קודם את "מוכן" ואת "בדפוס"'
+        : 'ההזמנה סומנה כנשלחה לדפוס — בטלו קודם את "בדפוס"',
+    });
+  }
+  const prev = db.clearProduction(c.id);
+  if (prev === false) return res.status(404).json({ error: 'not found' });
+  if (prev === null) return res.status(409).json({ error: 'not produced' });
+  // The deck, the board and both press artifacts. Best-effort by design: a file
+  // that was already gone is the state we wanted, and a failed unlink must not
+  // leave the record un-cleared — the record is what the dashboard reads.
+  const press = pressPaths(c.id);
+  const board = boardFileFor(c.id);
+  pressUnlink(
+    path.join(GENERATED_DIR, c.id + '.pdf'),
+    ...(board ? [board] : []),
+    press.pdf,
+    press.partial,
+    press.err
+  );
+  res.json({ ok: true, cleared: prev });
+});
+
 // Admin: download the order's BOARD file — the second artifact, produced beside
 // the deck. Same gate and same id-handling as the PDF route above; 404 when the
 // collection or the board file is absent.

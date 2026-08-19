@@ -347,3 +347,125 @@ describe('the board artifact', () => {
     expect(dl.status).toBe(404);
   });
 });
+
+// ---------------------------------------------------------------------------
+// UNDOING a production run. An order lands in the dashboard's
+// "הופקו — לשליחה לדפוס" step because a PDF exists; nothing could take it back
+// out, so an order produced too early, or produced from the wrong words, was
+// stuck in the print queue. Reopening the word list does not help — that step
+// asks whether a file was BUILT, not whether the list is open.
+describe('DELETE /api/admin/collections/:id/production', () => {
+  async function del(urlPath) {
+    const res = await fetch(base + urlPath, { method: 'DELETE' });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  // Produce for real (the fake generator writes both artifacts), so the files
+  // these tests assert about are the ones the route will be deleting.
+  async function produced(name) {
+    const c = db.createCollection(name, { theme: 'trip comeback' });
+    db.addWords(c.id, ['מים', 'אש']);
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' }, { admin: true });
+    const r = await post(key('/api/admin/collections/' + c.id + '/generate'), {});
+    expect(r.status).toBe(200);
+    return c;
+  }
+
+  it('403 without the admin key', async () => {
+    const c = await produced('NoKeyUndo');
+    const r = await del('/api/admin/collections/' + c.id + '/production');
+    expect(r.status).toBe(403);
+    // and the record is untouched
+    expect(db.getCollection(c.id).production.state).toBe('generated');
+  });
+
+  it('404 for an unknown collection', async () => {
+    const r = await del(key('/api/admin/collections/nope/production'));
+    expect(r.status).toBe(404);
+  });
+
+  it('409 when nothing was ever produced — there is no run to undo', async () => {
+    const c = db.createCollection('NeverProduced', { theme: 'trip comeback' });
+    db.addWords(c.id, ['מים']);
+    const r = await del(key('/api/admin/collections/' + c.id + '/production'));
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('not produced');
+  });
+
+  it('clears BOTH mirrors of the record, so nothing still reads as produced', async () => {
+    const c = await produced('UndoMe');
+    const r = await del(key('/api/admin/collections/' + c.id + '/production'));
+    expect(r.status).toBe(200);
+    expect(r.body.cleared.state).toBe('generated');
+
+    const after = db.getCollection(c.id);
+    // Every reader falls back from one mirror to the other; leaving either
+    // behind would keep the order in the print queue for half the code.
+    expect(after.production).toBeUndefined();
+    expect(after.order.production).toBeUndefined();
+  });
+
+  it('deletes the deck, the board and the press files it referred to', async () => {
+    const c = await produced('Files');
+    const deck = path.join(genDir, c.id + '.pdf');
+    const board = path.join(genDir, c.id + '.board.pdf');
+    expect(fs.existsSync(deck)).toBe(true);
+    expect(fs.existsSync(board)).toBe(true);
+
+    expect((await del(key('/api/admin/collections/' + c.id + '/production'))).status).toBe(200);
+
+    // The /pdf routes serve whatever is on disk WITHOUT consulting the record,
+    // so a surviving file beside a cleared record is a deck the shop could still
+    // be sent. Both have to go.
+    expect(fs.existsSync(deck)).toBe(false);
+    expect(fs.existsSync(board)).toBe(false);
+    expect(fs.existsSync(path.join(genDir, c.id + '.press.pdf'))).toBe(false);
+  });
+
+  it('and the download route stops answering with a stale file', async () => {
+    const c = await produced('Download');
+    const before = await fetch(base + key('/api/admin/collections/' + c.id + '/pdf'));
+    expect(before.status).toBe(200);
+    await del(key('/api/admin/collections/' + c.id + '/production'));
+    const after = await fetch(base + key('/api/admin/collections/' + c.id + '/pdf'));
+    expect(after.status).toBe(404);
+  });
+
+  it('REFUSES once the order was stamped as sent to the printer', async () => {
+    const c = await produced('AtPrinter');
+    db.setOrderSentToPrint(c.id, true);
+    const r = await del(key('/api/admin/collections/' + c.id + '/production'));
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('stamped');
+    // The deck is at the shop: the record AND the file both survive, or the
+    // dashboard would disagree with the world.
+    expect(db.getCollection(c.id).production.state).toBe('generated');
+    expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(true);
+  });
+
+  it('…and once it is marked ready', async () => {
+    const c = await produced('IsReady');
+    db.setOrderSentToPrint(c.id, true);
+    db.setOrderReady(c.id, true);
+    const r = await del(key('/api/admin/collections/' + c.id + '/production'));
+    expect(r.status).toBe(409);
+    expect(r.body.detail).toContain('מוכן');
+  });
+
+  it('un-stamping first is what unblocks it — the reverse order the toggles use', async () => {
+    const c = await produced('ReverseOrder');
+    db.setOrderSentToPrint(c.id, true);
+    expect((await del(key('/api/admin/collections/' + c.id + '/production'))).status).toBe(409);
+    db.setOrderSentToPrint(c.id, false);
+    expect((await del(key('/api/admin/collections/' + c.id + '/production'))).status).toBe(200);
+  });
+
+  it('the order can be produced again afterwards — the point of undoing it', async () => {
+    const c = await produced('Again');
+    await del(key('/api/admin/collections/' + c.id + '/production'));
+    const again = await post(key('/api/admin/collections/' + c.id + '/generate'), {});
+    expect(again.status).toBe(200);
+    expect(again.body.production.state).toBe('generated');
+    expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(true);
+  });
+});

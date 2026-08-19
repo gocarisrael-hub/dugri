@@ -1946,6 +1946,37 @@ const db = {
     return rec;
   },
 
+  // Undo a production run: forget that this collection ever produced a PDF.
+  //
+  // The admin dashboard decides where an order STANDS from this record — an
+  // order with a generated PDF sits in "הופקו — לשליחה לדפוס" — so clearing it
+  // is what drops the order back into "נסגרו — להפקה", the production queue, to
+  // be produced again. Reopening the word list does NOT do that: the stage looks
+  // at whether a file was built, not at whether the list is open.
+  //
+  // Clears BOTH mirrors (the order's and the collection's), because every reader
+  // falls back from one to the other — leaving either behind would keep the order
+  // looking produced to half the code.
+  //
+  // The capability token goes with it. It is minted per production record, and
+  // no customer email carries a download link any more (see the generate route),
+  // so a re-produce simply mints a fresh one. Anything that WAS handed out
+  // pointed at a file this call deletes, and must stop working.
+  //
+  // Returns the record it removed, null when there was nothing to undo, and
+  // false when the collection is unknown — three answers, because the caller
+  // reports them differently.
+  clearProduction(id) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    const prev = (c.order && c.order.production) || c.production || null;
+    if (!prev) return null;
+    delete c.production;
+    if (c.order) delete c.order.production;
+    saveDb();
+    return prev;
+  },
+
   // --- Discount coupons ---------------------------------------------------
   // A coupon is a percentage-off code the admin creates and the checkout
   // applies. Shape: { id, code, discount_pct, valid_until, active, created_at,
