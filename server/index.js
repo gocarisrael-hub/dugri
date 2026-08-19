@@ -1575,28 +1575,28 @@ function designNameFor(theme) {
   }
 }
 
-// The orders a sticker is printed for TONIGHT: self-collection, the deck already
-// PRODUCED, and not yet handed over.
+// The orders a sticker is printed for TONIGHT: exactly the owner's
+// "הופקו — לשליחה לדפוס" pile, narrowed to self-collection.
 //
-// This began as "pickup, and carrying the sent-to-print stamp" — which is the
-// admin's own בדפוס stage, and which matches NOTHING. Measured against the real
-// orders: 135 have been stamped to print, and every one of them is also already
-// marked ready, because the owner presses the two together. Her בדפוס is the
-// pile going to the printer tonight, not a state an order ever rests in — and in
-// the stage strip that pile is "הופקו — לשליחה לדפוס".
-//
-// So the rule is the one the label itself implies: THE BOX EXISTS AND HAS NOT
-// GONE OUT. Each clause earns its place —
-//   • pickup      — a delivery order is posted rather than collected;
-//   • paid        — an unpaid order is not being made;
-//   • produced    — there is no box to label until the deck has been built (an
-//                   order still collecting words, or closed and not yet run,
-//                   has nothing to stick a label on);
-//   • not ready   — marked ready means labelled and handed over;
+// ONE STAGE, NOT A RANGE. The sheet is printed with the batch that is about to
+// leave for Galor, so it is the same set as that chip and no wider. Each clause
+// earns its place —
+//   • pickup             — a delivery order is posted, and its label is the
+//                          courier's (server/hfd.js), not this one;
+//   • paid               — an unpaid order is not being made;
+//   • produced           — there is no box to label until the deck is built;
+//   • NOT sent to print  — once the batch has gone, its stickers went with it;
+//                          reprinting them the next night is a duplicate sheet
+//                          for boxes that already carry one;
+//   • not ready          — marked ready means labelled and handed over;
 //   • not cancelled.
 //
-// An order that IS resting in בדפוס (stamped, not yet ready) still qualifies:
-// it was produced to get there, so the first clause already holds.
+// This USED to also take orders resting in בדפוס (stamped, not yet ready), on
+// the reasoning that the stamp and the ready mark are pressed together so
+// nothing ever rests there. Orders do rest there — eight of them the day this
+// changed — and every one had already had its sticker printed. Zero on a night
+// with nothing newly produced is the correct answer, not a sign the sheet is
+// broken.
 //
 // Oldest first, so the sheet comes out in the order the orders table shows and a
 // sticker can be found in it.
@@ -1611,8 +1611,8 @@ function pickupStickerOrders() {
       const o = c.order;
       if (!o || c.cancelled) return false;
       if (o.version !== 'pickup' || !o.paid) return false;
-      if (o.ready_at) return false;
-      return orderProduced(c) || !!o.sent_to_print_at;
+      if (o.ready_at || o.sent_to_print_at) return false;
+      return orderProduced(c);
     })
     .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
     .map((c) => ({
@@ -1698,7 +1698,7 @@ app.get('/api/admin/pickup-stickers', async (req, res) => {
     // should read as one rather than as something that failed.
     return res.status(409).json({
       error: 'none',
-      message: 'אין כרגע הזמנות איסוף עצמי בדפוס.',
+      message: 'אין כרגע הזמנות איסוף עצמי שהופקו וממתינות לשליחה לדפוס.',
     });
   }
   let out;

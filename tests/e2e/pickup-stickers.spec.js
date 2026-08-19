@@ -48,9 +48,10 @@ async function pickupAwaitingPrint(page, title) {
 // state this server cannot be walked into (it needs a real print run), and one
 // that must be applied in the SAME handler: a second page.route on the same
 // pattern replaces the first rather than chaining onto it.
-async function onlyMine(page, mine, { ready = [] } = {}) {
+async function onlyMine(page, mine, { ready = [], atPrinter = [] } = {}) {
   const keep = new Set(mine.map((c) => c.id));
   const done = new Set(ready.map((c) => c.id));
+  const sent = new Set(atPrinter.map((c) => c.id));
   await page.route('**/api/admin/collections*', async (route) => {
     const res = await route.fetch();
     const body = await res.json();
@@ -60,6 +61,7 @@ async function onlyMine(page, mine, { ready = [] } = {}) {
         c.order.paid = true;
         c.order.production = { state: 'generated' };
         c.order.ready_at = done.has(c.id) ? '2026-08-16T00:00:00.000Z' : null;
+        c.order.sent_to_print_at = sent.has(c.id) ? '2026-08-16T00:00:00.000Z' : null;
         c.cancelled = false;
       } else {
         c.order.production = null;
@@ -95,6 +97,21 @@ test('an order already marked ready is not on tonight’s sheet', async ({ page 
   ];
   // Ready means the box has been labelled and handed over.
   await onlyMine(page, mine, { ready: [mine[1]] });
+  await page.goto(ADMIN);
+
+  await expect(page.getByTestId('pickup-stickers')).toBeVisible();
+  await expect(page.locator('#stickerCount')).toHaveText('1');
+});
+
+// The sheet is the batch about to LEAVE for the printer, not everything built.
+// An order already sent had its sticker printed with that batch, and printing it
+// again is a second label for a box that already carries one.
+test('an order already sent to the printer is not on tonight’s sheet', async ({ page }) => {
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה ח'),
+    await pickupAwaitingPrint(page, 'שירה ט'),
+  ];
+  await onlyMine(page, mine, { atPrinter: [mine[1]] });
   await page.goto(ADMIN);
 
   await expect(page.getByTestId('pickup-stickers')).toBeVisible();
