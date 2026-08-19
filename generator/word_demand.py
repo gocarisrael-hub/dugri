@@ -115,7 +115,15 @@ def hardest(words, sizes):
     return word, size
 
 
-def small_cards(rows, sizes, ratio=0.75):
+# HOW SMALL IS SMALL, in print. A card unit is the artwork's own: 223.92 of them
+# span a 63mm card, so a unit is about 0.28mm and this floor is roughly 2.5mm of
+# type — small enough that an entry stops reading across a room, which is the
+# only reason this report exists. It fires on its own, so a deck that is
+# uniformly tiny is still reported even though no card stands out in it.
+_SMALL_FLOOR = 9.0
+
+
+def small_cards(rows, sizes, ratio=0.55, floor=_SMALL_FLOOR):
     """Cards that will print noticeably smaller than the rest of the deck.
 
     The owner's complaint, in her words: "sometimes there is 1 card that the font
@@ -141,10 +149,20 @@ def small_cards(rows, sizes, ratio=0.75):
     med = statistics.median([s for _, s, _ in per_card])
     if med <= 0:
         return []
+    # WHERE THE LINE IS. It was three quarters of the deck's median, and that
+    # called ordinary cards small: a deck sitting at 20.2 had three cards
+    # carrying אנציקלופדיה / אוניברסיטה / מתמטיקאי come out at 13-15, reported at
+    # 0.65-0.75 and perfectly good in the hand — "this cards have nothing small".
+    # A report the owner has to overrule is a report she stops reading. The card
+    # that started this one measured 0.38 of its deck.
+    #
+    # The floor is the second, independent alarm: below it the type is too small
+    # to read whatever the rest of the deck is doing, so a deck that is uniformly
+    # tiny still gets named instead of averaging itself out of trouble.
     out = [
         {"index": i, "size": round(s, 2), "word": w, "ratio": round(s / med, 3)}
         for i, s, w in per_card
-        if s < med * ratio
+        if s < med * ratio or s < floor
     ]
     out.sort(key=lambda d: d["ratio"])
     return out

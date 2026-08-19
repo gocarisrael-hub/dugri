@@ -103,14 +103,43 @@ def test_an_unmeasured_entry_is_treated_as_ordinary():
 
 
 def test_small_cards_names_the_entry_that_did_it():
-    words = ["קונסטרוקטיביזם"] + [f"מילה{i}" for i in range(20)]
+    words = ["קונסטרוקטיביזםאימפרסיוניזם"] + [f"מילה{i}" for i in range(20)]
     sizes = _sizes(words)
     rows = pack.deal(words, 6, random.Random(4), sizes=sizes)
     found = wd.small_cards([r for r in rows if any(r)], sizes)
     assert found, "the deliberately awful entry should surface"
-    assert found[0]["word"] == "קונסטרוקטיביזם"
-    assert found[0]["ratio"] < 0.75
+    assert found[0]["word"] == "קונסטרוקטיביזםאימפרסיוניזם"
+    assert found[0]["ratio"] < 0.55
     assert found[0]["index"] >= 1        # 1-based, the way a person counts cards
+
+
+def test_a_card_merely_smaller_than_its_deck_is_not_reported():
+    """The owner's correction, as a test: 0.65 of the deck is not "small".
+
+    Three cards of a 70-word order carried אנציקלופדיה, אוניברסיטה and
+    מתמטיקאי — ordinary long Hebrew words — and printed at 13-15 against a deck
+    median of 20.2. The report named all three; she looked at the deck and said
+    they had nothing small about them. Only a card that is genuinely hard to
+    read is worth interrupting her for.
+    """
+    rows = [["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"]]
+    ordinary = {"a": 13.11, "b": 13.65, "c": 15.13,
+                "d": 20.2, "e": 20.2, "f": 20.2, "g": 20.2}
+    assert wd.small_cards(rows, ordinary) == []
+    # ...while the card that started all this — 6.24 against the same deck —
+    # is still named.
+    tiny = {**ordinary, "a": 6.24}
+    named = wd.small_cards(rows, tiny)
+    assert [d["index"] for d in named] == [1]
+
+
+def test_a_uniformly_tiny_deck_is_still_reported():
+    """The floor fires on its own. A deck where EVERY card is unreadable has no
+    card standing out in it, and averaging itself out of trouble is exactly the
+    failure the report exists to catch."""
+    rows = [["a"], ["b"], ["c"], ["d"]]
+    sizes = {"a": 7.0, "b": 7.4, "c": 7.2, "d": 7.1}
+    assert len(wd.small_cards(rows, sizes)) == 4
 
 
 def test_an_even_deck_reports_nothing():
