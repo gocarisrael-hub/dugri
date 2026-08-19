@@ -37,6 +37,9 @@ const MAX_LINES = 400;
 const MAX_LINES_CHARS = 20000;
 // C0/C1 controls EXCEPT tab / newline / carriage return.
 const LINES_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
+// …and for the home-page "new game" block: server/promo.js is pure and owns the
+// shape (text caps, the link allow-list, the uploaded-photo rule).
+const { DEFAULT_PROMO, validatePromo } = require('./promo');
 // Same arrangement again for the buyer-facing word-pool menu: the module is pure
 // and owns the shape, the store owns persistence.
 const { DEFAULT_OPTIONS, validateOptions } = require('./wordlist-options');
@@ -99,6 +102,7 @@ function interpolate(template, values, opts) {
 //   'text'   — a short SINGLE-LINE string (a storefront label / announcement),
 //              bounded by the key's `max` (default 120 chars).
 //   'faq'    — the owner-managed home-page question ARRAY (server/faq.js).
+//   'promo'  — the owner-managed home-page "new game" BLOCK (server/promo.js).
 const REGISTRY = {
   email: {
     // The owner's "a new order started" alert. Despite the legacy key name this
@@ -646,6 +650,20 @@ const REGISTRY = {
   faq: {
     list: { kind: 'faq', tokens: [], default: DEFAULT_FAQ },
   },
+  // --- The home-page "new game" block ---------------------------------------
+  // ONE key holding the whole section: switch, position relative to the designs
+  // rail, ground, badge, title, sub-title, up to three uploaded photos and one or
+  // two buttons. It is a single object rather than a dozen loose keys because the
+  // fields are only meaningful together — a title saved without its photos, or a
+  // switch flipped on before the copy lands, would each publish a half-built
+  // section. The admin page POSTs the block whole, and promo.validatePromo (wired
+  // in via kind:'promo' below) accepts or rejects it whole.
+  //
+  // Defaults to OFF: this section ships dark and stays dark until the owner has
+  // something to launch.
+  promo: {
+    block: { kind: 'promo', tokens: [], default: DEFAULT_PROMO },
+  },
   // The menu of seed pools a BUYER may choose between, and what each is called in
   // front of her. Shape + safety rules live in server/wordlist-options.js (wired
   // in via kind:'wlopts' below); that the pool still EXISTS is checked by the
@@ -940,6 +958,13 @@ function validateValue(section, key, value) {
     // link_url allowlist — lives in the pure module, so a `javascript:` href or
     // an over-long answer can never be stored and served to every visitor.
     return validateFaq(value);
+  }
+  if (kind === 'promo') {
+    // The home-page "new game" BLOCK. Same posture as 'faq': the pure module owns
+    // the shape, so a `javascript:` button href, an off-site photo URL or a
+    // switched-on-but-empty section can never be stored and rendered for every
+    // visitor.
+    return validatePromo(value);
   }
   // Generic fallback: an object default requires an object override.
   if (isPlainObject(defaultFor(section, key)) && !isPlainObject(value)) {

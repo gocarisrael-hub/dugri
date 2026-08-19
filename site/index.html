@@ -556,6 +556,60 @@
         margin-top: 22px;
       }
 
+      /* ============ NEW GAME (#newgame) ============
+         The owner-managed launch section (js/promo.js, fed by the public
+         /api/promo). It does not exist in this markup on purpose: the whole
+         section is built and inserted next to the designs rail only once the
+         owner has switched it on, so an unlaunched game's name never sits in the
+         page source. What lives here is only what it looks like when it arrives.
+         Everything else it needs — .wrap, .sec-title, .btn, .alt, and the
+         `section + section` hairline — is already shared by the page. */
+      .promo-head .promo-badge {
+        display: inline-block;
+        font-family: var(--display);
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0.14em;
+        background: var(--accent);
+        color: #141414;
+        padding: 4px 12px;
+        margin-bottom: 14px;
+      }
+      .promo-photos {
+        display: grid;
+        /* Columns follow the photo COUNT (set by js/promo.js as data-count), so
+           two photos are a 2-up and one is a single wide picture. A fixed
+           3-column grid would leave a hole wherever the owner had less to show. */
+        grid-template-columns: 1fr;
+        gap: 14px;
+        margin: 0 auto 28px;
+        max-width: 900px;
+      }
+      .promo-photos img {
+        display: block;
+        width: 100%;
+        /* A fixed ratio keeps the row even however the owner's photos were shot —
+           three portrait phone snaps next to a landscape one would otherwise step
+           the row up and down. */
+        aspect-ratio: 4 / 3;
+        object-fit: cover;
+        border-radius: var(--radius);
+      }
+      @media (min-width: 720px) {
+        .promo-photos[data-count='2'] {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .promo-photos[data-count='3'] {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      .promo-cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        justify-content: center;
+      }
+
       /* ============ SOCIAL PROOF (#reviews) ============ */
       .proof-head .stars {
         color: #f5b301;
@@ -1134,6 +1188,7 @@
       import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
       import { fetchPricing, applySale, restampSale, PRICING_FALLBACK } from './js/pricing.js';
       import { initFaq } from './js/faq.js';
+      import { initPromo } from './js/promo.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
       import { defer, watchTrack } from './js/lazy-media.js';
 
@@ -1151,6 +1206,12 @@
           arrows: false,
         });
       }
+
+      // ---- NEW GAME: the owner-managed launch section, if she switched one on ----
+      // Fire-and-forget and fail-soft: it inserts itself next to the designs rail
+      // when /api/promo has a block to show, and resolves to null otherwise. The
+      // rest of the page never waits on it.
+      initPromo();
 
       // ---- PRODUCTS RAIL: one card per public design → product.html?design=<id> ----
       // Owner-editable store price. Seeded with the launch default so the rail is

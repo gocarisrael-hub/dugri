@@ -24,6 +24,7 @@ const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
 const reminders = require('./reminders');
 const faq = require('./faq');
+const promo = require('./promo');
 const wordlists = require('./wordlists');
 const wordlistOptions = require('./wordlist-options');
 const unsubscribe = require('./unsubscribe');
@@ -5164,6 +5165,45 @@ app.put('/api/admin/content/photos', (req, res) => {
   res.json({ ok: true, imgs: next });
 });
 
+// Admin: upload ONE photo for the home-page "new game" block and return the path
+// it was stored at. Same multipart shape and magic-byte typing as the content
+// routes above, and the same content-addressed store — so a photo already on the
+// volume de-dupes to the file that is already there.
+//
+// Unlike the content routes this attaches the file to NOTHING: the admin page
+// puts the returned path into the block and saves the block through
+// /api/admin/settings, which is what makes the whole section save atomically.
+// The cost of that is an upload the owner never saves leaves an unreferenced
+// file behind; the client shrinks images before sending, so a stray is a few tens
+// of KB, and deleting it here could just as easily delete a file the SAVED block
+// (or a content override sharing the same bytes) still points at.
+app.post(
+  '/api/admin/promo/image',
+  // Authenticate (on ?key=, available before the body) BEFORE buffering, so an
+  // unauthenticated client can't force large allocations.
+  (req, res, next) => {
+    if (!requireAdmin(req, res)) return;
+    next();
+  },
+  express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
+  (req, res) => {
+    const boundary = templates.boundaryFromContentType(req.headers['content-type']);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      return res.status(400).json({ error: 'expected multipart/form-data upload' });
+    }
+    const { files } = templates.parseMultipart(req.body, boundary);
+    const file = files.file || files.image || Object.values(files)[0];
+    if (!file || !Buffer.isBuffer(file.data)) {
+      return res.status(400).json({ error: 'no image file part' });
+    }
+    try {
+      res.json({ ok: true, img: content.saveImageBytes(file.data).path });
+    } catch (e) {
+      res.status(400).json({ error: String((e && e.message) || e) });
+    }
+  }
+);
+
 // --- Per-design GALLERY (server/design-images.js) ----------------------------
 // The owner CURATES each design's gallery WITHOUT a deploy — same self-serve
 // pattern as the content editor: REPLACE a base render (store|front|back|photo|board),
@@ -6107,6 +6147,19 @@ app.get('/api/pricing', (req, res) => {
 // handle. Writes stay behind the admin key via /api/admin/settings.
 app.get('/api/faq', (req, res) => {
   res.json({ items: faq.publicFaq(settings.get('faq', 'list')) });
+});
+
+// Public, UNAUTHENTICATED: the home-page "new game" block the owner edits in
+// admin-newgame.html. Same posture as /api/faq — a WHITELISTED projection, never
+// the raw stored object.
+//
+// The switch is enforced HERE, not only in the renderer: while the section is off
+// this answers `{ promo: null }` and nothing else. An unlaunched game's name,
+// copy and photos would otherwise sit in an unauthenticated response for anyone
+// who opened devtools, days before the owner meant to announce it — "off" has to
+// mean "not on the wire", not "not drawn".
+app.get('/api/promo', (req, res) => {
+  res.json({ promo: promo.publicPromo(settings.get('promo', 'block')) });
 });
 
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
