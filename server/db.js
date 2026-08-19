@@ -217,7 +217,47 @@ function effectivePricing() {
     // Charged once per order, not per copy (see deliveryFee). The checkout needs
     // it to show the same arithmetic the server is about to perform.
     delivery_fee: deliveryFee(),
+    // Where delivery takes longer than usual, and how much longer. Parsed HERE
+    // rather than in the browser so the "one locality per line" rule has exactly
+    // one implementation; the checkout receives a clean array and renders it.
+    delivery_exceptions: deliveryExceptions(),
   };
+}
+
+// The out-of-the-way localities and their delivery time, as the checkout needs
+// them: { towns: string[], eta_days: number }.
+//
+// An EMPTY towns array is the normal state and means "print nothing" — the note
+// only exists once the owner has filled the list. Every failure mode lands
+// there too: a missing key, a corrupt override, a non-string value. That
+// direction is deliberate. Showing no note understates nothing (the standard
+// delivery estimate beside it still stands), whereas a half-parsed list would
+// print a longer wait next to towns that don't belong to it, which is a promise
+// made to the wrong buyer.
+function deliveryExceptions() {
+  let towns = [];
+  let etaDays = 11;
+  try {
+    const raw = settings.get('pricing', 'remote_towns');
+    if (typeof raw === 'string') {
+      towns = raw
+        .split('\n')
+        .map((t) => t.trim())
+        .filter(Boolean);
+      // De-duplicate, preserving the owner's order: she edits this by hand and a
+      // town pasted twice is a typo, not an instruction.
+      towns = towns.filter((t, i) => towns.indexOf(t) === i);
+    }
+  } catch {
+    /* settings unavailable — no note rather than a guessed one */
+  }
+  try {
+    const d = settings.get('pricing', 'remote_eta_days');
+    if (Number.isInteger(d) && d > 0) etaDays = d;
+  } catch {
+    /* keep the default */
+  }
+  return { towns, eta_days: etaDays };
 }
 
 // --- copies -------------------------------------------------------------------
@@ -2492,6 +2532,7 @@ module.exports.orderRef = orderRef;
 // total, exposed for the routes (which must never trust a client's number) and
 // for unit tests.
 module.exports.deliveryFee = deliveryFee;
+module.exports.deliveryExceptions = deliveryExceptions;
 module.exports.sanitizeQuantity = sanitizeQuantity;
 module.exports.orderTotal = orderTotal;
 module.exports.MAX_COPIES = MAX_COPIES;

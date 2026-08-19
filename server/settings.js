@@ -29,6 +29,14 @@ const { DEFAULT_REMINDERS, validateReminders } = require('./reminders');
 // Same arrangement for the home-page FAQ list: server/faq.js is pure and
 // dependency-free, so settings -> faq adds no cycle.
 const { DEFAULT_FAQ, validateFaq } = require('./faq');
+
+// Caps for `kind: 'lines'` (the multi-line list fields — currently the
+// remote-delivery localities). Generous for a real list, bounded so the public
+// endpoint that carries it can't be grown without limit.
+const MAX_LINES = 400;
+const MAX_LINES_CHARS = 20000;
+// C0/C1 controls EXCEPT tab / newline / carriage return.
+const LINES_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
 // Same arrangement again for the buyer-facing word-pool menu: the module is pure
 // and owns the shape, the store owns persistence.
 const { DEFAULT_OPTIONS, validateOptions } = require('./wordlist-options');
@@ -575,6 +583,19 @@ const REGISTRY = {
     // which is the escape hatch if the gate ever hurts conversion.
     free_word_limit: { kind: 'count', min: 1, tokens: [], default: 20 },
     lock_after_free_limit: { kind: 'flag', tokens: [], default: true },
+    // Localities the courier treats as out-of-the-way, and how long delivery
+    // takes to them. The checkout prints them in a collapsed "יישובים חריגים"
+    // note under the delivery option, so a buyer in one of them learns the real
+    // wait BEFORE paying rather than from an apology afterwards.
+    //
+    // EMPTY by default, and that is the whole safety story: nothing renders
+    // until the owner fills the list, so deploying this promises nobody
+    // anything. `kind: 'lines'` is one locality per line (see validateValue) —
+    // the shape a person actually types, not JSON.
+    remote_towns: { kind: 'lines', tokens: [], default: '' },
+    // Business days to those localities. min 1 (a 0-day exception is not an
+    // exception), max 90 (a slip of the keypad must not promise a quarter-year).
+    remote_eta_days: { kind: 'count', min: 1, max: 90, tokens: [], default: 11 },
   },
   // --- Owner-managed reminder list (email + WhatsApp) -----------------------
   // A flexible replacement for the fixed wa daily/quiet triggers: ONE key holding
@@ -885,6 +906,22 @@ function validateValue(section, key, value) {
     if (typeof value !== 'string' || !choices.includes(value)) {
       return 'value must be one of: ' + choices.join(', ');
     }
+    return null;
+  }
+  if (kind === 'lines') {
+    // A plain multi-line string — one item per line — capped so a runaway paste
+    // can't grow the store and the UNAUTHENTICATED /api/pricing response it is
+    // served in. Control characters are rejected (newline and carriage return
+    // excepted: they are how the field expresses "next item"), because nothing
+    // else in that range is visible in a textarea but several are meaningful to
+    // a parser downstream.
+    if (typeof value !== 'string') return 'value must be a string';
+    if (value.length > MAX_LINES_CHARS) {
+      return 'value must be at most ' + MAX_LINES_CHARS + ' characters';
+    }
+    if (value.split('\n').length > MAX_LINES)
+      return 'value must be at most ' + MAX_LINES + ' lines';
+    if (LINES_CONTROL_RE.test(value)) return 'value must not contain control characters';
     return null;
   }
   if (kind === 'reminders') {

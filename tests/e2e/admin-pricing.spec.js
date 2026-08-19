@@ -223,3 +223,67 @@ test.describe('admin pricing editor', () => {
     await expect(page.locator('#nav a[data-page="admin-images.html"]')).toHaveCount(1);
   });
 });
+
+// ---- the remote-locality list ----------------------------------------------
+// The owner's list of towns where delivery takes longer. It is the one pricing
+// field that is FREE TEXT, and the one whose empty state is meaningful: an empty
+// box is how the note is removed from the site, so "saves nothing" has to be a
+// supported save rather than a validation error.
+test.describe('admin pricing editor — יישובים חריגים', () => {
+  const ONLY_HERE = 'Desktop Chrome';
+
+  test('typing a list saves it, and the checkout endpoint serves it parsed', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== ONLY_HERE,
+      'writes shared pricing state — one project only'
+    );
+    await page.goto(`/admin-pricing.html?key=${KEY}`);
+    const card = page.locator('[data-card="remote"]');
+    await expect(card).toBeVisible();
+    // Ships empty — the note is off until she fills it in.
+    await expect(card.locator('[data-area="remote_towns"]')).toHaveValue('');
+
+    await card.locator('[data-area="remote_towns"]').fill('אילת\nמצפה רמון\n\n  אילת  ');
+    await card.locator('[data-price="remote_eta_days"]').fill('12');
+    await card.locator('[data-save]').click();
+    await expect(card.locator('.status')).toHaveText(/נשמר/);
+
+    // What the buyer's checkout will actually receive: split per line, trimmed,
+    // de-duplicated, with the blank line gone.
+    const pricing = await (await request.get('/api/pricing')).json();
+    expect(pricing.delivery_exceptions).toEqual({
+      towns: ['אילת', 'מצפה רמון'],
+      eta_days: 12,
+    });
+
+    await resetKey(request, 'remote_towns');
+    await resetKey(request, 'remote_eta_days');
+  });
+
+  test('emptying the box is a real save — it is how the note is removed', async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== ONLY_HERE,
+      'writes shared pricing state — one project only'
+    );
+    await page.goto(`/admin-pricing.html?key=${KEY}`);
+    const card = page.locator('[data-card="remote"]');
+    await card.locator('[data-area="remote_towns"]').fill('אילת');
+    await card.locator('[data-save]').click();
+    await expect(card.locator('.status')).toHaveText(/נשמר/);
+
+    await page.locator('[data-card="remote"] [data-area="remote_towns"]').fill('');
+    await page.locator('[data-card="remote"] [data-save]').click();
+    await expect(page.locator('[data-card="remote"] .status')).toHaveText(/נשמר/);
+
+    const pricing = await (await request.get('/api/pricing')).json();
+    expect(pricing.delivery_exceptions.towns).toEqual([]);
+
+    await resetKey(request, 'remote_towns');
+  });
+});

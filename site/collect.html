@@ -1625,6 +1625,60 @@
         text-align: center;
         margin-top: 12px;
       }
+      /* "יישובים חריגים" — the collapsed exceptions note. It appears in BOTH
+         places a buyer asks for delivery: the add-on tick in the checkout, and
+         the card that adds delivery to an order already paid for. Both are
+         moments where a delivery TIME is promised ("מגיע תוך כ-7 ימי עסקים"), so
+         both have to carry the exception to it.
+         Collapsed by default and deliberately plain — no wash, no border box. It
+         is a footnote to the promise above it; a boxed callout would read as a
+         warning about delivery rather than a detail of it. */
+      .odd-note {
+        margin-top: 8px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      /* Indented to the same rail as the add-on it annotates (.pay-addon carries
+         margin-inline-start: 18px), so it reads as attached to that block rather
+         than to the option list above it. The add-delivery card overrides this
+         back to 0 — there is nothing to line up with in there. */
+      .pay-opts > .odd-note {
+        margin-inline-start: 18px;
+      }
+      .odd-note > summary {
+        cursor: pointer;
+        list-style: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: 700;
+        text-decoration: underline;
+        text-underline-offset: 2px;
+      }
+      .odd-note > summary::-webkit-details-marker {
+        display: none;
+      }
+      .odd-note > summary::after {
+        content: '▾';
+        font-size: 11px;
+        text-decoration: none;
+        transition: transform 0.2s ease;
+      }
+      .odd-note[open] > summary::after {
+        transform: rotate(180deg);
+      }
+      .odd-note p {
+        margin: 6px 0 0;
+        line-height: 1.55;
+      }
+      .odd-note .odd-towns {
+        color: var(--ink);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .odd-note > summary::after {
+          transition: none;
+        }
+      }
       /* small trust line above the pay button (secure + delivery expectation) */
       .pay-trust {
         text-align: center;
@@ -2121,6 +2175,14 @@
             </div>
           </div>
         </div>
+        <!-- The same note on the OTHER delivery path. This card is bought
+             separately, often days after the game itself, so a buyer who never
+             ticked the checkout add-on has never seen the exception. -->
+        <details class="odd-note" data-testid="remote-note" data-where="ship-add" hidden>
+          <summary data-edit="collect-remote-summary-ship">יישובים חריגים</summary>
+          <p class="odd-eta" data-role="eta"></p>
+          <p class="odd-towns" data-role="towns"></p>
+        </details>
         <div class="sheet-err hidden" id="shipAddErr" role="alert" data-testid="ship-add-err"></div>
         <button
           type="button"
@@ -2513,6 +2575,18 @@
               >
             </span>
           </label>
+          <!-- OUTSIDE the label above, not inside it. .pay-addon IS a <label>, and
+               a click anywhere inside a label is forwarded to its control — a
+               <summary> nested in there would TICK delivery on the way to opening
+               the note, and the buyer would find the order changed by reading
+               about it. As a sibling it toggles cleanly and still reads as that
+               tick's footnote.
+               Hidden until the owner has filled the list (paintRemoteNotes). -->
+          <details class="odd-note" data-testid="remote-note" data-where="ship-toggle" hidden>
+            <summary data-edit="collect-remote-summary">יישובים חריגים</summary>
+            <p class="odd-eta" data-role="eta"></p>
+            <p class="odd-towns" data-role="towns"></p>
+          </details>
         </div>
 
         <!-- Shown instead of the option list when prices can't be loaded (never
@@ -5238,6 +5312,39 @@
             .forEach((r) => (r.checked = false));
         }
       }
+      // Paint the "יישובים חריגים" note wherever it appears — the checkout add-on
+      // and the add-delivery card. ONE function for both, because two notes that
+      // could disagree about which towns are slow is worse than one note.
+      //
+      // Stays HIDDEN unless the owner has actually listed localities AND a
+      // positive number of days: an empty list means she has not set this up, and
+      // a note that announces an exception and then lists nothing reads as a
+      // warning with the detail withheld. No note leaves the standard estimate
+      // beside it standing on its own, which is the truthful state.
+      //
+      // textContent, never innerHTML — these town names are owner input arriving
+      // over a public endpoint, and a place name is not a place for markup.
+      function paintRemoteNotes(exceptions) {
+        const ex = exceptions || {};
+        const towns = Array.isArray(ex.towns) ? ex.towns : [];
+        const days = Number.isInteger(ex.eta_days) && ex.eta_days > 0 ? ex.eta_days : 0;
+        const show = towns.length > 0 && days > 0;
+        document.querySelectorAll('[data-testid="remote-note"]').forEach((el) => {
+          el.hidden = !show;
+          if (!show) {
+            // Collapse as well as hide: if the list is later emptied while the
+            // page is open, an unhidden-again note must not spring open with
+            // whatever it said last.
+            el.open = false;
+            return;
+          }
+          const eta = el.querySelector('[data-role="eta"]');
+          const list = el.querySelector('[data-role="towns"]');
+          if (eta) eta.textContent = 'ביישובים הבאים זמן האספקה הוא עד ' + days + ' ימי עסקים:';
+          if (list) list.textContent = towns.join(' · ');
+        });
+      }
+
       function setupPayPanel() {
         const payPanel = $('#payPanel');
         // `block` differs by caller: the reminder sits just above the panel, so
@@ -5725,6 +5832,10 @@
             // switch like every other surface (css/tokens.css). Called on every
             // (re)load so a retry after a failed fetch paints the right state.
             applySale(p.sale);
+            // The remote-locality note rides the same payload. On a FAILED fetch
+            // the helper hands back an empty list, so the note disappears rather
+            // than promising a delivery window we could not read.
+            paintRemoteNotes(p.delivery_exceptions);
           });
         }
         const retryBtn = priceErr && priceErr.querySelector('[data-role="retry"]');

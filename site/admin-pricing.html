@@ -157,7 +157,22 @@
         border-radius: 8px;
         padding: 10px 12px;
       }
-      input:focus {
+      textarea {
+        display: block;
+        width: 100%;
+        min-height: 150px;
+        font: inherit;
+        font-size: 15px;
+        line-height: 1.7;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 10px 12px;
+        resize: vertical;
+      }
+      input:focus,
+      textarea:focus {
         outline: none;
         border-color: var(--pink);
       }
@@ -275,6 +290,10 @@
         <div class="section-group">
           <p class="section-title">משלוח</p>
           <div id="shippingCards"></div>
+        </div>
+        <div class="section-group">
+          <p class="section-title">יישובים חריגים</p>
+          <div id="remoteCards"></div>
         </div>
         <div class="section-group">
           <p class="section-title">מכסת מילים חינם</p>
@@ -530,11 +549,56 @@
         );
       }
 
+      // --- remote localities card (the slow-delivery list + its ETA) -------------
+      // One locality per line, exactly as it is typed — the checkout splits on the
+      // newline and prints them under a collapsed "יישובים חריגים" note in both
+      // places a buyer asks for delivery.
+      //
+      // Leaving the box EMPTY removes the note from the site entirely. That is the
+      // shipped state and the escape hatch: there is no separate on/off switch to
+      // forget, because a list of no towns and a note about no towns are the same
+      // thing.
+      function remoteCardHtml(eff) {
+        const towns = typeof eff.remote_towns === 'string' ? eff.remote_towns : '';
+        const count = towns.split('\n').filter((t) => t.trim()).length;
+        return (
+          '<div class="card' +
+          (count ? '' : ' off') +
+          '" data-card="remote" data-keys="remote_towns,remote_eta_days">' +
+          '<div class="card-head"><h3 class="card-title">יישובים עם זמן אספקה ארוך</h3>' +
+          '<span class="card-id">pricing.remote_towns</span></div>' +
+          '<label class="fld">רשימת היישובים (שורה לכל יישוב)</label>' +
+          '<textarea data-area="remote_towns" rows="8" ' +
+          'placeholder="אילת&#10;מצפה רמון&#10;ראש פינה">' +
+          esc(towns) +
+          '</textarea>' +
+          priceFieldHtml(
+            'remote_eta_days',
+            'זמן אספקה ליישובים האלה',
+            eff.remote_eta_days,
+            'ימי עסקים',
+            1
+          ) +
+          '<p class="hint">' +
+          (count
+            ? '<b>' + esc(count) + '</b> יישובים ברשימה. '
+            : '<b>הרשימה ריקה</b> — ההערה לא מוצגת כרגע באתר. ') +
+          'ההערה מופיעה מקופלת בשני המקומות שבהם מבקשים משלוח: ליד “שלחו לי עד הבית” בקופה, ' +
+          'וגם בכרטיס שמוסיף משלוח להזמנה ששולמה. כדי להסיר אותה לגמרי — רוקנו את התיבה.</p>' +
+          '<div class="actions">' +
+          '<button class="primary" data-save type="button">שמירה</button>' +
+          '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
+          '<span class="meta status" role="status" aria-live="polite"></span>' +
+          '</div></div>'
+        );
+      }
+
       function render() {
         const eff = state.effective.pricing;
         qs('storeCards').innerHTML = storeCardHtml(eff) + saleCardHtml(eff);
         qs('versionCards').innerHTML = VERSIONS.map((v) => versionCardHtml(v, eff)).join('');
         qs('shippingCards').innerHTML = shippingCardHtml(eff);
+        qs('remoteCards').innerHTML = remoteCardHtml(eff);
         qs('quotaCards').innerHTML = quotaCardHtml(eff);
       }
 
@@ -558,7 +622,9 @@
                 ? quotaCardHtml(eff)
                 : id === 'shipping'
                   ? shippingCardHtml(eff)
-                  : versionCardHtml(byId(id), eff);
+                  : id === 'remote'
+                    ? remoteCardHtml(eff)
+                    : versionCardHtml(byId(id), eff);
         card.outerHTML = html;
       }
       function byId(id) {
@@ -586,6 +652,17 @@
         // an empty banner is how the owner drops the strip while keeping the sale.
         for (const inp of card.querySelectorAll('[data-text]')) {
           values[inp.dataset.text] = inp.value.trim();
+        }
+        // Multi-line list (the remote localities). Only the ends are trimmed —
+        // the newlines BETWEEN entries are the data. Blank lines are dropped here
+        // rather than stored, so the count in the hint matches what the site
+        // shows. An empty box is a valid save: it is how the note is removed.
+        for (const ta of card.querySelectorAll('[data-area]')) {
+          values[ta.dataset.area] = ta.value
+            .split('\n')
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .join('\n');
         }
         return { values };
       }

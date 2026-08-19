@@ -84,7 +84,10 @@ async function withCardEnabled(page) {
 // conditional and this helper works on both.
 async function openPayPanel(page) {
   await showPayTab(page);
-  await page.locator('#payPanel summary').click();
+  // `> summary` (a DIRECT child), not a descendant: the panel also contains the
+  // collapsed "יישובים חריגים" note, which carries a <summary> of its own, so a
+  // bare `#payPanel summary` matches two elements and fails strict mode.
+  await page.locator('#payPanel > summary').click();
 }
 
 // WAIT for the tab, never just look: the strip appears when the owner's state
@@ -561,7 +564,7 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   await expect(panel).toBeVisible();
   // Collapsed by default: the inner options are hidden behind one button.
   await expect(page.locator('#payOpts')).toBeHidden();
-  await expect(page.locator('#payPanel summary')).toContainText('שלמו וקבלו את המשחק');
+  await expect(page.locator('#payPanel > summary')).toContainText('שלמו וקבלו את המשחק');
   // Click the summary → options reveal; click again → collapse.
   await openPayPanel(page);
   await expect(page.locator('#payOpts')).toBeVisible();
