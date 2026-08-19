@@ -351,9 +351,11 @@ test.describe('product detail page', () => {
       expect(buyBox.y, `${id}: button below the price`).toBeGreaterThan(priceBox.y);
       expect(buyBox.y, `${id}: button above the first section`).toBeLessThan(firstSecBox.y);
 
-      // The launch/delivery note travelled with the button and still carries its
-      // per-design override key.
-      const noteEl = page.locator('[data-edit-pd="buy-note"]');
+      // The delivery note travelled with the button and still carries a
+      // per-design override key. It is the ALWAYS-SHOWN half now: the launch
+      // phrase beside it is its own element and leaves with the sale switch
+      // (see sale-switch.spec.js).
+      const noteEl = page.locator('[data-edit-pd="buy-note-rest"]');
       await expect(noteEl).toHaveCount(1);
       await expect(noteEl).toContainText('מוכן תוך 3 ימי עסקים');
       const noteBox = await noteEl.boundingBox();

@@ -39,7 +39,11 @@ const PD_FIELDS = [
   'inside-3',
   'inside-4',
   'buy-cta',
-  'buy-note',
+  // The buy note is TWO fields now: the launch phrase (which the sale switch can
+  // take away) and the standing facts that stay either way. The old single
+  // `buy-note` key is retired — see the note in product.html.
+  'buy-note-sale',
+  'buy-note-rest',
   'related-heading',
   'related-sub',
 ];
