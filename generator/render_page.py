@@ -4375,10 +4375,22 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
     # AFTER the nudge, because the nudge is what decides which paper the box
     # actually covers on this front.
     tbox = title_box_clear_of(tbox, obstacles)
+    # THE CAP, and WHICH cap. A pinned size is a ceiling the box may still pull
+    # down, and a template's two title faces do not share one: the design's own
+    # face was measured against the design's own language, and the SECOND face —
+    # reached only when the buyer writes in the other language
+    # (``title_font_for``) — has its own proportions, so one number cannot suit
+    # both. ``size_alt`` is that second number; unset, the alt-language title
+    # takes the same chain it always did.
+    cap = fixed_size if fixed_size is not None else ts.get("size")
+    alt_name = os.path.basename(str(cfg.get("title_font_alt") or "").strip())
+    if (alt_name and os.path.basename(str(title_font)) == alt_name
+            and ts.get("size_alt") is not None):
+        cap = ts["size_alt"]
     return title_block(tbox, title_lines, ts["fill"], ts["outline"], title_font,
                        ts["outline_w"], ts["arch"], ts["shadow"],
                        rtl=title_is_rtl(cfg),
-                       fixed_size=fixed_size if fixed_size is not None else ts.get("size"),
+                       fixed_size=cap,
                        align=align or ts.get("align", "center"),
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
