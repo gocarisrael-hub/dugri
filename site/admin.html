@@ -3002,6 +3002,64 @@
             showPdf(prod.press);
           }
 
+          // "בטל הפקה" — take a produced order back OUT of the print queue.
+          //
+          // Only for a produced order: an order whose last run ERRORED never left
+          // "נסגרו — להפקה" in the first place, so there is nothing to undo, and a
+          // button offering it would be a button that changes no stage.
+          //
+          // GATED ON THE STAMPS, like the two stamp toggles are on each other: once
+          // the deck has gone to Galor, un-producing it only makes this table
+          // disagree with the world. Disabled rather than hidden, and the reason is
+          // in the label's title AND on the row — the owner works this table from a
+          // phone, where a tooltip needs a hover she cannot give it. The server
+          // refuses it too (409), so a tab left open overnight cannot slip past.
+          if (prod && prod.state === 'generated') {
+            const order = c.order || {};
+            const isSent = !!order.sent_to_print_at;
+            const isReady = !!order.ready_at;
+            const undoBtn = document.createElement('button');
+            undoBtn.className = 'act';
+            undoBtn.dataset.testid = 'undo-production';
+            undoBtn.dataset.collection = c.id;
+            undoBtn.textContent = 'בטל הפקה';
+            if (isSent || isReady) {
+              undoBtn.disabled = true;
+              undoBtn.title = isReady
+                ? 'ההזמנה סומנה כמוכנה — לביטול ההפקה בטלו קודם את "מוכן" ואת "בדפוס"'
+                : 'ההזמנה נשלחה לדפוס — לביטול ההפקה בטלו קודם את "בדפוס"';
+            } else {
+              undoBtn.title = 'מוחק את הקובץ שהופק ומחזיר את ההזמנה לרשימת "נסגרו — להפקה"';
+            }
+            undoBtn.onclick = async () => {
+              // Names the two consequences that are not obvious from the button:
+              // the produced file is DELETED, and the order moves back a step.
+              if (
+                !confirm(
+                  'לבטל את ההפקה של ' +
+                    (c.honoree_name || 'ההזמנה') +
+                    '?\nהקובץ שהופק יימחק, וההזמנה תחזור לרשימת "נסגרו — להפקה".'
+                )
+              )
+                return;
+              undoBtn.disabled = true;
+              const r = await adminActionResult(
+                'DELETE',
+                '/api/admin/collections/' + c.id + '/production'
+              );
+              if (r.ok) load();
+              else {
+                undoBtn.disabled = false;
+                // adminActionResult hands back { ok, data } — the server's
+                // reason lives one level in.
+                const d = r.data || {};
+                alert('לא הצלחנו לבטל את ההפקה: ' + (d.detail || d.error || ''));
+              }
+            };
+            td.appendChild(document.createTextNode(' '));
+            td.appendChild(undoBtn);
+          }
+
           // Cancel / restore (soft) + hard delete.
           if (c.cancelled) {
             const badge = document.createElement('span');
