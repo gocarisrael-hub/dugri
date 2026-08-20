@@ -173,7 +173,7 @@ test.describe('store grid (products.html)', () => {
     await page.goto('/products.html');
     const wa = page.locator('footer #waLink');
     await expect(wa).toHaveAttribute('href', /^https:\/\/wa\.me\/\d+$/);
-    await expect(page.locator('footer a[href="tel:+972546577715"]')).toHaveCount(1);
+    await expect(page.locator('footer a[href="tel:+972552441334"]')).toHaveCount(1);
     await expect(page.locator('footer a[href="mailto:dugri.israel@gmail.com"]')).toHaveCount(1);
     await expect(page.locator('footer #igLink')).toHaveAttribute(
       'href',

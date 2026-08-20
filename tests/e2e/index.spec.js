@@ -242,10 +242,10 @@ test.describe('real contact info', () => {
     const footer = page.locator('footer');
     const footerText = await footer.innerText();
     expect(footerText).toContain('dugri.israel@gmail.com');
-    expect(footerText).toContain('0546577715');
+    expect(footerText).toContain('0552441334');
 
     await expect(footer.locator('a[href="mailto:dugri.israel@gmail.com"]')).toHaveCount(1);
-    await expect(footer.locator('a[href="tel:+972546577715"]')).toHaveCount(1);
+    await expect(footer.locator('a[href="tel:+972552441334"]')).toHaveCount(1);
   });
 });
 

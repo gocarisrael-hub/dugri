@@ -1987,7 +1987,7 @@ test('the confirmation page shows the order number, what was ordered and a way t
   const wa = page.locator('#waBtn');
   await expect(wa).toBeVisible();
   const href = await wa.getAttribute('href');
-  expect(href).toContain('wa.me/972546577715');
+  expect(href).toContain('wa.me/972552441334');
   expect(decodeURIComponent(href)).toContain(ref);
 
   // The buyer is thanked for the order...
