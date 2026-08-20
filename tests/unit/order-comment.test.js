@@ -6,10 +6,15 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-// THE NOTE SHE LEAVES WITH HER ORDER. Everything else the wizard collects ends up
-// printed on something; this does not. It is where a buyer says the thing that
-// has no field of its own — "זו הפתעה, אל תתקשרו אליה", "צריך עד יום חמישי" —
-// and before this she had to find the WhatsApp to say it.
+// THE NOTE ON AN ORDER. It began as a box in the wizard; the owner has since
+// removed that box, so no customer types one any more (see
+// tests/e2e/order-comment.spec.js, which now guards its absence). What remains is
+// the OWNER's own field: where she records what a customer told her on WhatsApp,
+// and where the notes existing orders already carry keep living.
+//
+// The create route still ACCEPTS a comment, which is what these tests use to seed
+// one — cheaper than driving the admin dialog, and it keeps the storage rules
+// under test whichever way a comment arrives.
 //
 // Covered here: it is stored as typed (sanitized), it survives to the admin
 // order, admin can edit it, it reaches the owner's order email, and it NEVER
