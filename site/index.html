@@ -556,6 +556,50 @@
         margin-top: 22px;
       }
 
+      /* ============ FOR BUSINESSES (#business) ============
+         The B2B enquiry band. Until now "לעסקים" was one line in the footer
+         (#497) — enough to click, not enough to decide from: a welfare manager
+         landing here could not tell whether we do her use case at all. This is
+         the same offer with room to say what it is.
+         It reuses .alt/.wrap/.sec-title/.btn and adds only the three-up. */
+      .b2b-trio {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 26px;
+        max-width: 880px;
+        margin: 0 auto 34px;
+        text-align: right;
+      }
+      @media (min-width: 760px) {
+        .b2b-trio {
+          grid-template-columns: repeat(3, 1fr);
+        }
+      }
+      /* A rule ON TOP, not a card: the page's own device for a group of equals
+         (see the deck rail), and it keeps the band from reading as three
+         products for sale. */
+      .b2b-trio > div {
+        border-top: 2px solid var(--ink);
+        padding-top: 14px;
+      }
+      .b2b-trio b {
+        display: block;
+        font-family: var(--display);
+        font-weight: 500;
+        font-size: 17px;
+        margin-bottom: 6px;
+      }
+      .b2b-trio span {
+        color: var(--muted);
+        font-size: 15.5px;
+        line-height: 1.6;
+      }
+      .b2b-terms {
+        color: var(--muted);
+        font-size: 14.5px;
+        margin-top: 16px;
+      }
+
       /* ============ NEW GAME (#newgame) ============
          The owner-managed launch section (js/promo.js, fed by the public
          /api/promo). It does not exist in this markup on purpose: the whole
@@ -1721,6 +1765,57 @@
             >יש שאלה? דברו איתנו בוואטסאפ</a
           >
         </div>
+      </div>
+    </section>
+
+    <!-- The business band. Every string carries data-edit, so the offer, the
+         three uses and the button text are the owner's to rewrite from the site
+         itself (js/editor.js) without a deploy — the same rule as the rest of
+         the page. The WhatsApp href is a literal with its own pre-filled message
+         (like the shop's b2b line): a business enquiry should not arrive looking
+         like every other "יש לי שאלה". -->
+    <section class="b2b alt" id="business" data-reveal>
+      <div class="wrap">
+        <div class="sec-title">
+          <h2 data-edit="index-b2b-heading">דוגרי לעסקים</h2>
+          <p data-edit="index-b2b-sub">
+            אותו משחק שמפוצץ את החדר - הפעם עם הבדיחות הפנימיות של הצוות, השמות מהמשרד והרגעים שכולם
+            זוכרים.
+          </p>
+        </div>
+        <div class="b2b-trio">
+          <div>
+            <b data-edit="index-b2b-1-title">מתנה לצוות</b>
+            <span data-edit="index-b2b-1-body"
+              >משחק לכל עובד, מהמילים של המשרד. גם לסוף שנה וגם לפרישה.</span
+            >
+          </div>
+          <div>
+            <b data-edit="index-b2b-2-title">כנסים וגיבושים</b>
+            <span data-edit="index-b2b-2-body"
+              >שובר קרח שעובד גם בקבוצה של ארבעים, בלי מנחה ובלי הסברים.</span
+            >
+          </div>
+          <div>
+            <b data-edit="index-b2b-3-title">משחק ממותג</b>
+            <span data-edit="index-b2b-3-body">הלוגו שלכם על גב הקלף ועל הקופסה, בעיצוב שלנו.</span>
+          </div>
+        </div>
+        <div class="hero-cta" style="justify-content: center">
+          <a
+            class="btn wa"
+            href="https://wa.me/972546577715?text=%D7%94%D7%99%D7%99%21%20%D7%90%D7%A0%D7%97%D7%A0%D7%95%20%D7%9E%D7%A2%D7%95%D7%A0%D7%99%D7%99%D7%A0%D7%99%D7%9D%20%D7%91%D7%94%D7%96%D7%9E%D7%A0%D7%94%20%D7%9C%D7%A2%D7%A1%D7%A7%2F%D7%90%D7%99%D7%A8%D7%95%D7%A2%20%D7%92%D7%93%D7%95%D7%9C"
+            target="_blank"
+            rel="noopener"
+            data-testid="b2b-wa"
+            data-ga="contact_click"
+            data-ga-channel="whatsapp"
+            data-ga-where="b2b-band"
+            data-edit="index-b2b-cta"
+            >דברו איתנו בוואטסאפ</a
+          >
+        </div>
+        <p class="b2b-terms" style="text-align: center" data-edit="index-b2b-terms">חשבונית מס</p>
       </div>
     </section>
 
