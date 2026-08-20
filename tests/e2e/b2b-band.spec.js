@@ -1,0 +1,68 @@
+// The business band on the home page (#business).
+//
+// "לעסקים" used to be one line in the footer: enough to click, not enough to
+// decide from. What is under test is that the band SAYS what the offer is, that
+// its WhatsApp link arrives looking like a business enquiry rather than like
+// every other question, and that every word of it is the owner's to rewrite
+// from the site itself.
+import { test, expect } from '@playwright/test';
+
+test.beforeEach(async ({ page }) => {
+  await page.goto('/index.html');
+});
+
+test('the band names the three things a business orders', async ({ page }) => {
+  const band = page.locator('#business');
+  await band.scrollIntoViewIfNeeded();
+  await expect(band).toBeVisible();
+  await expect(band.getByRole('heading', { name: 'דוגרי לעסקים' })).toBeVisible();
+  for (const use of ['מתנה לצוות', 'כנסים וגיבושים', 'משחק ממותג']) {
+    await expect(band.getByText(use, { exact: true })).toBeVisible();
+  }
+  // The terms line answers the two questions a business asks before writing.
+  await expect(band).toContainText('חשבונית מס');
+  await expect(band).toContainText('10 יחידות');
+});
+
+test('its WhatsApp link carries a business message, not the general one', async ({ page }) => {
+  const cta = page.getByTestId('b2b-wa');
+  const href = await cta.getAttribute('href');
+  expect(href).toContain('wa.me/972546577715');
+  // The pre-filled text is percent-encoded Hebrew; decoding is what makes this
+  // assertion readable — and what catches a link that lost its message.
+  expect(decodeURIComponent(href)).toContain('הזמנה לעסק/אירוע גדול');
+  await expect(cta).toHaveAttribute('target', '_blank');
+  await expect(cta).toHaveAttribute('rel', /noopener/);
+});
+
+test('the click is counted, and counted as its own place', async ({ page }) => {
+  const cta = page.getByTestId('b2b-wa');
+  await expect(cta).toHaveAttribute('data-ga', 'contact_click');
+  await expect(cta).toHaveAttribute('data-ga-channel', 'whatsapp');
+  // Its own `where`, so the band can be judged against the footer line rather
+  // than lumped in with it.
+  await expect(cta).toHaveAttribute('data-ga-where', 'b2b-band');
+});
+
+test('every word of it is owner-editable', async ({ page }) => {
+  const band = page.locator('#business');
+  // Heading, sub, three titles, three bodies, the button and the terms line.
+  await expect(band.locator('[data-edit^="index-b2b-"]')).toHaveCount(10);
+});
+
+test('it sits between the closing CTA and the footer', async ({ page }) => {
+  // Last thing before the footer: a business reader has by then seen the whole
+  // consumer pitch, which is the argument the band leans on.
+  const order = await page.evaluate(() => {
+    const band = document.querySelector('#business');
+    const footer = document.querySelector('footer');
+    const final = document.querySelector('section.final');
+    return {
+      afterFinal: !!(
+        final && final.compareDocumentPosition(band) & Node.DOCUMENT_POSITION_FOLLOWING
+      ),
+      beforeFooter: !!(band.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING),
+    };
+  });
+  expect(order).toEqual({ afterFinal: true, beforeFooter: true });
+});
