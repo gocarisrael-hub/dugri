@@ -246,7 +246,7 @@ describe('words the quota refuses are held, not dropped', () => {
     expect(db.listHeldWords(c.id).map((w) => w.text)).toEqual(['שלוש']);
   });
 
-  it('dedupes a released word against one added by hand in the meantime', () => {
+  it('promotes a held word typed by hand instead of showing it in both places', () => {
     settings.set('pricing', 'free_word_limit', 1);
     const c = db.createCollection('שירה', { email: 'h5@example.com' });
     db.addWords(c.id, ['אחת', 'שתיים']);
@@ -256,13 +256,73 @@ describe('words the quota refuses are held, not dropped', () => {
     settings.set('pricing', 'free_word_limit', 10);
     db.addWords(c.id, ['שתיים']);
     expect(db.listWords(c.id).map((w) => w.text)).toEqual(['אחת', 'שתיים']);
-    expect(db.countHeldWords(c.id)).toBe(1);
-    // Payment resolves the collision: the held copy is discarded on release
-    // rather than putting 'שתיים' in the deck twice.
+    // The held copy is GONE, not waiting alongside it. Leaving it would print
+    // 'שתיים' on the page twice — once as collected, once under "will be added
+    // when you pay" — about a word she can already see in her list.
+    expect(db.countHeldWords(c.id)).toBe(0);
+  });
+
+  it('discards an emptied bucket on disk, not just in memory', () => {
+    settings.set('pricing', 'free_word_limit', 1);
+    const c = db.createCollection('שירה', { email: 'h10@example.com' });
+    db.addWords(c.id, ['אחת', 'שתיים']);
+    // Gate off, and the only held word is a duplicate of one already in the list,
+    // so the release moves NOTHING while still emptying the bucket. A save keyed
+    // on "did anything cross over" would skip here and the bucket would come back
+    // from disk on the next boot.
+    db.addWords(c.id, ['שתיים']);
+    settings.set('pricing', 'lock_after_free_limit', false);
+    db.addWords(c.id, ['שלוש']);
+    expect(db.countHeldWords(c.id)).toBe(0);
+    const onDisk = JSON.parse(
+      fs.readFileSync(path.join(process.env.DATA_DIR, 'dugri-data.json'), 'utf8')
+    );
+    expect((onDisk.held_words || []).filter((w) => w.collection_id === c.id)).toEqual([]);
+  });
+
+  it('counts a re-pasted held word as a duplicate, not as a fresh rejection', () => {
+    settings.set('pricing', 'free_word_limit', 2);
+    const c = db.createCollection('שירה', { email: 'h11@example.com' });
+    db.addWords(c.id, words(6));
+    // She re-pastes the identical list, thinking the first attempt failed. The
+    // four held words are duplicates — counting them as `blocked` as well would
+    // break the partition of the batch and make the page report four rejections
+    // for words it is already holding.
+    const r = db.addWords(c.id, words(6));
+    expect(r).toMatchObject({ added: 0, skipped: 6, blocked: 0, held: 0, dropped: 0 });
+    expect(r.added + r.skipped + r.blocked + r.tooLong + r.emoji + r.niqqud).toBe(6);
+    expect(db.countHeldWords(c.id)).toBe(4);
+  });
+
+  it('discards a word bank frozen before the held words were released', () => {
+    settings.set('pricing', 'free_word_limit', 2);
+    const c = db.createCollection('שירה', { email: 'h12@example.com' });
+    db.addWords(c.id, words(6));
+    // She closes while still unpaid — the close card is offered on any open
+    // unpaid order — and the bank the deck prints from is frozen from the 2
+    // words she has.
+    db.closeCollection(c.id, c.owner_token);
+    db.setWordBank(c.id, { words: db.listWords(c.id).map((w) => w.text) });
+    expect(db.getCollection(c.id).word_bank).toBeTruthy();
+    // Paying now releases 4 more words into the list. The frozen bank predates
+    // them, so keeping it would print a deck without words the page shows as
+    // collected. It is discarded and re-freezes on the next close.
     db.setOrder(c.id, c.owner_token, { version: 'pdf' });
     db.markPaid(c.id);
-    expect(db.listWords(c.id).map((w) => w.text)).toEqual(['אחת', 'שתיים']);
-    expect(db.countHeldWords(c.id)).toBe(0);
+    expect(db.listWords(c.id)).toHaveLength(6);
+    expect(db.getCollection(c.id).word_bank).toBeUndefined();
+  });
+
+  it('keeps a word bank that no release invalidated', () => {
+    settings.set('pricing', 'free_word_limit', 50);
+    const c = db.createCollection('שירה', { email: 'h13@example.com' });
+    db.addWords(c.id, words(4));
+    db.closeCollection(c.id, c.owner_token);
+    db.setWordBank(c.id, { words: db.listWords(c.id).map((w) => w.text) });
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id);
+    // Nothing was held, so nothing moved, so the approved bank stands.
+    expect(db.getCollection(c.id).word_bank).toBeTruthy();
   });
 
   it('releases the bucket as soon as the quota stops applying', () => {

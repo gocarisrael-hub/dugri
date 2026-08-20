@@ -57,6 +57,9 @@ async function createCollection(page, name) {
 // (everything landed) or the dialog is up (something did not).
 async function pasteWords(page, n, prefix = 'word') {
   const list = Array.from({ length: n }, (_, i) => prefix + (i + 1)).join('\n');
+  // A dialog left open by an earlier step would make the poll below return true
+  // instantly and hand the race straight back, so start from a clean slate.
+  await expect(page.locator('#msgModal')).toBeHidden();
   await page.click('#tab-list');
   await page.fill('#pasteBox', list);
   await page.click('#pasteAdd');

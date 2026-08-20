@@ -180,7 +180,9 @@ describe('POST /words enforces the quota', () => {
     await post('/api/collections/' + c.id + '/words', { words: words(12) });
     // The buyer re-pastes the identical list, thinking the first one failed.
     const r = await post('/api/collections/' + c.id + '/words', { words: words(12) });
-    expect(r.body.held).toBe(0);
+    // Every word is a duplicate of one we already have — 5 in the list, 7 in the
+    // bucket — so the whole batch reads as duplicates, with nothing newly refused.
+    expect(r.body).toMatchObject({ added: 0, skipped: 12, blocked: 0, held: 0, dropped: 0 });
     expect(r.body.held_count).toBe(7);
     expect((await get('/api/collections/' + c.id)).body.held_words).toHaveLength(7);
   });
