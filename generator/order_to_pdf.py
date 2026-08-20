@@ -123,17 +123,26 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         with open(words_path, "w", encoding="utf-8") as f:
             f.write("\n".join(words) + "\n")
         csv_path = os.path.join(workdir, "order.csv")
-        # HOW HARD each entry is to print, measured against this template's own
-        # slot and font (word_demand). The packer uses it to put the demanding
-        # entries TOGETHER — one small card instead of four — and it is what
-        # names the entries that would make a card small whatever we did.
+        # TWO NUMBERS, AND THEY ARE NOT THE SAME NUMBER.
+        #
+        # ``sizes`` is how large each entry can be set against this template's own
+        # slot and font — real card units, and what the small-card report has to
+        # speak in to be comparable with the deck it describes.
+        #
+        # ``weights`` is the order the deal hands entries out in, and it is the
+        # LETTER COUNT (word_demand.letter_weights). The measurement above reads
+        # an entry at its best wrapping, which is room the card does not have, so
+        # as a difficulty order it correlated 0.077 with what cards actually
+        # print — noise. Letters correlate 0.714 and cost nothing. The full
+        # reasoning is at letter_weights.
         sizes = word_demand.measure(words, theme_key, word_font=word_font)
+        weights = word_demand.letter_weights(words)
         if config.is_single_card(cfg):
             pack.pack(words, csv_path, fronts=len(config.fronts(cfg)),
-                      order=order, personal_count=boundary, sizes=sizes)
+                      order=order, personal_count=boundary, sizes=weights)
         else:
             pack.pack(words, csv_path, order=order, personal_count=boundary,
-                      sizes=sizes)
+                      sizes=weights)
         # The cards that will print noticeably smaller than the rest, with the
         # entry responsible for each. Printed on its own line for the server to
         # pick up, the same way the board path is.

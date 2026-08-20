@@ -166,3 +166,42 @@ def small_cards(rows, sizes, ratio=0.55, floor=_SMALL_FLOOR):
     ]
     out.sort(key=lambda d: d["ratio"])
     return out
+
+
+# HOW MANY LETTERS, spaces counted. The deal's difficulty order, and deliberately
+# not the measurement above.
+#
+# THE MEASUREMENT ANSWERS THE WRONG QUESTION for this purpose. It reports the
+# largest size an entry can reach over EVERY wrapping it allows, and the best
+# wrapping is nearly always the one with the most lines — so a phrase scores by
+# room it will not get. Lines cost height, four entries share one height budget,
+# and the card pays the difference in size. Measured over a real 412-word order
+# on אשכולית, against the size each card ACTUALLY prints at:
+#
+#     best size over all wrappings (what the deal used)   0.077
+#     letters, spaces included                            0.714
+#     each entry fitted on a real card                    0.821
+#
+# 0.077 is no correlation at all: the deal was sorting on noise. The worst entry
+# of that order, עוגת יום הולדת, scored 33.46 — lighter than מחברת, one of the
+# easiest words in the deck — and caps its card at 15.61 whatever sits beside it.
+# Counting its letters puts it where it belongs, first, and costs nothing to do.
+#
+# Letters beat the cleverer string rules too (longest token 0.011, widest line of
+# a two-line split 0.195): what binds a card is HEIGHT, and total length is what
+# says how many lines an entry will take. The longest-token rules chase width,
+# which is mostly not the constraint.
+#
+# Sign: the deal reads its scores as SIZES — bigger is easier — so the count is
+# negated. Nothing else reads them, and the small-card report keeps the real
+# measurement above, which is in card units and has to stay that way.
+def letter_weights(words):
+    """``{word: -len(word)}`` — the deal's difficulty order, longest first.
+
+    Spaces count. "יתוש בחדר" is nine, "מחברת" is five, and the deal will hand
+    the nine-letter entry out before the five-letter one.
+
+    Needs no font, no template and no measurement, so unlike :func:`measure` it
+    cannot come back empty — there is no unreadable-font path to fall back from.
+    """
+    return {w: -len(str(w)) for w in dict.fromkeys(words) if w and str(w).strip()}
