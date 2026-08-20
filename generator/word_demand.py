@@ -12,11 +12,20 @@ thing that can land on a card, because there is nowhere to break it. So the old
 rule would happily seat two genuinely hard entries together and let the card
 shrink for both, while carefully separating two easy ones.
 
-WHAT IS MEASURED. For each entry, the largest font size at which it can be set
-in a standard word slot — the same measurement the renderer makes when it lays
-the card out (``render_page._candidates``), asked one entry at a time. Bigger is
-easier. A card's size is the MINIMUM over its four entries, which is what makes
-this the right number to balance across cards.
+TWO NUMBERS LIVE IN THIS FILE, and they answer different questions.
+
+``measure`` — HOW LARGE WILL THIS PRINT. For each entry, the largest font size
+at which it can be set in a standard word slot — the same measurement the
+renderer makes when it lays the card out (``render_page._candidates``), asked one
+entry at a time. Bigger is easier. A card's size is the MINIMUM over its four
+entries, so this is the number the small-card report speaks in: card units, the
+same units as the deck it describes.
+
+``letter_weights`` — WHICH ENTRY IS DEALT FIRST. The deal used to order by
+``measure`` and no longer does: the measurement reads an entry at its BEST
+wrapping, which is height a card with four entries cannot give it, so as a
+running order it correlated 0.077 with the size cards actually print at. Letters
+correlate 0.714. The full argument, with the numbers, is at ``letter_weights``.
 
 WHY ONE REPRESENTATIVE SLOT is enough here. The four word slots of a card are
 the same size as each other (they differ only in where they sit and which icon
@@ -203,5 +212,19 @@ def letter_weights(words):
 
     Needs no font, no template and no measurement, so unlike :func:`measure` it
     cannot come back empty — there is no unreadable-font path to fall back from.
+
+    TWO REFINEMENTS THAT LOOK OBVIOUS AND MEASURE WORSE. Both were tried against
+    the real ceiling — each entry fitted on an actual card — so neither needs
+    trying again:
+
+    * Weighing a long UNBREAKABLE token above a phrase of the same length. It
+      reads like the right correction (a token cannot wrap), but the card does
+      not agree: קונסטרוקטיביזם and בר רווקות ענקית both cap their card at 17.40,
+      one letter apart in length and identical in effect. On a list stuffed with
+      twenty such tokens, letters still tracked the ceiling at 0.843 against the
+      measurement's 0.442, and the printed decks came out level.
+    * Scaling Latin characters by ``render_page._WORD_ALT_SCALE`` (0.8), since a
+      Latin run is set smaller than a Hebrew one. On a mixed-script list that
+      made the weight WORSE, not better: plain letters 0.792, scaled 0.753.
     """
     return {w: -len(str(w)) for w in dict.fromkeys(words) if w and str(w).strip()}

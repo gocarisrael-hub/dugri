@@ -277,6 +277,28 @@ def test_the_phrase_the_measurement_called_easy_is_dealt_first():
     assert "עוגת יום הולדת" in rows[0], rows
 
 
+def test_hard_entries_are_still_spread_one_per_card_under_letter_weights():
+    # THE RULE ITSELF, re-asserted against the score the deal actually uses. The
+    # older test above proves it for wd.measure, which no order takes any more,
+    # so it would not catch a weight that let two demanding entries share a card.
+    # The demanding entries here are what a real order's worst ones look like:
+    # long phrases, not the invented unbreakable tokens.
+    hard = ["עוגת יום הולדת", "מסיבת הפתעה גדולה", "ארוחת בוקר בנמל", "להקת שבעת הכוכבים"]
+    easy = ["ים", "אמא", "דוד", "שוק", "חוף", "כלב", "עץ", "אור", "גן", "רון", "נר", "תה"]
+    words = hard + easy
+    rows = pack.deal(words, 4, random.Random(3), sizes=wd.letter_weights(words))
+    per_card = [sum(1 for w in row if w in set(hard)) for row in rows]
+    assert max(per_card) == 1, rows
+
+
+def test_a_long_token_and_a_long_phrase_are_weighed_alike():
+    # The correction that looks obvious and measures worse — see letter_weights.
+    # These two cap a card at the same 17.40 on אשכולית, and the weight keeps
+    # them together rather than promoting the token for being unbreakable.
+    w = wd.letter_weights(["קונסטרוקטיביזם", "בר רווקות ענקית"])
+    assert abs(w["קונסטרוקטיביזם"] - w["בר רווקות ענקית"]) <= 1
+
+
 def test_the_snake_still_pairs_the_heaviest_with_the_lightest():
     # The deal itself is untouched: heaviest first, dealt left to right and then
     # right to left. Eight entries over two cards is two laps each way, so card 1
