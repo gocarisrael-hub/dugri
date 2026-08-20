@@ -196,3 +196,117 @@ describe('the "quota reached" email body', () => {
     expect(msg.text).toContain(c.owner_token);
   });
 });
+
+// The held bucket: words the quota refuses are parked, not discarded, and cross
+// into the real list exactly once — on payment. This exists because a buyer
+// pasted 150 words onto a 15-word quota, was shown "all your words are saved",
+// paid, and found 15. The 135 were never stored anywhere.
+describe('words the quota refuses are held, not dropped', () => {
+  it('parks the overflow of a batch and keeps it out of the list', () => {
+    settings.set('pricing', 'free_word_limit', 5);
+    const c = db.createCollection('שירה', { email: 'h1@example.com' });
+    const r = db.addWords(c.id, words(12));
+    expect(r).toMatchObject({ added: 5, blocked: 7, held: 7, dropped: 0 });
+    // The list holds only what was paid for; the count the whole product reads
+    // from is untouched by the held words.
+    expect(db.countWords(c.id)).toBe(5);
+    expect(db.countHeldWords(c.id)).toBe(7);
+    expect(db.listWords(c.id)).toHaveLength(5);
+    expect(db.listHeldWords(c.id).map((w) => w.text)).toEqual(words(12).slice(5));
+  });
+
+  it('releases them into the list on payment, oldest-first, keeping their order', () => {
+    settings.set('pricing', 'free_word_limit', 3);
+    const c = db.createCollection('שירה', { email: 'h2@example.com' });
+    db.addWords(c.id, words(9));
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    expect(db.markPaid(c.id)).toBe(true);
+    expect(db.countHeldWords(c.id)).toBe(0);
+    expect(db.listWords(c.id).map((w) => w.text)).toEqual(words(9));
+  });
+
+  it('keeps the contributor name on a released word', () => {
+    settings.set('pricing', 'free_word_limit', 1);
+    const c = db.createCollection('שירה', { email: 'h3@example.com' });
+    db.addWords(c.id, ['ראשונה', 'שנייה'], 'דנה');
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id);
+    const released = db.listWords(c.id).find((w) => w.text === 'שנייה');
+    expect(released.added_by).toBe('דנה');
+  });
+
+  it('does not hold a word that is already in the list', () => {
+    settings.set('pricing', 'free_word_limit', 2);
+    const c = db.createCollection('שירה', { email: 'h4@example.com' });
+    db.addWords(c.id, ['אחת', 'שתיים']);
+    // 'אחת' is a duplicate of a stored word, so it is skipped rather than held —
+    // releasing it later would put the same word in the deck twice.
+    const r = db.addWords(c.id, ['אחת', 'שלוש']);
+    expect(r).toMatchObject({ added: 0, skipped: 1, blocked: 1, held: 1 });
+    expect(db.listHeldWords(c.id).map((w) => w.text)).toEqual(['שלוש']);
+  });
+
+  it('dedupes a released word against one added by hand in the meantime', () => {
+    settings.set('pricing', 'free_word_limit', 1);
+    const c = db.createCollection('שירה', { email: 'h5@example.com' });
+    db.addWords(c.id, ['אחת', 'שתיים']);
+    expect(db.countHeldWords(c.id)).toBe(1);
+    // The owner raises the quota — which does NOT lift it, so the bucket stays
+    // parked — and types the held word herself before paying.
+    settings.set('pricing', 'free_word_limit', 10);
+    db.addWords(c.id, ['שתיים']);
+    expect(db.listWords(c.id).map((w) => w.text)).toEqual(['אחת', 'שתיים']);
+    expect(db.countHeldWords(c.id)).toBe(1);
+    // Payment resolves the collision: the held copy is discarded on release
+    // rather than putting 'שתיים' in the deck twice.
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id);
+    expect(db.listWords(c.id).map((w) => w.text)).toEqual(['אחת', 'שתיים']);
+    expect(db.countHeldWords(c.id)).toBe(0);
+  });
+
+  it('releases the bucket as soon as the quota stops applying', () => {
+    settings.set('pricing', 'free_word_limit', 2);
+    const c = db.createCollection('שירה', { email: 'h6@example.com' });
+    db.addWords(c.id, words(6));
+    expect(db.countHeldWords(c.id)).toBe(4);
+    // The owner switches the gate off. The next add sweeps the held words in
+    // rather than leaving them stranded behind a lock that no longer exists.
+    settings.set('pricing', 'lock_after_free_limit', false);
+    db.addWords(c.id, ['נוספת']);
+    expect(db.countHeldWords(c.id)).toBe(0);
+    expect(db.listWords(c.id)).toHaveLength(7);
+  });
+
+  it('refuses to hold beyond the cap, and says so rather than implying it kept them', () => {
+    settings.set('pricing', 'free_word_limit', 1);
+    const c = db.createCollection('שירה', { email: 'h7@example.com' });
+    // 1 lands, 500 are held, the rest are genuinely gone — and reported as gone.
+    const r = db.addWords(c.id, words(520));
+    expect(r.added).toBe(1);
+    expect(r.blocked).toBe(519);
+    expect(r.held).toBe(500);
+    expect(r.dropped).toBe(19);
+    expect(r.held + r.dropped).toBe(r.blocked);
+    expect(db.countHeldWords(c.id)).toBe(500);
+  });
+
+  it('never holds a word that failed validation', () => {
+    settings.set('pricing', 'free_word_limit', 1);
+    const c = db.createCollection('שירה', { email: 'h8@example.com' });
+    const r = db.addWords(c.id, ['בסדר', 'שמח 🎉', 'שָׁלוֹם', 'ב'.repeat(40)]);
+    expect(r).toMatchObject({ added: 1, emoji: 1, niqqud: 1, tooLong: 1, held: 0 });
+    // A word we refuse for its content is refused, full stop — parking it would
+    // only release it into the deck later, which is what the refusal prevents.
+    expect(db.countHeldWords(c.id)).toBe(0);
+  });
+
+  it('drops the bucket with the collection', () => {
+    settings.set('pricing', 'free_word_limit', 1);
+    const c = db.createCollection('שירה', { email: 'h9@example.com' });
+    db.addWords(c.id, words(5));
+    expect(db.countHeldWords(c.id)).toBe(4);
+    db.deleteCollection(c.id);
+    expect(db.countHeldWords(c.id)).toBe(0);
+  });
+});

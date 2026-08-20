@@ -802,6 +802,22 @@ function publicView(c, { owner = false } = {}) {
     // how the buyer gets in. null when no group / no link yet.
     ...(owner ? { wa_invite_link: waState.inviteLinkForCollection(c.id) } : {}),
     count: words.length,
+    // Words the free quota refused and we are holding for release on payment.
+    // Sent to EVERY viewer of the collect link, exactly like the word list, and
+    // deliberately as the words themselves rather than a number: the page shows
+    // them so the buyer can SEE what has not been added instead of being asked to
+    // believe a reassuring sentence. The old lock copy promised "all the words you
+    // collected are saved" while silently dropping the overflow, which is how a
+    // 150-word paste became 15 words and a paid order. Proof, not a promise.
+    //
+    // NOT added to `count`, and never mixed into `words` — the counter, the CSV
+    // and the generator must keep seeing only what has actually been bought.
+    held_words: db.listHeldWords(c.id).map((w) => ({
+      id: w.id,
+      text: w.text,
+      added_by: w.added_by,
+      created_at: w.created_at,
+    })),
     words: words.map((w) => ({
       id: w.id,
       text: w.text,
@@ -2949,16 +2965,14 @@ app.post('/api/collections/:id/words', (req, res) => {
   // The free-quota gate is enforced HERE, server-side — collect.html also hides
   // the add box at the limit, but a client-side lock is bypassable and the whole
   // point of the quota is that it can't be walked around.
-  const before = db.freeLimit(req.params.id);
-  if (before && before.locked) {
-    // Locked, so the limit goes out with it (same reasoning as the public view:
-    // at the lock `count` already IS the limit). The page still never shows it.
-    return res.status(402).json({
-      error: 'free_limit_reached',
-      count: db.countWords(req.params.id),
-      free_word_limit: before.limit,
-    });
-  }
+  //
+  // A full collection is no longer turned away with a 402. It used to be, and
+  // that 402 was where a locked buyer's words died: the request was refused
+  // whole, so a paste sent from a tab opened before the lock landed left nothing
+  // behind. db.addWords now parks anything the quota refuses (capped) instead of
+  // dropping it, and it enforces the quota itself — over-quota words never reach
+  // the word list from here either way. So the request goes through and the
+  // response says exactly what happened to every word in it.
   const r = db.addWords(req.params.id, words, req.body && req.body.added_by);
   if (r && r.closed) return res.status(409).json({ error: 'collection closed' });
   const count = db.countWords(req.params.id);
@@ -2977,6 +2991,15 @@ app.post('/api/collections/:id/words', (req, res) => {
     // How many words the quota refused (0 when no quota applies). The page uses
     // this to say "5 of your 50 words were added" instead of failing silently.
     blocked: r.blocked || 0,
+    // The split of `blocked`: `held` was parked for release on payment, `dropped`
+    // hit the held-bucket cap and really is gone. The page must be able to tell
+    // these apart — claiming we kept a word we didn't is the exact failure this
+    // whole change exists to fix, so it is never inferred, always reported.
+    held: r.held || 0,
+    dropped: r.dropped || 0,
+    // Everything the collection is holding after this request, not just what this
+    // request added to it, so a reload and a fresh add agree on the number.
+    held_count: db.countHeldWords(req.params.id),
     // How many entries were over the length cap and therefore NOT stored. The
     // page normally filters these out before submitting (so the customer is told
     // while typing), but a paste from an old tab or a non-browser client still
