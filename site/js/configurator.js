@@ -274,7 +274,7 @@ export const PLAN_PRICES = {
  * @param {string} opts.designName
  * @param {string} opts.colorName
  * @param {string} opts.mainHex
- * @param {string} [opts.whatsapp='972546577715']
+ * @param {string} [opts.whatsapp='972552441334']
  * @returns {{summary:string, whatsappUrl:string, price:number, planLabel:string}}
  */
 export function buildOrder({
@@ -283,7 +283,7 @@ export function buildOrder({
   designName,
   colorName,
   mainHex,
-  whatsapp = '972546577715',
+  whatsapp = '972552441334',
 }) {
   const planLabel = PLAN_LABELS[plan];
   const price = PLAN_PRICES[plan];

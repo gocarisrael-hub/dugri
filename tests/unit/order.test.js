@@ -21,7 +21,7 @@ describe('buildOrder', () => {
 
   it('returns a wa.me URL with the default number', () => {
     const o = buildOrder({ plan: 'base', ...common });
-    expect(o.whatsappUrl.startsWith('https://wa.me/972546577715?text=')).toBe(true);
+    expect(o.whatsappUrl.startsWith('https://wa.me/972552441334?text=')).toBe(true);
   });
 
   it('uses a custom whatsapp number when provided', () => {

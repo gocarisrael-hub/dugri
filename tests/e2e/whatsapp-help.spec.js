@@ -13,7 +13,8 @@ test.beforeEach(async ({ page }) => {
 // customer-facing page of the order / word-collection flow, so a customer can
 // reach the owner for help at any point. It links to the owner's number and
 // opens in a new tab.
-const WA_HREF = /wa\.me\/972546577715/;
+// The SUPPORT number, which is not the owner's own — see fix/support-whatsapp-number.
+const WA_HREF = /wa\.me\/972552441334/;
 
 test('options (order wizard) shows a visible WhatsApp help button', async ({ page }) => {
   await page.goto('/options.html');
