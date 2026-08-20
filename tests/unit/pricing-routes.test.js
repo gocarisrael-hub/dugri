@@ -138,9 +138,10 @@ describe('GET /api/pricing (public)', () => {
     // ELSE from settings rides along, so it stays an exact list.
     // `sale` is the storefront's display state (on/off + the owner's two
     // strings), NOT a settings dump — the raw sale_* keys stay server-side.
-    // `delivery_exceptions` is the localities where delivery takes longer, as
-    // the checkout needs them — a parsed { towns, eta_days }, never the raw
-    // multi-line settings string.
+    // `delivery_exceptions` is the HEADLINE of the slow-delivery list — how many
+    // localities and how long — never the names. Every storefront page fetches
+    // this endpoint for its prices and none of them prints a town, so a real
+    // courier list (thousands of names) has its own endpoint instead.
     expect(Object.keys(body).sort()).toEqual([
       'delivery_exceptions',
       'delivery_fee',
@@ -149,10 +150,10 @@ describe('GET /api/pricing (public)', () => {
       'versions',
     ]);
     expect(Object.keys(body.sale).sort()).toEqual(['banner', 'label', 'on']);
-    expect(Object.keys(body.delivery_exceptions).sort()).toEqual(['eta_days', 'towns']);
+    expect(Object.keys(body.delivery_exceptions).sort()).toEqual(['count', 'eta_days']);
     // Ships EMPTY: the note only exists once the owner has filled the list, so a
     // deploy promises nobody a delivery window.
-    expect(body.delivery_exceptions.towns).toEqual([]);
+    expect(body.delivery_exceptions.count).toBe(0);
     // Exactly the four known versions, each just { enabled, price }.
     expect(Object.keys(body.versions).sort()).toEqual(['custom', 'delivery', 'pdf', 'pickup']);
     for (const v of Object.values(body.versions)) {
@@ -410,5 +411,45 @@ describe('charge path: in-flight order survives the version being disabled (bug 
     });
     expect(r.status).toBe(200);
     expect(r.body.charged).toBe(199);
+  });
+});
+
+// The localities themselves, on their OWN endpoint. Split out of /api/pricing
+// when the owner's real list turned out to be thousands of names: pricing is
+// fetched by every storefront page for its numbers, and not one of them prints a
+// town, so the list would have been dead weight on the home page, the shop and
+// every product page.
+describe('GET /api/delivery-exceptions', () => {
+  it('is public — the checkout reads it with no key', async () => {
+    const { status } = await get('/api/delivery-exceptions');
+    expect(status).toBe(200);
+  });
+
+  it('ships empty, so nothing is promised until the owner fills the list', async () => {
+    const { body } = await get('/api/delivery-exceptions');
+    expect(body).toEqual({ towns: [], eta_days: 11 });
+  });
+
+  it('serves the parsed list, and only that', async () => {
+    await post(adminUrl('/api/admin/settings'), {
+      section: 'pricing',
+      key: 'remote_towns',
+      value: '  אילת \n\nמצפה רמון\nאילת',
+    });
+    const { body } = await get('/api/delivery-exceptions');
+    // Trimmed, blank line dropped, de-duplicated — the same parse the checkout
+    // would otherwise have had to repeat.
+    expect(body.towns).toEqual(['אילת', 'מצפה רמון']);
+    expect(Object.keys(body).sort()).toEqual(['eta_days', 'towns']);
+    // No other settings section rides along.
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain('subject');
+    expect(serialized).not.toContain('store');
+  });
+
+  it('and /api/pricing still reports the count for the same list', async () => {
+    const { body } = await get('/api/pricing');
+    expect(body.delivery_exceptions.count).toBe(2);
+    expect(JSON.stringify(body)).not.toContain('אילת');
   });
 });
