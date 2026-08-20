@@ -637,6 +637,24 @@
         color: var(--muted);
         font-size: 14.5px;
       }
+      /* The launch-offer half of the buy note follows the owner's SALE SWITCH,
+         like every other sale surface (css/tokens.css, "SALE MODE").
+         It used to be plain copy inside one editable line, so turning the sale
+         off left "מבצע השקה" printed under the buy button — and because this line
+         is PER-DESIGN copy, clearing it by hand meant editing it once per design,
+         with every new design shipping the phrase again.
+         The separator belongs to the pseudo-element, not to the text, so it
+         leaves WITH the phrase instead of stranding a leading "·".
+         `:not([data-sale='on'])` rather than `[data-sale='off']`, so the phrase is
+         absent BEFORE /api/pricing resolves too: an offer we have not confirmed is
+         one we must not print, which is the rule the flags and the strip already
+         follow. */
+      .pdp-buy-note .buy-note-sale::after {
+        content: ' · ';
+      }
+      html:not([data-sale='on']) .pdp-buy-note .buy-note-sale {
+        display: none;
+      }
       #pdpBuy {
         font-size: 19px;
         padding: 17px 40px;
@@ -1000,8 +1018,19 @@
               data-edit-pd="buy-cta"
               >מתחילים לבנות את המשחק ›</a
             >
-            <p class="pdp-buy-note" data-edit-pd="buy-note">
-              מבצע השקה · מוכן תוך 3 ימי עסקים · ללא הגבלת מילים
+            <!-- TWO nodes, not one sentence. The launch phrase is its own element so
+                 the sale switch can take it away on every design at once; the rest is
+                 a standing fact about the product and stays either way. Separate
+                 data-edit-pd keys because the editor rewrites a bound node with
+                 textContent — one key over both halves would wipe the split on the
+                 owner's first edit.
+                 NOTE: the always-shown half carries a NEW key (buy-note-rest). The
+                 old `buy-note` override held the WHOLE sentence, launch phrase
+                 included; re-using the key here would have printed that phrase twice
+                 on any design that had been customised. -->
+            <p class="pdp-buy-note" data-testid="pdp-buy-note">
+              <span class="buy-note-sale" data-edit-pd="buy-note-sale">מבצע השקה</span
+              ><span data-edit-pd="buy-note-rest">מוכן תוך 3 ימי עסקים · ללא הגבלת מילים</span>
             </p>
           </div>
         </div>
