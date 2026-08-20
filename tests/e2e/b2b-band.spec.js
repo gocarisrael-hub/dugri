@@ -19,9 +19,13 @@ test('the band names the three things a business orders', async ({ page }) => {
   for (const use of ['מתנה לצוות', 'כנסים וגיבושים', 'משחק ממותג']) {
     await expect(band.getByText(use, { exact: true })).toBeVisible();
   }
-  // The terms line answers the two questions a business asks before writing.
+  // The one commitment the band makes, because a business needs it before it can
+  // buy anything. It promises NO minimum quantity and NO turnaround: both were
+  // written here on my guess and taken out on the owner's word — she is the one
+  // who knows what she can hold to, and a promise on a page is a promise.
   await expect(band).toContainText('חשבונית מס');
-  await expect(band).toContainText('10 יחידות');
+  await expect(band).not.toContainText('יחידות');
+  await expect(band).not.toContainText('יום עבודה');
 });
 
 test('its WhatsApp link carries a business message, not the general one', async ({ page }) => {
