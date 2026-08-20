@@ -1719,6 +1719,16 @@
         font-weight: 600;
         margin: 4px 0 0;
       }
+      /* The business-day cutoff, sharing .pay-trust's placement but not its
+         weight: the security line is a promise, this is a qualifier on someone
+         else's promise, and printing them at the same weight makes the buyer
+         read two claims of equal size where there is one. */
+      .pay-cutoff {
+        font-weight: 400;
+        font-size: 12.5px;
+        line-height: 1.5;
+        margin-top: 6px;
+      }
       /* credit-card pay (PeleCard iframe) — the only payment path. This is the
          primary CTA, so make it large, bold and high-contrast, with a soft
          "breathing" pulse that draws the eye to it without nagging. */
@@ -2762,6 +2772,18 @@
              right beside a printed game quoted at 3 business days, and the
              option the buyer has selected already states its own time. -->
         <p class="pay-trust" data-edit="collect-pay-trust">🔒 תשלום מאובטח בכרטיס אשראי</p>
+
+        <!-- The SAME rule the owner sees beside her production queue, said to the
+             person it costs a day. The clock starts when the word list closes,
+             not at payment (the option above already states how long it then
+             takes), so a buyer paying at 16:30 who closes tonight should not read
+             the estimate as starting today.
+             Under the security line rather than beside the option: it qualifies
+             every option's time, not one of them, and it must not push the price
+             and the button apart. -->
+        <p class="pay-trust pay-cutoff" data-testid="pay-cutoff" data-edit="collect-pay-cutoff">
+          הספירה מתחילה כשסוגרים את רשימת המילים. רשימה שנסגרת אחרי 16:00 - נספרת מיום העסקים הבא.
+        </p>
 
         <button
           type="button"

@@ -443,6 +443,30 @@
         gap: 8px;
         flex-wrap: wrap;
       }
+      /* The production clock's one rule, stated where production is chosen.
+         It sits under the שלב row rather than in each order's הפקה cell: the
+         sentence is the same for every order, and a table of forty rows would
+         print it forty times. It is text on the page, not a title= tooltip —
+         this table is worked from a phone, where nothing can be hovered, and the
+         phone layout takes the <thead> off screen entirely, so a hint parked in
+         the column heading would be invisible exactly where it is needed most. */
+      .stage-note {
+        margin: 2px 0 0;
+        padding-inline-start: 50px; /* clears .flab's reserved width, so it lines
+                                       up under the chips it explains */
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: #6b645b;
+      }
+      .stage-note b {
+        color: var(--ink, #141414);
+        font-weight: 700;
+      }
+      @media (max-width: 640px) {
+        .stage-note {
+          padding-inline-start: 0;
+        }
+      }
       .flab {
         font-size: 12.5px;
         font-weight: 700;
@@ -785,6 +809,10 @@
             <span class="flab">שלב</span>
             <div class="tabs" id="tabs-stage"></div>
           </div>
+          <p class="stage-note" data-testid="stage-note">
+            <b>יום עסקים מסתיים ב-16:00.</b> רשימה שנסגרה אחרי השעה הזו - הספירה מתחילה מיום העסקים
+            הבא.
+          </p>
         </div>
         <div class="ctl-right">
           <!-- THE NIGHT'S STICKER SHEET. Every printed game the customer collects
