@@ -53,16 +53,13 @@ test('every word of it is owner-editable', async ({ page }) => {
 test('it sits between the closing CTA and the footer', async ({ page }) => {
   // Last thing before the footer: a business reader has by then seen the whole
   // consumer pitch, which is the argument the band leans on.
-  const order = await page.evaluate(() => {
-    const band = document.querySelector('#business');
-    const footer = document.querySelector('footer');
-    const final = document.querySelector('section.final');
-    return {
-      afterFinal: !!(
-        final && final.compareDocumentPosition(band) & Node.DOCUMENT_POSITION_FOLLOWING
-      ),
-      beforeFooter: !!(band.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING),
-    };
-  });
-  expect(order).toEqual({ afterFinal: true, beforeFooter: true });
+  // Read the page order off the DOM as a list of landmarks, which needs no
+  // browser globals in this file and says the same thing more plainly.
+  const order = await page.evaluate(() =>
+    [...document.querySelectorAll('section.final, #business, footer')].map(
+      (el) => el.id || el.tagName.toLowerCase()
+    )
+  );
+  // "order" is the closing CTA section's own id.
+  expect(order).toEqual(['order', 'business', 'footer']);
 });
