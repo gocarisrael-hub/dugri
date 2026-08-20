@@ -238,7 +238,9 @@ def main():
     ap.add_argument("--order", default=pack.ORDER_RANDOM, choices=list(pack.ORDERS),
                     help="how the words are laid onto cards: random blends them, "
                          "personal-first opens with the buyer's own words, by-script "
-                         "keeps Hebrew and Latin cards apart")
+                         "keeps Hebrew and Latin cards apart, exact lays the list "
+                         "down as it arrived (and gives up the phrase balance to "
+                         "do it)")
     ap.add_argument("--personal-count", type=int, default=None, metavar="N",
                     help="how many of the leading words are the buyer's own — the "
                          "boundary --order=personal-first splits on. Pass it when "

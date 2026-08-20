@@ -33,7 +33,34 @@ test('card order: defaults to the blend every deck had before this existed', asy
   await expect(page.locator('#e-card-order')).toHaveValue('');
   const options = page.locator('#e-card-order option');
   await expect(options.first()).toContainText('מעורבב');
-  await expect(options).toHaveCount(3);
+  await expect(options).toHaveCount(4);
+});
+
+test('card order: the exact option warns about what it costs', async ({ page, request }) => {
+  // It is the one order that gives up the phrase balance (generator/pack.py), so
+  // some cards can print small. The label has to say so IN the picker — by the
+  // time she can see it, the deck is produced.
+  const name = uniq('מדויק');
+  await seed(request, name);
+  await page.goto(`/admin.html?key=${KEY}`);
+  await openEdit(page, name);
+  const exact = page.locator('#e-card-order option[value="exact"]');
+  await expect(exact).toHaveCount(1);
+  await expect(exact).toContainText('בדיוק לפי הסדר');
+  await expect(exact).toContainText('פונט קטן');
+});
+
+test('card order: exact persists and reaches the order', async ({ page, request }) => {
+  const name = uniq('מדויק-שמירה');
+  const id = await seed(request, name);
+  await page.goto(`/admin.html?key=${KEY}`);
+  await openEdit(page, name);
+  await page.selectOption('#e-card-order', 'exact');
+  await page.locator('#e-save').click();
+  await expect(page.locator('#edit')).toBeHidden();
+
+  const after = await (await request.get(`/api/admin/collections?key=${KEY}`)).json();
+  expect(after.collections.find((c) => c.id === id).card_order).toBe('exact');
 });
 
 test('card order: choosing one persists onto the order', async ({ page, request }) => {

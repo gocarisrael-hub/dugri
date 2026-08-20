@@ -157,12 +157,23 @@ def _phrase_quota(n_multi, caps):
 #                   and the pool fills the rest.
 #   by-script       Hebrew cards and Latin cards are kept apart, so no card mixes
 #                   the two scripts.
+#   exact           the list is laid onto cards EXACTLY as it arrived — words 1-4
+#                   on card 1, 5-8 on card 2 — for an order whose SEQUENCE carries
+#                   meaning (a timeline, a story, a joke that builds).
 #
-# THE PHRASE RULE IS NOT ONE OF THE OPTIONS — it applies underneath all of them.
-# `deal` guarantees every card lands within ONE multi-word entry of the average,
-# because all four words on a card render at one size and a card of four phrases
-# prints tiny. Grouping only decides WHICH words a card may draw from; the deal
-# inside each group is the same balanced deal it always was.
+# THE PHRASE RULE IS NOT ONE OF THE OPTIONS — it applies underneath all of them,
+# with ONE deliberate exception: `exact`. `deal` guarantees every card lands
+# within ONE multi-word entry of the average, because all four words on a card
+# render at one size and a card of four phrases prints tiny. Grouping only decides
+# WHICH words a card may draw from; the deal inside each group is the same
+# balanced deal it always was.
+#
+# `exact` is the one option that gives that up, and it has to: keeping a sequence
+# and spreading the phrases are the same decision made two ways, so no deck can
+# have both. Picking it says the order matters more than the type size — and the
+# price is real, because four long entries that happen to sit together in the list
+# now sit together on a card, and that card prints small. Every other option keeps
+# the balance.
 #
 # THE SEAM. A group whose size is not a multiple of four leaves its last card
 # short (2 or 3 words, blanks trailing), so a grouped deck can run ONE card
@@ -175,7 +186,8 @@ def _phrase_quota(n_multi, caps):
 ORDER_RANDOM = "random"
 ORDER_PERSONAL_FIRST = "personal-first"
 ORDER_BY_SCRIPT = "by-script"
-ORDERS = (ORDER_RANDOM, ORDER_PERSONAL_FIRST, ORDER_BY_SCRIPT)
+ORDER_EXACT = "exact"
+ORDERS = (ORDER_RANDOM, ORDER_PERSONAL_FIRST, ORDER_BY_SCRIPT, ORDER_EXACT)
 
 _HEBREW_RE = re.compile(r"[\u0590-\u05FF]")
 _LATIN_RE = re.compile(r"[A-Za-z]")
@@ -353,6 +365,23 @@ def deal(uniq, n_cards, rnd, sizes=None):
     return rows
 
 
+def deal_in_order(uniq, n_cards):
+    """Deal ``uniq`` into rows of PER_CARD, in the order given. No shuffle.
+
+    The counterpart to ``deal`` for ``exact``: words 1-4 land on card 1, 5-8 on
+    card 2, and the last card is blank-padded like every other deck's is.
+
+    It takes no RNG and no sizes on purpose. Both exist to make the ARRANGEMENT
+    better, and an arrangement chosen by the caller is not ours to improve —
+    accepting a seed here would only invite a future change to use it.
+    """
+    rows = []
+    for i in range(n_cards):
+        row = list(uniq[i * PER_CARD:(i + 1) * PER_CARD])
+        rows.append(row + [""] * (PER_CARD - len(row)))
+    return rows
+
+
 def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
          order=ORDER_RANDOM, personal_count=None, sizes=None):
     """Write the deck CSV and return ``(unique_words, card_count)``.
@@ -363,8 +392,10 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     ``order`` is the per-order card order (see ORDERS): the words are partitioned
     into groups and each group is dealt into its OWN cards, so a card only ever
     draws from one group. The phrase balance is unchanged and applies inside every
-    group. ``personal_count`` is how many of the leading words are the customer's
-    own — the boundary `personal-first` splits on, and ignored by the others.
+    group — EXCEPT under `exact`, which lays the list down as it arrived and gives
+    the balance up to do it. ``personal_count`` is how many of the leading words
+    are the customer's own — the boundary `personal-first` splits on, and ignored
+    by the others.
     """
     seen = set()
     uniq = []
@@ -383,7 +414,15 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     groups = card_groups(uniq, order, personal_count)
     rows = []
     for g in groups:
-        rows.extend(deal(g, max(1, math.ceil(len(g) / PER_CARD)), rnd, sizes=sizes))
+        n_cards = max(1, math.ceil(len(g) / PER_CARD))
+        # `exact` is the one order that does not go through the balanced deal —
+        # see the note above ORDERS for why the two cannot both be had. Dedup
+        # above still applies: a repeat is dropped, so "exactly as it arrived"
+        # means the arriving list minus its own duplicates.
+        if order == ORDER_EXACT:
+            rows.extend(deal_in_order(g, n_cards))
+        else:
+            rows.extend(deal(g, n_cards, rnd, sizes=sizes))
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(FIELDS)

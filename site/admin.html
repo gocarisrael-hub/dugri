@@ -1473,6 +1473,10 @@
         { value: '', label: 'מעורבב (ברירת מחדל)' },
         { value: 'personal-first', label: 'מילים של הלקוח/ה קודם' },
         { value: 'by-script', label: 'עברית ואנגלית בנפרד' },
+        // The one option that gives up the phrase balance — see the note above
+        // ORDERS in generator/pack.py. The label says so, because the cost lands
+        // on the printed cards and she is the one choosing to pay it.
+        { value: 'exact', label: 'בדיוק לפי הסדר שנשלח (יתכנו קלפים בפונט קטן)' },
       ];
 
       let wordlistList = null;
