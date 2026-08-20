@@ -252,12 +252,13 @@ test.describe('admin pricing editor — יישובים חריגים', () => {
     await expect(card.locator('.status')).toHaveText(/נשמר/);
 
     // What the buyer's checkout will actually receive: split per line, trimmed,
-    // de-duplicated, with the blank line gone.
+    // de-duplicated, with the blank line gone. The names come from their own
+    // endpoint — /api/pricing carries only the headline, since every storefront
+    // page fetches it and none of them prints a town.
+    const towns = await (await request.get('/api/delivery-exceptions')).json();
+    expect(towns).toEqual({ towns: ['אילת', 'מצפה רמון'], eta_days: 12 });
     const pricing = await (await request.get('/api/pricing')).json();
-    expect(pricing.delivery_exceptions).toEqual({
-      towns: ['אילת', 'מצפה רמון'],
-      eta_days: 12,
-    });
+    expect(pricing.delivery_exceptions).toEqual({ count: 2, eta_days: 12 });
 
     await resetKey(request, 'remote_towns');
     await resetKey(request, 'remote_eta_days');
@@ -281,8 +282,10 @@ test.describe('admin pricing editor — יישובים חריגים', () => {
     await page.locator('[data-card="remote"] [data-save]').click();
     await expect(page.locator('[data-card="remote"] .status')).toHaveText(/נשמר/);
 
+    const towns = await (await request.get('/api/delivery-exceptions')).json();
+    expect(towns.towns).toEqual([]);
     const pricing = await (await request.get('/api/pricing')).json();
-    expect(pricing.delivery_exceptions.towns).toEqual([]);
+    expect(pricing.delivery_exceptions.count).toBe(0);
 
     await resetKey(request, 'remote_towns');
   });

@@ -2856,7 +2856,12 @@
         batchNiqqudMessage,
       } from './js/niqqud.js';
       import { track } from './js/analytics.js';
-      import { fetchPricing, applySale, PRICING_FALLBACK } from './js/pricing.js';
+      import {
+        fetchPricing,
+        fetchDeliveryExceptions,
+        applySale,
+        PRICING_FALLBACK,
+      } from './js/pricing.js';
       // The pawn geometry, shared with the wizard and mirrored in the generator:
       // where a subject sits inside the printed circle, and how the buyer's own
       // adjustment moves it. Static (a few hundred bytes) unlike the CUTTER,
@@ -5324,11 +5329,22 @@
       //
       // textContent, never innerHTML — these town names are owner input arriving
       // over a public endpoint, and a place name is not a place for markup.
+      // The town names, fetched once and reused. They live behind their own
+      // endpoint because a real courier list is thousands of names and every
+      // storefront page fetches /api/pricing — see js/pricing.js. Only this page
+      // prints them, and only for the owner, so the request is made here rather
+      // than on load.
+      let remoteTownsPromise = null;
+      function remoteTowns() {
+        if (!remoteTownsPromise) remoteTownsPromise = fetchDeliveryExceptions();
+        return remoteTownsPromise;
+      }
+
       function paintRemoteNotes(exceptions) {
         const ex = exceptions || {};
-        const towns = Array.isArray(ex.towns) ? ex.towns : [];
+        const count = Number.isInteger(ex.count) && ex.count > 0 ? ex.count : 0;
         const days = Number.isInteger(ex.eta_days) && ex.eta_days > 0 ? ex.eta_days : 0;
-        const show = towns.length > 0 && days > 0;
+        const show = count > 0 && days > 0;
         document.querySelectorAll('[data-testid="remote-note"]').forEach((el) => {
           el.hidden = !show;
           if (!show) {
@@ -5339,10 +5355,22 @@
             return;
           }
           const eta = el.querySelector('[data-role="eta"]');
-          const list = el.querySelector('[data-role="towns"]');
           if (eta) eta.textContent = 'ביישובים הבאים זמן האספקה הוא עד ' + days + ' ימי עסקים:';
-          if (list) list.textContent = towns.join(' · ');
         });
+        // The names arrive separately. The note is already on screen and already
+        // truthful without them — it states the wait and that there is a list —
+        // so a slow fetch delays only the names, and a failed one leaves the
+        // heading standing rather than blanking a note the buyer is reading.
+        if (show) {
+          remoteTowns().then((ex2) => {
+            const towns = (ex2 && ex2.towns) || [];
+            if (!towns.length) return;
+            document.querySelectorAll('[data-testid="remote-note"]').forEach((el) => {
+              const list = el.querySelector('[data-role="towns"]');
+              if (list) list.textContent = towns.join(' · ');
+            });
+          });
+        }
       }
 
       function setupPayPanel() {

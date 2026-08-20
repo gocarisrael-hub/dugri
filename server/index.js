@@ -6137,6 +6137,19 @@ app.get('/api/pricing', (req, res) => {
   res.json(db.effectivePricing());
 });
 
+// Public, UNAUTHENTICATED: the localities where delivery takes longer, and how
+// long. Its own endpoint rather than a field on /api/pricing, because the two
+// have completely different audiences: every storefront page fetches pricing for
+// its numbers, while this list — thousands of names on a real courier's
+// exceptions list — is printed by exactly one surface, the checkout's delivery
+// note. Riding along on pricing would put the whole list on the home page, the
+// shop and every product page, none of which will ever show a word of it.
+// A WHITELISTED projection like /api/faq: the parsed { towns, eta_days }, never
+// the raw multi-line settings string.
+app.get('/api/delivery-exceptions', (req, res) => {
+  res.json(db.deliveryExceptions());
+});
+
 // Public, UNAUTHENTICATED: the home-page FAQ the owner edits in admin-faq.html.
 // A WHITELISTED projection of only the `faq` settings section — the ENABLED
 // questions, in order, reduced to { id, q, a, link_text, link_url }. A disabled

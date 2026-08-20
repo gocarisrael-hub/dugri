@@ -26,8 +26,10 @@ test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
 });
 
-// Pricing with delivery live. `exceptions` is spliced in as the server would
-// send it — already parsed into { towns, eta_days }.
+// Pricing with delivery live. `exceptions` is the HEADLINE the server sends on
+// this endpoint — { count, eta_days }. The names come from their own endpoint
+// (stubTowns below), because a real courier list is thousands of them and every
+// storefront page fetches pricing.
 async function stubPricing(page, exceptions) {
   const body = {
     store: { now: 199, was: 239 },
@@ -45,6 +47,14 @@ async function stubPricing(page, exceptions) {
   };
   if (exceptions !== undefined) body.delivery_exceptions = exceptions;
   await page.route('**/api/pricing', (route) => route.fulfill({ json: body }));
+}
+
+// The names, on their own endpoint. `undefined` leaves the route unstubbed so
+// the real (empty) server answer stands.
+async function stubTowns(page, towns, etaDays = 11) {
+  await page.route('**/api/delivery-exceptions', (route) =>
+    route.fulfill({ json: { towns, eta_days: etaDays } })
+  );
 }
 
 // The server's answer about the after-the-fact delivery offer, injected into the
@@ -106,7 +116,8 @@ const noteAt = (page, where) => page.locator(`[data-testid="remote-note"][data-w
 
 test.describe('in the checkout, under the delivery tick', () => {
   test('lists the towns and the days, and starts collapsed', async ({ page }) => {
-    await stubPricing(page, { towns: TOWNS, eta_days: 11 });
+    await stubPricing(page, { count: TOWNS.length, eta_days: 11 });
+    await stubTowns(page, TOWNS);
     await createCollection(page);
     await openPayPanel(page);
 
@@ -125,7 +136,8 @@ test.describe('in the checkout, under the delivery tick', () => {
   });
 
   test('opening it does NOT tick delivery', async ({ page }) => {
-    await stubPricing(page, { towns: TOWNS, eta_days: 11 });
+    await stubPricing(page, { count: TOWNS.length, eta_days: 11 });
+    await stubTowns(page, TOWNS);
     await createCollection(page);
     await openPayPanel(page);
 
@@ -143,7 +155,8 @@ test.describe('in the checkout, under the delivery tick', () => {
   });
 
   test('sits under the delivery tick, not above it', async ({ page }) => {
-    await stubPricing(page, { towns: TOWNS, eta_days: 11 });
+    await stubPricing(page, { count: TOWNS.length, eta_days: 11 });
+    await stubTowns(page, TOWNS);
     await createCollection(page);
     await openPayPanel(page);
 
@@ -155,7 +168,8 @@ test.describe('in the checkout, under the delivery tick', () => {
   });
 
   test('stays away until the owner has filled the list', async ({ page }) => {
-    await stubPricing(page, { towns: [], eta_days: 11 });
+    await stubPricing(page, { count: 0, eta_days: 11 });
+    await stubTowns(page, []);
     await createCollection(page);
     await openPayPanel(page);
     await expect(page.getByTestId('ship-toggle')).toBeVisible();
@@ -183,9 +197,77 @@ test.describe('in the checkout, under the delivery tick', () => {
   });
 });
 
+test.describe('a real-sized list', () => {
+  // The owner's own list is a courier's exceptions list — thousands of names,
+  // not the three this spec uses elsewhere. The first cap shipped at 400 lines
+  // and she met it on her first save.
+  const MANY = Array.from({ length: 2500 }, (_, i) => 'יישוב ' + i);
+
+  test('prints in full, and the note still opens collapsed', async ({ page }) => {
+    await stubPricing(page, { count: MANY.length, eta_days: 11 });
+    await stubTowns(page, MANY);
+    await createCollection(page);
+    await openPayPanel(page);
+
+    const note = noteAt(page, 'ship-toggle');
+    await expect(note).toBeVisible();
+    await expect(note).not.toHaveAttribute('open', '');
+    await note.locator('summary').click();
+    const towns = note.locator('[data-role="towns"]');
+    // First, last and one from the middle — the whole list travelled.
+    await expect(towns).toContainText('יישוב 0');
+    await expect(towns).toContainText('יישוב 1250');
+    await expect(towns).toContainText('יישוב 2499');
+  });
+
+  test('the names do NOT ride on /api/pricing', async ({ page }) => {
+    // What the storefront pays for this feature. Every page fetches pricing for
+    // its numbers and not one prints a town, so the list must not be in there.
+    let pricingBody = '';
+    await page.route('**/api/pricing', async (route) => {
+      const body = {
+        store: { now: 199, was: 239 },
+        sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
+        delivery_fee: 39,
+        versions: {
+          pdf: { enabled: false, price: 79 },
+          pickup: { enabled: true, price: 199 },
+          delivery: { enabled: true, price: 199 },
+          custom: { enabled: false, price: 599 },
+        },
+        delivery_exceptions: { count: MANY.length, eta_days: 11 },
+      };
+      pricingBody = JSON.stringify(body);
+      return route.fulfill({ json: body });
+    });
+    await stubTowns(page, MANY);
+    await createCollection(page);
+    await openPayPanel(page);
+    await expect(noteAt(page, 'ship-toggle')).toBeVisible();
+    expect(pricingBody).not.toContain('יישוב 0');
+    expect(pricingBody.length).toBeLessThan(1000);
+  });
+
+  test('if the names fail to load, the note still states the wait', async ({ page }) => {
+    await stubPricing(page, { count: 2500, eta_days: 11 });
+    await page.route('**/api/delivery-exceptions', (route) => route.abort('failed'));
+    await createCollection(page);
+    await openPayPanel(page);
+
+    // The heading is true without the names — it says how long the wait is and
+    // that a list exists — so a failed second fetch must not blank a note the
+    // buyer is already reading.
+    const note = noteAt(page, 'ship-toggle');
+    await expect(note).toBeVisible();
+    await note.locator('summary').click();
+    await expect(note.locator('[data-role="eta"]')).toContainText('11 ימי עסקים');
+  });
+});
+
 test.describe('on the card that adds delivery after payment', () => {
   test('carries the same note', async ({ page }) => {
-    await stubPricing(page, { towns: TOWNS, eta_days: 11 });
+    await stubPricing(page, { count: TOWNS.length, eta_days: 11 });
+    await stubTowns(page, TOWNS);
     await stubUpgrade(page);
     const url = await createCollection(page);
     await page.goto(url);
@@ -204,7 +286,8 @@ test.describe('on the card that adds delivery after payment', () => {
   });
 
   test('and hides there too when the list is empty', async ({ page }) => {
-    await stubPricing(page, { towns: [], eta_days: 11 });
+    await stubPricing(page, { count: 0, eta_days: 11 });
+    await stubTowns(page, []);
     await stubUpgrade(page);
     const url = await createCollection(page);
     await page.goto(url);

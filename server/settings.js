@@ -31,10 +31,15 @@ const { DEFAULT_REMINDERS, validateReminders } = require('./reminders');
 const { DEFAULT_FAQ, validateFaq } = require('./faq');
 
 // Caps for `kind: 'lines'` (the multi-line list fields — currently the
-// remote-delivery localities). Generous for a real list, bounded so the public
-// endpoint that carries it can't be grown without limit.
-const MAX_LINES = 400;
-const MAX_LINES_CHARS = 20000;
+// remote-delivery localities). A bound against a runaway paste, NOT a policy:
+// the first pair of numbers here (400 lines / 20k chars) was a guess made before
+// anyone had pasted a real list, and the owner met it on her first save — a
+// courier's own exceptions list runs to thousands of localities, not hundreds.
+// Sized now for the real thing with room over it. The list no longer rides on
+// /api/pricing (it has its own endpoint, fetched only where the note is shown),
+// so a long one costs the storefront nothing.
+const MAX_LINES = 5000;
+const MAX_LINES_CHARS = 200000;
 // C0/C1 controls EXCEPT tab / newline / carriage return.
 const LINES_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
 // …and for the home-page "new game" block: server/promo.js is pure and owns the

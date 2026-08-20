@@ -110,19 +110,50 @@ describe('what may be stored at all', () => {
     expect(() => settings.set('pricing', 'remote_towns', 'א\nב\r\nג')).not.toThrow();
   });
 
-  it('refuses a list long enough to bloat the public endpoint', () => {
-    expect(() => settings.set('pricing', 'remote_towns', 'x\n'.repeat(500))).toThrow(/lines/);
-    expect(() => settings.set('pricing', 'remote_towns', 'x'.repeat(20001))).toThrow(/characters/);
+  // The cap is a runaway-paste guard, NOT a policy. The first pair of numbers
+  // (400 lines) was a guess made before anyone had pasted a real list, and the
+  // owner hit it on her first save — a courier's own exceptions list runs to
+  // thousands of localities. A real-sized list has to go in.
+  it('accepts a real-sized courier list', () => {
+    const real = Array.from({ length: 2500 }, (_, i) => 'יישוב ' + i).join('\n');
+    expect(() => settings.set('pricing', 'remote_towns', real)).not.toThrow();
+    expect(db.deliveryExceptions().towns).toHaveLength(2500);
+  });
+
+  it('still refuses a list long enough to be a runaway paste', () => {
+    expect(() => settings.set('pricing', 'remote_towns', 'x\n'.repeat(6000))).toThrow(/lines/);
+    expect(() => settings.set('pricing', 'remote_towns', 'x'.repeat(200001))).toThrow(/characters/);
   });
 });
 
-describe('effectivePricing carries it to the checkout', () => {
-  it('rides along with the prices, parsed', () => {
+describe('what /api/pricing carries', () => {
+  // The HEADLINE only. Every storefront page fetches pricing for its numbers,
+  // and none of them prints a single town — so a 2,500-name list must not ride
+  // along on the home page, the shop and every product page. The names have
+  // their own endpoint, fetched by the checkout alone.
+  it('carries how many and how long, never the names', () => {
     settings.set('pricing', 'remote_towns', 'אילת\nמצפה רמון');
     settings.set('pricing', 'remote_eta_days', 11);
     const p = db.effectivePricing();
-    expect(p.delivery_exceptions).toEqual({ towns: ['אילת', 'מצפה רמון'], eta_days: 11 });
+    expect(p.delivery_exceptions).toEqual({ count: 2, eta_days: 11 });
+    expect(JSON.stringify(p)).not.toContain('אילת');
     // and the prices are untouched by any of it
     expect(p.store.now).toBe(199);
+  });
+
+  it('stays a fixed size however long the list gets', () => {
+    const big = Array.from({ length: 2000 }, (_, i) => 'יישוב ' + i).join('\n');
+    settings.set('pricing', 'remote_towns', big);
+    const bytes = JSON.stringify(db.effectivePricing()).length;
+    settings.set('pricing', 'remote_towns', 'אילת');
+    const small = JSON.stringify(db.effectivePricing()).length;
+    // Only the count's own digits differ — a 2,000-town list costs the
+    // storefront three characters, not fifty kilobytes.
+    expect(bytes - small).toBeLessThan(10);
+  });
+
+  it('the towns themselves are still there for the checkout to fetch', () => {
+    settings.set('pricing', 'remote_towns', 'אילת\nמצפה רמון');
+    expect(db.deliveryExceptions()).toEqual({ towns: ['אילת', 'מצפה רמון'], eta_days: 11 });
   });
 });

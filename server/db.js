@@ -217,10 +217,18 @@ function effectivePricing() {
     // Charged once per order, not per copy (see deliveryFee). The checkout needs
     // it to show the same arithmetic the server is about to perform.
     delivery_fee: deliveryFee(),
-    // Where delivery takes longer than usual, and how much longer. Parsed HERE
-    // rather than in the browser so the "one locality per line" rule has exactly
-    // one implementation; the checkout receives a clean array and renders it.
-    delivery_exceptions: deliveryExceptions(),
+    // Where delivery takes longer, as a HEADLINE only — how many localities and
+    // how long. Deliberately NOT the towns themselves: /api/pricing is fetched by
+    // every storefront page for its prices, and a real courier list is thousands
+    // of names, which none of those pages will ever print. The list has its own
+    // endpoint (GET /api/delivery-exceptions), fetched only by the checkout,
+    // which is the only surface that shows it.
+    // `count` is what the checkout needs to decide whether the note exists at
+    // all, so the note can be painted from this payload without the names.
+    delivery_exceptions: (() => {
+      const e = deliveryExceptions();
+      return { count: e.towns.length, eta_days: e.eta_days };
+    })(),
   };
 }
 
