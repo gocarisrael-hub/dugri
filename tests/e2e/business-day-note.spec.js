@@ -18,7 +18,7 @@ const note = (page) => page.getByTestId('stage-note');
 test('states the cutoff, and where the count starts from', async ({ page }) => {
   await page.goto(`/admin.html?key=${KEY}`);
   await expect(note(page)).toBeVisible();
-  await expect(note(page)).toContainText('19:00');
+  await expect(note(page)).toContainText('16:00');
   // Both halves of the rule: when the day ends, and what that means for a list
   // closed after it.
   await expect(note(page)).toContainText('יום עסקים');
@@ -43,14 +43,14 @@ test('is text on the page, not a tooltip, and appears exactly once', async ({ pa
   // Nothing about the rule may hide behind a hover: the phone layout has no
   // hover at all, and it takes the <thead> off screen, so a title= on the הפקה
   // heading would be unreachable exactly where this is needed.
-  await expect(note(page)).not.toHaveAttribute('title', /19:00/);
+  await expect(note(page)).not.toHaveAttribute('title', /16:00/);
 });
 
 test('survives on a phone, where the column headings do not', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/admin.html?key=${KEY}`);
   await expect(note(page)).toBeVisible();
-  await expect(note(page)).toContainText('19:00');
+  await expect(note(page)).toContainText('16:00');
 });
 
 test('is not shown to someone without the key', async ({ page }) => {
@@ -62,4 +62,98 @@ test('is not shown to someone without the key', async ({ page }) => {
   await page.goto('/admin.html');
   await expect(page.locator('#controls')).toBeHidden();
   await expect(note(page)).toBeHidden();
+});
+
+// THE SAME RULE, SAID TO THE BUYER.
+//
+// The owner's copy sits beside her production queue; this one sits where the
+// money is, because the buyer is the one it costs a day. The clock starts when
+// the word list CLOSES — not at payment — so someone paying at 16:30 who closes
+// tonight must not read the option's estimate as starting today.
+test.describe('the same cutoff, at the payment step', () => {
+  const PNG =
+    'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+
+  async function createCollection(page, title = 'Shira') {
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({
+        json: {
+          card: PNG,
+          back: PNG,
+          board: PNG,
+          warning: null,
+          word_font: null,
+          word_font_options: [],
+        },
+      })
+    );
+    await page.goto('/options.html?step=3');
+    await expect(page.getByTestId('step-3')).toBeVisible();
+    await page.fill('#customTitleInput', title);
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.fill('#ownerEmail', 'test@example.com');
+    await page.fill('#ownerPhone', '0521234567');
+    await page.fill('#buyerNameInput', 'דנה כהן');
+    await page.getByTestId('next-btn').click();
+    await page.waitForURL(/collect\.html\?c=.+&k=.+/);
+  }
+
+  async function openPayPanel(page) {
+    const tab = page.getByTestId('tab-pay');
+    const shown = await tab
+      .waitFor({ state: 'visible', timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (shown) await tab.click();
+    await page.locator('#payPanel > summary').click();
+  }
+
+  test('states when the clock starts, and the cutoff', async ({ page }) => {
+    await createCollection(page);
+    await openPayPanel(page);
+    const cutoff = page.getByTestId('pay-cutoff');
+    await expect(cutoff).toBeVisible();
+    await expect(cutoff).toContainText('16:00');
+    // The clock starts at CLOSING, not at payment — the whole point of saying it
+    // here, where a buyer would otherwise assume paying starts it.
+    await expect(cutoff).toContainText('סוגרים את רשימת המילים');
+    await expect(cutoff).toContainText('יום העסקים הבא');
+  });
+
+  test('sits under the security line, above the pay button', async ({ page }) => {
+    await createCollection(page);
+    await openPayPanel(page);
+    const [trustBox, cutoffBox, btnBox] = await Promise.all([
+      page.locator('[data-edit="collect-pay-trust"]').boundingBox(),
+      page.getByTestId('pay-cutoff').boundingBox(),
+      page.locator('#cardPayBtn').boundingBox(),
+    ]);
+    expect(cutoffBox.y).toBeGreaterThan(trustBox.y);
+    // It must not come between the total and the button, and it must not push
+    // the button off the panel — it is a qualifier, not a step.
+    if (btnBox) expect(cutoffBox.y).toBeLessThan(btnBox.y);
+  });
+
+  test('reads lighter than the security promise beside it', async ({ page }) => {
+    await createCollection(page);
+    await openPayPanel(page);
+    const weight = (loc) =>
+      loc.evaluate((el) => parseInt(getComputedStyle(el).fontWeight, 10) || 400);
+    const size = (loc) => loc.evaluate((el) => parseFloat(getComputedStyle(el).fontSize));
+    const trust = page.locator('[data-edit="collect-pay-trust"]');
+    const cutoff = page.getByTestId('pay-cutoff');
+    // Two claims printed at the same weight read as two promises; this one is a
+    // qualifier on somebody else's.
+    expect(await weight(cutoff)).toBeLessThan(await weight(trust));
+    expect(await size(cutoff)).toBeLessThan(await size(trust));
+  });
+
+  test('is owner-editable, like every other line in the panel', async ({ page }) => {
+    await createCollection(page);
+    await openPayPanel(page);
+    await expect(page.getByTestId('pay-cutoff')).toHaveAttribute('data-edit', 'collect-pay-cutoff');
+  });
 });
