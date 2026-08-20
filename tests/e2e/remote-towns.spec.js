@@ -264,6 +264,85 @@ test.describe('a real-sized list', () => {
   });
 });
 
+test.describe('finding your own town in a long list', () => {
+  // A courier list is thousands of names. Opened, it is a wall of text: nobody
+  // reads it, they look for one town. So above FIND_MIN the note carries a
+  // search box — and below it does not, because a search field over six names is
+  // furniture.
+  const MANY = Array.from({ length: 2500 }, (_, i) => 'יישוב ' + i).concat(['אילת', 'מצפה רמון']);
+
+  async function openNote(page, towns) {
+    await stubPricing(page, { count: towns.length, eta_days: 11 });
+    await stubTowns(page, towns);
+    await createCollection(page);
+    await openPayPanel(page);
+    const note = noteAt(page, 'ship-toggle');
+    await note.locator('summary').click();
+    return note;
+  }
+
+  test('filters the list down to what was typed', async ({ page }) => {
+    const note = await openNote(page, MANY);
+    const find = note.getByTestId('remote-find');
+    await expect(find).toBeVisible();
+
+    await find.fill('אילת');
+    const towns = note.locator('[data-role="towns"]');
+    await expect(towns).toHaveText('אילת');
+    // …and the 2,500 that do not match are gone, not merely scrolled past.
+    await expect(towns).not.toContainText('יישוב 0');
+  });
+
+  test('a partial word is enough — nobody types the whole name', async ({ page }) => {
+    const note = await openNote(page, MANY);
+    await note.getByTestId('remote-find').fill('מצפה');
+    await expect(note.locator('[data-role="towns"]')).toHaveText('מצפה רמון');
+  });
+
+  test('counts the hits, so a wide match is obviously wide', async ({ page }) => {
+    const note = await openNote(page, MANY);
+    await note.getByTestId('remote-find').fill('יישוב 1');
+    // "יישוב 1", "יישוב 1x", "יישוב 1xx"… — the buyer sees at a glance that the
+    // query is too loose rather than scrolling to find out.
+    await expect(note.locator('[data-role="count"]')).toContainText('נמצאו');
+  });
+
+  test('a miss is an ANSWER, not a failed search', async ({ page }) => {
+    const note = await openNote(page, MANY);
+    await note.getByTestId('remote-find').fill('תל אביב');
+    // The thing the buyer actually came to find out: not on the list means the
+    // normal delivery time. "Nothing found" alone would read as a broken search.
+    await expect(note.locator('[data-role="count"]')).toContainText('זמן האספקה הרגיל');
+    await expect(note.locator('[data-role="towns"]')).toHaveText('');
+  });
+
+  test('clearing the box brings the whole list back', async ({ page }) => {
+    const note = await openNote(page, MANY);
+    const find = note.getByTestId('remote-find');
+    await find.fill('אילת');
+    await expect(note.locator('[data-role="towns"]')).toHaveText('אילת');
+    await find.fill('');
+    await expect(note.locator('[data-role="towns"]')).toContainText('יישוב 0');
+    await expect(note.locator('[data-role="count"]')).toBeHidden();
+  });
+
+  test('no search box over a list short enough to read', async ({ page }) => {
+    const note = await openNote(page, TOWNS);
+    await expect(note.getByTestId('remote-find')).toBeHidden();
+    await expect(note.locator('[data-role="towns"]')).toContainText('אילת');
+  });
+
+  test('the open list scrolls inside the note, not the panel', async ({ page }) => {
+    const note = await openNote(page, MANY);
+    const list = note.locator('[data-role="towns"]');
+    // 2,500 names must not push the pay button off the screen: the list is a
+    // bounded, scrollable box of its own.
+    const [h, scrollH] = await list.evaluate((el) => [el.clientHeight, el.scrollHeight]);
+    expect(h).toBeLessThan(400);
+    expect(scrollH).toBeGreaterThan(h);
+  });
+});
+
 test.describe('on the card that adds delivery after payment', () => {
   test('carries the same note', async ({ page }) => {
     await stubPricing(page, { count: TOWNS.length, eta_days: 11 });

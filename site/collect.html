@@ -1673,6 +1673,38 @@
       }
       .odd-note .odd-towns {
         color: var(--ink);
+        /* A courier's list runs to thousands of names. Open, that is a wall of
+           text taller than the panel — so the list scrolls inside the note
+           instead of pushing the pay button off the screen. */
+        max-height: 220px;
+        overflow-y: auto;
+      }
+      .odd-note .odd-find {
+        display: block;
+        width: 100%;
+        margin-top: 8px;
+        padding: 8px 10px;
+        font: inherit;
+        font-size: 13px;
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      /* `display:block` above is an AUTHOR rule and beats the browser's own
+         `[hidden] { display: none }`, so without this the search box stays on
+         screen for a short list no matter what the JS sets. Same reason the
+         count line below needs its own guard. */
+      .odd-note .odd-find[hidden],
+      .odd-note .odd-count[hidden] {
+        display: none;
+      }
+      .odd-note .odd-find:focus {
+        outline: none;
+        border-color: var(--ink);
+      }
+      .odd-note .odd-count {
+        font-size: 12px;
       }
       @media (prefers-reduced-motion: reduce) {
         .odd-note > summary::after {
@@ -2181,6 +2213,17 @@
         <details class="odd-note" data-testid="remote-note" data-where="ship-add" hidden>
           <summary data-edit="collect-remote-summary-ship">יישובים חריגים</summary>
           <p class="odd-eta" data-role="eta"></p>
+          <input
+            class="odd-find"
+            type="search"
+            data-role="find"
+            data-testid="remote-find"
+            placeholder="חיפוש יישוב"
+            aria-label="חיפוש יישוב ברשימה"
+            autocomplete="off"
+            hidden
+          />
+          <p class="odd-count" data-role="count" hidden></p>
           <p class="odd-towns" data-role="towns"></p>
         </details>
         <div class="sheet-err hidden" id="shipAddErr" role="alert" data-testid="ship-add-err"></div>
@@ -2585,6 +2628,19 @@
           <details class="odd-note" data-testid="remote-note" data-where="ship-toggle" hidden>
             <summary data-edit="collect-remote-summary">יישובים חריגים</summary>
             <p class="odd-eta" data-role="eta"></p>
+            <!-- A list this long is not read, it is SEARCHED. Shown only once the
+                 list is long enough to be worth searching (see FIND_MIN). -->
+            <input
+              class="odd-find"
+              type="search"
+              data-role="find"
+              data-testid="remote-find"
+              placeholder="חיפוש יישוב"
+              aria-label="חיפוש יישוב ברשימה"
+              autocomplete="off"
+              hidden
+            />
+            <p class="odd-count" data-role="count" hidden></p>
             <p class="odd-towns" data-role="towns"></p>
           </details>
         </div>
@@ -5366,11 +5422,57 @@
             const towns = (ex2 && ex2.towns) || [];
             if (!towns.length) return;
             document.querySelectorAll('[data-testid="remote-note"]').forEach((el) => {
-              const list = el.querySelector('[data-role="towns"]');
-              if (list) list.textContent = towns.join(' · ');
+              fillTownList(el, towns);
             });
           });
         }
+      }
+
+      // Below this many names the list is read, above it the list is SEARCHED.
+      // A search box over six towns is furniture; over two thousand it is the
+      // only way anyone finds their own.
+      const FIND_MIN = 25;
+
+      // Paint one note's list, honouring its search box. Called once when the
+      // names land and again on every keystroke.
+      //
+      // The list is ONE text node, not two thousand elements: the whole point of
+      // the filter is that the buyer reads a handful of names, and building a
+      // DOM node per town would cost more than the feature is worth.
+      function fillTownList(el, towns) {
+        const list = el.querySelector('[data-role="towns"]');
+        const find = el.querySelector('[data-role="find"]');
+        const count = el.querySelector('[data-role="count"]');
+        if (!list) return;
+
+        const paint = () => {
+          const q = find && !find.hidden ? find.value.trim() : '';
+          const hits = q ? towns.filter((t) => t.includes(q)) : towns;
+          list.textContent = hits.join(' · ');
+          if (!count) return;
+          if (!q) {
+            count.hidden = true;
+            return;
+          }
+          count.hidden = false;
+          // A miss is an ANSWER, not an error: a town that is not on this list
+          // ships in the normal time, which is the thing the buyer came to find
+          // out. Saying only "not found" would read as a failed search.
+          count.textContent = hits.length
+            ? 'נמצאו ' + hits.length + ' יישובים'
+            : 'לא ברשימה - כלומר זמן האספקה הרגיל.';
+        };
+
+        if (find) {
+          find.hidden = towns.length < FIND_MIN;
+          // Once per element: paintRemoteNotes re-runs on every pricing reload,
+          // and a listener added each time would filter the same list twice.
+          if (!find.dataset.wired) {
+            find.dataset.wired = '1';
+            find.addEventListener('input', paint);
+          }
+        }
+        paint();
       }
 
       function setupPayPanel() {
