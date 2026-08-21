@@ -3570,43 +3570,6 @@
             <span class="wiz-hint" data-edit="options-event-type-hint">במילים שלכם</span>
           </label>
         </div>
-        <!-- OPTIONAL NOTE TO US. Everything else the wizard collects ends up
-             printed on something; this does not. It is where a buyer says the
-             thing that has no field of its own — "זו הפתעה, אל תתקשרו אליה",
-             "צריך עד יום חמישי" — and it sits beside the other things she is
-             telling us about herself rather than about the game.
-             IT IS A PLAIN, OPEN BOX, and getting here took two wrong turns. This
-             step was held to "fits a phone with no scrolling", so the box was
-             moved, then folded behind a button to cost one line. Put to the
-             owner, she answered: "fits a phone with no scrolling - forget about
-             this." So the box is a box, and the step scrolls. What the step still
-             owes her is in wizard-noscroll: every control REACHABLE, which is the
-             half of that rule she kept.
-             THE EXAMPLE IN THE BOX IS A DEADLINE, on the owner's ask for a
-             different one. An example is not decoration — it is the whole brief
-             for a free-text box, and a buyer answers the question the example
-             asks. "זו הפתעה, אל תתקשרו אליה" asks for a fact about the party;
-             a date and a "by when" asks for the thing that actually changes how
-             the order is handled, and it is the one the owner has to know BEFORE
-             she starts rather than after. The surprise note is still welcome
-             here — it just no longer sets the ceiling for what she gets told. -->
-        <label class="wiz-field" id="orderCommentField" data-testid="order-comment-field">
-          <span class="wiz-lbl" data-edit="options-comment-label"
-            >רוצים להוסיף לנו הערה? (רשות)</span
-          >
-          <textarea
-            class="wiz-input"
-            id="orderCommentInput"
-            data-testid="order-comment-input"
-            rows="2"
-            maxlength="500"
-            placeholder="למשל: המסיבה ב-12.9, צריך את הקובץ עד ה-9.9"
-            aria-label="הערה להזמנה (רשות)"
-          ></textarea>
-          <span class="wiz-hint" data-edit="options-comment-hint"
-            >ההערה מגיעה אלינו בלבד ולא מודפסת על הקלפים.</span
-          >
-        </label>
         <p class="wiz-err" id="createErr" data-testid="create-err" hidden></p>
       </section>
     </main>
@@ -3914,7 +3877,6 @@
       let activeTab = 'front';
       let chasers = false; // optional drinking-game add-on (default OFF)
       let customTitle = ''; // optional free-form title override (F7); '' = theme default
-      let orderComment = ''; // optional note to US; '' = she wrote nothing
       let buyerName = ''; // REQUIRED: who is ORDERING (never the honoree); '' = unanswered
       let eventType = ''; // optional: the event in her words; '' = unanswered
       let currentStep = 1; // wizard position (1..5); read by persist() for the URL
@@ -4716,7 +4678,6 @@
           mainHex,
           chasers,
           customTitle,
-          orderComment,
           buyerName,
           eventType,
         };
@@ -5044,19 +5005,6 @@
           persist();
           // Re-render the live preview so the buyer sees the EXACT title (WYSIWYG).
           if (currentStep === 3) requestPreview();
-        });
-      }
-
-      /* ---- optional note to us -----------------------------------------------
-         Not printed on anything, so it needs none of the title's fitting or
-         warnings: it is a message to the owner, kept with the order and shown
-         in admin beside it. Persisted with the rest of the selection so a
-         refresh mid-wizard does not lose what she typed. */
-      const orderCommentInput = document.getElementById('orderCommentInput');
-      if (orderCommentInput) {
-        orderCommentInput.addEventListener('input', () => {
-          orderComment = orderCommentInput.value;
-          persist();
         });
       }
 
@@ -6612,8 +6560,6 @@
               // both in her words; optional, never printed, shown to us in admin
               buyer_name: buyerName,
               event_type: eventType,
-              // her own note about this order; never printed, shown to us in admin
-              comment: orderComment,
             }),
           });
           const data = await r.json();
@@ -7061,10 +7007,6 @@
         try {
           const saved = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
           if (saved && typeof saved.customTitle === 'string') customTitle = saved.customTitle;
-          // ...and her note to us, for the same reason: free-form text stays out
-          // of the URL, and losing what she typed to a refresh is its own small
-          // insult on the screen where she is about to pay.
-          if (saved && typeof saved.orderComment === 'string') orderComment = saved.orderComment;
           // ...and the two short answers beside it, for the same reason.
           if (saved && typeof saved.buyerName === 'string') buyerName = saved.buyerName;
           if (saved && typeof saved.eventType === 'string') eventType = saved.eventType;
@@ -7077,7 +7019,6 @@
           // and it is on its way to the same printed card either way.
           refreshTitleError();
         }
-        if (orderCommentInput) orderCommentInput.value = orderComment;
         if (buyerNameInput) buyerNameInput.value = buyerName;
         if (eventTypeInput) eventTypeInput.value = eventType;
         // a fixed-colour design ignores any restored colour choice.

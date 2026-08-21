@@ -1,18 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 
-// THE NOTE SHE LEAVES WITH HER ORDER, from her side of the screen: there is
-// somewhere to say it, what she types survives a refresh, and it travels with
-// the order rather than being quietly dropped.
+// THE NOTE BOX IS GONE FROM THE WIZARD — the owner asked for it removed, so a
+// customer is no longer offered a free-text box on the details step.
 //
-// It is a plain, open box on the details step, beside the email and the phone.
-// It was moved once and folded behind a button once, both times to satisfy "fits
-// a phone with no scrolling"; the owner then dropped that rule ("forget about
-// this"). What the step still owes her — that she can reach every control — is
-// asserted in wizard-noscroll.
+// What is left of the feature is the OWNER's side: `comment` is still stored on
+// an order, still shown and editable in the admin dialog, and still reaches her
+// order email. That is how she records what a customer told her on WhatsApp, and
+// it is covered in tests/unit/order-comment.test.js. Existing orders keep the
+// notes their buyers already left.
 //
-// The server side (sanitizing, admin, the owner's email) is covered in
-// tests/unit/order-comment.test.js; this is the part only a browser can answer.
+// So this file is a GUARD, not a feature spec: it holds the wizard to not asking
+// for one, and holds the step that used to end with it to still working without
+// it. Written as tests rather than deleted, because "there is no box" is exactly
+// the kind of thing a later change re-adds by accident.
 
 // A 1x1 transparent PNG standing in for the rendered preview.
 const PNG =
@@ -63,41 +64,16 @@ async function toDetailsStep(page) {
   await page.getByTestId('buyer-name-input').fill('דנה כהן');
 }
 
-test.describe('the note a buyer leaves with her order', () => {
-  test('there is somewhere to say it, and it says it is not printed', async ({ page }) => {
+test.describe('the wizard no longer asks the customer for a note', () => {
+  test('the details step carries no note box at all', async ({ page }) => {
     await toNameStep(page);
     await toDetailsStep(page);
-    await expect(page.getByTestId('order-comment-input')).toBeVisible();
-    // The one thing she must be able to trust about this box: what she writes
-    // here does NOT end up on the cards.
-    await expect(page.getByTestId('order-comment-field')).toContainText('לא מודפסת');
+    // Neither the input nor the label that framed it ("לא מודפסת על הקלפים").
+    await expect(page.getByTestId('order-comment-input')).toHaveCount(0);
+    await expect(page.getByTestId('order-comment-field')).toHaveCount(0);
   });
 
-  test('the example in the box is one that changes how the order is handled', async ({ page }) => {
-    // The placeholder IS the brief for a free-text box: a buyer answers the
-    // question the example asks. It used to ask for a fact about the party ("זו
-    // הפתעה, אל תתקשרו אליה"); the owner asked for a different one, so it now
-    // asks for a date and a by-when — the thing the owner has to know BEFORE she
-    // starts a deck rather than after. The assertion is on the deadline, not on
-    // the exact sentence, so the copy can be reworded without a red test.
-    await toNameStep(page);
-    await toDetailsStep(page);
-    await expect(page.getByTestId('order-comment-input')).toHaveAttribute(
-      'placeholder',
-      /עד ה?-?\d/
-    );
-  });
-
-  test('what she typed survives a refresh of the step', async ({ page }) => {
-    await toNameStep(page);
-    await toDetailsStep(page);
-    const note = 'זו הפתעה - אל תתקשרו אליה';
-    await page.getByTestId('order-comment-input').fill(note);
-    await page.reload();
-    await expect(page.getByTestId('order-comment-input')).toHaveValue(note);
-  });
-
-  test('it travels with the order she creates', async ({ page }) => {
+  test('and the order it creates carries no comment', async ({ page }) => {
     await toNameStep(page);
     let posted = null;
     await page.route('**/api/collections', async (route) => {
@@ -109,47 +85,50 @@ test.describe('the note a buyer leaves with her order', () => {
       });
     });
     await toDetailsStep(page);
-    await page.getByTestId('order-comment-input').fill('צריך עד יום חמישי');
     await page.getByTestId('next-btn').click(); // create
-    await expect.poll(() => posted && posted.comment).toBe('צריך עד יום חמישי');
+    await expect.poll(() => posted !== null).toBe(true);
+    // Absent, not an empty string: the field is gone, so there is nothing to
+    // send. (The route still ACCEPTS a comment — that is what the admin edit
+    // path writes — it simply is not offered to a buyer any more.)
+    expect(posted.comment).toBeUndefined();
+    // The two short answers that shared the step with it are untouched.
+    expect(posted.buyer_name).toBe('דנה כהן');
   });
 
-  test('a buyer on a phone can reach it, and the step scrolls to let her', async ({ page }) => {
-    // What replaced "the step must not scroll": the box is 141px on a step that
-    // had 2px to spare, so the step scrolls now — and scrolling has to actually
-    // deliver her to it, clear of the sticky bar rather than under it.
+  test('the step still completes on a phone, with the box removed', async ({ page }) => {
+    // The note box was the tallest thing on this step and the last control on
+    // it. Removing it must not have left the step in a state where the end of
+    // the form is unreachable under the sticky bar.
     await page.setViewportSize({ width: 390, height: 844 });
     await toNameStep(page);
     await toDetailsStep(page);
-    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
-    await expect
-      .poll(async () =>
-        page.evaluate(() => {
-          const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
-          const el = document
-            .querySelector('[data-testid="order-comment-input"]')
-            .getBoundingClientRect();
-          return Math.round(el.bottom - bar.top);
-        })
-      )
-      .toBeLessThanOrEqual(0);
-    await page.getByTestId('order-comment-input').fill('נא לארוז כמתנה');
-    await expect(page.getByTestId('order-comment-input')).toHaveValue('נא לארוז כמתנה');
+    const last = page.getByTestId('event-type-input');
+    await last.scrollIntoViewIfNeeded();
+    const clear = await page.evaluate(() => {
+      const bar = document.querySelector('.wiz-bar').getBoundingClientRect();
+      const el = document.querySelector('[data-testid="event-type-input"]').getBoundingClientRect();
+      return Math.round(el.bottom - bar.top);
+    });
+    expect(clear).toBeLessThanOrEqual(0);
+    await last.fill('יום הולדת 40');
+    await expect(last).toHaveValue('יום הולדת 40');
   });
 
-  test('an order with nothing to say still goes through', async ({ page }) => {
+  test('nothing it left behind breaks a refresh of the step', async ({ page }) => {
+    // The note was persisted into localStorage with the rest of the selection.
+    // A buyer mid-wizard when this shipped still has that key, so the restore
+    // must ignore what it no longer knows about rather than throwing on it.
     await toNameStep(page);
-    let posted = null;
-    await page.route('**/api/collections', async (route) => {
-      posted = JSON.parse(route.request().postData() || '{}');
-      await route.fulfill({
-        status: 201,
-        contentType: 'application/json',
-        body: JSON.stringify({ id: 'c-test', owner_token: 't-test' }),
-      });
-    });
     await toDetailsStep(page);
-    await page.getByTestId('next-btn').click(); // create
-    await expect.poll(() => posted && posted.comment).toBe('');
+    await page.evaluate(() => {
+      const sel = JSON.parse(localStorage.getItem('dugri_selection') || '{}');
+      sel.orderComment = 'הערה משמורה ישנה';
+      localStorage.setItem('dugri_selection', JSON.stringify(sel));
+    });
+    await page.reload();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await expect(page.getByTestId('order-comment-input')).toHaveCount(0);
+    // …and the fields that ARE still restored came back.
+    await expect(page.getByTestId('buyer-name-input')).toHaveValue('דנה כהן');
   });
 });

@@ -299,12 +299,13 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
     // The last control first: if the tail of the document is too short to bring
     // it clear of the fixed bar, the funnel is blocked and nothing else matters.
-    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
+    // The note box used to be last; the owner dropped it from the wizard, so the
+    // event type is the end of the form now.
+    await assertControlReachableByScrolling(page, '[data-testid="event-type-input"]');
     // …and the fields above it are still on screen at that same scroll position,
     // not pushed off the top by everything that came after them.
     await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
     await assertControlReachableByScrolling(page, '[data-testid="buyer-name-input"]');
-    await assertControlReachableByScrolling(page, '[data-testid="event-type-input"]');
   });
 
   // STEP 5 IS THE SECOND STEP THAT MAY SCROLL, for the same reason as step 3 with
@@ -428,10 +429,11 @@ test.describe('the deck pictures never bury a control', () => {
     // no amount of scrolling helped, because the page could not scroll.)
     await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
     // The pictures push from ABOVE and the form grows from below, so the control
-    // most at risk is whichever is LAST — today the note box, under the buyer's
-    // name and the event type. Check it by position, not by which field happened
-    // to be last when this test was written.
-    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
+    // most at risk is whichever is LAST — today the event type, under the buyer's
+    // name. (It was the note box until the owner dropped that field from the
+    // wizard.) Check it by position, not by which field happened to be last when
+    // this test was written.
+    await assertControlReachableByScrolling(page, '[data-testid="event-type-input"]');
   });
 
   // Step 5 now carries BOTH tall things: the deck pictures and a photo grid whose
@@ -545,10 +547,10 @@ test.describe('the deck pictures never bury a control', () => {
       await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)
     ).toBeGreaterThan(0);
     // The other half, which is not optional: the last control comes fully clear.
-    // "Last" is the note box now — the buyer's name and the event type sit
-    // between it and the phone field — so check the real end of the form, and the
-    // phone field too, since it is what this test is named for.
-    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
+    // "Last" is the event type now — it and the buyer's name sit between the
+    // phone field and the end of the form — so check the real end of the form,
+    // and the phone field too, since it is what this test is named for.
+    await assertControlReachableByScrolling(page, '[data-testid="event-type-input"]');
     await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
   });
 
@@ -637,7 +639,7 @@ test.describe('the deck pictures never bury a control', () => {
     // picture" affordance is not the fix.
     await expect(page.locator('#deckDots .carousel-dot')).toHaveCount(3);
     await assertControlReachableByScrolling(page, '[data-testid="owner-phone"]');
-    await assertControlReachableByScrolling(page, '[data-testid="order-comment-input"]');
+    await assertControlReachableByScrolling(page, '[data-testid="event-type-input"]');
   });
 
   // Step 3 keeps the big picture AND its licence to scroll (owner, 2026-08-06), so
