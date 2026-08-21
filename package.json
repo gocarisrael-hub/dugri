@@ -7,7 +7,7 @@
     "test": "vitest run",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
-    "test:py": "cd generator && python3 -m pytest -q",
+    "test:py": "cd generator && python3 -m pytest -q -n 4 --dist loadfile",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "lint": "eslint .",
