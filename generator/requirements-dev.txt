@@ -27,6 +27,24 @@
 # Pinned loosely: these are stable, widely-packaged libraries and the tests do
 # not depend on version-specific behaviour.
 pytest>=8
+# pytest-xdist — the suite runs on FOUR workers, one file at a time each
+# (`-n 4 --dist loadfile`).
+# It is 1077 tests, most of the time in a few dozen that drive real headless
+# Chrome, and serially that is ten and a half minutes; across four workers it is
+# four and a half.
+#
+# loadfile, NOT the finer-grained `--dist load`. Distributing individual tests
+# was measured too: it came out SLOWER (305s vs 268s) and, more to the point, RED
+# — test_icon_keepout and test_recipe_diff_single both fail that way, because
+# tests inside one file lean on each other. Keeping a file on one worker is both
+# the safe choice and the fast one; don't "optimise" it to `load`.
+#
+# FOUR, not `-n auto`. auto takes one worker per logical CPU, and on a 10-core
+# laptop that is ten headless Chromes rendering at once: test_render_page and
+# test_card_paper fail there and pass alone. The ceiling is concurrent Chromes,
+# not cores, so it is a fixed number — and four is what a CI runner has anyway.
+# Raising it needs the render helper to tolerate contention first.
+pytest-xdist>=3
 pillow>=10
 numpy>=1.26
 pikepdf>=8

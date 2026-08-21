@@ -103,12 +103,12 @@ jobs:
   python:
     name: Generator tests (pytest)
     runs-on: ubuntu-latest
-    # Bound worst-case cost the same way the Node job does. The "about a minute"
-    # this cap was written for is long gone: the suite is past 950 tests, dozens
-    # of which drive real headless Chrome, and it now takes 7-10 minutes on a
-    # runner (9m36s and 9m48s on main on 2026-08-08/09). At 10 the cap had
-    # stopped catching hangs and started cancelling green suites over runner
-    # variance, so it matches the Node job's 20.
+    # Bound worst-case cost the same way the Node job does. The suite is 1077
+    # tests, dozens of which drive real headless Chrome; it took 11m21s serially
+    # and now runs one worker per file (see npm run test:py), which brought it to
+    # about four and a half minutes locally. The cap stays generous: it is a
+    # backstop against a hung Chrome, and a cap that fires on healthy runs only
+    # teaches everyone to re-run reds.
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -151,7 +151,8 @@ jobs:
       - name: Generator tests (pytest)
         # Run from generator/ — the tests import their modules by bare name
         # (`import pack`), which resolves via pytest putting the test file's own
-        # directory on sys.path.
+        # directory on sys.path. The script carries the xdist flags, so a laptop
+        # run and a CI run are the same run.
         run: npm run test:py
 
   # --- One check to read ------------------------------------------------------
