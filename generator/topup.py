@@ -110,8 +110,9 @@ def personal_span(personal_words):
     return n
 
 
-def topup(personal_words, theme_key, target=TARGET, wordlist=None):
-    """Return a deduped word list: all personal words + seed fillers to >= target.
+def topup(personal_words, theme_key, target=TARGET, wordlist=None,
+          keep_duplicates=False):
+    """Return a word list: all personal words + seed fillers to >= target.
 
     - Every unique personal word is always present, first.
     - If the (deduped) personal words already reach `target`, they are returned
@@ -119,6 +120,13 @@ def topup(personal_words, theme_key, target=TARGET, wordlist=None):
     - Otherwise fill from `wordlist` if one is given, else the theme's own
       `wordlist` pool, then generic-350, until the list has at least `target`
       words (or the pools run dry).
+
+    ``keep_duplicates`` turns the dedup off FOR THE PERSONAL WORDS ONLY. It is
+    set by the `exact` card order, where the customer wrote her list in fours and
+    each four is a card she authored: a repeat there is a clue she used on two
+    different cards, not a slip, and dropping it shifts every card after it. The
+    FILLER is still deduped against itself and against her words — a pool word
+    that repeats one of hers is a slip by definition, since she never chose it.
 
     ``wordlist`` is a PER-ORDER override, set by the owner on the order itself:
     a 40th birthday run off a kids template wants the grown-up pool, and the
@@ -134,10 +142,14 @@ def topup(personal_words, theme_key, target=TARGET, wordlist=None):
     seen = set()
     out = []
 
-    def add(words, cap):
-        """Add unique words. With cap=True, stop the moment the deck reaches
-        `target` (so fillers never overshoot the deck size); with cap=False,
-        add every word (used for personal words, which are always all kept)."""
+    def add(words, cap, keep_repeats=False):
+        """Add words. With cap=True, stop the moment the deck reaches `target`
+        (so fillers never overshoot the deck size); with cap=False, add every
+        word (used for personal words, which are always all kept).
+
+        `keep_repeats` skips the dedup, and is only ever passed for the personal
+        words under the `exact` order. A repeat is still REMEMBERED in `seen`,
+        so filler can never reintroduce one of her words later."""
         for w in words:
             if cap and len(out) >= target:
                 return
@@ -145,14 +157,14 @@ def topup(personal_words, theme_key, target=TARGET, wordlist=None):
             if not w:
                 continue
             k = _norm(w)
-            if k in seen:
+            if k in seen and not keep_repeats:
                 continue
             seen.add(k)
             out.append(w)
 
     # 1) All personal words first — never dropped (beyond exact dedup), even if
     #    they alone exceed the target.
-    add(personal_words or [], cap=False)
+    add(personal_words or [], cap=False, keep_repeats=keep_duplicates)
     if len(out) >= target:
         return out
 

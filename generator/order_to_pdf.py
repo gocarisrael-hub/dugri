@@ -105,7 +105,11 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
 
     try:
         # 1) Top up the personal words to a full deck.
-        words = topup(personal_words, theme_key, wordlist=wordlist)
+        # Under `exact` her repeats are kept: she wrote the list in fours and each
+        # four is a card, so a word she used as a clue on two cards must appear
+        # twice or every card after the first repeat shifts. See pack.ORDERS.
+        words = topup(personal_words, theme_key, wordlist=wordlist,
+                      keep_duplicates=(order == pack.ORDER_EXACT))
         # Where her own words end and the filler begins — the boundary the
         # 'personal-first' order splits on. It is a count because the deck is one
         # flat list; nothing marks a word as filler.

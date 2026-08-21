@@ -974,6 +974,9 @@ const db = {
     // Room left under the quota, computed from the CURRENT count (Infinity when
     // the collection is exempt/paid or the gate is switched off).
     let room = freeLimitState(c, existingWords.length).remaining;
+    // Set BEFORE the words arrive (the admin picks the card order on the order,
+    // then the list is sent), so it is read here rather than at production time.
+    const authoredList = c.card_order === 'exact';
     const by = addedBy ? String(addedBy).trim().slice(0, 40) : null;
     let added = 0;
     let skipped = 0;
@@ -1006,7 +1009,21 @@ const db = {
         continue;
       }
       const n = norm(text);
-      if (existing.has(n)) {
+      // AN AUTHORED LIST KEEPS ITS REPEATS. A collection whose card order is
+      // `exact` is one where the customer wrote the list in fours and each four
+      // is a card she composed — so a clue she used on two different cards
+      // ("אוכל" on the food card and again on the Friday-dinner card) is not a
+      // slip to tidy away. Dropping it does not shorten the list by one, it
+      // shifts every card after the first repeat and quietly rewrites the rest
+      // of her deck.
+      //
+      // Everywhere else a repeat IS a slip — two contributors sending the same
+      // word, or one buyer pasting the same list twice — and it is still
+      // dropped, because two identical words on one card is a printed mistake.
+      // The generator holds the same rule at its own two layers (topup and
+      // pack, both keyed off the same `exact`), so the list that is stored, the
+      // list that is frozen and the list that is printed all agree.
+      if (!authoredList && existing.has(n)) {
         skipped += 1;
         continue;
       }

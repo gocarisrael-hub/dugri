@@ -157,7 +157,15 @@ def _phrase_quota(n_multi, caps):
 #                   the two scripts.
 #   exact           the list is laid onto cards EXACTLY as it arrived — words 1-4
 #                   on card 1, 5-8 on card 2 — for an order whose SEQUENCE carries
-#                   meaning (a timeline, a story, a joke that builds).
+#                   meaning. Its real use turned out to be bigger than a running
+#                   order: a customer who writes the list in FOURS is writing the
+#                   CARDS, and then the deck is hers card by card.
+#                   REPEATS SURVIVE under this order, and only under this one. A
+#                   list of authored cards says "אוכל" on six different cards
+#                   because six different cards are about food; dropping the
+#                   repeats does not tidy that list, it shifts every card after
+#                   the first repeat and quietly rewrites the rest of the deck.
+#                   Everywhere else a repeat is a slip and is still dropped.
 #
 # THE PHRASE RULE IS NOT ONE OF THE OPTIONS — it applies underneath all of them,
 # with ONE deliberate exception: `exact`. `deal` guarantees every card lands
@@ -401,13 +409,19 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     are the customer's own — the boundary `personal-first` splits on, and ignored
     by the others.
     """
-    seen = set()
-    uniq = []
-    for w in words:
-        w = w.strip()
-        if w and w not in seen:
-            seen.add(w)
-            uniq.append(w)
+    # `exact` keeps repeats; every other order drops them. See the note above
+    # ORDERS: when the ARRANGEMENT is the caller's, a repeat is part of what she
+    # arranged, and removing it moves every card after it.
+    if order == ORDER_EXACT:
+        uniq = [w for w in (str(x).strip() for x in words) if w]
+    else:
+        seen = set()
+        uniq = []
+        for w in words:
+            w = w.strip()
+            if w and w not in seen:
+                seen.add(w)
+                uniq.append(w)
     # Own RNG, not the global one: pack must not perturb (or be perturbed by)
     # anything else seeding random in the same order-rendering process.
     rnd = random.Random(seed)
@@ -420,9 +434,9 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     for g in groups:
         n_cards = max(1, math.ceil(len(g) / PER_CARD))
         # `exact` is the one order that does not go through the balanced deal —
-        # see the note above ORDERS for why the two cannot both be had. Dedup
-        # above still applies: a repeat is dropped, so "exactly as it arrived"
-        # means the arriving list minus its own duplicates.
+        # see the note above ORDERS for why the two cannot both be had. It is
+        # also the one that kept its repeats above, so "exactly as it arrived"
+        # means exactly that.
         if order == ORDER_EXACT:
             rows.extend(deal_in_order(g, n_cards))
         else:
