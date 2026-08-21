@@ -220,6 +220,77 @@ def test_a_grouped_full_deck_costs_at_most_one_extra_card():
         assert plain <= cards <= plain + 1, order
 
 
+# ---- exact: the list as it arrived -----------------------------------------
+# The fourth order, and the only one that gives up the phrase balance. It exists
+# for a list whose SEQUENCE means something — a timeline, a story, a joke that
+# builds — where a balanced deal would scatter the point of the list across the
+# deck.
+
+
+def test_exact_lays_the_list_down_in_order():
+    words = [f"w{i}" for i in range(1, 13)]
+    path = _csv()
+    pack.pack(words, path, order=pack.ORDER_EXACT, photo_card=False)
+    assert _cards(path) == [
+        ["w1", "w2", "w3", "w4"],
+        ["w5", "w6", "w7", "w8"],
+        ["w9", "w10", "w11", "w12"],
+    ]
+
+
+def test_exact_is_the_same_deck_whatever_the_seed():
+    """No RNG reaches it — the caller chose the arrangement, so nothing may vary
+    it. (Every other order is deterministic PER SEED; this one is deterministic
+    full stop.)"""
+    words = [f"w{i}" for i in range(1, 30)]
+    a, b = _csv("a.csv"), _csv("b.csv")
+    pack.pack(words, a, seed=1, order=pack.ORDER_EXACT, photo_card=False)
+    pack.pack(words, b, seed=999, order=pack.ORDER_EXACT, photo_card=False)
+    assert _cards(a) == _cards(b)
+
+
+def test_exact_pads_only_the_last_card():
+    words = [f"w{i}" for i in range(1, 7)]      # 6 -> one full card + a short one
+    path = _csv()
+    pack.pack(words, path, order=pack.ORDER_EXACT, photo_card=False)
+    cards = _cards(path)
+    assert cards[0] == ["w1", "w2", "w3", "w4"]
+    assert cards[1] == ["w5", "w6", "", ""]
+
+
+def test_exact_loses_no_word_and_invents_none():
+    """The rule every order shares: grouping decides WHERE a word goes, never
+    WHETHER it goes."""
+    words = [f"w{i}" for i in range(1, 51)]
+    path = _csv()
+    pack.pack(words, path, order=pack.ORDER_EXACT, photo_card=False)
+    assert _placed(_cards(path)) == words
+
+
+def test_exact_still_drops_a_repeat():
+    """"Exactly as it arrived" means the arriving list minus its own duplicates —
+    the dedup above the deal is not one of the things this option turns off."""
+    path = _csv()
+    pack.pack(["a", "b", "a", "c"], path, order=pack.ORDER_EXACT, photo_card=False)
+    assert _cards(path) == [["a", "b", "c", ""]]
+
+
+def test_exact_keeps_phrases_where_the_customer_put_them():
+    """The trade, stated as a test: four phrases in a row in the list stay four
+    phrases on one card. Under every other order the deal would spread them, and
+    THAT is the difference the owner is choosing when she picks this."""
+    phrases = ["ארוחת בוקר בנמל", "להקת שבעת הכוכבים", "טיול לצפון בגשם",
+               "הקפה של שלוש בבוקר"]
+    words = phrases + [f"w{i}" for i in range(1, 9)]
+    path = _csv()
+    pack.pack(words, path, order=pack.ORDER_EXACT, photo_card=False)
+    assert _cards(path)[0] == phrases
+
+
+def test_exact_is_offered_as_an_order():
+    assert pack.ORDER_EXACT in pack.ORDERS
+
+
 if __name__ == "__main__":
     import pytest
     raise SystemExit(pytest.main([__file__, "-q"]))

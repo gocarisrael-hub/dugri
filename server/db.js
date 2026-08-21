@@ -283,7 +283,7 @@ const MAX_COPIES = Number(process.env.MAX_COPIES || 999);
 // generator/pack.py accepts (its ORDERS), because they are passed to the child
 // verbatim as --order=<value>; null means the default blend, which is what every
 // order did before this existed.
-const CARD_ORDERS = ['random', 'personal-first', 'by-script'];
+const CARD_ORDERS = ['random', 'personal-first', 'by-script', 'exact'];
 
 // The one-time shipping fee. Only a NON-NEGATIVE integer is honoured; anything
 // else falls back to 0, so a corrupt override can never inflate a charge.
