@@ -231,3 +231,80 @@ def test_equal_rows_keep_the_order_they_arrived_in():
         s["y0"], s["y1"] = 20 + i * 40.0, 20 + i * 40.0 + h
         s["x0"], s["x1"] = slots[0]["x0"], slots[0]["x1"]
     assert rp.order_by_room(flat, words, face, cell=cell, obstacles=None) == words
+
+
+# ---- the deal's weight: letters, not the measurement -------------------------
+# The measurement above still answers "how large will this print", which the
+# small-card report needs. What it must NOT decide any more is the ORDER the deal
+# hands entries out in: it reads every entry at its best wrapping, and a card
+# with four entries has no room to wrap. See word_demand.letter_weights.
+
+
+def test_letters_are_counted_with_the_spaces():
+    w = wd.letter_weights(["יתוש בחדר", "מחברת"])
+    assert w["יתוש בחדר"] == -9
+    assert w["מחברת"] == -5
+
+
+def test_a_longer_entry_weighs_heavier():
+    # Bigger means easier — the direction the deal has always read.
+    w = wd.letter_weights(["עוגת יום הולדת", "מחברת", "קן"])
+    assert w["עוגת יום הולדת"] < w["מחברת"] < w["קן"]
+
+
+def test_blank_entries_carry_no_weight():
+    assert wd.letter_weights(["", "   ", None, "קן"]) == {"קן": -2}
+
+
+def test_the_weight_needs_no_font_or_template():
+    # measure() comes back empty when the fonts cannot be read, and the deal used
+    # to fall back to counting spaces. Letters have no such path, so every order
+    # is dealt by the same rule and the deck cannot change shape on a bad font.
+    assert wd.letter_weights(["מסיבה"]) == {"מסיבה": -5}
+
+
+def test_the_phrase_the_measurement_called_easy_is_dealt_first():
+    # THE BUG THIS FIXES, as one assertion. עוגת יום הולדת caps its card at 15.61
+    # on אשכולית — the worst entry of the order that exposed this — while the
+    # measurement scores it ABOVE מחברת, one of the easiest words in the deck.
+    # Under letters it is the heaviest thing in the list, and the deal, which
+    # hands out heaviest first, gives it to card 1.
+    words = ["עוגת יום הולדת", "מחברת", "קן", "ים",
+             "פאב", "שוק", "חוף", "גן"]
+    measured = wd.measure(words, THEME)
+    assert measured["עוגת יום הולדת"] > measured["מחברת"]
+    rows = pack.deal(words, 2, random.Random(0), sizes=wd.letter_weights(words))
+    assert "עוגת יום הולדת" in rows[0], rows
+
+
+def test_hard_entries_are_still_spread_one_per_card_under_letter_weights():
+    # THE RULE ITSELF, re-asserted against the score the deal actually uses. The
+    # older test above proves it for wd.measure, which no order takes any more,
+    # so it would not catch a weight that let two demanding entries share a card.
+    # The demanding entries here are what a real order's worst ones look like:
+    # long phrases, not the invented unbreakable tokens.
+    hard = ["עוגת יום הולדת", "מסיבת הפתעה גדולה", "ארוחת בוקר בנמל", "להקת שבעת הכוכבים"]
+    easy = ["ים", "אמא", "דוד", "שוק", "חוף", "כלב", "עץ", "אור", "גן", "רון", "נר", "תה"]
+    words = hard + easy
+    rows = pack.deal(words, 4, random.Random(3), sizes=wd.letter_weights(words))
+    per_card = [sum(1 for w in row if w in set(hard)) for row in rows]
+    assert max(per_card) == 1, rows
+
+
+def test_a_long_token_and_a_long_phrase_are_weighed_alike():
+    # The correction that looks obvious and measures worse — see letter_weights.
+    # These two cap a card at the same 17.40 on אשכולית, and the weight keeps
+    # them together rather than promoting the token for being unbreakable.
+    w = wd.letter_weights(["קונסטרוקטיביזם", "בר רווקות ענקית"])
+    assert abs(w["קונסטרוקטיביזם"] - w["בר רווקות ענקית"]) <= 1
+
+
+def test_the_snake_still_pairs_the_heaviest_with_the_lightest():
+    # The deal itself is untouched: heaviest first, dealt left to right and then
+    # right to left. Eight entries over two cards is two laps each way, so card 1
+    # takes the 1st, 4th, 5th and 8th heaviest — the extremes — and card 2 the
+    # middle four.
+    words = ["א" * n for n in range(9, 1, -1)]        # lengths 9,8,7,6,5,4,3,2
+    rows = pack.deal(words, 2, random.Random(0), sizes=wd.letter_weights(words))
+    assert sorted(len(w) for w in rows[0]) == [2, 5, 6, 9], rows
+    assert sorted(len(w) for w in rows[1]) == [3, 4, 7, 8], rows

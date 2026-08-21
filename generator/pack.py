@@ -90,8 +90,6 @@ PER_CARD = 4
 # Word cards in a standard deck; + the photo card = 104 cards = 208 pages.
 WORD_CARDS = 103
 
-# An entry below this fraction of the deck's median is HARD — see _hard_cut.
-_HARD_CUT = 0.75
 # How many front styles a v2 template ships (2.svg..9.svg).
 FRONTS = 8
 
@@ -235,25 +233,18 @@ def card_groups(uniq, order, personal_count=None):
     return [words]
 
 
-def _hard_cut(sizes, cut=_HARD_CUT):
-    """The size below which an entry counts as HARD, for this deck.
-
-    Relative to the deck's own median entry, never an absolute number: what
-    counts as small depends on the template and the font, and a deck of long
-    Hebrew phrases has a different comfortable size from a deck of one-word
-    English names.
-    """
-    vals = sorted(sizes.values())
-    if not vals:
-        return 0.0
-    med = vals[len(vals) // 2]
-    return med * cut
-
-
 def deal_measured(uniq, n_cards, rnd, sizes):
-    """Deal by MEASURED difficulty — see generator/word_demand.py.
+    """Deal by WEIGHT — see ``word_demand.letter_weights``.
 
     THE RULE: hard entries are SPREAD, one per card, not put together.
+
+    ``sizes`` is any score where bigger means easier; the deal only ever ORDERS
+    by it. It used to be the per-entry measurement (``word_demand.measure``) and
+    is now the entry's letter count, negated, because the measurement reads each
+    entry at its best wrapping — room a card with four entries does not have —
+    and so ranked them by something the printed card does not obey. Over a real
+    412-word order, against the size each card actually printed at: measurement
+    0.077, letters 0.714. The reasoning in full is at ``letter_weights``.
 
     That is the second answer this function has had, and the first one was right
     at the time. While every card solved its own line spacing, a card could
@@ -279,8 +270,9 @@ def deal_measured(uniq, n_cards, rnd, sizes):
     easiest. A plain round robin would hand card 1 the hardest entry of every
     round.
 
-    An entry nobody could measure is treated as AVERAGE — it lands where the deal
-    puts it, which is what it did before any of this existed.
+    An entry the caller left out of ``sizes`` is treated as AVERAGE — it lands
+    where the deal puts it. With letter weights nothing is ever left out, so this
+    is the guard for a hand-built score, not a path an order takes.
     """
     words = list(uniq)
     # Shuffle first so equal-difficulty entries fall in a different order per
@@ -323,24 +315,36 @@ def deal_measured(uniq, n_cards, rnd, sizes):
 def deal(uniq, n_cards, rnd, sizes=None):
     """Deal ``uniq`` into ``n_cards`` rows of PER_CARD slots (blank-padded).
 
-    The guarantee, for any word list: every card ends up within ONE phrase of
-    the deck average, never clustered — with M phrases over n cards each card
-    takes ``M//n`` or ``M//n + 1``. This is NOT "at most one phrase per card":
-    a list that is mostly phrases has to put 2, 3 or 4 on every card. What it
-    rules out is the lopsided deck — one card carrying four phrases while the
-    next carries none.
+    TWO DEALS LIVE HERE, and which one runs depends on ``sizes``. Every order
+    takes the weighted one (``deal_measured``); the phrase-counting deal below
+    is what a caller that passes no weight gets, and its guarantee — described
+    next — is the guarantee of THAT deal, not of the deck an order prints.
 
-    Singles fill from slot 1, phrases fill from the back, so a 3+1 card reads
-    single/single/single/phrase and the wrapped entry sits on the bottom line.
-    Only the last card can be short, and its blanks stay TRAILING — the card
-    renderer numbers the slots 1..4 top-down, so a blank between two words would
-    print an empty numbered line.
+    The phrase deal's promise: every card ends up within ONE phrase of the deck
+    average, never clustered — with M phrases over n cards each card takes
+    ``M//n`` or ``M//n + 1``. This is NOT "at most one phrase per card": a list
+    that is mostly phrases has to put 2, 3 or 4 on every card. What it rules out
+    is the lopsided deck — one card carrying four phrases while the next carries
+    none. Singles fill from slot 1, phrases fill from the back, so a 3+1 card
+    reads single/single/single/phrase.
 
-    ``sizes`` is the MEASURED difficulty of each entry (word_demand.measure). When
-    it is given the deal is made from it instead — see ``deal_measured``, which is
-    the better rule and the default for any order the fonts could be read for.
-    The space-counting deal below is what runs when no measurement was possible
-    (an unreadable font, a template we cannot load), and it is unchanged.
+    The weighted deal does not count phrases at all, and so does not make that
+    promise: a phrase is heavy in proportion to its LENGTH, which is what the
+    card actually pays for, and four short phrases may share a card while one
+    long one sits alone. Measured on real orders that is the better deck, and
+    on a list stuffed with long unbreakable tokens the two decks come out level
+    (72.8 cards at full size against 73.4, with fewer visibly small ones).
+
+    Either way only the last card can be short, and its blanks stay TRAILING —
+    the card renderer numbers the slots 1..4 top-down, so a blank between two
+    words would print an empty numbered line.
+
+    ``sizes`` is a per-entry WEIGHT, bigger meaning easier — in an order it is
+    the letter count from ``word_demand.letter_weights``. When it is given the
+    deal is made from it instead (see ``deal_measured``), which is what every
+    order does: letters need no font, so unlike the old measurement there is no
+    order the weight cannot be built for. The space-counting deal below survives
+    for a caller that passes nothing, and it is unchanged.
     """
     if sizes:
         return deal_measured(uniq, n_cards, rnd, sizes)
