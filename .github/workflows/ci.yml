@@ -13,16 +13,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
-    name: Format + Lint + Unit + E2E
+  # --- Fast gates -------------------------------------------------------------
+  # Format, lint and the unit suite: about 90 seconds all told. Split out from the
+  # E2E run so a missing semicolon is reported in a minute and a half instead of
+  # waiting behind a quarter-hour of browsers.
+  checks:
+    name: Format + Lint + Unit
     runs-on: ubuntu-latest
-    # Bound worst-case cost: a hung E2E/webServer can otherwise burn the default
-    # 6-hour job cap. Not a target — a BACKSTOP. It was 20, and the suite grew
-    # into it: a run that finished test 900 of ~900 was cancelled one minute from
-    # the end and reported as a failure, twice, on a branch whose tests all pass.
-    # A cap that fires on healthy runs teaches everyone to re-run reds, which is
-    # exactly how a real one gets waved through.
-    timeout-minutes: 35
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -40,39 +38,62 @@ jobs:
       - name: Unit tests (Vitest)
         run: npm run test:unit
 
-      # --- E2E: iPhone 14 + Desktop Chrome, on BOTH pull_request AND push:main ---
-      # These two profiles carry every device-gated spec (mobile-only checks run on
-      # iPhone 14; layout/measurement specs are Desktop-Chrome-only), so together
-      # they execute every merge-gating test.
-      #
-      # push:main runs E2E too — deliberately. It used to be skipped to save minutes,
-      # on the assumption "the squashed PR already ran E2E green under review." That
-      # assumption fails the moment a PR is merged PAST a red E2E check: main then has
-      # no E2E net and a real break ships silently — which happened (#167 shipped a
-      # broken home page; main's push CI was green only because E2E didn't run there).
-      # One E2E run per merge is cheap insurance against that.
-      # Cache the Chromium binary so runs don't re-download it each time (keyed on the
-      # resolved Playwright version). On a cache hit `install` skips the download;
-      # `install-deps` still installs the system libs (fast).
+  # --- E2E, SHARDED -----------------------------------------------------------
+  # The suite is ~1900 tests (every spec on two device profiles) and took 15m36s
+  # as one step — nearly the whole CI wall-clock, and close enough to the cap that
+  # green runs were being cancelled a minute from the end. Playwright splits a run
+  # by `--shard`, so the same tests now run on four runners at once: same tests,
+  # same projects, nothing skipped, a quarter of the wall time.
+  #
+  # THE TWO PROFILES carry every device-gated spec (mobile-only checks run on
+  # iPhone 14; layout/measurement specs are Desktop-Chrome-only), so together they
+  # execute every merge-gating test. Mobile Safari is a real WebKit engine on a
+  # short list of layout specs — see playwright.config.js for why the list is short.
+  #
+  # push:main runs E2E too — deliberately. It used to be skipped to save minutes,
+  # on the assumption "the squashed PR already ran E2E green under review." That
+  # assumption fails the moment a PR is merged PAST a red E2E check: main then has
+  # no E2E net and a real break ships silently — which happened (#167 shipped a
+  # broken home page; main's push CI was green only because E2E didn't run there).
+  e2e:
+    name: E2E ${{ matrix.shard }}/4
+    runs-on: ubuntu-latest
+    # Each shard is ~a quarter of the suite. The cap is a backstop against a hung
+    # webServer, not a target.
+    timeout-minutes: 20
+    strategy:
+      # One shard failing must not cancel the other three: the whole point of a
+      # test run is the full list of what broke, and a cancelled sibling reports
+      # as a failure nobody can read.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Install server dependencies
+        run: cd server && (npm ci || npm install)
+      # Cache the browser binaries so runs don't re-download them each time (keyed
+      # on the resolved Playwright version). On a cache hit `install` skips the
+      # download; `install-deps` still installs the system libs (fast). A miss adds
+      # about ten minutes, which is what used to push a whole run past its cap.
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-      # WebKit joins Chromium here. It is a second download (cached above with it)
-      # and it runs a SHORT list of specs — playwright.config.js pins the "Mobile
-      # Safari" project to the layout checks with `testMatch` — because the whole
-      # point is engine divergence in how a box is sized, not a second pass over
-      # application logic. Everything an iPhone buyer sees was previously measured
-      # in Chromium only, which is how a pawn card that draws ellipses off their
-      # cut-lines on every iPhone passed every check we had.
       - name: Install Playwright browsers
         run: |
           npx playwright install-deps chromium webkit
           npx playwright install chromium webkit
       - name: E2E tests (iPhone 14 + Desktop Chrome + Mobile Safari)
-        run: npx playwright test --project="iPhone 14" --project="Desktop Chrome" --project="Mobile Safari"
+        run: npx playwright test --project="iPhone 14" --project="Desktop Chrome" --project="Mobile Safari" --shard=${{ matrix.shard }}/4
 
   # --- The Python generator ---------------------------------------------------
   # generator/ has 279 tests and CI has never run a single one of them: the job
@@ -132,3 +153,23 @@ jobs:
         # (`import pack`), which resolves via pytest putting the test file's own
         # directory on sys.path.
         run: npm run test:py
+
+  # --- One check to read ------------------------------------------------------
+  # Six jobs now report where two used to. This is the single check that says
+  # "everything passed": it fails if ANY of them did not, including a cancelled or
+  # skipped shard — `needs` alone would let those through, because a job that never
+  # ran is not a job that failed.
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+    needs: [checks, e2e, python]
+    if: always()
+    steps:
+      - name: Every job green
+        run: |
+          echo "checks: ${{ needs.checks.result }}"
+          echo "e2e:    ${{ needs.e2e.result }}"
+          echo "python: ${{ needs.python.result }}"
+          [ "${{ needs.checks.result }}" = "success" ] \
+            && [ "${{ needs.e2e.result }}" = "success" ] \
+            && [ "${{ needs.python.result }}" = "success" ]
