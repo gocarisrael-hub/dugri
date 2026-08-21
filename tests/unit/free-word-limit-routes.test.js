@@ -117,25 +117,74 @@ describe('POST /words enforces the quota', () => {
     expect(r.body).not.toHaveProperty('free_word_limit');
   });
 
-  it('takes a batch partially, reporting what the quota refused', async () => {
+  it('takes a batch partially, HOLDING what the quota refused', async () => {
     const c = await newCollection();
     await post('/api/collections/' + c.id + '/words', { words: words(3) });
     const r = await post('/api/collections/' + c.id + '/words', { words: words(10, 'x') });
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ added: 2, blocked: 8, count: 5, free_limit_locked: true });
+    // The 8 the quota refused are PARKED, not dropped. This is the whole fix: a
+    // buyer who pasted 150 words used to keep 15 and lose 135 the moment she left
+    // for the payment page.
+    expect(r.body).toMatchObject({ held: 8, dropped: 0, held_count: 8 });
   });
 
-  it('refuses a further add with 402 once the quota is full', async () => {
+  it('keeps holding words once the quota is full, instead of refusing the request', async () => {
     const c = await newCollection();
     await post('/api/collections/' + c.id + '/words', { words: words(5) });
+    // This used to be a 402 that threw the whole request away — which is exactly
+    // where a paste sent from a tab opened before the lock landed died.
     const r = await post('/api/collections/' + c.id + '/words', { words: ['עוד'] });
-    expect(r.status).toBe(402);
-    expect(r.body.error).toBe('free_limit_reached');
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ added: 0, blocked: 1, held: 1, free_limit_locked: true });
     // Locked, so the number rides along (count already equals it). What matters
     // is that the PAGE never renders it — see the e2e spec.
     expect(r.body.free_word_limit).toBe(5);
-    // Nothing slipped through.
+    // Nothing slipped through INTO THE LIST: the count is still the quota.
+    const v = (await get('/api/collections/' + c.id)).body;
+    expect(v.count).toBe(5);
+    // ...and the held word rides on the public view so the page can show it.
+    expect(v.held_words.map((w) => w.text)).toEqual(['עוד']);
+  });
+
+  it('releases every held word into the list when the order is paid', async () => {
+    const c = await newCollection();
+    // 5 fit, 7 are held — the shape of the order that started all this.
+    const r = await post('/api/collections/' + c.id + '/words', { words: words(12) });
+    expect(r.body).toMatchObject({ added: 5, held: 7, count: 5 });
     expect((await get('/api/collections/' + c.id)).body.count).toBe(5);
+
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id);
+
+    const v = (await get('/api/collections/' + c.id)).body;
+    expect(v.count).toBe(12);
+    expect(v.held_words).toEqual([]);
+    // Every word the buyer typed is in the list, in the order she typed it.
+    expect(v.words.map((w) => w.text)).toEqual(words(12));
+  });
+
+  it('does not count held words as collected before payment', async () => {
+    const c = await newCollection();
+    await post('/api/collections/' + c.id + '/words', { words: words(40) });
+    const v = (await get('/api/collections/' + c.id)).body;
+    // The counter, the progress bar and the generator all read `count`. A held
+    // word is not bought yet and must never inflate it.
+    expect(v.count).toBe(5);
+    expect(v.words).toHaveLength(5);
+    expect(v.held_words).toHaveLength(35);
+  });
+
+  it('does not hold the same word twice across repeated pastes', async () => {
+    const c = await newCollection();
+    await post('/api/collections/' + c.id + '/words', { words: words(12) });
+    // The buyer re-pastes the identical list, thinking the first one failed.
+    const r = await post('/api/collections/' + c.id + '/words', { words: words(12) });
+    // Every word is a duplicate of one we already have — 5 in the list, 7 in the
+    // bucket — so the whole batch reads as duplicates, with nothing newly refused.
+    expect(r.body).toMatchObject({ added: 0, skipped: 12, blocked: 0, held: 0, dropped: 0 });
+    expect(r.body.held_count).toBe(7);
+    expect((await get('/api/collections/' + c.id)).body.held_words).toHaveLength(7);
   });
 
   it('lets the words back in once the order is paid', async () => {

@@ -46,12 +46,29 @@ async function createCollection(page, name) {
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
 }
 
-// Paste `n` distinct words in one go through the list tab.
+// Paste `n` distinct words in one go through the list tab, and WAIT for the add
+// to finish before returning.
+//
+// The wait is load-bearing, not politeness. The submit handler clears the box
+// only after its POST and the follow-up refresh have both resolved, so a caller
+// that fires and returns can type the next paste into a box that is about to be
+// cleared out from under it — the second batch then submits as an empty string
+// and silently never happens. Two terminal states are possible: the box is empty
+// (everything landed) or the dialog is up (something did not).
 async function pasteWords(page, n, prefix = 'word') {
   const list = Array.from({ length: n }, (_, i) => prefix + (i + 1)).join('\n');
+  // A dialog left open by an earlier step would make the poll below return true
+  // instantly and hand the race straight back, so start from a clean slate.
+  await expect(page.locator('#msgModal')).toBeHidden();
   await page.click('#tab-list');
   await page.fill('#pasteBox', list);
   await page.click('#pasteAdd');
+  await expect
+    .poll(async () => {
+      if (await page.locator('#msgModal').isVisible()) return true;
+      return (await page.locator('#pasteBox').inputValue()) === '';
+    })
+    .toBe(true);
 }
 
 test('quota: nothing hints at the cap, then the add box locks at the limit', async ({ page }) => {
@@ -78,6 +95,9 @@ test('quota: nothing hints at the cap, then the add box locks at the limit', asy
   // Overshoot the quota in one paste: the server takes only what fits, so the
   // count stops exactly at the limit and the lock engages.
   await pasteWords(page, 40, 'extra');
+  // Overshooting now raises a dialog naming what did not fit (see the partial-paste
+  // spec). Dismiss it — it is modal, so it would swallow every click below.
+  await page.locator('#msgModalOk').click();
   await expect(page.locator('#count')).toHaveText(String(FREE_LIMIT));
   await expect(page.getByTestId('free-limit-lock')).toBeVisible();
   await expect(page.locator('#wordInput')).toBeDisabled();
@@ -119,25 +139,58 @@ test('quota: nothing hints at the cap, then the add box locks at the limit', asy
   await expect(page.getByTestId('free-limit-lock')).toContainText('תשלום');
 });
 
-test('quota: a partial paste says how many words did NOT make it, and keeps them', async ({
+test('quota: a partial paste says what did NOT make it, in a dialog that cannot be missed', async ({
   page,
 }) => {
   await createCollection(page, 'Partial');
-  // 15 words in, 5 slots left, then paste 40: the server stores 5 and refuses 35.
+  // 15 words in, 5 slots left, then paste 40: the server stores 5 and holds 35.
   await pasteWords(page, FREE_LIMIT - 5);
-  await page.click('#tab-list');
-  const rest = Array.from({ length: 40 }, (_, i) => 'late' + (i + 1)).join('\n');
-  await page.fill('#pasteBox', rest);
-  await page.click('#pasteAdd');
+  await pasteWords(page, 40, 'late');
 
   await expect(page.locator('#count')).toHaveText(String(FREE_LIMIT));
-  // The buyer is TOLD what was lost — silently eating 35 typed words is the
-  // failure this guards.
-  const toast = page.locator('#toast');
-  await expect(toast).toContainText('35');
-  await expect(toast).toContainText('לא נוספו');
+  // The buyer is TOLD what happened, and told it in a dialog she has to dismiss.
+  // A toast that fades in 1.8s is exactly how someone walks to the payment page
+  // believing all 40 words landed.
+  const dialog = page.locator('#msgModal');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('35');
+  await page.click('#msgModalOk');
+
   // …and their typing is still on screen, not wiped by a "success" clear.
   await expect(page.locator('#pasteBox')).toHaveValue(/late40/);
+});
+
+test('quota: the words that did not fit are SHOWN, and survive leaving the page', async ({
+  page,
+}) => {
+  await createCollection(page, 'Held');
+  await pasteWords(page, FREE_LIMIT + 12);
+  await page.locator('#msgModalOk').click();
+
+  // The 12 that did not fit are on the page as themselves — not summarised, not
+  // described, not promised. The buyer reads her own words back.
+  const held = page.getByTestId('held-words');
+  await expect(held).toBeVisible();
+  await expect(held.locator('[data-testid="held-word-text"]')).toHaveCount(12);
+  await expect(held).toContainText('word' + (FREE_LIMIT + 12));
+
+  // They are NOT counted as collected — the counter, the bar and the deck must
+  // only ever see words that have been paid for.
+  await expect(page.locator('#count')).toHaveText(String(FREE_LIMIT));
+
+  // THE regression. This is the exact journey that lost 135 words: the buyer
+  // leaves for the payment page and comes back to a reloaded tab. The textarea
+  // is empty by then — everything now rests on the server having kept them.
+  await page.goto('/');
+  await page.goBack();
+  await expect(page.getByTestId('held-words')).toBeVisible();
+  await expect(
+    page.getByTestId('held-words').locator('[data-testid="held-word-text"]')
+  ).toHaveCount(12);
+
+  // And the lock no longer tells her everything is safe. It used to end
+  // "כל המילים שאספתם שמורות" while the overflow was being dropped on the floor.
+  await expect(page.getByTestId('free-limit-lock')).not.toContainText('שמורות');
 });
 
 test('quota: a contributor on the public link sees the lock without a pay button', async ({

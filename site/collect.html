@@ -497,6 +497,36 @@
         font-size: 16px;
         line-height: 1;
       }
+      /* Words the free quota refused, parked until payment. Deliberately drawn as
+         the SAME pill, dimmed and dashed rather than as a paragraph saying "we
+         kept 135 words for you" — the buyer reads her own words back and needs no
+         reassurance from us. Dashed + muted so nobody mistakes them for collected
+         ones: they are not in the count, not in the deck, not yet. */
+      .held-block {
+        margin-top: 16px;
+        padding-top: 14px;
+        border-top: 1px dashed var(--line);
+      }
+      .held-head {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        font-size: 13px;
+        margin-bottom: 8px;
+      }
+      .held-head strong {
+        font-weight: 700;
+      }
+      .held-note {
+        display: block;
+        margin: -4px 0 10px;
+      }
+      .word.held {
+        background: transparent;
+        border-style: dashed;
+        color: var(--muted);
+        font-weight: 500;
+      }
       .banner {
         background: var(--section);
         border: 1px solid var(--line);
@@ -2397,6 +2427,20 @@
         <small class="muted" id="countHint">היעד: לפחות 70 מילים</small>
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
+        </div>
+        <!-- Over-quota words, shown rather than described. This block is the whole
+             fix: the count and the copy can be argued with, a buyer's own 135
+             words sitting on the page cannot. Hidden entirely when nothing is
+             held, which is the overwhelmingly common case. -->
+        <div class="held-block hidden" id="heldBlock" data-testid="held-words">
+          <div class="held-head">
+            <strong id="heldCount"></strong>
+            <span data-edit="collect-held-head">מילים שעדיין לא נוספו לרשימה</span>
+          </div>
+          <small class="muted held-note" data-edit="collect-held-note"
+            >הן יתווספו לרשימה עם השלמת התשלום.</small
+          >
+          <div class="words" id="heldWrap"></div>
         </div>
       </div>
 
@@ -4393,6 +4437,7 @@
         if (state.free_limit_locked) applyLockedCounterCopy();
 
         renderWords();
+        renderHeldWords();
         renderOwnerState();
       }
 
@@ -4415,9 +4460,16 @@
         // paywall: the box is dead, and nothing on screen says why or what fixes
         // it. The owner can act (pay); a contributor can't, so they are told who
         // can — never handed a pay button for someone else's order.
+        //
+        // This used to end "כל המילים שאספתם שמורות" — every word you collected is
+        // safe. It was not true: the words the quota refused were dropped on the
+        // floor, and that sentence is what told a buyer with 135 unsaved words that
+        // it was safe to leave for the payment page. The reassurance is gone. The
+        // page now shows the held words themselves, a few centimetres up, and
+        // promises nothing it cannot put on screen.
         $('#lockNote').textContent = isOwner
-          ? 'כדי להמשיך להוסיף מילים צריך להשלים את התשלום. כל המילים שאספתם שמורות.'
-          : 'כדי להמשיך להוסיף מילים המארגנ/ת צריכה להשלים את התשלום. כל המילים שנאספו שמורות.';
+          ? 'כדי להמשיך להוסיף מילים צריך להשלים את התשלום.'
+          : 'כדי להמשיך להוסיף מילים המארגנ/ת צריכה להשלים את התשלום.';
         payBtn.classList.toggle('hidden', !isOwner);
       }
 
@@ -4496,6 +4548,42 @@
             }
             wrap.appendChild(el);
           }
+        }
+      }
+
+      // The parked words. Read-only on purpose: no × and no inline edit, because
+      // these are not in the collection yet and a delete control here would need a
+      // route that does not (and should not) exist. They are shown, not managed.
+      //
+      // Same newest-first order as the live list, so a buyer who pastes 150 words
+      // sees the tail of her own paste at the top of the held block, exactly where
+      // the last word she typed would have gone.
+      function renderHeldWords() {
+        const block = $('#heldBlock');
+        const wrap = $('#heldWrap');
+        const held = Array.isArray(state.held_words) ? state.held_words : [];
+        block.classList.toggle('hidden', !held.length);
+        if (!held.length) {
+          wrap.innerHTML = '';
+          return;
+        }
+        $('#heldCount').textContent = String(held.length);
+        wrap.innerHTML = '';
+        for (const w of newestFirst(held)) {
+          const el = document.createElement('span');
+          el.className = 'word held';
+          const txt = document.createElement('span');
+          txt.className = 'wtext';
+          txt.textContent = w.text;
+          txt.setAttribute('data-testid', 'held-word-text');
+          el.appendChild(txt);
+          if (w.added_by) {
+            const by = document.createElement('span');
+            by.className = 'by';
+            by.textContent = '· ' + w.added_by;
+            el.appendChild(by);
+          }
+          wrap.appendChild(el);
         }
       }
 
@@ -4682,15 +4770,48 @@
           // Words the free quota refused. A partial batch (5 of 50 stored) is a
           // success with a caveat, not a failure — say exactly what landed.
           const blocked = (res && res.blocked) || 0;
-          track('word_added', { method: method || 'single', count: added, skipped, blocked });
+          // `held` rides along so the funnel can show how often a buyer runs into
+          // the quota mid-paste, and with how many words behind her — the single
+          // best predictor that she is about to pay, or about to give up.
+          track('word_added', {
+            method: method || 'single',
+            count: added,
+            skipped,
+            blocked,
+            held: (res && res.held) || 0,
+          });
           if (blocked) {
-            // NAME THE LOSS. A 40-word paste with room for 5 stores 5 and drops 35;
-            // saying only "we stopped here" while the textarea is cleared destroys
-            // typing the buyer can't get back. Returning false keeps their text on
-            // screen (see the paste handler) so the rest survives the paywall.
-            const lost = blocked === 1 ? 'מילה אחת לא נוספה' : blocked + ' מילים לא נוספו';
-            const landed = added === 1 ? 'נוספה מילה' : 'נוספו ' + added + ' מילים';
-            say((added ? landed + ' · ' : '') + lost + ' - האיסוף מושהה עד להשלמת התשלום');
+            // NAME THE LOSS, and do it in a dialog the buyer has to dismiss — not
+            // in a toast that fades after 1.8s. This is the moment a 150-word paste
+            // becomes 15 collected words, and the moment the buyer decides whether
+            // to walk to the payment page. A message she can miss by looking away
+            // is how she ends up paying and then finding 15 words.
+            //
+            // `held` and `dropped` come from the server and are never inferred:
+            // held words are parked and shown in the block below the list, dropped
+            // ones hit the bucket cap and are genuinely gone. Saying "we kept them"
+            // about a word we dropped is the failure this change exists to fix.
+            const held = (res && res.held) || 0;
+            const dropped = (res && res.dropped) || 0;
+            const landed = added === 1 ? 'נוספה מילה אחת' : 'נוספו ' + added + ' מילים';
+            const lines = [];
+            if (added) lines.push(landed + '.');
+            if (held) {
+              lines.push(
+                (held === 1 ? 'מילה אחת נוספת מופיעה' : held + ' מילים נוספות מופיעות') +
+                  ' למטה, מתחת לרשימה.'
+              );
+            }
+            // Only said when it actually happened, and said plainly.
+            if (dropped) {
+              lines.push((dropped === 1 ? 'מילה אחת לא נשמרה' : dropped + ' מילים לא נשמרו') + '.');
+            }
+            lines.push('האיסוף מושהה עד להשלמת התשלום.');
+            if (lenNote) lines.push(lenNote);
+            openDialog(lines.join(' '));
+            // Still false: the caller keeps the buyer's text on screen. Belt to the
+            // held bucket's braces — if the server ever refuses the parking (cap,
+            // an older build behind a stale tab), the text is still in the box.
             return false;
           }
           if (added >= 1) {
@@ -4958,6 +5079,11 @@
         const reader = new FileReader();
         reader.onload = () => addWords(String(reader.result), 'file');
         reader.readAsText(f);
+        // Cleared so re-picking the SAME file fires `change` again. Unlike the
+        // paste box there is nothing left on screen afterwards, which is why the
+        // file route was the worse of the two when over-quota words were dropped:
+        // the buyer had neither her words nor her selection. They are parked
+        // server-side now, and the dialog says where they went.
         e.target.value = '';
       });
 

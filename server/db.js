@@ -42,6 +42,10 @@ const MAX_SESSIONS = Number(process.env.PELECARD_MAX_SESSIONS || 50);
 const DEFAULTS = {
   collections: [],
   words: [],
+  // Words the free quota refused, parked instead of thrown away — see the
+  // held-word block near addWords. Absent from every file written before this
+  // existed, which is exactly why DEFAULTS is spread UNDER the parsed JSON.
+  held_words: [],
   coupons: [],
   design_codes: [],
   order_seq: 0,
@@ -474,6 +478,61 @@ function freeLimitState(c, count) {
   };
 }
 
+// --- held words --------------------------------------------------------------
+// Words the quota refused are PARKED, not discarded. Before this, a 150-word
+// paste onto a collection with 15 free slots stored 15 and dropped 135 on the
+// floor; the page kept the text in the textarea, which survives exactly until
+// the buyer leaves for the payment page and comes back to a reloaded tab. That
+// is precisely the moment they were told to leave, so the typing they cared
+// most about was the typing most likely to die.
+//
+// Held words live in their OWN array, never in `_db.words`. That is the whole
+// safety property: every reader of the word list (the count, the public view,
+// the CSV, the generator) keeps seeing only paid-for words without knowing this
+// feature exists. They cross over in exactly one place — releaseHeld() — which
+// payment is the ordinary trigger for.
+//
+// The cap stops the bucket from becoming free unlimited storage for anyone who
+// never intends to pay. 500 matches the per-request ceiling on POST /words and
+// whatsapp.MAX_WORDS, so no single legitimate paste can hit it.
+const MAX_HELD_WORDS = 500;
+
+// Move every held word for a collection into the real list. The ONE place a
+// held word becomes a real one. Re-dedupes against the live list on the way
+// through, because the quota may have been raised (or the gate switched off)
+// while words sat here, letting the buyer add a word by hand that is also held.
+// Original `created_at` is preserved so released words keep their true place in
+// the chronological list rather than all landing at the payment timestamp.
+// Returns how many crossed over. Does NOT save — callers batch that.
+function releaseHeld(id) {
+  const mine = _db.held_words.filter((w) => w.collection_id === id);
+  // `removed` is deliberately separate from `moved`: the bucket is emptied even
+  // when nothing crosses over (every held word lost to a duplicate), and a caller
+  // that saved only on `moved` would leave the emptied bucket unpersisted — the
+  // held block would come back from disk on the next restart.
+  if (!mine.length) return { moved: 0, removed: 0 };
+  const existing = new Set(_db.words.filter((w) => w.collection_id === id).map((w) => w.norm));
+  let moved = 0;
+  for (const w of mine) {
+    if (existing.has(w.norm)) continue;
+    existing.add(w.norm);
+    _db.words.push({
+      id: w.id,
+      collection_id: id,
+      text: w.text,
+      norm: w.norm,
+      added_by: w.added_by || null,
+      created_at: w.created_at,
+    });
+    moved += 1;
+  }
+  // Emptied whether or not every word crossed: a held word that lost a race to
+  // its own duplicate is finished either way, and leaving it would resurrect it
+  // on the next release.
+  _db.held_words = _db.held_words.filter((w) => w.collection_id !== id);
+  return { moved, removed: mine.length };
+}
+
 function loadDb() {
   try {
     if (!fs.existsSync(DB_FILE)) return { ...DEFAULTS };
@@ -893,8 +952,25 @@ const db = {
     if (!c) return null;
     if (effectiveStatus(c) !== 'open') return { closed: true, added: 0, skipped: 0, blocked: 0 };
 
+    // A collection that is no longer under the quota (paid, exempt, or the gate
+    // switched off since the words were parked) releases anything it is holding
+    // FIRST, so the dedupe sets below see the full picture and the buyer's held
+    // words rejoin the list at the first opportunity rather than at payment only.
+    const released = freeLimitState(c, 0).applies ? { moved: 0, removed: 0 } : releaseHeld(id);
+
     const existingWords = _db.words.filter((w) => w.collection_id === id);
     const existing = new Set(existingWords.map((w) => w.norm));
+    // Already-held words dedupe too: a buyer who pastes the same over-quota list
+    // twice must not end up holding two copies of every word.
+    const heldWords = _db.held_words.filter((w) => w.collection_id === id);
+    const heldNorms = new Set(heldWords.map((w) => w.norm));
+    let heldRoom = Math.max(0, MAX_HELD_WORDS - heldWords.length);
+    // Held words this batch PROMOTED into the list — room opened up (the owner
+    // raised the quota, or deleted a collected word) and the buyer typed a word
+    // she could see sitting in the held block. Adding it live while its held copy
+    // survives shows her the same word twice, once as collected and once as
+    // "will be added when you pay", so the held copy is dropped at the end.
+    const promoted = new Set();
     // Room left under the quota, computed from the CURRENT count (Infinity when
     // the collection is exempt/paid or the gate is switched off).
     let room = freeLimitState(c, existingWords.length).remaining;
@@ -902,6 +978,8 @@ const db = {
     let added = 0;
     let skipped = 0;
     let blocked = 0;
+    let held = 0;
+    let dropped = 0;
     let tooLong = 0;
     let emoji = 0;
     let niqqud = 0;
@@ -932,10 +1010,43 @@ const db = {
         skipped += 1;
         continue;
       }
-      // Quota exhausted: count the remainder as blocked, never stored. A
-      // duplicate above is NOT counted here — it was never going to be stored.
+      // Already held, and there is room for it now: it becomes a real word here
+      // and stops being a held one below, instead of existing as both.
+      if (heldNorms.has(n) && room > 0) promoted.add(n);
+      // Quota exhausted: the word does not enter the list — but it is PARKED
+      // rather than discarded (see the held-word block above). `blocked` keeps
+      // its old meaning, "did not reach the list", so every existing caller
+      // still reports the batch honestly; `held` and `dropped` split it into
+      // what we kept and what the cap refused. A duplicate above is NOT counted
+      // here — it was never going to be stored either way.
       if (room <= 0) {
+        // Already held: a duplicate, exactly like one already in the list, and
+        // counted as one. NOT `blocked` too — double-counting it would break the
+        // partition of the batch, and the page reads those counters to tell the
+        // buyer what happened to her words. Re-pasting the same 135-word list
+        // must read as "already have them", not as 135 fresh rejections.
+        if (heldNorms.has(n)) {
+          skipped += 1;
+          continue;
+        }
         blocked += 1;
+        if (heldRoom > 0) {
+          heldRoom -= 1;
+          heldNorms.add(n);
+          _db.held_words.push({
+            id: uid(),
+            collection_id: id,
+            text,
+            norm: n,
+            added_by: by,
+            created_at: nowIso(),
+          });
+          held += 1;
+        } else {
+          // Past MAX_HELD_WORDS. Still counted, so the caller can say plainly
+          // that these ones really are gone instead of implying we kept them.
+          dropped += 1;
+        }
         continue;
       }
       room -= 1;
@@ -950,8 +1061,14 @@ const db = {
       });
       added += 1;
     }
-    if (added) saveDb();
-    return { added, skipped, blocked, tooLong, emoji, niqqud };
+    // Drop the held copies of anything this batch promoted into the list.
+    if (promoted.size) {
+      _db.held_words = _db.held_words.filter(
+        (w) => !(w.collection_id === id && promoted.has(w.norm))
+      );
+    }
+    if (added || held || promoted.size || released.removed) saveDb();
+    return { added, skipped, blocked, held, dropped, tooLong, emoji, niqqud };
   },
 
   // The free-quota state for a collection, from its live word count. Exposed so
@@ -960,6 +1077,24 @@ const db = {
     const c = this.getCollection(id);
     if (!c) return null;
     return freeLimitState(c, this.countWords(id));
+  },
+
+  // The words this collection is holding back — refused by the free quota and
+  // parked rather than dropped. Oldest-first, matching listWords. NOT part of
+  // the word list and never counted as one: collect.html renders them in their
+  // own block so the buyer can SEE what has not been added, and the generator,
+  // the CSV and the count all stay blind to them until payment releases them.
+  listHeldWords(id) {
+    return _db.held_words
+      .filter((w) => w.collection_id === id)
+      .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+  },
+
+  // How many words are parked. NO sort, for callers that only need the number.
+  countHeldWords(id) {
+    let n = 0;
+    for (const w of _db.held_words) if (w.collection_id === id) n += 1;
+    return n;
   },
 
   // Mark the one-time "free quota reached" email as sent. Returns true only for
@@ -1271,6 +1406,7 @@ const db = {
     _db.collections = _db.collections.filter((c) => c.id !== id);
     if (_db.collections.length === before) return false;
     _db.words = _db.words.filter((w) => w.collection_id !== id);
+    _db.held_words = _db.held_words.filter((w) => w.collection_id !== id);
     saveDb();
     return true;
   },
@@ -1922,6 +2058,22 @@ const db = {
     if (!c || !c.order) return false;
     c.order.paid = true;
     c.order.paid_at = nowIso();
+    // Payment is exactly what lifts the quota, so it is exactly what releases the
+    // words the quota was holding back. Done here rather than in the PeleCard
+    // callback so EVERY route to paid — the card callback, an admin marking it
+    // paid by hand — releases them, and no buyer has to re-type a thing.
+    //
+    // An owner CAN close while still unpaid (the close card shows for any open
+    // unpaid order), and closing freezes the word bank the deck is printed from.
+    // Paying after that releases words into a list the frozen bank has already
+    // been taken from — the page would show them as collected while the deck was
+    // built without them, which is the same broken promise this whole change
+    // exists to end. So a release that actually moved words discards the bank,
+    // under the existing rule: a bank that no longer matches its inputs is worse
+    // than no bank, because it still looks authoritative. It re-freezes on the
+    // next close. A no-op in the ordinary pay-then-close order, where no bank
+    // exists yet.
+    if (releaseHeld(id).moved) this.clearWordBank(id);
     if (meta.method) c.order.paid_method = meta.method;
     if (meta.transactionId) c.order.paid_transaction_id = meta.transactionId;
     if (meta.approvalNo) c.order.paid_approval_no = meta.approvalNo;
