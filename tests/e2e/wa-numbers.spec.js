@@ -50,14 +50,42 @@ test('the product page’s WhatsApp goes to support', async ({ page }) => {
   await expect(wa).toHaveAttribute('href', SUPPORT);
 });
 
-test('no page still carries the owner’s number on a general contact link', async ({ page }) => {
+// The rule this file exists for, stated directly: a GENERAL "דברו איתנו" must
+// never carry the owner's own number. A business enquiry may — that is the whole
+// point of having two numbers.
+//
+// This used to assert the stronger "the owner's number must not appear at all",
+// on the stated premise that none of these four pages had a business link. That
+// premise expired: the home page's לעסקים band (#506) put a deliberate business
+// CTA on index.html pointing at her number, and the assertion started failing on
+// main for a page that was behaving exactly as intended. Note the file already
+// asserts, a few tests up, that her number MUST appear on index.html in the
+// footer's לעסקים line — the two had drifted into contradicting each other.
+//
+// So it checks the real rule instead of the shortcut. A business link identifies
+// itself in the markup — its own testid, its analytics slot, or the b2b block it
+// sits in — and everything else on the page is a general contact link that must
+// be support. A new "דברו איתנו" quietly wired to her personal phone still fails
+// here, which is the failure worth catching.
+test('no page carries the owner’s number on a GENERAL contact link', async ({ page }) => {
   for (const path of ['/index.html', '/how.html', '/collect.html', '/options.html']) {
     await page.goto(path);
-    const hrefs = await page
-      .locator('a[href*="wa.me"]')
-      .evaluateAll((els) => els.map((e) => e.getAttribute('href')));
-    // Any link to the owner's number on these pages must be a business one; none
-    // of these four pages has one, so the owner's number must not appear at all.
-    expect(hrefs.filter((h) => OWNER.test(h))).toEqual([]);
+    const links = await page.locator('a[href*="wa.me"]').evaluateAll((els) =>
+      els.map((e) => ({
+        href: e.getAttribute('href'),
+        business: !!e.closest('[data-testid*="b2b"], [data-ga-where*="b2b"], [class*="b2b"]'),
+      }))
+    );
+    const general = links.filter((l) => !l.business).map((l) => l.href);
+    expect(general.filter((h) => OWNER.test(h))).toEqual([]);
   }
+});
+
+// The other half of the same rule: the business link that IS allowed to carry her
+// number must still be reachable and still be hers. Without this, deleting the
+// band (or repointing it at support) would pass the test above in silence — and a
+// quantity enquiry landing in the support inbox is a sale nobody answers.
+test('the home page’s business band still reaches the owner herself', async ({ page }) => {
+  await page.goto('/index.html');
+  await expect(page.getByTestId('b2b-wa')).toHaveAttribute('href', OWNER);
 });
