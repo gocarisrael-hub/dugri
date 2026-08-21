@@ -62,19 +62,31 @@ test('the product page’s WhatsApp goes to support', async ({ page }) => {
 // asserts, a few tests up, that her number MUST appear on index.html in the
 // footer's לעסקים line — the two had drifted into contradicting each other.
 //
-// So it checks the real rule instead of the shortcut. A business link identifies
-// itself in the markup — its own testid, its analytics slot, or the b2b block it
-// sits in — and everything else on the page is a general contact link that must
-// be support. A new "דברו איתנו" quietly wired to her personal phone still fails
-// here, which is the failure worth catching.
+// So it checks the real rule instead of the shortcut, and the exemption is an
+// EXACT list of the two business links that exist — the home page's לעסגים band
+// and the shop's business line. Everything else on the page is a general contact
+// link that must be support, so a new "דברו איתנו" quietly wired to her personal
+// phone still fails here, which is the failure worth catching.
+//
+// The list is exact rather than a substring match on "b2b" for a reason. Matching
+// `[class*="b2b"]` also matches `.foot-b2b` — the footer's לעסקים paragraph, on
+// three pages — and that paragraph is the single most likely place someone drops
+// a chat link. A substring rule turns it into an exemption zone, which is how a
+// general support CTA on her personal phone would slip through the one test
+// written to stop it. (`[data-testid*="b2b"]` swallowed it twice over: that
+// paragraph's own testid is `footer-b2b`.)
+const BUSINESS_LINK = '#business a, [data-testid="b2b-wa"], [data-testid="store-b2b"] a';
+
 test('no page carries the owner’s number on a GENERAL contact link', async ({ page }) => {
   for (const path of ['/index.html', '/how.html', '/collect.html', '/options.html']) {
     await page.goto(path);
-    const links = await page.locator('a[href*="wa.me"]').evaluateAll((els) =>
-      els.map((e) => ({
-        href: e.getAttribute('href'),
-        business: !!e.closest('[data-testid*="b2b"], [data-ga-where*="b2b"], [class*="b2b"]'),
-      }))
+    const links = await page.locator('a[href*="wa.me"]').evaluateAll(
+      (els, sel) =>
+        els.map((e) => ({
+          href: e.getAttribute('href'),
+          business: e.matches(sel),
+        })),
+      BUSINESS_LINK
     );
     const general = links.filter((l) => !l.business).map((l) => l.href);
     expect(general.filter((h) => OWNER.test(h))).toEqual([]);
@@ -87,5 +99,10 @@ test('no page carries the owner’s number on a GENERAL contact link', async ({ 
 // quantity enquiry landing in the support inbox is a sale nobody answers.
 test('the home page’s business band still reaches the owner herself', async ({ page }) => {
   await page.goto('/index.html');
+  // VISIBLE, not merely present. "Reachable" is the claim, and a band hidden by a
+  // CSS regression or by a future owner-managed toggle (the pattern #502
+  // established for the "new game" section) takes the only business-enquiry path
+  // off the page while an href-only assertion stays green.
+  await expect(page.getByTestId('b2b-wa')).toBeVisible();
   await expect(page.getByTestId('b2b-wa')).toHaveAttribute('href', OWNER);
 });
