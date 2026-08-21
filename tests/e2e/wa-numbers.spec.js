@@ -50,14 +50,36 @@ test('the product page’s WhatsApp goes to support', async ({ page }) => {
   await expect(wa).toHaveAttribute('href', SUPPORT);
 });
 
-test('no page still carries the owner’s number on a general contact link', async ({ page }) => {
+// The rule is about WHICH KIND of link carries which number, so the check has to
+// be per link, not per page. It was written as "these four pages have no business
+// link at all, so the owner's number must not appear on them" — true when it was
+// written, and false the moment the home page grew a B2B band of its own. Stated
+// that way it failed on a link that is CORRECT: a business enquiry belongs to the
+// owner, which is the whole point of having two numbers.
+//
+// So: every link the page offers as a general contact goes to support, and a
+// business CTA is exempt the same way the footer's לעסקים line already is —
+// identified by what it IS (data-ga-where="b2b-band" / the shop's store-b2b),
+// never by which page it happens to sit on. A new business CTA on any page is
+// then correct by construction, and a general link that quietly picks up the
+// owner's number still fails here.
+test('no page carries the owner’s number on a GENERAL contact link', async ({ page }) => {
   for (const path of ['/index.html', '/how.html', '/collect.html', '/options.html']) {
     await page.goto(path);
     const hrefs = await page
-      .locator('a[href*="wa.me"]')
+      .locator('a[href*="wa.me"]:not([data-ga-where="b2b-band"]):not([data-testid="b2b-wa"])')
       .evaluateAll((els) => els.map((e) => e.getAttribute('href')));
-    // Any link to the owner's number on these pages must be a business one; none
-    // of these four pages has one, so the owner's number must not appear at all.
-    expect(hrefs.filter((h) => OWNER.test(h))).toEqual([]);
+    expect(
+      hrefs.filter((h) => OWNER.test(h)),
+      `${path} routes a general link to the owner`
+    ).toEqual([]);
   }
+});
+
+// …and the exemption is not a hole: the business CTA it lets through must really
+// be the owner's, or the number split has silently reversed itself and quantity
+// enquiries are landing in the support inbox.
+test('the home page’s business CTA does go to the owner herself', async ({ page }) => {
+  await page.goto('/index.html');
+  await expect(page.getByTestId('b2b-wa')).toHaveAttribute('href', OWNER);
 });
