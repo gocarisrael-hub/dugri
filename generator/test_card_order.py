@@ -267,12 +267,42 @@ def test_exact_loses_no_word_and_invents_none():
     assert _placed(_cards(path)) == words
 
 
-def test_exact_still_drops_a_repeat():
-    """"Exactly as it arrived" means the arriving list minus its own duplicates —
-    the dedup above the deal is not one of the things this option turns off."""
+def test_exact_keeps_a_repeat():
+    """"Exactly as it arrived" means EXACTLY — repeats included.
+
+    This is the option's whole reason for existing at the owner's scale: a
+    customer who writes her list in FOURS is writing the cards, and a clue she
+    used on two different cards ("אוכל" on the food card and on the Friday-dinner
+    card) has to appear twice. Dropping it does not tidy the list, it shifts
+    every card after the first repeat and rewrites the rest of the deck.
+    """
     path = _csv()
     pack.pack(["a", "b", "a", "c"], path, order=pack.ORDER_EXACT, photo_card=False)
-    assert _cards(path) == [["a", "b", "c", ""]]
+    assert _cards(path) == [["a", "b", "a", "c"]]
+
+
+def test_every_other_order_still_drops_a_repeat():
+    """The exemption is exact's alone. Anywhere the ARRANGEMENT is ours, a repeat
+    is a slip — two identical words on one card is a printed mistake."""
+    for order in (pack.ORDER_RANDOM, pack.ORDER_PERSONAL_FIRST, pack.ORDER_BY_SCRIPT):
+        path = _csv()
+        pack.pack(["a", "b", "a", "c"], path, order=order, photo_card=False)
+        placed = _placed(_cards(path))
+        assert sorted(placed) == ["a", "b", "c"], order
+
+
+def test_exact_keeps_the_customers_cards_intact():
+    """The real shape: a list authored in fours comes out one four per card, with
+    the repeats where she put them."""
+    cards = [
+        ["אושפלאו", "בשר", "אורז", "שישי"],
+        ["ארוחת שישי", "אוכל", "משפחה", "מסורת"],
+        ["שמן באוכל", "בישול", "אוכל", "ארוחת שישי"],
+    ]
+    path = _csv()
+    pack.pack([w for c in cards for w in c], path, order=pack.ORDER_EXACT,
+              photo_card=False)
+    assert _cards(path) == cards
 
 
 def test_exact_keeps_phrases_where_the_customer_put_them():
