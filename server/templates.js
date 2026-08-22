@@ -2848,6 +2848,18 @@ function validateBacks(input, label) {
 // without it; board/back/word_size may be null/absent). Returns a fresh,
 // generator-shaped object or { error }. Shared by /api/preview so the previewed
 // look uses the exact same validation the save path enforces.
+// The largest the type may ever set on a design, whatever room its box has —
+// one per surface and script, because the four surfaces do not share an answer.
+// See generator/config.TYPE_CEILINGS, which reads the same six names.
+const TYPE_CEILINGS = [
+  'word_max_he',
+  'word_max_en',
+  'title_max_en',
+  'title_max_he',
+  'back_title_max_en',
+  'back_title_max_he',
+];
+
 function validateCalibration(input, fronts) {
   const b = input && typeof input === 'object' && !Array.isArray(input) ? input : {};
   const ts = validateTitleStyle(b.title_style);
@@ -3096,6 +3108,21 @@ function updateTemplateSettings({ root, key, patch }) {
       return { error: 'word_pitch must be a positive number or null', httpStatus: 400 };
     }
   }
+  // THE SIX CEILINGS. Optional, and null is a real answer meaning "no ceiling"
+  // — the state every template ships in and every deck printed so far. Validated
+  // like the other type numbers rather than trusted: they reach the generator as
+  // a hard cap on what a paid order prints.
+  for (const field of TYPE_CEILINGS) {
+    if (!(field in p)) continue;
+    if (p[field] === null || p[field] === '') {
+      changed[field] = null;
+    } else if (isFiniteNum(p[field]) && p[field] > 0 && p[field] <= 400) {
+      changed[field] = p[field];
+    } else {
+      return { error: field + ' must be a positive number or null', httpStatus: 400 };
+    }
+  }
+
   if ('card_slots' in p) {
     const v = validateCardSlots(p.card_slots, entryFrontNumbers(entry));
     if (v.error) return { error: v.error, httpStatus: 400 };
