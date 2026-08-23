@@ -111,6 +111,26 @@ test('follow-up buttons carry the right hrefs', async ({ page, request }) => {
   );
 });
 
+test('WhatsApp sits in ניהול, not in מעקב — and the bot button stays put', async ({
+  page,
+  request,
+}) => {
+  const name = uniq('ואטסניהול');
+  await seed(request, { name, email: 'inactions@example.com', phone: '0541234567' });
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = page.locator('tbody tr').filter({ hasText: name });
+  // ניהול leads the row, so the WhatsApp link is in the FIRST cell.
+  const actions = row.locator('td').first();
+  await expect(actions.locator('a.wa')).toHaveAttribute('href', 'https://wa.me/972541234567');
+  // and it left מעקב behind, which keeps only חיוג + מייל.
+  await expect(row.locator('.followup a.wa')).toHaveCount(0);
+  await expect(row.locator('.followup a')).toHaveCount(2);
+  // The bot's group button did not move with it.
+  await expect(actions.locator('button', { hasText: 'קבוצה' })).toHaveCount(0);
+  await expect(row.locator('button', { hasText: 'פתח קבוצה בבוט' })).toHaveCount(1);
+});
+
 test('בטל marks cancelled + שחזר restores; מחק removes the row', async ({ page, request }) => {
   page.on('dialog', (dialog) => dialog.accept());
   const name = uniq('בטל');
