@@ -729,6 +729,22 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     return "".join(out)
 
 
+def latin_scale(cfg, size, default):
+    """The share of the card's size a LATIN run sets at, with its ceiling on.
+
+    ``word_alt_scale`` is the design's ratio; ``word_max_en`` is the largest a
+    Latin run may print whatever that ratio works out to. Expressed back as a
+    ratio because that is what the Face carries, and because the fit measured
+    with a ratio — one that can only ever come DOWN, so every width the fit
+    reserved is still enough and no run can reach past the row it was fitted in.
+    """
+    scale = config.word_alt_scale(cfg, default)
+    ceiling = config.type_ceiling(cfg, "word_max_en")
+    if ceiling and size > 0:
+        scale = min(scale, ceiling / size)
+    return scale
+
+
 def word_text(x_right, baseline, size, color, num, word, font_path):
     """One numbered entry on a SINGLE line, anchored by its baseline.
 
@@ -2872,7 +2888,7 @@ def row_bounds(slots, slot, row, cell, obstacles, floor=None):
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
                   obstacles=None, title_box=None, even_lines=False,
-                  deck_pitch=None):
+                  deck_pitch=None, max_size=None):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -2914,6 +2930,14 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     # units) instead of deriving it from the recipe box heights — used where the
     # detected boxes overshoot (e.g. bachelorette rendered ~26 vs the real 19).
     uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
+    # THE HEBREW WORD CEILING, folded into the card's target rather than applied
+    # after it. `uniform` is what `_fit_card` already treats as the largest the
+    # card may set and what `_candidates` measures a mid-word break against, so
+    # lowering it here caps the type AND keeps the break decision honest — a
+    # ceiling applied afterwards would shrink the type while the wrapping stayed
+    # solved for a size nobody is printing.
+    if max_size and max_size > 0:
+        uniform = min(uniform, max_size)
     floor = cell[0] + (cell[2] - cell[0]) * safe if cell else None
     # A synthetic-bold word is WIDER than the advance the fit measures: the
     # stroke is centred on the outline, so it hangs half its width past each end
@@ -3957,7 +3981,7 @@ def title_is_rtl(cfg):
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
                 bold=False, bold_w=None, leading=None, one_block=False,
-                alt_font_path=None):
+                alt_font_path=None, max_size=None):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -4096,6 +4120,12 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         # A pin is the origin's number for the origin's own title; the box is the
         # promise made to whoever is looking at it.
         size = min(size, size_h)
+    # THE CEILING, last. It is not a pin and not a fit: it can only ever bring
+    # the answer DOWN, so it is applied after both have had their say and cannot
+    # license a title the box would not have allowed. A card whose box gives less
+    # than the ceiling never notices it is there.
+    if max_size and max_size > 0:
+        size = min(size, max_size)
     gap = size * pitch
     total = gap * (n - 1)
     top = (y0 + y1) / 2 - total / 2
@@ -4275,6 +4305,22 @@ def _nudge_title_box(tbox, cell, offset):
     return {"x0": x0, "x1": x1, "y0": y0, "y1": y1}
 
 
+_TITLE_HEBREW = re.compile(r"[\u0590-\u05FF]")
+
+
+def title_ceiling(cfg, lines, back=False):
+    """The ceiling for THIS title, by the script it is set in.
+
+    Read off the resolved text rather than the theme's declared language: a buyer
+    may write the honoree's name in the other one (``title_font_for`` already
+    swaps the face for exactly that), and the ceiling has to follow the face it
+    is measured against or it caps the wrong thing.
+    """
+    key = ("back_title_max_" if back else "title_max_")
+    key += "he" if any(_TITLE_HEBREW.search(ln or "") for ln in (lines or [])) else "en"
+    return config.type_ceiling(cfg, key)
+
+
 def title_box_clear_of(tbox, obstacles, right=None):
     """``tbox`` trimmed to paper the artwork does not already occupy.
 
@@ -4357,7 +4403,7 @@ def title_box_clear_of(tbox, obstacles, right=None):
 
 
 def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
-                   fixed_size=None, align=None, obstacles=None):
+                   fixed_size=None, align=None, obstacles=None, back=False):
     """The stacked-title markup for one card, or "" when there is nothing to draw.
 
     ``tbox_list`` may hold ONE BOX PER TITLE LINE (birthday-girls records two);
@@ -4391,6 +4437,7 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        ts["outline_w"], ts["arch"], ts["shadow"],
                        rtl=title_is_rtl(cfg),
                        fixed_size=cap,
+                       max_size=title_ceiling(cfg, title_lines, back=back),
                        align=align or ts.get("align", "center"),
                        italic=ts.get("italic", False),
                        bold=ts.get("bold", False),
@@ -4440,7 +4487,8 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                             # had; every card template, which is everything built
                             # since, gets the uniform rhythm.
                             even_lines=config.is_single_card(cfg),
-                            deck_pitch=deck_pitch)
+                            deck_pitch=deck_pitch,
+                            max_size=config.type_ceiling(cfg, "word_max_he"))
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
@@ -4458,7 +4506,9 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                               wi + 1, lay.lines, word_font, lead=lay.lead,
                               marker_advance=advance, bold_w=bold_w,
                               alt_font_path=word_font_alt,
-                              alt_scale=alt_scale))
+                              # per CARD, because the ceiling bites at the size
+                              # this card actually set, not the deck's ratio
+                              alt_scale=latin_scale(cfg, lay.size, alt_scale)))
     return "".join(out)
 
 
@@ -4505,7 +4555,8 @@ def card_pitch_need(theme, recipe, words, front_index=None, word_font=None,
     free = _word_layouts(slots, words, face, face.ref, cell=cell,
                          word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                          room_bottom=room, bold_w=config.word_bold_w(cfg, _WORD_BOLD_W),
-                         obstacles=icons, even_lines=False)
+                         obstacles=icons, even_lines=False,
+                         max_size=config.type_ceiling(cfg, "word_max_he"))
     live = [l for l in free if l]
     if not live or all(len(l.lines) == 1 for l in live):
         return None                      # nothing wraps: the design's own spacing stands
@@ -4646,7 +4697,8 @@ def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
     # measured against. Falls through to the deck-wide pins when unset.
     return _title_overlay(boxes, title_lines, cfg_back, title_font, cell,
                           fixed_size=((bk or {}).get("size")
-                                      or ts.get("back_size") or ts.get("size")))
+                                      or ts.get("back_size") or ts.get("size")),
+                          back=True)
 
 
 def back_draws_title(theme, clean_svg, back_index=None):
@@ -4977,6 +5029,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        ts["outline_w"], ts["arch"], ts["shadow"],
                                        rtl=title_is_rtl(cfg),
                                        fixed_size=ts.get("size"),
+                                       max_size=title_ceiling(cfg, title_lines),
                                        align=config.front_align(cfg, ci + 1),
                                        italic=ts.get("italic", False),
                                        bold=ts.get("bold", False),
@@ -5014,7 +5067,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
         layouts = _word_layouts(card_words, words, face, face.ref,
                                 cell=cell, word_size=cfg.get("word_size"),
                                 bold_w=bold_w, obstacles=icons,
-                                room_bottom=room)
+                                room_bottom=room,
+                                max_size=config.type_ceiling(cfg, "word_max_he"))
         # The sheet card sets on the same grid as every other card: one right
         # anchor, one digit column, and the centres the grid put the lines on.
         x_right = _card_right_edge(card_words, cell)
@@ -5028,7 +5082,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             overlay.append(word_lines(x_right, center, lay.size, slot["color"],
                                       wi + 1, lay.lines, word_font, lead=lay.lead,
                                       bold_w=bold_w, alt_font_path=word_alt,
-                                      alt_scale=alt_scale,
+                                      alt_scale=latin_scale(cfg, lay.size, alt_scale),
                                       marker_advance=advance))
     body = "".join(overlay)
     return svg.replace("</svg>", body + "</svg>")

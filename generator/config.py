@@ -877,6 +877,50 @@ def word_bold_w(cfg, default):
         return default
 
 
+# THE SIX CEILINGS. A ceiling is the largest the type may ever set on a design,
+# whatever room its box has. It is not a pin: below it the box still decides, and
+# a box that gives less keeps giving less. It exists because a card of very short
+# words has nothing holding its WIDTH, so it runs up to whatever its box allows
+# and prints a `נעה` twice the size of the `אנציקלופדיה` on the card beside it.
+# The owner reads that as two different decks.
+#
+# Six, not one, because the four surfaces do not share an answer:
+#   * words, Hebrew and Latin — a Latin run is set in its own face at its own
+#     scale, so one number cannot cover both;
+#   * the front title and the BACK title — a back is one uncluttered card and its
+#     title goes far larger than any front's;
+#   * and each of those by SCRIPT, because a design's two title faces put a
+#     different amount of ink in the same box (see title_font_for).
+#
+# Absent or null is the honest default: no ceiling, the box alone decides, and
+# every deck printed before this reads exactly as it did.
+TYPE_CEILINGS = (
+    "word_max_he", "word_max_en",
+    "title_max_en", "title_max_he",
+    "back_title_max_en", "back_title_max_he",
+)
+
+
+def type_ceiling(cfg, name):
+    """One ceiling from the theme, or None where the design sets none.
+
+    Garbage is None rather than an error: a ceiling is an optional refinement,
+    and refusing to render a paid order over a malformed optional knob would be
+    the wrong trade. A non-positive number is the same as absent — there is no
+    meaningful ceiling of zero.
+    """
+    if name not in TYPE_CEILINGS:
+        raise KeyError(f"unknown ceiling {name!r}")
+    raw = (cfg or {}).get(name)
+    if raw is None:
+        return None
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if val > 0 else None
+
+
 def word_alt_scale(cfg, default):
     """How big this theme sets its ENGLISH card words, as a size fraction.
 
