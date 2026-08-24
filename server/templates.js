@@ -3688,6 +3688,44 @@ function templateImagePath(root, slug, slot) {
 // For a font role with no filename on record, the uploaded basename is used and
 // recorded in themes.json so the generator can find it.
 // Returns { key, role, path } or { error, httpStatus, ... }.
+// READ one of a template's asset files back — the counterpart to replaceAsset.
+//
+// Every asset a template owns could be WRITTEN through the API and none could be
+// READ: the fonts in particular exist only on the volume, which is why the
+// calibration bench had to ship its own copies baked in as base64 and then went
+// stale the moment a font was replaced. A tool that renders a template's type
+// has to be able to fetch that template's actual faces.
+//
+// Resolution is deliberately identical to replaceAsset's — assetRolesFor is the
+// one source of truth for a role's path and kind, so read and write can never
+// disagree about which file a role names. Same containment check, for the same
+// reason: a role is a whitelisted id, never a path from the caller.
+function readAsset({ root, key, role }) {
+  const themes = loadThemes(themesPathFor(root));
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  const dir = resolveTemplateDir(root, entry, key);
+  if (!dir) return { error: 'template directory is outside the templates root', httpStatus: 400 };
+  const spec = assetRolesFor(entry).find((a) => a.role === role);
+  if (!spec) return { error: 'unknown asset role: ' + role, httpStatus: 404 };
+  // A font role's path is the filename the entry RECORDS, and an optional role
+  // that was never uploaded records nothing — there is no path to resolve, which
+  // is a normal answer rather than something to crash on.
+  if (!spec.rel) {
+    return { error: 'asset not present', httpStatus: 404, optional: !!spec.optional };
+  }
+  const file = path.resolve(dir, spec.rel);
+  if (file !== dir && !file.startsWith(dir + path.sep)) {
+    return { error: 'refusing to read outside the template directory', httpStatus: 400 };
+  }
+  if (!fs.existsSync(file)) {
+    // An OPTIONAL role that was never uploaded is a normal answer, not a fault:
+    // a template with one title face simply has no title-font-alt.
+    return { error: 'asset not present', httpStatus: 404, optional: !!spec.optional };
+  }
+  return { file, rel: spec.rel, kind: spec.kind };
+}
+
 function replaceAsset({
   root,
   key,
@@ -4069,6 +4107,7 @@ module.exports = {
   titlePlaceholders,
   titleLinesFrom,
   replaceAsset,
+  readAsset,
   clearAsset,
   fontScriptCoverage,
   REMOVABLE_ROLES,
