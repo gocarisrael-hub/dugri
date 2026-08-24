@@ -86,8 +86,10 @@ describe('buildOrderReady — the two promises', () => {
     expect(msg.text).toContain('כתובת לאיסוף');
     expect(msg.text).toContain('גלאור');
     // An address is not directions. This is the mail she reads in the car, so it
-    // carries the pickup page too — entrance, floor, hours, what to bring.
-    expect(msg.text).toContain('/pickup');
+    // carries the pickup page too — entrance, floor, hours, what to bring, at
+    // THIS deployment's origin rather than a domain typed into the default.
+    expect(msg.text).toContain(BASE + '/pickup');
+    expect(msg.text).not.toContain('{url}');
     // ...and it must NOT promise a delivery.
     expect(msg.text).not.toContain('יוצא אליכם');
   });

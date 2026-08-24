@@ -300,12 +300,23 @@ function formatAddress(addr) {
   return seg.filter(Boolean).join(', ');
 }
 
+// The "everything about collecting it" line, with {url} resolved against THIS
+// deployment's origin. Returns '' — so the caller drops the line — when there is
+// no template, or no base to build an absolute url from: an email that ships a
+// literal "{url}" or a bare "/pickup" is worse than one that never mentions the
+// page, because both look like a link and neither is one.
+function pickupPageLine(info, baseUrl) {
+  if (!info || !info.link) return '';
+  if (!baseUrl) return '';
+  return interpolate(info.link, { url: String(baseUrl).replace(/\/+$/, '') + '/pickup' });
+}
+
 // The buyer-facing fulfilment block for an order: a delivery block (approx time +
 // shipping address) for a `delivery` order, or a self-pickup block (we'll email
 // when ready + approx prep time + pickup address) for a `pickup` order. Returns
 // [] for pdf/custom or a missing order. Every string is owner-editable via
 // settings (delivery_info / pickup_info); the address comes from the order.
-function fulfilmentLines(order) {
+function fulfilmentLines(order, baseUrl) {
   if (!order) return [];
   const lines = [];
   if (order.version === 'delivery') {
@@ -320,8 +331,9 @@ function fulfilmentLines(order) {
     if (p.address) lines.push((p.address_label ? p.address_label + ': ' : '') + p.address);
     // The address alone does not get anyone through the door: which entrance,
     // which floor, what to bring, and what the orders look like when she gets
-    // there all live on /pickup. One line, and only when it is set.
-    if (p.link) lines.push(p.link);
+    // there all live on /pickup.
+    const pickupLine = pickupPageLine(p, baseUrl);
+    if (pickupLine) lines.push(pickupLine);
   }
   return lines;
 }
@@ -329,8 +341,8 @@ function fulfilmentLines(order) {
 // The fulfilment block as it appears in a BUYER email: the lines above, preceded
 // by a blank separator, or [] when there is nothing to say. Kept as its own
 // helper so the confirmation and the receipt can never format it differently.
-function fulfilmentBlock(collection) {
-  const fulfil = fulfilmentLines((collection && collection.order) || null);
+function fulfilmentBlock(collection, baseUrl) {
+  const fulfil = fulfilmentLines((collection && collection.order) || null, baseUrl);
   return fulfil.length ? ['', ...fulfil] : [];
 }
 
@@ -583,7 +595,7 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   // The ONLY block kept from the old order-details section: how they receive the
   // game. That is not an order detail but the buyer's instructions — it is the
   // only place they are told where and when to collect it.
-  lines.push(...fulfilmentBlock(collection));
+  lines.push(...fulfilmentBlock(collection, baseUrl));
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
   const htmlLines = lines.slice();
@@ -647,7 +659,7 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const lines = interpolate(tpl.body, values).split('\n');
-  lines.push(...fulfilmentBlock(collection));
+  lines.push(...fulfilmentBlock(collection, baseUrl));
   lines.push(...orderRefLine(collection));
   // Branded HTML mirrors the plain-text body but drops the raw URL line — the
   // link becomes the CTA button. Everything above the link is reused as-is.
@@ -733,7 +745,7 @@ function buildFinishedMessage(collection, baseUrl) {
 // The pickup ADDRESS is read from pickup_info, which already holds it and is
 // already editable — the ready mail must never carry a second copy that can
 // drift out of step with the one on the confirmation.
-function orderReadyFulfilment(order) {
+function orderReadyFulfilment(order, baseUrl) {
   const info = _store.get('email', 'order_ready_info') || {};
   const version = order && order.version;
   if (version === 'pickup') {
@@ -741,7 +753,8 @@ function orderReadyFulfilment(order) {
     const out = info.pickup ? [info.pickup] : [];
     if (p.address) out.push((p.address_label ? p.address_label + ': ' : '') + p.address);
     // This is the mail she reads in the car, so it carries the directions too.
-    if (p.link) out.push(p.link);
+    const pickupLine = pickupPageLine(p, baseUrl);
+    if (pickupLine) out.push(pickupLine);
     return out;
   }
   if (version === 'delivery') {
@@ -785,7 +798,7 @@ function buildOrderReady(collection, baseUrl) {
   const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
-  const fulfil = orderReadyFulfilment(order);
+  const fulfil = orderReadyFulfilment(order, baseUrl);
   if (fulfil.length) bodyLines.push('', ...fulfil);
   const copies = orderReadyCopies(order);
   if (copies.length) bodyLines.push('', ...copies);

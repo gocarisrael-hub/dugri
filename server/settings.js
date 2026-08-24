@@ -364,19 +364,21 @@ const REGISTRY = {
     // address); `address_label` labels it.
     pickup_info: {
       kind: 'map',
-      tokens: [],
+      tokens: ['url'],
       default: {
         ready: 'נעדכן אותך במייל ברגע שהמשחק מוכן לאיסוף.',
         eta: 'המשחק מוכן בדרך כלל תוך כ-4 ימי עסקים מרגע שרשימת המילים מוכנה.',
         address: 'בית הדפוס גלאור, התחייה 14 תל אביב — כניסה B, קומה ראשונה.',
         address_label: 'כתובת לאיסוף',
-        // An ABSOLUTE url, spelled out in the text rather than assembled from
-        // PUBLIC_BASE_URL: fulfilmentLines() is called without a base (the
-        // fulfilment block has never needed one), and threading one through
-        // every caller to build a link the owner can already type is plumbing
-        // for its own sake. If the domain ever moves, this is one field in
-        // admin — not a deploy.
-        link: 'כל פרטי האיסוף — שעות פתיחה, מה להביא ואיך מוצאים את ההזמנה: https://dugri.co.il/pickup',
+        // {url} is filled from PUBLIC_BASE_URL, NOT typed in here. It was typed
+        // in here, as https://dugri.co.il — a domain that does not resolve; the
+        // site is dugri-israel.co.il — so every pickup buyer got a dead link and
+        // nothing in the repo could tell. A hand-written origin is a fact about
+        // the deployment kept somewhere the deployment cannot correct, and
+        // staging would have been wrong even had the domain been right. The line
+        // is DROPPED entirely when there is no base to build from: no bare
+        // "{url}", no relative path a mail client cannot follow.
+        link: 'כל פרטי האיסוף — שעות פתיחה, מה להביא ואיך מוצאים את ההזמנה: {url}',
       },
     },
     // The CTA button labels on the branded HTML emails.
