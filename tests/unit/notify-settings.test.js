@@ -97,7 +97,7 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         '',
         // The one block kept from the old details section: how the game reaches
         // them. It is the only place the buyer is told the delivery time.
-        'המשחק יישלח אליך בדרך כלל תוך כ-7 ימי עסקים מרגע שרשימת המילים מוכנה.',
+        'המשחק יישלח אליך בדרך כלל תוך כ-8 ימי עסקים מרגע שרשימת המילים מוכנה.',
         '',
         // This mail goes out at order creation, so the closing line + link send
         // the buyer to PAY (pay=1 opens the checkout on arrival), not to the

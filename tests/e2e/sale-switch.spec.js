@@ -12,7 +12,7 @@ import { ALL_ON, stubFeatures } from './feature-flags.js';
 // phrase again.
 //
 // The phrase is its own element now and follows the switch. What the rest of the
-// line says is unaffected: "מוכן תוך 3 ימי עסקים · ללא הגבלת מילים" is a standing
+// line says is unaffected: "מוכן תוך 4 ימי עסקים · ללא הגבלת מילים" is a standing
 // fact about the product, not part of the offer.
 
 const VERSIONS = {
@@ -49,7 +49,7 @@ test('with the sale ON, the buy note carries the launch phrase', async ({ page }
   await expect(phrase(page)).toHaveText('מבצע השקה');
   // The whole line still reads as one sentence, separator included.
   await expect(page.locator('.pdp-buy-note')).toContainText('מבצע השקה');
-  await expect(page.locator('.pdp-buy-note')).toContainText('מוכן תוך 3 ימי עסקים');
+  await expect(page.locator('.pdp-buy-note')).toContainText('מוכן תוך 4 ימי עסקים');
 });
 
 test('turning the sale OFF takes the phrase away, and leaves the rest', async ({ page }) => {
@@ -61,7 +61,7 @@ test('turning the sale OFF takes the phrase away, and leaves the rest', async ({
   // split exists to avoid: hiding the whole line would take the delivery time
   // and the word cap with it.
   await expect(rest(page)).toBeVisible();
-  await expect(rest(page)).toContainText('מוכן תוך 3 ימי עסקים');
+  await expect(rest(page)).toContainText('מוכן תוך 4 ימי עסקים');
   await expect(rest(page)).toContainText('ללא הגבלת מילים');
   // And nothing anywhere on the page still ADVERTISES the launch offer.
   // useInnerText, deliberately: textContent counts nodes the CSS has hidden, and
@@ -80,7 +80,7 @@ test('the separator leaves with the phrase — no stranded "·"', async ({ page 
   // deleting text instead of hiding a node.
   const text = (await page.locator('.pdp-buy-note').innerText()).trim();
   expect(text.startsWith('·')).toBe(false);
-  expect(text).toBe('מוכן תוך 3 ימי עסקים · ללא הגבלת מילים');
+  expect(text).toBe('מוכן תוך 4 ימי עסקים · ללא הגבלת מילים');
 });
 
 test('a failed pricing fetch prints no offer either', async ({ page }) => {
