@@ -90,7 +90,7 @@ def render_board(theme, board_clean, title_lines, out_png, chasers=False):
              + rp.title_faces(theme, cfg, lines=title_lines) + "</style>")
     body = style + rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                   title_font, ts["outline_w"], ts["arch"], ts["shadow"],
-                                  rtl=rp.title_is_rtl(cfg),
+                                  rtl=rp.title_is_rtl(cfg, title_lines),
                                   fixed_size=ts.get("board_size"),
                                   align=ts.get("align", "center"),
                                   italic=ts.get("italic", False),
@@ -124,7 +124,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                "y0": cy0 + frac["y0"] * ch, "y1": cy0 + frac["y1"] * ch}
         body.append(rp.title_block(box, title_lines, bk["fill"], bk["outline"],
                                    title_font, ts["outline_w"], ts["arch"], ts["shadow"],
-                                   rtl=rp.title_is_rtl(cfg),
+                                   rtl=rp.title_is_rtl(cfg, title_lines),
                                    fixed_size=ts.get("back_size") or ts.get("size"),
                                    align=ts.get("align", "center"),
                                    italic=ts.get("italic", False),
@@ -258,7 +258,7 @@ def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
                "y0": frac["y0"] * vb[3], "y1": frac["y1"] * vb[3]}
         overlay = rp.title_block(box, title_lines, bd["fill"], bd["outline"],
                                  title_font, ts["outline_w"], ts["arch"], ts["shadow"],
-                                 rtl=rp.title_is_rtl(cfg),
+                                 rtl=rp.title_is_rtl(cfg, title_lines),
                                  fixed_size=ts.get("board_size"),
                                  align=ts.get("align", "center"),
                                  italic=ts.get("italic", False),

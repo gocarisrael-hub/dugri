@@ -3969,12 +3969,30 @@ def title_font_for(theme, lines, cfg=None):
     return alt if script != (cfg.get("language") or "hebrew") else primary
 
 
-def title_is_rtl(cfg):
-    # A title is right-to-left when the theme's language is Hebrew. RTL matters
-    # for any title that mixes digits with Hebrew (e.g. anniversary "30 שנה
-    # נישואין" or "{NAME} בן {AGE}"): with the default LTR base direction the
-    # leading/embedded digit run lays out on the wrong side. English themes stay
-    # LTR and are untouched.
+def title_is_rtl(cfg, lines=None):
+    """Whether this title's base direction is right-to-left.
+
+    Read off the TITLE ITSELF, exactly as ``title_font_for`` already reads the
+    face off it: ``title_script`` answers "hebrew"/"english" from the first
+    strong character anywhere in the title, and digits/spaces/punctuation decide
+    nothing. It matters for any title that mixes digits with Hebrew — "30 שנות
+    נישואין", "{NAME} בן {AGE}" — because under the default LTR base direction
+    the digit run lays out on the WRONG SIDE of the words.
+
+    It used to be read off the theme's ``language`` instead, and that was true
+    when the honoree's name was composed into a designed title. It stopped being
+    true when the buyer started typing the WHOLE title herself: seven of the ten
+    designs are ``language: english`` and every one of them takes Hebrew titles
+    daily, so a Latin-scripted deck laid every numbered Hebrew title out
+    backwards while the FONT — picked from the same text — swapped correctly.
+
+    ``lines`` omitted, or a title with no strong character in it at all (bare
+    digits), falls back to the theme's language, which is the previous
+    behaviour and the only answer available.
+    """
+    script = title_script(lines) if lines else None
+    if script is not None:
+        return script == "hebrew"
     return cfg.get("language") == "hebrew"
 
 
@@ -4435,7 +4453,7 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
         cap = ts["size_alt"]
     return title_block(tbox, title_lines, ts["fill"], ts["outline"], title_font,
                        ts["outline_w"], ts["arch"], ts["shadow"],
-                       rtl=title_is_rtl(cfg),
+                       rtl=title_is_rtl(cfg, title_lines),
                        fixed_size=cap,
                        max_size=title_ceiling(cfg, title_lines, back=back),
                        align=align or ts.get("align", "center"),
@@ -5027,7 +5045,7 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
             overlay.append(title_block(tbox, title_lines,
                                        ts["fill"], ts["outline"], title_font,
                                        ts["outline_w"], ts["arch"], ts["shadow"],
-                                       rtl=title_is_rtl(cfg),
+                                       rtl=title_is_rtl(cfg, title_lines),
                                        fixed_size=ts.get("size"),
                                        max_size=title_ceiling(cfg, title_lines),
                                        align=config.front_align(cfg, ci + 1),
