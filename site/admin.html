@@ -1047,6 +1047,26 @@
         return a;
       }
 
+      // THE PROOF: the customer's own look at the produced deck, before the file
+      // reaches the shop. The row links to the ADMIN redirect rather than
+      // building the customer URL here — the list carries no capability token,
+      // and it should not have to.
+      function proofLink(id) {
+        const a = document.createElement('a');
+        a.className = 'act';
+        a.textContent = 'הגהה';
+        a.title = 'העמוד שהלקוחה רואה — כל קלפי החפיסה מתוך הקובץ עצמו';
+        a.href =
+          location.origin +
+          '/api/admin/collections/' +
+          id +
+          '/proof?key=' +
+          encodeURIComponent(key);
+        a.target = '_blank';
+        a.rel = 'noopener';
+        return a;
+      }
+
       // Last fetched list + current view state (client-side filter/sort).
       let allCols = [];
       // collection id -> { groupId, closed }, refreshed with the collections.
@@ -2996,6 +3016,12 @@
           const showPdf = (press) => {
             pdfWrap.textContent = ' ';
             pdfWrap.appendChild(pressLink(c.id, press));
+            // Beside the shop's file, the customer's look at it. Only for an
+            // order that actually produced one — 'failed' has no deck to read.
+            if (press !== 'failed') {
+              pdfWrap.appendChild(document.createTextNode(' '));
+              pdfWrap.appendChild(proofLink(c.id));
+            }
             const note = smallCardsNote(prod);
             if (note) pdfWrap.appendChild(note);
           };

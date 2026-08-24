@@ -40,6 +40,7 @@ const storeImport = require('./store-import');
 const templateImport = require('./template-import');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 const generatorProc = require('./generator-proc');
+const proof = require('./proof');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -1314,6 +1315,14 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       base && boardFile && production && production.pdf_token
         ? base + '/api/collections/' + c.id + '/board?t=' + encodeURIComponent(production.pdf_token)
         : null;
+    // The PROOF link, on the same capability token: the page where the customer
+    // reads her own deck before it goes to the shop. Handed back with the other
+    // customer link rather than mailed — production is hand-pressed, and the
+    // owner decides when an order is worth a proof.
+    const customerProofLink =
+      base && production && production.pdf_token
+        ? base + '/proof.html?c=' + c.id + '&t=' + encodeURIComponent(production.pdf_token)
+        : null;
     // NO email fires here any more. The old "your file is ready — download it"
     // mail (pdf_ready) was written for the digital-only phase; the product now
     // ships as a printed game, so there is nothing for the customer to download,
@@ -1332,6 +1341,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       boardLink: adminBoardLink,
       customerLink,
       customerBoardLink,
+      customerProofLink,
     });
   } catch (e) {
     const detail = String((e && e.message) || e);
@@ -1398,6 +1408,8 @@ app.delete('/api/admin/collections/:id/production', (req, res) => {
   // leave the record un-cleared — the record is what the dashboard reads.
   const press = pressPaths(c.id);
   const board = boardFileFor(c.id);
+  // The proof reads the deck, so it goes when the deck does.
+  proof.remove(GENERATED_DIR, c.id);
   pressUnlink(
     path.join(GENERATED_DIR, c.id + '.pdf'),
     ...(board ? [board] : []),
@@ -1416,6 +1428,22 @@ app.get('/api/admin/collections/:id/board', (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c) return res.status(404).json({ error: 'not found' });
   sendBoardFile(res, c.id);
+});
+
+// Admin: open the customer's PROOF page for this order. A redirect, not a copy
+// of the page: the owner clicks and lands on the very screen the customer gets,
+// token and all, so "what does she see?" is never a question answered from
+// memory. The admin key gets you the redirect; the token in it is what the
+// buyer's link carries.
+app.get('/api/admin/collections/:id/proof', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const production = (c.order && c.order.production) || c.production || null;
+  const token = production && production.pdf_token;
+  // No token means the order was never produced — there is no deck to proof.
+  if (!token) return res.status(409).json({ error: 'not produced' });
+  res.redirect('/proof.html?c=' + encodeURIComponent(c.id) + '&t=' + encodeURIComponent(token));
 });
 
 // --- The PRESS copy -------------------------------------------------------
@@ -1536,6 +1564,58 @@ app.get('/api/collections/:id/board', (req, res) => {
   const token = production && production.pdf_token;
   if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
   sendBoardFile(res, c.id);
+});
+
+// --- The PROOF ------------------------------------------------------------
+// PUBLIC, on the same per-collection capability token as the deck and the board:
+// one order, one secret, now three artifacts. The buyer gets to READ her deck
+// before it is printed — every card, front and back, as pages out of the produced
+// PDF rather than a second drawing of it. server/proof.js has the reasoning.
+app.get('/api/collections/:id/proof', async (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const production = (c.order && c.order.production) || c.production || null;
+  const token = production && production.pdf_token;
+  if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
+  try {
+    const manifest = await proof.ensure({
+      generatedDir: GENERATED_DIR,
+      id: c.id,
+      python: PYTHON_BIN,
+      repoRoot: REPO_ROOT,
+    });
+    // No cache: the deck can be re-produced under a buyer who left the tab open,
+    // and the manifest is how she'd find out.
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ pages: manifest.pages, width: manifest.width, name: c.honoree_name || '' });
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    // "no pdf" is not an error the buyer caused: her order simply isn't produced
+    // yet, and the page says so rather than showing her a failure.
+    if (msg === 'no pdf') return res.status(404).json({ error: 'no pdf' });
+    console.error('proof build failed', c.id, msg);
+    res.status(500).json({ error: 'proof failed' });
+  }
+});
+
+// One page of the proof. The page number is validated against the manifest and
+// then rebuilt from digits, so nothing off the URL reaches the filesystem.
+app.get('/api/collections/:id/proof/:n', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const production = (c.order && c.order.production) || c.production || null;
+  const token = production && production.pdf_token;
+  if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
+  const manifest = proof.readFresh(GENERATED_DIR, c.id);
+  if (!manifest) return res.status(404).json({ error: 'no proof' });
+  const file = proof.pageFile(GENERATED_DIR, c.id, req.params.n, manifest);
+  if (!file || !fs.existsSync(file)) return res.status(404).json({ error: 'no page' });
+  res.setHeader('Content-Type', 'image/webp');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Immutable for an hour: a page only changes when the deck is re-produced, and
+  // that rebuilds the whole proof directory under a fresh manifest.
+  res.setHeader('Cache-Control', 'private, max-age=3600');
+  res.sendFile(file);
 });
 
 // Admin: mark an order SENT TO THE PRINT SHOP. A toggle: body {undo:true} takes
