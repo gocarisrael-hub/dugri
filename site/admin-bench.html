@@ -828,6 +828,10 @@
   body.lean .panel section.grp {
     padding-block: 0.5rem;
   }
+  .backlink {
+    text-decoration: none;
+    margin-inline-end: 0.6rem;
+  }
   .dirtynote {
     font: 12px var(--ui);
     color: var(--flag);
@@ -4591,6 +4595,19 @@
     } catch (err) {
       /* fine */
     }
+
+    /* ---- and a way back out ----
+     A full-screen tool with no exit is a trap: the only way back to the rest of
+     admin was the browser's back button, which is also the one thing the unsaved
+     guard interrupts. The key travels with the link, the way every admin page
+     carries it to the next. */
+    const back = document.createElement('a');
+    back.className = 'btn xs backlink';
+    back.textContent = '↩ ניהול';
+    back.title = 'חזרה לתבניות';
+    back.href = 'admin-templates.html' + (ADMIN ? '?key=' + encodeURIComponent(ADMIN) : '');
+    const brand = document.querySelector('.top .brand');
+    if (brand) brand.insertAdjacentElement('beforebegin', back);
 
     /* ---- a way across eleven sections ---- */
     const panel = document.querySelector('.panel');
