@@ -4304,18 +4304,8 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         else:
             # Shift the anchor by half the asymmetry so the ink — not the advance —
             # straddles the box centre.
-            #
-            # MIRRORED FOR AN RTL RUN. _ink_bearings measures with Pillow, which
-            # lays a string out left-to-right whatever its script; the SVG paints
-            # a Hebrew title RIGHT-TO-LEFT. So the overhang Pillow reports on the
-            # right is the one that shows on the LEFT, and correcting by the
-            # unmirrored skew moved the line the wrong way — twice the error
-            # rather than none. Measured on סנטוריני's "יעל חוגגת יובל": 1.84
-            # units left of centre before, 0 after (the two-line title on the
-            # same card was already centred, because its lines happen to have no
-            # asymmetry to correct — which is why this hid for so long).
             lsb, rsb = _ink_bearings(f, ref, line, size)
-            skew = (rsb - lsb) / 2 if rtl else (lsb - rsb) / 2
+            skew = (lsb - rsb) / 2
             xl = cx - skew - wln / 2 - size * 0.15
             xr = cx - skew + wln / 2 + size * 0.15
         cxp = (xl + xr) / 2
