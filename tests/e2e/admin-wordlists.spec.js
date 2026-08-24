@@ -24,7 +24,12 @@ test.describe('admin wordlists', () => {
     await expect(page.locator('#app')).toBeVisible();
     const generic = page.locator('.list-item[data-item="generic-350.txt"]');
     await expect(generic).toBeVisible();
-    await expect(generic.locator('.li-meta')).toContainText('350 מילים');
+    // A COUNT, not a specific one. The meta line proves the page reads the pool
+    // and reports its size; pinning the exact number makes an unrelated edit to
+    // the words (e.g. #519 taking 51 grim entries out of the shipped pools) fail
+    // a test about the LISTING. The filename keeps the original figure; the file
+    // no longer has to match it.
+    await expect(generic.locator('.li-meta')).toContainText(/\d+ מילים/);
     // the design -> pool table is populated, each row an editable picker
     await expect(page.locator('#links tr')).not.toHaveCount(0);
     await expect(page.locator('#links select[data-link]').first()).toBeVisible();
