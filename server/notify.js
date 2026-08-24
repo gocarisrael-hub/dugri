@@ -318,6 +318,10 @@ function fulfilmentLines(order) {
     if (p.ready) lines.push(p.ready);
     if (p.eta) lines.push(p.eta);
     if (p.address) lines.push((p.address_label ? p.address_label + ': ' : '') + p.address);
+    // The address alone does not get anyone through the door: which entrance,
+    // which floor, what to bring, and what the orders look like when she gets
+    // there all live on /pickup. One line, and only when it is set.
+    if (p.link) lines.push(p.link);
   }
   return lines;
 }
@@ -736,6 +740,8 @@ function orderReadyFulfilment(order) {
     const p = pickupInfo();
     const out = info.pickup ? [info.pickup] : [];
     if (p.address) out.push((p.address_label ? p.address_label + ': ' : '') + p.address);
+    // This is the mail she reads in the car, so it carries the directions too.
+    if (p.link) out.push(p.link);
     return out;
   }
   if (version === 'delivery') {

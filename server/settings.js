@@ -368,8 +368,15 @@ const REGISTRY = {
       default: {
         ready: 'נעדכן אותך במייל ברגע שהמשחק מוכן לאיסוף.',
         eta: 'המשחק מוכן בדרך כלל תוך כ-4 ימי עסקים מרגע שרשימת המילים מוכנה.',
-        address: 'בית הדפוס גלאור — עדכנו כאן את הכתובת המלאה לאיסוף.',
+        address: 'בית הדפוס גלאור, התחייה 14 תל אביב — כניסה B, קומה ראשונה.',
         address_label: 'כתובת לאיסוף',
+        // An ABSOLUTE url, spelled out in the text rather than assembled from
+        // PUBLIC_BASE_URL: fulfilmentLines() is called without a base (the
+        // fulfilment block has never needed one), and threading one through
+        // every caller to build a link the owner can already type is plumbing
+        // for its own sake. If the domain ever moves, this is one field in
+        // admin — not a deploy.
+        link: 'כל פרטי האיסוף — שעות פתיחה, מה להביא ואיך מוצאים את ההזמנה: https://dugri.co.il/pickup',
       },
     },
     // The CTA button labels on the branded HTML emails.

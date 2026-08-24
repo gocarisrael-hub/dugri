@@ -85,6 +85,9 @@ describe('buildOrderReady — the two promises', () => {
     // The address comes from pickup_info — the same one the confirmation shows.
     expect(msg.text).toContain('כתובת לאיסוף');
     expect(msg.text).toContain('גלאור');
+    // An address is not directions. This is the mail she reads in the car, so it
+    // carries the pickup page too — entrance, floor, hours, what to bring.
+    expect(msg.text).toContain('/pickup');
     // ...and it must NOT promise a delivery.
     expect(msg.text).not.toContain('יוצא אליכם');
   });
