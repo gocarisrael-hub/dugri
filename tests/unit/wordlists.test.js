@@ -18,6 +18,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
 const SHIPPED_DIR = path.join(__dirname, '..', '..', 'content', 'wordlists');
 
+// How many words the shipped generic pool actually has, read from the file
+// rather than written down. It was written down as 350, and the day six grim
+// words were taken out of the pools (a funeral and a hospital among them) five
+// tests failed on the count — none of which is about counting. What these tests
+// mean by 350 is "all of it".
+const GENERIC_COUNT = fs
+  .readFileSync(path.join(SHIPPED_DIR, 'generic-350.txt'), 'utf8')
+  .split('\n')
+  .map((w) => w.trim())
+  .filter(Boolean).length;
+
 const ADMIN_KEY = 'test-admin-key';
 let app;
 let store;
@@ -91,7 +102,7 @@ describe('wordlists store — persistence (DATA_DIR, not the image)', () => {
     const generic = all.find((w) => w.name === 'generic-350.txt');
     expect(generic).toBeTruthy();
     expect(generic.source).toBe('shipped');
-    expect(generic.count).toBe(350);
+    expect(generic.count).toBe(GENERIC_COUNT);
     expect(fs.existsSync(storeDir)).toBe(false);
   });
 
@@ -138,7 +149,7 @@ describe('wordlists store — copy-on-write over a shipped list', () => {
     store.update('generic-350.txt', { text: 'רק זה' });
     const rec = store.revert('generic-350.txt');
     expect(rec.source).toBe('shipped');
-    expect(rec.count).toBe(350);
+    expect(rec.count).toBe(GENERIC_COUNT);
     expect(fs.existsSync(path.join(storeDir, 'generic-350.txt'))).toBe(false);
   });
 
@@ -465,7 +476,7 @@ describe('admin wordlist routes', () => {
     const r = await req('GET', key('/api/admin/wordlists'));
     expect(r.status).toBe(200);
     const generic = r.body.wordlists.find((w) => w.name === 'generic-350.txt');
-    expect(generic.count).toBe(350);
+    expect(generic.count).toBe(GENERIC_COUNT);
     expect(generic.source).toBe('shipped');
     // linkage comes from the real generator/themes.json
     expect(r.body.themes.length).toBeGreaterThan(0);
@@ -475,7 +486,7 @@ describe('admin wordlist routes', () => {
   it('GET one pool returns its words; 404 for unknown/unsafe names', async () => {
     const r = await req('GET', key('/api/admin/wordlists/generic-350.txt'));
     expect(r.status).toBe(200);
-    expect(r.body.words.length).toBe(350);
+    expect(r.body.words.length).toBe(GENERIC_COUNT);
     expect((await req('GET', key('/api/admin/wordlists/nope.txt'))).status).toBe(404);
     expect(
       (await req('GET', key('/api/admin/wordlists/' + encodeURIComponent('../x')))).status
@@ -517,7 +528,7 @@ describe('admin wordlist routes', () => {
     // and revert puts it back
     const rev = await req('POST', key('/api/admin/wordlists/kids-birthday-350.txt/revert'));
     expect(rev.body.source).toBe('shipped');
-    expect(rev.body.count).toBe(350);
+    expect(rev.body.count).toBe(GENERIC_COUNT);
   });
 
   it('DELETE is refused for a referenced list with the theme names in the message', async () => {

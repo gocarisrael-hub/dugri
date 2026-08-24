@@ -3,6 +3,7 @@
 
 Run: python3 generator/test_topup.py   (or via pytest)
 """
+import io
 import os
 import re
 import shutil
@@ -10,6 +11,23 @@ import tempfile
 
 import pack
 import topup
+
+# How many words the shipped generic pool actually holds, read from the file
+# rather than written down. It was written down as 350 in three places, and the
+# day six grim words were taken out of the pools (a funeral and a hospital among
+# them) all three failed — none of which is a test about counting. What they mean
+# by the number is "the whole shipped pool".
+SHIPPED_GENERIC = len(
+    [
+        w
+        for w in io.open(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "content", "wordlists", "generic-350.txt"),
+            encoding="utf-8",
+        ).read().splitlines()
+        if w.strip()
+    ]
+)
 
 
 class _store:
@@ -96,7 +114,7 @@ def test_empty_personal_still_fills():
 def test_no_data_dir_reads_the_shipped_pool():
     prev, topup.STORE_DIR = topup.STORE_DIR, ""
     try:
-        assert len(topup._read_wordlist("generic-350.txt")) == 350
+        assert len(topup._read_wordlist("generic-350.txt")) == SHIPPED_GENERIC
         assert topup._wordlist_path("generic-350.txt").startswith(topup.WORDLISTS_DIR)
     finally:
         topup.STORE_DIR = prev
@@ -109,7 +127,7 @@ def test_owner_store_shadows_the_shipped_pool_of_the_same_name():
         )
         assert topup._read_wordlist("generic-350.txt") == ["מילה של הבעלים"]
     # and the shipped file is untouched once the store is gone
-    assert len(topup._read_wordlist("generic-350.txt")) == 350
+    assert len(topup._read_wordlist("generic-350.txt")) == SHIPPED_GENERIC
 
 
 def test_owner_edit_of_a_theme_pool_reaches_the_deck():
@@ -144,7 +162,7 @@ def test_a_deleted_shipped_pool_reads_as_gone():
         assert topup._wordlist_path("generic-350.txt") is None
         assert topup._read_wordlist("generic-350.txt") == []
     # …and the shipped file is untouched: the marker masks, it does not erase.
-    assert len(topup._read_wordlist("generic-350.txt")) == 350
+    assert len(topup._read_wordlist("generic-350.txt")) == SHIPPED_GENERIC
 
 
 def test_a_deleted_pool_leaves_the_deck_short_rather_than_crashing():
