@@ -2390,9 +2390,19 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
     return out
 
 
+def _entry_step(centers):
+    """Units between one entry's row and the next — the gap a wrapped line is
+    measured against by ``word_wrap_pitch``. The SMALLEST gap, because a card
+    whose rows are not evenly spaced must still keep every continuation inside
+    its own entry."""
+    cs = sorted(c for c in (centers or []) if c is not None)
+    gaps = [b - a for a, b in zip(cs, cs[1:])]
+    return min(gaps) if gaps else 0.0
+
+
 def _fit_card(cands, centers, uniform, font=None, ref=None,
               vbounds=None, room=None, count=None, bold_w=0.0, rows=None,
-              pitch=None):
+              pitch=None, wrap_pitch=None):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -2455,6 +2465,16 @@ def _fit_card(cands, centers, uniform, font=None, ref=None,
         flat = [ln for i in live for ln in cands[i][counts[i]][0]]
         live_c = [centers[i] for i in live]
         lead = _card_lead(font, ref, flat, count=count, bold_w=bold_w)
+        # THE DESIGN MAY ASK FOR MORE THAN THE INK FLOOR between the lines of one
+        # entry (word_wrap_pitch). It is applied HERE, inside the fit, rather than
+        # at the render: a wider gap makes the block taller, and only the fit can
+        # pay for that in size. `max` keeps the floor, so this can never be why
+        # two letters touch; the `lead * size <= pitch` test below keeps a
+        # continuation from drifting further than the next entry.
+        if wrap_pitch and size:
+            step = _entry_step(live_c)
+            if step:
+                lead = max(lead, wrap_pitch * step / size)
         span = max(live_c) - min(live_c)
         if pitch and pitch > 0:
             # THE DECK'S RHYTHM IS FIXED, so the SIZE is what gives. Two limits,
@@ -2888,7 +2908,7 @@ def row_bounds(slots, slot, row, cell, obstacles, floor=None):
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
                   obstacles=None, title_box=None, even_lines=False,
-                  deck_pitch=None, max_size=None):
+                  deck_pitch=None, max_size=None, wrap_pitch=None):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
 
     One UNIFORM font size is the target for every word (matching the origin's
@@ -3061,7 +3081,7 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         size, counts, lead = _fit_card(cands, centers, cap, font=font, ref=ref,
                                        vbounds=vbounds, room=room,
                                        count=len(slots), bold_w=bold_w,
-                                       rows=rows, pitch=want)
+                                       rows=rows, pitch=want, wrap_pitch=wrap_pitch)
         lines = sum(counts.values())
         # With a card to measure, the pitch floor is the origin's ENTRY spacing (a
         # constant per template) and the ceiling is the paper left below the first
@@ -4506,7 +4526,8 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                             # since, gets the uniform rhythm.
                             even_lines=config.is_single_card(cfg),
                             deck_pitch=deck_pitch,
-                            max_size=config.type_ceiling(cfg, "word_max_he"))
+                            max_size=config.type_ceiling(cfg, "word_max_he"),
+                            wrap_pitch=config.word_wrap_pitch(cfg))
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
@@ -4574,7 +4595,8 @@ def card_pitch_need(theme, recipe, words, front_index=None, word_font=None,
                          word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                          room_bottom=room, bold_w=config.word_bold_w(cfg, _WORD_BOLD_W),
                          obstacles=icons, even_lines=False,
-                         max_size=config.type_ceiling(cfg, "word_max_he"))
+                         max_size=config.type_ceiling(cfg, "word_max_he"),
+                         wrap_pitch=config.word_wrap_pitch(cfg))
     live = [l for l in free if l]
     if not live or all(len(l.lines) == 1 for l in live):
         return None                      # nothing wraps: the design's own spacing stands
@@ -5086,7 +5108,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                 cell=cell, word_size=cfg.get("word_size"),
                                 bold_w=bold_w, obstacles=icons,
                                 room_bottom=room,
-                                max_size=config.type_ceiling(cfg, "word_max_he"))
+                                max_size=config.type_ceiling(cfg, "word_max_he"),
+                                wrap_pitch=config.word_wrap_pitch(cfg))
         # The sheet card sets on the same grid as every other card: one right
         # anchor, one digit column, and the centres the grid put the lines on.
         x_right = _card_right_edge(card_words, cell)

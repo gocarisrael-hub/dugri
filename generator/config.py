@@ -952,6 +952,36 @@ def word_alt_scale(cfg, default):
     return scale if scale > 0 else default
 
 
+def word_wrap_pitch(cfg):
+    """How far apart the lines of ONE wrapped entry sit, as a fraction of the
+    step between entries. ``None`` when the design does not say.
+
+    A long phrase breaks over two lines, and how close those two halves sit is
+    what decides whether the card reads as four items or as five. The generator
+    has only ever answered that from the ink — ``_card_lead``, the tightest
+    spacing at which no two letters touch — which is a FLOOR, not a look. This
+    lets a design ask for more than the floor, up to the full entry step, at
+    which point every gap on the card is identical and the two halves read as two
+    separate words.
+
+    Bounded at 1: past the entry step a continuation would sit further from its
+    own first line than from the next entry, and the numbering stops meaning
+    anything. Bounded below by the ink floor at the point of use, so this can
+    never be the reason two letters touch.
+
+    A missing, unparseable or out-of-range value means "the ink floor", which is
+    what every deck printed to date has used.
+    """
+    raw = (cfg or {}).get("word_wrap_pitch")
+    if raw is None:
+        return None
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return val if 0 < val <= 1 else None
+
+
 def _default_ink(cfg):
     """Fallback ink colour when no detected recipe supplies one.
 
