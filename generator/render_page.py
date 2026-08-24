@@ -4304,8 +4304,31 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
         else:
             # Shift the anchor by half the asymmetry so the ink — not the advance —
             # straddles the box centre.
+            # LEFT-TO-RIGHT ONLY, and that is the whole point. _ink_bearings
+            # measures through Pillow, which lays every string out
+            # left-to-right whatever its script; the SVG paints a Hebrew title
+            # RIGHT-TO-LEFT. The overhangs it reports therefore do not belong
+            # to the run being drawn, and correcting by them displaces the line
+            # by about the full asymmetry instead of half of it — in EITHER
+            # direction, which is why mirroring the sign (#531) moved the error
+            # to the other side rather than removing it.
+            #
+            # MEASURED on rendered pixels through the production rasterizer,
+            # with the brush face this actually bites on (GveretLevin) and the
+            # owner's own title "יעל חוגגת יובל", against a 380-unit box:
+            #
+            #     skew = (lsb - rsb) / 2   ink 16.83 units LEFT of centre
+            #     skew = (rsb - lsb) / 2   ink 14.50 units RIGHT of centre
+            #     no skew                  ink  1.17 units off centre
+            #
+            # ~4% of the box either way, ~3.5mm on a printed card — visible,
+            # and exactly what was reported twice, once per sign. An RTL run
+            # needs no correction here: the text anchor has already centred it.
+            # The LTR branch keeps the skew, where the same measurement across
+            # every shipped Latin theme puts it at up to 1.7 units of good and
+            # no harm.
             lsb, rsb = _ink_bearings(f, ref, line, size)
-            skew = (lsb - rsb) / 2
+            skew = 0.0 if rtl else (lsb - rsb) / 2
             xl = cx - skew - wln / 2 - size * 0.15
             xr = cx - skew + wln / 2 + size * 0.15
         cxp = (xl + xr) / 2
