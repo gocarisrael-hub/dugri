@@ -791,6 +791,57 @@
         background 0.12s ease;
     }
   }
+
+  /* --- the tool layer: state, navigation, density --- */
+  .jump {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    padding: 0.55rem 0.9rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule);
+    margin: 0 0 0.4rem;
+  }
+  .jump a {
+    font: 11px var(--num);
+    color: var(--muted);
+    text-decoration: none;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .jump a:hover,
+  .jump a:focus-visible {
+    color: var(--ink);
+    border-color: var(--rule2);
+    outline: none;
+  }
+  .jump .btn.xs {
+    margin-inline-start: auto;
+  }
+  body.lean .panel p.hint {
+    display: none;
+  }
+  body.lean .panel section.grp {
+    padding-block: 0.5rem;
+  }
+  .dirtynote {
+    font: 12px var(--ui);
+    color: var(--flag);
+    margin-inline: 0.6rem;
+    align-self: center;
+  }
+  .btn.urgent {
+    box-shadow: inset 0 0 0 2px var(--flag);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .jump a {
+      transition: none;
+    }
+  }
   .pressok {
     font: 12px var(--num);
     color: var(--ok);
@@ -4433,6 +4484,140 @@
     ART_Y = (PAGE_H - CH) / 2;
   }
 
+  /* ============================================================================
+   THE SCREEN AS A TOOL, not a document.
+
+   This page began as a one-off bench to settle one template, read top to bottom
+   once. It is now the thing that writes type into production, opened again and
+   again — and the two want opposite things from a layout. What follows is only
+   about that difference:
+
+     * UNSAVED WORK IS THE EXPENSIVE MISTAKE HERE. Everything tuned on this page
+       lived in one browser until today, and it has already been lost twice. So
+       the page now knows when it is dirty, says so, refuses to leave quietly,
+       and takes Cmd/Ctrl-S like anything else that holds work.
+     * THE PROSE IS FOR THE FIRST VISIT. After that it is between her and the
+       controls, so it folds away and stays folded.
+     * ELEVEN SECTIONS IN ONE SCROLL need a way across.
+   ============================================================================ */
+  let DIRTY = false;
+
+  function markDirty(on) {
+    DIRTY = !!on;
+    const b = $('saveSite');
+    if (b && !b.disabled) {
+      b.textContent = DIRTY ? 'שמירה לאתר •' : 'שמירה לאתר';
+      b.classList.toggle('urgent', DIRTY);
+    }
+    const s = $('dirtyNote');
+    if (s) s.textContent = DIRTY ? 'יש שינויים שלא נשמרו' : '';
+  }
+
+  function uxPass() {
+    /* ---- unsaved work ---- */
+    // Any control, and any box that was dragged: both are "she changed something".
+    document.addEventListener('input', () => markDirty(true), true);
+    document.addEventListener('change', () => markDirty(true), true);
+    document.addEventListener(
+      'pointerup',
+      (e) => {
+        if (e.target && e.target.closest && e.target.closest('.slot')) markDirty(true);
+      },
+      true
+    );
+
+    addEventListener('beforeunload', (e) => {
+      if (!DIRTY) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
+    addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const b = $('saveSite');
+        if (b && !b.disabled) b.click();
+      }
+    });
+
+    const note = document.createElement('span');
+    note.id = 'dirtyNote';
+    note.className = 'dirtynote';
+    ($('saveSite') || {}).insertAdjacentElement &&
+      $('saveSite').insertAdjacentElement('beforebegin', note);
+
+    /* ---- switching template must not drop work ---- */
+    const pick = $('tplPick');
+    if (pick) {
+      let last = pick.value;
+      pick.addEventListener(
+        'change',
+        (e) => {
+          if (DIRTY && !confirm('יש שינויים שלא נשמרו בתבנית הזו. לעבור בכל זאת?')) {
+            e.stopImmediatePropagation();
+            pick.value = last;
+            return;
+          }
+          last = pick.value;
+        },
+        true
+      );
+    }
+
+    /* ---- the prose folds away ---- */
+    const LEAN = 'dugri-bench-lean';
+    const setLean = (on) => {
+      document.body.classList.toggle('lean', on);
+      try {
+        localStorage.setItem(LEAN, on ? '1' : '0');
+      } catch (err) {
+        /* private window */
+      }
+      const t = $('leanBtn');
+      if (t) {
+        t.textContent = on ? 'הסברים' : 'פחות טקסט';
+        t.setAttribute('aria-pressed', String(on));
+      }
+    };
+    const lean = document.createElement('button');
+    lean.className = 'btn xs';
+    lean.id = 'leanBtn';
+    lean.type = 'button';
+    lean.title = 'מסתיר את פסקאות ההסבר ומשאיר את הפקדים';
+    lean.addEventListener('click', () => setLean(!document.body.classList.contains('lean')));
+    let want = false;
+    try {
+      want = localStorage.getItem(LEAN) === '1';
+    } catch (err) {
+      /* fine */
+    }
+
+    /* ---- a way across eleven sections ---- */
+    const panel = document.querySelector('.panel');
+    const nav = document.createElement('nav');
+    nav.className = 'jump';
+    const heads = [...panel.querySelectorAll('section.grp > h2')];
+    heads.forEach((h, i) => {
+      const id = 'sec' + i;
+      h.parentNode.id = id;
+      const a = document.createElement('a');
+      a.href = '#' + id;
+      // The heading carries a scope tag in a <span> ("every card", "card 2"); the
+      // jump list wants the NAME only, or it reads "Title — back the back".
+      const bare = h.cloneNode(true);
+      bare.querySelectorAll('span').forEach((x) => x.remove());
+      a.textContent = bare.textContent.replace(/\s+/g, ' ').trim();
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        h.parentNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      nav.appendChild(a);
+    });
+    nav.appendChild(lean);
+    panel.insertBefore(nav, panel.firstChild);
+    setLean(want);
+  }
+
   /* ---------- boot ---------- */
   let LAST_OUT = null;
 
@@ -4569,6 +4754,8 @@
     await fitControls();
     paint();
     askThePress();
+    uxPass();
+    markDirty(false); // what just loaded IS what is saved
     if (!restored) saveState();
   })();
 </script>
