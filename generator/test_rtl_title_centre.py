@@ -160,3 +160,85 @@ def test_a_latin_title_still_gets_its_correction():
         f"{key}: turning the bearings off moved a Latin title by only "
         f"{moved:.2f} units — the LTR correction is no longer being applied"
     )
+
+
+# --- the probe: a title that Chrome draws wider than Pillow expects ----------
+
+def _probe_offsets(entry, font_path, names, out_dir, probe):
+    """Ink offset AND ink width for each title, with and without the probe."""
+    import render_page as rp
+    blocks, labels = [], []
+    ts = entry["title_style"]
+    for name in names:
+        lines = T._fill(entry, name) or [name]
+        rp._TITLE_UID[0] = 0
+        blocks.append(rp.title_block(
+            BOX, lines, ts["fill"], ts["outline"], font_path, ts["outline_w"],
+            ts.get("arch", 0), ts.get("shadow"), rtl=True,
+            align=ts.get("align", "center"), leading=ts.get("leading"),
+            width_probe=probe))
+        labels.append(name)
+    mask = T._chrome_mask(
+        T._title_doc(*blocks, font_path=font_path, weight=None),
+        T._BAND_W, T._BAND_H * len(blocks), SCALE,
+        os.path.join(out_dir, ("probe" if probe else "plain") + ".png"))
+    out = []
+    for name, span in zip(labels, T._band_spans(mask, len(blocks))):
+        assert span, f"{name}: nothing rendered"
+        out.append((name, (span[1] - span[0]) / SCALE,
+                    (span[0] + span[1]) / 2 / SCALE - CX))
+    return out
+
+
+def test_the_probe_keeps_a_title_inside_its_box():
+    """The owner's report: a long title starting on its box's left edge and
+    running 2.2mm out of the right one.
+
+    Rendered here rather than reasoned about, because the whole failure was the
+    fit trusting a measurement Chrome does not agree with. If Chrome is not
+    available the probe answers "no correction" and there is nothing to assert,
+    so the test says so instead of passing quietly.
+    """
+    import tempfile
+    import title_metrics as tm
+    themes = _hebrew_themes()
+    key, entry = themes[0]
+    fp = config.font_path(key, entry["title_font"])
+    tm.clear_cache()
+    face = __import__("render_page")._title_face(fp, None, rtl=True)
+    if all(r == 1.0 for r, _ in tm.probe(fp, ["ליאתי מלכת המשחקים"], face).values()):
+        pytest.skip("this face needs no correction — nothing for the probe to do")
+    d = tempfile.mkdtemp(prefix="dugri-probe-")
+    names = ["ליאתי מלכת המשחקים", "יעל חוגגת יוֹבל"]
+    plain = _probe_offsets(entry, fp, names, d, probe=False)
+    probed = _probe_offsets(entry, fp, names, d, probe=True)
+    for (name, w0, o0), (_, w1, o1) in zip(plain, probed):
+        assert w1 <= WIDTH + 1, (
+            f"{name}: the title still draws {w1:.1f} units wide in a "
+            f"{WIDTH:.0f}-unit box")
+        assert abs(o1) <= abs(o0) + 0.5, (
+            f"{name}: the probe moved the title further off centre "
+            f"({o0:+.2f} -> {o1:+.2f})")
+
+
+def test_the_probe_never_grows_a_title():
+    """It exists to stop overflow. A probe that could also ENLARGE type would
+    re-size every title on every template on one measurement's say-so."""
+    import re
+    import tempfile
+    import render_page as rp
+    key, entry = _hebrew_themes()[0]
+    fp = config.font_path(key, entry["title_font"])
+    ts = entry["title_style"]
+    for name in ("רן", "דניאל", "ליאתי מלכת המשחקים"):
+        lines = T._fill(entry, name) or [name]
+        sizes = []
+        for probe in (False, True):
+            rp._TITLE_UID[0] = 0
+            b = rp.title_block(BOX, lines, ts["fill"], ts["outline"], fp,
+                               ts["outline_w"], ts.get("arch", 0), ts.get("shadow"),
+                               rtl=True, align=ts.get("align", "center"),
+                               leading=ts.get("leading"), width_probe=probe)
+            sizes.append(float(re.search(r'font-size="([\d.]+)"', b).group(1)))
+        assert sizes[1] <= sizes[0] + 1e-6, (
+            f"{name}: the probe GREW the title from {sizes[0]} to {sizes[1]}")
