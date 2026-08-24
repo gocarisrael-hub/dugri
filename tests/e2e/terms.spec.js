@@ -72,9 +72,12 @@ test.describe('the terms page', () => {
       'href',
       'index.html'
     );
-    await expect(page.locator('[data-edit="terms-contact"]')).toContainText(
-      'dugri.israel@gmail.com'
-    );
+    // The registered entity, because §1 promises the business's details are
+    // published and a terms page without them breaks its own first clause.
+    const contact = page.locator('[data-edit="terms-contact"]');
+    await expect(contact).toContainText('gocar');
+    await expect(contact).toContainText('516264108');
+    await expect(contact).toContainText('dugri.israel@gmail.com');
     await expect(page.locator('footer a[href*="wa.me"]')).toHaveAttribute('href', /972552441334/);
   });
 });
