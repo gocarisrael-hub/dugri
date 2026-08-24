@@ -1240,7 +1240,13 @@
     <script type="module">
       import { initCarousel } from './js/carousel.js';
       import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
-      import { fetchPricing, applySale, restampSale, PRICING_FALLBACK } from './js/pricing.js';
+      import {
+        fetchPricing,
+        applySale,
+        restampSale,
+        repaintPricingOnReturn,
+        PRICING_FALLBACK,
+      } from './js/pricing.js';
       import { initFaq } from './js/faq.js';
       import { initPromo } from './js/promo.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
@@ -1512,13 +1518,18 @@
       // resolves. Fail-safe: on a slow/failed fetch the seeded default stays. This
       // is the page's SINGLE /api/pricing fetch — it also feeds the (dormant) plan
       // sum used by the classic CONFIG script below, via the window hook it exposes.
-      fetchPricing().then((p) => {
+      const paintPricing = (p) => {
         PRICE = p.store.now;
         WAS = p.store.was;
         for (const el of document.querySelectorAll('.home-prod-price')) stampRailPrice(el);
         applySale(p.sale);
         if (typeof window.dugriSetPlanSum === 'function') window.dugriSetPlanSum(p.store.now);
-      });
+      };
+      fetchPricing().then(paintPricing);
+      // And again when the visitor returns to the tab: the sale strip and the
+      // struck price on this page are the loudest promise the site makes, and
+      // the one that most often stops being true while a tab sits open.
+      repaintPricingOnReturn(paintPricing);
 
       // ---- CELEBRATIONS COUNTER: exact order count from the public stats API ----
       // The box ships with the real default (23) baked into the HTML, so it is

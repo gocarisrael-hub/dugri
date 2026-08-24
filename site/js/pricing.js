@@ -200,3 +200,81 @@ function paintSale(sale, doc) {
     el.hidden = !text;
   }
 }
+
+/* ==========================================================================
+   PRICES GO STALE IN AN OPEN TAB
+   Every page fetches /api/pricing ONCE, on load, and never asks again. A tab
+   left open — or one iOS Safari restores from its back/forward cache, which is
+   what a phone does all day — keeps painting whatever was true the moment it
+   loaded. Hours later it is still showing a launch price that ended, with the
+   struck-through 279 beside it, to someone who is about to press Buy.
+
+   That is not a caching bug to purge: the HTML ships no-cache, the modules are
+   content-hashed, and /api/pricing is never cached at the edge. Nothing is
+   stale on the wire — the page simply never asked a second time.
+
+   So: ask again when the shopper comes BACK. Two ways in, because they are
+   genuinely different events and only one of them re-runs any script:
+     • pageshow with persisted — restored from the bfcache; no script re-ran,
+       the DOM is exactly as it was left.
+     • visibilitychange to visible — the tab was merely backgrounded. Rate-
+       limited by STALE_AFTER_MS, since flicking between apps must not mean a
+       request per flick.
+
+   The page hands in its OWN paint function (the same one it runs after the
+   first fetch), so this module never learns what any page's price markup looks
+   like. Registered by the storefront only: a checkout or a wizard mid-order
+   must not have its prices moved under the buyer's hands.
+   ========================================================================== */
+const STALE_AFTER_MS = 5 * 60 * 1000;
+const painters = [];
+let lastFetch = Date.now();
+let refreshing = false;
+
+async function refreshPricing() {
+  // One flight at a time: pageshow and visibilitychange can both fire for a
+  // single return to the tab, and two answers painting in arbitrary order is a
+  // race for no benefit.
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    const p = await fetchPricing();
+    // A failed fetch resolves to the FALLBACK, not to the truth. Painting it
+    // would replace a price the server really sent with a hardcoded guess —
+    // strictly worse than the slightly old figure already on screen.
+    if (!p.ok) return;
+    lastFetch = Date.now();
+    for (const paint of painters) {
+      try {
+        paint(p);
+      } catch {
+        /* one page's painter must not stop the others */
+      }
+    }
+  } finally {
+    refreshing = false;
+  }
+}
+
+// Register a page's paint function and start watching for its return. Call it
+// with the same function the page runs after its first fetch.
+export function repaintPricingOnReturn(paint, win = window) {
+  if (typeof paint !== 'function') return;
+  painters.push(paint);
+  if (painters.length > 1) return; // listeners are installed once
+  win.addEventListener('pageshow', (e) => {
+    if (e.persisted) refreshPricing();
+  });
+  win.document.addEventListener('visibilitychange', () => {
+    if (win.document.visibilityState !== 'visible') return;
+    if (Date.now() - lastFetch < STALE_AFTER_MS) return;
+    refreshPricing();
+  });
+}
+
+// Test seam: drop the registered painters and reset the clock between cases.
+export function __resetPricingRefresh() {
+  painters.length = 0;
+  lastFetch = Date.now();
+  refreshing = false;
+}

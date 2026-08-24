@@ -33,7 +33,7 @@ import {
 } from './designs.js';
 import { initCarousel } from './carousel.js';
 import { initPinchZoom } from './pinch-zoom.js';
-import { fetchPricing, applySale } from './pricing.js';
+import { fetchPricing, applySale, repaintPricingOnReturn } from './pricing.js';
 import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './design-images.js';
 import { defer, watchTrack } from './lazy-media.js';
 
@@ -795,14 +795,19 @@ function boot() {
   // Overlay the owner-editable store price when it resolves (timeout-bounded,
   // fail-safe). First paint already showed the launch default, so a slow/failed
   // fetch simply leaves that in place.
-  fetchPricing().then((p) => {
+  const paintPricing = (p) => {
     PRICE = p.store.now;
     WAS = p.store.was;
     restampPrices();
     // Sale mode rides on the SAME fetch: it decides whether the struck WAS this
     // just stamped is shown at all, and paints the flag over the gallery.
     applySale(p.sale);
-  });
+  };
+  fetchPricing().then(paintPricing);
+  // ...and again whenever the shopper comes back to a tab that has been sitting
+  // open. This page is where Buy is pressed; a launch price that ended hours ago
+  // must not still be on screen at that moment.
+  repaintPricingOnReturn(paintPricing);
 
   // Overlay the owner-editable design names (independent, fail-soft) — see the
   // note above; a name override applied here defers to a content name override.

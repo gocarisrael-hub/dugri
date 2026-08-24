@@ -702,7 +702,13 @@
         syncDesignNames,
         loadCustomDesigns,
       } from './js/designs.js';
-      import { fetchPricing, applySale, restampSale, PRICING_FALLBACK } from './js/pricing.js';
+      import {
+        fetchPricing,
+        applySale,
+        restampSale,
+        repaintPricingOnReturn,
+        PRICING_FALLBACK,
+      } from './js/pricing.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
       import { defer, watchTrack } from './js/lazy-media.js';
       // Reuse the detail page's override helpers so the grid and PDP can never
@@ -1006,12 +1012,16 @@
 
       // Overlay the live owner-editable price once it resolves (non-blocking;
       // fail-safe — on a slow/failed fetch the seeded launch defaults stay).
-      fetchPricing().then((p) => {
+      const paintPricing = (p) => {
         PRICE = p.store.now;
         WAS = p.store.was;
         for (const el of document.querySelectorAll('.product-price')) stampPrice(el);
         applySale(p.sale);
-      });
+      };
+      fetchPricing().then(paintPricing);
+      // A shop tab lives for days on a phone. Ask again when it comes back, so a
+      // grid of ended launch prices is not what the shopper returns to.
+      repaintPricingOnReturn(paintPricing);
     </script>
   </body>
 </html>
