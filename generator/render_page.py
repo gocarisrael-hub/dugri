@@ -2221,28 +2221,71 @@ def _strands_a_leading_numeral(lines):
     return len(first) > 1 and first[0].isdigit()
 
 
-def _balanced_split(font, text, n):
-    """Split ``text`` at spaces into ``n`` lines, minimising the widest line.
+# A SLASH IS A BREAK OPPORTUNITY, and the best one there is.
+#
+# Buyers write a phrase and its English beside it — "צער גידול בנות/Full house",
+# "בלגן/mess" — and a slash is the only mark that says "these two are the same
+# thing". Splitting at spaces alone cannot see it: "בנות/Full" is one token, so
+# the width-optimal split tore the pair in half and the card came back reading
+#
+#     צער גידול
+#     Full house/בנות
+#
+# — two fragments, neither of which is what she wrote. Breaking AFTER the slash
+# keeps each side whole, which is how the pair is read.
+_AFTER_SLASH = re.compile(r"(?<=/)")
 
-    Returns None when the text has too few words to make ``n`` lines. Brute force
-    over the split points: a card word is a handful of words, so the search is
-    tiny and always finds the true optimum.
 
-    Ranked by (strands a leading numeral, widest line), so the numeral rule beats
-    pure width — which is the point of it, since the width-optimal split is the
-    unreadable one. The readable split is 8.8% wider on the deck's own face but
-    needs LESS line pitch (its two lines' glyphs clash less), so on the affected
-    card it cost nothing at all: 16.7 against 16.4 for the width-optimal one.
+def _units(text):
+    """``(piece, joiner)`` — the text in pieces that may start a line, each with
+    the joiner that follows it when the next piece stays on the same line: a
+    space between words, NOTHING after a slash (the slash is already the join).
     """
-    parts = text.split()
-    if len(parts) < n:
+    units = []
+    for word in text.split():
+        parts = [p for p in _AFTER_SLASH.split(word) if p]
+        for i, part in enumerate(parts):
+            units.append([part, "" if i < len(parts) - 1 else " "])
+    if units:
+        units[-1][1] = ""
+    return [tuple(u) for u in units]
+
+
+def _join(units):
+    return "".join(p + (j if i < len(units) - 1 else "")
+                   for i, (p, j) in enumerate(units))
+
+
+def _balanced_split(font, text, n):
+    """Split ``text`` into ``n`` lines, minimising the widest line.
+
+    Returns None when the text has too few pieces to make ``n`` lines. Brute
+    force over the split points: a card word is a handful of words, so the
+    search is tiny and always finds the true optimum.
+
+    Ranked by (strands a leading numeral, widest line), unchanged: once the slash
+    is a place a line MAY end, the narrowest split is already the readable one —
+    on the card that prompted this, breaking at the slash measures 1029 against
+    1228 for the mid-phrase split the old tokenisation was forced into. So the
+    ranking needs no new term, and no input can be dragged to a worse-fitting
+    split in the name of a slash.
+
+    The numeral rule still beats pure width — which is the point of it, since
+    there the width-optimal split IS the unreadable one. The readable split is
+    8.8% wider on the deck's own face but needs LESS line pitch (its two lines'
+    glyphs clash less), so on the affected card it cost nothing at all: 16.7
+    against 16.4 for the width-optimal one.
+    """
+    units = _units(text)
+    if len(units) < n:
         return None
     if n == 1:
-        return [" ".join(parts)]
+        return [_join(units)]
     best = None
-    for cuts in itertools.combinations(range(1, len(parts)), n - 1):
-        bounds = (0,) + cuts + (len(parts),)
-        lines = [" ".join(parts[a:b]) for a, b in zip(bounds, bounds[1:])]
+    for cuts in itertools.combinations(range(1, len(units)), n - 1):
+        bounds = (0,) + cuts + (len(units),)
+        groups = [units[a:b] for a, b in zip(bounds, bounds[1:])]
+        lines = [_join(g) for g in groups]
         rank = (_strands_a_leading_numeral(lines),
                 max(font.getlength(ln) for ln in lines))
         if best is None or rank < best[0]:
