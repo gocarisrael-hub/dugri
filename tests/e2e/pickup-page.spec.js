@@ -105,3 +105,39 @@ test('the checkout links to it from OUTSIDE the pickup label', async ({ page, re
   // she left. It has to be a sibling.
   expect(await link.evaluate((el) => !!el.closest('label'))).toBe(false);
 });
+
+// The footer link, on every page that carries a footer. Self-pickup is the half
+// of the order that happens OFF the site — an address, a floor, a closing time —
+// so it is looked up long after the wizard is done and the confirmation mail has
+// been buried. It sits beside the terms because both are the small print someone
+// goes hunting for rather than reads on the way past.
+const FOOTER_PAGES = ['/index.html', '/products.html', '/product.html', '/how.html'];
+
+test.describe('the footer link', () => {
+  for (const path of FOOTER_PAGES) {
+    test(`${path} links to the pickup page, beside the terms`, async ({ page }) => {
+      await page.goto(path);
+      const link = page.getByTestId('footer-pickup');
+      await expect(link).toHaveAttribute('href', 'pickup.html');
+      await expect(link).toHaveText('איסוף עצמי');
+      // Beside, not instead of: adding one line of fine print must not cost the
+      // other, and the terms link is a legal requirement on a shop that charges.
+      await expect(page.getByTestId('footer-terms')).toBeVisible();
+      // One line, both links — same <p>, so the row reads as fine print rather
+      // than as two separate footer sections.
+      const sameRow = await link.evaluate(
+        (el) =>
+          el.closest('p') ===
+          el.ownerDocument.querySelector('[data-testid="footer-terms"]').closest('p')
+      );
+      expect(sameRow).toBe(true);
+    });
+  }
+
+  test('and the link actually opens the page', async ({ page }) => {
+    await page.goto('/index.html');
+    await page.getByTestId('footer-pickup').click();
+    await expect(page).toHaveURL(/pickup\.html$/);
+    await expect(page.getByRole('heading', { level: 1 })).toContainText('איסוף עצמי');
+  });
+});
