@@ -1,0 +1,4761 @@
+<title>עורך התבנית</title>
+<link rel="stylesheet" href="/assets/fonts/fonts.css" />
+<style>
+  :root {
+    --paper: #eef1ef;
+    --surface: #ffffff;
+    --sunk: #e4e9e6;
+    --raise: #f7faf8;
+    --ink: #0d3e43;
+    --muted: #5b7477;
+    --faint: #8ba3a5;
+    --rule: #cfdad7;
+    --rule2: #b6c6c2;
+    --sea: #017f8d;
+    --sky: #97d8e6;
+    --sand: #fff7cd;
+    --flag: #c25b1f;
+    --over: #a3301a;
+    --ok: #2f7d5c;
+    --band: rgba(1, 127, 141, 0.13);
+    --bandline: rgba(1, 127, 141, 0.45);
+    --warnbg: #fff7cd;
+    --warnink: #5a3410;
+    --tbox: rgba(13, 62, 67, 0.1);
+    --tboxline: rgba(13, 62, 67, 0.45);
+    --ui: 'Heebo', 'Helvetica Neue', Arial, sans-serif;
+    --num: ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) {
+      --paper: #0a1618;
+      --surface: #0f2023;
+      --sunk: #16292c;
+      --raise: #14262a;
+      --ink: #e4efec;
+      --muted: #8aa7a9;
+      --faint: #5d7a7d;
+      --rule: #22383b;
+      --rule2: #2f4a4e;
+      --sea: #4fc6d4;
+      --sky: #97d8e6;
+      --sand: #fff7cd;
+      --flag: #e8853f;
+      --over: #ff7a5e;
+      --ok: #5fc79a;
+      --band: rgba(79, 198, 212, 0.13);
+      --bandline: rgba(79, 198, 212, 0.42);
+      --tbox: rgba(151, 216, 230, 0.09);
+      --tboxline: rgba(151, 216, 230, 0.38);
+      --warnbg: rgba(232, 133, 63, 0.14);
+      --warnink: #f2ded0;
+    }
+  }
+  :root[data-theme='dark'] {
+    --paper: #0a1618;
+    --surface: #0f2023;
+    --sunk: #16292c;
+    --raise: #14262a;
+    --ink: #e4efec;
+    --muted: #8aa7a9;
+    --faint: #5d7a7d;
+    --rule: #22383b;
+    --rule2: #2f4a4e;
+    --sea: #4fc6d4;
+    --sky: #97d8e6;
+    --sand: #fff7cd;
+    --flag: #e8853f;
+    --over: #ff7a5e;
+    --ok: #5fc79a;
+    --band: rgba(79, 198, 212, 0.13);
+    --bandline: rgba(79, 198, 212, 0.42);
+    --tbox: rgba(151, 216, 230, 0.09);
+    --tboxline: rgba(151, 216, 230, 0.38);
+    --warnbg: rgba(232, 133, 63, 0.14);
+    --warnink: #f2ded0;
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--ui);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button,
+  input,
+  select,
+  textarea {
+    font-family: inherit;
+    color: inherit;
+  }
+  h1,
+  h2,
+  h3 {
+    margin: 0;
+    font-weight: 300;
+    text-wrap: balance;
+  }
+  a {
+    color: var(--sea);
+  }
+
+  /* ---------- top bar ---------- */
+  .top {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    padding: 12px 20px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule2);
+  }
+  .brand {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  .brand .he {
+    font-size: 1.5rem;
+    font-weight: 200;
+    letter-spacing: 0.02em;
+  }
+  .brand .en {
+    font-family: var(--num);
+    font-size: 10.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .top .sp {
+    flex: 1;
+  }
+  .field {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .field > span {
+    font-family: var(--num);
+    font-size: 10px;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  input[type='text'] {
+    background: var(--raise);
+    border: 1px solid var(--rule);
+    padding: 6px 9px;
+    font-size: 13.5px;
+    width: 110px;
+  }
+  textarea {
+    background: var(--raise);
+    border: 1px solid var(--rule);
+    padding: 8px 9px;
+    font-size: 13.5px;
+    width: 100%;
+    resize: vertical;
+    line-height: 1.45;
+    font-family: 'Heebo', var(--ui);
+  }
+  input[type='text']:focus,
+  select:focus,
+  textarea:focus,
+  button:focus-visible {
+    outline: 2px solid var(--sea);
+    outline-offset: 1px;
+  }
+  select {
+    background: var(--raise);
+    border: 1px solid var(--rule);
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  .btn {
+    background: var(--raise);
+    border: 1px solid var(--rule2);
+    padding: 6px 11px;
+    cursor: pointer;
+    font-family: var(--num);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+  }
+  .btn:hover {
+    background: var(--sunk);
+  }
+  .btn.on {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .btn.solid {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .seg {
+    display: flex;
+  }
+  .seg .btn + .btn {
+    border-left: 0;
+  }
+
+  /* ---------- shell ---------- */
+  .shell {
+    display: grid;
+    grid-template-columns: 352px minmax(0, 1fr);
+    align-items: start;
+  }
+  @media (max-width: 1080px) {
+    .shell {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .panel {
+    border-right: 1px solid var(--rule);
+    background: var(--surface);
+    position: sticky;
+    top: 57px;
+    max-height: calc(100vh - 57px);
+    overflow-y: auto;
+  }
+  @media (max-width: 1080px) {
+    .panel {
+      position: static;
+      max-height: none;
+      border-right: 0;
+      border-bottom: 1px solid var(--rule2);
+    }
+  }
+  .grp {
+    border-bottom: 1px solid var(--rule);
+    padding: 16px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .grp > h2 {
+    font-family: var(--num);
+    font-size: 10.5px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    display: flex;
+    gap: 9px;
+    align-items: center;
+  }
+  .tagx {
+    border: 1px solid var(--rule2);
+    color: var(--faint);
+    font-size: 9px;
+    letter-spacing: 0.07em;
+    padding: 1px 5px;
+    text-transform: none;
+    font-weight: 400;
+  }
+  .tagx.all {
+    border-color: var(--sea);
+    color: var(--sea);
+  }
+  .hint {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin: 0;
+  }
+  .hint b {
+    font-weight: 500;
+    color: var(--ink);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 96px minmax(0, 1fr) 46px;
+    gap: 10px;
+    align-items: center;
+  }
+  .row label {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .row input[type='range'] {
+    width: 100%;
+    accent-color: var(--sea);
+  }
+  .row output {
+    font-family: var(--num);
+    font-size: 11.5px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+  .row.wide {
+    grid-template-columns: 96px minmax(0, 1fr);
+  }
+  .row[hidden],
+  .sw[hidden] {
+    display: none;
+  }
+  .sw {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12.5px;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .sw input {
+    margin: 0;
+    accent-color: var(--sea);
+  }
+  .pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+  }
+  .pair input[type='text'] {
+    width: 100%;
+  }
+  .btns {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .read {
+    font-family: var(--num);
+    font-size: 11px;
+    line-height: 1.65;
+    color: var(--muted);
+    white-space: pre-wrap;
+    background: var(--sunk);
+    padding: 9px 10px;
+    font-variant-numeric: tabular-nums;
+    overflow-x: auto;
+  }
+  .read b {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .read .bind {
+    color: var(--flag);
+    font-weight: 500;
+  }
+  .read .cap {
+    color: var(--over);
+    font-weight: 500;
+  }
+
+  /* a ceiling drawn against the box it has to live in */
+  .eg {
+    background: var(--sunk);
+    padding: 7px 9px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+  .eg[hidden] {
+    display: none;
+  }
+  .eg svg {
+    width: 100%;
+    height: auto;
+    display: block;
+    overflow: visible;
+  }
+  .eg .lab {
+    font-family: var(--num);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .eg .lab.holds {
+    color: var(--flag);
+  }
+  .eg .lab.sub {
+    color: var(--faint);
+  }
+  .eg .lab.sub bdi {
+    font-family: 'Heebo', var(--num);
+  }
+  .eg .frame {
+    fill: none;
+    stroke: var(--rule2);
+    stroke-width: 0.6;
+    stroke-dasharray: 2 2;
+  }
+
+  .warn {
+    background: var(--warnbg);
+    color: var(--warnink);
+    border-left: 3px solid var(--flag);
+    padding: 10px 12px;
+    font-size: 12.5px;
+  }
+  .warn b {
+    font-weight: 500;
+  }
+
+  /* ---------- stage ---------- */
+  .stage {
+    padding: 18px 20px 60px;
+    min-width: 0;
+  }
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 18px;
+  }
+  .legend i {
+    display: inline-block;
+    width: 22px;
+    height: 0;
+    border-top: 2px solid;
+    margin-right: 7px;
+    vertical-align: 3px;
+  }
+  .wall {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(214px, 1fr));
+    gap: 16px;
+  }
+  .slot {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .slot.sel {
+    border-color: var(--flag);
+    box-shadow: inset 0 0 0 1px var(--flag);
+  }
+  .slot .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--num);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+    cursor: pointer;
+  }
+  .slot.sel .head {
+    color: var(--flag);
+  }
+  .slot .head .sz {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0;
+  }
+  .slot svg {
+    width: 100%;
+    height: auto;
+    display: block;
+    background: var(--sunk);
+    touch-action: none;
+    overflow: hidden;
+  }
+  .slot .why {
+    font-family: var(--num);
+    font-size: 9.5px;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .slot .why .b {
+    color: var(--flag);
+  }
+  .slot .cc {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+  }
+  .slot .cclab {
+    font-family: var(--num);
+    font-size: 9.5px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .btn.xs {
+    padding: 4px 7px;
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    flex: 1;
+    white-space: nowrap;
+  }
+  .clearspan {
+    stroke: var(--flag);
+    stroke-width: 0.7;
+    opacity: 0.8;
+    fill: none;
+  }
+  .roomline {
+    stroke: var(--flag);
+    stroke-width: 0.5;
+    opacity: 0.5;
+    stroke-dasharray: 4 3;
+  }
+  .slot .why .c {
+    color: var(--over);
+  }
+  .backwall {
+    margin-top: 22px;
+  }
+  .backwall .wall {
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+  .stage .stagehint {
+    font-size: 12.5px;
+    color: var(--muted);
+    max-width: 62ch;
+    margin: 0 0 12px;
+  }
+  .try {
+    margin-top: 26px;
+    border-top: 1px solid var(--rule);
+    padding-top: 18px;
+  }
+  .tryctl {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 18px 32px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 15px 18px;
+    margin-bottom: 16px;
+    align-items: start;
+  }
+  .trycol {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+  }
+  .trycol h4 {
+    margin: 0 0 2px;
+    font-family: var(--num);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--faint);
+    font-weight: 500;
+  }
+  .btn.xs.wide {
+    flex: none;
+    align-self: flex-start;
+  }
+  .tryctl .tf {
+    display: grid;
+    grid-template-columns: 70px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+  }
+  .tryctl .tf > span {
+    font-size: 12.5px;
+    color: var(--muted);
+  }
+  .tryctl .tf input[type='text'] {
+    width: 100%;
+  }
+  .trywall {
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  }
+  .slot .rows {
+    font-family: var(--num);
+    font-size: 10px;
+    line-height: 1.65;
+    color: var(--muted);
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-variant-numeric: tabular-nums;
+  }
+  .slot .rows .past {
+    color: var(--over);
+  }
+  /* IBM Plex Mono carries no Hebrew, so a word quoted inside a monospaced readout
+   fell back to something thin and half-legible. Name a face that has it. */
+  .rows bdi,
+  .read bdi {
+    font-family: 'Heebo', var(--num);
+    font-size: 1.08em;
+  }
+  .slot .rows .ok {
+    color: var(--ok);
+  }
+  .slot.short {
+    border-color: var(--flag);
+  }
+  .slot .why.col {
+    flex-direction: column;
+    gap: 3px;
+    line-height: 1.5;
+  }
+  .slot .why.col b {
+    color: var(--ink);
+    font-weight: 500;
+  }
+  .stage h3 {
+    font-family: var(--num);
+    font-size: 10.5px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+    margin-bottom: 11px;
+  }
+
+  /* boxes drawn in user units inside each card svg */
+  .bx {
+    fill: var(--band);
+    stroke: none;
+  }
+  .bx.t {
+    fill: var(--tbox);
+  }
+  .edge {
+    stroke: var(--bandline);
+    stroke-width: 0.7;
+    stroke-dasharray: 2.4 2;
+    fill: none;
+    cursor: pointer;
+  }
+  .edge.t {
+    stroke: var(--tboxline);
+  }
+  .edge.binds {
+    stroke: var(--flag);
+    stroke-width: 1.8;
+    stroke-dasharray: none;
+  }
+  .hit {
+    fill: none;
+    stroke: transparent;
+    stroke-width: 5.5;
+  }
+  .hit.mv {
+    fill: transparent;
+    cursor: move;
+  }
+  .hit.ew {
+    cursor: ew-resize;
+  }
+  .hit.ns {
+    cursor: ns-resize;
+  }
+  .hit.nwse {
+    cursor: nwse-resize;
+  }
+  .hit.nesw {
+    cursor: nesw-resize;
+  }
+  .knob {
+    fill: var(--surface);
+    stroke: var(--bandline);
+    stroke-width: 0.6;
+  }
+  .knob.t {
+    stroke: var(--tboxline);
+  }
+  .knob.binds {
+    stroke: var(--flag);
+    stroke-width: 1.2;
+  }
+  .rowrule {
+    stroke: var(--bandline);
+    stroke-width: 0.35;
+    stroke-dasharray: 1.5 1.8;
+  }
+  .wtext,
+  .ttext {
+    pointer-events: none;
+  }
+  .ghost {
+    fill: none;
+    stroke: var(--flag);
+    stroke-width: 0.3;
+    opacity: 0.45;
+    stroke-linejoin: round;
+  }
+
+  /* ---------- numbers ---------- */
+  .out {
+    margin: 26px 0 0;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+  }
+  .out pre {
+    max-height: 60vh;
+    overflow: auto;
+  }
+  .chips {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .chip {
+    background: var(--raise);
+    border: 1px solid var(--rule2);
+    color: var(--muted);
+    cursor: pointer;
+    font-family: var(--num);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    padding: 4px 8px;
+  }
+  .chip:hover {
+    background: var(--sunk);
+  }
+  .chip.on {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
+  .out .bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .out .bar h2 {
+    font-family: var(--num);
+    font-size: 10.5px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .out .bar .sp {
+    flex: 1;
+  }
+  .out pre {
+    margin: 0;
+    padding: 14px 16px;
+    font-family: var(--num);
+    font-size: 11.5px;
+    line-height: 1.6;
+    overflow-x: auto;
+    color: var(--ink);
+    white-space: pre;
+  }
+  .foot {
+    padding: 0 20px 60px;
+    max-width: 70ch;
+  }
+  .foot p {
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .foot h3 {
+    margin-bottom: 8px;
+  }
+  .k {
+    font-family: var(--num);
+    font-size: 11.5px;
+    background: var(--sunk);
+    padding: 1px 5px;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .slot,
+    .btn {
+      transition:
+        border-color 0.12s ease,
+        background 0.12s ease;
+    }
+  }
+
+  /* --- the tool layer: state, navigation, density --- */
+  .jump {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.5rem;
+    padding: 0.55rem 0.9rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--rule);
+    margin: 0 0 0.4rem;
+  }
+  .jump a {
+    font: 11px var(--num);
+    color: var(--muted);
+    text-decoration: none;
+    padding: 0.15rem 0.35rem;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .jump a:hover,
+  .jump a:focus-visible {
+    color: var(--ink);
+    border-color: var(--rule2);
+    outline: none;
+  }
+  .jump .btn.xs {
+    margin-inline-start: auto;
+  }
+  body.lean .panel p.hint {
+    display: none;
+  }
+  body.lean .panel section.grp {
+    padding-block: 0.5rem;
+  }
+  .dirtynote {
+    font: 12px var(--ui);
+    color: var(--flag);
+    margin-inline: 0.6rem;
+    align-self: center;
+  }
+  .btn.urgent {
+    box-shadow: inset 0 0 0 2px var(--flag);
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .jump a {
+      transition: none;
+    }
+  }
+  .pressok {
+    font: 12px var(--num);
+    color: var(--ok);
+    margin-inline: 0.8rem;
+  }
+  .pressbad {
+    font: 12px var(--num);
+    color: var(--over);
+    font-weight: 600;
+    margin-inline: 0.8rem;
+  }
+</style>
+
+<div class="top">
+  <div class="brand">
+    <span class="he" id="brandHe"></span><span class="en" id="brandEn"></span>
+  </div>
+  <div class="field">
+    <span>honoree</span><input type="text" id="name" value="MAYA" dir="auto" />
+  </div>
+  <div class="seg">
+    <button class="btn" data-name="MAYA">en</button>
+    <button class="btn" data-name="מיה">he</button>
+  </div>
+  <div class="sp"></div>
+  <span class="hint" id="copied"></span>
+  <button class="btn solid" id="copy">copy the numbers</button>
+  <button class="btn" id="reset">reset to live</button>
+  <span class="tag" id="kept"></span>
+</div>
+
+<div class="shell">
+  <div class="panel">
+    <section class="grp">
+      <h2>The four words <span class="tagx">preview only</span></h2>
+      <div class="pair">
+        <input type="text" id="w0" dir="auto" /><input type="text" id="w1" dir="auto" />
+        <input type="text" id="w2" dir="auto" /><input type="text" id="w3" dir="auto" />
+      </div>
+      <div class="seg">
+        <button class="btn" data-words="he">hebrew</button>
+        <button class="btn" data-words="mix">mixed</button>
+        <button class="btn" data-words="en">english</button>
+        <button class="btn" data-words="long">long</button>
+      </div>
+      <p class="hint">
+        All four words on a card are set at <b>one size</b>. The longest one decides it, and the
+        other three come down to meet it.
+      </p>
+    </section>
+
+    <section class="grp">
+      <h2>Word box <span class="tagx all">every card</span></h2>
+      <p class="hint">
+        One box holds all four rows. Drag it to move; pull a <b>side</b> to grow it that way alone,
+        or a corner for two ways at once.
+      </p>
+      <label class="sw"><input type="checkbox" id="wBold" /> fatten it (synthetic bold)</label>
+      <p class="hint" id="faceNote"></p>
+
+      <label class="sw"><input type="checkbox" id="wFit" checked /> Size follows the box</label>
+      <p class="hint">
+        Untick to pin a number instead — but <b>the box still wins</b>: a pin stops at the box the
+        same way a ceiling does. Nothing on this page can print bigger than its rectangle.
+      </p>
+      <div class="row" id="wPinRow" hidden>
+        <label for="wPin">pinned size</label>
+        <input type="range" id="wPin" min="8" max="42" step="0.01" /><output id="wPinV"></output>
+      </div>
+      <div class="row">
+        <label for="wPitch">line gap</label>
+        <input type="range" id="wPitch" min="0.9" max="3" step="0.01" /><output
+          id="wPitchV"
+        ></output>
+      </div>
+      <p class="hint">
+        A <b>multiple of the word size</b>, exactly like the title's line gap — 1.40 means each line
+        sits 1.4 of its own size below the one above. Open it and the four rows ask for more of a
+        box that is not growing, so the type comes down; close it and the type grows until the row's
+        width stops it. It never goes below what the letters need to clear each other.
+      </p>
+      <div class="row">
+        <label for="wTight">wrapped lines</label>
+        <input type="range" id="wTight" min="0.5" max="1" step="0.01" /><output
+          id="wTightV"
+        ></output>
+      </div>
+      <p class="hint">
+        A word too long for its row breaks over <b>two lines</b>. This is how close those two lines
+        sit, as a share of the normal gap between words.
+      </p>
+      <p class="hint">
+        <b>1.00</b> — the same gap everywhere, so the two halves look like two separate words.
+        <b>0.70</b> — they sit close and read as one word again. It only ever pulls lines closer,
+        never further apart, so nothing can end up outside the card.
+      </p>
+      <div class="read" id="wRead"></div>
+    </section>
+
+    <section class="grp">
+      <h2>Word ceilings <span class="tagx all">every card</span></h2>
+      <p class="hint">
+        Off, the box alone decides and a bigger box means bigger type. Switch a ceiling on and it
+        holds the type down — never up: it <b>stops at the box</b>, because a maximum above the box
+        is a maximum that never comes down.
+      </p>
+      <label class="sw"><input type="checkbox" id="capOn" /> Hold the words down</label>
+      <div class="row">
+        <label for="capHe">hebrew max</label>
+        <input type="range" id="capHe" min="8" max="48" step="0.01" /><output id="capHeV"></output>
+      </div>
+      <div class="eg" id="capHeEg"></div>
+      <div class="row">
+        <label for="capEn">english max</label>
+        <input type="range" id="capEn" min="6" max="48" step="0.01" /><output id="capEnV"></output>
+      </div>
+      <div class="eg" id="capEnEg"></div>
+    </section>
+
+    <section class="grp">
+      <h2>English words <span class="tagx all">every card</span></h2>
+      <p class="hint">
+        An English word set in the Hebrew face runs wide, so on a mixed card it drags the Hebrew
+        down with it. Give English its own size and it stops pulling.
+      </p>
+      <p class="hint" id="enNote"></p>
+      <div class="row wide">
+        <label for="enMode">english size</label>
+        <select id="enMode">
+          <option value="scale">a share of the Hebrew</option>
+          <option value="exact">an exact size</option>
+          <option value="free">its own fit, capped</option>
+        </select>
+      </div>
+      <div class="row" id="enScaleRow">
+        <label for="enScale">share</label>
+        <input type="range" id="enScale" min="0.4" max="1.3" step="0.01" /><output
+          id="enScaleV"
+        ></output>
+      </div>
+      <div class="row" id="enSizeRow" hidden>
+        <label for="enSize">size</label>
+        <input type="range" id="enSize" min="5" max="36" step="0.01" /><output
+          id="enSizeV"
+        ></output>
+      </div>
+      <label class="sw"
+        ><input type="checkbox" id="enDrag" checked /> English words drag the card's size
+        down</label
+      >
+      <p class="hint">
+        Untick and a Latin entry is measured on its own, so one long English word no longer shrinks
+        the Hebrew beside it.
+      </p>
+    </section>
+
+    <section class="grp">
+      <h2>The title <span class="tagx all">every card</span></h2>
+      <div class="row" id="genderRow" hidden>
+        <label for="tGender">boy or girl</label>
+        <select id="tGender">
+          <option value="m">בן</option>
+          <option value="f">בת</option></select
+        ><output></output>
+      </div>
+      <div class="row" id="ageRow" hidden>
+        <label for="tAge">age</label> <input type="text" id="tAge" value="30" /><output></output>
+      </div>
+      <div class="row wide">
+        <label for="titleMode">words</label>
+        <select id="titleMode">
+          <option value="template">the template, filled with a name</option>
+          <option value="own">whatever I type</option>
+        </select>
+      </div>
+      <p class="hint" id="tmplNote"></p>
+      <div id="ownWrap" hidden>
+        <textarea id="titleText" rows="3" dir="auto" spellcheck="false"></textarea>
+        <p class="hint">
+          One line per row on the card. Hebrew or English — the face it is set in and the ceiling
+          that holds it both follow what you type, not what the template says.
+        </p>
+      </div>
+    </section>
+
+    <section class="grp">
+      <h2>Title — front <span class="tagx" id="tScope">card 2</span></h2>
+      <label class="sw"><input type="checkbox" id="tFit" checked /> Size follows the box</label>
+      <div class="row" id="tPinRow" hidden>
+        <label for="tPin">pinned size</label>
+        <input type="range" id="tPin" min="6" max="60" step="0.01" /><output id="tPinV"></output>
+      </div>
+      <p class="hint">
+        Move a title <b>up or down</b> and every card follows — the height is one answer for the
+        template. <b>Side to side</b> stays on the card you drag, since the artwork it has to clear
+        moves around. Resizing always reaches every card.
+      </p>
+      <label class="sw"><input type="checkbox" id="tLock" /> Left-to-right follows too</label>
+      <div class="row wide">
+        <label for="tAlign">align</label>
+        <select id="tAlign">
+          <option>center</option>
+          <option>left</option>
+          <option>right</option>
+        </select>
+      </div>
+      <div class="row">
+        <label for="tLead">line gap</label>
+        <input type="range" id="tLead" min="0.5" max="1.4" step="0.01" /><output
+          id="tLeadV"
+        ></output>
+      </div>
+      <div class="btns">
+        <button class="btn" data-title="level">level all to this card</button>
+        <button class="btn" data-title="copy">copy to all cards</button>
+      </div>
+      <div class="read" id="tRead"></div>
+    </section>
+
+    <section class="grp">
+      <h2>Title ceilings <span class="tagx all">every card</span></h2>
+      <p class="hint" id="titleFaceNote"></p>
+      <label class="sw"><input type="checkbox" id="tCapOn" /> Hold the front titles down</label>
+      <div class="row">
+        <label for="tCapEn">english max</label>
+        <input type="range" id="tCapEn" min="8" max="80" step="0.01" /><output
+          id="tCapEnV"
+        ></output>
+      </div>
+      <div class="eg" id="tCapEnEg"></div>
+      <div class="row">
+        <label for="tCapHe">hebrew max</label>
+        <input type="range" id="tCapHe" min="8" max="80" step="0.01" /><output
+          id="tCapHeV"
+        ></output>
+      </div>
+      <div class="eg" id="tCapHeEg"></div>
+      <div class="warn" id="heWarn"></div>
+    </section>
+
+    <section class="grp" id="backTitleGrp">
+      <h2>Title — back <span class="tagx">the back</span></h2>
+      <label class="sw"><input type="checkbox" id="bFit" checked /> Size follows the box</label>
+      <div class="row" id="bPinRow" hidden>
+        <label for="bPin">pinned size</label>
+        <input type="range" id="bPin" min="6" max="60" step="0.01" /><output id="bPinV"></output>
+      </div>
+      <div class="read" id="bRead"></div>
+    </section>
+
+    <section class="grp" id="backCapGrp">
+      <h2>Back ceilings <span class="tagx">the back only</span></h2>
+      <p class="hint">
+        The back is one big card with nothing to dodge, so its title goes much larger than a front's
+        — it gets its own pair, stopping at its own box.
+      </p>
+      <label class="sw"><input type="checkbox" id="bCapOn" /> Hold the back title down</label>
+      <div class="row">
+        <label for="bCapEn">english max</label>
+        <input type="range" id="bCapEn" min="8" max="90" step="0.01" /><output
+          id="bCapEnV"
+        ></output>
+      </div>
+      <div class="eg" id="bCapEnEg"></div>
+      <div class="row">
+        <label for="bCapHe">hebrew max</label>
+        <input type="range" id="bCapHe" min="8" max="90" step="0.01" /><output
+          id="bCapHeV"
+        ></output>
+      </div>
+      <div class="eg" id="bCapHeEg"></div>
+    </section>
+  </div>
+
+  <div class="stage">
+    <p class="legend">
+      <span
+        ><i style="border-color: var(--bandline); border-top-style: dashed"></i>word box — one for
+        the template</span
+      >
+      <span
+        ><i style="border-color: var(--tboxline); border-top-style: dashed"></i>title box — per
+        card</span
+      >
+      <span><i style="border-color: var(--flag)"></i>the edge that is holding the size</span>
+      <label class="sw" style="margin-left: auto"
+        ><input type="checkbox" id="showCap" checked /> outline the ceiling on the cards</label
+      >
+      <label class="sw"
+        ><input type="checkbox" id="showShort" checked /> show the shortest case</label
+      >
+    </p>
+    <div class="wall" id="wall"></div>
+    <div class="backwall" id="shortwrap">
+      <h3>Where a ceiling bites</h3>
+      <p class="stagehint">
+        Two-letter words and a three-letter name, on the card you have selected. Nothing holds the
+        width, so the type reaches the box's own maximum — and a ceiling is the only thing that can
+        bring it back down. Move one and watch this card; the others will not budge until the
+        ceiling drops under what their longer words already set at.
+      </p>
+      <div class="wall" id="shortwall"></div>
+    </div>
+
+    <section class="try" id="try">
+      <h3>Try a size</h3>
+      <p class="stagehint">
+        Type the words you are worried about, set a size by hand, and look at it. Nothing is fitted
+        here — the number you pick is the number that prints, and it is wired straight to the
+        ceilings, so whatever you settle on is what the cards above and the PDF below will use.
+      </p>
+      <div class="tryctl">
+        <div class="trycol">
+          <h4>the words</h4>
+          <div class="tf"><span>row 1</span><input type="text" id="t0" dir="auto" /></div>
+          <div class="tf"><span>row 2</span><input type="text" id="t1" dir="auto" /></div>
+          <div class="tf"><span>row 3</span><input type="text" id="t2" dir="auto" /></div>
+          <div class="tf"><span>row 4</span><input type="text" id="t3" dir="auto" /></div>
+          <div class="tf"><span>honoree</span><input type="text" id="tName" dir="auto" /></div>
+          <button class="btn xs wide" id="tryPull">take the words from the panel</button>
+        </div>
+        <div class="trycol">
+          <h4>the sizes</h4>
+          <div class="row">
+            <label for="tryHe">hebrew words</label>
+            <input type="range" id="tryHe" min="6" max="60" step="0.01" /><output
+              id="tryHeV"
+            ></output>
+          </div>
+          <div class="row">
+            <label for="tryEn">english words</label>
+            <input type="range" id="tryEn" min="6" max="60" step="0.01" /><output
+              id="tryEnV"
+            ></output>
+          </div>
+          <div class="row">
+            <label for="tryT">front title</label>
+            <input type="range" id="tryT" min="6" max="80" step="0.01" /><output
+              id="tryTV"
+            ></output>
+          </div>
+          <div class="row">
+            <label for="tryB">back title</label>
+            <input type="range" id="tryB" min="6" max="90" step="0.01" /><output
+              id="tryBV"
+            ></output>
+          </div>
+          <p class="hint">
+            These four <b>are the ceilings</b>. Move one and the matching ceiling on the left takes
+            it at once, switched on — so the wall, the deck and the PDF all follow. The box still
+            has the last word: a size it cannot give comes back pulled in.
+          </p>
+        </div>
+      </div>
+      <div class="wall trywall" id="trywall"></div>
+    </section>
+
+    <section class="try" id="deck">
+      <h3>The whole deck</h3>
+      <p class="stagehint">
+        A real order, laid out with the numbers above and nothing else — the same box, the same line
+        gap, the same ceilings, the same title, and the generator's own wrapping.
+        <b>One card to a page</b>, the way <span class="k">card_structure: cards</span> ships: 74 ×
+        105 mm of trim inside the bleed the artwork already carries, a 4 mm crop-mark margin around
+        that, hairline marks starting at the bleed edge, and the TrimBox and BleedBox a shop's
+        imposition reads. The back is the last page. Still RGB — the CMYK separation is the one
+        thing only the generator does.
+      </p>
+      <div class="tryctl">
+        <div class="trycol">
+          <h4>the words</h4>
+          <textarea id="deckWords" rows="7" dir="auto" spellcheck="false"></textarea>
+          <div class="btns">
+            <button class="btn xs wide" id="deckMaya">Maya's list</button>
+            <button class="btn xs wide" id="deckClear">clear</button>
+          </div>
+          <p class="hint" id="deckCount"></p>
+        </div>
+        <div class="trycol">
+          <h4>the sheet</h4>
+          <div class="row">
+            <label for="deckDpi">resolution</label>
+            <input type="range" id="deckDpi" min="96" max="300" step="1" /><output
+              id="deckDpiV"
+            ></output>
+          </div>
+          <p class="hint">
+            The heavy words are dealt first and snaked across the cards, so no single card collects
+            all the long ones. Every card still sets one size, chosen by its own longest word.
+          </p>
+          <p class="hint">
+            Long phrases <b>wrap exactly as the press wraps them</b> — same search over every
+            combination of line counts, same tie-break to the fewest lines, and the extra line is
+            paid for out of the paper below the words rather than out of the type size.
+          </p>
+          <p class="hint" id="deckCaps"></p>
+          <div class="btns">
+            <button class="btn solid" id="deckGo">build the PDF</button>
+            <button class="btn xs wide" id="capsOff">no ceilings</button>
+          </div>
+          <p class="hint" id="deckStatus"></p>
+        </div>
+      </div>
+    </section>
+
+    <div class="backwall">
+      <h3>The back</h3>
+      <div class="wall" id="backwall"></div>
+    </div>
+    <div class="out">
+      <div class="bar">
+        <h2>The numbers</h2>
+        <span class="chips" id="capState"></span>
+        <div class="sp"></div>
+        <button class="btn" id="copy2">copy</button>
+      </div>
+      <pre id="json"></pre>
+    </div>
+  </div>
+</div>
+
+<div class="foot" style="padding-top: 34px">
+  <h3>What this bench is, and is not</h3>
+  <p>
+    The artwork is the nine live סיישל card files, and the boxes start at the calibration the press
+    is using today. The geometry you drag is exact — those fractions are the ones the generator
+    reads.
+  </p>
+  <p>
+    The fit is the generator's own, ported: <span class="k">_balanced_split</span>,
+    <span class="k">_hard_split</span>, <span class="k">_candidates</span>,
+    <span class="k">_fit_card</span>, <span class="k">_lead_for</span> and
+    <span class="k">_card_lead</span> with its column-by-column
+    <span class="k">_min_line_pitch</span> — same constants, same search, same tie-breaks. Checked
+    against the real thing on sixteen cards of a live order: identical line counts, and the sizes
+    agreed to <b>0.03</b>. The one piece that could not come across whole is the rasteriser —
+    <span class="k">_ink_skyline</span> reads inked pixels through PIL, this reads them through a
+    canvas — and that difference is what the 0.03 is.
+  </p>
+  <p>
+    The paper the words may reach is read off the artwork here, the way
+    <span class="k">room_bottom</span> reads it off the printed frame. Two dashed lines on the
+    selected card show where it starts and ends; a wrapped line is paid for out of that.
+  </p>
+  <h3>The box always wins</h3>
+  <p>
+    Every number here — a ceiling, a pinned size, the English word size — stops at the box it has to
+    print inside. The type can grow past what you see whenever the words get shorter, because the
+    <span class="k">width fit</span> relaxes with the text; it can never grow past the
+    <span class="k">height fit</span>, because that one is the rectangle itself. So the sliders top
+    out there, and the only way to a bigger number is a bigger box.
+  </p>
+  <p>
+    The four ceilings and the English word size do not exist in the generator yet. Pick the numbers
+    here, and they get wired in as <span class="k">word_max_he</span>,
+    <span class="k">word_max_en</span>, <span class="k">title_max_en</span>,
+    <span class="k">title_max_he</span> and <span class="k">word_en_size</span> /
+    <span class="k">word_alt_scale</span>.
+  </p>
+</div>
+
+<script>
+  /* ============================================================================
+   THE TEMPLATE, READ OFF THE SITE.
+
+   The bench used to ship a SNAPSHOT of one template — its entry, its card art
+   and its four faces, all baked in as base64 by a build step. That is what made
+   it drift: the numbers went stale the day the template was calibrated again,
+   and דני rendered for days in a face the site had already replaced.
+
+   Nothing is baked here. Everything below is fetched from the same API the
+   generator reads, every time the page opens, so "what the bench shows" and
+   "what the press has" cannot be different things.
+   ============================================================================ */
+  let TPL = null,
+    LIVE = null,
+    CARD_IMG = {},
+    FONT_B64 = {},
+    MAYA_WORDS = [],
+    PRESET;
+
+  const Q = new URLSearchParams(location.search);
+  const ADMIN = Q.get('key') || '';
+  const withKey = (p) => p + (p.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(ADMIN);
+
+  async function apiJSON(p) {
+    const r = await fetch(withKey(p));
+    if (!r.ok) throw new Error(p + ' → ' + r.status);
+    return r.json();
+  }
+  async function apiText(p) {
+    const r = await fetch(withKey(p));
+    if (!r.ok) throw new Error(p + ' → ' + r.status);
+    return r.text();
+  }
+  /* An OPTIONAL face a design has not got answers 404 — that is an answer, not a
+   fault, so it comes back null rather than throwing. */
+  async function apiDataURI(p, mime) {
+    const r = await fetch(withKey(p));
+    if (!r.ok) return null;
+    const b = new Uint8Array(await r.arrayBuffer());
+    let s = '';
+    for (let i = 0; i < b.length; i += 0x8000) {
+      s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+    }
+    return 'data:' + mime + ';base64,' + btoa(s);
+  }
+
+  /* The card art arrives as SVG and is FLATTENED to a raster here.
+
+   NOT named rasterise(): the page already has one, for the proof, taking a DOM
+   node and a dpi. Two functions of that name in one script is the later one
+   winning silently — which is exactly what happened.
+
+   It has to be. The card is drawn as an <image> inside an SVG that this page
+   later serialises and rasterises for the proof, and an SVG rendered as an image
+   may not fetch anything — nor is a data: SVG nested inside another data: SVG a
+   thing renderers agree on. The old build step rasterised with headless Chrome
+   for exactly this reason; the browser already here can do the same job. */
+  function flattenCardArt(svgText, w, h) {
+    return new Promise((res, rej) => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = Math.round(w * 2);
+        c.height = Math.round(h * 2);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        res(c.toDataURL('image/png'));
+      };
+      img.onerror = () => rej(new Error('card art would not draw'));
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgText)));
+    });
+  }
+
+  /* Does this template's TITLE face have Hebrew? The bundle answered it with
+   fontTools at build time. In a browser the honest test is to measure: a face
+   without the glyph falls back, so it measures exactly like the fallback does. */
+  function faceHasHebrew(family) {
+    const c = document.createElement('canvas').getContext('2d');
+    c.font = '100px monospace';
+    const bare = c.measureText('אבג').width;
+    c.font = '100px "' + family + '", monospace';
+    return Math.abs(c.measureText('אבג').width - bare) > 0.5;
+  }
+
+  const CARD_ROLE = (n) => 'clean-' + n;
+  const FONT_ROLES = [
+    ['title', 'title-font'],
+    ['titleAlt', 'title-font-alt'],
+    ['word', 'word-font'],
+    ['wordAlt', 'word-font-alt'],
+  ];
+  const SAMPLE = [
+    'מסיבה',
+    'ריקודים',
+    'צחוקים',
+    'חברים',
+    'אמא',
+    'ים',
+    'כלב',
+    'גן',
+    'חתונה',
+    'טיול',
+    'קפה',
+    'מוזיקה',
+    'ילדות',
+    'שכונה',
+    'צבא',
+    'אוניברסיטה',
+    'בית',
+    'משפחה',
+  ];
+
+  async function loadTemplate(key) {
+    const list = (await apiJSON('/api/admin/templates')).templates || [];
+    const status = list.find((t) => t.key === key);
+    if (!status) throw new Error('no template called ' + key);
+    // The EFFECTIVE entry — shipped defaults with the owner's overrides merged.
+    // NOT /export, which answers the owner layer only: a template she has never
+    // calibrated is absent there, and the editor would open on nothing.
+    LIVE = (await apiJSON('/api/admin/templates/' + encodeURIComponent(key) + '/entry')).entry;
+    if (!LIVE) throw new Error(key + ' has no entry');
+
+    // Which cards this design actually has, off its own asset list — never a
+    // guessed range, so a design with three fronts shows three.
+    const nums = (status.assets || [])
+      .filter((a) => a.present && /^clean-\d+$/.test(a.role))
+      .map((a) => Number(a.role.split('-')[1]))
+      .sort((a, b) => a - b);
+    const backs = nums.filter((n) => n === 1);
+    const fronts = nums.filter((n) => n !== 1);
+    LIVE.card_fronts = fronts;
+    LIVE.card_backs = backs;
+    LIVE.card_viewbox = LIVE.card_viewbox || { w: 223.92, h: 312 };
+
+    for (const [slot, role] of FONT_ROLES) {
+      FONT_B64[slot] = await apiDataURI(
+        '/api/admin/templates/' + encodeURIComponent(key) + '/assets/' + role,
+        'font/ttf'
+      );
+    }
+    // A design with one title face renders Hebrew in the same face; the page must
+    // not point at a family it has no bytes for.
+    FONT_B64.titleAlt = FONT_B64.titleAlt || FONT_B64.title;
+    FONT_B64.wordAlt = FONT_B64.wordAlt || FONT_B64.word;
+
+    const st = document.createElement('style');
+    st.textContent =
+      '@font-face{font-family:"TplTitle";src:url(' +
+      FONT_B64.title +
+      ');font-display:block}' +
+      '@font-face{font-family:"TplTitleAlt";src:url(' +
+      FONT_B64.titleAlt +
+      ');font-display:block}' +
+      '@font-face{font-family:"TplWord";src:url(' +
+      FONT_B64.word +
+      ');font-display:block}' +
+      '@font-face{font-family:"TplWordAlt";src:url(' +
+      FONT_B64.wordAlt +
+      ');font-display:block}';
+    document.head.appendChild(st);
+    await document.fonts.load('200px "TplTitle"', 'ABC');
+
+    const vb = LIVE.card_viewbox;
+    for (const n of nums) {
+      const svg = await apiText(
+        '/api/admin/templates/' + encodeURIComponent(key) + '/asset-svg/' + CARD_ROLE(n)
+      );
+      CARD_IMG[n] = await flattenCardArt(svg, vb.w, vb.h);
+    }
+
+    // EVERY calibrated design carries a pitch; a template she has not tuned yet
+    // does not, and the fallback used to be a bare 24 — whereupon each card on the
+    // wall solved its own pitch and wrote it back, so the type decayed card after
+    // card down the page (8.67, 6.42, 4.75 … on אואזיס). A deck has ONE rhythm, so
+    // an untuned design opens on the one its own slots describe, and holds it.
+    if (!(LIVE.word_pitch > 0)) {
+      const w = (LIVE.card_slots || {}).words || [];
+      if (w.length > 1) LIVE.word_pitch = (w[1].y0 - w[0].y0) * LIVE.card_viewbox.h;
+    }
+
+    MAYA_WORDS = SAMPLE.slice();
+    // The panel names the four faces it is drawing with; a design that ships only
+    // one word face draws English in that one, and must say so rather than
+    // "undefined".
+    LIVE.word_font_alt = LIVE.word_font_alt || LIVE.word_font;
+    LIVE.title_font_alt = LIVE.title_font_alt || LIVE.title_font;
+
+    TPL = {
+      key,
+      en: key,
+      name: status.display_he || LIVE.display_he || key,
+      fronts,
+      backs,
+      backTitle: !!(LIVE.back && LIVE.back.frac),
+      titleHasHebrew: faceHasHebrew('TplTitle'),
+      // A design with ONE title face sets Hebrew in that same face; naming a second
+      // one it has not got printed the word "undefined" at her on the panel.
+      titleAltFace: (LIVE.title_font_alt || LIVE.title_font || '').replace(/\.[to]tf$/i, ''),
+      sampleName: 'MAYA',
+    };
+    document.title = TPL.name + ' — עורך התבנית';
+  }
+
+  /* ============================================================
+   units — everything below is in the card's own viewBox units
+   (223.92 x 312), which is what the recipe fractions multiply.
+   ============================================================ */
+  let CW, CH;
+  const REF = 200; // the size every measurement is taken at
+  let FRONTS;
+  let BACKS;
+  let BACKK;
+  // A back carries a personalised title only where the template calibrated one.
+  let HAS_BACK_TITLE;
+  let TS;
+  const FRONT_CAPS = { he: 'tCapHe', en: 'tCapEn', on: 'tCapOn' };
+  const BACK_CAPS = { he: 'bCapHe', en: 'bCapEn', on: 'bCapOn' };
+  const $ = (id) => document.getElementById(id);
+  const SHOWCAP = () => $('showCap').checked;
+  // The template's own four faces. A design ships a face per script, not one face
+  // scaled: on סיישל the words are Asakim Bold (Hebrew only) and every Latin word
+  // is set in brixton-sans (Latin only) — which is why alt_scale is live.
+  const WFACE = () => 'TplWord'; // the word face
+  const WALT = () => 'TplWordAlt'; // the face every Latin word is set in
+  const TFACE = 'TplTitle',
+    TALT = 'TplTitleAlt';
+  // Half a slider step. A ceiling resting ON the box lands a rounding crumb below
+  // it, and without this every card claimed to be "at ceiling" while nothing was
+  // actually being held down.
+  const CAP_EPS = 0.02;
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const r4 = (n) => Math.round(n * 10000) / 10000;
+
+  const SAMPLES = {
+    he: ['מסיבה', 'ריקודים', 'צחוקים', 'חברים'],
+    mix: ['מסיבה', 'Below deck', 'ריקודים', 'W.A.P'],
+    en: ['Below deck', 'Jeopardy', 'Oxford', 'Golf'],
+    long: ['עוגת יום הולדת', 'Say yes to the dress', 'אישה לאישה מלכה', 'ארכיון חדשות 13'],
+  };
+
+  /* ---------- state ---------- */
+  const bandFromSlots = (w) => {
+    const gap = w.length > 1 ? w[1].y0 - w[0].y0 : w[0].y1 - w[0].y0;
+    return { x0: w[0].x0, x1: w[0].x1, y0: w[0].y0, y1: w[0].y0 + 4 * gap };
+  };
+  let LIVE_BAND;
+  let S, SEL;
+
+  function fresh() {
+    return {
+      band: { ...LIVE_BAND },
+      titles: Object.fromEntries(FRONTS.map((k) => [k, { ...LIVE.card_slots.titles[k] }])),
+      back: HAS_BACK_TITLE ? { ...LIVE.back.frac } : { x0: 0.2, y0: 0.4, x1: 0.8, y1: 0.6 },
+    };
+  }
+  function resetAll() {
+    S = fresh();
+    SEL = FRONTS[0];
+    setR('wPin', LIVE.word_size);
+    // the deck's own rhythm, expressed against its own size
+    STEP = LIVE.word_pitch || ((LIVE_BAND.y1 - LIVE_BAND.y0) * CH) / 4;
+    setR('wPitch', LIVE.word_size ? r2(STEP / LIVE.word_size) : 1.4);
+    setR('wTight', 1);
+    // THE CEILINGS COME OFF THE SITE when the design carries them. They used to
+    // start at 999 (off) every time, which meant the only copy of a tuned ceiling
+    // lived in this browser — and a browser store is not somewhere measurements
+    // are allowed to live alone. The six names are the same ones the settings API
+    // and generator/config.type_ceiling read, so what opens here is what prints.
+    const cap = (name, el, fallback) => {
+      const v = LIVE[name];
+      const on = typeof v === 'number' && v > 0;
+      setR(el, on ? v : fallback);
+      return on;
+    };
+    const capW = cap('word_max_he', 'capHe', 999) | cap('word_max_en', 'capEn', 999);
+    setR('enScale', 0.8);
+    setR('enSize', 14);
+    setR('tPin', TS.size || 24);
+    setR('tLead', TS.leading || 0.68);
+    const capT = cap('title_max_en', 'tCapEn', 999) | cap('title_max_he', 'tCapHe', 999);
+    const capB = cap('back_title_max_en', 'bCapEn', 999) | cap('back_title_max_he', 'bCapHe', 999);
+    setR('bPin', TS.back_size || TS.size || 24);
+    // A PINNED SIZE IS THE TEMPLATE'S ANSWER, so the page opens on it. These used
+    // to be forced to "follows the box" whatever the entry said, which quietly
+    // showed a fitted size for a design the press sets at a fixed one.
+    $('wFit').checked = !(LIVE.word_size > 0);
+    $('tFit').checked = !(TS.size > 0);
+    $('bFit').checked = !((TS.back_size || TS.size) > 0);
+    $('tLock').checked = false;
+    $('enDrag').checked = true;
+    $('showCap').checked = true;
+    $('showShort').checked = true;
+    $('capOn').checked = !!capW;
+    $('tCapOn').checked = !!capT;
+    $('bCapOn').checked = !!capB;
+    // What production ships, from themes.json: Aharoni Book for the words with a
+    // synthetic bold, Sprite Graffiti for the title. The admin API carries no font
+    // fields at all (pull.py: "it is a summary… it carries no fonts"), so these
+    // travel in the deployed image and this IS the live answer.
+    $('wBold').checked = !!LIVE.word_bold;
+    $('tAlign').value = TS.align || 'center';
+    $('enMode').value = 'scale';
+    $('titleMode').value = 'template';
+    $('titleText').value = LIVE.title_lines.join('\n').replace(/\{NAME\}/g, 'MAYA');
+    SAMPLES.he.forEach((w, i) => {
+      $('w' + i).value = w;
+    });
+    $('name').value = TPL.sampleName || SAMPLE_EN;
+    ['מסיבה', 'ריקודים', 'Below deck', 'Gym'].forEach((w, i) => {
+      $('t' + i).value = w;
+    });
+    $('tName').value = TPL.sampleName || SAMPLE_EN;
+    setR('tryHe', 21);
+    setR('tryEn', 17);
+    setR('tryT', 23);
+    setR('tryB', 34);
+    setR('deckDpi', 170);
+    $('deckWords').value = MAYA_WORDS.join('\n');
+    syncHidden();
+  }
+  const setR = (id, v) => {
+    const e = $(id);
+    e.value = v;
+    const o = $(id + 'V');
+    if (o) o.textContent = num(id, v);
+  };
+  const num = (id, v) =>
+    id === 'enScale' || id === 'tLead' || id === 'wTight' || id === 'wPitch'
+      ? (+v).toFixed(2)
+      : (+v).toFixed(1);
+  function own2() {
+    return $('titleMode').value === 'own';
+  }
+  /** What this particular template needs on screen. */
+  function shapePanel() {
+    $('brandHe').textContent = TPL.name;
+    $('brandEn').textContent = TPL.en + ' · ' + CW + ' × ' + CH;
+    $('backTitleGrp').hidden = !HAS_BACK_TITLE;
+    $('backCapGrp').hidden = !HAS_BACK_TITLE;
+    $('tryB').closest('.row').hidden = !HAS_BACK_TITLE;
+    $('deckMaya').textContent = TPL.wordsLabel;
+    $('enNote').innerHTML =
+      "This template <b>does</b> ship a Latin word face, so the generator's " +
+      "<b>0.80</b> is live: every English word already sets at 80% of the card's size, in " +
+      '<span class="k">' +
+      LIVE.word_font_alt +
+      '</span>. Anything else here is a change you are proposing.';
+    $('faceNote').innerHTML =
+      'The four faces this template ships, off the volume: words in ' +
+      '<span class="k">' +
+      LIVE.word_font +
+      '</span>' +
+      (LIVE.word_bold ? ' (with the synthetic bold)' : '') +
+      ', every English word in <span class="k">' +
+      LIVE.word_font_alt +
+      '</span>, the title in ' +
+      '<span class="k">' +
+      LIVE.title_font +
+      '</span> and a Hebrew title in ' +
+      '<span class="k">' +
+      LIVE.title_font_alt +
+      '</span>.';
+    $('titleFaceNote').innerHTML = TPL.titleHasHebrew
+      ? '<b>' +
+        TPL.titleFace +
+        '</b> sets both scripts here, but a Hebrew title and an English one are ' +
+        'still two different titles: they put a different amount of ink in the same box, so each gets ' +
+        'its own maximum. Both are shown below whichever name you type.'
+      : 'Two different titles, not one measured twice: an English name is set in <b>' +
+        TPL.titleFace +
+        '</b>, which has no Hebrew, so a Hebrew one is set in <b>' +
+        TPL.titleAltFace +
+        '</b>. The two ' +
+        'do not fill the same box the same way, so each has its own maximum. Both are shown below.';
+    document.querySelectorAll('[data-seychelles]').forEach((n) => {
+      n.hidden = TPL.key !== 'trip comeback';
+    });
+  }
+  function syncHidden() {
+    $('wPinRow').hidden = $('wFit').checked;
+    $('tPinRow').hidden = $('tFit').checked;
+    $('bPinRow').hidden = $('bFit').checked;
+    $('genderRow').hidden = !TPL.gender || own2();
+    $('ageRow').hidden = !(TPL.extra || []).includes('AGE') || own2();
+    const own = $('titleMode').value === 'own';
+    $('ownWrap').hidden = !own;
+    $('tmplNote').textContent = own
+      ? 'The template is out of the way. These lines print exactly as typed.'
+      : 'The template sets ' + LIVE.title_lines.join(' / ') + ' — only the name is yours.';
+    const m = $('enMode').value;
+    $('enScaleRow').hidden = m !== 'scale';
+    $('enSizeRow').hidden = m !== 'exact';
+    $('enDrag').disabled = m !== 'scale'; // the other two modes already cut it loose
+    $('enDrag').closest('.sw').style.opacity = m === 'scale' ? '' : '.45';
+  }
+
+  /* ---------- reading the artwork ----------
+   "Centre it between the icon and the boundary" needs to know where the icon is,
+   so read the card. Each front is drawn once into a 224x312 buffer; for any
+   horizontal band, the most common colour is the card's ground and everything
+   else — the printed frame, a parachute, a suitcase — is something the title has
+   to keep clear of. The widest unbroken run of ground in that band IS the clear
+   space, and it collapses to "between the two boundaries" on a card with nothing
+   in the way, which is the other half of what she asked for.               */
+  const INK = {};
+  function loadInk() {
+    return Promise.all(
+      Object.keys(CARD_IMG).map(
+        (k) =>
+          new Promise((done) => {
+            const im = new Image();
+            im.onload = () => {
+              const c = document.createElement('canvas');
+              c.width = 224;
+              c.height = 312;
+              const cx = c.getContext('2d', { willReadFrequently: true });
+              cx.drawImage(im, 0, 0, c.width, c.height);
+              try {
+                INK[k] = cx.getImageData(0, 0, c.width, c.height);
+              } catch (e) {
+                /* leave it out */
+              }
+              done();
+            };
+            im.onerror = () => done();
+            im.src = CARD_IMG[k];
+          })
+      )
+    );
+  }
+  function clearRun(key, y0f, y1f) {
+    const d = INK[key];
+    if (!d) return null;
+    const W = d.width,
+      H = d.height,
+      px = d.data;
+    const r0 = clamp(Math.floor(y0f * H), 0, H - 1),
+      r1 = clamp(Math.ceil(y1f * H), r0 + 1, H);
+    const tally = new Map();
+    for (let y = r0; y < r1; y += 2)
+      for (let x = 0; x < W; x += 2) {
+        const i = (y * W + x) * 4;
+        const q = ((px[i] >> 4) << 8) | ((px[i + 1] >> 4) << 4) | (px[i + 2] >> 4);
+        tally.set(q, (tally.get(q) || 0) + 1);
+      }
+    let bg = 0,
+      best = -1;
+    tally.forEach((v, q) => {
+      if (v > best) {
+        best = v;
+        bg = q;
+      }
+    });
+    const br = ((bg >> 8) & 15) * 17,
+      bgc = ((bg >> 4) & 15) * 17,
+      bb = (bg & 15) * 17,
+      TOL = 26;
+    const clear = new Uint8Array(W);
+    for (let x = 0; x < W; x++) {
+      let ok = 1;
+      for (let y = r0; y < r1; y++) {
+        const i = (y * W + x) * 4;
+        if (
+          Math.abs(px[i] - br) > TOL ||
+          Math.abs(px[i + 1] - bgc) > TOL ||
+          Math.abs(px[i + 2] - bb) > TOL
+        ) {
+          ok = 0;
+          break;
+        }
+      }
+      clear[x] = ok;
+    }
+    let bs = -1,
+      bl = 0,
+      cs = -1;
+    for (let x = 0; x <= W; x++) {
+      if (x < W && clear[x]) {
+        if (cs < 0) cs = x;
+      } else if (cs >= 0) {
+        if (x - cs > bl) {
+          bl = x - cs;
+          bs = cs;
+        }
+        cs = -1;
+      }
+    }
+    return bl > 2 ? { x0: bs / W, x1: (bs + bl) / W, w: bl / W } : null;
+  }
+  /* THE PAPER A WRAP IS PAID FOR WITH.
+   `room` in the generator is not the traced word band — it is the card's real
+   envelope, the safe top down to the printed frame's interior (room_bottom).
+   Handing the fit the band instead makes every wrap impossible: the band is
+   exactly four line gaps tall, so a fifth line never fits and a long phrase can
+   only be paid for in type size. Read the card instead: from the band, walk out
+   until the artwork starts — the frame, or an icon — and that is the floor. */
+  const ROOM_RESERVE = 3; // ~1mm of air off whatever we ran into
+  const _ROOM = new Map();
+  function cardRoom(key) {
+    const band = S.band;
+    const ck = key + '|' + r4(band.y0) + '|' + r4(band.y1) + '|' + r4(band.x0) + '|' + r4(band.x1);
+    if (_ROOM.has(ck)) return _ROOM.get(ck);
+    const d = INK[key];
+    let out;
+    if (!d) out = [band.y0 * CH, band.y1 * CH];
+    else {
+      const W = d.width,
+        H = d.height,
+        px = d.data;
+      const x0 = clamp(Math.floor(band.x0 * W), 0, W - 1);
+      const x1 = clamp(Math.ceil(band.x1 * W), x0 + 1, W);
+      const r0 = clamp(Math.floor(band.y0 * H), 0, H - 1);
+      const r1 = clamp(Math.ceil(band.y1 * H), r0 + 1, H);
+      const tally = new Map();
+      for (let y = r0; y < r1; y++)
+        for (let x = x0; x < x1; x++) {
+          const i = (y * W + x) * 4;
+          const q = ((px[i] >> 4) << 8) | ((px[i + 1] >> 4) << 4) | (px[i + 2] >> 4);
+          tally.set(q, (tally.get(q) || 0) + 1);
+        }
+      let bg = 0,
+        best = -1;
+      tally.forEach((v, q) => {
+        if (v > best) {
+          best = v;
+          bg = q;
+        }
+      });
+      const br = ((bg >> 8) & 15) * 17,
+        bgc = ((bg >> 4) & 15) * 17,
+        bb = (bg & 15) * 17,
+        TOL = 26;
+      const inked = (y) => {
+        for (let x = x0; x < x1; x++) {
+          const i = (y * W + x) * 4;
+          if (
+            Math.abs(px[i] - br) > TOL ||
+            Math.abs(px[i + 1] - bgc) > TOL ||
+            Math.abs(px[i + 2] - bb) > TOL
+          )
+            return true;
+        }
+        return false;
+      };
+      let floor = H,
+        ceiling = 0;
+      for (let y = r1; y < H; y++)
+        if (inked(y)) {
+          floor = y;
+          break;
+        }
+      for (let y = r0; y >= 0; y--)
+        if (inked(y)) {
+          ceiling = y + 1;
+          break;
+        }
+      out = [(ceiling / H) * CH + ROOM_RESERVE, (floor / H) * CH - ROOM_RESERVE];
+    }
+    _ROOM.set(ck, out);
+    return out;
+  }
+
+  function centreTitle(k, how) {
+    const back = k === 'back';
+    const b = back ? S.back : S.titles[k];
+    const w = b.x1 - b.x0;
+    let m = 0.5;
+    if (how === 'clear') {
+      const run = clearRun(back ? BACKK : k, b.y0, b.y1);
+      if (!run) return false;
+      m = (run.x0 + run.x1) / 2;
+    }
+    const nb = { ...b, x0: m - w / 2, x1: m + w / 2 };
+    if (back) S.back = nb;
+    else S.titles[k] = nb;
+    return true;
+  }
+
+  /* ---------- measuring ---------- */
+  const CX = document.createElement('canvas').getContext('2d');
+  const isLatinCh = (c) => /[A-Za-z0-9]/.test(c);
+  const hasHeb = (s) => /[֐-׿]/.test(s);
+  const hasLat = (s) => /[A-Za-z]/.test(s);
+
+  function runs(text) {
+    // split a word into script runs
+    const out = [];
+    let cur = null;
+    for (const ch of text) {
+      const lat = isLatinCh(ch);
+      if (!cur || cur.lat !== lat) {
+        cur = { lat, t: '' };
+        out.push(cur);
+      }
+      cur.t += ch;
+    }
+    return out;
+  }
+  function widthAt(text, family, ref) {
+    // advance width at `ref`
+    CX.font = ref + 'px "' + family + '"';
+    return CX.measureText(text).width;
+  }
+  /** A word's width at REF. A Latin run is set in the SECOND face and at its own
+   *  ratio — Face.runs + Face.scale, where the alt is a different file, not the
+   *  same one scaled. */
+  function wordWidth(text, family, latRatio) {
+    const alt = family === WFACE() ? WALT() : family;
+    return runs(text).reduce(
+      (a, r) => a + widthAt(r.t, r.lat ? alt : family, REF) * (r.lat ? latRatio : 1),
+      0
+    );
+  }
+  function faceLead(family) {
+    // ascent + descent, per unit of size
+    CX.font = REF + 'px "' + family + '"';
+    const m = CX.measureText('אHgqק');
+    const a = m.fontBoundingBoxAscent || m.actualBoundingBoxAscent || REF * 0.8;
+    const d = m.fontBoundingBoxDescent || m.actualBoundingBoxDescent || REF * 0.2;
+    return (a + d) / REF;
+  }
+  function inkStack(lines, family, pitch) {
+    // full stacked ink height at REF
+    CX.font = REF + 'px "' + family + '"';
+    let top = Infinity,
+      bot = -Infinity;
+    lines.forEach((ln, i) => {
+      const m = CX.measureText(ln || 'M');
+      const base = i * pitch * REF;
+      top = Math.min(top, base - (m.actualBoundingBoxAscent || REF * 0.7));
+      bot = Math.max(bot, base + (m.actualBoundingBoxDescent || REF * 0.2));
+    });
+    return bot - top;
+  }
+
+  /* ---------- the numbered marker ----------
+   Every row prints "1." … "4." — the digit is the RIGHTMOST glyph, the period
+   sits to its left, then a gap, then the word. The digit column is one fixed
+   width for the card (the widest digit it uses) so all four words start at the
+   same x, and the marker keeps the CARD's size even on a row whose word is set
+   smaller. It is set in the card's own face, always.
+   _MARKER_SCALE 0.9 · _WORD_GAP 0.30 · inter-gap 0.06 · _CENTER_DROP 0.34      */
+  const MARKER_SCALE = 0.9,
+    WORD_GAP = 0.3,
+    CENTER_DROP = 0.34;
+  /* THE ROW BOX THIS PAGE SAVES, and the generator's cap on the type inside it.
+   The page draws ONE band for all four rows, because that is how the spacing is
+   read by eye — but what it WRITES to card_slots.words is four boxes, each a
+   band around its own row: ROW_TOP of the pitch above the centre for the
+   ascender, ROW_BOT below for the descender. Detection writes the same shape
+   (measured 0.37–0.72 of the pitch across the shipped recipes).
+   generator/_word_layouts then caps the whole card at `box height x
+   _WORD_SIZE_K`, so THAT is the room the press has — and it is the room this
+   page has to measure against, or it reads more than the press will give.
+   Named here and used by BOTH the fit and the export, so the two cannot drift. */
+  const ROW_TOP = 0.3,
+    ROW_BOT = 0.09;
+  const WORD_SIZE_K = 1.3; // generator/render_page._WORD_SIZE_K
+  let ADV = 83,
+    DOTW = 28; // measured once the face has loaded
+  function measureMarker() {
+    ADV = Math.max(...[1, 2, 3, 4].map((n) => widthAt(String(n), WFACE(), REF)));
+    DOTW = widthAt('.', WFACE(), REF);
+  }
+  /** The marker's full span, per unit of the CARD's word size. */
+  function markerSpan() {
+    const ms = MARKER_SCALE;
+    return (ADV / REF) * ms + ms * 0.06 + (DOTW / REF) * ms;
+  }
+
+  /* ============================================================
+   THE PRESS'S OWN FIT, PORTED
+   ------------------------------------------------------------
+   A straight port of generator/render_page.py — _balanced_split,
+   _hard_split, _candidates, _fit_card, _lead_for, _card_lead and its
+   column-by-column _min_line_pitch. Same constants, same search, same
+   tie-breaks. What it is handed is different: the boxes, the line gap,
+   the ceilings and the title all come from this page rather than from
+   themes.json, which is the whole point of tuning them here.
+
+   The one thing that could not come across whole is the RASTERISER.
+   _ink_skyline reads real inked pixels through PIL; this reads them
+   through a canvas. Same question asked of the same outlines, so the
+   answers agree to about a pixel — see the check in the reply.
+   ============================================================ */
+  const WRAP_GAP = 0.07; // _WRAP_GAP — clear air between two wrapped lines
+  const WRAP_MAX = 3; // _WRAP_MAX_LINES
+  const BREAK_BELOW = 0.85; // _BREAK_BELOW — when a mid-word break is allowed
+  const BREAK_MIN = 8; // _BREAK_MIN_CHARS
+  const HYPHEN = '-'; // _BREAK_HYPHEN
+  const SKY_REF = 100; // the skyline's own raster size (PIL uses ref=200)
+
+  /* ---------- measuring, all cached: a deck asks the same questions a lot ---- */
+  const _ADV = new Map(),
+    _INK = new Map(),
+    _SKY = new Map();
+  function latRatio() {
+    return $('enMode').value === 'scale' ? +$('enScale').value : 1;
+  }
+  /** Face.getlength: a Latin run sets at alt_scale of the card's size. */
+  function advOf(t) {
+    const k = t + '\u0000' + latRatio() + '\u0000' + WFACE();
+    if (_ADV.has(k)) return _ADV.get(k);
+    const v = wordWidth(t, WFACE(), latRatio());
+    _ADV.set(k, v);
+    return v;
+  }
+  /** font.getbbox, as ink above and below the baseline at REF. */
+  function inkBox(t) {
+    const ik = t + '\u0000' + WFACE();
+    if (_INK.has(ik)) return _INK.get(ik);
+    CX.font = REF + 'px "' + WFACE() + '"';
+    const m = CX.measureText(t);
+    const v = { a: m.actualBoundingBoxAscent || 0, d: m.actualBoundingBoxDescent || 0 };
+    _INK.set(ik, v);
+    return v;
+  }
+
+  /** _ink_skyline: per column of the rasterised line, its ink's deepest and
+   *  highest row — as fractions of the size, indexed FROM THE RIGHT ANCHOR.
+   *  Indexing from the right is what makes the shift in _min_line_pitch zero:
+   *  every word run on a card shares one right edge, so two rows overlap exactly
+   *  where their ink shares a column of that edge. */
+  function skyline(line) {
+    const sk = line + '\u0000' + WFACE();
+    if (_SKY.has(sk)) return _SKY.get(sk);
+    CX.font = SKY_REF + 'px "' + WFACE() + '"';
+    const m = CX.measureText(line);
+    const a = Math.ceil(m.width),
+      asc = Math.ceil(m.actualBoundingBoxAscent || SKY_REF);
+    const dsc = Math.ceil(m.actualBoundingBoxDescent || SKY_REF * 0.3);
+    const M = 6;
+    const w = Math.max(8, a + 2 * M),
+      h = Math.max(8, asc + dsc + 2 * M);
+    const base = M + asc,
+      anchor = w - M;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, w, h);
+    g.font = SKY_REF + 'px "' + WFACE() + '"';
+    g.fillStyle = '#000';
+    g.textAlign = 'right';
+    g.textBaseline = 'alphabetic';
+    try {
+      g.direction = 'rtl';
+    } catch (e) {
+      /* older engines lay it out anyway */
+    }
+    g.fillText(line, anchor, base);
+    const d = g.getImageData(0, 0, w, h).data;
+    const below = new Array(anchor).fill(null),
+      above = new Array(anchor).fill(null);
+    for (let x = 0; x < anchor; x++) {
+      let top = -1,
+        bot = -1;
+      for (let y = 0; y < h; y++) {
+        if (d[(y * w + x) * 4] < 200) {
+          if (top < 0) top = y;
+          bot = y;
+        }
+      }
+      if (top >= 0) {
+        const i = anchor - 1 - x;
+        below[i] = (bot - base) / SKY_REF;
+        above[i] = (base - top) / SKY_REF;
+      }
+    }
+    const r = { below, above };
+    _SKY.set(sk, r);
+    return r;
+  }
+  /** _dilate — what a synthetic-bold stroke does horizontally. */
+  function dilate(profile, radius) {
+    if (radius <= 0) return profile;
+    const n = profile.length,
+      out = new Array(n);
+    for (let i = 0; i < n; i++) {
+      let best = null;
+      for (let j = Math.max(0, i - radius); j <= Math.min(n - 1, i + radius); j++) {
+        const v = profile[j];
+        if (v != null && (best === null || v > best)) best = v;
+      }
+      out[i] = best;
+    }
+    return out;
+  }
+  /** _min_line_pitch, align="right", rtl — the worst column-wise collision. */
+  const _PAIR = new Map();
+  /** One stacked pair's column-wise requirement. Cached: _fit_card scores up to
+   *  81 combinations per card and they share most of their adjacent pairs, so
+   *  without this the same two lines get re-scanned dozens of times. */
+  function pairPitch(upper, lower, radius) {
+    const k = radius + '\u0000' + upper + '\u0000' + lower + '\u0000' + WFACE();
+    if (_PAIR.has(k)) return _PAIR.get(k);
+    const u = dilate(skyline(upper).below, radius);
+    const l = dilate(skyline(lower).above, radius);
+    const n = Math.min(u.length, l.length);
+    let worst = 0;
+    for (let i = 0; i < n; i++) {
+      if (u[i] == null || l[i] == null) continue;
+      const need = u[i] + l[i];
+      if (need > worst) worst = need;
+    }
+    _PAIR.set(k, worst);
+    return worst;
+  }
+  function minLinePitch(lines, pad, grow, clear) {
+    let worst = 0;
+    const radius = Math.max(0, Math.round((grow || 0) * SKY_REF));
+    for (let k = 0; k + 1 < lines.length; k++)
+      worst = Math.max(worst, pairPitch(lines[k], lines[k + 1], radius));
+    return worst + pad + clear;
+  }
+  /** _card_lead — one pitch for the whole card, the worst pair it actually sets. */
+  function cardLead(lines, count, boldW) {
+    const texts = lines.filter((l) => l && l.trim());
+    const digits = [];
+    for (let n = 1; n <= Math.max(1, count | 0); n++) digits.push(String(n));
+    const mb = inkBox(digits.join('') + '.');
+    const markers = ((mb.a + mb.d) / REF) * MARKER_SCALE + WRAP_GAP;
+    if (!texts.length) return markers;
+    if (texts.length < 2) return Math.max(markers, WRAP_GAP);
+    return Math.max(minLinePitch(texts, boldW || 0, (boldW || 0) / 2, WRAP_GAP), markers);
+  }
+  /** _lead_for — what one wrapped entry's own pair of lines needs. */
+  function leadFor(lines) {
+    if (lines.length < 2) return 0;
+    let need = 0;
+    for (let i = 0; i + 1 < lines.length; i++) {
+      const drop = (inkBox(lines[i]).d + inkBox(lines[i + 1]).a) / REF;
+      if (drop > need) need = drop;
+    }
+    return need + WRAP_GAP;
+  }
+  /** _ink_reach — how far a line's ink runs from the slot centre it is dropped on. */
+  function inkReach(line) {
+    const b = inkBox(line);
+    return [b.a / REF - CENTER_DROP, b.d / REF + CENTER_DROP];
+  }
+
+  /* ---------- the wrappings ---------- */
+  /** _balanced_split — n lines at spaces, narrowest widest line, and never
+   *  strand a leading numeral. */
+  function balancedSplit(text, n) {
+    const parts = text.split(/\s+/).filter(Boolean);
+    if (parts.length < n) return null;
+    if (n === 1) return [parts.join(' ')];
+    let best = null;
+    const cuts = new Array(n - 1);
+    const walk = (at, k) => {
+      if (k === n - 1) {
+        const bounds = [0, ...cuts, parts.length],
+          lines = [];
+        for (let i = 0; i + 1 < bounds.length; i++)
+          lines.push(parts.slice(bounds[i], bounds[i + 1]).join(' '));
+        const first = lines[0].split(' ');
+        const strand = first.length > 1 && /^\d+$/.test(first[0]) ? 1 : 0;
+        const widest = Math.max(...lines.map(advOf));
+        if (!best || strand < best.s || (strand === best.s && widest < best.w))
+          best = { s: strand, w: widest, lines };
+        return;
+      }
+      for (let i = at; i <= parts.length - (n - 1 - k); i++) {
+        cuts[k] = i;
+        walk(i + 1, k + 1);
+      }
+    };
+    walk(1, 0);
+    return best.lines;
+  }
+  /** _fit_chars / _wrap_at / _hard_split — breaking a word that has no spaces. */
+  function fitChars(tok, width) {
+    for (let k = tok.length - 1; k > 0; k--) if (advOf(tok.slice(0, k) + HYPHEN) <= width) return k;
+    return 0;
+  }
+  function wrapAt(text, width) {
+    const out = [];
+    let cur = '';
+    for (const t of text.split(/\s+/).filter(Boolean)) {
+      let tok = t;
+      const trial = cur ? cur + ' ' + tok : tok;
+      if (advOf(trial) <= width) {
+        cur = trial;
+        continue;
+      }
+      if (cur) {
+        out.push(cur);
+        cur = '';
+      }
+      while (advOf(tok) > width) {
+        const k = fitChars(tok, width);
+        if (!k) return null;
+        out.push(tok.slice(0, k) + HYPHEN);
+        tok = tok.slice(k);
+      }
+      cur = tok;
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+  function hardSplit(text, n) {
+    const whole = advOf(text);
+    if (whole <= 0 || n < 1) return null;
+    let lo = 0,
+      hi = whole,
+      best = null;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      const ls = wrapAt(text, mid);
+      if (ls && ls.length <= n) {
+        best = ls;
+        hi = mid;
+      } else lo = mid;
+    }
+    return best;
+  }
+  /** _candidates — every way to set one entry, and the largest size each allows. */
+  function candidates(word, avail, uniform) {
+    const markerRef = (markerSpan() + WORD_GAP) * REF;
+    const budget = (lines) => {
+      const widest = Math.max(...lines.map(advOf));
+      const denom = markerRef + widest;
+      return {
+        lines,
+        lead: leadFor(lines),
+        max: denom > 0 && avail > 0 ? (avail * REF) / denom : Infinity,
+      };
+    };
+    const out = {};
+    for (let n = 1; n <= WRAP_MAX; n++) {
+      const ls = balancedSplit(word, n);
+      if (!ls) break;
+      out[n] = budget(ls);
+    }
+    const have = Object.keys(out);
+    if (!have.length) {
+      out[1] = { lines: [word], lead: 0, max: Infinity };
+      return out;
+    }
+    const wholeBest = Math.max(...have.map((k) => out[k].max));
+    if (
+      uniform &&
+      isFinite(uniform) &&
+      wholeBest < uniform * BREAK_BELOW &&
+      word.replace(/ /g, '').length >= BREAK_MIN
+    ) {
+      for (let n = have.length + 1; n <= WRAP_MAX; n++) {
+        const ls = hardSplit(word, n);
+        if (!ls || out[ls.length]) break;
+        out[ls.length] = budget(ls);
+      }
+    }
+    return out;
+  }
+
+  /** _fit_card — ONE size for the whole card, and each entry's line count.
+   *  Every combination of line counts is scored outright; ties go to the fewest
+   *  total lines, because wrapping is a cost paid to keep the type big. */
+  /* `ratio` is the line gap as a MULTIPLE OF THE SIZE, the way a title's leading
+   is. It cannot be applied as `size <= pitch / lead` — with pitch = ratio x size
+   that reduces to `ratio >= lead` and bounds nothing, which is why iterating it
+   oscillated. It is solved the way `old_cap` solves a title instead: the rows
+   share the box, so each of them gets a fourth of it and the type follows.
+   `lead` still wins where the glyphs need more — letters must not touch. */
+  function fitCard(cands, centers, uniform, room, count, boldW, rows, pitch, band, ratio) {
+    const live = Object.keys(cands)
+      .map(Number)
+      .sort((a, b) => a - b);
+    if (!live.length) return null;
+    const options = live.map((i) =>
+      Object.keys(cands[i])
+        .map(Number)
+        .sort((a, b) => a - b)
+    );
+    const combo = new Array(live.length);
+    let best = null;
+    const score = () => {
+      const counts = {};
+      live.forEach((i, k) => {
+        counts[i] = combo[k];
+      });
+      let size = isFinite(uniform) ? uniform : Infinity;
+      let why = isFinite(uniform) ? 'ceiling' : 'width';
+      live.forEach((i) => {
+        if (cands[i][counts[i]].max < size) {
+          size = cands[i][counts[i]].max;
+          why = 'width';
+        }
+      });
+      const flat = [];
+      live.forEach((i) => {
+        cands[i][counts[i]].lines.forEach((l) => flat.push(l));
+      });
+      const liveC = live.map((i) => centers[i]);
+      const lead = cardLead(flat, count, boldW);
+      if (ratio && ratio > 0 && band) {
+        // the box, shared by the rows that sit in it
+        const rows_n = Math.max(1, live.length);
+        const eff = Math.max(ratio, lead || 0);
+        const capH = ((band[1] - band[0]) / (eff * rows_n)) * 1.02;
+        if (capH < size) {
+          size = capH;
+          why = 'height';
+        }
+        pitch = eff * size;
+      }
+      if (pitch && pitch > 0) {
+        if (!ratio && lead > 0 && pitch / lead < size) {
+          size = pitch / lead;
+          why = 'height';
+        }
+        const first = Math.min(...liveC);
+        const below = inkReach(flat[flat.length - 1])[1];
+        const above = inkReach(flat[0])[0];
+        const run = (flat.length - 1) * pitch;
+        // An unwrapped card sits exactly where it always did — the band. Only the
+        // lines a wrap ADDS are paid for out of the paper below it.
+        const plain = flat.length === live.length;
+        const floor = plain && band ? band[1] : room ? room[1] : Math.max(...liveC);
+        const ceiling = room ? room[0] : null;
+        if (floor != null && below > 0) {
+          const v = (floor - first - run) / below;
+          if (v < size) {
+            size = v;
+            why = 'height';
+          }
+        }
+        if (ceiling != null && above > 0) {
+          const v = (first - ceiling) / above;
+          if (v < size) {
+            size = v;
+            why = 'height';
+          }
+        }
+        if (size <= 0) return; // no paper for this wrapping
+      } else {
+        // The pitch-free fallback: only reachable when the rhythm refused every
+        // wrapping. The generator solves it against the card's real envelope; here
+        // the word box IS the envelope.
+        if (room && flat.length > 1 && lead > 0) {
+          const v = (room[1] - room[0]) / ((flat.length - 1) * lead);
+          if (v < size) {
+            size = v;
+            why = 'height';
+          }
+        }
+      }
+      if (rows && live.length === 1) {
+        // A lone entry has no neighbours to be held by — only the strip the design
+        // drew for it. At a fixed pitch half its run is absolute; only the ink scales.
+        const i = live[0],
+          lines = cands[i][counts[i]].lines;
+        if (pitch && pitch > 0) {
+          const growAbs = ((counts[i] - 1) * pitch) / 2;
+          [
+            [centers[i] - rows[i][0], inkReach(lines[0])[0]],
+            [rows[i][1] - centers[i], inkReach(lines[lines.length - 1])[1]],
+          ].forEach(([reach, ink]) => {
+            if (ink > 0) {
+              const v = Math.max(reach - growAbs, 0) / ink;
+              if (v < size) {
+                size = v;
+                why = 'height';
+              }
+            }
+          });
+        }
+      }
+      const total = combo.reduce((a, b) => a + b, 0);
+      if (best === null || size > best.size || (size === best.size && total < best.total))
+        best = { size, counts: Object.assign({}, counts), lead, total, why, pitch };
+    };
+    const walk = (k) => {
+      if (k === live.length) {
+        score();
+        return;
+      }
+      for (const c of options[k]) {
+        combo[k] = c;
+        walk(k + 1);
+      }
+    };
+    walk(0);
+    if (best === null)
+      return fitCard(cands, centers, uniform, room, count, boldW, rows, null, band, 0);
+    return best;
+  }
+
+  /* ---------- the word fit ----------
+   Two bounds, exactly as the press states them:
+     width  — the longest entry must sit inside the row
+     height — one line's ink must sit inside one line gap
+   The card takes the smaller, then the ceiling takes what is left.        */
+  function wordFit(words, key) {
+    const band = S.band;
+    const rowW = (band.x1 - band.x0) * CW;
+    const fat = $('wBold').checked ? LIVE.word_bold_w || 0.04 : 0;
+    const mode = $('enMode').value,
+      drag = $('enDrag').checked;
+    const capHe = $('capOn').checked ? +$('capHe').value : Infinity;
+    const capEn = $('capOn').checked ? +$('capEn').value : Infinity;
+    const live = words.map((w, i) => ({ w, i })).filter((x) => x.w);
+
+    // The box's own maximum, whatever the words: the MARKER COLUMN alone demands
+    // a pitch, so nothing can ever set larger than the gap divided by that.
+    const digits0 = [];
+    for (let n = 1; n <= Math.max(1, live.length); n++) digits0.push(String(n));
+    const mb0 = inkBox(digits0.join('') + '.');
+    const markerLead = ((mb0.a + mb0.d) / REF) * MARKER_SCALE + WRAP_GAP;
+    // TWO bounds, and the smaller wins — the same two the press applies.
+    //
+    // The marker column demands a pitch, so nothing can set larger than the gap
+    // divided by that. But the press ALSO caps the card at its box height times
+    // _WORD_SIZE_K, and this page used to ignore that second bound entirely: it
+    // read the pitch as if the whole gap were type room. On birthday-girls that
+    // showed 21.05 where the press printed 12.94 — 1.63x — so every size settled
+    // here came out small on paper, and the ceilings tuned against it never bit.
+    const leadBind = markerLead > 0 ? STEP / markerLead : 999;
+    const boxBind = STEP * (ROW_TOP + ROW_BOT) * WORD_SIZE_K;
+    const pinned = !$('wFit').checked;
+    // The box bound is the TARGET a card takes when nothing pins it — in the press
+    // `uniform = word_size if word_size else median(box heights) x _WORD_SIZE_K`,
+    // so a pinned size is the answer and the box does not reduce it further.
+    // Clamping a pin here read 15.82 on אואזיס where the press sets its pinned
+    // 21.30. The marker's own pitch still binds either way: two lines that touch
+    // are not a look, they are a fault.
+    const hBind = pinned ? leadBind : Math.min(leadBind, boxBind);
+    const uniform = pinned ? +$('wPin').value : isFinite(capHe) ? capHe : hBind;
+    // An entry set on its own size is not one of the card's demands.
+    const holds = live.filter((x) => {
+      const latinOnly = hasLat(x.w) && !hasHeb(x.w);
+      return !latinOnly || (mode === 'scale' && drag);
+    });
+    // EVERY entry goes into the fit, because every entry takes a row — even one
+    // whose size is set on its own and therefore holds nothing down. Giving those
+    // an unbounded width leaves them out of the size decision while keeping their
+    // lines in the height decision; leaving them out altogether meant their rows
+    // were never reserved and the last entry walked off the bottom of the card.
+    const holdSet = new Set(holds.map((x) => x.i));
+    const cands = {};
+    live.forEach((x) => {
+      const c = candidates(x.w, rowW, uniform);
+      if (!holdSet.has(x.i))
+        Object.keys(c).forEach((k) => {
+          c[k] = { ...c[k], max: Infinity };
+        });
+      cands[x.i] = c;
+    });
+    const room = key ? cardRoom(key) : [band.y0 * CH, band.y1 * CH];
+    // The pitch and the size decide each other, so solve twice: once at the pitch
+    // we came in with, then at the pitch that size actually asks for. It settles —
+    // the width fit, which starts it, does not depend on the pitch at all.
+    const bandBox = [band.y0 * CH, band.y1 * CH];
+    const ratio = +$('wPitch').value;
+    let solved = null;
+    if (Object.keys(cands).length) {
+      solved = fitCard(
+        cands,
+        rowCentres(),
+        uniform,
+        room,
+        live.length,
+        fat,
+        rowCentres().map((cy) => [cy - STEP / 2, cy + STEP / 2]),
+        STEP,
+        bandBox,
+        ratio
+      );
+      // THE PITCH IS THE BAND'S, NOT THE TYPE'S. It used to be overwritten with
+      // whatever the fit settled on, which was harmless while the size was bounded
+      // by the pitch alone. It stopped being harmless the moment the size was ALSO
+      // bounded by the row box (which this page derives FROM the pitch): the fit
+      // returns ratio x size, the size is at most 0.507 x pitch, so every repaint
+      // multiplied the pitch by ratio x 0.507 and the wall decayed card after card
+      // (8.67, 6.42, 4.75 ... on אואזיס). In the press the row box is a STORED
+      // rectangle and nothing feeds the size back into the spacing, so nothing
+      // here may either: the band she drags is the rhythm, and it stays put.
+    }
+    const step = STEP;
+
+    const he = solved ? solved.size : Math.min(isFinite(uniform) ? uniform : hBind, hBind);
+    const bind = solved ? solved.why : 'height';
+    const capped = bind === 'ceiling';
+    const raw = he;
+
+    const layout = {};
+    live.forEach((x) => {
+      const c = cands[x.i];
+      layout[x.i] = solved && c && c[solved.counts[x.i]] ? c[solved.counts[x.i]].lines : [x.w];
+    });
+
+    let en;
+    if (mode === 'exact') en = +$('enSize').value;
+    else if (mode === 'free') {
+      // Its OWN fit means the size at which it fills the row ON THE LINE IT IS
+      // DRAWN ON. Taking the best over every wrapping and then printing the word
+      // whole is what put "New girl" 31.6 units outside its box.
+      const lat = live.filter((x) => hasLat(x.w) && !hasHeb(x.w));
+      en = lat.length
+        ? Math.min(hBind, ...lat.map((x) => candidates(x.w, rowW, Infinity)[1].max))
+        : he;
+    } else en = he * +$('enScale').value;
+
+    // THE BOX WINS, for English too. The marker is drawn at the CARD's size while
+    // the word is drawn at its own, so the room left for a Latin run is not the
+    // room its own fit assumed. Whatever the mode, no drawn line may leave the row.
+    const markerDrawn = markerSpan() * he + WORD_GAP * he;
+    const roomForWord = rowW - markerDrawn;
+    let enRoom = Infinity;
+    live.forEach((x) => {
+      if (!(hasLat(x.w) && !hasHeb(x.w))) return;
+      ((solved && layout[x.i]) || [x.w]).forEach((ln) => {
+        const a = wordWidth(ln, WFACE(), 1) / REF + fat;
+        if (a > 0) enRoom = Math.min(enRoom, roomForWord / a);
+      });
+    });
+    const enSpilled = en > enRoom + CAP_EPS;
+    en = Math.min(en, enRoom);
+
+    const enRaw = en;
+    const enCapped = en > capEn + CAP_EPS;
+    en = Math.min(en, capEn);
+
+    const widest = holds.length
+      ? Math.min(
+          ...holds.map((x) => {
+            const c = candidates(x.w, rowW, uniform);
+            return Math.max(...Object.keys(c).map((k) => c[k].max));
+          })
+        )
+      : hBind;
+    const wWord = holds.length ? holds.reduce((a, b) => (advOf(a.w) > advOf(b.w) ? a : b)).w : '';
+
+    LASTSIZE = he; // the anchor follows the type it places
+    return {
+      he,
+      en,
+      bind,
+      capped,
+      enCapped,
+      enSpilled,
+      wBind: widest,
+      hBind,
+      wWord,
+      rowW,
+      step,
+      lead: solved ? solved.lead : markerLead,
+      fit: raw,
+      fat,
+      layout,
+      mark: markerSpan() + WORD_GAP,
+      centers: rowCentres(),
+      heGhost: Math.max(raw, isFinite(capHe) ? capHe : 0),
+      enGhost: Math.max(enRaw, isFinite(capEn) ? capEn : 0),
+    };
+  }
+
+  /* THE LINE GAP IS A MULTIPLE OF THE SIZE, exactly like the title's leading.
+   Held as an absolute number it worked backwards: the gap WAS the room each line
+   got, so opening it made the type bigger. As a multiple, the four rows share the
+   box the way the title's lines share theirs — open it and each line asks for
+   more of a box that is not growing, so the type comes down. _grid_pitch does the
+   same thing: max(what the deck wants, what the glyphs need) x size. */
+  let STEP = 24; // the pitch the last fit settled on
+  function pitchUnits() {
+    return STEP;
+  }
+  function stepFor(size, lead) {
+    return Math.max(+$('wPitch').value, lead || 0) * size;
+  }
+  /* WHERE ROW 1 SITS. The block hangs from the TOP of the box: row one's ink meets
+   the box's top edge, and the rest step down from there. Centring the four rows
+   in the box instead left half a gap of air above the first word and below the
+   last, which reads as the box being too big rather than the type being placed. */
+  let LASTSIZE = 16; // what the last fit set, for the anchor
+  let _ASC = null;
+  function faceAscent() {
+    // ink above the baseline, per unit size
+    if (_ASC == null) _ASC = inkBox('אבגדהוזחטיכלמנסעפצקרשת').a / REF;
+    return _ASC;
+  }
+  function blockTop(size, line) {
+    const asc = line ? inkBox(line).a / REF : faceAscent();
+    return S.band.y0 * CH + (asc - CENTER_DROP) * size;
+  }
+  function rowCentres() {
+    const first = blockTop(LASTSIZE);
+    return [0, 1, 2, 3].map((i) => first + i * pitchUnits());
+  }
+
+  /* ---------- the title fit ---------- */
+  /* A title is either the template with a name dropped into it, or whatever she
+   typed. Both arrive here as a "spec": a name string, or {lines}. The SCRIPT is
+   read off the resulting text either way, so a typed Hebrew title picks up the
+   Hebrew face and the Hebrew ceiling without being told to. */
+  function customLines() {
+    if ($('titleMode').value !== 'own') return null;
+    const ls = $('titleText')
+      .value.split('\n')
+      .map((x) => x.trim())
+      .filter(Boolean);
+    return ls.length ? ls : null;
+  }
+  /** The template's own placeholders: the honoree, the gendered word a design
+   *  swaps on ({m:בן|f:בת}), and any extra field it asks for ({AGE}). */
+  function fillTitle(line, nm) {
+    const g = $('tGender') ? $('tGender').value : 'm';
+    return line
+      .replace(/\{m:([^|}]*)\|f:([^}]*)\}/g, (_, m, f) => (g === 'f' ? f : m))
+      .replace(/\{AGE\}/g, ($('tAge') && $('tAge').value.trim()) || '30')
+      .replace(/\{NAME\}/g, nm);
+  }
+  function titleLines(spec) {
+    if (spec && spec.lines) return { heb: spec.lines.some(hasHeb), lines: spec.lines };
+    const raw = (spec != null ? spec : $('name').value).trim() || SAMPLE_EN;
+    const heb = hasHeb(raw);
+    const nm = heb ? raw : LIVE.name_form === 'english-caps' ? raw.toUpperCase() : raw;
+    const lines = LIVE.title_lines.map((l) => fillTitle(l, nm)).filter((x) => x.trim());
+    return { heb, lines: lines.length ? lines : ['—'] };
+  }
+  /** What the eight cards are showing: her own words when she has typed some. */
+  function wallSpec() {
+    const own = customLines();
+    return own ? { lines: own } : undefined;
+  }
+  function titleFit(box, pinnedVal, pinned, caps, nameRaw) {
+    const { heb, lines } = titleLines(nameRaw);
+    // The title face is used unless it simply has not got the script.
+    const family = heb && !TPL.titleHasHebrew ? TALT : TFACE;
+    const bw = (box.x1 - box.x0) * CW,
+      bh = (box.y1 - box.y0) * CH;
+    const n = lines.length;
+    const pitch = +$('tLead').value;
+    const outline = TS.outline_w || 0;
+    const ring = TS.outline && TS.fill && TS.outline !== TS.fill ? outline : 0;
+    const grow = ring; // paint spread per side
+    const pad = 2 * outline + (TS.shadow ? 0.06 : 0);
+
+    const ratios = lines.map((l) => widthAt(l, family, REF) / REF);
+    const denomW = Math.max(...ratios, 0.0001);
+    const sizeW = Math.min((bw * 0.98) / denomW, bw / (denomW + 2 * grow));
+
+    const oldCap = (bh / (Math.max(0.8, pitch) * n)) * 1.02;
+    const stack = inkStack(lines, family, pitch);
+    const inkFit = (bh * REF) / (stack + pad * REF);
+    const sizeH = Math.min(oldCap, inkFit);
+    // The box's OWN maximum, whatever the title. Fewer lines always allow a larger
+    // size, so the honest ceiling is what a SINGLE line could set in this box —
+    // measured off THIS title's three lines it sat at a third of the truth, and a
+    // shorter title could never have reached it.
+    const one = [
+      lines.reduce((a, b) => (widthAt(b, family, REF) > widthAt(a, family, REF) ? b : a)),
+    ];
+    const capH = Math.min(
+      (bh / Math.max(0.8, pitch)) * 1.02,
+      (bh * REF) / (inkStack(one, family, pitch) + pad * REF)
+    );
+
+    let fit = Math.min(sizeW, sizeH);
+    let bind = sizeW <= sizeH ? 'width' : 'height';
+    if (pinned) {
+      // A PIN IS A TARGET, NEVER A LICENCE TO OVERFLOW — the generator's own words,
+      // and its own clamp: a pinned size is the origin's number for the origin's
+      // own title, and the honoree's name is not that text. The box binds it both
+      // ways. Without this a pinned back title ran clean off the card the moment
+      // the name got longer than the one it was measured on.
+      const held = Math.min(sizeW, sizeH);
+      fit = Math.min(pinnedVal, held);
+      if (fit >= pinnedVal - 1e-9) bind = 'pinned';
+    }
+
+    // The FRONT and the BACK are told to read different ceilings: the back is one
+    // uncluttered card and its title goes far larger than any front's, so one pair
+    // of numbers could never serve both.
+    const cap = $(caps.on).checked ? +$(heb ? caps.he : caps.en).value : Infinity;
+    const capped = fit > cap + CAP_EPS;
+    return {
+      size: Math.min(fit, cap),
+      bind,
+      capped,
+      heb,
+      lines,
+      family,
+      pitch,
+      ring,
+      sizeW,
+      sizeH,
+      capH,
+      fit,
+      cap,
+      bw,
+    };
+  }
+
+  /* ============================================================
+   drawing
+   ============================================================ */
+  const NS = 'http://www.w3.org/2000/svg';
+  const el = (t, a) => {
+    const n = document.createElementNS(NS, t);
+    for (const k in a) n.setAttribute(k, a[k]);
+    return n;
+  };
+
+  /** A box: tinted fill, four separately-drawn edges (so the binding one can shout),
+   *  eight grab targets, and eight knobs. */
+  function drawBox(g, box, kind, binds) {
+    const TAG = kind;
+    const x = box.x0 * CW,
+      y = box.y0 * CH,
+      w = (box.x1 - box.x0) * CW,
+      h = (box.y1 - box.y0) * CH;
+    const t = kind === 'band' ? '' : ' t';
+    g.appendChild(el('rect', { class: 'bx' + t, x, y, width: w, height: h }));
+
+    const bindW = binds === 'width',
+      bindH = binds === 'height';
+    const edges = [
+      ['n', x, y, x + w, y, bindH],
+      ['s', x, y + h, x + w, y + h, bindH],
+      ['w', x, y, x, y + h, bindW],
+      ['e', x + w, y, x + w, y + h, bindW],
+    ];
+    edges.forEach(([id, x1, y1, x2, y2, hot]) => {
+      g.appendChild(el('line', { class: 'edge' + t + (hot ? ' binds' : ''), x1, y1, x2, y2 }));
+    });
+
+    g.appendChild(
+      el('rect', { class: 'hit mv', x, y, width: w, height: h, 'data-h': 'move', 'data-box': TAG })
+    );
+    edges.forEach(([id, x1, y1, x2, y2]) => {
+      g.appendChild(
+        el('line', {
+          class: 'hit ' + (id === 'n' || id === 's' ? 'ns' : 'ew'),
+          x1,
+          y1,
+          x2,
+          y2,
+          'data-h': id,
+          'data-box': TAG,
+        })
+      );
+    });
+    const corners = [
+      ['nw', x, y, 'nwse'],
+      ['ne', x + w, y, 'nesw'],
+      ['sw', x, y + h, 'nesw'],
+      ['se', x + w, y + h, 'nwse'],
+    ];
+    corners.forEach(([id, cx, cy, cur]) => {
+      g.appendChild(
+        el('rect', {
+          class: 'hit ' + cur,
+          x: cx - 4,
+          y: cy - 4,
+          width: 8,
+          height: 8,
+          'data-h': id,
+          'data-box': TAG,
+        })
+      );
+    });
+    const mids = [
+      ['n', x + w / 2, y, bindH],
+      ['s', x + w / 2, y + h, bindH],
+      ['w', x, y + h / 2, bindW],
+      ['e', x + w, y + h / 2, bindW],
+    ];
+    [...corners.map((c) => [c[0], c[1], c[2], false]), ...mids].forEach(([id, cx, cy, hot]) => {
+      g.appendChild(
+        el('rect', {
+          class: 'knob' + t + (hot ? ' binds' : ''),
+          x: cx - 1.7,
+          y: cy - 1.7,
+          width: 3.4,
+          height: 3.4,
+        })
+      );
+    });
+  }
+
+  /** Which text-anchor puts the run's visual `side` on the x we hand it. */
+  function sideAnchor(side, rtl) {
+    if (side === 'center') return 'middle';
+    const right = side === 'right';
+    return right === rtl ? 'start' : 'end';
+  }
+
+  function drawWords(g, words, fit) {
+    const band = S.band;
+    const x1 = band.x1 * CW;
+    const ms = fit.he * MARKER_SCALE; // the marker keeps the CARD's size
+    const col = (ADV / REF) * ms,
+      tiny = ms * 0.06,
+      dotw = (DOTW / REF) * ms;
+    const markerW = col + tiny + dotw;
+    const bold = (sz) =>
+      fit.fat
+        ? {
+            stroke: '#017f8d',
+            'stroke-width': r2(fit.fat * sz),
+            'paint-order': 'stroke fill',
+            'stroke-linejoin': 'round',
+          }
+        : {};
+    const live = words.map((w, i) => ({ w, i })).filter((x) => x.w);
+    if (!live.length) return;
+    // THE LINE GRID: the card's whole sequence of lines sits on one pitch, the
+    // first pinned to the first entry's calibrated centre. A wrapped entry pushes
+    // the ones below it down — which is the paper a wrap is paid for with.
+    const head = ((fit.layout && fit.layout[live[0].i]) || [live[0].w])[0];
+    const first = blockTop(fit.he, head); // that word's own ink meets the box top
+    const right = x1 - markerW - fit.he * WORD_GAP;
+    // The press steps EVERY line by the same pitch. `wrapped lines` pulls the gap
+    // inside one entry in without touching the gap between entries, so the four
+    // items read as four; it can only ever shorten the block, so the paper the fit
+    // reserved still covers it.
+    const tight = +$('wTight').value;
+    let y = first;
+    live.forEach((x, n) => {
+      const lines = (fit.layout && fit.layout[x.i]) || [x.w];
+      const latinOnly = hasLat(x.w) && !hasHeb(x.w);
+      const size = latinOnly ? fit.en : fit.he;
+      lines.forEach((ln, j) => {
+        if (n || j) y += fit.step * (j ? tight : 1);
+        const base = y + fit.he * CENTER_DROP;
+        if (j === 0) {
+          const d = el('text', {
+            class: 'wtext',
+            x: x1,
+            y: base,
+            'font-size': r2(ms),
+            'font-family': WFACE(),
+            'text-anchor': 'end',
+            fill: '#017f8d',
+            ...bold(ms),
+          });
+          d.textContent = String(x.i + 1);
+          g.appendChild(d);
+          const dot = el('text', {
+            class: 'wtext',
+            x: x1 - col - tiny,
+            y: base,
+            'font-size': r2(ms),
+            'font-family': WFACE(),
+            'text-anchor': 'end',
+            fill: '#017f8d',
+            ...bold(ms),
+          });
+          dot.textContent = '.';
+          g.appendChild(dot);
+        }
+        const ghost = latinOnly ? fit.enGhost : fit.heGhost;
+        if (SHOWCAP() && isFinite(ghost) && ghost > size + CAP_EPS) {
+          const gt = el('text', {
+            class: 'wtext ghost',
+            x: right,
+            y: base,
+            'font-size': r2(ghost),
+            'font-family': latinOnly ? WALT() : WFACE() + ',' + WALT(),
+            'text-anchor': sideAnchor('right', !latinOnly),
+            direction: latinOnly ? 'ltr' : 'rtl',
+          });
+          gt.textContent = ln;
+          g.appendChild(gt);
+        }
+        const t = el('text', {
+          class: 'wtext',
+          x: right,
+          y: base,
+          'font-size': r2(size),
+          'font-family': latinOnly ? WALT() : WFACE() + ',' + WALT(),
+          'text-anchor': sideAnchor('right', !latinOnly),
+          direction: latinOnly ? 'ltr' : 'rtl',
+          fill: '#017f8d',
+          ...bold(size),
+        });
+        t.textContent = ln;
+        g.appendChild(t);
+      });
+    });
+  }
+
+  function drawTitle(g, box, tf) {
+    const cx = ((box.x0 + box.x1) / 2) * CW,
+      x0 = box.x0 * CW,
+      x1 = box.x1 * CW;
+    const cy = ((box.y0 + box.y1) / 2) * CH;
+    const n = tf.lines.length,
+      step = tf.pitch * tf.size;
+    const align = $('tAlign').value;
+    const anchor = sideAnchor(align, tf.heb);
+    const ax = align === 'center' ? cx : align === 'left' ? x0 : x1;
+    const first = cy - ((n - 1) * step) / 2 + tf.size * 0.33;
+    const gsize = Math.max(tf.fit, tf.cap);
+    if (SHOWCAP() && isFinite(gsize) && gsize > tf.size + CAP_EPS) {
+      const gstep = tf.pitch * gsize,
+        gfirst = cy - ((n - 1) * gstep) / 2 + gsize * 0.33;
+      tf.lines.forEach((ln, i) => {
+        const gt = el('text', {
+          class: 'ttext ghost',
+          x: ax,
+          y: gfirst + i * gstep,
+          'font-size': r2(gsize),
+          'text-anchor': anchor,
+          'font-family': tf.family,
+          direction: tf.heb ? 'rtl' : 'ltr',
+        });
+        gt.textContent = ln;
+        g.appendChild(gt);
+      });
+    }
+    tf.lines.forEach((ln, i) => {
+      const t = el('text', {
+        class: 'ttext',
+        x: ax,
+        y: first + i * step,
+        'font-size': r2(tf.size),
+        'text-anchor': anchor,
+        'font-family': tf.family + ',' + (tf.family === TFACE ? TALT : TFACE),
+        fill: TS.fill,
+        stroke: TS.outline,
+        'stroke-width': tf.ring * 2 * tf.size,
+        'stroke-linejoin': 'round',
+        'paint-order': 'stroke fill',
+        direction: tf.heb ? 'rtl' : 'ltr',
+      });
+      t.textContent = ln;
+      g.appendChild(t);
+    });
+  }
+
+  /** The span the "centre in the clear" button is centring within. */
+  function drawClear(g, run, box) {
+    if (!run) return;
+    const y = box.y0 * CH - 3.5,
+      a = run.x0 * CW,
+      b = run.x1 * CW;
+    g.appendChild(
+      el('path', {
+        class: 'clearspan',
+        d: `M${r2(a)} ${r2(y - 2.4)} V${r2(y + 2.4)} M${r2(a)} ${r2(y)} H${r2(b)} M${r2(b)} ${r2(y - 2.4)} V${r2(y + 2.4)}`,
+      })
+    );
+  }
+
+  function cardSVG(key, kind) {
+    const svg = el('svg', { viewBox: `0 0 ${CW} ${CH}`, 'data-card': key });
+    svg.appendChild(el('image', { href: CARD_IMG[key], x: 0, y: 0, width: CW, height: CH }));
+    return svg;
+  }
+
+  /** Draw one ceiling against the box it has to live in, at its true relative size.
+   *  A ceiling that is not currently biting changes nothing on the cards, so this
+   *  is the only place its number means anything until it does. */
+  function drawEg(id, boxW, size, text, family, mode, now, note) {
+    const host = $(id);
+    if (!host || !text) return;
+    CX.font = REF + 'px "' + family + '"';
+    const adv = (CX.measureText(text).width / REF) * size;
+    const marker = mode === 'word' ? (markerSpan() + WORD_GAP) * size : 0;
+    const total = adv + marker;
+    const pad = Math.max(size * 0.35, 3);
+    const vbW = Math.max(boxW, total) + pad * 2;
+    const vbH = size * 1.55;
+    const bx = vbW - pad - boxW; // the box hugs the right, as the row does
+    const base = vbH * 0.72;
+    const rtl = /[\u0590-\u05FF]/.test(text);
+    const holds = now != null && size < now - CAP_EPS;
+    const fill = holds ? 'var(--flag)' : '#017f8d';
+    const mk =
+      mode === 'word'
+        ? `<text x="${r2(bx + boxW)}" y="${r2(base)}" font-size="${r2(size * MARKER_SCALE)}"
+             font-family="TplWord" text-anchor="end" fill="${fill}">1.</text>`
+        : '';
+    const anchor = mode === 'word' ? sideAnchor('right', rtl) : 'middle';
+    const tx = mode === 'word' ? bx + boxW - marker : bx + boxW / 2;
+    // What the number MEANS, not what the drawing happens to do: a ceiling above
+    // what the box already gives is a ceiling that never comes down.
+    const say =
+      now == null
+        ? `${r2(size)}`
+        : holds
+          ? `${r2(size)} — holding the type down from ${r2(now)}`
+          : `${r2(size)} — clear of the ${r2(now)} ` +
+            (mode === 'word'
+              ? 'these words set at; it bites on shorter ones'
+              : 'this name sets at; it bites on shorter ones');
+    host.innerHTML =
+      `<svg viewBox="0 0 ${r2(vbW)} ${r2(vbH)}" aria-hidden="true">` +
+      `<rect class="frame" x="${r2(bx)}" y="1" width="${r2(boxW)}" height="${r2(vbH - 2)}"/>` +
+      mk +
+      `<text x="${r2(tx)}" y="${r2(base)}" font-size="${r2(size)}" font-family="${family}"
+             text-anchor="${anchor}" direction="${rtl ? 'rtl' : 'ltr'}" fill="${fill}">${esc(text)}</text>` +
+      `</svg>` +
+      `<span class="lab${holds ? ' holds' : ''}">${say}</span>` +
+      (note ? `<span class="lab sub">${note}</span>` : '');
+  }
+  const esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+
+  /** The largest the box could EVER set, whatever word or name it is handed.
+   *  It is the HEIGHT bound: `size = min(width fit, height fit)`, and only the
+   *  width half depends on the text. So no ceiling above it can ever come down on
+   *  anything, and the slider simply stops there. Returns true if it had to pull
+   *  the current value in. */
+  function capMax(id, bound) {
+    const e = $(id),
+      top = Math.max(+e.min, r2(bound));
+    const before = +e.value;
+    // Lowering `max` past the current value makes the browser sanitise it there
+    // and then, so there is nothing left to test afterwards — read the value back
+    // instead of predicting it, and always retype the label from what it says.
+    e.max = top;
+    const o = $(id + 'V');
+    if (o) o.textContent = num(id, e.value);
+    return +e.value !== before;
+  }
+
+  /* The shortest an order ever gets: two-letter words and a three-letter name.
+   Nothing is holding the WIDTH here, so the type runs all the way up to the
+   box's own maximum — which is the one and only situation a ceiling exists for.
+   On every other card the words are long enough that the box beats the ceiling
+   to it, and moving a ceiling changes nothing you can see. */
+  const SHORT_WORDS = ['ים', 'כלב', 'אמא', 'Gym'];
+  const SHORT_NAME = 'MAY';
+
+  /* An English title and a Hebrew one are not the same title measured twice: they
+   are set in DIFFERENT FACES — Sprite Graffiti has no Hebrew at all, so a Hebrew
+   name falls to Aharoni — and two faces put a different amount of ink in the
+   same box. So each script gets its own box maximum and its own ceiling, and the
+   panel shows both at once whichever name is currently typed. */
+  let SAMPLE_EN = 'MAYA',
+    SAMPLE_HE = 'מיה';
+  function scriptNames() {
+    const own = customLines();
+    if (own) {
+      // Her title occupies its own script's slot; the other keeps a stock title so
+      // both ceilings stay measurable in one pass.
+      return own.some(hasHeb)
+        ? { en: SAMPLE_EN, he: { lines: own } }
+        : { en: { lines: own }, he: SAMPLE_HE };
+    }
+    const typed = $('name').value.trim();
+    return hasHeb(typed)
+      ? { en: SAMPLE_EN, he: typed || SAMPLE_HE }
+      : { en: typed || SAMPLE_EN, he: SAMPLE_HE };
+  }
+  /** The title fit for one script, on one box, ignoring the other script entirely. */
+  function fitFor(box, name, caps) {
+    return titleFit(
+      box,
+      +$(caps === BACK_CAPS ? 'bPin' : 'tPin').value,
+      !$(caps === BACK_CAPS ? 'bFit' : 'tFit').checked,
+      caps,
+      name
+    );
+  }
+
+  function shortCard() {
+    const host = $('shortwall');
+    if (!host) return;
+    host.textContent = '';
+    $('shortwrap').hidden = !$('showShort').checked;
+    if (!$('showShort').checked) return;
+    const k = SEL;
+    const fit = wordFit(SHORT_WORDS, k);
+    const tf = titleFit(
+      S.titles[k],
+      +$('tPin').value,
+      !$('tFit').checked,
+      FRONT_CAPS,
+      wallSpec() || SHORT_NAME
+    );
+    const slot = document.createElement('div');
+    slot.className = 'slot short';
+    slot.innerHTML =
+      `<div class="head"><span>card ${k} · shortest case</span>` +
+      `<span class="sz">words ${r2(fit.he)}</span></div>`;
+    const svg = cardSVG(k);
+    const g = el('g', {});
+    drawBox(g, S.band, 'band', fit.bind);
+    drawWords(g, SHORT_WORDS, fit);
+    drawBox(g, S.titles[k], 'title', tf.bind);
+    drawTitle(g, S.titles[k], tf);
+    svg.appendChild(g);
+    slot.appendChild(svg);
+    const why = document.createElement('div');
+    why.className = 'why col';
+    const line = (what, raw, now, capped) =>
+      capped
+        ? `<span><b>${what}</b> would set at ${r2(raw)} — the ceiling holds it to <span class="c">${r2(now)}</span></span>`
+        : `<span><b>${what}</b> at ${r2(now)}, the box's own maximum — no ceiling in the way</span>`;
+    why.innerHTML =
+      line('words', fit.fit, fit.he, fit.capped) + line('title', tf.fit, tf.size, tf.capped);
+    slot.appendChild(why);
+    host.appendChild(slot);
+  }
+
+  const BOUND = { word: 99, titleEn: 99, titleHe: 99, backEn: 99, backHe: 99 };
+  // Each slider is parked at ITS OWN script's box maximum, never a shared one.
+  const CAP_GROUPS = [
+    {
+      on: 'capOn',
+      ids: ['capHe', 'capEn'],
+      egs: ['capHeEg', 'capEnEg'],
+      at: { capHe: 'word', capEn: 'word' },
+    },
+    {
+      on: 'tCapOn',
+      ids: ['tCapEn', 'tCapHe'],
+      egs: ['tCapEnEg', 'tCapHeEg'],
+      at: { tCapEn: 'titleEn', tCapHe: 'titleHe' },
+    },
+    {
+      on: 'bCapOn',
+      ids: ['bCapEn', 'bCapHe'],
+      egs: ['bCapEnEg', 'bCapHeEg'],
+      at: { bCapEn: 'backEn', bCapHe: 'backHe' },
+    },
+  ];
+  function capRows() {
+    CAP_GROUPS.forEach((g) => {
+      const on = $(g.on).checked;
+      g.ids.forEach((id) => {
+        const r = $(id).closest('.row');
+        if (r) r.hidden = !on;
+      });
+      g.egs.forEach((id) => {
+        const e = $(id);
+        if (e) e.hidden = !on;
+      });
+    });
+  }
+  /** Switching a ceiling on parks it at the box, holding nothing until it is moved. */
+  function capToggled(which) {
+    const g = CAP_GROUPS.find((x) => x.on === which);
+    if (g && $(which).checked) g.ids.forEach((id) => setR(id, r2(BOUND[g.at[id]])));
+    capRows();
+  }
+
+  /* A hand-set card. Nothing here is fitted: the sizes are the ones typed in, so
+   what the box does or does not hold is the whole answer. It is the question a
+   ceiling is really asking — "at this number, does my worst word still sit
+   inside the row?" — put where it can be looked at instead of reasoned about. */
+  function tryWords() {
+    return [0, 1, 2, 3].map((i) => $('t' + i).value.trim());
+  }
+
+  function rowRoom(word, size, cardSize) {
+    const rowW = (S.band.x1 - S.band.x0) * CW;
+    const fat = $('wBold').checked ? LIVE.word_bold_w || 0.04 : 0;
+    const mark = (markerSpan() + WORD_GAP) * cardSize;
+    const ink = (wordWidth(word, WFACE(), 1) / REF) * size + fat * size;
+    return rowW - mark - ink;
+  }
+  function titleRoom(box, lines, family, size, ring, pitch, shadow, outline) {
+    const bw = (box.x1 - box.x0) * CW,
+      bh = (box.y1 - box.y0) * CH;
+    const wNeed =
+      Math.max(...lines.map((l) => widthAt(l, family, REF) / REF)) * size + 2 * ring * size;
+    const hNeed =
+      (inkStack(lines, family, pitch) / REF) * size + (2 * outline + (shadow ? 0.06 : 0)) * size;
+    return { w: bw - wNeed, h: bh - hNeed };
+  }
+  function handLayout(word, rowW, size) {
+    const c = candidates(word, rowW, Infinity);
+    const ns = Object.keys(c)
+      .map(Number)
+      .sort((a, b) => a - b);
+    for (const n of ns) if (c[n].max >= size) return c[n].lines;
+    return c[ns[ns.length - 1]].lines;
+  }
+
+  function tryCard(host, key, isBack) {
+    const words = tryWords();
+    const he = +$('tryHe').value,
+      en = +$('tryEn').value;
+    const size = isBack ? +$('tryB').value : +$('tryT').value;
+    const box = isBack ? S.back : S.titles[SEL];
+    const { heb, lines } = titleLines(wallSpec() || $('tName').value);
+    // The SAME rule the card wall uses (see titleFit): a title is set in the
+    // title face unless that face simply has not got the script. Reaching for
+    // WFACE() here put the WORD font on the title, so this one card showed a
+    // Hebrew name in a face that prints nowhere.
+    const family = heb && !TPL.titleHasHebrew ? TALT : TFACE;
+    const pitch = +$('tLead').value;
+    const ring = TS.outline && TS.fill && TS.outline !== TS.fill ? TS.outline_w || 0 : 0;
+    const fat = $('wBold').checked ? LIVE.word_bold_w || 0.04 : 0;
+    // A fit-shaped object with the sizes already decided, so the same painters run.
+    // It needs everything drawWords reads off a real fit — the row centres, the
+    // grid step and each entry's wrapping — or the painter walks off the end of it.
+    const rowW = (S.band.x1 - S.band.x0) * CW;
+    const layout = {};
+    words.forEach((w, i) => {
+      if (!w) return;
+      const latinOnly = hasLat(w) && !hasHeb(w);
+      layout[i] = handLayout(w, rowW, latinOnly ? en : he);
+    });
+    const fit = {
+      he,
+      en,
+      step: pitchUnits(),
+      fat,
+      heGhost: 0,
+      enGhost: 0,
+      rowW,
+      layout,
+      centers: rowCentres(),
+    };
+    const tf = { size, lines, family, heb, pitch, ring, fit: size, cap: 0 };
+
+    const slot = document.createElement('div');
+    slot.className = 'slot short';
+    slot.innerHTML =
+      `<div class="head"><span>${isBack ? 'the back' : 'card ' + SEL} · by hand</span>` +
+      `<span class="sz">${r2(size)}</span></div>`;
+    const svg = cardSVG(key);
+    const g = el('g', {});
+    if (!isBack) {
+      drawBox(g, S.band, 'band', null);
+      drawWords(g, words, fit);
+    }
+    drawBox(g, box, isBack ? 'back' : 'title', null);
+    drawTitle(g, box, tf);
+    svg.appendChild(g);
+    slot.appendChild(svg);
+
+    const rows = document.createElement('div');
+    rows.className = 'rows';
+    const say = (label, room) => {
+      const past = room < 0;
+      return (
+        `<span class="${past ? 'past' : 'ok'}">${label} — ` +
+        (past ? `runs ${r2(-room)} past` : `${r2(room)} to spare`) +
+        `</span>`
+      );
+    };
+    const out = [];
+    if (!isBack)
+      words.forEach((w, i) => {
+        if (!w) return;
+        const latin = hasLat(w) && !hasHeb(w);
+        const lines = layout[i] || [w];
+        lines.forEach((ln, j) =>
+          out.push(
+            say(
+              (j === 0 ? `${i + 1}. ` : '   ') + `<bdi>${esc(ln)}</bdi>`,
+              rowRoom(ln, latin ? en : he, he)
+            )
+          )
+        );
+      });
+    const tr = titleRoom(box, lines, family, size, ring, pitch, TS.shadow, TS.outline_w || 0);
+    out.push(say('title width', tr.w));
+    out.push(say('title height', tr.h));
+    rows.innerHTML = out.join('');
+    slot.appendChild(rows);
+
+    const cc = document.createElement('div');
+    cc.className = 'cc';
+    cc.innerHTML =
+      `<span class="cclab">${isBack ? 'back title' : 'words + front title'} → ` +
+      `${heb ? 'hebrew' : 'english'} ceiling, live</span>`;
+    slot.appendChild(cc);
+    host.appendChild(slot);
+  }
+  function tryPanel() {
+    const host = $('trywall');
+    if (!host) return;
+    host.textContent = '';
+    tryCard(host, SEL, false);
+    tryCard(host, BACKK, true);
+  }
+
+  /* A ceiling that is switched off is not a setting, so it exports as null — which
+   reads as a bug if you meet it in the JSON without knowing the switch exists.
+   Say it beside the numbers, where the question actually gets asked, and let the
+   answer be clickable. */
+  function capState() {
+    const host = $('capState');
+    if (!host) return;
+    host.innerHTML = [
+      ['capOn', 'words'],
+      ['tCapOn', 'front title'],
+      ['bCapOn', 'back title'],
+    ]
+      .map(([id, label]) => {
+        const on = $(id).checked;
+        return (
+          `<button class="chip${on ? ' on' : ''}" data-capchip="${id}">` +
+          `${label} ceiling ${on ? 'on' : 'off — exports null'}</button>`
+        );
+      })
+      .join('');
+  }
+
+  /* ============================================================
+   the deck — a whole order, on paper
+   ============================================================ */
+  const PT = 72 / 25.4;
+  /* PressGeometry, from generator/press.py. The card artwork is 223.92 x 312
+   points — 79 x 110 mm — around a 74 x 105 mm trim, so it already carries its
+   own bleed; the page grows a 4 mm margin around that for the crop marks. One
+   card to a page, which is what card_structure "cards" ships. */
+  const TRIM_W = 74 * PT,
+    TRIM_H = 105 * PT;
+  let NAT_X, NAT_Y;
+  const BLEED = Math.min(NAT_X, NAT_Y); // what the artwork can honestly promise
+  const MARK = 4 * PT,
+    MARK_W = 0.25; // MARK_MM, MARK_W_PT
+  const PAGE_W = TRIM_W + 2 * (BLEED + MARK);
+  const PAGE_H = TRIM_H + 2 * (BLEED + MARK);
+  let ART_X, ART_Y;
+  const TX0 = BLEED + MARK,
+    TY0 = BLEED + MARK;
+  const TX1 = TX0 + TRIM_W,
+    TY1 = TY0 + TRIM_H;
+
+  /** _marks_ops — eight hairlines on the trim edges, starting at the bleed edge
+   *  and pointing outwards, so nothing a mark draws survives the cut. Drawn as
+   *  PDF vectors rather than into the raster: a 0.25 pt line is under a pixel at
+   *  any sane resolution and would blur away. */
+  function marksOps() {
+    const seg = [];
+    [TX0, TX1].forEach((x) => {
+      seg.push([x, TY0 - BLEED - MARK, x, TY0 - BLEED]);
+      seg.push([x, TY1 + BLEED, x, TY1 + BLEED + MARK]);
+    });
+    [TY0, TY1].forEach((y) => {
+      seg.push([TX0 - BLEED - MARK, y, TX0 - BLEED, y]);
+      seg.push([TX1 + BLEED, y, TX1 + BLEED + MARK, y]);
+    });
+    return ['q', '0 G', MARK_W + ' w', '[] 0 d']
+      .concat(
+        seg.map(
+          ([a, b, c, d]) => `${a.toFixed(4)} ${b.toFixed(4)} m ${c.toFixed(4)} ${d.toFixed(4)} l S`
+        )
+      )
+      .concat(['Q'])
+      .join('\n');
+  }
+
+  function deckWordList() {
+    const raw = $('deckWords').value.split(/[\n,;\t]+/);
+    const seen = new Set(),
+      out = [];
+    raw.forEach((w) => {
+      const t = w.trim();
+      if (t && !seen.has(t)) {
+        seen.add(t);
+        out.push(t);
+      }
+    });
+    return out;
+  }
+  /* Deal by LETTER COUNT, snaking. A card sets ONE size, chosen by its longest
+   entry, so putting the long words together wastes the short ones — and putting
+   them all on one card wastes that card. Snaking spreads the weight: pass one
+   deals heaviest-first left to right, pass two right to left, and so on. */
+  function dealCards(words) {
+    const n = Math.max(1, Math.ceil(words.length / 4));
+    const cards = Array.from({ length: n }, () => []);
+    words
+      .slice()
+      .sort((a, b) => b.length - a.length || a.localeCompare(b))
+      .forEach((w, k) => {
+        const pass = Math.floor(k / n),
+          pos = k % n;
+        cards[pass % 2 ? n - 1 - pos : pos].push(w);
+      });
+    return cards;
+  }
+
+  /** One printed sheet: eight cards, drawn by the same painters as the wall. */
+  function deckPage(words, key) {
+    const svg = el('svg', {
+      xmlns: NS,
+      'xmlns:xlink': 'http://www.w3.org/1999/xlink',
+      viewBox: `0 0 ${CW} ${CH}`,
+      width: CW,
+      height: CH,
+    });
+    const defs = el('defs', {});
+    const st = document.createElementNS(NS, 'style');
+    // The document's own @font-face does not reach an SVG rendered as an image.
+    st.textContent =
+      `@font-face{font-family:TplTitle;src:url(${FONT_B64.title})}` +
+      `@font-face{font-family:TplTitleAlt;src:url(${FONT_B64.titleAlt})}` +
+      `@font-face{font-family:TplWord;src:url(${FONT_B64.word})}` +
+      `@font-face{font-family:TplWordAlt;src:url(${FONT_B64.wordAlt})}`;
+    defs.appendChild(st);
+    svg.appendChild(defs);
+    const im = el('image', { x: 0, y: 0, width: CW, height: CH });
+    im.setAttribute('href', CARD_IMG[key]);
+    im.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', CARD_IMG[key]);
+    svg.appendChild(im);
+    const g = el('g', {});
+    if (words) {
+      const fit = wordFit(words, key);
+      fit.heGhost = 0;
+      fit.enGhost = 0; // no working marks on paper
+      drawWords(g, words, fit);
+    }
+    const isBack = BACKS.includes(key);
+    if (!isBack || HAS_BACK_TITLE) {
+      const box = isBack ? S.back : S.titles[key];
+      const caps = isBack ? BACK_CAPS : FRONT_CAPS;
+      const tf = titleFit(
+        box,
+        +$(isBack ? 'bPin' : 'tPin').value,
+        !$(isBack ? 'bFit' : 'tFit').checked,
+        caps,
+        wallSpec()
+      );
+      tf.cap = 0;
+      tf.fit = tf.size;
+      drawTitle(g, box, tf);
+    }
+    svg.appendChild(g);
+    return svg;
+  }
+
+  function rasterise(svg, dpi) {
+    const src =
+      'data:image/svg+xml;charset=utf-8,' +
+      encodeURIComponent(new XMLSerializer().serializeToString(svg));
+    return new Promise((done, fail) => {
+      const img = new Image();
+      img.onload = () => {
+        const k = dpi / 72;
+        const c = document.createElement('canvas');
+        c.width = Math.round(CW * k);
+        c.height = Math.round(CH * k);
+        const cx = c.getContext('2d');
+        cx.fillStyle = '#ffffff';
+        cx.fillRect(0, 0, c.width, c.height);
+        cx.drawImage(img, 0, 0, c.width, c.height);
+        c.toBlob(
+          (b) =>
+            b
+              ? done({ blob: b, w: c.width, h: c.height })
+              : fail(new Error('the card would not encode')),
+          'image/jpeg',
+          0.88
+        );
+      };
+      img.onerror = () => fail(new Error('the card would not render'));
+      img.src = src;
+    });
+  }
+
+  /* A PDF of full-page images: one XObject and one content stream per sheet. No
+   font embedding, no glyph mapping — the type is already in the pixels. */
+  const ENC = new TextEncoder();
+  /* One card to a page: the artwork placed full-bleed inside a crop-mark margin,
+   with the TrimBox and BleedBox a shop's imposition actually reads (set_boxes).
+   The type is already in the pixels, so no font embedding — but the marks are
+   vectors, because a 0.25 pt hairline has to stay a hairline. */
+  function buildPDF(pages) {
+    const chunks = [];
+    let len = 0;
+    const off = [];
+    const push = (d) => {
+      const b = typeof d === 'string' ? ENC.encode(d) : d;
+      chunks.push(b);
+      len += b.length;
+    };
+    push(
+      new Uint8Array([
+        0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x34, 0x0a, 0x25, 0xe2, 0xe3, 0xcf, 0xd3, 0x0a,
+      ])
+    );
+    const n = pages.length,
+      ids = [];
+    for (let i = 0; i < n; i++) ids.push({ p: 3 + i * 3, c: 4 + i * 3, x: 5 + i * 3 });
+    off[1] = len;
+    push(`1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n`);
+    off[2] = len;
+    push(
+      `2 0 obj\n<< /Type /Pages /Count ${n} /Kids [${ids.map((o) => o.p + ' 0 R').join(' ')}] >>\nendobj\n`
+    );
+    const marks = marksOps();
+    const boxes =
+      `/TrimBox [${TX0.toFixed(4)} ${TY0.toFixed(4)} ${TX1.toFixed(4)} ${TY1.toFixed(4)}] ` +
+      `/BleedBox [${MARK.toFixed(4)} ${MARK.toFixed(4)} ` +
+      `${(PAGE_W - MARK).toFixed(4)} ${(PAGE_H - MARK).toFixed(4)}]`;
+    pages.forEach((pg, i) => {
+      const o = ids[i];
+      off[o.p] = len;
+      push(
+        `${o.p} 0 obj\n<< /Type /Page /Parent 2 0 R ` +
+          `/MediaBox [0 0 ${PAGE_W.toFixed(4)} ${PAGE_H.toFixed(4)}] ${boxes} ` +
+          `/Resources << /XObject << /Im0 ${o.x} 0 R >> >> /Contents ${o.c} 0 R >>\nendobj\n`
+      );
+      const stream =
+        `q ${CW.toFixed(4)} 0 0 ${CH.toFixed(4)} ${ART_X.toFixed(4)} ${ART_Y.toFixed(4)} cm /Im0 Do Q\n` +
+        marks +
+        '\n';
+      off[o.c] = len;
+      push(
+        `${o.c} 0 obj\n<< /Length ${ENC.encode(stream).length} >>\nstream\n${stream}endstream\nendobj\n`
+      );
+      off[o.x] = len;
+      push(
+        `${o.x} 0 obj\n<< /Type /XObject /Subtype /Image /Width ${pg.w} /Height ${pg.h} ` +
+          `/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${pg.bytes.length} >>\nstream\n`
+      );
+      push(pg.bytes);
+      push('\nendstream\nendobj\n');
+    });
+    const xref = len,
+      total = 2 + n * 3;
+    let x = `xref\n0 ${total + 1}\n0000000000 65535 f \n`;
+    for (let i = 1; i <= total; i++) x += String(off[i]).padStart(10, '0') + ' 00000 n \n';
+    x += `trailer\n<< /Size ${total + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    push(x);
+    const out = new Uint8Array(len);
+    let at = 0;
+    chunks.forEach((c) => {
+      out.set(c, at);
+      at += c.length;
+    });
+    return out;
+  }
+
+  let DECK_BUSY = false;
+  async function buildDeck() {
+    if (DECK_BUSY) return;
+    const words = deckWordList();
+    const say = (m) => {
+      $('deckStatus').textContent = m;
+    };
+    if (words.length < 4) {
+      say('Paste at least four words.');
+      return;
+    }
+    const dl = await claude.use('downloads');
+    if (!dl) {
+      say('This view cannot hand you a file.');
+      return;
+    }
+    DECK_BUSY = true;
+    $('deckGo').disabled = true;
+    try {
+      const cards = dealCards(words);
+      const dpi = +$('deckDpi').value;
+      const sheets = [];
+      const perFront = BACKS.length > 1; // a back of its own for every front
+      for (let i = 0; i < cards.length; i++) {
+        if (i % 4 === 0) say(`card ${i + 1} of ${cards.length}…`);
+        const png = await rasterise(deckPage(cards[i], FRONTS[i % FRONTS.length]), dpi);
+        sheets.push({ bytes: new Uint8Array(await png.blob.arrayBuffer()), w: png.w, h: png.h });
+        if (perFront) {
+          const b = await rasterise(deckPage(null, BACKS[i % BACKS.length]), dpi);
+          sheets.push({ bytes: new Uint8Array(await b.blob.arrayBuffer()), w: b.w, h: b.h });
+        }
+      }
+      if (!perFront) {
+        say('the back…');
+        const bpng = await rasterise(deckPage(null, BACKK), dpi);
+        sheets.push({ bytes: new Uint8Array(await bpng.blob.arrayBuffer()), w: bpng.w, h: bpng.h });
+      }
+      const pdf = buildPDF(sheets);
+      const mb = (pdf.length / 1048576).toFixed(1);
+      if (pdf.length > 16 * 1048576) {
+        say(`${mb} MB — over the 16 MB limit. Drop the resolution and try again.`);
+        return;
+      }
+      const held = $('deckCaps').textContent.startsWith('Ceilings')
+        ? ' — with the ceilings above in force'
+        : '';
+      say(
+        `${cards.length} cards, ${sheets.length} pages, ${mb} MB${held} — waiting for you to accept…`
+      );
+      const slug = (LIVE.slug || TPL.key).replace(/[^a-z0-9-]+/gi, '-').toLowerCase();
+      await dl.save({ filename: `dugri-${slug}-proof.pdf`, data: pdf });
+      say(`Saved. ${sheets.length} pages for ${cards.length} cards, from ${words.length} words.`);
+    } catch (err) {
+      const code = err && err.code;
+      say(
+        code === 'declined'
+          ? 'You said no — nothing was saved.'
+          : code === 'extension_not_enabled'
+            ? 'PDFs are not enabled for this view.'
+            : code === 'too_large'
+              ? 'Too large — drop the resolution and try again.'
+              : code === 'rate_limited'
+                ? 'A save prompt is already open. Try again in a moment.'
+                : (err && err.message) || 'That did not work.'
+      );
+    } finally {
+      DECK_BUSY = false;
+      $('deckGo').disabled = false;
+    }
+  }
+  /* WHAT IS HOLDING THE DECK DOWN, said where the deck is built. A ceiling set
+   while trying a size is invisible by the time you reach this button — one nudge
+   in Try a size took a real deck from 24.5 to 8.0 and nothing on the way said so. */
+  function deckCaps() {
+    const on = [];
+    if ($('capOn').checked)
+      on.push('words ' + r2(+$('capHe').value) + ' · english ' + r2(+$('capEn').value));
+    if ($('tCapOn').checked)
+      on.push('front title ' + r2(+$('tCapEn').value) + ' / ' + r2(+$('tCapHe').value));
+    if (HAS_BACK_TITLE && $('bCapOn').checked)
+      on.push('back title ' + r2(+$('bCapEn').value) + ' / ' + r2(+$('bCapHe').value));
+    const e = $('deckCaps');
+    e.innerHTML = on.length
+      ? '<b style="color:var(--over)">Ceilings are holding this deck down:</b> ' +
+        on.join(' · ') +
+        '. Every card prints at those sizes or under, however much room its box has.'
+      : 'No ceilings are set — every card takes whatever its box gives.';
+  }
+  function deckCount() {
+    const w = deckWordList();
+    const cards = Math.ceil(w.length / 4);
+    $('deckCount').textContent = w.length
+      ? `${w.length} words after duplicates → ${cards} cards → ${cards + 1} pages, one card each`
+      : 'One word per line.';
+  }
+
+  /* TRY A SIZE AND THE CEILINGS ARE ONE NUMBER.
+   A size settled by hand here is the size she wants held, so it goes straight to
+   the matching ceiling — switched on, because a number nobody is enforcing is
+   not a decision — and comes back clamped, so the two can never disagree about
+   what the box allows. Moving a ceiling on the panel mirrors the other way. */
+  const MIRROR = { tryHe: 'capHe', tryEn: 'capEn' };
+  function tryScript() {
+    return titleLines(wallSpec() || $('tName').value).heb;
+  }
+  function mirrorFromTry(id) {
+    const heb = tryScript();
+    const to =
+      MIRROR[id] ||
+      (id === 'tryT'
+        ? heb
+          ? 'tCapHe'
+          : 'tCapEn'
+        : id === 'tryB'
+          ? heb
+            ? 'bCapHe'
+            : 'bCapEn'
+          : null);
+    if (!to) return;
+    const on = to.startsWith('tCap') ? 'tCapOn' : to.startsWith('bCap') ? 'bCapOn' : 'capOn';
+    if (!$(on).checked) {
+      $(on).checked = true;
+      capRows();
+    }
+    setR(to, +$(id).value);
+  }
+  function mirrorToTry(id) {
+    const heb = tryScript();
+    const back =
+      { capHe: 'tryHe', capEn: 'tryEn' }[id] ||
+      ((id === 'tCapHe' && heb) || (id === 'tCapEn' && !heb)
+        ? 'tryT'
+        : (id === 'bCapHe' && heb) || (id === 'bCapEn' && !heb)
+          ? 'tryB'
+          : null);
+    if (back) setR(back, +$(id).value);
+  }
+  /** After the box has had its say, both ends show the number that will print. */
+  function reMirror() {
+    ['capHe', 'capEn', 'tCapEn', 'tCapHe', 'bCapEn', 'bCapHe'].forEach(mirrorToTry);
+  }
+
+  /* ---------- the wall ---------- */
+  let LAST = {};
+  function paint() {
+    if (typeof askThePress === 'function') askThePress();
+    const words = [0, 1, 2, 3].map((i) => $('w' + i).value.trim());
+    let fit = wordFit(words, SEL);
+    // The bounds are read BEFORE any ceiling is applied, so clamping the sliders
+    // to them cannot chase its own tail; only a clamp that actually moved a value
+    // needs the fit taken again.
+    const pulled = ['capHe', 'capEn', 'wPin', 'enSize']
+      .map((id) => capMax(id, fit.hBind))
+      .some(Boolean);
+    if (pulled) fit = wordFit(words, SEL);
+    const NM = scriptNames();
+    const tallestFor = (nm) =>
+      Math.max(...FRONTS.map((k) => fitFor(S.titles[k], nm, FRONT_CAPS).capH));
+    const tEn = tallestFor(NM.en),
+      tHe = tallestFor(NM.he);
+    capMax('tCapEn', tEn);
+    capMax('tCapHe', tHe);
+    capMax('tPin', Math.max(tEn, tHe));
+    const bEn = HAS_BACK_TITLE ? fitFor(S.back, NM.en, BACK_CAPS).capH : 99;
+    const bHe = HAS_BACK_TITLE ? fitFor(S.back, NM.he, BACK_CAPS).capH : 99;
+    if (HAS_BACK_TITLE) {
+      capMax('bCapEn', bEn);
+      capMax('bCapHe', bHe);
+      capMax('bPin', Math.max(bEn, bHe));
+    }
+    // Remembered so switching a ceiling ON starts it exactly at the box, where it
+    // is holding nothing — turning it on must never move the type by itself.
+    BOUND.word = fit.hBind;
+    BOUND.lastWordSize = fit.he;
+    BOUND.titleEn = tEn;
+    BOUND.titleHe = tHe;
+    BOUND.backEn = bEn;
+    BOUND.backHe = bHe;
+    capRows();
+    const wall = $('wall');
+    wall.textContent = '';
+
+    FRONTS.forEach((k) => {
+      const slot = document.createElement('div');
+      slot.className = 'slot' + (k === SEL ? ' sel' : '');
+      slot.dataset.card = k;
+      const tf = titleFit(
+        S.titles[k],
+        +$('tPin').value,
+        !$('tFit').checked,
+        FRONT_CAPS,
+        wallSpec()
+      );
+      slot.innerHTML =
+        `<div class="head" data-pick="${k}"><span>card ${k}</span>` +
+        `<span class="sz">title ${r2(tf.size)}</span></div>`;
+      const svg = cardSVG(k);
+      const g = el('g', {});
+      const cfit = wordFit(words, k);
+      drawBox(g, S.band, 'band', cfit.bind);
+      drawWords(g, words, cfit);
+      drawBox(g, S.titles[k], 'title', tf.bind);
+      if (k === SEL) {
+        drawClear(g, clearRun(k, S.titles[k].y0, S.titles[k].y1), S.titles[k]);
+        cardRoom(k).forEach((y) =>
+          g.appendChild(
+            el('line', {
+              class: 'roomline',
+              x1: S.band.x0 * CW,
+              y1: r2(y),
+              x2: S.band.x1 * CW,
+              y2: r2(y),
+            })
+          )
+        );
+      }
+      drawTitle(g, S.titles[k], tf);
+      svg.appendChild(g);
+      slot.appendChild(svg);
+      const why = document.createElement('div');
+      why.className = 'why';
+      why.innerHTML =
+        `<span>words ${r2(cfit.he)}${cfit.capped ? ' <span class="c">at ceiling</span>' : ` held by <span class="b">${cfit.bind}</span>`}</span>` +
+        `<span>title ${tf.capped ? '<span class="c">at ceiling</span>' : `by <span class="b">${tf.bind}</span>`}</span>`;
+      slot.appendChild(why);
+      const cc = document.createElement('div');
+      cc.className = 'cc';
+      cc.innerHTML =
+        `<span class="cclab">centre</span>` +
+        `<button class="btn xs" data-centre="clear" data-k="${k}">in the clear</button>` +
+        `<button class="btn xs" data-centre="card" data-k="${k}">in the card</button>`;
+      slot.appendChild(cc);
+      wall.appendChild(slot);
+      LAST['t' + k] = tf;
+    });
+
+    const bw = $('backwall');
+    bw.textContent = '';
+    // Every back this template ships. A design may print one shared back or one
+    // per front, and it only carries a title where a box was calibrated for it.
+    BACKS.forEach((bk) => {
+      const bslot = document.createElement('div');
+      bslot.className = 'slot';
+      const bf = HAS_BACK_TITLE
+        ? titleFit(S.back, +$('bPin').value, !$('bFit').checked, BACK_CAPS, wallSpec())
+        : null;
+      bslot.innerHTML =
+        `<div class="head"><span>back ${bk}</span>` +
+        `<span class="sz">${bf ? 'title ' + r2(bf.size) : 'artwork'}</span></div>`;
+      const bsvg = cardSVG(bk);
+      const bg = el('g', {});
+      if (bf) {
+        drawBox(bg, S.back, 'back', bf.bind);
+        drawTitle(bg, S.back, bf);
+      }
+      bsvg.appendChild(bg);
+      bslot.appendChild(bsvg);
+      const bwhy = document.createElement('div');
+      bwhy.className = 'why';
+      bwhy.innerHTML = bf
+        ? `<span>${bf.capped ? '<span class="c">at its ceiling</span>' : `held by <span class="b">${bf.bind}</span>`}</span><span>${r2(bf.size)}</span>`
+        : `<span>artwork only — nothing personal is printed on this back</span>`;
+      bslot.appendChild(bwhy);
+      if (bf) {
+        const bcc = document.createElement('div');
+        bcc.className = 'cc';
+        bcc.innerHTML =
+          `<span class="cclab">centre</span>` +
+          `<button class="btn xs" data-centre="clear" data-k="back">in the clear</button>` +
+          `<button class="btn xs" data-centre="card" data-k="back">in the card</button>`;
+        bslot.appendChild(bcc);
+      }
+      bw.appendChild(bslot);
+      LAST.back = bf;
+    });
+    LAST.fit = fit;
+
+    const longest = (pick) =>
+      words
+        .filter(Boolean)
+        .filter(pick)
+        .sort((a, b) => widthAt(b, WFACE(), REF) - widthAt(a, WFACE(), REF))[0];
+    drawEg(
+      'capHeEg',
+      fit.rowW,
+      +$('capHe').value,
+      longest(hasHeb) || 'ריקודים',
+      WFACE(),
+      'word',
+      fit.fit
+    );
+    drawEg(
+      'capEnEg',
+      fit.rowW,
+      +$('capEn').value,
+      longest((w) => hasLat(w) && !hasHeb(w)) || 'Below deck',
+      WFACE(),
+      'word',
+      $('enMode').value === 'scale' ? fit.fit * +$('enScale').value : fit.en
+    );
+    const tl = titleLines(wallSpec()),
+      tb = S.titles[SEL];
+    const widest = (fam) =>
+      tl.lines.slice().sort((a, b) => widthAt(b, fam, REF) - widthAt(a, fam, REF))[0];
+    // Both scripts, side by side, whichever name happens to be typed: the widest
+    // line each one sets, in the face that one is actually printed in.
+    const lineFor = (nm, fam) =>
+      titleLines(nm)
+        .lines.slice()
+        .sort((a, b) => widthAt(b, fam, REF) - widthAt(a, fam, REF))[0];
+    const tbw = (tb.x1 - tb.x0) * CW,
+      bbw = (S.back.x1 - S.back.x0) * CW;
+    // The widest LINE is what sets the size, and on this template that is "WELCOME"
+    // for either script — a Hebrew name drops the whole title into Aharoni, English
+    // words included. So the strip shows that line, and the caption says whose
+    // title it is and which face it landed in.
+    const sample = (nm, fam) =>
+      `<bdi dir="ltr">${esc(titleLines(nm).lines.join(' '))}</bdi> · ` +
+      (fam === 'TplTitle' ? 'Sprite Graffiti' : 'Aharoni');
+    drawEg(
+      'tCapEnEg',
+      tbw,
+      +$('tCapEn').value,
+      lineFor(NM.en, 'TplTitle'),
+      'TplTitle',
+      'title',
+      fitFor(S.titles[SEL], NM.en, FRONT_CAPS).fit,
+      sample(NM.en, 'TplTitle')
+    );
+    drawEg(
+      'tCapHeEg',
+      tbw,
+      +$('tCapHe').value,
+      lineFor(NM.he, WFACE()),
+      WFACE(),
+      'title',
+      fitFor(S.titles[SEL], NM.he, FRONT_CAPS).fit,
+      sample(NM.he, WFACE())
+    );
+    if (HAS_BACK_TITLE) {
+      drawEg(
+        'bCapEnEg',
+        bbw,
+        +$('bCapEn').value,
+        lineFor(NM.en, 'TplTitle'),
+        'TplTitle',
+        'title',
+        fitFor(S.back, NM.en, BACK_CAPS).fit,
+        sample(NM.en, 'TplTitle')
+      );
+      drawEg(
+        'bCapHeEg',
+        bbw,
+        +$('bCapHe').value,
+        lineFor(NM.he, WFACE()),
+        WFACE(),
+        'title',
+        fitFor(S.back, NM.he, BACK_CAPS).fit,
+        sample(NM.he, WFACE())
+      );
+    }
+
+    shortCard();
+    tryPanel();
+    capState();
+    deckCount();
+    deckCaps();
+    reMirror();
+    readouts(fit);
+    writeJSON(fit);
+  }
+
+  function readouts(fit) {
+    const band = S.band;
+    const grew =
+      fit.bind === 'width'
+        ? 'Pull the <span class="bind">left or right</span> side to grow them. Taller does nothing yet.'
+        : fit.bind === 'height'
+          ? 'Open the <span class="bind">line gap</span> — or pull top/bottom — to grow them. Wider does nothing yet.'
+          : 'Pinned: the box only places the words.';
+    $('wRead').innerHTML =
+      `box   x <b>${r4(band.x0)}–${r4(band.x1)}</b>  y <b>${r4(band.y0)}–${r4(band.y1)}</b>\n` +
+      `row   <b>${r2(fit.rowW)}</b> wide · gap <b>${r2(fit.step)}</b> · lead <b>${r2(fit.lead)}</b>\n` +
+      `number takes <b>${r2(fit.mark * fit.he)}</b> of the row (digit column + gap)\n` +
+      `paper  y <b>${r2(cardRoom(SEL)[0])}</b>–<b>${r2(cardRoom(SEL)[1])}</b> read off card ${SEL} — what a wrap is paid for with\n` +
+      `width fit  <b>${r2(fit.wBind)}</b>${fit.wWord ? '  (<bdi>' + esc(fit.wWord) + '</bdi>)' : ''}\n` +
+      `height fit <b>${r2(fit.hBind)}</b> — the box's own maximum, whatever the word\n` +
+      `lines  <b>${Object.values(fit.layout || {}).reduce((a, l) => a + l.length, 0)}</b> on the card, wrapped as the press wraps\n` +
+      `words set at <b>${r2(fit.he)}</b>${fit.capped ? ' <span class="cap">— the hebrew ceiling</span>' : ''}` +
+      `, english <b>${r2(fit.en)}</b>${
+        fit.enCapped
+          ? ' <span class="cap">— capped</span>'
+          : fit.enSpilled
+            ? ' <span class="cap">— pulled in to the row</span>'
+            : ''
+      }\n` +
+      grew;
+
+    const tf =
+      LAST['t' + SEL] ||
+      titleFit(S.titles[SEL], +$('tPin').value, !$('tFit').checked, FRONT_CAPS, wallSpec());
+    const b = S.titles[SEL],
+      lv = levelState();
+    $('tScope').textContent = 'card ' + SEL;
+    $('tRead').innerHTML =
+      `box   x <b>${r4(b.x0)}–${r4(b.x1)}</b>  y <b>${r4(b.y0)}–${r4(b.y1)}</b>\n` +
+      `width fit  <b>${r2(tf.sizeW)}</b>\nheight fit <b>${r2(tf.sizeH)}</b>\n` +
+      `set at <b>${r2(tf.size)}</b>` +
+      (tf.capped
+        ? ' <span class="cap">— at the ' + (tf.heb ? 'hebrew' : 'english') + ' ceiling</span>'
+        : ' held by <span class="bind">' + tf.bind + '</span>') +
+      '\n' +
+      (lv.level
+        ? 'height  <b>level on all eight cards</b>'
+        : `height  <span class="cap">card${lv.off.length > 1 ? 's' : ''} ${lv.off.join(', ')} ` +
+          `sit${lv.off.length > 1 ? '' : 's'} at a different height</span> — nudge one up or down, or level them`);
+
+    const bf = LAST.back;
+    if (bf)
+      $('bRead').innerHTML =
+        `box   x <b>${r4(S.back.x0)}–${r4(S.back.x1)}</b>  y <b>${r4(S.back.y0)}–${r4(S.back.y1)}</b>\n` +
+        `set at <b>${r2(bf.size)}</b> held by <span class="bind">${bf.bind}</span>`;
+
+    const heb = titleLines(wallSpec()).heb;
+    $('heWarn').hidden = true;
+    $('heWarn').innerHTML = TPL.titleHasHebrew
+      ? ''
+      : heb
+        ? 'This title is Hebrew, and <b>Sprite Graffiti carries no Hebrew at all</b> — 0 of 27 letters. ' +
+          'It is previewed here in Aharoni. Until the template gets a <span class="k">title_font_alt</span>, ' +
+          'a Hebrew honoree prints as missing glyphs and the Hebrew ceiling has nothing to hold.'
+        : 'Set a Hebrew name above to see what the Hebrew ceiling is holding. Sprite Graffiti has no Hebrew letters, ' +
+          'so that preview stands in Aharoni.';
+  }
+
+  function writeJSON(fit) {
+    // The five decisions this bench exists to settle come FIRST — they are what
+    // she came here for; the geometry below is the same shape the template
+    // already stores.
+    const out = {
+      word_max_he: $('capOn').checked ? r2(+$('capHe').value) : null,
+      word_max_en: $('capOn').checked ? r2(+$('capEn').value) : null,
+      title_max_en: $('tCapOn').checked ? r2(+$('tCapEn').value) : null,
+      title_max_he: $('tCapOn').checked ? r2(+$('tCapHe').value) : null,
+      back_title_max_en: $('bCapOn').checked ? r2(+$('bCapEn').value) : null,
+      back_title_max_he: $('bCapOn').checked ? r2(+$('bCapHe').value) : null,
+      word_en:
+        $('enMode').value === 'exact'
+          ? { mode: 'exact', size: r2(+$('enSize').value) }
+          : $('enMode').value === 'free'
+            ? { mode: 'own-fit' }
+            : { mode: 'scale', word_alt_scale: r2(+$('enScale').value) },
+      word_en_drags_card: $('enDrag').checked,
+
+      theme: TPL.key,
+      card_viewbox: LIVE.card_viewbox,
+      word_size: $('wFit').checked ? null : r2(+$('wPin').value),
+      word_font: LIVE.word_font,
+      word_font_alt: LIVE.word_font_alt,
+      title_font: LIVE.title_font,
+      title_font_alt: LIVE.title_font_alt,
+      word_bold: $('wBold').checked,
+      word_pitch: r2(pitchUnits()),
+      word_lead: r2(+$('wPitch').value) /* the gap as a multiple of the size */,
+      word_wrap_pitch: r2(+$('wTight').value) /* not in the generator yet */,
+      title_style: {
+        ...TS,
+        align: $('tAlign').value,
+        leading: r2(+$('tLead').value),
+        size: $('tFit').checked ? null : r2(+$('tPin').value),
+        back_size: $('bFit').checked ? null : r2(+$('bPin').value),
+      },
+      card_slots: {
+        words: rowCentres().map((cy) => ({
+          x0: r4(S.band.x0),
+          y0: r4((cy - fit.step * ROW_TOP) / CH),
+          x1: r4(S.band.x1),
+          y1: r4((cy + fit.step * ROW_BOT) / CH),
+        })),
+        titles: Object.fromEntries(
+          FRONTS.map((k) => [
+            k,
+            {
+              x0: r4(S.titles[k].x0),
+              y0: r4(S.titles[k].y0),
+              x1: r4(S.titles[k].x1),
+              y1: r4(S.titles[k].y1),
+            },
+          ])
+        ),
+      },
+      back: {
+        ...LIVE.back,
+        frac: { x0: r4(S.back.x0), y0: r4(S.back.y0), x1: r4(S.back.x1), y1: r4(S.back.y1) },
+      },
+    };
+    LAST_OUT = out;
+    // One box per line: forty boxes down the page is a wall nobody reads.
+    const text = JSON.stringify(out, null, 2).replace(
+      /\{\s*\n\s*"x0": ([-\d.]+),\s*\n\s*"y0": ([-\d.]+),\s*\n\s*"x1": ([-\d.]+),\s*\n\s*"y1": ([-\d.]+)\s*\n\s*\}/g,
+      '{ "x0": $1, "y0": $2, "x1": $3, "y1": $4 }'
+    );
+    $('json').textContent = text;
+  }
+
+  /* ============================================================
+   dragging — move, and grow one side at a time
+   ============================================================ */
+  let DRAG = null;
+  document.addEventListener('pointerdown', (e) => {
+    const hit = e.target.closest('.hit');
+    if (!hit) return;
+    const svg = hit.closest('svg'),
+      key = svg.dataset.card;
+    const kind = hit.dataset.box;
+    const box = kind === 'band' ? S.band : kind === 'back' ? S.back : S.titles[key];
+    if (!box) return;
+    if (kind === 'title' && key !== SEL) SEL = key;
+    const r = svg.getBoundingClientRect();
+    DRAG = { kind, key, rect: r, sx: e.clientX, sy: e.clientY, box: { ...box }, h: hit.dataset.h };
+    svg.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!DRAG) return;
+    const dx = (e.clientX - DRAG.sx) / DRAG.rect.width;
+    const dy = (e.clientY - DRAG.sy) / DRAG.rect.height;
+    const b = { ...DRAG.box },
+      h = DRAG.h;
+    const MINW = 0.05,
+      MINH = 0.025;
+    if (h === 'move') {
+      const w = b.x1 - b.x0,
+        ht = b.y1 - b.y0;
+      b.x0 = clamp(b.x0 + dx, -0.2, 1.2 - w);
+      b.x1 = b.x0 + w;
+      b.y0 = clamp(b.y0 + dy, -0.2, 1.2 - ht);
+      b.y1 = b.y0 + ht;
+    } else {
+      if (h.includes('w')) b.x0 = Math.min(b.x1 - MINW, b.x0 + dx);
+      if (h.includes('e')) b.x1 = Math.max(b.x0 + MINW, b.x1 + dx);
+      if (h.includes('n')) b.y0 = Math.min(b.y1 - MINH, b.y0 + dy);
+      if (h.includes('s')) b.y1 = Math.max(b.y0 + MINH, b.y1 + dy);
+    }
+    applyBox(DRAG.kind, DRAG.key, b, DRAG.h !== 'move');
+    paint();
+  });
+  document.addEventListener('pointerup', () => {
+    if (DRAG) {
+      DRAG = null;
+      saveState();
+    }
+  });
+  document.addEventListener('pointercancel', () => {
+    DRAG = null;
+  });
+
+  function applyBox(kind, key, b, resizing) {
+    if (kind === 'band') {
+      S.band = b;
+      return;
+    }
+    if (kind === 'back') {
+      S.back = b;
+      return;
+    }
+    // A title's HEIGHT — where it sits down the card, and how tall it is — is one
+    // answer for the whole template: the eight fronts are the same card printed
+    // eight ways, and a title that rides at a different height on each of them
+    // reads as a mistake. So a vertical move carries to every card. Only the
+    // SIDE-TO-SIDE stays this card's own, because the artwork it has to clear is
+    // in a different place on each one. The lock hands that over too.
+    const w = b.x1 - b.x0,
+      h = b.y1 - b.y0;
+    const locked = $('tLock').checked;
+    FRONTS.forEach((k) => {
+      if (k === key) {
+        S.titles[k] = b;
+        return;
+      }
+      const cur = S.titles[k];
+      const cx = (cur.x0 + cur.x1) / 2;
+      if (resizing) S.titles[k] = { x0: cx - w / 2, x1: cx + w / 2, y0: b.y0, y1: b.y1 };
+      else if (locked) S.titles[k] = { ...b };
+      else S.titles[k] = { x0: cur.x0, x1: cur.x1, y0: b.y0, y1: b.y1 };
+    });
+  }
+
+  /** Do all eight fronts hang their title at the same height — and if not, which
+   *  ones are the exceptions? Measured against the MAJORITY height, not against
+   *  whichever card happens to be selected: the odd ones out are the news. */
+  function levelState() {
+    const tally = {};
+    FRONTS.forEach((k) => {
+      const key = r4(S.titles[k].y0) + ':' + r4(S.titles[k].y1);
+      (tally[key] = tally[key] || []).push(k);
+    });
+    const groups = Object.values(tally).sort((a, b) => b.length - a.length);
+    const off = groups
+      .slice(1)
+      .flat()
+      .sort((a, b) => +a - +b);
+    return { level: groups.length === 1, off, common: groups[0] };
+  }
+
+  /* ============================================================
+   wiring
+   ============================================================ */
+  document.addEventListener('input', (e) => {
+    const t = e.target;
+    if (t.matches('input[type=range]')) {
+      const o = $(t.id + 'V');
+      if (o) o.textContent = num(t.id, t.value);
+    }
+    if (/^try(He|En|T|B)$/.test(t.id)) mirrorFromTry(t.id);
+    if (/^(cap|tCap|bCap)(He|En)$/.test(t.id)) mirrorToTry(t.id);
+    paint();
+    saveState();
+  });
+  document.addEventListener('change', (e) => {
+    // A change of face invalidates every measurement taken against the old one.
+    // Switching to her own words starts from what is on the cards right now, so the
+    // first thing she sees is the title she already had, editable.
+    if (e.target.id === 'titleMode' && e.target.value === 'own')
+      $('titleText').value = titleLines().lines.join('\n');
+    if (['capOn', 'tCapOn', 'bCapOn'].includes(e.target.id)) capToggled(e.target.id);
+    syncHidden();
+    paint();
+    saveState();
+  });
+  document.addEventListener('click', (e) => {
+    const pick = e.target.closest('[data-pick]');
+    if (pick) {
+      SEL = pick.dataset.pick;
+      paint();
+      return;
+    }
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.name) {
+      $('name').value = b.dataset.name;
+      paint();
+    }
+    if (b.dataset.words) {
+      SAMPLES[b.dataset.words].forEach((w, i) => {
+        $('w' + i).value = w;
+      });
+      paint();
+    }
+    if (b.dataset.title) {
+      const t = S.titles[SEL];
+      if (b.dataset.title === 'level')
+        FRONTS.forEach((k) => {
+          S.titles[k] = { ...S.titles[k], y0: t.y0, y1: t.y1 };
+        });
+      if (b.dataset.title === 'copy')
+        FRONTS.forEach((k) => {
+          S.titles[k] = { ...t };
+        });
+      paint();
+    }
+    if (b.dataset.centre) {
+      const k = b.dataset.k;
+      if (k !== 'back' && k !== SEL) SEL = k;
+      if (!centreTitle(k, b.dataset.centre) && b.dataset.centre === 'clear')
+        $('copied').textContent = 'nothing clear to centre in there';
+      paint();
+    }
+    if (b.dataset.capchip) {
+      const c = $(b.dataset.capchip);
+      c.checked = !c.checked;
+      capToggled(b.dataset.capchip);
+      paint();
+    }
+    if (b.id === 'deckMaya') {
+      $('deckWords').value = MAYA_WORDS.join('\n');
+      paint();
+    }
+    if (b.id === 'deckClear') {
+      $('deckWords').value = '';
+      paint();
+    }
+    if (b.id === 'capsOff') {
+      ['capOn', 'tCapOn', 'bCapOn'].forEach((id) => {
+        $(id).checked = false;
+      });
+      capRows();
+      paint();
+    }
+    if (b.id === 'deckGo') {
+      buildDeck();
+    }
+    if (b.id === 'tryPull') {
+      [0, 1, 2, 3].forEach((i) => {
+        $('t' + i).value = $('w' + i).value;
+      });
+      $('tName').value = $('name').value;
+      paint();
+    }
+    if (b.dataset.adopt) {
+      const a = b.dataset.adopt;
+      const on = (id) => {
+        $(id).checked = true;
+        capRows();
+      };
+      if (a === 'words') {
+        on('capOn');
+        setR('capHe', +$('tryHe').value);
+        setR('capEn', +$('tryEn').value);
+      }
+      // the size was tried on ONE name, so it becomes that name's script's ceiling
+      const heb = titleLines(wallSpec() || $('tName').value).heb;
+      if (a === 'title') {
+        on('tCapOn');
+        setR(heb ? 'tCapHe' : 'tCapEn', +$('tryT').value);
+      }
+      if (a === 'back') {
+        on('bCapOn');
+        setR(heb ? 'bCapHe' : 'bCapEn', +$('tryB').value);
+      }
+      paint();
+    }
+    if (b.id === 'reset') {
+      forgetState();
+      resetAll();
+      applyPreset();
+      paint();
+      $('kept').textContent =
+        typeof PRESET !== 'undefined' ? 'your saved numbers' : 'production numbers';
+    }
+    saveState();
+    if (b.id === 'copy' || b.id === 'copy2') {
+      navigator.clipboard.writeText($('json').textContent).then(
+        () => {
+          $('copied').textContent = 'copied';
+          setTimeout(() => {
+            $('copied').textContent = '';
+          }, 1600);
+        },
+        () => {
+          $('copied').textContent = 'select the block and copy';
+        }
+      );
+    }
+  });
+
+  /* ============================================================
+   YOUR NUMBERS, KEPT
+   ------------------------------------------------------------
+   Every box you drag, every slider, every switch, the title you type and the
+   word list are written to this browser the moment they change, and read back
+   when the page opens. Republishing does not touch them: the store belongs to
+   the viewer, not to the file. "reset to live" is the one thing that clears it.
+   ============================================================ */
+  let STORE;
+  const PRESET_V = (typeof PRESET !== 'undefined' && PRESET.v) || 0;
+  const FIELDS = () => [...document.querySelectorAll('input[id], select[id], textarea[id]')];
+  function saveState() {
+    try {
+      const f = {};
+      FIELDS().forEach((e) => {
+        if (e.type === 'checkbox') f[e.id] = e.checked;
+        else if (
+          e.type === 'range' ||
+          e.type === 'text' ||
+          e.tagName === 'SELECT' ||
+          e.tagName === 'TEXTAREA'
+        )
+          f[e.id] = e.value;
+      });
+      localStorage.setItem(STORE, JSON.stringify({ v: 1, pv: PRESET_V, f, S, SEL }));
+    } catch (err) {
+      /* private window, or full — the page still works */
+    }
+  }
+  function loadState() {
+    let raw = null;
+    try {
+      raw = localStorage.getItem(STORE);
+    } catch (err) {
+      return false;
+    }
+    if (!raw) return false;
+    let d;
+    try {
+      d = JSON.parse(raw);
+    } catch (err) {
+      return false;
+    }
+    if (!d || d.v !== 1 || !d.f) return false;
+    // Numbers shipped WITH the template are newer than anything this browser was
+    // holding from before they arrived — otherwise a stale store silently swallows
+    // the very measurements she just handed over.
+    if ((d.pv || 0) !== PRESET_V) return false;
+    if (d.S && d.S.band && d.S.titles && d.S.back) S = d.S;
+    if (d.SEL && S.titles[d.SEL]) SEL = d.SEL;
+    FIELDS().forEach((e) => {
+      if (!(e.id in d.f)) return;
+      const v = d.f[e.id];
+      if (e.type === 'checkbox') e.checked = !!v;
+      else {
+        e.value = v;
+        const o = $(e.id + 'V');
+        if (o) o.textContent = num(e.id, e.value);
+      }
+    });
+    syncHidden();
+    capRows();
+    return true;
+  }
+  /* NUMBERS SHE HAS ALREADY SETTLED, shipped with the template. They are the
+   starting point and what "reset to live" returns to — her measurements are not
+   something a republish is allowed to throw away. Her own browser store still
+   wins over these; this is only the floor. */
+  function applyPreset() {
+    const P = typeof PRESET !== 'undefined' ? PRESET : null;
+    if (!P) return;
+    const cs = P.card_slots || {};
+    if (cs.words && cs.words.length) S.band = bandFromSlots(cs.words);
+    if (cs.titles)
+      FRONTS.forEach((k) => {
+        if (cs.titles[k]) S.titles[k] = { ...cs.titles[k] };
+      });
+    if (P.back && P.back.frac) S.back = { ...P.back.frac };
+    const ts = P.title_style || {};
+    if (ts.leading) setR('tLead', ts.leading);
+    if (ts.align) $('tAlign').value = ts.align;
+    if (ts.size) {
+      $('tFit').checked = false;
+      setR('tPin', ts.size);
+    }
+    if (ts.back_size) {
+      $('bFit').checked = false;
+      setR('bPin', ts.back_size);
+    }
+    if (P.word_size) {
+      $('wFit').checked = false;
+      setR('wPin', P.word_size);
+    }
+    if (typeof P.word_bold === 'boolean') $('wBold').checked = P.word_bold;
+    if (P.word_wrap_pitch) setR('wTight', P.word_wrap_pitch);
+    if (P.word_lead) setR('wPitch', P.word_lead);
+    else if (P.word_pitch) STEP = P.word_pitch; // resolved on the first fit
+    const en = P.word_en || {};
+    if (en.mode) {
+      $('enMode').value = en.mode;
+    }
+    if (en.word_alt_scale) setR('enScale', en.word_alt_scale);
+    if (en.size) setR('enSize', en.size);
+    if (typeof P.word_en_drags_card === 'boolean') $('enDrag').checked = P.word_en_drags_card;
+    const caps = [
+      ['word_max_he', 'capHe', 'capOn'],
+      ['word_max_en', 'capEn', 'capOn'],
+      ['title_max_en', 'tCapEn', 'tCapOn'],
+      ['title_max_he', 'tCapHe', 'tCapOn'],
+      ['back_title_max_en', 'bCapEn', 'bCapOn'],
+      ['back_title_max_he', 'bCapHe', 'bCapOn'],
+    ];
+    caps.forEach(([f, id, on]) => {
+      if (P[f] == null) return;
+      if ($(id)) {
+        $(id).max = Math.max(+$(id).max || 0, P[f]);
+        setR(id, P[f]);
+      }
+      if ($(on)) $(on).checked = true;
+    });
+    syncHidden();
+    capRows();
+  }
+
+  function forgetState() {
+    try {
+      localStorage.removeItem(STORE);
+    } catch (err) {
+      /* nothing to forget */
+    }
+  }
+
+  /* ---------- what the press says ---------- */
+  /* Sizes agree to well inside a tenth of a unit when the two engines agree at all;
+   anything past this is drift, and drift is the bug this readout exists to catch. */
+  const PRESS_TOL = 0.25;
+  let pressAsk = 0;
+
+  function pressWords() {
+    return [0, 1, 2, 3].map((i) => ($('w' + i) || {}).value || '').filter(Boolean);
+  }
+
+  /* Debounced: a drag fires this on every frame otherwise, and the answer costs a
+   python start. The last ask wins — an older reply that lands late is dropped. */
+  function askThePress() {
+    const mine = ++pressAsk;
+    const el = $('pressSays');
+    if (!el || !LAST_OUT) return;
+    clearTimeout(askThePress._t);
+    askThePress._t = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          withKey('/api/admin/templates/' + encodeURIComponent(TPL.key) + '/typefit'),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ words: pressWords(), overrides: LAST_OUT }),
+          }
+        );
+        if (mine !== pressAsk) return;
+        const d = await r.json();
+        if (d.error) {
+          el.textContent = 'the press: ' + d.error;
+          el.className = 'pressbad';
+          return;
+        }
+        const mineSize = BOUND.lastWordSize;
+        const off = mineSize != null ? Math.abs(d.word_size - mineSize) : 0;
+        el.textContent =
+          'the press sets ' +
+          d.word_size.toFixed(2) +
+          (mineSize == null
+            ? ''
+            : off <= PRESS_TOL
+              ? ' — this page agrees'
+              : ' — THIS PAGE SAYS ' + mineSize.toFixed(2) + ', which is drift');
+        el.className = off <= PRESS_TOL ? 'pressok' : 'pressbad';
+      } catch (err) {
+        if (mine === pressAsk) {
+          el.textContent = 'the press: ' + err.message;
+          el.className = 'pressbad';
+        }
+      }
+    }, 400);
+  }
+
+  function initFromLive() {
+    CW = LIVE.card_viewbox.w;
+    CH = LIVE.card_viewbox.h;
+    FRONTS = LIVE.card_fronts.map(String);
+    BACKS = TPL.backs && TPL.backs.length ? TPL.backs.map(String) : ['1'];
+    HAS_BACK_TITLE = !!(TPL.backTitle && LIVE.back && LIVE.back.frac);
+    TS = LIVE.title_style;
+    LIVE_BAND = bandFromSlots(LIVE.card_slots.words);
+    STEP = LIVE.word_pitch || 24;
+    SAMPLE_EN = TPL.sampleEn || 'MAYA';
+    SAMPLE_HE = TPL.sampleHe || 'מיה';
+    STORE = 'dugri-bench-' + TPL.key;
+    BACKK = BACKS[0];
+    SEL = FRONTS[0];
+    NAT_X = (CW - TRIM_W) / 2;
+    NAT_Y = (CH - TRIM_H) / 2;
+    ART_X = (PAGE_W - CW) / 2;
+    ART_Y = (PAGE_H - CH) / 2;
+  }
+
+  /* ============================================================================
+   THE SCREEN AS A TOOL, not a document.
+
+   This page began as a one-off bench to settle one template, read top to bottom
+   once. It is now the thing that writes type into production, opened again and
+   again — and the two want opposite things from a layout. What follows is only
+   about that difference:
+
+     * UNSAVED WORK IS THE EXPENSIVE MISTAKE HERE. Everything tuned on this page
+       lived in one browser until today, and it has already been lost twice. So
+       the page now knows when it is dirty, says so, refuses to leave quietly,
+       and takes Cmd/Ctrl-S like anything else that holds work.
+     * THE PROSE IS FOR THE FIRST VISIT. After that it is between her and the
+       controls, so it folds away and stays folded.
+     * ELEVEN SECTIONS IN ONE SCROLL need a way across.
+   ============================================================================ */
+  let DIRTY = false;
+
+  function markDirty(on) {
+    DIRTY = !!on;
+    const b = $('saveSite');
+    if (b && !b.disabled) {
+      b.textContent = DIRTY ? 'שמירה לאתר •' : 'שמירה לאתר';
+      b.classList.toggle('urgent', DIRTY);
+    }
+    const s = $('dirtyNote');
+    if (s) s.textContent = DIRTY ? 'יש שינויים שלא נשמרו' : '';
+  }
+
+  function uxPass() {
+    /* ---- unsaved work ---- */
+    // Any control, and any box that was dragged: both are "she changed something".
+    document.addEventListener('input', () => markDirty(true), true);
+    document.addEventListener('change', () => markDirty(true), true);
+    document.addEventListener(
+      'pointerup',
+      (e) => {
+        if (e.target && e.target.closest && e.target.closest('.slot')) markDirty(true);
+      },
+      true
+    );
+
+    addEventListener('beforeunload', (e) => {
+      if (!DIRTY) return;
+      e.preventDefault();
+      e.returnValue = '';
+    });
+
+    addEventListener('keydown', (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const b = $('saveSite');
+        if (b && !b.disabled) b.click();
+      }
+    });
+
+    const note = document.createElement('span');
+    note.id = 'dirtyNote';
+    note.className = 'dirtynote';
+    ($('saveSite') || {}).insertAdjacentElement &&
+      $('saveSite').insertAdjacentElement('beforebegin', note);
+
+    /* ---- switching template must not drop work ---- */
+    const pick = $('tplPick');
+    if (pick) {
+      let last = pick.value;
+      pick.addEventListener(
+        'change',
+        (e) => {
+          if (DIRTY && !confirm('יש שינויים שלא נשמרו בתבנית הזו. לעבור בכל זאת?')) {
+            e.stopImmediatePropagation();
+            pick.value = last;
+            return;
+          }
+          last = pick.value;
+        },
+        true
+      );
+    }
+
+    /* ---- the prose folds away ---- */
+    const LEAN = 'dugri-bench-lean';
+    const setLean = (on) => {
+      document.body.classList.toggle('lean', on);
+      try {
+        localStorage.setItem(LEAN, on ? '1' : '0');
+      } catch (err) {
+        /* private window */
+      }
+      const t = $('leanBtn');
+      if (t) {
+        t.textContent = on ? 'הסברים' : 'פחות טקסט';
+        t.setAttribute('aria-pressed', String(on));
+      }
+    };
+    const lean = document.createElement('button');
+    lean.className = 'btn xs';
+    lean.id = 'leanBtn';
+    lean.type = 'button';
+    lean.title = 'מסתיר את פסקאות ההסבר ומשאיר את הפקדים';
+    lean.addEventListener('click', () => setLean(!document.body.classList.contains('lean')));
+    let want = false;
+    try {
+      want = localStorage.getItem(LEAN) === '1';
+    } catch (err) {
+      /* fine */
+    }
+
+    /* ---- a way across eleven sections ---- */
+    const panel = document.querySelector('.panel');
+    const nav = document.createElement('nav');
+    nav.className = 'jump';
+    const heads = [...panel.querySelectorAll('section.grp > h2')];
+    heads.forEach((h, i) => {
+      const id = 'sec' + i;
+      h.parentNode.id = id;
+      const a = document.createElement('a');
+      a.href = '#' + id;
+      // The heading carries a scope tag in a <span> ("every card", "card 2"); the
+      // jump list wants the NAME only, or it reads "Title — back the back".
+      const bare = h.cloneNode(true);
+      bare.querySelectorAll('span').forEach((x) => x.remove());
+      a.textContent = bare.textContent.replace(/\s+/g, ' ').trim();
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        h.parentNode.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      nav.appendChild(a);
+    });
+    nav.appendChild(lean);
+    panel.insertBefore(nav, panel.firstChild);
+    setLean(want);
+  }
+
+  /* ---------- boot ---------- */
+  let LAST_OUT = null;
+
+  /* The fields a settings save may carry. word_lead and word_alt_scale are NOT
+   here: the generator reads word_alt_scale but the settings API cannot yet
+   store it (#521), and word_lead is the same spacing word_pitch already
+   carries, in relative units. Sending a field the API drops would report a save
+   that did not happen. */
+  const SAVEABLE = [
+    'word_max_he',
+    'word_max_en',
+    'title_max_en',
+    'title_max_he',
+    'back_title_max_en',
+    'back_title_max_he',
+    'word_pitch',
+    'word_size',
+    'title_style',
+    'card_slots',
+    'back',
+    'word_wrap_pitch',
+  ];
+
+  async function saveToSite(btn) {
+    if (!LAST_OUT) return;
+    const patch = {};
+    for (const f of SAVEABLE) if (f in LAST_OUT) patch[f] = LAST_OUT[f];
+    btn.disabled = true;
+    const was = btn.textContent;
+    btn.textContent = 'שומר…';
+    try {
+      const r = await fetch(
+        withKey('/api/admin/templates/' + encodeURIComponent(TPL.key) + '/settings'),
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        }
+      );
+      const body = await r.json().catch(() => ({}));
+      // A refusal is reported with the field that caused it, never swallowed —
+      // a silent save is how a number ends up only in this browser.
+      btn.textContent = r.ok ? 'נשמר ✓' : 'לא נשמר: ' + (body.error || r.status);
+      if (r.ok) {
+        LIVE =
+          (await apiJSON('/api/admin/templates/' + encodeURIComponent(TPL.key) + '/entry')).entry ||
+          LIVE;
+      }
+    } catch (err) {
+      btn.textContent = 'לא נשמר: ' + err.message;
+    }
+    setTimeout(() => {
+      btn.textContent = was;
+      btn.disabled = false;
+    }, 2600);
+  }
+
+  async function fitControls() {
+    const bar = $('copy').parentNode;
+    const says = document.createElement('span');
+    says.id = 'pressSays';
+    says.className = 'pressok';
+    says.textContent = 'asking the press…';
+    bar.appendChild(says);
+
+    const save = document.createElement('button');
+    save.className = 'btn solid';
+    save.id = 'saveSite';
+    save.textContent = 'שמירה לאתר';
+    save.title = 'כותב את המספרים האלה לתבנית עצמה';
+    save.addEventListener('click', () => saveToSite(save));
+    bar.insertBefore(save, $('copy'));
+
+    const list = (await apiJSON('/api/admin/templates')).templates || [];
+    const pick = document.createElement('select');
+    pick.className = 'sel';
+    pick.id = 'tplPick';
+    for (const t of list) {
+      const o = document.createElement('option');
+      o.value = t.key;
+      o.textContent = t.display_he || t.key;
+      if (t.key === TPL.key) o.selected = true;
+      pick.appendChild(o);
+    }
+    pick.addEventListener('change', () => {
+      location.search =
+        '?key=' + encodeURIComponent(ADMIN) + '&tpl=' + encodeURIComponent(pick.value);
+    });
+    bar.insertBefore(pick, bar.firstChild);
+  }
+
+  (async function boot() {
+    const want = Q.get('tpl');
+    try {
+      if (!want) {
+        const list = (await apiJSON('/api/admin/templates')).templates || [];
+        if (!list.length) throw new Error('no templates');
+        location.replace(
+          '?key=' + encodeURIComponent(ADMIN) + '&tpl=' + encodeURIComponent(list[0].key)
+        );
+        return;
+      }
+      await loadTemplate(want);
+      initFromLive();
+    } catch (err) {
+      document.body.innerHTML =
+        '<p style="padding:2rem;font:16px system-ui">לא הצלחתי לטעון את התבנית: ' +
+        err.message +
+        '</p>';
+      return;
+    }
+    shapePanel();
+    resetAll();
+    applyPreset();
+    const restored = loadState();
+    $('kept').textContent = restored
+      ? 'your numbers, kept'
+      : typeof PRESET !== 'undefined'
+        ? 'your saved numbers'
+        : 'production numbers';
+    try {
+      await Promise.all([
+        document.fonts.load('200px "TplWord"', 'אבג'),
+        document.fonts.load('200px "TplWordAlt"', 'ABCabc'),
+        document.fonts.load('200px "TplTitle"', 'ABC'),
+        document.fonts.load('200px "TplTitleAlt"', 'אבג'),
+      ]);
+      await document.fonts.ready;
+    } catch (err) {
+      /* measured against the fallback; the boxes are still exact */
+    }
+    measureMarker();
+    await loadInk();
+    await fitControls();
+    paint();
+    askThePress();
+    uxPass();
+    markDirty(false); // what just loaded IS what is saved
+    if (!restored) saveState();
+  })();
+</script>
