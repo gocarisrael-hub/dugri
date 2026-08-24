@@ -3726,6 +3726,21 @@ function templateImagePath(root, slug, slot) {
 // one source of truth for a role's path and kind, so read and write can never
 // disagree about which file a role names. Same containment check, for the same
 // reason: a role is a whitelisted id, never a path from the caller.
+// The EFFECTIVE entry for one template — shipped defaults with the owner's
+// overrides already merged, which is exactly what the generator reads.
+//
+// Neither existing route could answer this. /export is the owner LAYER only (it
+// exists to move overrides between environments), so a template the owner never
+// calibrated comes back absent; the status list is a fixed projection that omits
+// most of the type knobs. A calibration screen needs the whole entry or it edits
+// a template it cannot see.
+function templateEntry({ root, key }) {
+  const themes = loadThemes(themesPathFor(root));
+  const entry = ownTheme(themes, key);
+  if (!entry) return { error: 'template not found', httpStatus: 404 };
+  return { key, entry };
+}
+
 function readAsset({ root, key, role }) {
   const themes = loadThemes(themesPathFor(root));
   const entry = ownTheme(themes, key);
@@ -4134,6 +4149,7 @@ module.exports = {
   titleLinesFrom,
   replaceAsset,
   readAsset,
+  templateEntry,
   clearAsset,
   fontScriptCoverage,
   REMOVABLE_ROLES,

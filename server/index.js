@@ -4428,6 +4428,23 @@ app.post(
 // until now could only be repaired by hand-editing themes.json on the volume.
 // templates.clearAsset refuses every other role, so this cannot strip a template
 // of a font it needs to render.
+// Admin: the EFFECTIVE entry for one template — shipped defaults with the owner's
+// overrides merged, i.e. what the generator reads. The calibration screen needs the
+// whole entry; /export answers the owner layer only and the status list is a fixed
+// projection that omits most of the type knobs.
+app.get('/api/admin/templates/:key/entry', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = templates.templateEntry({ root: TEMPLATE_ROOT, key: req.params.key });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) return res.status(result.httpStatus || 400).json({ error: result.error });
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json(result);
+});
+
 // Admin: READ one of a template's asset files (the counterpart to the replace
 // route above). The role is a whitelisted id, never a path, and templates.readAsset
 // resolves it through the SAME table the writer uses, so the two can never point at
