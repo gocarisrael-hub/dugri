@@ -3128,6 +3128,29 @@ function updateTemplateSettings({ root, key, patch }) {
       return { error: 'word_alt_scale must be a positive number or null', httpStatus: 400 };
     }
   }
+  // HOW FAR APART THE LINES OF ONE WRAPPED ENTRY SIT, as a fraction of the step
+  // between entries (generator/config.word_wrap_pitch reads this exact name). A
+  // long phrase breaks over two lines, and how close the halves sit is what
+  // decides whether the card reads as four items or five.
+  //
+  // Bounded at 1: past the entry step a continuation sits further from its own
+  // first line than from the next entry, and the numbering stops meaning
+  // anything. The generator bounds it from BELOW by the ink floor (_card_lead,
+  // the tightest spacing at which no two letters touch), so no value here can be
+  // the reason two letters touch. Absent = that floor, which is what every deck
+  // printed to date has used.
+  if ('word_wrap_pitch' in p) {
+    if (p.word_wrap_pitch === null || p.word_wrap_pitch === '') {
+      changed.word_wrap_pitch = null;
+    } else if (isFiniteNum(p.word_wrap_pitch) && p.word_wrap_pitch > 0 && p.word_wrap_pitch <= 1) {
+      changed.word_wrap_pitch = p.word_wrap_pitch;
+    } else {
+      return {
+        error: 'word_wrap_pitch must be a number above 0 and at most 1, or null',
+        httpStatus: 400,
+      };
+    }
+  }
   // THE SIX CEILINGS. Optional, and null is a real answer meaning "no ceiling"
   // — the state every template ships in and every deck printed so far. Validated
   // like the other type numbers rather than trusted: they reach the generator as
@@ -3289,6 +3312,9 @@ function updateTemplateSettings({ root, key, patch }) {
   if ('word_pitch' in changed && changed.word_pitch === null) delete entry.word_pitch;
   // Same for word_alt_scale:null — "the house fraction", i.e. absent.
   if ('word_alt_scale' in changed && changed.word_alt_scale === null) delete entry.word_alt_scale;
+  // Same for word_wrap_pitch:null — "the ink floor", i.e. absent.
+  if ('word_wrap_pitch' in changed && changed.word_wrap_pitch === null)
+    delete entry.word_wrap_pitch;
   // Same for wordlist:null — "no pool named", i.e. fall back to the generic one.
   // Dropping the key rather than storing null keeps the owner entry readable as
   // the shipped entries are, and topup's `cfg.get("wordlist") or GENERIC` treats
