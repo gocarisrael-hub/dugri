@@ -50,6 +50,37 @@ app.use(express.json({ limit: '1mb' }));
 // PeleCard posts its server-side callback as a urlencoded form; accept both.
 app.use(express.urlencoded({ extended: false, limit: '1mb' }));
 
+// NOTHING MAY CACHE A JSON ANSWER FROM THIS SERVER.
+//
+// The pages were built to be un-stale: the HTML ships `no-cache`, the modules
+// are content-hashed and immutable, and Cloudflare reports DYNAMIC on every
+// document. But every /api answer went out with NO cache directive at all —
+// only a weak ETag. A response with no freshness information is not "don't
+// cache me", it is "you decide", and the caches that decide are the ones we
+// never see: in-app browsers (Instagram is where most of this shop's traffic
+// comes from), carrier proxies, a webview restored from disk. That is how a
+// shopper reloads the page, gets today's HTML, and still reads yesterday's
+// price out of /api/pricing — the reload she was told would fix it does not
+// touch a heuristically-fresh entry.
+//
+// These payloads are STATE, not assets: a price, a sale that has ended, which
+// designs exist, what the owner rewrote a minute ago. There is no version of
+// "slightly old" that is right for any of them, and they are all a few hundred
+// bytes, so there is nothing to save by allowing it.
+//
+// Hooked on res.json rather than mounted as a blanket header, because /api also
+// hands back FILES — template images, a produced PDF — and those genuinely
+// should be cached. An endpoint that has already chosen its own Cache-Control
+// keeps it.
+app.use('/api', (req, res, next) => {
+  const json = res.json.bind(res);
+  res.json = (body) => {
+    if (!res.get('Cache-Control')) res.set('Cache-Control', 'no-store');
+    return json(body);
+  };
+  next();
+});
+
 // Absolute base URL for the PeleCard return/callback URLs. We require an
 // explicit PUBLIC_BASE_URL and never derive it from request headers: a spoofed
 // Host header would otherwise redirect the payment callback to an attacker, so
