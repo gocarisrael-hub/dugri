@@ -31,6 +31,7 @@ const PAGES = [
   'collect.html',
   'options.html',
   'timer.html',
+  'pickup.html',
 ];
 
 // Pull every data-edit / -img / -bg / -photos / -pd key value out of a page.
@@ -98,6 +99,21 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'collect-ver-custom-title',
       'collect-ver-custom-note',
       'collect-ver-custom-note2',
+    ],
+    // The self-pickup page. Its hours are a TABLE of tagged cells rather than a
+    // picture of a timetable, so the owner can correct one closing time from the
+    // site itself — the thing most likely to change, and the thing a graphic
+    // would have frozen until someone re-exported it.
+    'pickup.html': [
+      'pickup-hero-heading',
+      'pickup-address-street',
+      'pickup-address-detail',
+      'pickup-hours-thu',
+      'pickup-hours-fri',
+      'pickup-bring-title',
+      'pickup-find-body',
+      'pickup-step-2',
+      'pickup-wait-body',
     ],
     'options.html': [
       'options-nav-designs',

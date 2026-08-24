@@ -77,6 +77,11 @@ describe('buyer confirmation — fulfilment + photo', () => {
     expect(msg.text).toContain('נעדכן אותך במייל'); // pickup_info.ready
     expect(msg.text).toContain('ימי עסקים'); // pickup_info.eta
     expect(msg.text).toContain('בית הדפוס'); // pickup_info.address default
+    // The address that used to end this block was a placeholder telling the OWNER
+    // to fill it in; it names the entrance and the floor now, and points at the
+    // page that holds the hours and what to bring.
+    expect(msg.text).toContain('התחייה 14'); // pickup_info.address
+    expect(msg.text).toContain('/pickup'); // pickup_info.link
   });
 
   it('the HTML uses the Assistant font, embeds the product photo, and carries the signature logo', () => {

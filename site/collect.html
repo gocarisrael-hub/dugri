@@ -1668,6 +1668,18 @@
         font-size: 13px;
         color: var(--muted);
       }
+      /* The pickup footnote sits on the same rail and at the same weight as the
+         remote-towns note it sits above — both are annotations on the option
+         they follow, not options themselves. */
+      .pickup-more {
+        margin: 8px 0 0 0;
+        margin-inline-start: 18px;
+        font-size: 13px;
+      }
+      .pickup-more a {
+        color: var(--muted);
+        text-decoration: underline;
+      }
       /* Indented to the same rail as the add-on it annotates (.pay-addon carries
          margin-inline-start: 18px), so it reads as attached to that block rather
          than to the option list above it. The add-delivery card overrides this
@@ -2638,6 +2650,17 @@
               >
             </span>
           </label>
+          <!-- OUTSIDE the label above, for the reason spelled out on the
+               remote-towns note further down: .pay-opt IS a <label>, so a click
+               anywhere inside it is forwarded to its radio. A link nested there
+               would change the buyer's selected version on her way to reading
+               about the pickup — she would come back to a different order than
+               she left. As a sibling it is just a footnote to the option. -->
+          <p class="pickup-more">
+            <a href="pickup.html" data-testid="pickup-details-link" data-edit="collect-pickup-more"
+              >פרטי האיסוף העצמי - כתובת, שעות ומה להביא</a
+            >
+          </p>
           <label class="pay-opt pay-opt-custom">
             <input type="radio" name="payVersion" value="custom" />
             <span class="opt-body">

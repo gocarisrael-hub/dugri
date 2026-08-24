@@ -32,16 +32,30 @@ describe('DEFAULT_FAQ — the shipped seed', () => {
     expect(validateFaq(DEFAULT_FAQ)).toBeNull();
   });
 
-  it('carries the five questions the home page ships, all enabled', () => {
-    expect(DEFAULT_FAQ).toHaveLength(5);
+  it('carries the six questions the home page ships, all enabled', () => {
+    expect(DEFAULT_FAQ).toHaveLength(6);
     expect(DEFAULT_FAQ.every((r) => r.enabled)).toBe(true);
     expect(DEFAULT_FAQ.map((r) => r.id)).toEqual([
       'what-is-it',
       'how-many-words',
       'when-delivered',
+      'where-to-pickup',
       'how-to-order',
       'business-orders',
     ]);
+  });
+
+  // "when do I get it" and "where do I go" are asked at different moments — the
+  // first before ordering, the second on the morning of the collection — so the
+  // pickup answer is its own question, and it carries the link to the page that
+  // holds the hours, the entrance and what to bring.
+  it('sends the pickup question to the pickup page', () => {
+    const q = DEFAULT_FAQ.find((r) => r.id === 'where-to-pickup');
+    expect(q).toBeTruthy();
+    expect(q.a).toContain('התחייה 14');
+    expect(q.a).toContain('כניסה B');
+    expect(q.link_url).toBe('/pickup');
+    expect(q.link_text).toBeTruthy();
   });
 
   // The bulk-order question is the FAQ half of the B2B contact line (the other

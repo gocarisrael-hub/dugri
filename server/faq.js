@@ -65,6 +65,19 @@ const DEFAULT_FAQ = [
     link_text: '',
     link_url: '',
   },
+  // Pickup gets its OWN question rather than a sentence bolted onto the timing
+  // answer: "when do I get it" and "where do I go and what do I bring" are asked
+  // at different moments — the first before ordering, the second on the morning
+  // of the collection — and the second one is the one people re-open the site to
+  // find.
+  {
+    id: 'where-to-pickup',
+    enabled: true,
+    q: 'איפה אוספים את המשחק?',
+    a: 'בבית הדפוס גלאור, התחייה 14 תל אביב - כניסה B, קומה ראשונה. פתוח ראשון עד חמישי; נעדכן אתכם ברגע שהמשחק מוכן, ואין טעם להגיע לפני ההודעה. בעמוד האיסוף יש שעות פתיחה מלאות, מה צריך להביא ואיך מוצאים את ההזמנה בכניסה.',
+    link_text: 'לעמוד האיסוף העצמי',
+    link_url: '/pickup',
+  },
   {
     id: 'how-to-order',
     enabled: true,

@@ -1,0 +1,427 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="pickup.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+    <script src="js/header.js" defer></script>
+    <script src="js/editor.js" defer></script>
+    <title>איסוף עצמי - דוגרי</title>
+    <meta
+      name="description"
+      content="כל פרטי האיסוף העצמי של דוגרי: בית הדפוס גלאור, התחייה 14 תל אביב, כניסה B קומה ראשונה. שעות פתיחה, מה צריך להביא ואיך מוצאים את ההזמנה."
+    />
+    <meta property="og:title" content="איסוף עצמי - דוגרי" />
+    <meta
+      property="og:description"
+      content="כתובת, שעות פתיחה, מה להביא ואיך מוצאים את ההזמנה בבית הדפוס."
+    />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#8ca287" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/header.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.65;
+        font-size: 17px;
+        -webkit-font-smoothing: antialiased;
+        /* clears the fixed .hdr */
+        padding-top: 62px;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+      h1,
+      h2,
+      h3 {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
+        line-height: 1.25;
+      }
+      /* --- hero ------------------------------------------------------------ */
+      .hero {
+        background: var(--section);
+        border-bottom: 1px solid var(--line);
+        padding: 34px 0 30px;
+        text-align: center;
+      }
+      .hero h1 {
+        font-size: clamp(30px, 7vw, 44px);
+      }
+      .hero .lede {
+        color: var(--muted);
+        margin: 10px auto 0;
+        max-width: 30em;
+      }
+      /* --- cards ----------------------------------------------------------- */
+      main {
+        padding: 26px 0 60px;
+      }
+      .card {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        border-radius: var(--radius);
+        padding: 20px;
+        margin: 0 0 16px;
+        box-shadow: var(--shadow-sm);
+      }
+      .card h2 {
+        font-size: 22px;
+        margin-bottom: 12px;
+      }
+      .card p + p {
+        margin-top: 10px;
+      }
+      .addr {
+        font-size: 19px;
+        line-height: 1.5;
+      }
+      .addr b {
+        font-weight: 600;
+      }
+      .addr .sub {
+        color: var(--muted);
+        font-size: 16px;
+      }
+      .map-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .map-links a {
+        display: inline-block;
+        border: 1px solid var(--ink);
+        border-radius: var(--radius-pill);
+        padding: 8px 18px;
+        text-decoration: none;
+        color: var(--ink);
+        font-size: 15px;
+        transition: background 0.15s var(--ease);
+      }
+      .map-links a:hover {
+        background: var(--sage-tint);
+      }
+      /* --- opening hours --------------------------------------------------- */
+      /* A real table, not a picture of one: it is read by screen readers, it is
+         searchable, and the owner can correct a single time through the content
+         editor without anyone re-exporting a graphic. */
+      table.hours {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      table.hours th,
+      table.hours td {
+        text-align: start;
+        padding: 9px 2px;
+        border-bottom: 1px solid var(--line);
+        font-weight: 400;
+      }
+      table.hours tr:last-child th,
+      table.hours tr:last-child td {
+        border-bottom: 0;
+      }
+      table.hours td {
+        text-align: end;
+        font-variant-numeric: tabular-nums;
+      }
+      table.hours td.closed {
+        color: var(--muted);
+      }
+      /* --- the "wait for the email" callout -------------------------------- */
+      .callout {
+        border: 1px solid var(--accent);
+        background: var(--accent-tint);
+        border-radius: var(--radius);
+        padding: 16px 18px;
+        margin: 0 0 16px;
+      }
+      .callout b {
+        font-weight: 700;
+      }
+      /* --- lists ----------------------------------------------------------- */
+      ul.bring {
+        list-style: none;
+        margin-top: 12px;
+      }
+      ul.bring li {
+        position: relative;
+        padding-inline-start: 26px;
+        margin-bottom: 8px;
+      }
+      ul.bring li::before {
+        content: '✓';
+        position: absolute;
+        inset-inline-start: 0;
+        color: var(--ok);
+        font-weight: 700;
+      }
+      ol.steps {
+        list-style: none;
+        counter-reset: step;
+        margin-top: 6px;
+      }
+      ol.steps li {
+        counter-increment: step;
+        position: relative;
+        padding-inline-start: 44px;
+        margin-bottom: 16px;
+        min-height: 32px;
+      }
+      ol.steps li::before {
+        content: counter(step);
+        position: absolute;
+        inset-inline-start: 0;
+        top: 0;
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--ink);
+        border-radius: 50%;
+        font-family: var(--display);
+        font-size: 16px;
+      }
+      figure.route {
+        margin-top: 18px;
+      }
+      figure.route img {
+        display: block;
+        width: 100%;
+        height: auto;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      figure.route figcaption {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 8px;
+        text-align: center;
+      }
+      /* --- footer ---------------------------------------------------------- */
+      footer {
+        background: var(--section);
+        border-top: 1px solid var(--line);
+        padding: 26px 0;
+        text-align: center;
+      }
+      footer p {
+        margin-bottom: 6px;
+      }
+      footer a {
+        color: var(--ink);
+      }
+      .back {
+        display: inline-block;
+        margin-top: 12px;
+        font-size: 15px;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="hdr" aria-label="ניווט ראשי">
+      <div class="hdr-inner">
+        <button
+          class="hdr-toggle"
+          type="button"
+          data-testid="nav-toggle"
+          aria-expanded="false"
+          aria-controls="navMenu"
+          aria-label="תפריט"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+            <line x1="4" y1="7" x2="20" y2="7" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="12" x2="20" y2="12" stroke-width="2" stroke-linecap="round" />
+            <line x1="4" y1="17" x2="20" y2="17" stroke-width="2" stroke-linecap="round" />
+          </svg>
+        </button>
+        <a class="hdr-logo" href="index.html" aria-label="דוגרי - לדף הבית"
+          ><img src="assets/logo.png" alt="דוגרי"
+        /></a>
+        <a class="hdr-order nav-cta" href="products.html" data-testid="order-now">הזמינו עכשיו</a>
+      </div>
+      <nav
+        class="hdr-menu"
+        id="navMenu"
+        data-testid="nav-menu"
+        role="menu"
+        aria-label="תפריט ניווט"
+      >
+        <a href="options.html" role="menuitem">להזמנה</a>
+        <a href="products.html" role="menuitem">החנות</a>
+        <a href="how.html" role="menuitem">איך זה עובד</a>
+        <a href="index.html#faq" role="menuitem">שאלות</a>
+      </nav>
+    </header>
+
+    <section class="hero">
+      <div class="wrap">
+        <h1 data-edit="pickup-hero-heading">איסוף עצמי</h1>
+        <p class="lede" data-edit="pickup-hero-lede">
+          המשחק מחכה לכם בבית הדפוס. הנה הכתובת, שעות הפתיחה, מה להביא ואיך מוצאים את ההזמנה.
+        </p>
+      </div>
+    </section>
+
+    <main>
+      <div class="wrap">
+        <!-- FIRST, before any address: the game is not there until we say it is.
+             A buyer who drives to Tel Aviv on the strength of an address and finds
+             nothing has been failed by this page, not by the print house. -->
+        <div class="callout" data-testid="pickup-wait">
+          <p data-edit="pickup-wait-body">
+            <b>חכו להודעה מאיתנו.</b> נעדכן אתכם במייל ובוואטסאפ ברגע שהמשחק מוכן לאיסוף - אל תגיעו
+            לפני שקיבלתם את ההודעה.
+          </p>
+        </div>
+
+        <section class="card" data-testid="pickup-address">
+          <h2 data-edit="pickup-address-heading">הכתובת</h2>
+          <p class="addr">
+            <b data-edit="pickup-address-name">בית הדפוס גלאור</b><br />
+            <span data-edit="pickup-address-street">התחייה 14, תל אביב</span><br />
+            <span class="sub" data-edit="pickup-address-detail"
+              >כניסה B, קומה ראשונה - פנייה ראשונה שמאלה ולעלות קומה במדרגות</span
+            >
+          </p>
+          <div class="map-links">
+            <a
+              href="https://waze.com/ul?q=%D7%94%D7%AA%D7%97%D7%99%D7%99%D7%94%2014%20%D7%AA%D7%9C%20%D7%90%D7%91%D7%99%D7%91&navigate=yes"
+              target="_blank"
+              rel="noopener"
+              data-testid="pickup-waze"
+              >פתיחה ב-Waze</a
+            >
+            <a
+              href="https://www.google.com/maps/search/?api=1&query=%D7%94%D7%AA%D7%97%D7%99%D7%99%D7%94%2014%20%D7%AA%D7%9C%20%D7%90%D7%91%D7%99%D7%91"
+              target="_blank"
+              rel="noopener"
+              data-testid="pickup-gmaps"
+              >פתיחה ב-Google Maps</a
+            >
+          </div>
+        </section>
+
+        <section class="card" data-testid="pickup-hours">
+          <h2 data-edit="pickup-hours-heading">שעות פתיחה</h2>
+          <table class="hours">
+            <tbody>
+              <tr>
+                <th scope="row" data-edit="pickup-day-sun">ראשון</th>
+                <td data-edit="pickup-hours-sun">9:00 - 16:30</td>
+              </tr>
+              <tr>
+                <th scope="row" data-edit="pickup-day-mon">שני</th>
+                <td data-edit="pickup-hours-mon">9:00 - 16:30</td>
+              </tr>
+              <tr>
+                <th scope="row" data-edit="pickup-day-tue">שלישי</th>
+                <td data-edit="pickup-hours-tue">9:00 - 16:30</td>
+              </tr>
+              <tr>
+                <th scope="row" data-edit="pickup-day-wed">רביעי</th>
+                <td data-edit="pickup-hours-wed">9:00 - 16:30</td>
+              </tr>
+              <tr>
+                <th scope="row" data-edit="pickup-day-thu">חמישי</th>
+                <td data-edit="pickup-hours-thu">9:00 - 15:30</td>
+              </tr>
+              <tr>
+                <th scope="row" data-edit="pickup-day-fri">שישי</th>
+                <td class="closed" data-edit="pickup-hours-fri">סגור</td>
+              </tr>
+              <tr>
+                <th scope="row" data-edit="pickup-day-sat">שבת</th>
+                <td class="closed" data-edit="pickup-hours-sat">סגור</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section class="card" data-testid="pickup-bring">
+          <h2 data-edit="pickup-bring-heading">מה להביא</h2>
+          <p data-edit="pickup-bring-body">בעת האיסוף חשוב להגיע עם פרטים מזהים:</p>
+          <ul class="bring">
+            <li data-edit="pickup-bring-title">הכותרת שבחרתם למוצר שלכם</li>
+            <li data-edit="pickup-bring-phone">הטלפון של המזמין/ה</li>
+            <li data-edit="pickup-bring-name">השם של המזמין/ה</li>
+          </ul>
+        </section>
+
+        <section class="card" data-testid="pickup-find">
+          <h2 data-edit="pickup-find-heading">איך מוצאים את ההזמנה</h2>
+          <p data-edit="pickup-find-body">
+            בבית הדפוס ההזמנות מסודרות בכניסה, מתחת לשלט ״דוגרי איסוף עצמי״. הפרטים כתובים באופן
+            ברור על כל הזמנה - קחו את ההזמנה לפי הפרטים שלכם, וּודאו שההזמנה שלקחתם אכן שלכם.
+          </p>
+        </section>
+
+        <section class="card" data-testid="pickup-route">
+          <h2 data-edit="pickup-route-heading">איך מגיעים</h2>
+          <ol class="steps">
+            <li data-edit="pickup-step-1">היכנסו לאזור החניה ופנו שמאלה.</li>
+            <li data-edit="pickup-step-2">היכנסו לכניסה B, ועלו קומה במדרגות שמשמאלכם.</li>
+            <li data-edit="pickup-step-3">
+              היכנסו בדלת שכתוב עליה ״דפוס גלאור״ - על השולחן משמאלכם מונחת ההזמנה שלכם.
+            </li>
+          </ol>
+          <figure class="route">
+            <img
+              src="assets/pickup-directions.jpg"
+              data-edit-img="pickup-route-photo"
+              alt="שלוש תמונות של הדרך: אזור החניה, כניסה B והמדרגות, והדלת של דפוס גלאור"
+              width="1000"
+              height="1778"
+              loading="lazy"
+            />
+            <figcaption data-edit="pickup-route-caption">הדרך מהחניה ועד ההזמנה</figcaption>
+          </figure>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p data-edit="pickup-footer-help">משהו לא ברור? כתבו לנו ונעזור.</p>
+        <p>
+          <a href="https://wa.me/972552441334" target="_blank" rel="noopener">וואטסאפ 0552441334</a>
+        </p>
+        <p><a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></p>
+        <a class="back" href="index.html" data-edit="pickup-footer-back">חזרה לעמוד הבית</a>
+      </div>
+    </footer>
+  </body>
+</html>
