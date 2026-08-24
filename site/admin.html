@@ -2224,7 +2224,7 @@
         // ניהול leads the row: the buttons are what the owner comes to this table
         // to press, and at the far end they sat behind a horizontal scroll on every
         // screen narrower than the full column set.
-        ['ניהול', 240],
+        ['ניהול', 300],
         // ONE identity column. It used to be two — the honoree's name, then the
         // title beside it — because a title was an optional override on a title
         // composed from that name. The buyer types the title now and nothing
@@ -2290,7 +2290,7 @@
         ['נוצר', 90],
         ['נסגר', 120],
         ['הערה שלי', 200],
-        ['מעקב', 110],
+        ['מעקב', 90],
         ['וואטסאפ', 120],
       ];
 
@@ -2807,21 +2807,14 @@
           tr.appendChild(tdClosed);
           tr.appendChild(noteCell(c));
 
-          // Follow-up: WhatsApp / Call / Email. Each link is shown only when the
-          // underlying contact field exists.
+          // Follow-up: Call / Email. Each link is shown only when the underlying
+          // contact field exists. WhatsApp used to lead this cell and now leads
+          // ניהול instead: writing to the customer is the action the owner takes
+          // most, and מעקב sits at the far end of the row behind a sideways
+          // scroll. What is left here is what she reaches for rarely.
           const tdFollow = document.createElement('td');
           const follow = document.createElement('div');
           follow.className = 'followup';
-          const intl = intlPhone(c.owner_phone);
-          if (intl) {
-            const wa = document.createElement('a');
-            wa.className = 'act wa';
-            wa.textContent = 'וואטסאפ';
-            wa.href = 'https://wa.me/' + intl;
-            wa.target = '_blank';
-            wa.rel = 'noopener';
-            follow.appendChild(wa);
-          }
           if (c.owner_phone) {
             const call = document.createElement('a');
             call.className = 'act';
@@ -2915,6 +2908,21 @@
           tr.appendChild(tdWa);
 
           const td = document.createElement('td');
+          // WhatsApp leads ניהול: nearly every order is settled in a chat with
+          // the customer, so this is the first thing pressed on the row. Only
+          // when there is a mobile number to write to — and never the bot's
+          // "open a group", which stays in its own column.
+          const intl = intlPhone(c.owner_phone);
+          if (intl) {
+            const waLink = document.createElement('a');
+            waLink.className = 'act wa';
+            waLink.textContent = 'וואטסאפ';
+            waLink.href = 'https://wa.me/' + intl;
+            waLink.target = '_blank';
+            waLink.rel = 'noopener';
+            td.appendChild(waLink);
+            td.appendChild(document.createTextNode(' '));
+          }
           // Edit the customer's choices (names, extra fields, design/theme,
           // pickup vs delivery + address, photos) after a WhatsApp conversation.
           const editBtn = document.createElement('button');
