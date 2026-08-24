@@ -81,7 +81,22 @@ describe('buyer confirmation — fulfilment + photo', () => {
     // to fill it in; it names the entrance and the floor now, and points at the
     // page that holds the hours and what to bring.
     expect(msg.text).toContain('התחייה 14'); // pickup_info.address
-    expect(msg.text).toContain('/pickup'); // pickup_info.link
+    // Built from THIS deployment's origin, never a domain typed into the
+    // default. It was typed in once, as a dugri.co.il that does not resolve,
+    // and every pickup buyer got a dead link.
+    expect(msg.text).toContain(BASE + '/pickup'); // pickup_info.link
+    expect(msg.text).not.toContain('{url}');
+  });
+
+  it('drops the pickup-page line entirely when there is no base url to build it from', () => {
+    const c = collection({ version: 'pickup', total: 199, address: null });
+    const msg = notify.buildBuyerConfirmation(c, '', { amountCharged: 199 });
+    // The rest of the pickup block survives — only the link goes.
+    expect(msg.text).toContain('התחייה 14');
+    // A literal "{url}" or a bare "/pickup" both LOOK like a link and neither
+    // is one; no line at all is the honest outcome.
+    expect(msg.text).not.toContain('{url}');
+    expect(msg.text).not.toContain('/pickup');
   });
 
   it('the HTML uses the Assistant font, embeds the product photo, and carries the signature logo', () => {
