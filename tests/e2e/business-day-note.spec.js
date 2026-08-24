@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 // THE PRODUCTION CLOCK'S ONE RULE.
 //
-// The delivery and pickup promises ("תוך כ-3 / כ-7 ימי עסקים") are counted from
+// The delivery and pickup promises ("תוך כ-4 / כ-8 ימי עסקים") are counted from
 // the moment the word list CLOSES — but a list closed at 19:40 has not bought
 // itself a day. The owner asked for that stated where she works the production
 // queue, so she is not re-deriving it per order at the end of a night.

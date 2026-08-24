@@ -357,7 +357,7 @@ test.describe('product detail page', () => {
       // (see sale-switch.spec.js).
       const noteEl = page.locator('[data-edit-pd="buy-note-rest"]');
       await expect(noteEl).toHaveCount(1);
-      await expect(noteEl).toContainText('מוכן תוך 3 ימי עסקים');
+      await expect(noteEl).toContainText('מוכן תוך 4 ימי עסקים');
       const noteBox = await noteEl.boundingBox();
       expect(noteBox.y, `${id}: note directly under the button`).toBeGreaterThan(buyBox.y);
       expect(noteBox.y, `${id}: note above the first section`).toBeLessThan(firstSecBox.y);

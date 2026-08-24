@@ -1161,13 +1161,13 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   // ONE printed game, priced once; delivery is the tick beneath it, priced at the
   // shipping fee alone.
   await expect(panel).toContainText('משחק מוכן ומודפס');
-  await expect(panel).toContainText('מוכן תוך כ-3 ימי עסקים · איסוף מבית דפוס גלאור, ת״א');
+  await expect(panel).toContainText('מוכן תוך כ-4 ימי עסקים · איסוף מבית דפוס גלאור, ת״א');
   await expect(panel).toContainText('149 ₪');
   await expect(panel).toContainText('שלחו לי עד הבית');
   // The tick is priced at the SHIPPING alone, not at a second full product price.
   await expect(page.locator('#shipPrice')).toHaveText('39 ₪');
   await expect(panel).not.toContainText('המפונקת');
-  await expect(panel).toContainText('מגיע תוך כ-7 ימי עסקים');
+  await expect(panel).toContainText('מגיע תוך כ-8 ימי עסקים');
   await expect(panel).toContainText('אזורים מרוחקים בתיאום ובתוספת תשלום');
   // pay-anytime / unlock messaging
   await expect(panel).toContainText('אפשר לשלם מתי שרוצים');
