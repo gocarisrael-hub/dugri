@@ -791,6 +791,17 @@
         background 0.12s ease;
     }
   }
+  .pressok {
+    font: 12px var(--num);
+    color: var(--ok);
+    margin-inline: 0.8rem;
+  }
+  .pressbad {
+    font: 12px var(--num);
+    color: var(--over);
+    font-weight: 600;
+    margin-inline: 0.8rem;
+  }
 </style>
 
 <div class="top">
@@ -3615,6 +3626,7 @@
   /* ---------- the wall ---------- */
   let LAST = {};
   function paint() {
+    if (typeof askThePress === 'function') askThePress();
     const words = [0, 1, 2, 3].map((i) => $('w' + i).value.trim());
     let fit = wordFit(words, SEL);
     // The bounds are read BEFORE any ceiling is applied, so clamping the sliders
@@ -3642,6 +3654,7 @@
     // Remembered so switching a ceiling ON starts it exactly at the box, where it
     // is holding nothing — turning it on must never move the type by itself.
     BOUND.word = fit.hBind;
+    BOUND.lastWordSize = fit.he;
     BOUND.titleEn = tEn;
     BOUND.titleHe = tHe;
     BOUND.backEn = bEn;
@@ -4346,6 +4359,60 @@
     }
   }
 
+  /* ---------- what the press says ---------- */
+  /* Sizes agree to well inside a tenth of a unit when the two engines agree at all;
+   anything past this is drift, and drift is the bug this readout exists to catch. */
+  const PRESS_TOL = 0.25;
+  let pressAsk = 0;
+
+  function pressWords() {
+    return [0, 1, 2, 3].map((i) => ($('w' + i) || {}).value || '').filter(Boolean);
+  }
+
+  /* Debounced: a drag fires this on every frame otherwise, and the answer costs a
+   python start. The last ask wins — an older reply that lands late is dropped. */
+  function askThePress() {
+    const mine = ++pressAsk;
+    const el = $('pressSays');
+    if (!el || !LAST_OUT) return;
+    clearTimeout(askThePress._t);
+    askThePress._t = setTimeout(async () => {
+      try {
+        const r = await fetch(
+          withKey('/api/admin/templates/' + encodeURIComponent(TPL.key) + '/typefit'),
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ words: pressWords(), overrides: LAST_OUT }),
+          }
+        );
+        if (mine !== pressAsk) return;
+        const d = await r.json();
+        if (d.error) {
+          el.textContent = 'the press: ' + d.error;
+          el.className = 'pressbad';
+          return;
+        }
+        const mineSize = BOUND.lastWordSize;
+        const off = mineSize != null ? Math.abs(d.word_size - mineSize) : 0;
+        el.textContent =
+          'the press sets ' +
+          d.word_size.toFixed(2) +
+          (mineSize == null
+            ? ''
+            : off <= PRESS_TOL
+              ? ' — this page agrees'
+              : ' — THIS PAGE SAYS ' + mineSize.toFixed(2) + ', which is drift');
+        el.className = off <= PRESS_TOL ? 'pressok' : 'pressbad';
+      } catch (err) {
+        if (mine === pressAsk) {
+          el.textContent = 'the press: ' + err.message;
+          el.className = 'pressbad';
+        }
+      }
+    }, 400);
+  }
+
   function initFromLive() {
     CW = LIVE.card_viewbox.w;
     CH = LIVE.card_viewbox.h;
@@ -4425,6 +4492,12 @@
 
   async function fitControls() {
     const bar = $('copy').parentNode;
+    const says = document.createElement('span');
+    says.id = 'pressSays';
+    says.className = 'pressok';
+    says.textContent = 'asking the press…';
+    bar.appendChild(says);
+
     const save = document.createElement('button');
     save.className = 'btn solid';
     save.id = 'saveSite';
@@ -4495,6 +4568,7 @@
     await loadInk();
     await fitControls();
     paint();
+    askThePress();
     if (!restored) saveState();
   })();
 </script>

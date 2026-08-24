@@ -4428,6 +4428,60 @@ app.post(
 // until now could only be repaired by hand-editing themes.json on the volume.
 // templates.clearAsset refuses every other role, so this cannot strip a template
 // of a font it needs to render.
+const TYPEFIT_TIMEOUT_MS = Number(process.env.TYPEFIT_TIMEOUT_MS || 15000);
+
+// Admin: WHAT THE PRESS WILL ACTUALLY SET for a template, some words and a set of
+// unsaved knobs — answered by the generator itself (generator/typefit.py).
+//
+// The calibration screen carries its own copy of the fit so it can answer while a
+// box is being dragged, and a second implementation of anything drifts. This one
+// has: it read 21.05 where the press printed 12.94, clamped a pinned size the
+// press honours, and fed the settled pitch back into the spacing so a wall of
+// cards decayed. Each was invisible until the two answers sat side by side — so
+// now they always do, on the page, rather than in a customer's deck.
+app.post('/api/admin/templates/:key/typefit', express.json({ limit: '64kb' }), (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const body = req.body || {};
+  const payload = JSON.stringify({
+    theme: req.params.key,
+    words: Array.isArray(body.words) ? body.words.slice(0, 8).map(String) : [],
+    title_lines: Array.isArray(body.title_lines) ? body.title_lines.slice(0, 6).map(String) : null,
+    // Unsaved knobs answer for themselves: the owner is asking about numbers she
+    // has not committed to, which is the only moment the answer is useful.
+    overrides: body.overrides && typeof body.overrides === 'object' ? body.overrides : {},
+  });
+  // Through spawnGenerator like every other generator run — it is what makes the
+  // child its own process group, so a wedged one can be taken down whole.
+  const child = spawnGenerator([path.join(REPO_ROOT, 'generator', 'typefit.py')], {
+    cwd: path.join(REPO_ROOT, 'generator'),
+  });
+  // It answers in well under a second; a run that does not is wedged, and the
+  // screen asks again on the next keystroke rather than holding a socket open.
+  const timer = setTimeout(() => killGenerator(child), TYPEFIT_TIMEOUT_MS);
+  let out = '';
+  let err = '';
+  const done = (code) => {
+    clearTimeout(timer);
+    if (res.headersSent) return;
+    if (code !== 0) {
+      return res.status(502).json({ error: 'typefit failed', detail: err.trim().slice(-400) });
+    }
+    try {
+      res.json(JSON.parse(out));
+    } catch {
+      res.status(502).json({ error: 'typefit answered nothing readable' });
+    }
+  };
+  child.stdout.on('data', (d) => (out += d));
+  child.stderr.on('data', (d) => (err += d));
+  child.on('error', (e) => {
+    err += String(e.message);
+    done(-1);
+  });
+  child.on('close', done);
+  child.stdin.end(payload);
+});
+
 // Admin: the EFFECTIVE entry for one template — shipped defaults with the owner's
 // overrides merged, i.e. what the generator reads. The calibration screen needs the
 // whole entry; /export answers the owner layer only and the status list is a fixed
