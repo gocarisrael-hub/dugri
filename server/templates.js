@@ -3108,6 +3108,26 @@ function updateTemplateSettings({ root, key, patch }) {
       return { error: 'word_pitch must be a positive number or null', httpStatus: 400 };
     }
   }
+  // HOW BIG THIS DESIGN SETS ITS ENGLISH WORDS, as a fraction of the card's size
+  // (generator/config.word_alt_scale reads this exact name). English is set in
+  // the SECOND word face, and a Latin face beside a Hebrew one at the same point
+  // size does not read as the same size — the Latin x-height is the taller — so
+  // the house default holds English at 0.8. A design whose Latin face needs more
+  // or less says so here; null returns it to the house fraction.
+  //
+  // It was readable by the generator and writable by nobody: the owner could tune
+  // it in the bench and had no way to save it, so a design that wanted 1.26
+  // printed at 0.8 with nothing to say why. Capped at 4 because this MULTIPLIES
+  // the size the card already fitted — past that the English leaves the card.
+  if ('word_alt_scale' in p) {
+    if (p.word_alt_scale === null || p.word_alt_scale === '') {
+      changed.word_alt_scale = null;
+    } else if (isFiniteNum(p.word_alt_scale) && p.word_alt_scale > 0 && p.word_alt_scale <= 4) {
+      changed.word_alt_scale = p.word_alt_scale;
+    } else {
+      return { error: 'word_alt_scale must be a positive number or null', httpStatus: 400 };
+    }
+  }
   // THE SIX CEILINGS. Optional, and null is a real answer meaning "no ceiling"
   // — the state every template ships in and every deck printed so far. Validated
   // like the other type numbers rather than trusted: they reach the generator as
@@ -3267,6 +3287,8 @@ function updateTemplateSettings({ root, key, patch }) {
   if ('word_size' in changed && changed.word_size === null) delete entry.word_size;
   // Same for word_pitch:null — "the design's own spacing", i.e. absent.
   if ('word_pitch' in changed && changed.word_pitch === null) delete entry.word_pitch;
+  // Same for word_alt_scale:null — "the house fraction", i.e. absent.
+  if ('word_alt_scale' in changed && changed.word_alt_scale === null) delete entry.word_alt_scale;
   // Same for wordlist:null — "no pool named", i.e. fall back to the generic one.
   // Dropping the key rather than storing null keeps the owner entry readable as
   // the shipped entries are, and topup's `cfg.get("wordlist") or GENERIC` treats
