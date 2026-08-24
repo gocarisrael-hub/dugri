@@ -4428,6 +4428,38 @@ app.post(
 // until now could only be repaired by hand-editing themes.json on the volume.
 // templates.clearAsset refuses every other role, so this cannot strip a template
 // of a font it needs to render.
+// Admin: READ one of a template's asset files (the counterpart to the replace
+// route above). The role is a whitelisted id, never a path, and templates.readAsset
+// resolves it through the SAME table the writer uses, so the two can never point at
+// different files.
+//
+// This exists so a tool can render a template's real type. The fonts live only on
+// the volume — nothing served them — which is why the calibration bench had to bake
+// its own copies in and then drifted from the site the moment a face was replaced.
+app.get('/api/admin/templates/:key/assets/:role', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  let result;
+  try {
+    result = templates.readAsset({
+      root: TEMPLATE_ROOT,
+      key: req.params.key,
+      role: req.params.role,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: String((e && e.message) || e) });
+  }
+  if (result.error) {
+    return res
+      .status(result.httpStatus || 400)
+      .json({ error: result.error, ...(result.optional ? { optional: true } : {}) });
+  }
+  // Immutable per (template, role, mtime) is not knowable here, so no-cache: a
+  // replaced font must never be served from an edge copy to a calibration screen
+  // that is measuring against it.
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(result.file);
+});
+
 app.delete('/api/admin/templates/:key/assets/:role', (req, res) => {
   if (!requireAdmin(req, res)) return;
   let result;
