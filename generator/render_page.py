@@ -4062,7 +4062,7 @@ def title_is_rtl(cfg, lines=None):
 def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
                 rtl=False, fixed_size=None, align="center", italic=False,
                 bold=False, bold_w=None, leading=None, one_block=False,
-                alt_font_path=None, max_size=None):
+                alt_font_path=None, max_size=None, width_probe=False):
     _TITLE_UID[0] += 1
     uid = _TITLE_UID[0]
     """Graffiti-style stacked title: sized so the WIDEST line fills the box
@@ -4096,6 +4096,34 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     face = _title_face(font_path, alt_font_path, rtl=rtl)
     f, ref = face, face.ref
     ratios = [f.getlength(ln) / ref for ln in lines]      # width per unit size
+    # ...corrected by WHAT CHROME ACTUALLY DRAWS, when the caller asks for it.
+    #
+    # The line above is Pillow's opinion, and Chrome is what draws the card. For
+    # some faces the two disagree badly: on סנטוריני's brush face Chrome lays
+    # "ליאתי מלכת" out 23.6% wider than Pillow reports. The fit then stops at a
+    # size where Pillow says the title fits, and the card comes back with the
+    # title starting exactly on its box's left edge and running 2.2mm out of the
+    # right one — which reads as a title shoved sideways, and was reported as
+    # one. See generator/title_metrics.py for the measurements.
+    #
+    # OPT-IN, because it costs a Chrome run: the deck asks for it once per order
+    # (the answer is cached per title), and the many callers that only want
+    # geometry — tests, calibration, the type bench — get today's numbers at
+    # today's speed. The probe only ever returns >= 1.0, so this can shrink a
+    # title that would overflow and can never grow one that fits.
+    measured = {}
+    # NOT FOR AN ARCHED TITLE. The probe draws a straight line; an arched one
+    # rides a curve, and both the width its ink spans and where that ink sits
+    # relative to the anchor are properties of the curve, not of the string. A
+    # straight measurement would be a confident wrong answer, so an arched
+    # template keeps the behaviour it has today.
+    if width_probe and not arch:
+        import title_metrics
+        measured = title_metrics.probe(font_path, lines, f,
+                                       alt_font_path=alt_font_path,
+                                       italic=italic)
+        ratios = [r * measured.get(ln, (1.0, 0.0))[0]
+                  for r, ln in zip(ratios, lines)]
     # Does this title actually need the second face? Asked once, because it
     # decides both how the runs are emitted and whether a PINNED size may stand.
     mixed = any(face.uses_alt(ln) for ln in lines)
@@ -4327,8 +4355,16 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
             # The LTR branch keeps the skew, where the same measurement across
             # every shipped Latin theme puts it at up to 1.7 units of good and
             # no harm.
-            lsb, rsb = _ink_bearings(f, ref, line, size)
-            skew = 0.0 if rtl else (lsb - rsb) / 2
+            if line in measured:
+                # MEASURED, off a real render of this very line: how far its ink
+                # landed from the point it was anchored at. Shift the anchor back
+                # by that and the ink straddles the box centre — no theory about
+                # which side a script's overhang falls on, which is what the two
+                # reverted attempts at this line each got wrong in turn.
+                skew = measured[line][1] * size
+            else:
+                lsb, rsb = _ink_bearings(f, ref, line, size)
+                skew = 0.0 if rtl else (lsb - rsb) / 2
             xl = cx - skew - wln / 2 - size * 0.15
             xr = cx - skew + wln / 2 + size * 0.15
         cxp = (xl + xr) / 2
@@ -4547,7 +4583,8 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        bold=ts.get("bold", False),
                        bold_w=ts.get("bold_w"),
                        leading=ts.get("leading"),
-                       one_block=bool(ts.get("one_block")))
+                       one_block=bool(ts.get("one_block")),
+                       width_probe=True)
 
 
 def _words_overlay(slots, words, cfg, word_font, cell, room=None,
@@ -5141,7 +5178,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
                                        bold=ts.get("bold", False),
                                        bold_w=ts.get("bold_w"),
                                        leading=ts.get("leading"),
-                                       one_block=bool(ts.get("one_block"))))
+                                       one_block=bool(ts.get("one_block")),
+                                       width_probe=True))
         words = words_by_card[ci] if ci < len(words_by_card) else []
         # A card may carry a title but no word slots (its title was drawn above);
         # skip the word pass so the sizing below can't crash the whole page.
