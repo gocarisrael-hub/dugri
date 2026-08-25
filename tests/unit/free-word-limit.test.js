@@ -338,17 +338,25 @@ describe('words the quota refuses are held, not dropped', () => {
     expect(db.listWords(c.id)).toHaveLength(7);
   });
 
-  it('refuses to hold beyond the cap, and says so rather than implying it kept them', () => {
+  // The held bucket's own ceiling (MAX_HELD_WORDS, 500) is no longer the binding
+  // one: a held word becomes a printed word the moment the buyer pays, so the
+  // DECK cap (412, db.DECK_WORDS) stops the batch first. What the batch keeps —
+  // stored plus held — can never exceed one deck, and the surplus is reported as
+  // `full` rather than as anything we kept.
+  it('refuses to hold beyond the deck, and says so rather than implying it kept them', () => {
     settings.set('pricing', 'free_word_limit', 1);
     const c = db.createCollection('שירה', { email: 'h7@example.com' });
-    // 1 lands, 500 are held, the rest are genuinely gone — and reported as gone.
     const r = db.addWords(c.id, words(520));
     expect(r.added).toBe(1);
-    expect(r.blocked).toBe(519);
-    expect(r.held).toBe(500);
-    expect(r.dropped).toBe(19);
-    expect(r.held + r.dropped).toBe(r.blocked);
-    expect(db.countHeldWords(c.id)).toBe(500);
+    expect(r.held).toBe(db.DECK_WORDS - 1);
+    expect(r.added + r.held).toBe(db.DECK_WORDS);
+    // Everything past a full deck: refused outright, and counted as refused.
+    expect(r.full).toBe(520 - db.DECK_WORDS);
+    // `blocked` keeps its meaning — what the QUOTA turned away — and every one of
+    // those was parked rather than lost, so nothing was dropped on the floor.
+    expect(r.blocked).toBe(r.held);
+    expect(r.dropped).toBe(0);
+    expect(db.countHeldWords(c.id)).toBe(db.DECK_WORDS - 1);
   });
 
   it('never holds a word that failed validation', () => {
