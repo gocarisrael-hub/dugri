@@ -1159,6 +1159,15 @@
       <div class="row"><input type="range" id="tryEn" min="6" max="60" step="0.01" /></div>
       <div class="row"><input type="range" id="tryT" min="6" max="80" step="0.01" /></div>
       <div class="row"><input type="range" id="tryB" min="6" max="90" step="0.01" /></div>
+      <!-- The panel's own word fields and name, seeded on every reset. Removing
+           the section took these with it and boot threw before a card was drawn:
+           a page that never finishes loading still contains every string a
+           markup test looks for. -->
+      <input type="text" id="t0" /><input type="text" id="t1" /> <input type="text" id="t2" /><input
+        type="text"
+        id="t3"
+      />
+      <input type="text" id="tName" />
     </div>
 
     <section class="try" id="deck">
@@ -1659,7 +1668,10 @@
     $('enScaleRow').hidden = m !== 'scale';
     $('enSizeRow').hidden = m !== 'exact';
     $('enDrag').disabled = m !== 'scale'; // the other two modes already cut it loose
-    $('enDrag').closest('.sw').style.opacity = m === 'scale' ? '' : '.45';
+    // enDrag lost its label when it stopped being a question on the screen, so
+    // there may be no .sw to dim. The disabled state above is what matters.
+    const dragSw = $('enDrag').closest('.sw');
+    if (dragSw) dragSw.style.opacity = m === 'scale' ? '' : '.45';
   }
 
   /* ---------- reading the artwork ----------
