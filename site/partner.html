@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="partner.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- A private report. Keeping it out of search results matters more here
+         than on any other page: the token in the URL is the only thing standing
+         between one blogger's earnings and anyone who can run a search. -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>הרווחים שלי — דוגרי</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        line-height: 1.6;
+        font-size: 17px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 28px 20px 64px;
+      }
+      h1 {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
+        font-size: clamp(26px, 6vw, 36px);
+      }
+      .sub {
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .code {
+        display: inline-block;
+        margin-top: 14px;
+        border: 1px solid var(--ink);
+        padding: 6px 14px;
+        font-family: var(--display);
+        letter-spacing: 0.12em;
+        font-size: 20px;
+      }
+      /* THE FOUR NUMBERS. "Still owed" is the one she opens this page for, so it
+         is the one that is not muted. */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1px;
+        background: var(--line);
+        border: 1px solid var(--line);
+        margin-top: 26px;
+      }
+      .tile {
+        background: var(--surface);
+        padding: 16px 18px;
+      }
+      .tile .k {
+        font-size: 13px;
+        color: var(--muted);
+        letter-spacing: 0.04em;
+      }
+      .tile .v {
+        font-family: var(--display);
+        font-weight: 300;
+        font-size: 27px;
+        margin-top: 4px;
+        font-variant-numeric: tabular-nums;
+      }
+      .tile.owed .v {
+        font-weight: 500;
+      }
+      h2 {
+        font-family: var(--display);
+        font-weight: 300;
+        font-size: 20px;
+        margin: 34px 0 12px;
+      }
+      .scroll {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 15px;
+      }
+      th,
+      td {
+        text-align: start;
+        padding: 10px 8px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+      }
+      td.earn {
+        font-weight: 600;
+      }
+      .msg {
+        color: var(--muted);
+        border: 1px solid var(--line);
+        padding: 18px;
+        margin-top: 24px;
+      }
+      .foot {
+        margin-top: 36px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div id="app" hidden>
+        <h1 id="hello">הרווחים שלי</h1>
+        <p class="sub" id="rate"></p>
+        <div class="code" id="code"></div>
+
+        <div class="tiles">
+          <div class="tile">
+            <div class="k">מכירות</div>
+            <div class="v" id="tSales">0</div>
+          </div>
+          <div class="tile">
+            <div class="k">הרווחת</div>
+            <div class="v" id="tEarned">0</div>
+          </div>
+          <div class="tile">
+            <div class="k">שולם לך</div>
+            <div class="v" id="tPaid">0</div>
+          </div>
+          <div class="tile owed">
+            <div class="k">נותר לתשלום</div>
+            <div class="v" id="tOwed">0</div>
+          </div>
+        </div>
+
+        <h2>המכירות שלך</h2>
+        <div class="scroll" id="salesWrap">
+          <table id="sales">
+            <thead>
+              <tr>
+                <th>הזמנה</th>
+                <th>תאריך</th>
+                <th>הלקוחה שילמה</th>
+                <th>היא חסכה</th>
+                <th>הרווח שלך</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <h2 id="payTitle" hidden>תשלומים שקיבלת</h2>
+        <div class="scroll">
+          <table id="payouts" hidden>
+            <thead>
+              <tr>
+                <th>תאריך</th>
+                <th>סכום</th>
+                <th>הערה</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <p class="foot">
+          הנתונים מתעדכנים אוטומטית. משהו לא מסתדר?
+          <a href="https://wa.me/972552441334" target="_blank" rel="noopener">דברו איתנו בוואטסאפ</a
+          >.
+        </p>
+      </div>
+
+      <div class="msg" id="err" hidden></div>
+    </div>
+
+    <script type="module">
+      const token = new URLSearchParams(location.search).get('t') || '';
+      const app = document.getElementById('app');
+      const err = document.getElementById('err');
+      const $ = (id) => document.getElementById(id);
+
+      const money = (n) => Number(n || 0).toLocaleString('he-IL') + ' ₪';
+      const fmtDate = (iso) => {
+        if (!iso) return '—';
+        const d = new Date(iso);
+        return Number.isNaN(d.getTime())
+          ? '—'
+          : d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      };
+
+      function fail(msg) {
+        err.textContent = msg;
+        err.hidden = false;
+      }
+
+      function paint(rep) {
+        const c = rep.coupon;
+        $('hello').textContent = c.partner_name ? 'הרווחים של ' + c.partner_name : 'הרווחים שלי';
+        // Her rate, in her own terms — she should never have to work out what she
+        // is owed from a percentage she was told once in a DM.
+        $('rate').textContent =
+          (c.commission_type === 'fixed'
+            ? 'את מרוויחה ' + money(c.commission_value) + ' על כל הזמנה'
+            : 'את מרוויחה ' + c.commission_value + '% ממחיר המשחק') +
+          ' · הלקוחות שלך מקבלות ' +
+          c.discount_pct +
+          '% הנחה';
+        $('code').textContent = c.code;
+
+        $('tSales').textContent = rep.totals.sales;
+        $('tEarned').textContent = money(rep.totals.earned);
+        $('tPaid').textContent = money(rep.totals.paid_out);
+        $('tOwed').textContent = money(rep.totals.outstanding);
+
+        const tb = document.querySelector('#sales tbody');
+        if (!rep.sales.length) {
+          $('salesWrap').innerHTML = '<p class="msg">עוד לא נרשמו מכירות עם הקוד שלך.</p>';
+        } else {
+          for (const s of rep.sales) {
+            const tr = document.createElement('tr');
+            const cells = [
+              [s.order_no || '—', ''],
+              [fmtDate(s.paid_at), ''],
+              [money(s.charged_total), 'num'],
+              [money(s.customer_saved), 'num'],
+              [money(s.amount), 'num earn'],
+            ];
+            for (const [text, cls] of cells) {
+              const td = document.createElement('td');
+              if (cls) td.className = cls;
+              td.textContent = text;
+              tr.appendChild(td);
+            }
+            tb.appendChild(tr);
+          }
+        }
+
+        if (rep.payouts.length) {
+          $('payTitle').hidden = false;
+          const pt = $('payouts');
+          pt.hidden = false;
+          const pb = pt.querySelector('tbody');
+          for (const p of rep.payouts) {
+            const tr = document.createElement('tr');
+            for (const [text, cls] of [
+              [fmtDate(p.date), ''],
+              [money(p.amount), 'num'],
+              [p.note || '—', ''],
+            ]) {
+              const td = document.createElement('td');
+              if (cls) td.className = cls;
+              td.textContent = text;
+              tr.appendChild(td);
+            }
+            pb.appendChild(tr);
+          }
+        }
+
+        app.hidden = false;
+      }
+
+      if (!token) {
+        fail('הקישור חסר. השתמשו בקישור המלא שקיבלתם מאיתנו.');
+      } else {
+        fetch('/api/partner/' + encodeURIComponent(token))
+          .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+          .then(paint)
+          .catch(() => fail('הקישור לא תקין או שאינו בתוקף. דברו איתנו ונשלח לכם קישור חדש.'));
+      }
+    </script>
+  </body>
+</html>

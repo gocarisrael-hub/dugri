@@ -245,6 +245,24 @@
             <label for="until">בתוקף עד (ריק = ללא תפוגה)</label>
             <input id="until" type="date" />
           </div>
+          <!-- A coupon becomes a BLOGGER's code by getting a name and a rate.
+               Left empty it is an ordinary discount code, exactly as before. -->
+          <div class="field">
+            <label for="partner">שם המשווקת (ריק = קופון רגיל)</label>
+            <input id="partner" type="text" autocomplete="off" placeholder="שם הבלוגרית" />
+          </div>
+          <div class="field">
+            <label for="ctype">היא מרוויחה</label>
+            <select id="ctype">
+              <option value="">— לא משווקת —</option>
+              <option value="fixed">סכום קבוע להזמנה (₪)</option>
+              <option value="percent">אחוז מהמשחק</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="cvalue">כמה</label>
+            <input id="cvalue" type="number" min="1" step="1" placeholder="30" />
+          </div>
           <button type="submit" id="submitBtn">צור קופון</button>
         </form>
         <div class="err" id="err"></div>
@@ -267,6 +285,9 @@
       const codeEl = document.getElementById('code');
       const pctEl = document.getElementById('pct');
       const untilEl = document.getElementById('until');
+      const partnerEl = document.getElementById('partner');
+      const ctypeEl = document.getElementById('ctype');
+      const cvalueEl = document.getElementById('cvalue');
       const submitBtn = document.getElementById('submitBtn');
       const errEl = document.getElementById('err');
 
@@ -298,6 +319,107 @@
         });
       }
 
+      const money = (n) => Number(n || 0).toLocaleString('he-IL') + ' ₪';
+
+      // The owner's view of ONE partner's money, opened under her row. It reads
+      // the SAME endpoint her own page reads, so the two can never disagree
+      // about what is owed — the commonest way a partnership goes sour.
+      async function toggleReport(c, tr) {
+        const open = tr.nextSibling && tr.nextSibling.dataset && tr.nextSibling.dataset.report;
+        if (open) return tr.nextSibling.remove();
+        const row = document.createElement('tr');
+        row.dataset.report = c.id;
+        const cell = document.createElement('td');
+        cell.colSpan = 7;
+        cell.textContent = 'טוען…';
+        row.appendChild(cell);
+        tr.after(row);
+
+        let rep = null;
+        try {
+          const r = await fetch(withKey('/api/admin/coupons/' + c.id + '/report'));
+          rep = r.ok ? await r.json() : null;
+        } catch {
+          rep = null;
+        }
+        if (!rep) {
+          cell.textContent = 'לא הצלחנו לטעון את הדוח.';
+          return;
+        }
+        cell.textContent = '';
+
+        const sum = document.createElement('p');
+        sum.innerHTML =
+          '<b>' +
+          rep.totals.sales +
+          '</b> מכירות · הרוויחה <b>' +
+          money(rep.totals.earned) +
+          '</b> · שולם <b>' +
+          money(rep.totals.paid_out) +
+          '</b> · נותר לתשלום <b>' +
+          money(rep.totals.outstanding) +
+          '</b>';
+        cell.appendChild(sum);
+
+        // Recording a payment is the only write here. It never edits a sale —
+        // what was earned is history.
+        const f = document.createElement('form');
+        f.className = 'form';
+        f.style.marginTop = '10px';
+        const amt = document.createElement('input');
+        amt.type = 'number';
+        amt.min = '1';
+        amt.step = '1';
+        amt.placeholder = 'סכום ששולם';
+        const note = document.createElement('input');
+        note.type = 'text';
+        note.placeholder = 'הערה (ביט, העברה…)';
+        const btn = document.createElement('button');
+        btn.type = 'submit';
+        btn.textContent = 'רשום תשלום';
+        f.append(amt, note, btn);
+        f.onsubmit = async (e) => {
+          e.preventDefault();
+          btn.disabled = true;
+          try {
+            await fetch(withKey('/api/admin/coupons/' + c.id + '/payouts'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ amount: Number(amt.value), note: note.value }),
+            });
+          } finally {
+            btn.disabled = false;
+          }
+          row.remove();
+          toggleReport(c, tr);
+        };
+        cell.appendChild(f);
+
+        if (rep.sales.length) {
+          const t = document.createElement('table');
+          t.innerHTML =
+            '<thead><tr><th>הזמנה</th><th>תאריך</th><th>שולם</th><th>הלקוחה חסכה</th><th>הרווח שלה</th></tr></thead>';
+          const body = document.createElement('tbody');
+          for (const sale of rep.sales) {
+            const r2 = document.createElement('tr');
+            for (const v of [
+              sale.order_no || '—',
+              sale.paid_at ? fmtDate(sale.paid_at.slice(0, 10)) : '—',
+              money(sale.charged_total),
+              money(sale.customer_saved),
+              money(sale.amount),
+            ]) {
+              const td = document.createElement('td');
+              td.textContent = v;
+              r2.appendChild(td);
+            }
+            body.appendChild(r2);
+          }
+          t.appendChild(body);
+          cell.appendChild(t);
+        }
+      }
+
       function render(coupons) {
         if (!coupons.length) {
           content.innerHTML = '<div class="msg">אין קופונים עדיין.</div>';
@@ -305,7 +427,7 @@
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>קוד</th><th>הנחה</th><th>בתוקף עד</th><th>סטטוס</th><th>שימושים</th><th>ניהול</th></tr></thead>';
+          '<thead><tr><th>קוד</th><th>הנחה</th><th>משווקת</th><th>בתוקף עד</th><th>סטטוס</th><th>שימושים</th><th>ניהול</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const c of coupons) {
           const tr = document.createElement('tr');
@@ -316,6 +438,26 @@
 
           const tdPct = document.createElement('td');
           tdPct.textContent = c.discount_pct + '%';
+
+          // WHO EARNS FROM THIS CODE, and what she earns — the two facts that
+          // turn a discount into a partnership, so they belong in the row rather
+          // than behind a click.
+          const tdPartner = document.createElement('td');
+          if (c.commission_type) {
+            const name = document.createElement('div');
+            name.textContent = c.partner_name || '—';
+            const rate = document.createElement('div');
+            rate.className = 'muted';
+            rate.textContent =
+              c.commission_type === 'fixed'
+                ? c.commission_value + ' ₪ להזמנה'
+                : c.commission_value + '% מהמשחק';
+            tdPartner.appendChild(name);
+            tdPartner.appendChild(rate);
+          } else {
+            tdPartner.className = 'muted';
+            tdPartner.textContent = '—';
+          }
 
           const tdUntil = document.createElement('td');
           if (c.valid_until) {
@@ -358,8 +500,33 @@
           tdManage.appendChild(document.createTextNode(' '));
           tdManage.appendChild(delBtn);
 
+          // A partner coupon carries two more actions: her private link, and the
+          // money. Both are hidden for an ordinary discount code, which has
+          // neither.
+          if (c.commission_type && c.report_token) {
+            const linkBtn = document.createElement('button');
+            linkBtn.className = 'ghost';
+            linkBtn.textContent = 'העתק קישור לדוח';
+            linkBtn.onclick = () => {
+              const url = location.origin + '/partner.html?t=' + c.report_token;
+              navigator.clipboard.writeText(url).then(() => {
+                linkBtn.textContent = 'הועתק ✓';
+                setTimeout(() => (linkBtn.textContent = 'העתק קישור לדוח'), 1500);
+              });
+            };
+            const moneyBtn = document.createElement('button');
+            moneyBtn.className = 'ghost';
+            moneyBtn.textContent = 'רווחים ותשלומים';
+            moneyBtn.onclick = () => toggleReport(c, tr);
+            tdManage.appendChild(document.createTextNode(' '));
+            tdManage.appendChild(linkBtn);
+            tdManage.appendChild(document.createTextNode(' '));
+            tdManage.appendChild(moneyBtn);
+          }
+
           tr.appendChild(tdCode);
           tr.appendChild(tdPct);
+          tr.appendChild(tdPartner);
           tr.appendChild(tdUntil);
           tr.appendChild(tdStatus);
           tr.appendChild(tdUses);
@@ -404,7 +571,14 @@
           const r = await fetch(withKey('/api/admin/coupons'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code, discount_pct: pct, valid_until: until || null }),
+            body: JSON.stringify({
+              code,
+              discount_pct: pct,
+              valid_until: until || null,
+              partner_name: partnerEl.value.trim(),
+              commission_type: ctypeEl.value || null,
+              commission_value: Number(cvalueEl.value) || 0,
+            }),
           });
           if (r.ok) {
             form.reset();
