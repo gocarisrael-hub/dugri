@@ -697,6 +697,59 @@
         font-size: 17px;
       }
 
+      /* THE WAIT. Between סיום and her own cards there are twenty to fifty
+         seconds of headless Chrome, and this is what stands in them: what is
+         being made, roughly how long, and nothing to press. It also carries the
+         two ways this can end without cards — the box being at its render cap,
+         and a render that failed — because neither is anything she did, and
+         neither may read as an error screen. */
+      .produce-wait-card {
+        max-width: 420px;
+        height: auto;
+        max-height: 92%;
+        border-width: 2px;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        gap: 14px;
+        padding: 34px 24px;
+      }
+      .produce-wait-spin {
+        width: 44px;
+        height: 44px;
+        border: 3px solid rgba(0, 0, 0, 0.14);
+        border-top-color: var(--ink);
+        border-radius: 50%;
+        animation: produce-spin 0.9s linear infinite;
+      }
+      @keyframes produce-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .produce-wait-spin {
+          animation-duration: 3s;
+        }
+      }
+      .produce-wait-title {
+        margin: 0;
+        font-size: 21px;
+        line-height: 1.35;
+        font-weight: 600;
+      }
+      .produce-wait-sub {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 1.5;
+      }
+      .produce-wait-card button {
+        width: 100%;
+        padding: 13px 12px;
+        font-size: 16px;
+      }
+
       /* A FULL-SCREEN ASK. Full-screen on a phone, centred and bounded on a
          desktop. The design and photo panels are inline tabs now; what is left
          using this is the closing confirmation, which earns the whole screen
@@ -2950,6 +3003,28 @@
             סוגרים ושולחים לדפוס
           </button>
         </div>
+      </div>
+    </div>
+
+    <!-- …and the moment after that button: the deck is being rendered, and this
+         is the only thing on the screen until it is. Not a toast — she must not
+         start typing into a page whose words are already frozen — and not a
+         dialog either: there is nothing to decide, so there is nothing to press
+         until it has finished one way or the other. -->
+    <div
+      id="produceWait"
+      class="game-sheet hidden"
+      role="status"
+      aria-live="polite"
+      data-testid="produce-wait"
+    >
+      <div class="game-sheet-card produce-wait-card">
+        <div class="produce-wait-spin" id="produceWaitSpin" aria-hidden="true"></div>
+        <p class="produce-wait-title" id="produceWaitTitle" data-testid="produce-wait-title"></p>
+        <p class="produce-wait-sub" id="produceWaitSub" data-testid="produce-wait-sub"></p>
+        <button type="button" class="ghost hidden" id="produceWaitOk" data-testid="produce-wait-ok">
+          הבנתי
+        </button>
       </div>
     </div>
 
@@ -5409,6 +5484,45 @@
           });
         }
 
+        // ---- סיום, and the deck that comes out of it ------------------------
+        //
+        // Closing used to be the end of this page: post /close, re-render, show
+        // the banner. It is now the START of the last thing she does — the deck
+        // is produced while she waits, and she lands on the proof with every one
+        // of her cards on it.
+        //
+        // THE CLOSE IS SACRED and stays in its own request. Nothing below can
+        // undo it: every failure here costs her the instant proof and nothing
+        // else, and the owner can still hand it over afterwards.
+        const WAIT_POLL_MS = 2000;
+        // A render is 20-50s and the server lets four more wait behind two
+        // running, so four minutes covers the honest worst case. Past it,
+        // something has gone quiet rather than slow, and saying so beats a
+        // spinner that never stops.
+        const WAIT_GIVE_UP_MS = 4 * 60 * 1000;
+        // Both ways this ends without cards — the box at its render cap, and a
+        // render that failed. Neither is anything she did and neither is
+        // anything she can fix, so neither says "error": we have her list, it is
+        // in production, the proof follows.
+        const WAIT_CALM_TITLE = 'קיבלנו! המשחק בהפקה';
+        const WAIT_CALM_SUB =
+          'הרשימה נסגרה והמשחק שלכם בהפקה. ההדמיה של הקלפים תגיע אליכם בוואטסאפ בקרוב.';
+
+        const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+        function showWait(title, sub, spinning) {
+          $('#produceWaitTitle').textContent = title;
+          $('#produceWaitSub').textContent = sub || '';
+          $('#produceWaitSpin').classList.toggle('hidden', !spinning);
+          // Nothing to press while it is working; a way out once it is not.
+          $('#produceWaitOk').classList.toggle('hidden', !!spinning);
+          $('#produceWait').classList.remove('hidden');
+        }
+        $('#produceWaitOk').onclick = () => {
+          $('#produceWait').classList.add('hidden');
+          refresh();
+        };
+
         async function closeCollection() {
           if (!(await askToClose())) return;
           let closed = false;
@@ -5422,7 +5536,62 @@
             })
             .catch(() => {});
           if (closed) track('collection_closed');
+          if (closed) await produceAndShowProof();
           await refresh();
+        }
+
+        // Start the render, wait on it, and take her to her cards. Returns
+        // having either navigated away or left a calm line on the screen; it
+        // never throws, and it never touches the close.
+        async function produceAndShowProof() {
+          let start;
+          try {
+            start = await api('/produce', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ owner_token: ownerToken }),
+            });
+          } catch (e) {
+            // 503 'busy' is the render cap: nothing was started, and she is owed
+            // a sentence saying so. Everything else — an order that is not paid,
+            // one already reopened, a network blip — is not a state worth
+            // explaining, and the page simply re-renders the way it did before
+            // any of this existed.
+            if (e && e.body && e.body.state === 'busy')
+              showWait(WAIT_CALM_TITLE, WAIT_CALM_SUB, false);
+            return;
+          }
+          // Already produced (a second tap, or a reload after it finished).
+          if (start.state === 'ready' && start.proof_url) {
+            location.href = start.proof_url;
+            return;
+          }
+          const n = Number(start.cards);
+          showWait(
+            n > 0
+              ? 'מכינים את ' + n + ' הקלפים שלך - זה לוקח פחות מדקה'
+              : 'מכינים את הקלפים שלך - זה לוקח פחות מדקה',
+            'רגע אחד, לא לסגור את החלון',
+            true
+          );
+          const deadline = Date.now() + WAIT_GIVE_UP_MS;
+          while (Date.now() < deadline) {
+            await sleep(WAIT_POLL_MS);
+            let s;
+            try {
+              s = await api('/produce?k=' + encodeURIComponent(ownerToken));
+            } catch {
+              continue; // a blip mid-render is not an answer; keep asking
+            }
+            if (s.state === 'ready' && s.proof_url) {
+              location.href = s.proof_url;
+              return;
+            }
+            // 'error' is a render that failed; 'idle' means the server no longer
+            // knows about it (a restart mid-render). Both end the same way.
+            if (s.state === 'error' || s.state === 'idle') break;
+          }
+          showWait(WAIT_CALM_TITLE, WAIT_CALM_SUB, false);
         }
         // The button is dead until she has ticked the line above it. Wired here
         // rather than in the markup so a page that somehow renders without the
