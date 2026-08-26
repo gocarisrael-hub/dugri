@@ -1668,17 +1668,15 @@
         font-size: 13px;
         color: var(--muted);
       }
-      /* The pickup footnote sits on the same rail and at the same weight as the
-         remote-towns note it sits above — both are annotations on the option
-         they follow, not options themselves. */
-      .pickup-more {
-        margin: 8px 0 0 0;
-        margin-inline-start: 18px;
-        font-size: 13px;
+      /* The pickup note is the same component as the remote-towns one below it —
+         both are annotations on the option they follow, not options themselves.
+         It only needs its own rail: .pay-opts > .odd-note indents to line up
+         with the delivery ADD-ON, and this one annotates the option above it. */
+      .pay-opts > .pickup-note {
+        margin-inline-start: 0;
       }
-      .pickup-more a {
-        color: var(--muted);
-        text-decoration: underline;
+      .pickup-note p:last-child {
+        margin-top: 10px;
       }
       /* Indented to the same rail as the add-on it annotates (.pay-addon carries
          margin-inline-start: 18px), so it reads as attached to that block rather
@@ -2652,15 +2650,43 @@
           </label>
           <!-- OUTSIDE the label above, for the reason spelled out on the
                remote-towns note further down: .pay-opt IS a <label>, so a click
-               anywhere inside it is forwarded to its radio. A link nested there
+               anywhere inside it is forwarded to its radio. Anything nested there
                would change the buyer's selected version on her way to reading
                about the pickup — she would come back to a different order than
-               she left. As a sibling it is just a footnote to the option. -->
-          <p class="pickup-more">
-            <a href="pickup.html" data-testid="pickup-details-link" data-edit="collect-pickup-more"
-              >פרטי האיסוף העצמי - כתובת, שעות ומה להביא</a
-            >
-          </p>
+               she left. As a sibling it is just a footnote to the option.
+
+               It OPENS IN PLACE. It shipped as a link to /pickup, which walked
+               the buyer out of a half-filled order to read an address: the words
+               she had typed, the copies she had chosen and the coupon she had
+               applied were all behind a Back button she had no reason to trust.
+               Nobody leaves a checkout to look something up and comes back sure
+               their order survived. The full page still exists, and the last line
+               links to it — in a NEW TAB, so even that cannot cost her the order. -->
+          <details class="odd-note pickup-note" data-testid="pickup-details">
+            <summary data-edit="collect-pickup-summary">
+              פרטי האיסוף העצמי - כתובת, שעות ומה להביא
+            </summary>
+            <p data-edit="collect-pickup-addr">
+              <b>בית הדפוס גלאור</b> · התחייה 14, תל אביב · כניסה B, קומה ראשונה.
+            </p>
+            <p data-edit="collect-pickup-hours">
+              פתוח ראשון-רביעי 9:00-16:30, חמישי 9:00-15:30. שישי ושבת סגור.
+            </p>
+            <p data-edit="collect-pickup-bring">
+              להביא: הכותרת שבחרתם, השם והטלפון של המזמין/ה. נעדכן אתכם כשהמשחק מוכן - אין צורך
+              להגיע לפני.
+            </p>
+            <p>
+              <a
+                href="pickup.html"
+                target="_blank"
+                rel="noopener"
+                data-testid="pickup-details-link"
+                data-edit="collect-pickup-more"
+                >לעמוד האיסוף המלא, עם תמונות של הדרך</a
+              >
+            </p>
+          </details>
           <label class="pay-opt pay-opt-custom">
             <input type="radio" name="payVersion" value="custom" />
             <span class="opt-body">

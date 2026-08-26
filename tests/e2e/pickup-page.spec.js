@@ -90,20 +90,59 @@ test('the route is three numbered steps plus the photo', async ({ page }) => {
   expect(await img.evaluate((el) => el.naturalWidth)).toBeGreaterThan(0);
 });
 
-test('the checkout links to it from OUTSIDE the pickup label', async ({ page, request }) => {
-  const r = await request.post('/api/collections', {
-    data: { honoree_name: 'איסוף' + Date.now(), owner_email: 'pickup@example.com' },
+// AT THE CHECKOUT the pickup details OPEN IN PLACE. They shipped as a link to
+// this page, which walked a buyer out of a half-filled order to read an address:
+// the words she had typed, the copies she had chosen and the coupon she had
+// applied were all behind a Back button she had no reason to trust. Nobody
+// leaves a checkout to look something up and comes back sure their order
+// survived.
+test.describe('at the checkout', () => {
+  test.beforeEach(async ({ page, request }) => {
+    const r = await request.post('/api/collections', {
+      data: { honoree_name: 'איסוף' + Date.now(), owner_email: 'pickup@example.com' },
+    });
+    const { id, owner_token } = await r.json();
+    await page.goto(`/collect.html?c=${id}&k=${owner_token}&pay=1`);
   });
-  const { id, owner_token } = await r.json();
-  await page.goto(`/collect.html?c=${id}&k=${owner_token}&pay=1`);
 
-  const link = page.getByTestId('pickup-details-link');
-  await expect(link).toBeVisible();
-  await expect(link).toHaveAttribute('href', 'pickup.html');
-  // .pay-opt IS a <label>: a link inside one would flip the buyer's chosen
-  // version on the way out, and she would come back to a different order than
-  // she left. It has to be a sibling.
-  expect(await link.evaluate((el) => !!el.closest('label'))).toBe(false);
+  test('the details expand in place and never leave the order', async ({ page }) => {
+    const note = page.getByTestId('pickup-details');
+    await expect(note).toBeVisible();
+    // Shut on arrival — it is a footnote, not a section of the checkout.
+    expect(await note.evaluate((el) => el.open)).toBe(false);
+
+    const before = page.url();
+    await note.locator('summary').click();
+    expect(await note.evaluate((el) => el.open)).toBe(true);
+    // THE WHOLE POINT: still on the order, at the same address.
+    expect(page.url()).toBe(before);
+    await expect(note).toContainText('התחייה 14');
+    await expect(note).toContainText('כניסה B');
+  });
+
+  test('opening it does not touch the buyer’s chosen version', async ({ page }) => {
+    // .pay-opt IS a <label>: anything inside one forwards its click to that
+    // radio, so the note has to be a sibling — and opening it must leave the
+    // selection exactly as she left it.
+    const note = page.getByTestId('pickup-details');
+    expect(await note.evaluate((el) => !!el.closest('label'))).toBe(false);
+
+    const chosen = () => page.locator('input[name="payVersion"]:checked').getAttribute('value');
+    const before = await chosen();
+    await note.locator('summary').click();
+    expect(await chosen()).toBe(before);
+  });
+
+  test('the full page opens in a NEW tab, so even that cannot cost her the order', async ({
+    page,
+  }) => {
+    const note = page.getByTestId('pickup-details');
+    await note.locator('summary').click();
+    const link = page.getByTestId('pickup-details-link');
+    await expect(link).toHaveAttribute('href', 'pickup.html');
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', /noopener/);
+  });
 });
 
 // The footer link, on every page that carries a footer. Self-pickup is the half
