@@ -531,8 +531,11 @@
   .backwall {
     margin-top: 22px;
   }
+  /* The backs sat wider than the fronts, which said the back is the important
+     one. Every card the press prints is the same size here, because every one of
+     them is a card the artwork can push a box around on. */
   .backwall .wall {
-    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(214px, 1fr));
   }
   .stage .stagehint {
     font-size: 12.5px;
@@ -942,6 +945,7 @@
         <b>0.70</b> — they sit close and read as one word again. It only ever pulls lines closer,
         never further apart, so nothing can end up outside the card.
       </p>
+      <p class="hint" id="wrapRoom"></p>
       <div class="read" id="wRead" hidden></div>
     </section>
 
@@ -3648,6 +3652,34 @@
 
   /* ---------- the wall ---------- */
   let LAST = {};
+  // WHAT IS HOLDING THE SIZE, in the owner's words. The fit already knows — it
+  // returns the edge it stopped at — and the only thing missing was saying so
+  // anywhere she looks.
+  const HOLD = { width: 'הרוחב', height: 'הגובה', ceiling: 'התקרה' };
+
+  /* HOW MANY MORE LINES THIS BOX CAN ABSORB, which is the difference between "a
+     long word breaks" and "a long word shrinks the whole card".
+
+     `hBind` is the largest the box could EVER set — the height half of
+     min(width, height), which does not depend on the words. The card is sitting
+     at `he`. Adding a line multiplies the height the block asks for by
+     (lines+1)/lines, so the size the box could still set afterwards is
+     hBind x lines/(lines+k). A break is free while that stays at or above what
+     the card already sets, which solves to k <= lines x (hBind/he - 1).
+
+     Derived from the fit's own two numbers rather than re-measured here: a
+     second opinion about the same box is how a readout starts promising room
+     the card cannot afford. */
+  function freeBreaks(fit, words) {
+    if (!fit || !(fit.he > 0) || !(fit.hBind > 0)) return 0;
+    const lines = words.reduce(
+      (n, w, i) => n + (((fit.layout && fit.layout[i]) || [w]).length || 1),
+      0
+    );
+    if (!lines) return 0;
+    return Math.max(0, Math.floor(lines * (fit.hBind / fit.he - 1) + 1e-9));
+  }
+
   function paint() {
     if (typeof askThePress === 'function') askThePress();
     const words = [0, 1, 2, 3].map((i) => $('w' + i).value.trim());
@@ -3659,6 +3691,24 @@
       .map((id) => capMax(id, fit.hBind))
       .some(Boolean);
     if (pulled) fit = wordFit(words, SEL);
+    {
+      const k = freeBreaks(fit, words);
+      const hold = fit.capped ? 'ceiling' : fit.bind;
+      const say = {
+        height: 'הגובה של הקופסה מחזיק את הגודל — סגרו את הרווח בין השורות או הגביהו את הקופסה.',
+        width: 'הרוחב של הקופסה מחזיק את הגודל — הרחיבו אותה, או תנו למילה הארוכה להישבר.',
+        ceiling: 'התקרה מחזיקה את הגודל — הרימו אותה אם רוצים גדול יותר.',
+      };
+      const room = $('wrapRoom');
+      if (room) {
+        room.innerHTML =
+          (say[hold] || '') +
+          ' ' +
+          (k >= 1
+            ? `נשאר מקום ל<b>${k} שבירות שורה</b> נוספות בלי להקטין את הטיפוגרפיה.`
+            : 'אין מקום לשבירה נוספת — כל שבירה מכאן <b>תקטין את כל הקלף</b>.');
+      }
+    }
     const NM = scriptNames();
     const tallestFor = (nm) =>
       Math.max(...FRONTS.map((k) => fitFor(S.titles[k], nm, FRONT_CAPS).capH));
@@ -3726,8 +3776,8 @@
       const why = document.createElement('div');
       why.className = 'why';
       why.innerHTML =
-        `<span>words ${r2(cfit.he)}${cfit.capped ? ' <span class="c">at ceiling</span>' : ` held by <span class="b">${cfit.bind}</span>`}</span>` +
-        `<span>title ${tf.capped ? '<span class="c">at ceiling</span>' : `by <span class="b">${tf.bind}</span>`}</span>`;
+        `<span>מילים ${r2(cfit.he)}${cfit.capped ? ' <span class="c">בתקרה</span>' : ` — <span class="b">${HOLD[cfit.bind] || cfit.bind}</span>`}</span>` +
+        `<span>כותרת ${tf.capped ? '<span class="c">בתקרה</span>' : `— <span class="b">${HOLD[tf.bind] || tf.bind}</span>`}</span>`;
       slot.appendChild(why);
       const cc = document.createElement('div');
       cc.className = 'cc';
@@ -3764,7 +3814,7 @@
       const bwhy = document.createElement('div');
       bwhy.className = 'why';
       bwhy.innerHTML = bf
-        ? `<span>${bf.capped ? '<span class="c">at its ceiling</span>' : `held by <span class="b">${bf.bind}</span>`}</span><span>${r2(bf.size)}</span>`
+        ? `<span>${bf.capped ? '<span class="c">בתקרה</span>' : `<span class="b">${HOLD[bf.bind] || bf.bind}</span>`}</span><span>${r2(bf.size)}</span>`
         : `<span>artwork only — nothing personal is printed on this back</span>`;
       bslot.appendChild(bwhy);
       if (bf) {
