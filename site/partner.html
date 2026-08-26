@@ -165,6 +165,7 @@
               <tr>
                 <th>הזמנה</th>
                 <th>תאריך</th>
+                <th>עותקים</th>
                 <th>הלקוחה שילמה</th>
                 <th>היא חסכה</th>
                 <th>הרווח שלך</th>
@@ -225,7 +226,7 @@
         // is owed from a percentage she was told once in a DM.
         $('rate').textContent =
           (c.commission_type === 'fixed'
-            ? 'את מרוויחה ' + money(c.commission_value) + ' על כל הזמנה'
+            ? 'את מרוויחה ' + money(c.commission_value) + ' על כל עותק שנמכר'
             : 'את מרוויחה ' + c.commission_value + '% ממחיר המשחק') +
           ' · הלקוחות שלך מקבלות ' +
           c.discount_pct +
@@ -246,6 +247,8 @@
             const cells = [
               [s.order_no || '—', ''],
               [fmtDate(s.paid_at), ''],
+              // What makes a 90 ₪ line under a 30 ₪ rate add up.
+              [String(s.quantity || 1), 'num'],
               [money(s.charged_total), 'num'],
               [money(s.customer_saved), 'num'],
               [money(s.amount), 'num earn'],

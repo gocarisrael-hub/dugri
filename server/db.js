@@ -641,18 +641,23 @@ function normalizeCommission({ partner_name, commission_type, commission_value }
 // caller decides whether they come from the coupon (a new sale) or from the
 // order's own snapshot (history).
 //
-// THE BASE is the game money only: charged_total minus the shipping fee. Postage
-// is the courier's, and paying a cut of it loses money on every parcel. It
-// mirrors the rule the discount itself already follows — a code buys a game, not
-// postage.
+// FIXED is per COPY, so a three-copy order pays three times: one order can be
+// three games sold, and the blogger sold all three. PERCENT already scales with
+// the copies, because the money charged does.
+//
+// THE PERCENT BASE is the game money only: charged_total minus the shipping fee.
+// Postage is the courier's, and paying a cut of it loses money on every parcel.
+// It mirrors the rule the discount itself already follows — a code buys a game,
+// not postage.
 //
 // A FREE order earns nothing whatever the terms say. A 100%-off code takes no
 // money, and a fixed fee on top of it would be the shop paying to give a game
-// away. The sale is still reported, at zero, rather than hidden.
+// away — times the copy count, which is how a generous gift becomes an invoice.
+// The sale is still reported, at zero, rather than hidden.
 function commissionFor(order, { type, value }) {
   const charged = Number(order && order.charged_total);
   if (!type || !Number.isFinite(charged) || charged <= 0) return 0;
-  if (type === 'fixed') return round2(value);
+  if (type === 'fixed') return round2(value * sanitizeQuantity(order && order.quantity));
   const fee = Number((order && order.delivery_fee) || 0);
   const base = Math.max(0, charged - (Number.isFinite(fee) ? fee : 0));
   return round2((base * value) / 100);
@@ -2310,10 +2315,10 @@ const db = {
   // without commission_type are ordinary discount codes and behave exactly as
   // before; nothing here changes for them.
   //
-  // 'fixed' is a flat sum PER ORDER, not per copy: a three-copy order is one
-  // sale. It is deliberately unrelated to the discount — the owner agrees a
-  // number with the blogger ("30 ₪ a sale") and the size of the discount her
-  // audience gets is a separate lever.
+  // 'fixed' is a flat sum PER COPY. A buyer who orders three games has sold
+  // three games, and the blogger is paid for three. It is deliberately unrelated
+  // to the discount — the owner agrees a number with the blogger ("30 ₪ a game")
+  // and the size of the discount her audience gets is a separate lever.
   //
   // `payouts` is what has actually been handed over: [{ id, amount, date, note,
   // created_at }]. Outstanding is earned minus paid, and BOTH sides are derived
@@ -2524,6 +2529,9 @@ const db = {
         customer_saved: saved,
         quantity: o.quantity || 1,
         rate: snap ? { type: snap.type, value: snap.value } : null,
+        // Copies are what makes a 90 ₪ line under a 30 ₪ rate add up, so the
+        // number travels with the row rather than leaving her to guess.
+
         amount: snap ? round2(snap.amount) : 0,
       });
     }
