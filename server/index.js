@@ -41,6 +41,7 @@ const templateImport = require('./template-import');
 const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 const generatorProc = require('./generator-proc');
 const proof = require('./proof');
+const deckJobs = require('./deck-jobs');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -1169,11 +1170,29 @@ function generatorStatus(detail) {
   return 500;
 }
 
-app.post('/api/admin/collections/:id/generate', async (req, res) => {
-  if (!requireAdmin(req, res)) return;
-  const c = db.getCollection(req.params.id);
-  if (!c) return res.status(404).json({ error: 'not found' });
-  const b = req.body || {};
+// PRODUCE ONE DECK — the machinery behind every produce button there is.
+//
+// Lifted out of the admin route unchanged so the BUYER's סיום can run exactly
+// the same production the owner's "צור PDF" runs: same theme resolution, same
+// word bank, same pre-production validation, same generator spawn, same press
+// pass, same db.setProduction — which is the call that mints `pdf_token`, and so
+// the only thing that can make a proof link exist. Two code paths producing two
+// slightly different decks is the drift this project has already paid for; there
+// is one path.
+//
+// Answers in three ways, and they are not interchangeable:
+//   * { refuse: { status, body } } — the caller has to fix something (no theme,
+//     no words, an unknown theme, a failed pre-production check). Nothing was
+//     rendered and nothing was spent.
+//   * throws — the generator itself failed. generatorStatus() maps the message.
+//   * { production, boardFile } — the deck is on disk and recorded.
+//
+// opts.notifyOnError: whether a validation refusal also MAILS the customer what
+// to fix. True for the owner pressing produce (she is acting on the order and
+// the mail is the handover); false for the buyer's automatic run, where the mail
+// would arrive seconds after her own "we're producing" mail and contradict it.
+async function produceDeck(c, b, opts = {}) {
+  const refuse = (status, body) => ({ refuse: { status, body } });
   // One-click production: fall back to the collection's STORED resolved theme
   // (db sets `theme` from the design the buyer chose) so the admin button can
   // post an empty body. An explicit body theme still wins, so re-generating onto
@@ -1181,7 +1200,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   // downstream check (unknown theme, then the validate.js pre-production checks)
   // runs on the resolved key exactly as before.
   const theme = String(b.theme || c.theme || '').trim();
-  if (!theme) return res.status(400).json({ error: 'theme required' });
+  if (!theme) return refuse(400, { error: 'theme required' });
   // The APPROVED BANK when this order has one, the buyer's own words otherwise.
   // A frozen bank is already a full deck, and topup keeps every word it is given
   // and only fills a shortfall — so handing it over prints the approved list
@@ -1190,14 +1209,14 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     c,
     db.listWords(c.id).map((w) => w.text)
   );
-  if (!words.length) return res.status(400).json({ error: 'no words to generate' });
+  if (!words.length) return refuse(400, { error: 'no words to generate' });
 
   // Reject an unknown theme up front. An unknown key makes getTheme() null, which
   // makes validateOrderForProduction skip every theme-specific check (name
   // language, required extra fields) and still spawn the generator — so a bad
   // theme must fail fast here, before any validation is trusted or Chrome runs.
   const themeConfig = validate.getTheme(theme);
-  if (!themeConfig) return res.status(400).json({ error: 'unknown theme' });
+  if (!themeConfig) return refuse(400, { error: 'unknown theme' });
 
   // The render inputs the BUYER chose. Both live on the stored order; the body
   // may only OVERRIDE them, never erase them (validate.effectiveExtraFields
@@ -1232,97 +1251,107 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
       theme,
     });
     const base = paymentBaseUrl();
-    if (notify.isConfigured()) {
+    if (opts.notifyOnError !== false && notify.isConfigured()) {
       notify.sendProductionError({ ...c, count: words.length }, base, problems).catch(() => {});
     }
-    return res.status(400).json({ error: 'validation failed', problems, production });
+    return refuse(400, { error: 'validation failed', problems, production });
   }
 
   // Use the stored (validated) id — never the raw param — for the output path.
   const outPdf = path.join(GENERATED_DIR, c.id + '.pdf');
 
-  try {
-    const { pages, smallCards } = await runGenerator({
-      theme,
-      name: c.honoree_name || '',
-      words,
-      outPdf,
-      wordFont,
-      extraFields,
-      chasers: !!c.chasers,
-      customTitle: c.custom_title || null,
-      photos: pawnPhotoFiles(c),
-      // …each with the frame the buyer set for it on her collection page, in the
-      // same order (both come off pawnPhotoEntries).
-      photoFrames: pawnPhotoFrames(c),
-      // From the STORED collection, never the request body. The wizard asks the
-      // buyer for the honoree's gender once and it is validated to
-      // 'male'/'female'/null at the door (db.createCollection), so the order
-      // itself is the only place that knows it — an admin clicking "produce"
-      // posts an empty body and must still get בת on a girl's cards.
-      gender: c.gender || null,
-      // The owner's per-order seed pool, chosen in the order edit dialog. Null
-      // means "use the theme's own", which is what every order did before this
-      // existed. Read from the STORED collection, like everything else here.
-      wordlist: c.wordlist || null,
-      cardOrder: c.card_order || null,
-      // Where HER words end in the list above — see personalCountForProduction.
-      personalCount: wordBank.personalCountForProduction(c),
-    });
-    // The board is a second, separate artifact — recorded on production so the
-    // admin UI knows whether to offer it, and left null for a generator run that
-    // produced none (a v1 theme, whose board is still the deck's last page).
-    // ONE source of truth: what the generator actually left on disk. The child
-    // also prints the board path on stdout (#233), but the download routes have
-    // to probe the disk anyway — they run in a later request — and two sources
-    // can disagree, so the record is derived the same way the routes resolve it.
-    const boardFile = boardFileFor(c.id);
-    // THE PRINT SHOP'S COPY, built from the deck that was just produced —
-    // "1 button called create pdf and what it does is creating the pdf (as now
-    // this button do) and then run this script". One button, and nothing to wait
-    // for: the marks pass is 0.44s on a real 208-page order, so the shop's file
-    // is on disk before this request answers.
-    //
-    // NO COLOUR CONVERSION — "remove the cymk entirely". It was minutes of
-    // Ghostscript for a decision the shop makes better than we can, and it is the
-    // reason the old press build needed a button, a progress poll and a way to
-    // say "still building".
-    //
-    // The press file is an EXTRA, deliberately: a failure here leaves the order
-    // produced and the customer's deck correct, and is recorded rather than
-    // thrown. The one thing it must not do is leave a STALE press file from an
-    // earlier run beside a freshly produced deck — that is a file the shop would
-    // print without anyone noticing it belongs to an older version — so the old
-    // one goes before the new one is built.
-    const pressFiles = pressPaths(c.id);
-    pressUnlink(pressFiles.err, pressFiles.pdf, pressFiles.partial);
-    const marks = await pressMarks.addMarks(outPdf, pressFiles.pdf);
-    if (!marks.ok) {
-      try {
-        fs.writeFileSync(pressFiles.err, String(marks.detail || 'press_marks failed'), 'utf8');
-      } catch {
-        /* the produce itself still succeeded */
-      }
+  const { pages, smallCards } = await runGenerator({
+    theme,
+    name: c.honoree_name || '',
+    words,
+    outPdf,
+    wordFont,
+    extraFields,
+    chasers: !!c.chasers,
+    customTitle: c.custom_title || null,
+    photos: pawnPhotoFiles(c),
+    // …each with the frame the buyer set for it on her collection page, in the
+    // same order (both come off pawnPhotoEntries).
+    photoFrames: pawnPhotoFrames(c),
+    // From the STORED collection, never the request body. The wizard asks the
+    // buyer for the honoree's gender once and it is validated to
+    // 'male'/'female'/null at the door (db.createCollection), so the order
+    // itself is the only place that knows it — an admin clicking "produce"
+    // posts an empty body and must still get בת on a girl's cards.
+    gender: c.gender || null,
+    // The owner's per-order seed pool, chosen in the order edit dialog. Null
+    // means "use the theme's own", which is what every order did before this
+    // existed. Read from the STORED collection, like everything else here.
+    wordlist: c.wordlist || null,
+    cardOrder: c.card_order || null,
+    // Where HER words end in the list above — see personalCountForProduction.
+    personalCount: wordBank.personalCountForProduction(c),
+  });
+  // The board is a second, separate artifact — recorded on production so the
+  // admin UI knows whether to offer it, and left null for a generator run that
+  // produced none (a v1 theme, whose board is still the deck's last page).
+  // ONE source of truth: what the generator actually left on disk. The child
+  // also prints the board path on stdout (#233), but the download routes have
+  // to probe the disk anyway — they run in a later request — and two sources
+  // can disagree, so the record is derived the same way the routes resolve it.
+  const boardFile = boardFileFor(c.id);
+  // THE PRINT SHOP'S COPY, built from the deck that was just produced —
+  // "1 button called create pdf and what it does is creating the pdf (as now
+  // this button do) and then run this script". One button, and nothing to wait
+  // for: the marks pass is 0.44s on a real 208-page order, so the shop's file
+  // is on disk before this request answers.
+  //
+  // NO COLOUR CONVERSION — "remove the cymk entirely". It was minutes of
+  // Ghostscript for a decision the shop makes better than we can, and it is the
+  // reason the old press build needed a button, a progress poll and a way to
+  // say "still building".
+  //
+  // The press file is an EXTRA, deliberately: a failure here leaves the order
+  // produced and the customer's deck correct, and is recorded rather than
+  // thrown. The one thing it must not do is leave a STALE press file from an
+  // earlier run beside a freshly produced deck — that is a file the shop would
+  // print without anyone noticing it belongs to an older version — so the old
+  // one goes before the new one is built.
+  const pressFiles = pressPaths(c.id);
+  pressUnlink(pressFiles.err, pressFiles.pdf, pressFiles.partial);
+  const marks = await pressMarks.addMarks(outPdf, pressFiles.pdf);
+  if (!marks.ok) {
+    try {
+      fs.writeFileSync(pressFiles.err, String(marks.detail || 'press_marks failed'), 'utf8');
+    } catch {
+      /* the produce itself still succeeded */
     }
-    const production = db.setProduction(c.id, {
-      state: 'generated',
-      pdf_file: path.basename(outPdf),
-      board_file: boardFile ? path.basename(boardFile) : null,
-      generated_at: new Date().toISOString(),
-      theme,
-      pages,
-      // Whether the shop's copy is on disk. There is only ONE kind of press file
-      // now, so this is a fact rather than a mode: 'ready' or 'failed'.
-      press: marks.ok ? 'ready' : 'failed',
-      // Cards that will print noticeably smaller than the rest, and the entry
-      // responsible for each. The owner asked for this after finding decks with
-      // "1 card that the font size of the words is super tiny because of 1
-      // fucked up word": the packer already puts such entries together so they
-      // cost one card instead of four, and what is left is a word only she can
-      // shorten. A NOTE, never a block — the deck is correct, it is one card she
-      // may want to rewrite.
-      small_cards: smallCards && smallCards.length ? smallCards : null,
-    });
+  }
+  const production = db.setProduction(c.id, {
+    state: 'generated',
+    pdf_file: path.basename(outPdf),
+    board_file: boardFile ? path.basename(boardFile) : null,
+    generated_at: new Date().toISOString(),
+    theme,
+    pages,
+    // Whether the shop's copy is on disk. There is only ONE kind of press file
+    // now, so this is a fact rather than a mode: 'ready' or 'failed'.
+    press: marks.ok ? 'ready' : 'failed',
+    // Cards that will print noticeably smaller than the rest, and the entry
+    // responsible for each. The owner asked for this after finding decks with
+    // "1 card that the font size of the words is super tiny because of 1
+    // fucked up word": the packer already puts such entries together so they
+    // cost one card instead of four, and what is left is a word only she can
+    // shorten. A NOTE, never a block — the deck is correct, it is one card she
+    // may want to rewrite.
+    small_cards: smallCards && smallCards.length ? smallCards : null,
+  });
+  return { production, boardFile };
+}
+
+app.post('/api/admin/collections/:id/generate', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  try {
+    const out = await produceDeck(c, req.body || {}, { notifyOnError: true });
+    if (out.refuse) return res.status(out.refuse.status).json(out.refuse.body);
+    const { production, boardFile } = out;
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:
     //  - adminLink carries the master ADMIN_KEY and is for Dugri's own use only.
@@ -1647,6 +1676,145 @@ app.get('/api/collections/:id/proof/:n', (req, res) => {
   // that rebuilds the whole proof directory under a fresh manifest.
   res.setHeader('Cache-Control', 'private, max-age=3600');
   res.sendFile(file);
+});
+
+// --- PRODUCTION ON סיום ----------------------------------------------------
+//
+// She presses סיום and the deck is rendered THEN, so the next thing she sees is
+// her own cards instead of a thank-you note. Two routes, both gated on the
+// collection's owner_token — the same secret the close itself is posted with, so
+// finishing an order never needs the admin key:
+//
+//   POST /produce  starts a render (or joins the one already going) and answers
+//                  immediately: 202 while it runs, 503 when the box is full.
+//   GET  /produce  is what the waiting screen polls. Cheap by construction — a
+//                  store read and a Map lookup, no filesystem walk beyond one
+//                  existsSync, no work scheduled.
+//
+// IT DOES NOT BLOCK FOR THE RENDER. A deck is 20-50s of headless Chrome and
+// GENERATE_TIMEOUT_MS allows two minutes; holding a request open that long is a
+// connection a phone browser will drop on a lock-screen, and a dropped
+// connection would leave the buyer with no way to learn how it ended. Kick off,
+// then poll.
+//
+// WHAT PROTECTS THE BOX is server/deck-jobs.js: one render per collection ever
+// (so a double-tap or a reload joins rather than starts), two concurrent renders
+// across all buyers, four more allowed to wait, and an honest "busy" past that.
+// The owner's admin produce is deliberately NOT routed through the queue — it is
+// one person acting on one order and must never be told to wait behind buyers.
+
+function deckOnDisk(id) {
+  try {
+    return fs.existsSync(path.join(GENERATED_DIR, id + '.pdf'));
+  } catch {
+    return false;
+  }
+}
+
+// Where an order stands, in the words the waiting screen needs.
+//
+// 'ready' comes off the ORDER, never off the job: a produced deck stays produced
+// across a restart, and a buyer who reopens the tab an hour later must still be
+// sent to her cards. The job only explains the states before that.
+function produceState(c) {
+  const production = (c.order && c.order.production) || c.production || null;
+  const token = production && production.pdf_token;
+  if (production && production.state === 'generated' && token && deckOnDisk(c.id)) {
+    return {
+      state: 'ready',
+      pages: production.pages || null,
+      proof_url: '/proof.html?c=' + encodeURIComponent(c.id) + '&t=' + encodeURIComponent(token),
+    };
+  }
+  const job = deckJobs.get(c.id);
+  if (job && (job.state === 'running' || job.state === 'queued')) return { state: job.state };
+  if (job && job.state === 'error') return { state: 'error' };
+  return { state: 'idle' };
+}
+
+// How many cards she is waiting for, so the screen can say a number instead of
+// "please wait". From the SAME list production will print — the frozen bank when
+// there is one — at the deck's four words per card. An estimate, and treated as
+// one: null when it cannot be worked out, and the screen drops the number.
+function cardEstimate(c) {
+  try {
+    const words = wordBank.wordsForProduction(
+      c,
+      db.listWords(c.id).map((w) => w.text)
+    );
+    return words.length ? Math.ceil(words.length / 4) : null;
+  } catch {
+    return null;
+  }
+}
+
+app.post('/api/collections/:id/produce', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const token = req.body && req.body.owner_token;
+  if (!c.owner_token || c.owner_token !== token)
+    return res.status(403).json({ error: 'forbidden' });
+  res.setHeader('Cache-Control', 'no-store');
+
+  // Already produced: a second tap, or a reload after it finished. Hand back the
+  // proof rather than rendering the same deck again.
+  const already = produceState(c);
+  if (already.state === 'ready') return res.json(already);
+
+  // CLOSED FIRST, always. The close route is what freezes the word bank, and the
+  // deck has to be rendered from the frozen list rather than one still being
+  // typed into. It is also the rate limit that matters: closing is a one-way
+  // transition, so no buyer can ask for render after render.
+  if (c.status !== 'closed') return res.status(409).json({ error: 'open' });
+
+  // AND PAID. The proof shows every card in the deck, which is the product — an
+  // unpaid order that produced one would be giving it away. The pre-payment
+  // "מספיק! סיימנו לאסוף" therefore closes exactly as it always did and renders
+  // nothing; it is the post-payment "סיום - התחילו להפיק" that produces. This is
+  // one condition, and the owner can drop it if she'd rather every close render.
+  if (!(c.order && c.order.paid)) return res.status(409).json({ error: 'unpaid' });
+
+  const job = deckJobs.start(c.id, async () => {
+    // Re-read: the job may have sat in the queue for a minute, and the words,
+    // the title and the frozen bank are all read at render time.
+    const fresh = db.getCollection(c.id);
+    if (!fresh) throw new Error('collection vanished');
+    const out = await produceDeck(fresh, {}, { notifyOnError: false });
+    if (out.refuse) throw new Error((out.refuse.body && out.refuse.body.error) || 'refused');
+    // …and rasterise the proof while she is still on the waiting screen. Best
+    // effort, and never a reason to fail the job: the deck is produced either
+    // way, and proof.html builds it on arrival if this did not. What it buys is
+    // that her page JOINS this build (proof.js is single-flight per collection)
+    // instead of starting its own seven seconds after we told her it was ready.
+    await proof
+      .ensure({
+        generatedDir: GENERATED_DIR,
+        id: fresh.id,
+        python: PYTHON_BIN,
+        repoRoot: REPO_ROOT,
+      })
+      .catch(() => {});
+  });
+  if (job.state === 'busy') {
+    // Nothing was started and nothing was queued — say so, out loud, rather than
+    // leaving a spinner to time out. THE ORDER IS STILL CLOSED: the close
+    // happened in its own request and is not undone by this, so the owner
+    // produces it by hand and nothing is lost but the instant proof.
+    res.setHeader('Retry-After', '120');
+    return res.status(503).json({ state: 'busy' });
+  }
+  res
+    .status(202)
+    .json({ state: job.state === 'queued' ? 'queued' : 'running', cards: cardEstimate(c) });
+});
+
+app.get('/api/collections/:id/produce', (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  if (!c.owner_token || c.owner_token !== req.query.k)
+    return res.status(403).json({ error: 'forbidden' });
+  res.setHeader('Cache-Control', 'no-store');
+  res.json(produceState(c));
 });
 
 // Admin: mark an order SENT TO THE PRINT SHOP. A toggle: body {undo:true} takes
