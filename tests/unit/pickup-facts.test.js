@@ -74,11 +74,10 @@ describe('the checkout note stays a note', () => {
     expect(flat(read('collect.html'))).toContain('<details class="odd-note pickup-note"');
   });
 
-  it('its only link to the full page opens in a new tab', () => {
-    // Even the escape hatch must not be able to cost her the order.
-    expect(note).toContain('href="pickup.html"');
-    expect(note).toContain('target="_blank"');
-    expect(note).toContain('rel="noopener"');
+  it('offers no way out of the order at all', () => {
+    // The escape hatch is gone, not merely made survivable with target="_blank":
+    // the note above already answers what the full page would have told her.
+    expect(note).not.toContain('pickup.html');
   });
 
   it('ships shut — a footnote, not a section of the checkout', () => {
