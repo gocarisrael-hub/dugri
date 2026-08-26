@@ -55,7 +55,7 @@ test.describe('a partner coupon', () => {
     await expect(row).toHaveCount(1);
     // The two facts that turn a discount into a partnership sit in the row.
     await expect(row).toContainText('נועה');
-    await expect(row).toContainText('30 ₪ להזמנה');
+    await expect(row).toContainText('30 ₪ לעותק');
     await expect(row.getByRole('button', { name: 'העתק קישור לדוח' })).toBeVisible();
   });
 

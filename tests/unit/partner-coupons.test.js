@@ -35,11 +35,11 @@ beforeEach(() => {
 
 // A paid order carrying `code`, charged `charged` with `fee` of that being
 // postage. Returns the collection id.
-function paidOrder(code, { charged = 239, fee = 0, total = 279 } = {}) {
+function paidOrder(code, { charged = 239, fee = 0, total = 279, quantity = 1 } = {}) {
   const c = db.createCollection({ honoree_name: 'ש', owner_email: 'b@example.com' });
   c.order = {
     version: fee ? 'delivery' : 'pickup',
-    quantity: 1,
+    quantity,
     delivery_fee: fee,
     total,
     paid: false,
@@ -88,12 +88,45 @@ describe('creating a partner coupon', () => {
 });
 
 describe('what a sale earns', () => {
-  it('a fixed rate is per ORDER, whatever the discount was', () => {
+  it('a fixed rate is per COPY, whatever the discount was', () => {
     partner();
     paidOrder('BLOG', { charged: 203 });
     const rep = db.partnerReport(db.getCouponByCode('BLOG').id);
     expect(rep.totals.sales).toBe(1);
     expect(rep.totals.earned).toBe(30);
+  });
+
+  it('three copies in one order pay three times', () => {
+    partner({ code: 'THREE' });
+    paidOrder('THREE', { charged: 609, quantity: 3 });
+    const rep = db.partnerReport(db.getCouponByCode('THREE').id);
+    // One order, three games sold — and she sold all three.
+    expect(rep.totals.sales).toBe(1);
+    expect(rep.totals.earned).toBe(90);
+    // The copy count travels with the row, or a 90 ₪ line under a 30 ₪ rate
+    // looks like an error.
+    expect(rep.sales[0].quantity).toBe(3);
+  });
+
+  it('a missing or nonsense copy count is worth one, never zero or many', () => {
+    partner({ code: 'QTY' });
+    const c = db.createCollection({ honoree_name: 'ש', owner_email: 'b@example.com' });
+    c.order = { version: 'pickup', delivery_fee: 0, total: 279, paid: false };
+    db.markPaid(c.id, { charged_total: 239, coupon: 'QTY', discount_pct: 15 });
+    expect(db.partnerReport(db.getCouponByCode('QTY').id).totals.earned).toBe(30);
+  });
+
+  it('a free order earns nothing however many copies it is', () => {
+    partner({ code: 'FREE3' });
+    paidOrder('FREE3', { charged: 0, quantity: 3 });
+    // Times the copy count is how a generous gift becomes an invoice.
+    expect(db.partnerReport(db.getCouponByCode('FREE3').id).totals.earned).toBe(0);
+  });
+
+  it('a percent rate needs no copy rule — the money charged already scales', () => {
+    partner({ code: 'PCT3', commission_type: 'percent', commission_value: 20 });
+    paidOrder('PCT3', { charged: 609, quantity: 3 });
+    expect(db.partnerReport(db.getCouponByCode('PCT3').id).totals.earned).toBe(121.8);
   });
 
   it('a percent rate is on the game money — never on the postage', () => {

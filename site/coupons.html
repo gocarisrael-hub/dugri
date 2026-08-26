@@ -215,6 +215,7 @@
         <a data-page="admin.html">ניהול הזמנות</a>
         <a data-page="coupons.html" class="active">ניהול קופונים</a>
         <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
         <a data-page="admin-designs.html">עיצובים</a>
         <a data-page="admin-wordlists.html">רשימות מילים</a>
         <a data-page="admin-playbook.html">פלייבוק</a>
@@ -255,7 +256,7 @@
             <label for="ctype">היא מרוויחה</label>
             <select id="ctype">
               <option value="">— לא משווקת —</option>
-              <option value="fixed">סכום קבוע להזמנה (₪)</option>
+              <option value="fixed">סכום קבוע לכל עותק (₪)</option>
               <option value="percent">אחוז מהמשחק</option>
             </select>
           </div>
@@ -398,13 +399,14 @@
         if (rep.sales.length) {
           const t = document.createElement('table');
           t.innerHTML =
-            '<thead><tr><th>הזמנה</th><th>תאריך</th><th>שולם</th><th>הלקוחה חסכה</th><th>הרווח שלה</th></tr></thead>';
+            '<thead><tr><th>הזמנה</th><th>תאריך</th><th>עותקים</th><th>שולם</th><th>הלקוחה חסכה</th><th>הרווח שלה</th></tr></thead>';
           const body = document.createElement('tbody');
           for (const sale of rep.sales) {
             const r2 = document.createElement('tr');
             for (const v of [
               sale.order_no || '—',
               sale.paid_at ? fmtDate(sale.paid_at.slice(0, 10)) : '—',
+              sale.quantity,
               money(sale.charged_total),
               money(sale.customer_saved),
               money(sale.amount),
@@ -450,7 +452,7 @@
             rate.className = 'muted';
             rate.textContent =
               c.commission_type === 'fixed'
-                ? c.commission_value + ' ₪ להזמנה'
+                ? c.commission_value + ' ₪ לעותק'
                 : c.commission_value + '% מהמשחק';
             tdPartner.appendChild(name);
             tdPartner.appendChild(rate);
@@ -514,12 +516,23 @@
                 setTimeout(() => (linkBtn.textContent = 'העתק קישור לדוח'), 1500);
               });
             };
+            // A way to SEE her page, not only to copy its link — the owner should
+            // be able to check what the blogger is looking at before answering a
+            // question about it. New tab, so the coupon list is not lost.
+            const viewBtn = document.createElement('a');
+            viewBtn.className = 'ghost';
+            viewBtn.textContent = 'פתח את הדוח שלה';
+            viewBtn.href = '/partner.html?t=' + c.report_token;
+            viewBtn.target = '_blank';
+            viewBtn.rel = 'noopener';
             const moneyBtn = document.createElement('button');
             moneyBtn.className = 'ghost';
             moneyBtn.textContent = 'רווחים ותשלומים';
             moneyBtn.onclick = () => toggleReport(c, tr);
             tdManage.appendChild(document.createTextNode(' '));
             tdManage.appendChild(linkBtn);
+            tdManage.appendChild(document.createTextNode(' '));
+            tdManage.appendChild(viewBtn);
             tdManage.appendChild(document.createTextNode(' '));
             tdManage.appendChild(moneyBtn);
           }
