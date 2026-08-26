@@ -26,17 +26,16 @@ test('the editor comes up right-to-left, in Hebrew, without throwing', async ({ 
 
 test('a template it cannot load is reported, in Hebrew, not left blank', async ({ page }) => {
   await page.goto('/admin-bench.html?key=' + KEY);
-  // Either it loaded a template (the pitch slider exists) or it explains itself.
-  const drew = await page
-    .locator('#wPitch')
-    .waitFor({ state: 'attached', timeout: 8000 })
-    .then(() => true)
-    .catch(() => false);
-  if (drew) {
-    await expect(page.locator('#wPitch')).toBeVisible();
-    return;
-  }
-  await expect(page.locator('body')).toContainText('לא הצלחתי לטעון את התבנית');
+  // Either it loaded a template (the pitch slider is VISIBLE) or it explains itself.
+  //
+  // Asserted as one wait over both, not as "decide, then check". `#wPitch` ships
+  // in the static markup, so an `attached` probe answers yes before the fetch has
+  // resolved — and when the load then fails, the error render REMOVES it. That
+  // left a window where the probe said "drawn" and the assertion found nothing,
+  // which is exactly how this failed under a full-suite run and passed alone.
+  const drew = page.locator('#wPitch');
+  const said = page.getByText('לא הצלחתי לטעון את התבנית');
+  await expect(drew.or(said).first()).toBeVisible({ timeout: 15000 });
 });
 
 test('a wrong key is refused, and says so', async ({ page }) => {
