@@ -133,15 +133,21 @@ test.describe('at the checkout', () => {
     expect(await chosen()).toBe(before);
   });
 
-  test('the full page opens in a NEW tab, so even that cannot cost her the order', async ({
-    page,
-  }) => {
+  test('the note offers no way out of the checkout at all', async ({ page }) => {
+    // The note used to end with a link to the full pickup page. Even opening in a
+    // new tab, it invited a buyer mid-order to go and read something else; the
+    // note already answers the question it asks, so the way out is gone. The full
+    // page is still reachable from the footer of every page and from the FAQ,
+    // where there is no half-filled order to lose.
     const note = page.getByTestId('pickup-details');
     await note.locator('summary').click();
-    const link = page.getByTestId('pickup-details-link');
-    await expect(link).toHaveAttribute('href', 'pickup.html');
-    await expect(link).toHaveAttribute('target', '_blank');
-    await expect(link).toHaveAttribute('rel', /noopener/);
+    expect(await note.evaluate((el) => el.open)).toBe(true);
+    await expect(page.getByTestId('pickup-details-link')).toHaveCount(0);
+    await expect(note.locator('a')).toHaveCount(0);
+    // What it must still answer, on its own.
+    await expect(note).toContainText('התחייה 14');
+    await expect(note).toContainText('9:00');
+    await expect(note).toContainText('להביא');
   });
 });
 
