@@ -1,4 +1,5 @@
 <title>עורך התבנית</title>
+<meta name="dugri:dir" content="rtl" />
 <link rel="stylesheet" href="/assets/fonts/fonts.css" />
 <style>
   :root {
@@ -79,6 +80,9 @@
     box-sizing: border-box;
   }
   html,
+  html {
+    direction: rtl;
+  }
   body {
     margin: 0;
     padding: 0;
@@ -863,33 +867,25 @@
   <div class="brand">
     <span class="he" id="brandHe"></span><span class="en" id="brandEn"></span>
   </div>
-  <div class="field">
-    <span>honoree</span><input type="text" id="name" value="MAYA" dir="auto" />
-  </div>
-  <div class="seg">
-    <button class="btn" data-name="MAYA">en</button>
-    <button class="btn" data-name="מיה">he</button>
-  </div>
+  <input type="text" id="name" value="MAYA" dir="auto" hidden />
   <div class="sp"></div>
   <span class="hint" id="copied"></span>
-  <button class="btn solid" id="copy">copy the numbers</button>
-  <button class="btn" id="reset">reset to live</button>
+  <button class="btn solid" id="copy">העתקת המספרים</button>
+  <button class="btn" id="reset">חזרה למה שחי</button>
   <span class="tag" id="kept"></span>
 </div>
 
 <div class="shell">
   <div class="panel">
     <section class="grp">
-      <h2>The four words <span class="tagx">preview only</span></h2>
+      <h2>המילים שבתצוגה <span class="tagx">לתצוגה בלבד</span></h2>
       <div class="pair">
         <input type="text" id="w0" dir="auto" /><input type="text" id="w1" dir="auto" />
         <input type="text" id="w2" dir="auto" /><input type="text" id="w3" dir="auto" />
       </div>
       <div class="seg">
-        <button class="btn" data-words="he">hebrew</button>
-        <button class="btn" data-words="mix">mixed</button>
-        <button class="btn" data-words="en">english</button>
-        <button class="btn" data-words="long">long</button>
+        <button class="btn" data-words="mix">מעורב</button>
+        <button class="btn" data-words="long">מעורב ארוך</button>
       </div>
       <p class="hint">
         All four words on a card are set at <b>one size</b>. The longest one decides it, and the
@@ -898,15 +894,19 @@
     </section>
 
     <section class="grp">
-      <h2>Word box <span class="tagx all">every card</span></h2>
+      <h2>קופסת המילים <span class="tagx all">כל הקלפים</span></h2>
       <p class="hint">
         One box holds all four rows. Drag it to move; pull a <b>side</b> to grow it that way alone,
         or a corner for two ways at once.
       </p>
-      <label class="sw"><input type="checkbox" id="wBold" /> fatten it (synthetic bold)</label>
+      <label class="sw"><input type="checkbox" id="wBold" /> להשמין את האותיות</label>
+      <p class="hint">
+        לגופן אין משקל מודגש אמיתי, ולכן ההדגשה נעשית בקו סביב כל אות. זה מעבה אותה — וגם
+        <b>מרחיב</b> אותה, כי הקו בולט מעבר לשני קצות השורה.
+      </p>
       <p class="hint" id="faceNote"></p>
 
-      <label class="sw"><input type="checkbox" id="wFit" checked /> Size follows the box</label>
+      <input type="checkbox" id="wFit" checked hidden />
       <p class="hint">
         Untick to pin a number instead — but <b>the box still wins</b>: a pin stops at the box the
         same way a ceiling does. Nothing on this page can print bigger than its rectangle.
@@ -916,7 +916,7 @@
         <input type="range" id="wPin" min="8" max="42" step="0.01" /><output id="wPinV"></output>
       </div>
       <div class="row">
-        <label for="wPitch">line gap</label>
+        <label for="wPitch">רווח בין שורות</label>
         <input type="range" id="wPitch" min="0.9" max="3" step="0.01" /><output
           id="wPitchV"
         ></output>
@@ -928,7 +928,7 @@
         width stops it. It never goes below what the letters need to clear each other.
       </p>
       <div class="row">
-        <label for="wTight">wrapped lines</label>
+        <label for="wTight">שורות של מילה שנשברה</label>
         <input type="range" id="wTight" min="0.5" max="1" step="0.01" /><output
           id="wTightV"
         ></output>
@@ -942,46 +942,46 @@
         <b>0.70</b> — they sit close and read as one word again. It only ever pulls lines closer,
         never further apart, so nothing can end up outside the card.
       </p>
-      <div class="read" id="wRead"></div>
+      <div class="read" id="wRead" hidden></div>
     </section>
 
     <section class="grp">
-      <h2>Word ceilings <span class="tagx all">every card</span></h2>
+      <h2>תקרות המילים <span class="tagx all">כל הקלפים</span></h2>
       <p class="hint">
         Off, the box alone decides and a bigger box means bigger type. Switch a ceiling on and it
         holds the type down — never up: it <b>stops at the box</b>, because a maximum above the box
         is a maximum that never comes down.
       </p>
-      <label class="sw"><input type="checkbox" id="capOn" /> Hold the words down</label>
+      <input type="checkbox" id="capOn" checked hidden />
       <div class="row">
-        <label for="capHe">hebrew max</label>
+        <label for="capHe">תקרה לעברית</label>
         <input type="range" id="capHe" min="8" max="48" step="0.01" /><output id="capHeV"></output>
       </div>
       <div class="eg" id="capHeEg"></div>
       <div class="row">
-        <label for="capEn">english max</label>
+        <label for="capEn">תקרה לאנגלית</label>
         <input type="range" id="capEn" min="6" max="48" step="0.01" /><output id="capEnV"></output>
       </div>
       <div class="eg" id="capEnEg"></div>
     </section>
 
     <section class="grp">
-      <h2>English words <span class="tagx all">every card</span></h2>
+      <h2>אנגלית מול עברית <span class="tagx all">כל הקלפים</span></h2>
       <p class="hint">
         An English word set in the Hebrew face runs wide, so on a mixed card it drags the Hebrew
         down with it. Give English its own size and it stops pulling.
       </p>
       <p class="hint" id="enNote"></p>
       <div class="row wide">
-        <label for="enMode">english size</label>
+        <label for="enMode">גודל האנגלית</label>
         <select id="enMode">
-          <option value="scale">a share of the Hebrew</option>
-          <option value="exact">an exact size</option>
-          <option value="free">its own fit, capped</option>
+          <option value="scale">חלק מהעברית</option>
+          <option value="exact">גודל קבוע</option>
+          <option value="free">התאמה עצמאית, עם תקרה</option>
         </select>
       </div>
       <div class="row" id="enScaleRow">
-        <label for="enScale">share</label>
+        <label for="enScale">היחס</label>
         <input type="range" id="enScale" min="0.4" max="1.3" step="0.01" /><output
           id="enScaleV"
         ></output>
@@ -992,10 +992,7 @@
           id="enSizeV"
         ></output>
       </div>
-      <label class="sw"
-        ><input type="checkbox" id="enDrag" checked /> English words drag the card's size
-        down</label
-      >
+      <input type="checkbox" id="enDrag" checked hidden />
       <p class="hint">
         Untick and a Latin entry is measured on its own, so one long English word no longer shrinks
         the Hebrew beside it.
@@ -1003,19 +1000,19 @@
     </section>
 
     <section class="grp">
-      <h2>The title <span class="tagx all">every card</span></h2>
+      <h2>הכותרת <span class="tagx all">כל הקלפים</span></h2>
       <div class="row" id="genderRow" hidden>
-        <label for="tGender">boy or girl</label>
+        <label for="tGender">בן או בת</label>
         <select id="tGender">
           <option value="m">בן</option>
           <option value="f">בת</option></select
         ><output></output>
       </div>
       <div class="row" id="ageRow" hidden>
-        <label for="tAge">age</label> <input type="text" id="tAge" value="30" /><output></output>
+        <label for="tAge">גיל</label> <input type="text" id="tAge" value="30" /><output></output>
       </div>
       <div class="row wide">
-        <label for="titleMode">words</label>
+        <label for="titleMode">מילים</label>
         <select id="titleMode">
           <option value="template">the template, filled with a name</option>
           <option value="own">whatever I type</option>
@@ -1032,8 +1029,8 @@
     </section>
 
     <section class="grp">
-      <h2>Title — front <span class="tagx" id="tScope">card 2</span></h2>
-      <label class="sw"><input type="checkbox" id="tFit" checked /> Size follows the box</label>
+      <h2>הכותרת הקדמית <span class="tagx" id="tScope">card 2</span></h2>
+      <input type="checkbox" id="tFit" checked hidden />
       <div class="row" id="tPinRow" hidden>
         <label for="tPin">pinned size</label>
         <input type="range" id="tPin" min="6" max="60" step="0.01" /><output id="tPinV"></output>
@@ -1045,15 +1042,15 @@
       </p>
       <label class="sw"><input type="checkbox" id="tLock" /> Left-to-right follows too</label>
       <div class="row wide">
-        <label for="tAlign">align</label>
+        <label for="tAlign">יישור</label>
         <select id="tAlign">
-          <option>center</option>
-          <option>left</option>
-          <option>right</option>
+          <option>מרכז</option>
+          <option>שמאל</option>
+          <option>ימין</option>
         </select>
       </div>
       <div class="row">
-        <label for="tLead">line gap</label>
+        <label for="tLead">רווח בין שורות</label>
         <input type="range" id="tLead" min="0.5" max="1.4" step="0.01" /><output
           id="tLeadV"
         ></output>
@@ -1062,22 +1059,22 @@
         <button class="btn" data-title="level">level all to this card</button>
         <button class="btn" data-title="copy">copy to all cards</button>
       </div>
-      <div class="read" id="tRead"></div>
+      <div class="read" id="tRead" hidden></div>
     </section>
 
     <section class="grp">
-      <h2>Title ceilings <span class="tagx all">every card</span></h2>
+      <h2>תקרות הכותרת <span class="tagx all">כל הקלפים</span></h2>
       <p class="hint" id="titleFaceNote"></p>
-      <label class="sw"><input type="checkbox" id="tCapOn" /> Hold the front titles down</label>
+      <input type="checkbox" id="tCapOn" checked hidden />
       <div class="row">
-        <label for="tCapEn">english max</label>
+        <label for="tCapEn">תקרה לאנגלית</label>
         <input type="range" id="tCapEn" min="8" max="80" step="0.01" /><output
           id="tCapEnV"
         ></output>
       </div>
       <div class="eg" id="tCapEnEg"></div>
       <div class="row">
-        <label for="tCapHe">hebrew max</label>
+        <label for="tCapHe">תקרה לעברית</label>
         <input type="range" id="tCapHe" min="8" max="80" step="0.01" /><output
           id="tCapHeV"
         ></output>
@@ -1087,31 +1084,31 @@
     </section>
 
     <section class="grp" id="backTitleGrp">
-      <h2>Title — back <span class="tagx">the back</span></h2>
-      <label class="sw"><input type="checkbox" id="bFit" checked /> Size follows the box</label>
+      <h2>כותרת הגב <span class="tagx">הגב בלבד</span></h2>
+      <input type="checkbox" id="bFit" checked hidden />
       <div class="row" id="bPinRow" hidden>
         <label for="bPin">pinned size</label>
         <input type="range" id="bPin" min="6" max="60" step="0.01" /><output id="bPinV"></output>
       </div>
-      <div class="read" id="bRead"></div>
+      <div class="read" id="bRead" hidden></div>
     </section>
 
     <section class="grp" id="backCapGrp">
-      <h2>Back ceilings <span class="tagx">the back only</span></h2>
+      <h2>תקרות הגב <span class="tagx">הגב בלבד</span></h2>
       <p class="hint">
         The back is one big card with nothing to dodge, so its title goes much larger than a front's
         — it gets its own pair, stopping at its own box.
       </p>
-      <label class="sw"><input type="checkbox" id="bCapOn" /> Hold the back title down</label>
+      <input type="checkbox" id="bCapOn" checked hidden />
       <div class="row">
-        <label for="bCapEn">english max</label>
+        <label for="bCapEn">תקרה לאנגלית</label>
         <input type="range" id="bCapEn" min="8" max="90" step="0.01" /><output
           id="bCapEnV"
         ></output>
       </div>
       <div class="eg" id="bCapEnEg"></div>
       <div class="row">
-        <label for="bCapHe">hebrew max</label>
+        <label for="bCapHe">תקרה לעברית</label>
         <input type="range" id="bCapHe" min="8" max="90" step="0.01" /><output
           id="bCapHeV"
         ></output>
@@ -1140,7 +1137,7 @@
     </p>
     <div class="wall" id="wall"></div>
     <div class="backwall" id="shortwrap">
-      <h3>Where a ceiling bites</h3>
+      <h3>איפה התקרה נוגסת</h3>
       <p class="stagehint">
         Two-letter words and a three-letter name, on the card you have selected. Nothing holds the
         width, so the type reaches the box's own maximum — and a ceiling is the only thing that can
@@ -1150,61 +1147,22 @@
       <div class="wall" id="shortwall"></div>
     </div>
 
-    <section class="try" id="try">
-      <h3>Try a size</h3>
-      <p class="stagehint">
-        Type the words you are worried about, set a size by hand, and look at it. Nothing is fitted
-        here — the number you pick is the number that prints, and it is wired straight to the
-        ceilings, so whatever you settle on is what the cards above and the PDF below will use.
-      </p>
-      <div class="tryctl">
-        <div class="trycol">
-          <h4>the words</h4>
-          <div class="tf"><span>row 1</span><input type="text" id="t0" dir="auto" /></div>
-          <div class="tf"><span>row 2</span><input type="text" id="t1" dir="auto" /></div>
-          <div class="tf"><span>row 3</span><input type="text" id="t2" dir="auto" /></div>
-          <div class="tf"><span>row 4</span><input type="text" id="t3" dir="auto" /></div>
-          <div class="tf"><span>honoree</span><input type="text" id="tName" dir="auto" /></div>
-          <button class="btn xs wide" id="tryPull">take the words from the panel</button>
-        </div>
-        <div class="trycol">
-          <h4>the sizes</h4>
-          <div class="row">
-            <label for="tryHe">hebrew words</label>
-            <input type="range" id="tryHe" min="6" max="60" step="0.01" /><output
-              id="tryHeV"
-            ></output>
-          </div>
-          <div class="row">
-            <label for="tryEn">english words</label>
-            <input type="range" id="tryEn" min="6" max="60" step="0.01" /><output
-              id="tryEnV"
-            ></output>
-          </div>
-          <div class="row">
-            <label for="tryT">front title</label>
-            <input type="range" id="tryT" min="6" max="80" step="0.01" /><output
-              id="tryTV"
-            ></output>
-          </div>
-          <div class="row">
-            <label for="tryB">back title</label>
-            <input type="range" id="tryB" min="6" max="90" step="0.01" /><output
-              id="tryBV"
-            ></output>
-          </div>
-          <p class="hint">
-            These four <b>are the ceilings</b>. Move one and the matching ceiling on the left takes
-            it at once, switched on — so the wall, the deck and the PDF all follow. The box still
-            has the last word: a size it cannot give comes back pulled in.
-          </p>
-        </div>
-      </div>
-      <div class="wall trywall" id="trywall"></div>
-    </section>
+    <!-- THE TRY PANEL IS GONE FROM THE SCREEN, and its four inputs are not.
+         The ceilings mirror them (see MIRROR): a ceiling slider writes its
+         partner here and reads it back. Deleting the elements would leave that
+         wiring reaching for nulls on load, so they stay as hidden state until
+         the mirroring itself is unpicked — which is its own change, not a
+         passenger on a visual one. Each keeps a .row parent because the setup
+         code walks to it. -->
+    <div hidden id="tryLegacy">
+      <div class="row"><input type="range" id="tryHe" min="6" max="60" step="0.01" /></div>
+      <div class="row"><input type="range" id="tryEn" min="6" max="60" step="0.01" /></div>
+      <div class="row"><input type="range" id="tryT" min="6" max="80" step="0.01" /></div>
+      <div class="row"><input type="range" id="tryB" min="6" max="90" step="0.01" /></div>
+    </div>
 
     <section class="try" id="deck">
-      <h3>The whole deck</h3>
+      <h3>כל החבילה</h3>
       <p class="stagehint">
         A real order, laid out with the numbers above and nothing else — the same box, the same line
         gap, the same ceilings, the same title, and the generator's own wrapping.
@@ -1227,7 +1185,7 @@
         <div class="trycol">
           <h4>the sheet</h4>
           <div class="row">
-            <label for="deckDpi">resolution</label>
+            <label for="deckDpi">רזולוציה</label>
             <input type="range" id="deckDpi" min="96" max="300" step="1" /><output
               id="deckDpiV"
             ></output>
@@ -1243,8 +1201,8 @@
           </p>
           <p class="hint" id="deckCaps"></p>
           <div class="btns">
-            <button class="btn solid" id="deckGo">build the PDF</button>
-            <button class="btn xs wide" id="capsOff">no ceilings</button>
+            <button class="btn solid" id="deckGo">הורדת החבילה</button>
+            <button class="btn xs wide" id="capsOff">בלי תקרות</button>
           </div>
           <p class="hint" id="deckStatus"></p>
         </div>
@@ -1252,15 +1210,15 @@
     </section>
 
     <div class="backwall">
-      <h3>The back</h3>
+      <h3>הגב</h3>
       <div class="wall" id="backwall"></div>
     </div>
     <div class="out">
       <div class="bar">
-        <h2>The numbers</h2>
+        <h2>המספרים</h2>
         <span class="chips" id="capState"></span>
         <div class="sp"></div>
-        <button class="btn" id="copy2">copy</button>
+        <button class="btn" id="copy2">העתקה</button>
       </div>
       <pre id="json"></pre>
     </div>
@@ -1870,17 +1828,26 @@
     return out;
   }
 
-  function centreTitle(k, how) {
+  // Move the BOX, and let the artwork be the wall for every direction.
+  //
+  // It used to offer two buttons — centre in the card, or centre in the clear —
+  // which made dodging the picture a mode you opted into rather than a fact
+  // about the card. Now right / centre / left all place the box inside the run
+  // of paper the artwork leaves at the box's own height; where the artwork does
+  // not reach that band, that run IS the card, and the three behave as you would
+  // expect on an empty card.
+  function alignTitle(k, how) {
     const back = k === 'back';
     const b = back ? S.back : S.titles[k];
     const w = b.x1 - b.x0;
-    let m = 0.5;
-    if (how === 'clear') {
-      const run = clearRun(back ? BACKK : k, b.y0, b.y1);
-      if (!run) return false;
-      m = (run.x0 + run.x1) / 2;
-    }
-    const nb = { ...b, x0: m - w / 2, x1: m + w / 2 };
+    const run = clearRun(back ? BACKK : k, b.y0, b.y1) || { x0: 0, x1: 1 };
+    const room = run.x1 - run.x0;
+    // A box wider than the free run cannot be placed inside it; sit it at the
+    // run's own centre rather than pretending it fits.
+    const width = Math.min(w, room);
+    const x0 =
+      how === 'right' ? run.x1 - width : how === 'left' ? run.x0 : run.x0 + (room - width) / 2;
+    const nb = { ...b, x0, x1: x0 + w };
     if (back) S.back = nb;
     else S.titles[k] = nb;
     return true;
@@ -3607,8 +3574,9 @@
     }
   }
   /* WHAT IS HOLDING THE DECK DOWN, said where the deck is built. A ceiling set
-   while trying a size is invisible by the time you reach this button — one nudge
-   in Try a size took a real deck from 24.5 to 8.0 and nothing on the way said so. */
+   in one panel is invisible by the time you reach this button — one nudge to a
+   ceiling once took a real deck from 24.5 to 8.0 and nothing on the way said so,
+   which is why the state is restated here rather than assumed remembered. */
   function deckCaps() {
     const on = [];
     if ($('capOn').checked)
@@ -3764,9 +3732,9 @@
       const cc = document.createElement('div');
       cc.className = 'cc';
       cc.innerHTML =
-        `<span class="cclab">centre</span>` +
-        `<button class="btn xs" data-centre="clear" data-k="${k}">in the clear</button>` +
-        `<button class="btn xs" data-centre="card" data-k="${k}">in the card</button>`;
+        `<button class="btn xs" data-centre="right" data-k="${k}">ימין</button>` +
+        `<button class="btn xs" data-centre="center" data-k="${k}">מרכז</button>` +
+        `<button class="btn xs" data-centre="left" data-k="${k}">שמאל</button>`;
       slot.appendChild(cc);
       wall.appendChild(slot);
       LAST['t' + k] = tf;
@@ -3803,9 +3771,9 @@
         const bcc = document.createElement('div');
         bcc.className = 'cc';
         bcc.innerHTML =
-          `<span class="cclab">centre</span>` +
-          `<button class="btn xs" data-centre="clear" data-k="back">in the clear</button>` +
-          `<button class="btn xs" data-centre="card" data-k="back">in the card</button>`;
+          `<button class="btn xs" data-centre="right" data-k="back">ימין</button>` +
+          `<button class="btn xs" data-centre="center" data-k="back">מרכז</button>` +
+          `<button class="btn xs" data-centre="left" data-k="back">שמאל</button>`;
         bslot.appendChild(bcc);
       }
       bw.appendChild(bslot);
@@ -3914,7 +3882,7 @@
       fit.bind === 'width'
         ? 'Pull the <span class="bind">left or right</span> side to grow them. Taller does nothing yet.'
         : fit.bind === 'height'
-          ? 'Open the <span class="bind">line gap</span> — or pull top/bottom — to grow them. Wider does nothing yet.'
+          ? 'Open the <span class="bind">רווח בין שורות</span> — or pull top/bottom — to grow them. Wider does nothing yet.'
           : 'Pinned: the box only places the words.';
     $('wRead').innerHTML =
       `box   x <b>${r4(band.x0)}–${r4(band.x1)}</b>  y <b>${r4(band.y0)}–${r4(band.y1)}</b>\n` +
@@ -4200,8 +4168,7 @@
     if (b.dataset.centre) {
       const k = b.dataset.k;
       if (k !== 'back' && k !== SEL) SEL = k;
-      if (!centreTitle(k, b.dataset.centre) && b.dataset.centre === 'clear')
-        $('copied').textContent = 'nothing clear to centre in there';
+      alignTitle(k, b.dataset.centre);
       paint();
     }
     if (b.dataset.capchip) {
