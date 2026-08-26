@@ -426,6 +426,22 @@ function orderTotal(version, quantity, unitPrice) {
 }
 
 // --- free word quota ---------------------------------------------------------
+// THE DECK CAP. One full deck is 412 words — 103 word cards of four, which is
+// generator/topup.py's TARGET and what site/collect.html has always shown as
+// "מקסימום" on the counter. Until now that label was the only thing enforcing
+// it: the input stayed live past 412, the server had no ceiling at all, and five
+// orders reached production oversized (417, 423 …). The generator keeps every
+// personal word by design, so those printed as bigger decks — 212 pages instead
+// of 208 — on a fixed price.
+//
+// A ceiling the page claims and the server does not hold is not a ceiling. This
+// is the number, in one place, for the store, the routes and the tests.
+//
+// GRANDFATHERED, never trimmed: a collection already over the cap keeps every
+// word it has. The cap governs what may be ADDED, and silently deleting words a
+// customer wrote is a worse failure than a slightly larger deck.
+const DECK_WORDS = 412;
+
 // A collection may gather `pricing.free_word_limit` words before payment; past
 // that, adding is blocked until the order is paid. Both knobs are owner-editable
 // (see the pricing registry). A corrupt/non-integer override falls back to the
@@ -974,6 +990,11 @@ const db = {
     // Room left under the quota, computed from the CURRENT count (Infinity when
     // the collection is exempt/paid or the gate is switched off).
     let room = freeLimitState(c, existingWords.length).remaining;
+    // Room left in the DECK. Counts held words too: a held word becomes a real
+    // one the moment the buyer pays, so holding past the cap would just defer the
+    // overflow to the checkout. Already over the cap (an order collected before
+    // this existed) yields 0 — nothing more goes in, nothing already there moves.
+    let deckRoom = Math.max(0, DECK_WORDS - existingWords.length - heldWords.length);
     // Set BEFORE the words arrive (the admin picks the card order on the order,
     // then the list is sent), so it is read here rather than at production time.
     const authoredList = c.card_order === 'exact';
@@ -986,6 +1007,10 @@ const db = {
     let tooLong = 0;
     let emoji = 0;
     let niqqud = 0;
+    // Refused because the deck is full — its own counter, because "the deck holds
+    // 412" and "you have not paid yet" are different answers and the page says
+    // different things about them.
+    let full = 0;
     for (const raw of Array.isArray(words) ? words : []) {
       const text = validate.normalizeWordText(raw);
       if (!text) continue;
@@ -1027,6 +1052,14 @@ const db = {
         skipped += 1;
         continue;
       }
+      // THE DECK IS FULL. Checked after the duplicate test (a repeat is a repeat
+      // whatever the count) and before the quota: a word that cannot be printed
+      // must not be parked as held either, or payment would release it into a
+      // deck that has no room for it.
+      if (deckRoom <= 0 && !heldNorms.has(n)) {
+        full += 1;
+        continue;
+      }
       // Already held, and there is room for it now: it becomes a real word here
       // and stops being a held one below, instead of existing as both.
       if (heldNorms.has(n) && room > 0) promoted.add(n);
@@ -1049,6 +1082,7 @@ const db = {
         blocked += 1;
         if (heldRoom > 0) {
           heldRoom -= 1;
+          deckRoom -= 1;
           heldNorms.add(n);
           _db.held_words.push({
             id: uid(),
@@ -1067,6 +1101,7 @@ const db = {
         continue;
       }
       room -= 1;
+      deckRoom -= 1;
       existing.add(n);
       _db.words.push({
         id: uid(),
@@ -1085,7 +1120,7 @@ const db = {
       );
     }
     if (added || held || promoted.size || released.removed) saveDb();
-    return { added, skipped, blocked, held, dropped, tooLong, emoji, niqqud };
+    return { added, skipped, blocked, held, dropped, tooLong, emoji, niqqud, full };
   },
 
   // The free-quota state for a collection, from its live word count. Exposed so
@@ -2713,6 +2748,7 @@ module.exports.deliveryExceptions = deliveryExceptions;
 module.exports.sanitizeQuantity = sanitizeQuantity;
 module.exports.orderTotal = orderTotal;
 module.exports.MAX_COPIES = MAX_COPIES;
+module.exports.DECK_WORDS = DECK_WORDS;
 module.exports.CARD_ORDERS = CARD_ORDERS;
 // Pure free-quota projection (collection + word count -> {limit, applies, paid,
 // remaining, locked}), exposed for the API's public view and for unit tests.

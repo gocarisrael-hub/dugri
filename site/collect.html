@@ -4408,9 +4408,13 @@
         // much they bother to write. So the counter keeps its ordinary
         // minimum/maximum framing throughout; only `free_limit_locked` (a bare
         // boolean — the server deliberately does not send the limit) changes the UI.
-        applyFreeLimit(!!state.free_limit_locked);
         const n = state.count;
         const atMax = n >= MAX_WORDS;
+        // Order matters: when a collection is BOTH locked and full, the payment
+        // lock is the one shown, because it is the one the buyer can do something
+        // about.
+        if (state.free_limit_locked) applyFreeLimit(true);
+        else applyDeckFull(atMax);
         // Stage 2 kicks in once the 70-word minimum is met: the pill/hint reframe
         // around the max and the bar swaps to one scaled to MAX_WORDS.
         const stage2 = n >= WORD_GOAL;
@@ -4469,6 +4473,32 @@
       // the controls are genuinely disabled so nobody types into a dead box.
       // Takes only `locked`: the quota NUMBER never reaches the browser, so there
       // is nothing here that could leak it before the lock lands.
+      // THE DECK IS FULL — 412 words, one whole deck, and the server refuses more
+      // (db.addWords). The page has claimed "מקסימום" on the counter since the
+      // beginning while the input stayed live and the words kept going in; five
+      // orders reached production oversized that way. This closes the box at the
+      // number the page already shows.
+      //
+      // It reuses the payment lock's veil deliberately: from the buyer's side the
+      // two are the same event — the box went inert — and the only thing that
+      // matters is that the page says which one it is. The copy is the whole
+      // difference: a full deck is GOOD NEWS and reads as an achievement, not as
+      // a paywall, and it offers no pay button because paying changes nothing.
+      function applyDeckFull(full) {
+        const card = $('#addCard');
+        const veil = $('#lockVeil');
+        card.classList.toggle('locked', full);
+        veil.classList.toggle('hidden', !full);
+        for (const el of card.querySelectorAll('input, textarea, button:not(.lock-cta)')) {
+          el.disabled = full;
+        }
+        if (!full) return;
+        $('#lockChip').textContent = '🎉 החפיסה מלאה';
+        $('#lockNote').textContent =
+          'הגעתם ל-' + MAX_WORDS + ' מילים - חפיסה שלמה. אפשר לסגור ולהתחיל להפיק.';
+        $('#lockPayBtn').classList.add('hidden');
+      }
+
       function applyFreeLimit(locked) {
         const card = $('#addCard');
         const veil = $('#lockVeil');
@@ -4479,6 +4509,7 @@
           el.disabled = locked;
         }
         if (!locked) return;
+        $('#lockChip').textContent = '🔒 ההוספה נעולה';
         // Name the CAUSE. Without this the page reads as broken rather than as a
         // paywall: the box is dead, and nothing on screen says why or what fixes
         // it. The owner can act (pay); a contributor can't, so they are told who

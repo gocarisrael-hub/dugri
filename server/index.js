@@ -3118,6 +3118,12 @@ app.post('/api/collections/:id/words', (req, res) => {
     // was refused and why.
     too_long: r.tooLong || 0,
     max_word_len: validate.MAX_WORD_LEN,
+    // How many entries were refused because the deck is already full, and the
+    // size of that deck. Reported apart from `blocked` (the payment quota)
+    // because the two mean opposite things to the buyer: one clears when she
+    // pays, the other never does.
+    full: r.full || 0,
+    deck_words: db.DECK_WORDS,
     // How many entries were refused for carrying an emoji. Like `too_long` this
     // is normally 0 — collect.html filters them out before submitting, so the
     // customer is told while the word is still in front of her — but a paste
