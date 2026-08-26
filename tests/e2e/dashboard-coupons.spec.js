@@ -85,7 +85,18 @@ test('coupons: create, list with 0 uses, toggle inactive, delete', async ({ page
   await expect(row).toHaveCount(1);
   await expect(row).toContainText('15%');
   await expect(row.locator('.pill.on')).toBeVisible();
-  await expect(row.locator('td').nth(4)).toHaveText('0');
+  // The uses cell by its HEADING, not by an index. It was nth(4) until a
+  // "משווקת" column landed to its left and moved it — a positional assertion
+  // fails on a change that has nothing to do with what it is testing, and says
+  // nothing about what broke.
+  const usesAt = await page
+    .locator('thead th')
+    .allInnerTexts()
+    .then((h) => h.indexOf('שימושים'));
+  expect(usesAt).toBeGreaterThan(-1);
+  await expect(row.locator('td').nth(usesAt)).toHaveText('0');
+  // A coupon created without partner terms stays an ordinary discount code.
+  await expect(row.getByRole('button', { name: 'העתק קישור לדוח' })).toHaveCount(0);
 
   // Toggle inactive.
   await row.getByRole('button', { name: 'כבה' }).click();

@@ -2143,6 +2143,8 @@ app.get('/api/admin/coupons', (req, res) => {
 });
 
 // Admin: create a coupon. 400 on invalid input or a duplicate code.
+// Optionally a PARTNER coupon — a blogger's code that earns her money — by
+// carrying partner_name + commission_type + commission_value.
 app.post('/api/admin/coupons', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const b = req.body || {};
@@ -2150,9 +2152,87 @@ app.post('/api/admin/coupons', (req, res) => {
     code: b.code,
     discount_pct: b.discount_pct,
     valid_until: b.valid_until,
+    partner_name: b.partner_name,
+    commission_type: b.commission_type,
+    commission_value: b.commission_value,
   });
   if (coupon && coupon.error) return res.status(400).json({ error: coupon.error });
   res.status(201).json({ coupon });
+});
+
+// Admin: edit a coupon's PARTNER terms (name + what she earns). The code and the
+// discount are not editable — both are already printed in the blogger's post.
+app.post('/api/admin/coupons/:id/partner', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  const coupon = db.updateCouponPartner(req.params.id, {
+    partner_name: b.partner_name,
+    commission_type: b.commission_type,
+    commission_value: b.commission_value,
+  });
+  if (!coupon) return res.status(404).json({ error: 'not found' });
+  if (coupon.error) return res.status(400).json({ error: coupon.error });
+  res.json({ coupon });
+});
+
+// Admin: one partner's full report — the same numbers her own page shows, so
+// the two can never disagree about what is owed.
+app.get('/api/admin/coupons/:id/report', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const report = db.partnerReport(req.params.id);
+  if (!report) return res.status(404).json({ error: 'not found' });
+  res.json(report);
+});
+
+// Admin: record money actually handed to the blogger.
+app.post('/api/admin/coupons/:id/payouts', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  const payout = db.addCouponPayout(req.params.id, {
+    amount: b.amount,
+    date: b.date,
+    note: b.note,
+  });
+  if (!payout) return res.status(404).json({ error: 'not found' });
+  if (payout.error) return res.status(400).json({ error: payout.error });
+  res.status(201).json({ payout });
+});
+
+// Admin: undo a payout entry — for correcting a mistake, not for hiding one.
+app.delete('/api/admin/coupons/:id/payouts/:payoutId', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  if (!db.deleteCouponPayout(req.params.id, req.params.payoutId)) {
+    return res.status(404).json({ error: 'not found' });
+  }
+  res.json({ ok: true });
+});
+
+// Admin: issue a NEW report link, retiring the old one. For a link that leaked
+// or a partnership that ended; there is no way back to the previous token.
+app.post('/api/admin/coupons/:id/rotate-token', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const coupon = db.rotateCouponToken(req.params.id);
+  if (!coupon) return res.status(404).json({ error: 'not found' });
+  res.json({ coupon });
+});
+
+// THE BLOGGER'S OWN REPORT. No admin key and no login — the long random token in
+// the URL is the credential, which is the whole reason there is nothing here
+// worth stealing beyond her own numbers.
+//
+// It carries NO CUSTOMER DATA. Not a name, not an email, not a phone, not what
+// anyone ordered — those belong to the shop's buyers, who never agreed to be
+// listed on a partner's dashboard. An order number, a date and a sum are enough
+// for her to check every figure against what she is paid.
+app.get('/api/partner/:token', (req, res) => {
+  const coupon = db.getCouponByToken(req.params.token);
+  // Same answer for a malformed token, an unknown one and a coupon that is no
+  // longer a partner's: a 404 that distinguishes them is a way to hunt for real
+  // tokens.
+  if (!coupon) return res.status(404).json({ error: 'not found' });
+  const report = db.partnerReport(coupon.id);
+  if (!report) return res.status(404).json({ error: 'not found' });
+  res.json(report);
 });
 
 // Admin: toggle a coupon's active flag. 404 when the id is unknown.

@@ -610,6 +610,54 @@ const nowIso = () => new Date().toISOString();
 const todayStrIsrael = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Jerusalem' }).format(new Date());
 
+// Money, to the agora. Commission on a percentage lands on fractions, and a
+// float sum of fractions drifts — every amount that reaches the store or a
+// report goes through here so the two sides can never disagree by a rounding.
+function round2(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+// Validate the PARTNER terms on a coupon: who she is, and what she earns.
+// Returns the cleaned fields, or { error } — never throws, and never half-applies
+// (a bad rate must not be able to leave a coupon with a name but no terms).
+//
+// commission_type null/'' means "not a partner coupon", which clears the terms.
+// 'fixed' is shekels per order (1..10000 — a cap so a slipped keypad cannot
+// promise a fortune); 'percent' is 1..100 of the game money.
+function normalizeCommission({ partner_name, commission_type, commission_value } = {}) {
+  const name = typeof partner_name === 'string' ? partner_name.trim().slice(0, 80) : '';
+  const type = commission_type == null || commission_type === '' ? null : String(commission_type);
+  if (type === null) return { partner_name: name, commission_type: null, commission_value: 0 };
+  if (type !== 'fixed' && type !== 'percent') return { error: 'bad commission_type' };
+  const v = Number(commission_value);
+  if (!Number.isFinite(v) || v <= 0) return { error: 'bad commission_value' };
+  if (type === 'percent' && v > 100) return { error: 'bad commission_value' };
+  if (type === 'fixed' && v > 10000) return { error: 'bad commission_value' };
+  return { partner_name: name, commission_type: type, commission_value: round2(v) };
+}
+
+// What one PAID order earns its partner, given the terms in force at the time.
+// `order` is the stored order; the terms are passed in rather than read, so the
+// caller decides whether they come from the coupon (a new sale) or from the
+// order's own snapshot (history).
+//
+// THE BASE is the game money only: charged_total minus the shipping fee. Postage
+// is the courier's, and paying a cut of it loses money on every parcel. It
+// mirrors the rule the discount itself already follows — a code buys a game, not
+// postage.
+//
+// A FREE order earns nothing whatever the terms say. A 100%-off code takes no
+// money, and a fixed fee on top of it would be the shop paying to give a game
+// away. The sale is still reported, at zero, rather than hidden.
+function commissionFor(order, { type, value }) {
+  const charged = Number(order && order.charged_total);
+  if (!type || !Number.isFinite(charged) || charged <= 0) return 0;
+  if (type === 'fixed') return round2(value);
+  const fee = Number((order && order.delivery_fee) || 0);
+  const base = Math.max(0, charged - (Number.isFinite(fee) ? fee : 0));
+  return round2((base * value) / 100);
+}
+
 // Normalize a coupon code: trim + uppercase. Callers validate the [A-Z0-9] shape.
 const normCode = (s) =>
   String(s == null ? '' : s)
@@ -2133,6 +2181,27 @@ const db = {
     if (meta.charged_total != null) c.order.charged_total = Number(meta.charged_total);
     if (meta.coupon !== undefined) c.order.coupon = meta.coupon ? normCode(meta.coupon) : null;
     if (meta.discount_pct !== undefined) c.order.discount_pct = meta.discount_pct;
+    // A PARTNER coupon earns its blogger money, and the terms are FROZEN onto the
+    // order here — the single most important rule in the whole feature. Earnings
+    // are reported from these snapshots, never recomputed from the coupon: when
+    // the owner later raises a rate from 20 ₪ to 30 ₪, a live recomputation would
+    // silently re-price every sale the blogger ever made and invent a debt that
+    // was never agreed. What was sold under 20 stays 20, forever.
+    //
+    // Written on the ONE path both money events pass through (the card callback
+    // and the free-coupon path both land in markPaid), so no route can create a
+    // paid partner sale that carries no terms.
+    if (c.order.coupon) {
+      const cp = this.getCouponByCode(c.order.coupon);
+      if (cp && cp.commission_type) {
+        c.order.commission = {
+          code: cp.code,
+          type: cp.commission_type,
+          value: cp.commission_value,
+          amount: commissionFor(c.order, { type: cp.commission_type, value: cp.commission_value }),
+        };
+      }
+    }
     // Mark the matched pay session resolved so it's no longer "in flight".
     if (meta.token && c.order.pelecard && Array.isArray(c.order.pelecard.sessions)) {
       const s = c.order.pelecard.sessions.find((x) => x.token === meta.token);
@@ -2234,11 +2303,33 @@ const db = {
   // applies. Shape: { id, code, discount_pct, valid_until, active, created_at,
   // uses }. `valid_until` is a 'YYYY-MM-DD' string (inclusive) or null = never
   // expires. `uses` counts orders that used the coupon and became paid.
+  //
+  // A coupon becomes a PARTNER coupon — a blogger's code, which earns her money —
+  // by gaining `commission_type` ('fixed' | 'percent'), `commission_value`, a
+  // `partner_name` and a `report_token` (her private read-only report). Coupons
+  // without commission_type are ordinary discount codes and behave exactly as
+  // before; nothing here changes for them.
+  //
+  // 'fixed' is a flat sum PER ORDER, not per copy: a three-copy order is one
+  // sale. It is deliberately unrelated to the discount — the owner agrees a
+  // number with the blogger ("30 ₪ a sale") and the size of the discount her
+  // audience gets is a separate lever.
+  //
+  // `payouts` is what has actually been handed over: [{ id, amount, date, note,
+  // created_at }]. Outstanding is earned minus paid, and BOTH sides are derived
+  // from the orders — there is no running total to drift out of step with them.
 
   // Create a coupon. Validates the code shape/uniqueness and the percentage,
   // then persists it. Returns the stored coupon, or { error } on bad input or a
   // duplicate code.
-  createCoupon({ code, discount_pct, valid_until } = {}) {
+  createCoupon({
+    code,
+    discount_pct,
+    valid_until,
+    partner_name,
+    commission_type,
+    commission_value,
+  } = {}) {
     const c = normCode(code);
     if (!/^[A-Z0-9]{3,20}$/.test(c)) return { error: 'bad code' };
     if (!Number.isInteger(discount_pct) || discount_pct < 1 || discount_pct > 100) {
@@ -2253,6 +2344,8 @@ const db = {
       until = s;
     }
     if (_db.coupons.some((x) => x.code === c)) return { error: 'duplicate' };
+    const terms = normalizeCommission({ partner_name, commission_type, commission_value });
+    if (terms.error) return { error: terms.error };
     const coupon = {
       id: uid(),
       code: c,
@@ -2261,10 +2354,98 @@ const db = {
       active: true,
       created_at: nowIso(),
       uses: 0,
+      partner_name: terms.partner_name,
+      commission_type: terms.commission_type,
+      commission_value: terms.commission_value,
+      // Only a partner coupon gets a report link. The token is what stands
+      // between the open internet and one blogger's earnings, so it is 24 random
+      // bytes — never the code, which is short, uppercase and printed in public.
+      report_token: terms.commission_type ? crypto.randomBytes(24).toString('hex') : null,
+      payouts: [],
     };
     _db.coupons.push(coupon);
     saveDb();
     return coupon;
+  },
+
+  // Edit a coupon's PARTNER terms. The code and the discount are deliberately
+  // not editable here: both are printed in the blogger's post and in her
+  // audience's screenshots, and an edit would silently change what a customer
+  // was promised. Deactivate and issue a new code instead.
+  //
+  // Changing the rate affects FUTURE sales only — every past order carries the
+  // terms it was sold under (see markPaid). Raising a rate must never re-price
+  // history into money the owner never agreed to.
+  updateCouponPartner(id, { partner_name, commission_type, commission_value } = {}) {
+    const c = this.getCouponById(id);
+    if (!c) return null;
+    const terms = normalizeCommission({ partner_name, commission_type, commission_value });
+    if (terms.error) return { error: terms.error };
+    c.partner_name = terms.partner_name;
+    c.commission_type = terms.commission_type;
+    c.commission_value = terms.commission_value;
+    // Becoming a partner coupon mints the report link; it survives every later
+    // edit, so a link already sent to a blogger keeps working.
+    if (terms.commission_type && !c.report_token) {
+      c.report_token = crypto.randomBytes(24).toString('hex');
+    }
+    saveDb();
+    return c;
+  },
+
+  // Issue a NEW report link, retiring the old one — for a link that leaked, or a
+  // partnership that ended. There is no way back to the previous token.
+  rotateCouponToken(id) {
+    const c = this.getCouponById(id);
+    if (!c || !c.commission_type) return null;
+    c.report_token = crypto.randomBytes(24).toString('hex');
+    saveDb();
+    return c;
+  },
+
+  getCouponByToken(token) {
+    const t = String(token || '');
+    // A blank/absent token must never match a coupon that has none.
+    if (!/^[a-f0-9]{48}$/.test(t)) return null;
+    return _db.coupons.find((x) => x.report_token === t) || null;
+  },
+
+  // Record money actually handed to the blogger. Append-only from the owner's
+  // side; deleting one is for correcting a mistake, not for hiding a payment.
+  addCouponPayout(id, { amount, date, note } = {}) {
+    const c = this.getCouponById(id);
+    if (!c) return null;
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) return { error: 'bad amount' };
+    let d = todayStrIsrael();
+    if (date != null && date !== '') {
+      const str = String(date).trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(str) || Number.isNaN(Date.parse(str))) {
+        return { error: 'bad date' };
+      }
+      d = str;
+    }
+    if (!Array.isArray(c.payouts)) c.payouts = [];
+    const payout = {
+      id: uid(),
+      amount: round2(amt),
+      date: d,
+      note: typeof note === 'string' ? note.trim().slice(0, 200) : '',
+      created_at: nowIso(),
+    };
+    c.payouts.push(payout);
+    saveDb();
+    return payout;
+  },
+
+  deleteCouponPayout(id, payoutId) {
+    const c = this.getCouponById(id);
+    if (!c || !Array.isArray(c.payouts)) return false;
+    const before = c.payouts.length;
+    c.payouts = c.payouts.filter((p) => p.id !== payoutId);
+    if (c.payouts.length === before) return false;
+    saveDb();
+    return true;
   },
 
   // All coupons, newest first.
@@ -2308,6 +2489,70 @@ const db = {
       return { valid: false, reason: 'expired' };
     }
     return { valid: true, coupon: c };
+  },
+
+  // ONE partner's earnings, DERIVED from the orders every time. Nothing is
+  // stored: a running total is a second version of the truth, and the day it
+  // disagrees with the orders there is no way to tell which is wrong.
+  //
+  // A CANCELLED order is not a sale. It is excluded here — which is also why the
+  // blogger's own page can show a number the owner will actually pay, rather
+  // than one that shrinks without explanation the first time an order is voided.
+  //
+  // Returns null for an unknown coupon or one with no partner terms.
+  partnerReport(couponId) {
+    const cp = this.getCouponById(couponId);
+    if (!cp || !cp.commission_type) return null;
+    const sales = [];
+    for (const c of _db.collections) {
+      const o = c.order;
+      if (!o || !o.paid || c.cancelled) continue;
+      if (!o.coupon || o.coupon !== cp.code) continue;
+      // An order paid BEFORE the coupon gained its terms has no snapshot, and
+      // must not be paid retroactively at today's rate — it was not sold as a
+      // partner sale. Listed at zero so the two sides see the same history.
+      const snap = o.commission || null;
+      const charged = Number(o.charged_total || 0);
+      // What the customer saved: the order's own pre-discount total against what
+      // was actually charged. Both are stored, so this needs no arithmetic on a
+      // percentage and cannot drift by a rounding.
+      const saved = Math.max(0, round2(Number(o.total || 0) - charged));
+      sales.push({
+        order_no: c.order_no || null,
+        paid_at: o.paid_at || null,
+        charged_total: charged,
+        customer_saved: saved,
+        quantity: o.quantity || 1,
+        rate: snap ? { type: snap.type, value: snap.value } : null,
+        amount: snap ? round2(snap.amount) : 0,
+      });
+    }
+    sales.sort((a, b) => String(b.paid_at || '').localeCompare(String(a.paid_at || '')));
+    const earned = round2(sales.reduce((t, x) => t + x.amount, 0));
+    const payouts = Array.isArray(cp.payouts) ? [...cp.payouts] : [];
+    payouts.sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+    const paid_out = round2(payouts.reduce((t, x) => t + Number(x.amount || 0), 0));
+    return {
+      coupon: {
+        code: cp.code,
+        partner_name: cp.partner_name || '',
+        discount_pct: cp.discount_pct,
+        commission_type: cp.commission_type,
+        commission_value: cp.commission_value,
+        active: !!cp.active,
+      },
+      sales,
+      payouts,
+      totals: {
+        sales: sales.length,
+        customer_saved: round2(sales.reduce((t, x) => t + x.customer_saved, 0)),
+        earned,
+        paid_out,
+        // Can go NEGATIVE, and is shown that way: an overpayment is a fact the
+        // owner needs to see, not one to round up to zero.
+        outstanding: round2(earned - paid_out),
+      },
+    };
   },
 
   // Increment a coupon's use counter (called when an order that used it is
