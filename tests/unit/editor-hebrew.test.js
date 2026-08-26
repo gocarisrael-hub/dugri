@@ -119,3 +119,40 @@ describe('Hebrew', () => {
     expect(html).not.toContain('build the PDF');
   });
 });
+
+describe('the readouts that answer "why is the type this size"', () => {
+  it('names the edge that is holding it, in Hebrew', () => {
+    expect(html).toContain("const HOLD = { width: 'הרוחב', height: 'הגובה', ceiling: 'התקרה' }");
+    expect(html).toContain('הגובה של הקופסה מחזיק את הגודל');
+    expect(html).toContain('הרוחב של הקופסה מחזיק את הגודל');
+    expect(html).toContain('התקרה מחזיקה את הגודל');
+  });
+
+  it('the per-card line no longer reports in English', () => {
+    expect(html).not.toContain('held by <span class="b">');
+    expect(html).not.toContain('at ceiling</span>');
+    expect(html).toContain('בתקרה');
+  });
+
+  it('says how much room is left for a break, and where', () => {
+    expect(html).toContain('id="wrapRoom"');
+    expect(html).toContain('שבירות שורה');
+    expect(html).toContain('תקטין את כל הקלף');
+  });
+
+  it('derives that room from the fit, not from a second measurement', () => {
+    // A readout computed a second way is how it came to promise breaks the card
+    // could not afford.
+    expect(html).toContain('function freeBreaks(fit, words)');
+    expect(html).toContain('fit.hBind / fit.he - 1');
+  });
+});
+
+describe('every card is the same size', () => {
+  it('the backs are laid out on the fronts’ track, not a wider one', () => {
+    const m = html.match(/\.backwall \.wall \{[^}]*\}/);
+    expect(m).toBeTruthy();
+    expect(m[0]).toContain('minmax(214px, 1fr)');
+    expect(m[0]).not.toContain('260px');
+  });
+});
