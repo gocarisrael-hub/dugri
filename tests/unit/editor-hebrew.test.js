@@ -156,3 +156,56 @@ describe('every card is the same size', () => {
     expect(m[0]).not.toContain('260px');
   });
 });
+
+describe('the look the owner approved', () => {
+  it('the accent is the template’s ink, not the page’s old teal', () => {
+    expect(html).toMatch(/--sea:\s*#02408c/);
+    expect(html).not.toMatch(/--sea:\s*#017f8d/);
+    expect(html).toMatch(/--paper:\s*#f7f6f4/);
+  });
+
+  it('the cards take the wide half, the controls a column beside them', () => {
+    const m = html.match(/\.shell \{[^}]*\}/);
+    expect(m[0]).toContain('minmax(0, 1fr) 380px');
+    expect(html).toMatch(/\.stage \{\s*order: -1;/);
+  });
+
+  it('the title she prints is in the top bar, and is always her own words', () => {
+    expect(html).toContain('id="titleTop"');
+    expect(html).toContain('הכותרת שתודפס');
+    expect(html).toContain("$('titleMode').value = 'own'");
+    // the select survives hidden — the fit reads it
+    expect(html).toMatch(/<div class="row wide" hidden>[\s\S]{0,80}titleMode/);
+  });
+
+  it('the field opens on the filled title, not the template’s placeholders', () => {
+    expect(html).toContain('SEED_TITLE');
+    expect(html).toContain("$('titleText').value = titleLines().lines.join('\\n')");
+  });
+
+  it('the chip names the template without reciting the card’s dimensions', () => {
+    expect(html).toContain("$('brandEn').textContent = TPL.en;");
+    expect(html).not.toContain("TPL.en + ' · ' + CW");
+  });
+
+  it('the legend reads in Hebrew', () => {
+    expect(html).toContain('קופסת המילים — אחת');
+    expect(html).toContain('הצלע שמחזיקה את הגודל');
+    expect(html).not.toContain('word box — one for');
+  });
+});
+
+describe('what a browser found that the markup could not', () => {
+  it('the try panel’s word fields survive — the boot seeds them', () => {
+    // Removing the section took t0..t3 and tName with it; boot threw on load and
+    // the wall never drew.
+    for (const id of ['t0', 't1', 't2', 't3', 'tName']) {
+      expect(html).toContain('id="' + id + '"');
+    }
+  });
+
+  it('syncHidden tolerates enDrag having lost its label', () => {
+    expect(html).toContain("const dragSw = $('enDrag').closest('.sw')");
+    expect(html).toContain('if (dragSw)');
+  });
+});
