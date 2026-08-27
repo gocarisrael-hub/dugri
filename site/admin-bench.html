@@ -84,7 +84,19 @@
     box-sizing: border-box;
   }
   html,
-  html {
+  /* Right-to-left is a property of the INTERFACE, not of the cards. Everything
+     the owner reads is flipped; the SVG the generator's ported drawing code
+     paints into is left exactly as that code expects to find it. */
+  .top,
+  .panel,
+  .legend,
+  .out,
+  .foot,
+  .slot .why,
+  .slot .cc,
+  .slot .head,
+  .backwall > h3,
+  .stage .stagehint {
     direction: rtl;
   }
   body {
@@ -170,6 +182,13 @@
   .top .fld textarea:focus {
     outline: 2px solid var(--sea);
     outline-offset: -1px;
+  }
+  .top .titleNow {
+    align-self: center;
+    font: 400 14px var(--ui);
+    color: var(--muted);
+    border-inline-start: 2px solid var(--rule2);
+    padding-inline-start: 10px;
   }
   .top .sp {
     flex: 1;
@@ -1018,10 +1037,14 @@
       <label class="sw"><input type="checkbox" id="tLock" /> Left-to-right follows too</label>
       <div class="row wide">
         <label for="tAlign">יישור</label>
+        <!-- THE VALUE IS ENGLISH, THE LABEL IS HEBREW. These options carried no
+             value attribute, so their value WAS their text — translating them
+             renamed 'center' to 'מרכז', sideAnchor stopped recognising it, and
+             every title on every card lost its centring and ran off the edge. -->
         <select id="tAlign">
-          <option>מרכז</option>
-          <option>שמאל</option>
-          <option>ימין</option>
+          <option value="center">מרכז</option>
+          <option value="left">שמאל</option>
+          <option value="right">ימין</option>
         </select>
       </div>
       <div class="row">
@@ -1552,15 +1575,11 @@
     $('wBold').checked = !!LIVE.word_bold;
     $('tAlign').value = TS.align || 'center';
     $('enMode').value = 'scale';
-    // ALWAYS her own words. The template's own lines are what the generator
-    // already prints; the thing worth looking at in an editor is the line she is
-    // about to hand it. The select survives hidden because the fit reads it.
+    // ALWAYS her own words. The template's lines are what the generator already
+    // prints; the thing worth looking at in an editor is the line she is about
+    // to hand it. The select survives hidden because the fit reads it.
     $('titleMode').value = 'own';
     $('titleText').value = LIVE.title_lines.join('\n').replace(/\{NAME\}/g, 'MAYA');
-    // FILLED, not raw. {AGE} and {m:בן|f:בת} are instructions to the generator;
-    // a field that opens on them asks the owner to read machine syntax to find
-    // her own words. titleLines() can resolve them, but only once the entry is
-    // loaded — so the first paint does it.
     SEED_TITLE = true;
     SAMPLES.he.forEach((w, i) => {
       $('w' + i).value = w;
@@ -2586,8 +2605,30 @@
       .replace(/\{AGE\}/g, ($('tAge') && $('tAge').value.trim()) || '30')
       .replace(/\{NAME\}/g, nm);
   }
+  /** The ONE language a title reads in, the way the press decides it.
+   *
+   *  generator/title_script: a title is one thing set in one face, so the FIRST
+   *  STRONG CHARACTER anywhere in it is the answer — digits, spaces and
+   *  punctuation decide nothing.
+   *
+   *  This page used to ask a different question of her own words: does ANY
+   *  Hebrew appear? For "MAYA בן 30" that says Hebrew, the run is directed
+   *  right-to-left, and its anchor then puts the ink off the right edge of the
+   *  card — while the very same title, reached through the template, rendered
+   *  correctly because that path asks about the NAME. Two answers to one
+   *  question, and the card only obeys one of them. */
+  function firstStrongIsHeb(lines) {
+    for (const ln of lines || []) {
+      for (const ch of ln) {
+        if (/[֐-׿]/.test(ch)) return true;
+        if (/[A-Za-z]/.test(ch)) return false;
+      }
+    }
+    return false;
+  }
+
   function titleLines(spec) {
-    if (spec && spec.lines) return { heb: spec.lines.some(hasHeb), lines: spec.lines };
+    if (spec && spec.lines) return { heb: firstStrongIsHeb(spec.lines), lines: spec.lines };
     const raw = (spec != null ? spec : $('name').value).trim() || SAMPLE_EN;
     const heb = hasHeb(raw);
     const nm = heb ? raw : LIVE.name_form === 'english-caps' ? raw.toUpperCase() : raw;
@@ -3675,6 +3716,10 @@
   let SEED_TITLE = false;
 
   function paint() {
+    // FILLED, not raw: {AGE} and {m:בן|f:בת} are instructions to the generator,
+    // and a field that opens on them asks the owner to read machine syntax to
+    // find her own words. titleLines() resolves them, but only once the entry
+    // has loaded — so the first paint seeds the field.
     if (SEED_TITLE) {
       SEED_TITLE = false;
       $('titleText').value = titleLines().lines.join('\n');
