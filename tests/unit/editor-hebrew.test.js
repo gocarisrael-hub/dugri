@@ -102,8 +102,13 @@ describe('alignment moves the box, and the artwork bounds every direction', () =
 });
 
 describe('Hebrew', () => {
-  it('reads right to left', () => {
-    expect(html).toMatch(/html\s*{\s*direction:\s*rtl/);
+  it('reads right to left — the INTERFACE, not the cards', () => {
+    // A document-level flip re-reads what start and end mean underneath the
+    // drawing code, which computes every anchor against the direction it
+    // inherits. So the chrome is flipped and the SVG subtree is left alone.
+    expect(html).toMatch(/\.top,[\s\S]{0,240}direction: rtl;/);
+    expect(html).not.toMatch(/\bhtml\s*\{\s*direction:\s*rtl/);
+    expect(html).not.toMatch(/\bbody\s*\{[^}]*direction:\s*rtl/);
   });
 
   it('the section headings are in Hebrew', () => {
@@ -207,5 +212,35 @@ describe('what a browser found that the markup could not', () => {
   it('syncHidden tolerates enDrag having lost its label', () => {
     expect(html).toContain("const dragSw = $('enDrag').closest('.sw')");
     expect(html).toContain('if (dragSw)');
+  });
+});
+
+describe('translating must not rename a value', () => {
+  // The align options carried no value attribute, so their value WAS their
+  // text. Translating "center" to "מרכז" renamed the value, sideAnchor stopped
+  // recognising it, and every title on every card lost its centring and ran off
+  // the edge of the card. Nothing in the markup looked wrong.
+  it('every option states its value explicitly', () => {
+    const bare = html.match(/<option(?![^>]*\bvalue=)[^>]*>/g) || [];
+    expect(
+      bare,
+      'an option without a value: its value is its label, so translating it changes it'
+    ).toEqual([]);
+  });
+
+  it('the align values are the ones sideAnchor tests for', () => {
+    for (const v of ['center', 'left', 'right']) {
+      expect(html).toContain('<option value="' + v + '">');
+    }
+    expect(html).toContain("if (side === 'center') return 'middle'");
+  });
+});
+
+describe('the title reads in one language, the way the press decides it', () => {
+  it('the first strong character decides, not the presence of any Hebrew', () => {
+    // generator/title_script. Asking "is there ANY Hebrew" called
+    // "MAYA בן 30" a Hebrew title, which directs the run right-to-left.
+    expect(html).toContain('function firstStrongIsHeb(lines)');
+    expect(html).not.toContain('spec.lines.some(hasHeb)');
   });
 });
