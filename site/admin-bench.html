@@ -3,27 +3,31 @@
 <link rel="stylesheet" href="/assets/fonts/fonts.css" />
 <style>
   :root {
-    --paper: #eef1ef;
+    /* Neutral paper, so the only saturated thing on the page is the card. The
+       accent is the TEMPLATE's own ink, set from the entry at load, which makes
+       the editor reskin itself per template instead of being teal for all of
+       them. --sea is kept as the name the rest of the sheet already uses. */
+    --paper: #f7f6f4;
     --surface: #ffffff;
-    --sunk: #e4e9e6;
-    --raise: #f7faf8;
-    --ink: #0d3e43;
-    --muted: #5b7477;
-    --faint: #8ba3a5;
-    --rule: #cfdad7;
-    --rule2: #b6c6c2;
-    --sea: #017f8d;
-    --sky: #97d8e6;
-    --sand: #fff7cd;
-    --flag: #c25b1f;
+    --sunk: #f1efec;
+    --raise: #fbfaf8;
+    --ink: #14161a;
+    --muted: #6b6f76;
+    --faint: #9b9ea4;
+    --rule: #e2ded8;
+    --rule2: #c8c3ba;
+    --sea: #02408c;
+    --sky: #9dc0ee;
+    --sand: #fdf3d8;
+    --flag: #b3261e;
     --over: #a3301a;
-    --ok: #2f7d5c;
-    --band: rgba(1, 127, 141, 0.13);
-    --bandline: rgba(1, 127, 141, 0.45);
-    --warnbg: #fff7cd;
+    --ok: #2c6e4b;
+    --band: rgba(15, 143, 143, 0.1);
+    --bandline: rgba(15, 143, 143, 0.55);
+    --warnbg: #fdf3d8;
     --warnink: #5a3410;
-    --tbox: rgba(13, 62, 67, 0.1);
-    --tboxline: rgba(13, 62, 67, 0.45);
+    --tbox: rgba(2, 64, 140, 0.08);
+    --tboxline: rgba(2, 64, 140, 0.45);
     --ui: 'Heebo', 'Helvetica Neue', Arial, sans-serif;
     --num: ui-monospace, Menlo, monospace;
   }
@@ -117,111 +121,68 @@
   .top {
     position: sticky;
     top: 0;
-    z-index: 40;
-    display: flex;
-    align-items: center;
-    gap: 18px;
-    flex-wrap: wrap;
-    padding: 12px 20px;
+    z-index: 30;
     background: var(--surface);
-    border-bottom: 1px solid var(--rule2);
-  }
-  .brand {
+    border-bottom: 1px solid var(--rule);
     display: flex;
-    align-items: baseline;
-    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 10px 18px;
+    padding: 12px 16px;
+    margin: 0 0 18px;
   }
-  .brand .he {
-    font-size: 1.5rem;
-    font-weight: 200;
-    letter-spacing: 0.02em;
+  .top h1 {
+    font: 200 25px/1.1 var(--ui);
+    margin: 0;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
   }
-  .brand .en {
-    font-family: var(--num);
-    font-size: 10.5px;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--faint);
+  .top .brand {
+    font: 500 12px/1 var(--ui);
+    letter-spacing: 0.04em;
+    color: var(--sea);
+    border: 1px solid var(--sea);
+    padding: 5px 8px;
+    align-self: center;
+  }
+  .top .fld {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .top .fld > span {
+    font: 500 11px/1 var(--ui);
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .top .fld input,
+  .top .fld textarea {
+    font: 400 15px var(--ui);
+    padding: 7px 9px;
+    border: 1px solid var(--rule2);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 0;
+    min-width: 18ch;
+    resize: vertical;
+  }
+  .top .fld input:focus,
+  .top .fld textarea:focus {
+    outline: 2px solid var(--sea);
+    outline-offset: -1px;
   }
   .top .sp {
     flex: 1;
   }
-  .field {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-  }
-  .field > span {
-    font-family: var(--num);
-    font-size: 10px;
-    letter-spacing: 0.13em;
-    text-transform: uppercase;
-    color: var(--faint);
-  }
-  input[type='text'] {
-    background: var(--raise);
-    border: 1px solid var(--rule);
-    padding: 6px 9px;
-    font-size: 13.5px;
-    width: 110px;
-  }
-  textarea {
-    background: var(--raise);
-    border: 1px solid var(--rule);
-    padding: 8px 9px;
-    font-size: 13.5px;
-    width: 100%;
-    resize: vertical;
-    line-height: 1.45;
-    font-family: 'Heebo', var(--ui);
-  }
-  input[type='text']:focus,
-  select:focus,
-  textarea:focus,
-  button:focus-visible {
-    outline: 2px solid var(--sea);
-    outline-offset: 1px;
-  }
-  select {
-    background: var(--raise);
-    border: 1px solid var(--rule);
-    padding: 6px 8px;
-    font-size: 13px;
-  }
-  .btn {
-    background: var(--raise);
-    border: 1px solid var(--rule2);
-    padding: 6px 11px;
-    cursor: pointer;
-    font-family: var(--num);
-    font-size: 11px;
-    letter-spacing: 0.06em;
-  }
-  .btn:hover {
-    background: var(--sunk);
-  }
-  .btn.on {
-    background: var(--ink);
-    color: var(--paper);
-    border-color: var(--ink);
-  }
-  .btn.solid {
-    background: var(--ink);
-    color: var(--paper);
-    border-color: var(--ink);
-  }
-  .seg {
-    display: flex;
-  }
-  .seg .btn + .btn {
-    border-left: 0;
-  }
 
-  /* ---------- shell ---------- */
+  /* The cards are the point of the page, so they take the wide half; the
+     controls sit in a fixed column beside them. */
   .shell {
     display: grid;
-    grid-template-columns: 352px minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) 380px;
+    gap: 18px;
     align-items: start;
+    padding: 0 16px 60px;
   }
   @media (max-width: 1080px) {
     .shell {
@@ -229,6 +190,9 @@
     }
   }
 
+  .stage {
+    order: -1;
+  }
   .panel {
     border-right: 1px solid var(--rule);
     background: var(--surface);
@@ -867,8 +831,13 @@
 </style>
 
 <div class="top">
+  <h1>עורך הטיפוגרפיה</h1>
   <div class="brand">
     <span class="he" id="brandHe"></span><span class="en" id="brandEn"></span>
+  </div>
+  <div class="fld">
+    <span>הכותרת שתודפס</span>
+    <textarea id="titleTop" rows="2" dir="auto"></textarea>
   </div>
   <input type="text" id="name" value="MAYA" dir="auto" hidden />
   <div class="sp"></div>
@@ -1015,7 +984,7 @@
       <div class="row" id="ageRow" hidden>
         <label for="tAge">גיל</label> <input type="text" id="tAge" value="30" /><output></output>
       </div>
-      <div class="row wide">
+      <div class="row wide" hidden>
         <label for="titleMode">מילים</label>
         <select id="titleMode">
           <option value="template">the template, filled with a name</option>
@@ -1023,13 +992,15 @@
         </select>
       </div>
       <p class="hint" id="tmplNote"></p>
+      <!-- The field she types in lives in the top bar. This one stays as the
+           value the fit reads, so nothing in the engine has to learn a new id. -->
       <div id="ownWrap" hidden>
         <textarea id="titleText" rows="3" dir="auto" spellcheck="false"></textarea>
-        <p class="hint">
-          One line per row on the card. Hebrew or English — the face it is set in and the ceiling
-          that holds it both follow what you type, not what the template says.
-        </p>
       </div>
+      <p class="hint">
+        הכותרת נלקחת מהשדה שלמעלה — שורה אחת לכל שורה על הקלף. עברית או אנגלית: גם הגופן וגם התקרה
+        הולכים לפי מה שהקלדת, לא לפי מה שהתבנית אומרת.
+      </p>
     </section>
 
     <section class="grp">
@@ -1124,19 +1095,19 @@
   <div class="stage">
     <p class="legend">
       <span
-        ><i style="border-color: var(--bandline); border-top-style: dashed"></i>word box — one for
-        the template</span
+        ><i style="border-color: var(--bandline); border-top-style: dashed"></i>קופסת המילים — אחת
+        לתבנית</span
       >
       <span
-        ><i style="border-color: var(--tboxline); border-top-style: dashed"></i>title box — per
-        card</span
+        ><i style="border-color: var(--tboxline); border-top-style: dashed"></i>קופסת הכותרת — לכל
+        קלף</span
       >
-      <span><i style="border-color: var(--flag)"></i>the edge that is holding the size</span>
-      <label class="sw" style="margin-left: auto"
-        ><input type="checkbox" id="showCap" checked /> outline the ceiling on the cards</label
+      <span><i style="border-color: var(--flag)"></i>הצלע שמחזיקה את הגודל</span>
+      <label class="sw" style="margin-inline-start: auto"
+        ><input type="checkbox" id="showCap" checked /> לסמן את התקרה על הקלפים</label
       >
       <label class="sw"
-        ><input type="checkbox" id="showShort" checked /> show the shortest case</label
+        ><input type="checkbox" id="showShort" checked /> להראות את המקרה הקצר</label
       >
     </p>
     <div class="wall" id="wall"></div>
@@ -1163,6 +1134,15 @@
       <div class="row"><input type="range" id="tryEn" min="6" max="60" step="0.01" /></div>
       <div class="row"><input type="range" id="tryT" min="6" max="80" step="0.01" /></div>
       <div class="row"><input type="range" id="tryB" min="6" max="90" step="0.01" /></div>
+      <!-- The panel's own word fields and name, seeded on every reset. Removing
+           the section took these with it and boot threw before a card was drawn:
+           a page that never finishes loading still contains every string a
+           markup test looks for. -->
+      <input type="text" id="t0" /><input type="text" id="t1" /> <input type="text" id="t2" /><input
+        type="text"
+        id="t3"
+      />
+      <input type="text" id="tName" />
     </div>
 
     <section class="try" id="deck">
@@ -1572,8 +1552,16 @@
     $('wBold').checked = !!LIVE.word_bold;
     $('tAlign').value = TS.align || 'center';
     $('enMode').value = 'scale';
-    $('titleMode').value = 'template';
+    // ALWAYS her own words. The template's own lines are what the generator
+    // already prints; the thing worth looking at in an editor is the line she is
+    // about to hand it. The select survives hidden because the fit reads it.
+    $('titleMode').value = 'own';
     $('titleText').value = LIVE.title_lines.join('\n').replace(/\{NAME\}/g, 'MAYA');
+    // FILLED, not raw. {AGE} and {m:בן|f:בת} are instructions to the generator;
+    // a field that opens on them asks the owner to read machine syntax to find
+    // her own words. titleLines() can resolve them, but only once the entry is
+    // loaded — so the first paint does it.
+    SEED_TITLE = true;
     SAMPLES.he.forEach((w, i) => {
       $('w' + i).value = w;
     });
@@ -1606,7 +1594,8 @@
   /** What this particular template needs on screen. */
   function shapePanel() {
     $('brandHe').textContent = TPL.name;
-    $('brandEn').textContent = TPL.en + ' · ' + CW + ' × ' + CH;
+    // The card's dimensions are a constant of the product, not news.
+    $('brandEn').textContent = TPL.en;
     $('backTitleGrp').hidden = !HAS_BACK_TITLE;
     $('backCapGrp').hidden = !HAS_BACK_TITLE;
     $('tryB').closest('.row').hidden = !HAS_BACK_TITLE;
@@ -1663,7 +1652,10 @@
     $('enScaleRow').hidden = m !== 'scale';
     $('enSizeRow').hidden = m !== 'exact';
     $('enDrag').disabled = m !== 'scale'; // the other two modes already cut it loose
-    $('enDrag').closest('.sw').style.opacity = m === 'scale' ? '' : '.45';
+    // enDrag lost its label when it stopped being a question on the screen, so
+    // there may be no .sw to dim. The disabled state above is what matters.
+    const dragSw = $('enDrag').closest('.sw');
+    if (dragSw) dragSw.style.opacity = m === 'scale' ? '' : '.45';
   }
 
   /* ---------- reading the artwork ----------
@@ -3680,7 +3672,14 @@
     return Math.max(0, Math.floor(lines * (fit.hBind / fit.he - 1) + 1e-9));
   }
 
+  let SEED_TITLE = false;
+
   function paint() {
+    if (SEED_TITLE) {
+      SEED_TITLE = false;
+      $('titleText').value = titleLines().lines.join('\n');
+      $('titleTop').value = $('titleText').value;
+    }
     if (typeof askThePress === 'function') askThePress();
     const words = [0, 1, 2, 3].map((i) => $('w' + i).value.trim());
     let fit = wordFit(words, SEL);
@@ -4168,6 +4167,9 @@
       const o = $(t.id + 'V');
       if (o) o.textContent = num(t.id, t.value);
     }
+    // The panel's textarea is the one the fit reads; the top bar is where she
+    // types. Mirror before anything else runs, so this pass already sees it.
+    if (t.id === 'titleTop') $('titleText').value = t.value;
     if (/^try(He|En|T|B)$/.test(t.id)) mirrorFromTry(t.id);
     if (/^(cap|tCap|bCap)(He|En)$/.test(t.id)) mirrorToTry(t.id);
     paint();
