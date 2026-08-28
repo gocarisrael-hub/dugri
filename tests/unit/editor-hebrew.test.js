@@ -166,7 +166,7 @@ describe('the look the owner approved', () => {
   it('the accent is the template’s ink, not the page’s old teal', () => {
     expect(html).toMatch(/--sea:\s*#02408c/);
     expect(html).not.toMatch(/--sea:\s*#017f8d/);
-    expect(html).toMatch(/--paper:\s*#f7f6f4/);
+    expect(html).toMatch(/--paper:\s*#faf8f5/);
   });
 
   it('the cards take the wide half, the controls a column beside them', () => {
@@ -242,5 +242,96 @@ describe('the title reads in one language, the way the press decides it', () => 
     // "MAYA בן 30" a Hebrew title, which directs the run right-to-left.
     expect(html).toContain('function firstStrongIsHeb(lines)');
     expect(html).not.toContain('spec.lines.some(hasHeb)');
+  });
+});
+
+describe('a store written by an older page cannot poison a select', () => {
+  // The align options once carried no value attribute, so their value WAS their
+  // Hebrew label, and browsers saved that. Assigning an unknown value to a
+  // <select> leaves it BLANK, every reader falls through its cases, and titles
+  // went on being drawn off the card long after the markup was fixed.
+  it('a restored value the select does not have is refused', () => {
+    expect(html).toContain("if (e.tagName === 'SELECT')");
+    expect(html).toContain('const known = [...e.options].some((o) => o.value === v)');
+    expect(html).toContain('return; // keep the default');
+  });
+
+  it('the labels an older page saved are mapped back to values', () => {
+    expect(html).toMatch(/LEGACY_CHOICE = \{[^}]*'center'/);
+    expect(html).toMatch(/LEGACY_CHOICE = \{[^}]*'left'/);
+    expect(html).toMatch(/LEGACY_CHOICE = \{[^}]*'right'/);
+  });
+});
+
+describe('the hidden switches carry the template\u2019s answer, not a preference', () => {
+  // They LOOK like preferences and are not: resetAll sets six of the seven from
+  // the ENTRY. סיישל pins word_size 18.7, so it must open pinned — forcing them
+  // on would show a fitted size for a design the press sets at a fixed one.
+  it('nothing overrides them when state is restored', () => {
+    expect(html).not.toContain('ALWAYS_ON');
+  });
+
+  it('a pinned size says whose decision it is, in Hebrew', () => {
+    expect(html).toContain('id="wPinWhy"');
+    expect(html).toContain('<b>מקבעת</b>');
+    expect(html).toContain('<label for="wPin">גודל מקובע</label>');
+    expect(html).not.toContain('>pinned size<');
+  });
+});
+
+describe('the panels read as cards, not as a wall of settings', () => {
+  it('a group is a bordered card with room in it', () => {
+    const m = html.match(/\.grp \{[^}]*\}/);
+    expect(m[0]).toContain('background: var(--surface)');
+    expect(m[0]).toContain('border: 1px solid var(--rule)');
+    expect(m[0]).not.toContain('border-bottom: 1px solid var(--rule);');
+  });
+
+  it('the number in a row is the coloured thing, and the copy is readable', () => {
+    expect(html).toMatch(/\.row output \{[^}]*color: var\(--sea\)/);
+    expect(html).toMatch(/\.row label \{[^}]*font-size: 14px/);
+    expect(html).toMatch(/\.hint \{[^}]*font-size: 12\.5px/);
+  });
+
+  it('the cards no longer caption themselves with a number', () => {
+    expect(html).not.toContain('<span>קלף ${k}</span>');
+  });
+});
+
+describe('the buttons exist at all', () => {
+  // An earlier rewrite of the top bar deleted the base .btn rule along with the
+  // markup around it, and every button on the page fell back to a browser
+  // default. Nothing failed; it just looked unfinished.
+  it('there is a base rule, not only its modifiers', () => {
+    expect(html).toMatch(/\n\s*\.btn \{[\s\S]{0,320}cursor: pointer/);
+  });
+
+  it('and it is soft', () => {
+    const m = html.match(/\n\s*\.btn \{[^}]*\}/);
+    expect(m[0]).toMatch(/border-radius: 9px/);
+    expect(m[0]).toMatch(/font-family: var\(--ui\)/);
+  });
+
+  it('a card is rounded, and so is the artwork inside it', () => {
+    expect(html).toMatch(/\.grp \{[^}]*border-radius: 14px/);
+    expect(html).toMatch(/\.slot \{[^}]*border-radius: 12px/);
+    expect(html).toMatch(/\.slot svg \{[^}]*border-radius: 8px/);
+  });
+});
+
+describe('the card is not the page', () => {
+  // Every anchor in drawWords/drawTitle is start/end against the direction the
+  // element inherits. With the interface flipped and the card left to inherit
+  // it, "end" changes sides: the numbered column hangs OUTSIDE its box, on the
+  // wrong side of the anchor the press puts it on.
+  //
+  // Measured against the press for סיישל: every row's ink ends at 365px and the
+  // widest slot edge is 364.6 — the numeral sits INSIDE, touching the anchor.
+  it('the card svg is pinned left-to-right', () => {
+    expect(html).toMatch(/\.slot svg \{[\s\S]{0,600}direction: ltr/);
+  });
+
+  it('and the page-wide flip is still off', () => {
+    expect(html).not.toMatch(/\bhtml\s*\{\s*direction:\s*rtl/);
   });
 });

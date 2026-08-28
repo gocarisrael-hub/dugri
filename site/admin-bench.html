@@ -7,15 +7,15 @@
        accent is the TEMPLATE's own ink, set from the entry at load, which makes
        the editor reskin itself per template instead of being teal for all of
        them. --sea is kept as the name the rest of the sheet already uses. */
-    --paper: #f7f6f4;
+    --paper: #faf8f5;
     --surface: #ffffff;
-    --sunk: #f1efec;
+    --sunk: #f4f1ec;
     --raise: #fbfaf8;
     --ink: #14161a;
-    --muted: #6b6f76;
+    --muted: #71767e;
     --faint: #9b9ea4;
-    --rule: #e2ded8;
-    --rule2: #c8c3ba;
+    --rule: #ebe6df;
+    --rule2: #d6d0c6;
     --sea: #02408c;
     --sky: #9dc0ee;
     --sand: #fdf3d8;
@@ -169,8 +169,9 @@
   }
   .top .fld input,
   .top .fld textarea {
+    border-radius: 10px;
     font: 400 15px var(--ui);
-    padding: 7px 9px;
+    padding: 8px 11px;
     border: 1px solid var(--rule2);
     background: var(--paper);
     color: var(--ink);
@@ -196,6 +197,45 @@
 
   /* The cards are the point of the page, so they take the wide half; the
      controls sit in a fixed column beside them. */
+  /* THE BUTTONS, restored. An earlier rewrite of the bar above deleted the base
+     rule with the markup around it, and every button on the page has been a
+     browser default since — which is a fair part of why the page still felt
+     unfinished. Back, and softer than they were: rounded, in the UI face rather
+     than mono, and the accent rather than near-black when they are active. */
+  .btn {
+    background: var(--raise);
+    border: 1px solid var(--rule2);
+    border-radius: 9px;
+    padding: 7px 13px;
+    cursor: pointer;
+    font-family: var(--ui);
+    font-size: 13px;
+    color: var(--ink);
+    transition:
+      background 0.12s ease,
+      border-color 0.12s ease;
+  }
+  .btn:hover {
+    background: var(--sunk);
+  }
+  .btn:focus-visible {
+    outline: 2px solid var(--sea);
+    outline-offset: 1px;
+  }
+  .btn.on,
+  .btn.solid {
+    background: var(--sea);
+    color: #fff;
+    border-color: var(--sea);
+  }
+  .btn.xs {
+    border-radius: 7px;
+  }
+  .seg {
+    display: flex;
+    gap: 4px;
+  }
+
   .shell {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 380px;
@@ -213,6 +253,8 @@
     order: -1;
   }
   .panel {
+    background: transparent;
+    border: 0;
     border-right: 1px solid var(--rule);
     background: var(--surface);
     position: sticky;
@@ -228,23 +270,40 @@
       border-bottom: 1px solid var(--rule2);
     }
   }
+  /* A PANEL IS A CARD, not a band between two rules. The old sections ran
+     edge to edge divided by hairlines, which is what made a page of six
+     controls read as a wall of settings. */
+  /* SOFTER. Square corners and hard hairlines made a page of controls feel like
+     a form to be got through; the work here is slow and fiddly and the surface
+     should not add to that. Rounded, lighter lines, and a shadow so faint it
+     reads as depth rather than as a box. */
   .grp {
-    border-bottom: 1px solid var(--rule);
-    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(20, 22, 26, 0.03);
+    padding: 18px 20px 20px;
+    margin: 0 0 14px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 11px;
+  }
+  .grp > h2::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
   }
   .grp > h2 {
-    font-family: var(--num);
-    font-size: 10.5px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--muted);
+    font-family: var(--ui);
+    font-size: 12px;
     font-weight: 500;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin: 0;
     display: flex;
-    gap: 9px;
     align-items: center;
+    gap: 8px;
   }
   .tagx {
     border: 1px solid var(--rule2);
@@ -271,26 +330,32 @@
 
   .row {
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr) 46px;
-    gap: 10px;
-    align-items: center;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: 4px 10px;
   }
   .row label {
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: 14px;
+    color: var(--ink);
   }
   .row input[type='range'] {
+    grid-column: 1 / -1;
     width: 100%;
     accent-color: var(--sea);
+    margin: 2px 0 0;
   }
+  /* The number is the answer, so it is the coloured thing in the row. */
   .row output {
     font-family: var(--num);
-    font-size: 11.5px;
-    text-align: right;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--sea);
+    text-align: left;
     font-variant-numeric: tabular-nums;
   }
   .row.wide {
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
   }
   .row[hidden],
   .sw[hidden] {
@@ -403,6 +468,8 @@
     min-width: 0;
   }
   .legend {
+    font-size: 11.5px;
+    opacity: 0.75;
     display: flex;
     gap: 20px;
     flex-wrap: wrap;
@@ -429,7 +496,9 @@
   .slot {
     background: var(--surface);
     border: 1px solid var(--rule);
-    padding: 7px;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(20, 22, 26, 0.03);
+    padding: 9px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -458,6 +527,14 @@
     letter-spacing: 0;
   }
   .slot svg {
+    /* THE CARD IS NOT THE PAGE. Every anchor in drawWords/drawTitle is computed
+       as start/end against the direction the element inherits, and a run that
+       must read right-to-left says so on itself — the way the generator emits
+       it. Letting the card inherit the interface's rtl swaps what start and end
+       mean: the numbered column then hangs OUTSIDE its box, on the wrong side of
+       the anchor the press puts it on. */
+    direction: ltr;
+    border-radius: 8px;
     width: 100%;
     height: auto;
     display: block;
@@ -902,8 +979,12 @@
         אפשר לקבע מספר במקום — אבל <b>הקופסה עדיין מנצחת</b>: קיבוע נעצר בקופסה בדיוק כמו תקרה. שום
         דבר בעמוד הזה לא יכול להידפס גדול מהמלבן שלו.
       </p>
+      <p class="hint" id="wPinWhy" hidden>
+        התבנית הזו <b>מקבעת</b> את גודל המילים, ולכן הן לא נגזרות מהקופסה. זה מה שהדפוס עושה איתה
+        היום.
+      </p>
       <div class="row" id="wPinRow" hidden>
-        <label for="wPin">pinned size</label>
+        <label for="wPin">גודל מקובע</label>
         <input type="range" id="wPin" min="8" max="42" step="0.01" /><output id="wPinV"></output>
       </div>
       <div class="row">
@@ -1025,7 +1106,7 @@
       <h2>הכותרת הקדמית <span class="tagx" id="tScope">card 2</span></h2>
       <input type="checkbox" id="tFit" checked hidden />
       <div class="row" id="tPinRow" hidden>
-        <label for="tPin">pinned size</label>
+        <label for="tPin">גודל מקובע</label>
         <input type="range" id="tPin" min="6" max="60" step="0.01" /><output id="tPinV"></output>
       </div>
       <p class="hint">
@@ -1084,7 +1165,7 @@
       <h2>כותרת הגב <span class="tagx">הגב בלבד</span></h2>
       <input type="checkbox" id="bFit" checked hidden />
       <div class="row" id="bPinRow" hidden>
-        <label for="bPin">pinned size</label>
+        <label for="bPin">גודל מקובע</label>
         <input type="range" id="bPin" min="6" max="60" step="0.01" /><output id="bPinV"></output>
       </div>
       <div class="read" id="bRead" hidden></div>
@@ -1136,10 +1217,10 @@
     <div class="backwall" id="shortwrap">
       <h3>איפה התקרה נוגסת</h3>
       <p class="stagehint">
-        Two-letter words and a three-letter name, on the card you have selected. Nothing holds the
-        width, so the type reaches the box's own maximum — and a ceiling is the only thing that can
-        bring it back down. Move one and watch this card; the others will not budge until the
-        ceiling drops under what their longer words already set at.
+        מילים בנות שתי אותיות ושם בן שלוש, על הקלף שבחרתם. שום דבר לא מחזיק את הרוחב, ולכן
+        הטיפוגרפיה מגיעה למקסימום של הקופסה עצמה — ותקרה היא הדבר היחיד שיכול להוריד אותה משם. הזיזו
+        אחת והסתכלו על הקלף הזה; האחרים לא יזוזו עד שהתקרה תרד מתחת למה שהמילים הארוכות שלהם כבר
+        קבעו.
       </p>
       <div class="wall" id="shortwall"></div>
     </div>
@@ -1648,6 +1729,7 @@
   }
   function syncHidden() {
     $('wPinRow').hidden = $('wFit').checked;
+    if ($('wPinWhy')) $('wPinWhy').hidden = $('wFit').checked;
     $('tPinRow').hidden = $('tFit').checked;
     $('bPinRow').hidden = $('bFit').checked;
     $('genderRow').hidden = !TPL.gender || own2();
@@ -3782,8 +3864,8 @@
         wallSpec()
       );
       slot.innerHTML =
-        `<div class="head" data-pick="${k}"><span>קלף ${k}</span>` +
-        `<span class="sz">כותרת ${r2(tf.size)}</span></div>`;
+        `<div class="head" data-pick="${k}"><span></span>` +
+        `<span class="sz">${r2(tf.size)}</span></div>`;
       const svg = cardSVG(k);
       const g = el('g', {});
       const cfit = wordFit(words, k);
@@ -4364,6 +4446,10 @@
       /* private window, or full — the page still works */
     }
   }
+  /* What an older page wrote before its options had values of their own. Kept
+     so a saved choice survives the fix instead of silently reverting. */
+  const LEGACY_CHOICE = { מרכז: 'center', שמאל: 'left', ימין: 'right' };
+
   function loadState() {
     let raw = null;
     try {
@@ -4387,14 +4473,31 @@
     if (d.SEL && S.titles[d.SEL]) SEL = d.SEL;
     FIELDS().forEach((e) => {
       if (!(e.id in d.f)) return;
-      const v = d.f[e.id];
-      if (e.type === 'checkbox') e.checked = !!v;
-      else {
-        e.value = v;
-        const o = $(e.id + 'V');
-        if (o) o.textContent = num(e.id, e.value);
+      let v = d.f[e.id];
+      if (e.type === 'checkbox') {
+        e.checked = !!v;
+        return;
       }
+      // A SELECT ONLY TAKES A VALUE IT HAS. Assigning an unknown one leaves the
+      // element blank and every reader of it falls through its cases — which is
+      // how a browser that had stored the align value back when those options
+      // carried no value attribute (so their value WAS their Hebrew label) went
+      // on drawing titles off the card long after the markup was fixed. A store
+      // written by an older page must never be able to do that.
+      if (e.tagName === 'SELECT') {
+        const known = [...e.options].some((o) => o.value === v);
+        if (!known) v = LEGACY_CHOICE[v] || e.value;
+        if (![...e.options].some((o) => o.value === v)) return; // keep the default
+      }
+      e.value = v;
+      const o = $(e.id + 'V');
+      if (o) o.textContent = num(e.id, e.value);
     });
+    // NOT forced on. These look like preferences and are not: resetAll sets six
+    // of the seven from the ENTRY — whether the design pins a size, whether it
+    // carries ceilings — so a template that pins (סיישל pins word_size 18.7)
+    // must open pinned. Overriding them here would show a fitted size for a
+    // design the press sets at a fixed one.
     syncHidden();
     capRows();
     return true;
