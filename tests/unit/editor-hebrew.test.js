@@ -405,3 +405,42 @@ describe('the top bar has zones instead of a pile', () => {
     expect(html).toMatch(/\.top \.fld input,\s*\.top \.fld textarea \{[^}]*min-height: 62px/);
   });
 });
+
+describe('the ceiling examples are gone', () => {
+  // Each ceiling drew its own miniature of a word at that size, with a line of
+  // mono underneath. The cards above already show exactly that, at the size that
+  // actually prints — the miniature was the same answer twice, in a smaller font.
+  it('no example blocks, and nothing left to draw into them', () => {
+    expect(html).not.toContain('class="eg"');
+    expect(html).not.toContain('function drawEg(');
+    expect(html).not.toMatch(/\bdrawEg\(/);
+  });
+
+  it('the ceiling rows still hide and show with their switch', () => {
+    // capRows drove both the row and its example; only the example goes.
+    expect(html).toContain('function capRows()');
+    expect(html).toContain("const r = $(id).closest('.row');");
+    expect(html).not.toMatch(/egs: \[/);
+  });
+});
+
+describe('a ceiling says where it stops', () => {
+  // The owner asked twice why a ceiling ends at 14.2 and not 99. It ends at the
+  // largest size that box could ever set — above it a ceiling can never bite —
+  // so the slider names that number instead of leaving it a mystery.
+  it('capMax writes the bound out in words, under the reading', () => {
+    expect(html).toContain('המקסימום של הקופסה הזו');
+    expect(html).toMatch(/end\.textContent = 'עד ' \+ r2\(top\)/);
+    expect(html).toContain("(o || e).insertAdjacentElement('afterend', end)");
+  });
+
+  it('the bound is the box maximum, not a fixed 99', () => {
+    // capMax is handed a measured bound; nothing may hardcode a range here.
+    expect(html).toContain('top = Math.max(+e.min, r2(bound))');
+    expect(html).toContain('e.max = top;');
+  });
+
+  it('.capend is styled and spans its own line', () => {
+    expect(html).toMatch(/\.capend \{[^}]*grid-column: 1 \/ -1;/);
+  });
+});
