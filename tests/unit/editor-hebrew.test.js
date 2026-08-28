@@ -166,7 +166,7 @@ describe('the look the owner approved', () => {
   it('the accent is the template’s ink, not the page’s old teal', () => {
     expect(html).toMatch(/--sea:\s*#02408c/);
     expect(html).not.toMatch(/--sea:\s*#017f8d/);
-    expect(html).toMatch(/--paper:\s*#f7f6f4/);
+    expect(html).toMatch(/--paper:\s*#faf8f5/);
   });
 
   it('the cards take the wide half, the controls a column beside them', () => {
