@@ -398,6 +398,10 @@ describe('the top bar has zones instead of a pile', () => {
 
   it('the title field shows three lines without being dragged open', () => {
     expect(html).toMatch(/<textarea id="titleTop" rows="3"/);
-    expect(html).toMatch(/\.top \.fld input,[\s\S]{0,200}min-height: 62px/);
+    // Scoped to the rule's own body, not a character count: the declaration sat
+    // 217 chars from the selector and a 200-char window called a present feature
+    // missing. [^}]* cannot leak into the next rule, so this stays honest while
+    // surviving anyone adding a property above it.
+    expect(html).toMatch(/\.top \.fld input,\s*\.top \.fld textarea \{[^}]*min-height: 62px/);
   });
 });
