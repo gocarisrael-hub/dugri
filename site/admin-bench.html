@@ -136,26 +136,77 @@
     z-index: 30;
     background: var(--surface);
     border-bottom: 1px solid var(--rule);
-    display: flex;
-    flex-wrap: wrap;
-    align-items: flex-end;
-    gap: 10px 18px;
-    padding: 12px 16px;
+    display: grid;
+    grid-template-columns: auto minmax(200px, 320px) 1fr auto;
+    grid-template-areas: 'who fld sp acts' 'state state state state';
+    align-items: end;
+    gap: 6px 20px;
+    padding: 12px 18px 10px;
     margin: 0 0 18px;
   }
+  .top .who {
+    grid-area: who;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .top .fld {
+    grid-area: fld;
+  }
+  .top .sp {
+    grid-area: sp;
+  }
+  .top .acts {
+    grid-area: acts;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  /* Everything the bar REPORTS, under everything it offers. */
+  .top .state {
+    grid-area: state;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    min-height: 16px;
+    font-size: 12px;
+    color: var(--faint);
+  }
   .top h1 {
-    font: 200 25px/1.1 var(--ui);
+    font: 200 24px/1.1 var(--ui);
     margin: 0;
     letter-spacing: -0.01em;
     white-space: nowrap;
   }
+  /* One chip, one name. The Hebrew name and the generator key used to run
+     together with nothing between them: "סיישלtrip comeback". */
   .top .brand {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 7px;
     font: 500 12px/1 var(--ui);
-    letter-spacing: 0.04em;
     color: var(--sea);
     border: 1px solid var(--sea);
-    padding: 5px 8px;
-    align-self: center;
+    border-radius: 999px;
+    padding: 5px 11px;
+  }
+  .top .brand .en {
+    font-family: var(--num);
+    font-size: 11px;
+  }
+  .top .brand:empty,
+  .top .brand .he:empty {
+    display: none;
+  }
+  .top .sel {
+    border-radius: 999px;
+    border: 1px solid var(--rule2);
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 13px var(--ui);
+    padding: 5px 10px;
   }
   .top .fld {
     display: flex;
@@ -170,13 +221,13 @@
   .top .fld input,
   .top .fld textarea {
     border-radius: 10px;
-    font: 400 15px var(--ui);
+    font: 400 15px/1.35 var(--ui);
     padding: 8px 11px;
     border: 1px solid var(--rule2);
     background: var(--paper);
     color: var(--ink);
-    border-radius: 0;
-    min-width: 18ch;
+    width: 100%;
+    min-height: 62px;
     resize: vertical;
   }
   .top .fld input:focus,
@@ -184,24 +235,17 @@
     outline: 2px solid var(--sea);
     outline-offset: -1px;
   }
-  .top .titleNow {
-    align-self: center;
-    font: 400 14px var(--ui);
-    color: var(--muted);
-    border-inline-start: 2px solid var(--rule2);
-    padding-inline-start: 10px;
-  }
-  .top .sp {
-    flex: 1;
+  @media (max-width: 900px) {
+    .top {
+      grid-template-columns: 1fr;
+      grid-template-areas: 'who' 'fld' 'acts' 'state';
+      align-items: stretch;
+    }
+    .top .sp {
+      display: none;
+    }
   }
 
-  /* The cards are the point of the page, so they take the wide half; the
-     controls sit in a fixed column beside them. */
-  /* THE BUTTONS, restored. An earlier rewrite of the bar above deleted the base
-     rule with the markup around it, and every button on the page has been a
-     browser default since — which is a fair part of why the page still felt
-     unfinished. Back, and softer than they were: rounded, in the UI face rather
-     than mono, and the accent rather than near-black when they are active. */
   .btn {
     background: var(--raise);
     border: 1px solid var(--rule2);
@@ -221,6 +265,14 @@
   .btn:focus-visible {
     outline: 2px solid var(--sea);
     outline-offset: 1px;
+  }
+  .btn.quiet {
+    background: transparent;
+    border-color: transparent;
+    color: var(--muted);
+  }
+  .btn.quiet:hover {
+    background: var(--sunk);
   }
   .btn.on,
   .btn.solid {
@@ -934,20 +986,29 @@
 </style>
 
 <div class="top">
-  <h1>עורך הטיפוגרפיה</h1>
-  <div class="brand">
-    <span class="he" id="brandHe"></span><span class="en" id="brandEn"></span>
+  <div class="who">
+    <h1>עורך הטיפוגרפיה</h1>
+    <div class="brand">
+      <span class="he" id="brandHe"></span><span class="en" id="brandEn"></span>
+    </div>
   </div>
   <div class="fld">
     <span>הכותרת שתודפס</span>
-    <textarea id="titleTop" rows="2" dir="auto"></textarea>
+    <textarea id="titleTop" rows="3" dir="auto"></textarea>
   </div>
   <input type="text" id="name" value="MAYA" dir="auto" hidden />
   <div class="sp"></div>
-  <span class="hint" id="copied"></span>
-  <button class="btn solid" id="copy">העתקת המספרים</button>
-  <button class="btn" id="reset">חזרה למה שחי</button>
-  <span class="tag" id="kept"></span>
+  <div class="acts">
+    <button class="btn" id="copy">העתקת המספרים</button>
+    <button class="btn quiet" id="reset">חזרה למה שחי</button>
+  </div>
+  <!-- Everything the bar REPORTS, on one line under everything it OFFERS. The
+       press reading, the save state and the copy confirmation were three loose
+       spans among the buttons, each competing with a control for the same eye. -->
+  <div class="state">
+    <span class="tag" id="kept"></span>
+    <span class="hint" id="copied"></span>
+  </div>
 </div>
 
 <div class="shell">
@@ -1619,7 +1680,7 @@
   }
   /** What this particular template needs on screen. */
   function shapePanel() {
-    $('brandHe').textContent = TPL.name;
+    $('brandHe').textContent = '';
     // The card's dimensions are a constant of the product, not news.
     $('brandEn').textContent = TPL.en;
     $('backTitleGrp').hidden = !HAS_BACK_TITLE;
@@ -4749,12 +4810,13 @@
   }
 
   async function fitControls() {
+    // `bar` is the ACTIONS group; the reading goes on the state line beneath it.
     const bar = $('copy').parentNode;
     const says = document.createElement('span');
     says.id = 'pressSays';
     says.className = 'pressok';
-    says.textContent = 'asking the press…';
-    bar.appendChild(says);
+    says.textContent = 'שואל את הדפוס…';
+    (document.querySelector('.top .state') || bar).appendChild(says);
 
     const save = document.createElement('button');
     save.className = 'btn solid';
@@ -4779,7 +4841,9 @@
       location.search =
         '?key=' + encodeURIComponent(ADMIN) + '&tpl=' + encodeURIComponent(pick.value);
     });
-    bar.insertBefore(pick, bar.firstChild);
+    // With the identity: it says WHICH template this is, the same as the name
+    // and the chip beside it. Among the buttons it read as another action.
+    (document.querySelector('.top .who') || bar).appendChild(pick);
   }
 
   (async function boot() {
