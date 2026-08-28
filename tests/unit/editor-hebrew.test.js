@@ -262,3 +262,34 @@ describe('a store written by an older page cannot poison a select', () => {
     expect(html).toMatch(/LEGACY_CHOICE = \{[^}]*'right'/);
   });
 });
+
+describe('a store cannot leave the page somewhere the owner cannot leave', () => {
+  it('the switches that are no longer asked are forced on when state is restored', () => {
+    // They were ticked on every real template, so they came off the screen. A
+    // store written while one was UNticked would restore that — and there is no
+    // longer a control to put it back.
+    expect(html).toContain('ALWAYS_ON.forEach((id) => {');
+    expect(html).toMatch(
+      /ALWAYS_ON = \['wFit', 'capOn', 'enDrag', 'tFit', 'tCapOn', 'bFit', 'bCapOn'\]/
+    );
+  });
+});
+
+describe('the panels read as cards, not as a wall of settings', () => {
+  it('a group is a bordered card with room in it', () => {
+    const m = html.match(/\.grp \{[^}]*\}/);
+    expect(m[0]).toContain('background: var(--surface)');
+    expect(m[0]).toContain('border: 1px solid var(--rule)');
+    expect(m[0]).not.toContain('border-bottom: 1px solid var(--rule);');
+  });
+
+  it('the number in a row is the coloured thing, and the copy is readable', () => {
+    expect(html).toMatch(/\.row output \{[^}]*color: var\(--sea\)/);
+    expect(html).toMatch(/\.row label \{[^}]*font-size: 14px/);
+    expect(html).toMatch(/\.hint \{[^}]*font-size: 12\.5px/);
+  });
+
+  it('the cards no longer caption themselves with a number', () => {
+    expect(html).not.toContain('<span>קלף ${k}</span>');
+  });
+});

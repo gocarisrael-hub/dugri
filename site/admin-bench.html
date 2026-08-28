@@ -213,6 +213,8 @@
     order: -1;
   }
   .panel {
+    background: transparent;
+    border: 0;
     border-right: 1px solid var(--rule);
     background: var(--surface);
     position: sticky;
@@ -228,23 +230,34 @@
       border-bottom: 1px solid var(--rule2);
     }
   }
+  /* A PANEL IS A CARD, not a band between two rules. The old sections ran
+     edge to edge divided by hairlines, which is what made a page of six
+     controls read as a wall of settings. */
   .grp {
-    border-bottom: 1px solid var(--rule);
-    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 16px 18px 18px;
+    margin: 0 0 12px;
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 11px;
+  }
+  .grp > h2::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--rule);
   }
   .grp > h2 {
-    font-family: var(--num);
-    font-size: 10.5px;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: var(--muted);
+    font-family: var(--ui);
+    font-size: 12px;
     font-weight: 500;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin: 0;
     display: flex;
-    gap: 9px;
     align-items: center;
+    gap: 8px;
   }
   .tagx {
     border: 1px solid var(--rule2);
@@ -271,26 +284,32 @@
 
   .row {
     display: grid;
-    grid-template-columns: 96px minmax(0, 1fr) 46px;
-    gap: 10px;
-    align-items: center;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: 4px 10px;
   }
   .row label {
-    font-size: 12.5px;
-    color: var(--muted);
+    font-size: 14px;
+    color: var(--ink);
   }
   .row input[type='range'] {
+    grid-column: 1 / -1;
     width: 100%;
     accent-color: var(--sea);
+    margin: 2px 0 0;
   }
+  /* The number is the answer, so it is the coloured thing in the row. */
   .row output {
     font-family: var(--num);
-    font-size: 11.5px;
-    text-align: right;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--sea);
+    text-align: left;
     font-variant-numeric: tabular-nums;
   }
   .row.wide {
-    grid-template-columns: 96px minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
   }
   .row[hidden],
   .sw[hidden] {
@@ -403,6 +422,8 @@
     min-width: 0;
   }
   .legend {
+    font-size: 11.5px;
+    opacity: 0.75;
     display: flex;
     gap: 20px;
     flex-wrap: wrap;
@@ -3782,8 +3803,8 @@
         wallSpec()
       );
       slot.innerHTML =
-        `<div class="head" data-pick="${k}"><span>קלף ${k}</span>` +
-        `<span class="sz">כותרת ${r2(tf.size)}</span></div>`;
+        `<div class="head" data-pick="${k}"><span></span>` +
+        `<span class="sz">${r2(tf.size)}</span></div>`;
       const svg = cardSVG(k);
       const g = el('g', {});
       const cfit = wordFit(words, k);
@@ -4368,6 +4389,9 @@
      so a saved choice survives the fix instead of silently reverting. */
   const LEGACY_CHOICE = { מרכז: 'center', שמאל: 'left', ימין: 'right' };
 
+  /* Hidden, and always on: the fit reads them, the owner is no longer asked. */
+  const ALWAYS_ON = ['wFit', 'capOn', 'enDrag', 'tFit', 'tCapOn', 'bFit', 'bCapOn'];
+
   function loadState() {
     let raw = null;
     try {
@@ -4410,6 +4434,15 @@
       e.value = v;
       const o = $(e.id + 'V');
       if (o) o.textContent = num(e.id, e.value);
+    });
+    // THE SWITCHES THAT ARE NO LONGER QUESTIONS. They were ticked on every real
+    // template, so they came off the screen — but a store written while one of
+    // them was UNticked would restore that, and there is no longer a control to
+    // put it back. The page would sit in a state the owner cannot leave, quietly
+    // pinning a size or dropping a ceiling. What is not asked is not restored.
+    ALWAYS_ON.forEach((id) => {
+      const e = $(id);
+      if (e) e.checked = true;
     });
     syncHidden();
     capRows();
