@@ -335,3 +335,35 @@ describe('the card is not the page', () => {
     expect(html).not.toMatch(/\bhtml\s*\{\s*direction:\s*rtl/);
   });
 });
+
+describe('the panels stopped explaining themselves', () => {
+  // Fifteen paragraphs of prose sat under the controls. The owner uses this page
+  // every few weeks and does not need it argued at each time; what she does need
+  // is what the page is doing RIGHT NOW.
+  it('no static prose is left in the panels', () => {
+    const body = html.slice(0, html.indexOf('<script>'));
+    const prose = body.match(/<p class="hint">/g) || [];
+    expect(prose, 'a hint with no id is prose, not a reading').toEqual([]);
+  });
+
+  it('the notes that only ever said one thing are gone with the rest', () => {
+    // faceNote listed the template's four fonts; enNote and titleFaceNote
+    // argued about English; tmplNote could only ever say one thing once the
+    // title became always-her-own-words. Three of the four were still English.
+    for (const id of ['faceNote', 'enNote', 'tmplNote', 'titleFaceNote']) {
+      expect(html).not.toContain(id);
+    }
+  });
+
+  it('but everything that reports live state stays', () => {
+    for (const id of ['wPinWhy', 'wrapRoom', 'deckStatus']) {
+      expect(html).toContain('id="' + id + '"');
+    }
+  });
+
+  it('the essay at the foot is one line, and keeps the fact worth keeping', () => {
+    expect(html).toContain('class="foot-note"');
+    expect(html).toContain('0.03');
+    expect(html).not.toContain('<h3>מה העורך הזה, ומה הוא לא</h3>');
+  });
+});

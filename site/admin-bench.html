@@ -318,6 +318,13 @@
     border-color: var(--sea);
     color: var(--sea);
   }
+  .foot-note {
+    max-width: 74ch;
+    margin: 26px auto 0;
+    padding: 0 16px;
+    font: 400 12.5px/1.6 var(--ui);
+    color: var(--faint);
+  }
   .hint {
     font-size: 12.5px;
     color: var(--muted);
@@ -946,7 +953,11 @@
 <div class="shell">
   <div class="panel">
     <section class="grp">
-      <h2>המילים שבתצוגה <span class="tagx">לתצוגה בלבד</span></h2>
+      <h2
+        title="כל ארבע המילים על קלף מוגדרות בגודל אחד. הארוכה ביותר קובעת אותו, והשלוש האחרות יורדות אליה."
+      >
+        המילים שבתצוגה <span class="tagx">לתצוגה בלבד</span>
+      </h2>
       <div class="pair">
         <input type="text" id="w0" dir="auto" /><input type="text" id="w1" dir="auto" />
         <input type="text" id="w2" dir="auto" /><input type="text" id="w3" dir="auto" />
@@ -955,30 +966,17 @@
         <button class="btn" data-words="mix">מעורב</button>
         <button class="btn" data-words="long">מעורב ארוך</button>
       </div>
-      <p class="hint">
-        כל ארבע המילים על קלף מוגדרות ב<b>גודל אחד</b>. הארוכה ביותר קובעת אותו, והשלוש האחרות
-        יורדות אליה.
-      </p>
     </section>
 
     <section class="grp">
-      <h2>קופסת המילים <span class="tagx all">כל הקלפים</span></h2>
-      <p class="hint">
-        קופסה אחת מחזיקה את כל ארבע השורות. גררו אותה כדי להזיז; משכו <b>צלע</b> כדי להגדיל לכיוון
-        אחד, או פינה לשני כיוונים יחד.
-      </p>
+      <h2
+        title="קופסה אחת מחזיקה את כל ארבע השורות. גררו אותה כדי להזיז; משכו צלע כדי להגדיל לכיוון אחד, או פינה לשני כיוונים יחד. לגופן אין משקל מודגש אמיתי, ולכן ההדגשה נעשית בקו סביב כל אות. זה מעבה אותה — וגם מרחיב אותה, כי הקו בולט מעבר לשני קצות השורה. אפשר לקבע מספר במקום — אבל הקופסה עדיין מנצחת: קיבוע נעצר בקופסה בדיוק כמו תקרה. שום דבר בעמוד הזה לא יכול להידפס גדול מהמלבן שלו. כפולה של גודל המילה, בדיוק כמו הרווח בין שורות הכותרת — 1.40 אומר שכל שורה יושבת 1.4 מגודלה שלה מתחת לזו שמעליה. פתחו אותו וארבע השורות מבקשות יותר מקופסה שלא גדלה, ולכן הטיפוגרפיה קטנה; סגרו אותו והיא גדלה עד שרוחב השורה עוצר אותה. היא לעולם לא יורדת מתחת למה שהאותיות צריכות כדי לא להתנגש. מילה ארוכה מדי לשורה שלה נשברת לשתי שורות. זה כמה קרוב שתי השורות האלה יושבות זו לזו, כחלק מהרווח הרגיל בין מילים. 100% — אותו רווח בכל מקום, כך ששני החצאים נראים כמו שתי מילים נפרדות. 70% — הן יושבות קרוב ונקראות שוב כמילה אחת. זה רק מקרב שורות, אף פעם לא מרחיק, כך ששום דבר לא יכול לצאת מהקלף."
+      >
+        קופסת המילים <span class="tagx all">כל הקלפים</span>
+      </h2>
       <label class="sw"><input type="checkbox" id="wBold" /> להשמין את האותיות</label>
-      <p class="hint">
-        לגופן אין משקל מודגש אמיתי, ולכן ההדגשה נעשית בקו סביב כל אות. זה מעבה אותה — וגם
-        <b>מרחיב</b> אותה, כי הקו בולט מעבר לשני קצות השורה.
-      </p>
-      <p class="hint" id="faceNote"></p>
 
       <input type="checkbox" id="wFit" checked hidden />
-      <p class="hint">
-        אפשר לקבע מספר במקום — אבל <b>הקופסה עדיין מנצחת</b>: קיבוע נעצר בקופסה בדיוק כמו תקרה. שום
-        דבר בעמוד הזה לא יכול להידפס גדול מהמלבן שלו.
-      </p>
       <p class="hint" id="wPinWhy" hidden>
         התבנית הזו <b>מקבעת</b> את גודל המילים, ולכן הן לא נגזרות מהקופסה. זה מה שהדפוס עושה איתה
         היום.
@@ -993,38 +991,22 @@
           id="wPitchV"
         ></output>
       </div>
-      <p class="hint">
-        <b>כפולה של גודל המילה</b>, בדיוק כמו הרווח בין שורות הכותרת — 1.40 אומר שכל שורה יושבת 1.4
-        מגודלה שלה מתחת לזו שמעליה. פתחו אותו וארבע השורות מבקשות יותר מקופסה שלא גדלה, ולכן
-        הטיפוגרפיה קטנה; סגרו אותו והיא גדלה עד שרוחב השורה עוצר אותה. היא לעולם לא יורדת מתחת למה
-        שהאותיות צריכות כדי לא להתנגש.
-      </p>
       <div class="row">
         <label for="wTight">שורות של מילה שנשברה</label>
         <input type="range" id="wTight" min="0.5" max="1" step="0.01" /><output
           id="wTightV"
         ></output>
       </div>
-      <p class="hint">
-        מילה ארוכה מדי לשורה שלה נשברת ל<b>שתי שורות</b>. זה כמה קרוב שתי השורות האלה יושבות זו לזו,
-        כחלק מהרווח הרגיל בין מילים.
-      </p>
-      <p class="hint">
-        <b>100%</b> — אותו רווח בכל מקום, כך ששני החצאים נראים כמו שתי מילים נפרדות. <b>70%</b> — הן
-        יושבות קרוב ונקראות שוב כמילה אחת. זה רק מקרב שורות, אף פעם לא מרחיק, כך ששום דבר לא יכול
-        לצאת מהקלף.
-      </p>
       <p class="hint" id="wrapRoom"></p>
       <div class="read" id="wRead" hidden></div>
     </section>
 
     <section class="grp">
-      <h2>תקרות המילים <span class="tagx all">כל הקלפים</span></h2>
-      <p class="hint">
-        כבויה, הקופסה לבדה קובעת וקופסה גדולה יותר משמעה טיפוגרפיה גדולה יותר. הדליקו תקרה והיא
-        מחזיקה את הטיפוגרפיה למטה — לעולם לא למעלה: היא <b>נעצרת בקופסה</b>, כי מקסימום שגבוה
-        מהקופסה הוא מקסימום שלא יורד לעולם.
-      </p>
+      <h2
+        title="כבויה, הקופסה לבדה קובעת וקופסה גדולה יותר משמעה טיפוגרפיה גדולה יותר. הדליקו תקרה והיא מחזיקה את הטיפוגרפיה למטה — לעולם לא למעלה: היא נעצרת בקופסה, כי מקסימום שגבוה מהקופסה הוא מקסימום שלא יורד לעולם."
+      >
+        תקרות המילים <span class="tagx all">כל הקלפים</span>
+      </h2>
       <input type="checkbox" id="capOn" checked hidden />
       <div class="row">
         <label for="capHe">תקרה לעברית</label>
@@ -1039,12 +1021,11 @@
     </section>
 
     <section class="grp">
-      <h2>אנגלית מול עברית <span class="tagx all">כל הקלפים</span></h2>
-      <p class="hint">
-        מילה באנגלית שמוגדרת בגופן העברי יוצאת רחבה, ולכן על קלף מעורב היא
-        <b>מושכת איתה את העברית כלפי מטה</b>. תנו לאנגלית גודל משלה והיא מפסיקה למשוך.
-      </p>
-      <p class="hint" id="enNote"></p>
+      <h2
+        title="מילה באנגלית שמוגדרת בגופן העברי יוצאת רחבה, ולכן על קלף מעורב היא מושכת איתה את העברית כלפי מטה. תנו לאנגלית גודל משלה והיא מפסיקה למשוך. בלי זה, ערך לטיני נמדד בפני עצמו, כך שמילה אנגלית ארוכה אחת כבר לא מקטינה את העברית שלצידה."
+      >
+        אנגלית מול עברית <span class="tagx all">כל הקלפים</span>
+      </h2>
       <div class="row wide">
         <label for="enMode">גודל האנגלית</label>
         <select id="enMode">
@@ -1066,13 +1047,14 @@
         ></output>
       </div>
       <input type="checkbox" id="enDrag" checked hidden />
-      <p class="hint">
-        בלי זה, ערך לטיני נמדד בפני עצמו, כך שמילה אנגלית ארוכה אחת כבר לא מקטינה את העברית שלצידה.
-      </p>
     </section>
 
     <section class="grp">
-      <h2>הכותרת <span class="tagx all">כל הקלפים</span></h2>
+      <h2
+        title="הכותרת נלקחת מהשדה שלמעלה — שורה אחת לכל שורה על הקלף. עברית או אנגלית: גם הגופן וגם התקרה הולכים לפי מה שהקלדת, לא לפי מה שהתבנית אומרת."
+      >
+        הכותרת <span class="tagx all">כל הקלפים</span>
+      </h2>
       <div class="row" id="genderRow" hidden>
         <label for="tGender">בן או בת</label>
         <select id="tGender">
@@ -1090,30 +1072,24 @@
           <option value="own">whatever I type</option>
         </select>
       </div>
-      <p class="hint" id="tmplNote"></p>
       <!-- The field she types in lives in the top bar. This one stays as the
            value the fit reads, so nothing in the engine has to learn a new id. -->
       <div id="ownWrap" hidden>
         <textarea id="titleText" rows="3" dir="auto" spellcheck="false"></textarea>
       </div>
-      <p class="hint">
-        הכותרת נלקחת מהשדה שלמעלה — שורה אחת לכל שורה על הקלף. עברית או אנגלית: גם הגופן וגם התקרה
-        הולכים לפי מה שהקלדת, לא לפי מה שהתבנית אומרת.
-      </p>
     </section>
 
     <section class="grp">
-      <h2>הכותרת הקדמית <span class="tagx" id="tScope">card 2</span></h2>
+      <h2
+        title="הזיזו כותרת למעלה או למטה וכל הקלפים עוקבים — הגובה הוא תשובה אחת לתבנית. ימינה ושמאלה נשאר על הקלף שגררתם, כי הציור שצריך להתחמק ממנו זז מקלף לקלף. שינוי גודל תמיד מגיע לכל הקלפים."
+      >
+        הכותרת הקדמית <span class="tagx" id="tScope">card 2</span>
+      </h2>
       <input type="checkbox" id="tFit" checked hidden />
       <div class="row" id="tPinRow" hidden>
         <label for="tPin">גודל מקובע</label>
         <input type="range" id="tPin" min="6" max="60" step="0.01" /><output id="tPinV"></output>
       </div>
-      <p class="hint">
-        הזיזו כותרת <b>למעלה או למטה</b> וכל הקלפים עוקבים — הגובה הוא תשובה אחת לתבנית.
-        <b>ימינה ושמאלה</b> נשאר על הקלף שגררתם, כי הציור שצריך להתחמק ממנו זז מקלף לקלף. שינוי גודל
-        תמיד מגיע לכל הקלפים.
-      </p>
       <label class="sw"><input type="checkbox" id="tLock" /> גם ימין־שמאל עוקב</label>
       <div class="row wide">
         <label for="tAlign">יישור</label>
@@ -1142,7 +1118,6 @@
 
     <section class="grp">
       <h2>תקרות הכותרת <span class="tagx all">כל הקלפים</span></h2>
-      <p class="hint" id="titleFaceNote"></p>
       <input type="checkbox" id="tCapOn" checked hidden />
       <div class="row">
         <label for="tCapEn">תקרה לאנגלית</label>
@@ -1173,10 +1148,6 @@
 
     <section class="grp" id="backCapGrp">
       <h2>תקרות הגב <span class="tagx">הגב בלבד</span></h2>
-      <p class="hint">
-        הגב הוא קלף אחד גדול בלי ממה להתחמק, ולכן הכותרת שלו הולכת גדולה בהרבה מזו של הפנים — היא
-        מקבלת זוג תקרות משלה, שנעצר בקופסה שלה.
-      </p>
       <input type="checkbox" id="bCapOn" checked hidden />
       <div class="row">
         <label for="bCapEn">תקרה לאנגלית</label>
@@ -1277,15 +1248,6 @@
               id="deckDpiV"
             ></output>
           </div>
-          <p class="hint">
-            המילים הכבדות מחולקות ראשונות ומתפזרות על פני הקלפים, כך ששום קלף לא אוסף את כל הארוכות.
-            כל קלף עדיין מגדיר גודל אחד, שנקבע לפי המילה הארוכה ביותר שלו.
-          </p>
-          <p class="hint">
-            ביטויים ארוכים <b>נשברים בדיוק כמו שהדפוס שובר אותם</b> — אותו חיפוש על כל צירוף של
-            מספרי שורות, אותה הכרעה לטובת מספר השורות הקטן, והשורה הנוספת משולמת מהנייר שמתחת למילים
-            ולא מגודל הטיפוגרפיה.
-          </p>
           <p class="hint" id="deckCaps"></p>
           <div class="btns">
             <button class="btn solid" id="deckGo">הורדת החבילה</button>
@@ -1312,36 +1274,10 @@
   </div>
 </div>
 
-<div class="foot" style="padding-top: 34px">
-  <h3>מה העורך הזה, ומה הוא לא</h3>
-  <p>
-    הציורים הם קובצי הקלפים החיים של התבנית, והקופסאות מתחילות מהכיול שהדפוס עובד איתו היום.
-    הגאומטריה שאתם גוררים היא המדויקת — השברים האלה הם מה שהמחולל קורא.
-  </p>
-  <p>
-    ההתאמה היא של המחולל עצמו, מועברת לכאן: <span class="k">_balanced_split</span>,
-    <span class="k">_hard_split</span>, <span class="k">_candidates</span>,
-    <span class="k">_fit_card</span>, <span class="k">_lead_for</span> ו־<span class="k"
-      >_card_lead</span
-    >
-    עם <span class="k">_min_line_pitch</span> — אותם קבועים, אותו חיפוש, אותן הכרעות. נבדק מול הדבר
-    האמיתי על שישה־עשר קלפים של הזמנה חיה: אותו מספר שורות, והגדלים הסכימו עד <b>0.03</b>. החלק
-    היחיד שלא עבר שלם הוא הרסטריזציה — <span class="k">_ink_skyline</span> קורא פיקסלים דרך PIL וכאן
-    דרך קנבס — וההפרש הזה הוא ה־0.03.
-  </p>
-  <p>
-    הנייר שהמילים רשאיות להגיע אליו נקרא מהציור, כמו ש<span class="k">room_bottom</span> קורא אותו
-    מהמסגרת המודפסת. שני קווים מקווקווים על הקלף הנבחר מראים איפה הוא מתחיל ונגמר; שורה שנשברה
-    משולמת משם.
-  </p>
-  <h3>הקופסה תמיד מנצחת</h3>
-  <p>
-    כל מספר כאן — תקרה, גודל מקובע, גודל האנגלית — נעצר בקופסה שהוא צריך להידפס בתוכה. הטיפוגרפיה
-    יכולה לגדול מעבר למה שאתם רואים כשהמילים מתקצרות, כי <span class="k">התאמת הרוחב</span> משתחררת
-    עם הטקסט; היא לעולם לא תגדל מעבר ל<span class="k">התאמת הגובה</span>, כי זו המלבן עצמו. לכן
-    הסרגלים נעצרים שם, והדרך היחידה למספר גדול יותר היא קופסה גדולה יותר.
-  </p>
-</div>
+<p class="foot-note">
+  ההתאמה כאן היא של המחולל עצמו, מועברת — נבדקה מולו על שישה־עשר קלפים של הזמנה חיה והגדלים הסכימו
+  עד 0.03. הקופסה תמיד מנצחת: שום מספר כאן לא מדפיס גדול מהמלבן שלו.
+</p>
 
 <script>
   /* ============================================================================
@@ -1690,39 +1626,6 @@
     $('backCapGrp').hidden = !HAS_BACK_TITLE;
     $('tryB').closest('.row').hidden = !HAS_BACK_TITLE;
     $('deckMaya').textContent = TPL.wordsLabel;
-    $('enNote').innerHTML =
-      "This template <b>does</b> ship a Latin word face, so the generator's " +
-      "<b>0.80</b> is live: every English word already sets at 80% of the card's size, in " +
-      '<span class="k">' +
-      LIVE.word_font_alt +
-      '</span>. כל דבר אחר כאן הוא שינוי שאתם מציעים.';
-    $('faceNote').innerHTML =
-      'ארבעת הגופנים שהתבנית הזו מביאה, מהאחסון: מילים ב' +
-      '<span class="k">' +
-      LIVE.word_font +
-      '</span>' +
-      (LIVE.word_bold ? ' (עם ההדגשה המלאכותית)' : '') +
-      ', כל מילה באנגלית ב<span class="k">' +
-      LIVE.word_font_alt +
-      '</span>, הכותרת ב' +
-      '<span class="k">' +
-      LIVE.title_font +
-      '</span> וכותרת בעברית ב' +
-      '<span class="k">' +
-      LIVE.title_font_alt +
-      '</span>.';
-    $('titleFaceNote').innerHTML = TPL.titleHasHebrew
-      ? '<b>' +
-        TPL.titleFace +
-        '</b> sets both scripts here, but a Hebrew title and an English one are ' +
-        'still two different titles: they put a different amount of ink in the same box, so each gets ' +
-        'its own maximum. Both are shown below whichever name you type.'
-      : 'Two different titles, not one measured twice: an English name is set in <b>' +
-        TPL.titleFace +
-        '</b>, which has no Hebrew, so a Hebrew one is set in <b>' +
-        TPL.titleAltFace +
-        '</b>. The two ' +
-        'do not fill the same box the same way, so each has its own maximum. Both are shown below.';
     document.querySelectorAll('[data-seychelles]').forEach((n) => {
       n.hidden = TPL.key !== 'trip comeback';
     });
@@ -1736,9 +1639,6 @@
     $('ageRow').hidden = !(TPL.extra || []).includes('AGE') || own2();
     const own = $('titleMode').value === 'own';
     $('ownWrap').hidden = !own;
-    $('tmplNote').textContent = own
-      ? 'The template is out of the way. These lines print exactly as typed.'
-      : 'The template sets ' + LIVE.title_lines.join(' / ') + ' — only the name is yours.';
     const m = $('enMode').value;
     $('enScaleRow').hidden = m !== 'scale';
     $('enSizeRow').hidden = m !== 'exact';
