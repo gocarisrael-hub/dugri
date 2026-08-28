@@ -7,15 +7,15 @@
        accent is the TEMPLATE's own ink, set from the entry at load, which makes
        the editor reskin itself per template instead of being teal for all of
        them. --sea is kept as the name the rest of the sheet already uses. */
-    --paper: #f7f6f4;
+    --paper: #faf8f5;
     --surface: #ffffff;
-    --sunk: #f1efec;
+    --sunk: #f4f1ec;
     --raise: #fbfaf8;
     --ink: #14161a;
-    --muted: #6b6f76;
+    --muted: #71767e;
     --faint: #9b9ea4;
-    --rule: #e2ded8;
-    --rule2: #c8c3ba;
+    --rule: #ebe6df;
+    --rule2: #d6d0c6;
     --sea: #02408c;
     --sky: #9dc0ee;
     --sand: #fdf3d8;
@@ -169,8 +169,9 @@
   }
   .top .fld input,
   .top .fld textarea {
+    border-radius: 10px;
     font: 400 15px var(--ui);
-    padding: 7px 9px;
+    padding: 8px 11px;
     border: 1px solid var(--rule2);
     background: var(--paper);
     color: var(--ink);
@@ -196,6 +197,45 @@
 
   /* The cards are the point of the page, so they take the wide half; the
      controls sit in a fixed column beside them. */
+  /* THE BUTTONS, restored. An earlier rewrite of the bar above deleted the base
+     rule with the markup around it, and every button on the page has been a
+     browser default since — which is a fair part of why the page still felt
+     unfinished. Back, and softer than they were: rounded, in the UI face rather
+     than mono, and the accent rather than near-black when they are active. */
+  .btn {
+    background: var(--raise);
+    border: 1px solid var(--rule2);
+    border-radius: 9px;
+    padding: 7px 13px;
+    cursor: pointer;
+    font-family: var(--ui);
+    font-size: 13px;
+    color: var(--ink);
+    transition:
+      background 0.12s ease,
+      border-color 0.12s ease;
+  }
+  .btn:hover {
+    background: var(--sunk);
+  }
+  .btn:focus-visible {
+    outline: 2px solid var(--sea);
+    outline-offset: 1px;
+  }
+  .btn.on,
+  .btn.solid {
+    background: var(--sea);
+    color: #fff;
+    border-color: var(--sea);
+  }
+  .btn.xs {
+    border-radius: 7px;
+  }
+  .seg {
+    display: flex;
+    gap: 4px;
+  }
+
   .shell {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 380px;
@@ -233,11 +273,17 @@
   /* A PANEL IS A CARD, not a band between two rules. The old sections ran
      edge to edge divided by hairlines, which is what made a page of six
      controls read as a wall of settings. */
+  /* SOFTER. Square corners and hard hairlines made a page of controls feel like
+     a form to be got through; the work here is slow and fiddly and the surface
+     should not add to that. Rounded, lighter lines, and a shadow so faint it
+     reads as depth rather than as a box. */
   .grp {
     background: var(--surface);
     border: 1px solid var(--rule);
-    padding: 16px 18px 18px;
-    margin: 0 0 12px;
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(20, 22, 26, 0.03);
+    padding: 18px 20px 20px;
+    margin: 0 0 14px;
     display: flex;
     flex-direction: column;
     gap: 11px;
@@ -450,7 +496,9 @@
   .slot {
     background: var(--surface);
     border: 1px solid var(--rule);
-    padding: 7px;
+    border-radius: 12px;
+    box-shadow: 0 1px 2px rgba(20, 22, 26, 0.03);
+    padding: 9px;
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -479,6 +527,7 @@
     letter-spacing: 0;
   }
   .slot svg {
+    border-radius: 8px;
     width: 100%;
     height: auto;
     display: block;

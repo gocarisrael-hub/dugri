@@ -297,3 +297,24 @@ describe('the panels read as cards, not as a wall of settings', () => {
     expect(html).not.toContain('<span>קלף ${k}</span>');
   });
 });
+
+describe('the buttons exist at all', () => {
+  // An earlier rewrite of the top bar deleted the base .btn rule along with the
+  // markup around it, and every button on the page fell back to a browser
+  // default. Nothing failed; it just looked unfinished.
+  it('there is a base rule, not only its modifiers', () => {
+    expect(html).toMatch(/\n\s*\.btn \{[\s\S]{0,320}cursor: pointer/);
+  });
+
+  it('and it is soft', () => {
+    const m = html.match(/\n\s*\.btn \{[^}]*\}/);
+    expect(m[0]).toMatch(/border-radius: 9px/);
+    expect(m[0]).toMatch(/font-family: var\(--ui\)/);
+  });
+
+  it('a card is rounded, and so is the artwork inside it', () => {
+    expect(html).toMatch(/\.grp \{[^}]*border-radius: 14px/);
+    expect(html).toMatch(/\.slot \{[^}]*border-radius: 12px/);
+    expect(html).toMatch(/\.slot svg \{[^}]*border-radius: 8px/);
+  });
+});
