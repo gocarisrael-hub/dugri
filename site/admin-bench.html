@@ -923,8 +923,12 @@
         אפשר לקבע מספר במקום — אבל <b>הקופסה עדיין מנצחת</b>: קיבוע נעצר בקופסה בדיוק כמו תקרה. שום
         דבר בעמוד הזה לא יכול להידפס גדול מהמלבן שלו.
       </p>
+      <p class="hint" id="wPinWhy" hidden>
+        התבנית הזו <b>מקבעת</b> את גודל המילים, ולכן הן לא נגזרות מהקופסה. זה מה שהדפוס עושה איתה
+        היום.
+      </p>
       <div class="row" id="wPinRow" hidden>
-        <label for="wPin">pinned size</label>
+        <label for="wPin">גודל מקובע</label>
         <input type="range" id="wPin" min="8" max="42" step="0.01" /><output id="wPinV"></output>
       </div>
       <div class="row">
@@ -1046,7 +1050,7 @@
       <h2>הכותרת הקדמית <span class="tagx" id="tScope">card 2</span></h2>
       <input type="checkbox" id="tFit" checked hidden />
       <div class="row" id="tPinRow" hidden>
-        <label for="tPin">pinned size</label>
+        <label for="tPin">גודל מקובע</label>
         <input type="range" id="tPin" min="6" max="60" step="0.01" /><output id="tPinV"></output>
       </div>
       <p class="hint">
@@ -1105,7 +1109,7 @@
       <h2>כותרת הגב <span class="tagx">הגב בלבד</span></h2>
       <input type="checkbox" id="bFit" checked hidden />
       <div class="row" id="bPinRow" hidden>
-        <label for="bPin">pinned size</label>
+        <label for="bPin">גודל מקובע</label>
         <input type="range" id="bPin" min="6" max="60" step="0.01" /><output id="bPinV"></output>
       </div>
       <div class="read" id="bRead" hidden></div>
@@ -1157,10 +1161,10 @@
     <div class="backwall" id="shortwrap">
       <h3>איפה התקרה נוגסת</h3>
       <p class="stagehint">
-        Two-letter words and a three-letter name, on the card you have selected. Nothing holds the
-        width, so the type reaches the box's own maximum — and a ceiling is the only thing that can
-        bring it back down. Move one and watch this card; the others will not budge until the
-        ceiling drops under what their longer words already set at.
+        מילים בנות שתי אותיות ושם בן שלוש, על הקלף שבחרתם. שום דבר לא מחזיק את הרוחב, ולכן
+        הטיפוגרפיה מגיעה למקסימום של הקופסה עצמה — ותקרה היא הדבר היחיד שיכול להוריד אותה משם. הזיזו
+        אחת והסתכלו על הקלף הזה; האחרים לא יזוזו עד שהתקרה תרד מתחת למה שהמילים הארוכות שלהם כבר
+        קבעו.
       </p>
       <div class="wall" id="shortwall"></div>
     </div>
@@ -1669,6 +1673,7 @@
   }
   function syncHidden() {
     $('wPinRow').hidden = $('wFit').checked;
+    if ($('wPinWhy')) $('wPinWhy').hidden = $('wFit').checked;
     $('tPinRow').hidden = $('tFit').checked;
     $('bPinRow').hidden = $('bFit').checked;
     $('genderRow').hidden = !TPL.gender || own2();
@@ -4389,9 +4394,6 @@
      so a saved choice survives the fix instead of silently reverting. */
   const LEGACY_CHOICE = { מרכז: 'center', שמאל: 'left', ימין: 'right' };
 
-  /* Hidden, and always on: the fit reads them, the owner is no longer asked. */
-  const ALWAYS_ON = ['wFit', 'capOn', 'enDrag', 'tFit', 'tCapOn', 'bFit', 'bCapOn'];
-
   function loadState() {
     let raw = null;
     try {
@@ -4435,15 +4437,11 @@
       const o = $(e.id + 'V');
       if (o) o.textContent = num(e.id, e.value);
     });
-    // THE SWITCHES THAT ARE NO LONGER QUESTIONS. They were ticked on every real
-    // template, so they came off the screen — but a store written while one of
-    // them was UNticked would restore that, and there is no longer a control to
-    // put it back. The page would sit in a state the owner cannot leave, quietly
-    // pinning a size or dropping a ceiling. What is not asked is not restored.
-    ALWAYS_ON.forEach((id) => {
-      const e = $(id);
-      if (e) e.checked = true;
-    });
+    // NOT forced on. These look like preferences and are not: resetAll sets six
+    // of the seven from the ENTRY — whether the design pins a size, whether it
+    // carries ceilings — so a template that pins (סיישל pins word_size 18.7)
+    // must open pinned. Overriding them here would show a fitted size for a
+    // design the press sets at a fixed one.
     syncHidden();
     capRows();
     return true;

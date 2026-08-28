@@ -263,15 +263,19 @@ describe('a store written by an older page cannot poison a select', () => {
   });
 });
 
-describe('a store cannot leave the page somewhere the owner cannot leave', () => {
-  it('the switches that are no longer asked are forced on when state is restored', () => {
-    // They were ticked on every real template, so they came off the screen. A
-    // store written while one was UNticked would restore that — and there is no
-    // longer a control to put it back.
-    expect(html).toContain('ALWAYS_ON.forEach((id) => {');
-    expect(html).toMatch(
-      /ALWAYS_ON = \['wFit', 'capOn', 'enDrag', 'tFit', 'tCapOn', 'bFit', 'bCapOn'\]/
-    );
+describe('the hidden switches carry the template\u2019s answer, not a preference', () => {
+  // They LOOK like preferences and are not: resetAll sets six of the seven from
+  // the ENTRY. סיישל pins word_size 18.7, so it must open pinned — forcing them
+  // on would show a fitted size for a design the press sets at a fixed one.
+  it('nothing overrides them when state is restored', () => {
+    expect(html).not.toContain('ALWAYS_ON');
+  });
+
+  it('a pinned size says whose decision it is, in Hebrew', () => {
+    expect(html).toContain('id="wPinWhy"');
+    expect(html).toContain('<b>מקבעת</b>');
+    expect(html).toContain('<label for="wPin">גודל מקובע</label>');
+    expect(html).not.toContain('>pinned size<');
   });
 });
 
