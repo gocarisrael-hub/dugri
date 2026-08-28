@@ -975,7 +975,6 @@
         קופסת המילים <span class="tagx all">כל הקלפים</span>
       </h2>
       <label class="sw"><input type="checkbox" id="wBold" /> להשמין את האותיות</label>
-      <p class="hint" id="faceNote"></p>
 
       <input type="checkbox" id="wFit" checked hidden />
       <p class="hint" id="wPinWhy" hidden>
@@ -1027,7 +1026,6 @@
       >
         אנגלית מול עברית <span class="tagx all">כל הקלפים</span>
       </h2>
-      <p class="hint" id="enNote"></p>
       <div class="row wide">
         <label for="enMode">גודל האנגלית</label>
         <select id="enMode">
@@ -1074,7 +1072,6 @@
           <option value="own">whatever I type</option>
         </select>
       </div>
-      <p class="hint" id="tmplNote"></p>
       <!-- The field she types in lives in the top bar. This one stays as the
            value the fit reads, so nothing in the engine has to learn a new id. -->
       <div id="ownWrap" hidden>
@@ -1121,7 +1118,6 @@
 
     <section class="grp">
       <h2>תקרות הכותרת <span class="tagx all">כל הקלפים</span></h2>
-      <p class="hint" id="titleFaceNote"></p>
       <input type="checkbox" id="tCapOn" checked hidden />
       <div class="row">
         <label for="tCapEn">תקרה לאנגלית</label>
@@ -1630,39 +1626,6 @@
     $('backCapGrp').hidden = !HAS_BACK_TITLE;
     $('tryB').closest('.row').hidden = !HAS_BACK_TITLE;
     $('deckMaya').textContent = TPL.wordsLabel;
-    $('enNote').innerHTML =
-      "This template <b>does</b> ship a Latin word face, so the generator's " +
-      "<b>0.80</b> is live: every English word already sets at 80% of the card's size, in " +
-      '<span class="k">' +
-      LIVE.word_font_alt +
-      '</span>. כל דבר אחר כאן הוא שינוי שאתם מציעים.';
-    $('faceNote').innerHTML =
-      'ארבעת הגופנים שהתבנית הזו מביאה, מהאחסון: מילים ב' +
-      '<span class="k">' +
-      LIVE.word_font +
-      '</span>' +
-      (LIVE.word_bold ? ' (עם ההדגשה המלאכותית)' : '') +
-      ', כל מילה באנגלית ב<span class="k">' +
-      LIVE.word_font_alt +
-      '</span>, הכותרת ב' +
-      '<span class="k">' +
-      LIVE.title_font +
-      '</span> וכותרת בעברית ב' +
-      '<span class="k">' +
-      LIVE.title_font_alt +
-      '</span>.';
-    $('titleFaceNote').innerHTML = TPL.titleHasHebrew
-      ? '<b>' +
-        TPL.titleFace +
-        '</b> sets both scripts here, but a Hebrew title and an English one are ' +
-        'still two different titles: they put a different amount of ink in the same box, so each gets ' +
-        'its own maximum. Both are shown below whichever name you type.'
-      : 'Two different titles, not one measured twice: an English name is set in <b>' +
-        TPL.titleFace +
-        '</b>, which has no Hebrew, so a Hebrew one is set in <b>' +
-        TPL.titleAltFace +
-        '</b>. The two ' +
-        'do not fill the same box the same way, so each has its own maximum. Both are shown below.';
     document.querySelectorAll('[data-seychelles]').forEach((n) => {
       n.hidden = TPL.key !== 'trip comeback';
     });
@@ -1676,9 +1639,6 @@
     $('ageRow').hidden = !(TPL.extra || []).includes('AGE') || own2();
     const own = $('titleMode').value === 'own';
     $('ownWrap').hidden = !own;
-    $('tmplNote').textContent = own
-      ? 'The template is out of the way. These lines print exactly as typed.'
-      : 'The template sets ' + LIVE.title_lines.join(' / ') + ' — only the name is yours.';
     const m = $('enMode').value;
     $('enScaleRow').hidden = m !== 'scale';
     $('enSizeRow').hidden = m !== 'exact';

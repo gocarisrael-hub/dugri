@@ -346,8 +346,17 @@ describe('the panels stopped explaining themselves', () => {
     expect(prose, 'a hint with no id is prose, not a reading').toEqual([]);
   });
 
+  it('the notes that only ever said one thing are gone with the rest', () => {
+    // faceNote listed the template's four fonts; enNote and titleFaceNote
+    // argued about English; tmplNote could only ever say one thing once the
+    // title became always-her-own-words. Three of the four were still English.
+    for (const id of ['faceNote', 'enNote', 'tmplNote', 'titleFaceNote']) {
+      expect(html).not.toContain(id);
+    }
+  });
+
   it('but everything that reports live state stays', () => {
-    for (const id of ['faceNote', 'wPinWhy', 'wrapRoom', 'enNote', 'tmplNote', 'deckStatus']) {
+    for (const id of ['wPinWhy', 'wrapRoom', 'deckStatus']) {
       expect(html).toContain('id="' + id + '"');
     }
   });
