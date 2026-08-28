@@ -367,3 +367,37 @@ describe('the panels stopped explaining themselves', () => {
     expect(html).not.toContain('<h3>מה העורך הזה, ומה הוא לא</h3>');
   });
 });
+
+describe('the top bar has zones instead of a pile', () => {
+  // Four things were injected into it at runtime — a back link, a status
+  // reading, a save button and a template picker — and each landed wherever it
+  // fell. The bar is a grid with named areas now, so nothing can drift.
+  it('identity, the field, and the actions each have a place', () => {
+    expect(html).toMatch(/grid-template-areas: 'who fld sp acts' 'state state state state'/);
+    for (const c of ['who', 'acts', 'state']) {
+      expect(html).toContain('class="' + c + '"');
+    }
+  });
+
+  it('what the bar reports sits under what it offers', () => {
+    expect(html).toContain(".top .state') || bar).appendChild(says)");
+    expect(html).toContain(".top .who') || bar).appendChild(pick)");
+  });
+
+  it('one button carries weight; the rest are quiet', () => {
+    expect(html).toMatch(/<button class="btn quiet" id="reset"/);
+    expect(html).toMatch(/<button class="btn" id="copy"/);
+    expect(html).toMatch(/save\.className = 'btn solid'/);
+  });
+
+  it('the chip and the picker do not both name the template', () => {
+    // They read "סיישלtrip comeback" run together, and then said סיישל twice.
+    expect(html).toContain("$('brandHe').textContent = '';");
+    expect(html).toMatch(/\.top \.brand \{[^}]*gap: 7px/);
+  });
+
+  it('the title field shows three lines without being dragged open', () => {
+    expect(html).toMatch(/<textarea id="titleTop" rows="3"/);
+    expect(html).toMatch(/\.top \.fld input,[\s\S]{0,200}min-height: 62px/);
+  });
+});
