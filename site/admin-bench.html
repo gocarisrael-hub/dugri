@@ -527,6 +527,13 @@
     letter-spacing: 0;
   }
   .slot svg {
+    /* THE CARD IS NOT THE PAGE. Every anchor in drawWords/drawTitle is computed
+       as start/end against the direction the element inherits, and a run that
+       must read right-to-left says so on itself — the way the generator emits
+       it. Letting the card inherit the interface's rtl swaps what start and end
+       mean: the numbered column then hangs OUTSIDE its box, on the wrong side of
+       the anchor the press puts it on. */
+    direction: ltr;
     border-radius: 8px;
     width: 100%;
     height: auto;

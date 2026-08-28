@@ -318,3 +318,20 @@ describe('the buttons exist at all', () => {
     expect(html).toMatch(/\.slot svg \{[^}]*border-radius: 8px/);
   });
 });
+
+describe('the card is not the page', () => {
+  // Every anchor in drawWords/drawTitle is start/end against the direction the
+  // element inherits. With the interface flipped and the card left to inherit
+  // it, "end" changes sides: the numbered column hangs OUTSIDE its box, on the
+  // wrong side of the anchor the press puts it on.
+  //
+  // Measured against the press for סיישל: every row's ink ends at 365px and the
+  // widest slot edge is 364.6 — the numeral sits INSIDE, touching the anchor.
+  it('the card svg is pinned left-to-right', () => {
+    expect(html).toMatch(/\.slot svg \{[\s\S]{0,600}direction: ltr/);
+  });
+
+  it('and the page-wide flip is still off', () => {
+    expect(html).not.toMatch(/\bhtml\s*\{\s*direction:\s*rtl/);
+  });
+});
