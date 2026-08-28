@@ -4364,6 +4364,10 @@
       /* private window, or full — the page still works */
     }
   }
+  /* What an older page wrote before its options had values of their own. Kept
+     so a saved choice survives the fix instead of silently reverting. */
+  const LEGACY_CHOICE = { מרכז: 'center', שמאל: 'left', ימין: 'right' };
+
   function loadState() {
     let raw = null;
     try {
@@ -4387,13 +4391,25 @@
     if (d.SEL && S.titles[d.SEL]) SEL = d.SEL;
     FIELDS().forEach((e) => {
       if (!(e.id in d.f)) return;
-      const v = d.f[e.id];
-      if (e.type === 'checkbox') e.checked = !!v;
-      else {
-        e.value = v;
-        const o = $(e.id + 'V');
-        if (o) o.textContent = num(e.id, e.value);
+      let v = d.f[e.id];
+      if (e.type === 'checkbox') {
+        e.checked = !!v;
+        return;
       }
+      // A SELECT ONLY TAKES A VALUE IT HAS. Assigning an unknown one leaves the
+      // element blank and every reader of it falls through its cases — which is
+      // how a browser that had stored the align value back when those options
+      // carried no value attribute (so their value WAS their Hebrew label) went
+      // on drawing titles off the card long after the markup was fixed. A store
+      // written by an older page must never be able to do that.
+      if (e.tagName === 'SELECT') {
+        const known = [...e.options].some((o) => o.value === v);
+        if (!known) v = LEGACY_CHOICE[v] || e.value;
+        if (![...e.options].some((o) => o.value === v)) return; // keep the default
+      }
+      e.value = v;
+      const o = $(e.id + 'V');
+      if (o) o.textContent = num(e.id, e.value);
     });
     syncHidden();
     capRows();

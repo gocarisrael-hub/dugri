@@ -244,3 +244,21 @@ describe('the title reads in one language, the way the press decides it', () => 
     expect(html).not.toContain('spec.lines.some(hasHeb)');
   });
 });
+
+describe('a store written by an older page cannot poison a select', () => {
+  // The align options once carried no value attribute, so their value WAS their
+  // Hebrew label, and browsers saved that. Assigning an unknown value to a
+  // <select> leaves it BLANK, every reader falls through its cases, and titles
+  // went on being drawn off the card long after the markup was fixed.
+  it('a restored value the select does not have is refused', () => {
+    expect(html).toContain("if (e.tagName === 'SELECT')");
+    expect(html).toContain('const known = [...e.options].some((o) => o.value === v)');
+    expect(html).toContain('return; // keep the default');
+  });
+
+  it('the labels an older page saved are mapped back to values', () => {
+    expect(html).toMatch(/LEGACY_CHOICE = \{[^}]*'center'/);
+    expect(html).toMatch(/LEGACY_CHOICE = \{[^}]*'left'/);
+    expect(html).toMatch(/LEGACY_CHOICE = \{[^}]*'right'/);
+  });
+});
