@@ -84,7 +84,19 @@
     box-sizing: border-box;
   }
   html,
-  html {
+  /* Right-to-left is a property of the INTERFACE, not of the cards. Everything
+     the owner reads is flipped; the SVG the generator's ported drawing code
+     paints into is left exactly as that code expects to find it. */
+  .top,
+  .panel,
+  .legend,
+  .out,
+  .foot,
+  .slot .why,
+  .slot .cc,
+  .slot .head,
+  .backwall > h3,
+  .stage .stagehint {
     direction: rtl;
   }
   body {
@@ -170,6 +182,13 @@
   .top .fld textarea:focus {
     outline: 2px solid var(--sea);
     outline-offset: -1px;
+  }
+  .top .titleNow {
+    align-self: center;
+    font: 400 14px var(--ui);
+    color: var(--muted);
+    border-inline-start: 2px solid var(--rule2);
+    padding-inline-start: 10px;
   }
   .top .sp {
     flex: 1;
@@ -860,16 +879,16 @@
         <button class="btn" data-words="long">מעורב ארוך</button>
       </div>
       <p class="hint">
-        All four words on a card are set at <b>one size</b>. The longest one decides it, and the
-        other three come down to meet it.
+        כל ארבע המילים על קלף מוגדרות ב<b>גודל אחד</b>. הארוכה ביותר קובעת אותו, והשלוש האחרות
+        יורדות אליה.
       </p>
     </section>
 
     <section class="grp">
       <h2>קופסת המילים <span class="tagx all">כל הקלפים</span></h2>
       <p class="hint">
-        One box holds all four rows. Drag it to move; pull a <b>side</b> to grow it that way alone,
-        or a corner for two ways at once.
+        קופסה אחת מחזיקה את כל ארבע השורות. גררו אותה כדי להזיז; משכו <b>צלע</b> כדי להגדיל לכיוון
+        אחד, או פינה לשני כיוונים יחד.
       </p>
       <label class="sw"><input type="checkbox" id="wBold" /> להשמין את האותיות</label>
       <p class="hint">
@@ -880,8 +899,8 @@
 
       <input type="checkbox" id="wFit" checked hidden />
       <p class="hint">
-        Untick to pin a number instead — but <b>the box still wins</b>: a pin stops at the box the
-        same way a ceiling does. Nothing on this page can print bigger than its rectangle.
+        אפשר לקבע מספר במקום — אבל <b>הקופסה עדיין מנצחת</b>: קיבוע נעצר בקופסה בדיוק כמו תקרה. שום
+        דבר בעמוד הזה לא יכול להידפס גדול מהמלבן שלו.
       </p>
       <div class="row" id="wPinRow" hidden>
         <label for="wPin">pinned size</label>
@@ -894,10 +913,10 @@
         ></output>
       </div>
       <p class="hint">
-        A <b>multiple of the word size</b>, exactly like the title's line gap — 1.40 means each line
-        sits 1.4 of its own size below the one above. Open it and the four rows ask for more of a
-        box that is not growing, so the type comes down; close it and the type grows until the row's
-        width stops it. It never goes below what the letters need to clear each other.
+        <b>כפולה של גודל המילה</b>, בדיוק כמו הרווח בין שורות הכותרת — 1.40 אומר שכל שורה יושבת 1.4
+        מגודלה שלה מתחת לזו שמעליה. פתחו אותו וארבע השורות מבקשות יותר מקופסה שלא גדלה, ולכן
+        הטיפוגרפיה קטנה; סגרו אותו והיא גדלה עד שרוחב השורה עוצר אותה. היא לעולם לא יורדת מתחת למה
+        שהאותיות צריכות כדי לא להתנגש.
       </p>
       <div class="row">
         <label for="wTight">שורות של מילה שנשברה</label>
@@ -906,13 +925,13 @@
         ></output>
       </div>
       <p class="hint">
-        A word too long for its row breaks over <b>two lines</b>. This is how close those two lines
-        sit, as a share of the normal gap between words.
+        מילה ארוכה מדי לשורה שלה נשברת ל<b>שתי שורות</b>. זה כמה קרוב שתי השורות האלה יושבות זו לזו,
+        כחלק מהרווח הרגיל בין מילים.
       </p>
       <p class="hint">
-        <b>1.00</b> — the same gap everywhere, so the two halves look like two separate words.
-        <b>0.70</b> — they sit close and read as one word again. It only ever pulls lines closer,
-        never further apart, so nothing can end up outside the card.
+        <b>100%</b> — אותו רווח בכל מקום, כך ששני החצאים נראים כמו שתי מילים נפרדות. <b>70%</b> — הן
+        יושבות קרוב ונקראות שוב כמילה אחת. זה רק מקרב שורות, אף פעם לא מרחיק, כך ששום דבר לא יכול
+        לצאת מהקלף.
       </p>
       <p class="hint" id="wrapRoom"></p>
       <div class="read" id="wRead" hidden></div>
@@ -921,9 +940,9 @@
     <section class="grp">
       <h2>תקרות המילים <span class="tagx all">כל הקלפים</span></h2>
       <p class="hint">
-        Off, the box alone decides and a bigger box means bigger type. Switch a ceiling on and it
-        holds the type down — never up: it <b>stops at the box</b>, because a maximum above the box
-        is a maximum that never comes down.
+        כבויה, הקופסה לבדה קובעת וקופסה גדולה יותר משמעה טיפוגרפיה גדולה יותר. הדליקו תקרה והיא
+        מחזיקה את הטיפוגרפיה למטה — לעולם לא למעלה: היא <b>נעצרת בקופסה</b>, כי מקסימום שגבוה
+        מהקופסה הוא מקסימום שלא יורד לעולם.
       </p>
       <input type="checkbox" id="capOn" checked hidden />
       <div class="row">
@@ -941,8 +960,8 @@
     <section class="grp">
       <h2>אנגלית מול עברית <span class="tagx all">כל הקלפים</span></h2>
       <p class="hint">
-        An English word set in the Hebrew face runs wide, so on a mixed card it drags the Hebrew
-        down with it. Give English its own size and it stops pulling.
+        מילה באנגלית שמוגדרת בגופן העברי יוצאת רחבה, ולכן על קלף מעורב היא
+        <b>מושכת איתה את העברית כלפי מטה</b>. תנו לאנגלית גודל משלה והיא מפסיקה למשוך.
       </p>
       <p class="hint" id="enNote"></p>
       <div class="row wide">
@@ -967,8 +986,7 @@
       </div>
       <input type="checkbox" id="enDrag" checked hidden />
       <p class="hint">
-        Untick and a Latin entry is measured on its own, so one long English word no longer shrinks
-        the Hebrew beside it.
+        בלי זה, ערך לטיני נמדד בפני עצמו, כך שמילה אנגלית ארוכה אחת כבר לא מקטינה את העברית שלצידה.
       </p>
     </section>
 
@@ -1011,17 +1029,21 @@
         <input type="range" id="tPin" min="6" max="60" step="0.01" /><output id="tPinV"></output>
       </div>
       <p class="hint">
-        Move a title <b>up or down</b> and every card follows — the height is one answer for the
-        template. <b>Side to side</b> stays on the card you drag, since the artwork it has to clear
-        moves around. Resizing always reaches every card.
+        הזיזו כותרת <b>למעלה או למטה</b> וכל הקלפים עוקבים — הגובה הוא תשובה אחת לתבנית.
+        <b>ימינה ושמאלה</b> נשאר על הקלף שגררתם, כי הציור שצריך להתחמק ממנו זז מקלף לקלף. שינוי גודל
+        תמיד מגיע לכל הקלפים.
       </p>
-      <label class="sw"><input type="checkbox" id="tLock" /> Left-to-right follows too</label>
+      <label class="sw"><input type="checkbox" id="tLock" /> גם ימין־שמאל עוקב</label>
       <div class="row wide">
         <label for="tAlign">יישור</label>
+        <!-- THE VALUE IS ENGLISH, THE LABEL IS HEBREW. These options carried no
+             value attribute, so their value WAS their text — translating them
+             renamed 'center' to 'מרכז', sideAnchor stopped recognising it, and
+             every title on every card lost its centring and ran off the edge. -->
         <select id="tAlign">
-          <option>מרכז</option>
-          <option>שמאל</option>
-          <option>ימין</option>
+          <option value="center">מרכז</option>
+          <option value="left">שמאל</option>
+          <option value="right">ימין</option>
         </select>
       </div>
       <div class="row">
@@ -1031,8 +1053,8 @@
         ></output>
       </div>
       <div class="btns">
-        <button class="btn" data-title="level">level all to this card</button>
-        <button class="btn" data-title="copy">copy to all cards</button>
+        <button class="btn" data-title="level">ליישר את כולם לקלף הזה</button>
+        <button class="btn" data-title="copy">להעתיק לכל הקלפים</button>
       </div>
       <div class="read" id="tRead" hidden></div>
     </section>
@@ -1071,8 +1093,8 @@
     <section class="grp" id="backCapGrp">
       <h2>תקרות הגב <span class="tagx">הגב בלבד</span></h2>
       <p class="hint">
-        The back is one big card with nothing to dodge, so its title goes much larger than a front's
-        — it gets its own pair, stopping at its own box.
+        הגב הוא קלף אחד גדול בלי ממה להתחמק, ולכן הכותרת שלו הולכת גדולה בהרבה מזו של הפנים — היא
+        מקבלת זוג תקרות משלה, שנעצר בקופסה שלה.
       </p>
       <input type="checkbox" id="bCapOn" checked hidden />
       <div class="row">
@@ -1161,8 +1183,8 @@
           <h4>the words</h4>
           <textarea id="deckWords" rows="7" dir="auto" spellcheck="false"></textarea>
           <div class="btns">
-            <button class="btn xs wide" id="deckMaya">Maya's list</button>
-            <button class="btn xs wide" id="deckClear">clear</button>
+            <button class="btn xs wide" id="deckMaya">הרשימה של מאיה</button>
+            <button class="btn xs wide" id="deckClear">ניקוי</button>
           </div>
           <p class="hint" id="deckCount"></p>
         </div>
@@ -1175,13 +1197,13 @@
             ></output>
           </div>
           <p class="hint">
-            The heavy words are dealt first and snaked across the cards, so no single card collects
-            all the long ones. Every card still sets one size, chosen by its own longest word.
+            המילים הכבדות מחולקות ראשונות ומתפזרות על פני הקלפים, כך ששום קלף לא אוסף את כל הארוכות.
+            כל קלף עדיין מגדיר גודל אחד, שנקבע לפי המילה הארוכה ביותר שלו.
           </p>
           <p class="hint">
-            Long phrases <b>wrap exactly as the press wraps them</b> — same search over every
-            combination of line counts, same tie-break to the fewest lines, and the extra line is
-            paid for out of the paper below the words rather than out of the type size.
+            ביטויים ארוכים <b>נשברים בדיוק כמו שהדפוס שובר אותם</b> — אותו חיפוש על כל צירוף של
+            מספרי שורות, אותה הכרעה לטובת מספר השורות הקטן, והשורה הנוספת משולמת מהנייר שמתחת למילים
+            ולא מגודל הטיפוגרפיה.
           </p>
           <p class="hint" id="deckCaps"></p>
           <div class="btns">
@@ -1210,42 +1232,33 @@
 </div>
 
 <div class="foot" style="padding-top: 34px">
-  <h3>What this bench is, and is not</h3>
+  <h3>מה העורך הזה, ומה הוא לא</h3>
   <p>
-    The artwork is the nine live סיישל card files, and the boxes start at the calibration the press
-    is using today. The geometry you drag is exact — those fractions are the ones the generator
-    reads.
+    הציורים הם קובצי הקלפים החיים של התבנית, והקופסאות מתחילות מהכיול שהדפוס עובד איתו היום.
+    הגאומטריה שאתם גוררים היא המדויקת — השברים האלה הם מה שהמחולל קורא.
   </p>
   <p>
-    The fit is the generator's own, ported: <span class="k">_balanced_split</span>,
+    ההתאמה היא של המחולל עצמו, מועברת לכאן: <span class="k">_balanced_split</span>,
     <span class="k">_hard_split</span>, <span class="k">_candidates</span>,
-    <span class="k">_fit_card</span>, <span class="k">_lead_for</span> and
-    <span class="k">_card_lead</span> with its column-by-column
-    <span class="k">_min_line_pitch</span> — same constants, same search, same tie-breaks. Checked
-    against the real thing on sixteen cards of a live order: identical line counts, and the sizes
-    agreed to <b>0.03</b>. The one piece that could not come across whole is the rasteriser —
-    <span class="k">_ink_skyline</span> reads inked pixels through PIL, this reads them through a
-    canvas — and that difference is what the 0.03 is.
+    <span class="k">_fit_card</span>, <span class="k">_lead_for</span> ו־<span class="k"
+      >_card_lead</span
+    >
+    עם <span class="k">_min_line_pitch</span> — אותם קבועים, אותו חיפוש, אותן הכרעות. נבדק מול הדבר
+    האמיתי על שישה־עשר קלפים של הזמנה חיה: אותו מספר שורות, והגדלים הסכימו עד <b>0.03</b>. החלק
+    היחיד שלא עבר שלם הוא הרסטריזציה — <span class="k">_ink_skyline</span> קורא פיקסלים דרך PIL וכאן
+    דרך קנבס — וההפרש הזה הוא ה־0.03.
   </p>
   <p>
-    The paper the words may reach is read off the artwork here, the way
-    <span class="k">room_bottom</span> reads it off the printed frame. Two dashed lines on the
-    selected card show where it starts and ends; a wrapped line is paid for out of that.
+    הנייר שהמילים רשאיות להגיע אליו נקרא מהציור, כמו ש<span class="k">room_bottom</span> קורא אותו
+    מהמסגרת המודפסת. שני קווים מקווקווים על הקלף הנבחר מראים איפה הוא מתחיל ונגמר; שורה שנשברה
+    משולמת משם.
   </p>
-  <h3>The box always wins</h3>
+  <h3>הקופסה תמיד מנצחת</h3>
   <p>
-    Every number here — a ceiling, a pinned size, the English word size — stops at the box it has to
-    print inside. The type can grow past what you see whenever the words get shorter, because the
-    <span class="k">width fit</span> relaxes with the text; it can never grow past the
-    <span class="k">height fit</span>, because that one is the rectangle itself. So the sliders top
-    out there, and the only way to a bigger number is a bigger box.
-  </p>
-  <p>
-    The four ceilings and the English word size do not exist in the generator yet. Pick the numbers
-    here, and they get wired in as <span class="k">word_max_he</span>,
-    <span class="k">word_max_en</span>, <span class="k">title_max_en</span>,
-    <span class="k">title_max_he</span> and <span class="k">word_en_size</span> /
-    <span class="k">word_alt_scale</span>.
+    כל מספר כאן — תקרה, גודל מקובע, גודל האנגלית — נעצר בקופסה שהוא צריך להידפס בתוכה. הטיפוגרפיה
+    יכולה לגדול מעבר למה שאתם רואים כשהמילים מתקצרות, כי <span class="k">התאמת הרוחב</span> משתחררת
+    עם הטקסט; היא לעולם לא תגדל מעבר ל<span class="k">התאמת הגובה</span>, כי זו המלבן עצמו. לכן
+    הסרגלים נעצרים שם, והדרך היחידה למספר גדול יותר היא קופסה גדולה יותר.
   </p>
 </div>
 
@@ -1552,15 +1565,11 @@
     $('wBold').checked = !!LIVE.word_bold;
     $('tAlign').value = TS.align || 'center';
     $('enMode').value = 'scale';
-    // ALWAYS her own words. The template's own lines are what the generator
-    // already prints; the thing worth looking at in an editor is the line she is
-    // about to hand it. The select survives hidden because the fit reads it.
+    // ALWAYS her own words. The template's lines are what the generator already
+    // prints; the thing worth looking at in an editor is the line she is about
+    // to hand it. The select survives hidden because the fit reads it.
     $('titleMode').value = 'own';
     $('titleText').value = LIVE.title_lines.join('\n').replace(/\{NAME\}/g, 'MAYA');
-    // FILLED, not raw. {AGE} and {m:בן|f:בת} are instructions to the generator;
-    // a field that opens on them asks the owner to read machine syntax to find
-    // her own words. titleLines() can resolve them, but only once the entry is
-    // loaded — so the first paint does it.
     SEED_TITLE = true;
     SAMPLES.he.forEach((w, i) => {
       $('w' + i).value = w;
@@ -1605,19 +1614,19 @@
       "<b>0.80</b> is live: every English word already sets at 80% of the card's size, in " +
       '<span class="k">' +
       LIVE.word_font_alt +
-      '</span>. Anything else here is a change you are proposing.';
+      '</span>. כל דבר אחר כאן הוא שינוי שאתם מציעים.';
     $('faceNote').innerHTML =
-      'The four faces this template ships, off the volume: words in ' +
+      'ארבעת הגופנים שהתבנית הזו מביאה, מהאחסון: מילים ב' +
       '<span class="k">' +
       LIVE.word_font +
       '</span>' +
-      (LIVE.word_bold ? ' (with the synthetic bold)' : '') +
-      ', every English word in <span class="k">' +
+      (LIVE.word_bold ? ' (עם ההדגשה המלאכותית)' : '') +
+      ', כל מילה באנגלית ב<span class="k">' +
       LIVE.word_font_alt +
-      '</span>, the title in ' +
+      '</span>, הכותרת ב' +
       '<span class="k">' +
       LIVE.title_font +
-      '</span> and a Hebrew title in ' +
+      '</span> וכותרת בעברית ב' +
       '<span class="k">' +
       LIVE.title_font_alt +
       '</span>.';
@@ -2586,8 +2595,30 @@
       .replace(/\{AGE\}/g, ($('tAge') && $('tAge').value.trim()) || '30')
       .replace(/\{NAME\}/g, nm);
   }
+  /** The ONE language a title reads in, the way the press decides it.
+   *
+   *  generator/title_script: a title is one thing set in one face, so the FIRST
+   *  STRONG CHARACTER anywhere in it is the answer — digits, spaces and
+   *  punctuation decide nothing.
+   *
+   *  This page used to ask a different question of her own words: does ANY
+   *  Hebrew appear? For "MAYA בן 30" that says Hebrew, the run is directed
+   *  right-to-left, and its anchor then puts the ink off the right edge of the
+   *  card — while the very same title, reached through the template, rendered
+   *  correctly because that path asks about the NAME. Two answers to one
+   *  question, and the card only obeys one of them. */
+  function firstStrongIsHeb(lines) {
+    for (const ln of lines || []) {
+      for (const ch of ln) {
+        if (/[֐-׿]/.test(ch)) return true;
+        if (/[A-Za-z]/.test(ch)) return false;
+      }
+    }
+    return false;
+  }
+
   function titleLines(spec) {
-    if (spec && spec.lines) return { heb: spec.lines.some(hasHeb), lines: spec.lines };
+    if (spec && spec.lines) return { heb: firstStrongIsHeb(spec.lines), lines: spec.lines };
     const raw = (spec != null ? spec : $('name').value).trim() || SAMPLE_EN;
     const heb = hasHeb(raw);
     const nm = heb ? raw : LIVE.name_form === 'english-caps' ? raw.toUpperCase() : raw;
@@ -3050,8 +3081,8 @@
     const slot = document.createElement('div');
     slot.className = 'slot short';
     slot.innerHTML =
-      `<div class="head"><span>card ${k} · shortest case</span>` +
-      `<span class="sz">words ${r2(fit.he)}</span></div>`;
+      `<div class="head"><span>קלף ${k} · המקרה הקצר</span>` +
+      `<span class="sz">מילים ${r2(fit.he)}</span></div>`;
     const svg = cardSVG(k);
     const g = el('g', {});
     drawBox(g, S.band, 'band', fit.bind);
@@ -3188,7 +3219,7 @@
     const slot = document.createElement('div');
     slot.className = 'slot short';
     slot.innerHTML =
-      `<div class="head"><span>${isBack ? 'the back' : 'card ' + SEL} · by hand</span>` +
+      `<div class="head"><span>${isBack ? 'הגב' : 'קלף ' + SEL} · ביד</span>` +
       `<span class="sz">${r2(size)}</span></div>`;
     const svg = cardSVG(key);
     const g = el('g', {});
@@ -3675,6 +3706,10 @@
   let SEED_TITLE = false;
 
   function paint() {
+    // FILLED, not raw: {AGE} and {m:בן|f:בת} are instructions to the generator,
+    // and a field that opens on them asks the owner to read machine syntax to
+    // find her own words. titleLines() resolves them, but only once the entry
+    // has loaded — so the first paint seeds the field.
     if (SEED_TITLE) {
       SEED_TITLE = false;
       $('titleText').value = titleLines().lines.join('\n');
@@ -3747,8 +3782,8 @@
         wallSpec()
       );
       slot.innerHTML =
-        `<div class="head" data-pick="${k}"><span>card ${k}</span>` +
-        `<span class="sz">title ${r2(tf.size)}</span></div>`;
+        `<div class="head" data-pick="${k}"><span>קלף ${k}</span>` +
+        `<span class="sz">כותרת ${r2(tf.size)}</span></div>`;
       const svg = cardSVG(k);
       const g = el('g', {});
       const cfit = wordFit(words, k);
@@ -3801,7 +3836,7 @@
         : null;
       bslot.innerHTML =
         `<div class="head"><span>back ${bk}</span>` +
-        `<span class="sz">${bf ? 'title ' + r2(bf.size) : 'artwork'}</span></div>`;
+        `<span class="sz">${bf ? 'כותרת ' + r2(bf.size) : 'ציור'}</span></div>`;
       const bsvg = cardSVG(bk);
       const bg = el('g', {});
       if (bf) {
@@ -4282,8 +4317,7 @@
       resetAll();
       applyPreset();
       paint();
-      $('kept').textContent =
-        typeof PRESET !== 'undefined' ? 'your saved numbers' : 'production numbers';
+      $('kept').textContent = typeof PRESET !== 'undefined' ? 'המספרים ששמרת' : 'המספרים שבייצור';
     }
     saveState();
     if (b.id === 'copy' || b.id === 'copy2') {
@@ -4463,24 +4497,24 @@
         if (mine !== pressAsk) return;
         const d = await r.json();
         if (d.error) {
-          el.textContent = 'the press: ' + d.error;
+          el.textContent = 'הדפוס: ' + d.error;
           el.className = 'pressbad';
           return;
         }
         const mineSize = BOUND.lastWordSize;
         const off = mineSize != null ? Math.abs(d.word_size - mineSize) : 0;
         el.textContent =
-          'the press sets ' +
+          'הדפוס מגדיר ' +
           d.word_size.toFixed(2) +
           (mineSize == null
             ? ''
             : off <= PRESS_TOL
-              ? ' — this page agrees'
-              : ' — THIS PAGE SAYS ' + mineSize.toFixed(2) + ', which is drift');
+              ? ' — והעמוד הזה מסכים'
+              : ' — והעמוד הזה אומר ' + mineSize.toFixed(2) + ', כלומר סטייה');
         el.className = off <= PRESS_TOL ? 'pressok' : 'pressbad';
       } catch (err) {
         if (mine === pressAsk) {
-          el.textContent = 'the press: ' + err.message;
+          el.textContent = 'הדפוס: ' + err.message;
           el.className = 'pressbad';
         }
       }
@@ -4770,10 +4804,10 @@
     applyPreset();
     const restored = loadState();
     $('kept').textContent = restored
-      ? 'your numbers, kept'
+      ? 'המספרים שלך, נשמרו'
       : typeof PRESET !== 'undefined'
-        ? 'your saved numbers'
-        : 'production numbers';
+        ? 'המספרים ששמרת'
+        : 'המספרים שבייצור';
     try {
       await Promise.all([
         document.fonts.load('200px "TplWord"', 'אבג'),
