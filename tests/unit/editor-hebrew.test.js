@@ -444,3 +444,19 @@ describe('a ceiling says where it stops', () => {
     expect(html).toMatch(/\.capend \{[^}]*grid-column: 1 \/ -1;/);
   });
 });
+
+describe('the line gap says why it stops', () => {
+  // Same question as the ceiling, one row down: the renderer prints
+  // max(this number, what the glyphs need), so under the glyphs' own need the
+  // slider does nothing. Measured 0.64 (two-letter words) to 0.84 (a final
+  // letter descending) on the bench face; the slider floors just above that.
+  it('the pitch floor is stated on the row', () => {
+    expect(html).toContain('מתחת ל-0.9 האותיות עצמן קובעות את הרווח');
+    expect(html).toContain('id="wPitch" min="0.9"');
+  });
+
+  it('and the draw really does take the larger of the two', () => {
+    expect(html).toContain("return Math.max(+$('wPitch').value, lead || 0) * size;");
+    expect(html).toContain('const eff = Math.max(ratio, lead || 0);');
+  });
+});

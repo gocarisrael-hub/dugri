@@ -1021,6 +1021,15 @@
         <input type="range" id="wPitch" min="0.9" max="3" step="0.01" /><output
           id="wPitchV"
         ></output>
+        <!-- WHY IT STOPS AT 0.9. The number is a multiple of the word size, and
+         the renderer prints max(this, what the glyphs need) — so under the
+         glyphs' own need the slider is inert. Measured on this face: 0.64 for
+         two-letter words, 0.84 once a final ך ן ף ץ descends into the next row.
+         0.9 is the round number just above the worst of those. It is fixed
+         rather than measured live because the binding card changes with every
+         word list, and a floor that slid under her hand would be worse than one
+         that is simply stated. -->
+        <span class="capend">מתחת ל-0.9 האותיות עצמן קובעות את הרווח</span>
       </div>
       <div class="row">
         <label for="wTight">שורות של מילה שנשברה</label>
