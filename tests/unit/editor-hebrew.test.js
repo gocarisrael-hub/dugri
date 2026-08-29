@@ -529,3 +529,44 @@ describe('the line gap actually moves the rhythm', () => {
     expect(html).toMatch(/first \+ i \* pitchUnits\(\)/);
   });
 });
+
+// A CONTROL THAT DRAWS BUT CANNOT SAVE is the same failure as one that saves but
+// cannot draw, and the bench had both. `word_bold` went into the payload and the
+// API had no branch for it, so the unknown key was dropped in silence — the wall
+// went heavy and the press printed light. `word_alt_scale` was addressed to
+// nobody: the generator and the API both read that flat name, and the bench sent
+// it nested inside `word_en`, a shape neither has a concept of.
+describe('the controls that draw can also reach paper', () => {
+  const saveable = () => html.match(/const SAVEABLE = \[([\s\S]*?)\];/)[1];
+
+  it('the allowlist carries the weight switch and the English fraction', () => {
+    expect(saveable()).toContain("'word_bold'");
+    expect(saveable()).toContain("'word_alt_scale'");
+  });
+
+  it('the English fraction is sent flat, under the name both readers use', () => {
+    // generator/config.word_alt_scale and server/templates.js read this exact
+    // name at the top level; nested under word_en it reached neither.
+    expect(html).toMatch(/\{ word_alt_scale: r2\(\+\$\('enScale'\)\.value\) \}/);
+  });
+
+  it('and only in the mode that has a press to reach', () => {
+    // `exact` and `own-fit` have no generator field at all, so they are omitted
+    // rather than nulled — clearing a calibrated fraction on the way past would
+    // be a change she did not ask for.
+    expect(html).toMatch(/\.\.\.\(\$\('enMode'\)\.value === 'scale'/);
+  });
+
+  it('the reasons that stopped being true are gone', () => {
+    // #521 is closed: templates.js stores word_alt_scale. word_wrap_pitch has
+    // been read by config.word_wrap_pitch since #522.
+    expect(html).not.toContain('the settings API cannot yet');
+    expect(html).not.toContain('not in the generator yet');
+  });
+
+  it('word_en itself stays out — the press has no concept of a MODE', () => {
+    expect(saveable()).not.toContain("'word_en'");
+    expect(saveable()).not.toContain("'word_en_drags_card'");
+    expect(saveable()).not.toContain("'word_lead'");
+  });
+});

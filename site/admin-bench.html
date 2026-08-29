@@ -3982,6 +3982,14 @@
             ? { mode: 'own-fit' }
             : { mode: 'scale', word_alt_scale: r2(+$('enScale').value) },
       word_en_drags_card: $('enDrag').checked,
+      /* FLAT, and only in the mode that has a press to reach. `word_en` is the
+       bench's own record of the MODE, a thing the generator has no concept of —
+       it knows one number, `word_alt_scale`, which is what `scale` means. Sent
+       nested it was addressed to nobody. The other two modes are omitted rather
+       than nulled: they cannot be expressed on paper either way, and clearing a
+       calibrated fraction on the way past would be a change she did not ask
+       for. */
+      ...($('enMode').value === 'scale' ? { word_alt_scale: r2(+$('enScale').value) } : {}),
 
       theme: TPL.key,
       card_viewbox: LIVE.card_viewbox,
@@ -3993,7 +4001,7 @@
       word_bold: $('wBold').checked,
       word_pitch: r2(pitchUnits()),
       word_lead: r2(+$('wPitch').value) /* the gap as a multiple of the size */,
-      word_wrap_pitch: r2(+$('wTight').value) /* not in the generator yet */,
+      word_wrap_pitch: r2(+$('wTight').value),
       title_style: {
         ...TS,
         align: $('tAlign').value,
@@ -4659,11 +4667,14 @@
   /* ---------- boot ---------- */
   let LAST_OUT = null;
 
-  /* The fields a settings save may carry. word_lead and word_alt_scale are NOT
-   here: the generator reads word_alt_scale but the settings API cannot yet
-   store it (#521), and word_lead is the same spacing word_pitch already
-   carries, in relative units. Sending a field the API drops would report a save
-   that did not happen. */
+  /* The fields a settings save may carry. Sending one the API drops would report
+   a save that did not happen, so this list and the branches in
+   server/templates.updateTemplateSettings have to say the same thing.
+     word_lead is NOT here: it is the spacing word_pitch already carries, in
+   relative units, and nothing reads it.
+     word_en / word_en_drags_card are NOT here: the generator has no field for
+   an English MODE, so only the `scale` case has anywhere to land, and it lands
+   as the flat word_alt_scale below. */
   const SAVEABLE = [
     'word_max_he',
     'word_max_en',
@@ -4673,6 +4684,8 @@
     'back_title_max_he',
     'word_pitch',
     'word_size',
+    'word_bold',
+    'word_alt_scale',
     'title_style',
     'card_slots',
     'back',
