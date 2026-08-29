@@ -444,6 +444,61 @@ test('a stored two-line title survives opening and saving the sheet', async ({ p
   expect(state.custom_title).toBe(seeded);
 });
 
+// THE HEADING AT THE TOP OF THE PAGE NAMES THE DECK TOO.
+//
+// `honoree_name` is the order's LABEL, seeded from the first line of the title
+// at creation and never moved again — so a buyer who retitled her deck was left
+// reading the OLD title in the heading of the very page she retitled it on.
+test('the page heading follows the title she saves, not the one the order was created under', async ({
+  page,
+}) => {
+  const { url } = await createCollection(page, 'שירה');
+  await page.goto(url);
+  // Before she touches anything: the title the order was created with.
+  await expect(page.locator('#title')).toHaveText('אוספים מילים על שירה');
+
+  await page.getByTestId('tab-design').click();
+  await page.getByTestId('title-input').fill('החגיגה של שירה');
+  await page.getByTestId('title-save').click();
+
+  // Saving moves the heading NOW — not on whatever the 5s poll does next.
+  await expect(page.locator('#title')).toHaveText('אוספים מילים על החגיגה של שירה');
+  await expect(page).toHaveTitle('דוגרי · מילים על החגיגה של שירה');
+
+  // Clearing it restores the theme's own title on the card, and the heading goes
+  // back to the name the order is filed under rather than reading "מילים על ".
+  await page.getByTestId('title-input').fill('');
+  await page.getByTestId('title-save').click();
+  await expect(page.locator('#title')).toHaveText('אוספים מילים על שירה');
+});
+
+test('a two-line title reads as one line in the heading — the break is a space, not a join', async ({
+  page,
+}) => {
+  const { url, id, k } = await createCollection(page);
+  // The generator prints each line of the title as its own line; a heading has
+  // one. Dropping the break would fuse "החגיגה של" and "שירה" into one word.
+  await page.request.put(`/api/collections/${id}/title?k=${encodeURIComponent(k)}`, {
+    data: { custom_title: 'החגיגה של\nשירה' },
+  });
+  await page.goto(url);
+  await expect(page.locator('#title')).toHaveText('אוספים מילים על החגיגה של שירה');
+});
+
+test('a contributor reads the honoree name in the heading, never the deck title', async ({
+  page,
+}) => {
+  const { id, k } = await createCollection(page, 'שירה');
+  await page.request.put(`/api/collections/${id}/title?k=${encodeURIComponent(k)}`, {
+    data: { custom_title: 'מסיבת ההפתעה' },
+  });
+  // The link forwarded to the party carries no owner token, and `custom_title` is
+  // owner-only in the payload — the friends arriving from the WhatsApp group keep
+  // the one name of the two that means anything to them.
+  await page.goto(`/collect.html?c=${id}`);
+  await expect(page.locator('#title')).toHaveText('אוספים מילים על שירה');
+});
+
 test('she can type a two-line title, and the card is drawn with both lines', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   const asked = [];
