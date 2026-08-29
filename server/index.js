@@ -6690,6 +6690,7 @@ app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 // Built once, at boot, from site/js.
 const assetHashing = require('./asset-hashing');
 const moduleAssets = assetHashing.build(SITE_DIR);
+const metaPixel = require('./meta-pixel');
 
 // The hash IS the version, so a hashed url is immutable for a year. These never
 // exist on disk under the hashed name — the request is mapped back to the real
@@ -6740,7 +6741,11 @@ app.use((req, res, next) => {
   }
   res.setHeader('Cache-Control', 'no-cache');
   res.type('html');
-  res.send(moduleAssets.inject(html));
+  // Two injections, both cheap string work on an already-in-memory page: the
+  // module import map, and the owner's Meta pixel when she has set one. The
+  // pixel reads its id per request rather than at boot so pasting a new one in
+  // the admin takes effect on the next page load, with no restart.
+  res.send(metaPixel.inject(moduleAssets.inject(html), settings.get('analytics', 'meta_pixel_id')));
 });
 
 // Static site (so /collect resolves to collect.html, etc.). HTML is served

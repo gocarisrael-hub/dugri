@@ -6189,6 +6189,9 @@
           // a row in GA4's ecommerce report — a row with nothing in the revenue
           // column — so the funnel there reads as traffic that never buys.
           const chosen = DESIGNS[designIndex] || {};
+          if (typeof fbq === 'function') {
+            fbq('track', 'InitiateCheckout', { value: PLANS[plan].price, currency: 'ILS' });
+          }
           track('begin_checkout', {
             value: PLANS[plan].price,
             currency: 'ILS',

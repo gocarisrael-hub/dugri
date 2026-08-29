@@ -2,10 +2,10 @@
 <html lang="he" dir="rtl">
   <head>
     <meta charset="utf-8" />
-    <meta name="dugri:page" content="admin-features.html" />
+    <meta name="dugri:page" content="admin-analytics.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="robots" content="noindex, nofollow" />
-    <title>פיצ׳רים — דוגרי (ניהול)</title>
+    <title>אנליטיקס — דוגרי (ניהול)</title>
     <style>
       :root {
         --bg: #ffffff;
@@ -213,6 +213,19 @@
       button.danger:hover {
         background: #fdecf2;
       }
+      .card input[type='text'] {
+        width: 100%;
+        margin: 10px 0 0;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font: inherit;
+        letter-spacing: 0.04em;
+      }
+      .card input[type='text']:focus {
+        outline: 2px solid var(--pink);
+        outline-offset: 1px;
+      }
       .meta {
         color: var(--muted);
         font-size: 12px;
@@ -252,37 +265,27 @@
         <a data-page="admin-faq.html">שאלות נפוצות</a>
         <a data-page="admin-newgame.html">המשחק החדש</a>
         <a data-page="admin-preview.html">תצוגה מקדימה</a>
-        <a data-page="admin-features.html" class="active">פיצ׳רים</a>
+        <a data-page="admin-features.html">פיצ׳רים</a>
         <a data-page="admin-pricing.html">מחירים</a>
         <a data-page="admin-images.html">תמונות מוצר</a>
         <a data-page="admin-inventory.html">מלאי</a>
-        <a data-page="admin-analytics.html">אנליטיקס</a>
+        <a data-page="admin-analytics.html" class="active">אנליטיקס</a>
       </nav>
       <header>
-        <p class="kicker">Internal · פיצ׳רים בטופס ההזמנה</p>
-        <h1>פיצ׳רים</h1>
+        <p class="kicker">Internal · מדידה ופרסום</p>
+        <h1>אנליטיקס</h1>
         <p>
-          הדלקה/כיבוי של יכולות בטופס ההזמנה. פיצ׳ר כבוי מוסתר לגמרי מהלקוח/ה — הטופס ממשיך לעבוד עם
-          ברירת המחדל. כל שינוי נשמר בשרת ומשפיע מיד (רענון הטופס).
+          כאן מחברים את האתר לכלי המדידה. הפיקסל של מטא (פייסבוק ואינסטגרם) הוא מה שמאפשר לקמפיין
+          לדווח על הזמנות ולא רק על קליקים.
         </p>
       </header>
-
-      <div id="noKey" class="msg" hidden>
-        חסר מפתח גישה. פתחו את הדף עם <code>?key=…</code> בכתובת.
-      </div>
-      <div id="loadErr" class="msg" hidden></div>
-
-      <div id="app" hidden>
-        <div id="flagCards"></div>
-      </div>
-
-      <footer>נשמר בשרת (DATA_DIR) · גלוי רק עם מפתח הניהול · לא מקושר מהאתר.</footer>
+      <p class="hint" id="noKey" hidden>חסר מפתח גישה. פתחו את הדף עם <code>?key=…</code>.</p>
+      <div id="cards"></div>
     </div>
 
     <script>
       const key = new URLSearchParams(location.search).get('key') || '';
       const qs = (id) => document.getElementById(id);
-      // Carry the admin key across the linked admin pages.
       for (const a of document.querySelectorAll('#nav a')) {
         a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
       }
@@ -297,8 +300,8 @@
           body: body ? JSON.stringify(body) : undefined,
         });
         if (!r.ok) {
-          // Surface the server's {error} reason so the owner sees WHY. Fall back to
-          // the status if the body isn't JSON.
+          // Surface the server's {error} reason so the owner sees WHY a paste was
+          // refused (an id with spaces or a whole pasted snippet, most likely).
           let msg = 'HTTP ' + r.status;
           try {
             const j = await r.json();
@@ -310,167 +313,94 @@
         }
         return r.status === 204 ? null : r.json();
       }
-      function esc(s) {
-        return String(s == null ? '' : s).replace(
-          /[&<>"']/g,
-          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
-        );
-      }
-      // Stable, HTML-id-safe slug from section+key ('features-font_choice' -> ...).
-      function slug(section, k) {
-        return (section + '-' + k).replace(/[^a-z0-9]+/gi, '-');
-      }
 
-      // Friendly Hebrew names for each flag. Unknown keys (a flag added in code
-      // later) fall back to the raw id, so the list stays fully dynamic.
-      const LABELS = {
-        color_picking: 'בחירת צבע',
-        chasers_choice: 'צ׳ייסרים (עם/בלי)',
-        font_choice: 'בחירת גופן',
-        name_preview: 'תצוגה מקדימה עם שם',
-      };
-      function labelFor(k) {
-        return LABELS[k] || k;
-      }
-      // A per-flag note. font_choice depends on name_preview (the picker is nested
-      // in the preview panel), so it only takes effect when name-preview is on too.
-      const NOTES = {
-        font_choice: 'דורש שגם "תצוגה מקדימה עם שם" תהיה מופעלת — אחרת בחירת הגופן לא תוצג.',
-      };
+      const card = document.createElement('div');
+      const input = document.createElement('input');
+      const status = document.createElement('span');
 
-      let state = null; // last full settings.all() response
-
-      // --- one toggle card per feature flag ------------------------------------
-      function flagCardHtml(k, eff) {
-        const id = slug('features', k);
-        const on = !!eff;
-        const note = NOTES[k] ? '<p class="hint">' + esc(NOTES[k]) + '</p>' : '';
-        return (
-          '<div class="card' +
-          (on ? '' : ' off') +
-          '" data-section="features" data-key="' +
-          esc(k) +
-          '" data-kind="flag" id="card-' +
-          id +
-          '">' +
-          '<div class="card-head"><h3 class="card-title">' +
-          esc(labelFor(k)) +
-          '</h3><span class="card-id">features.' +
-          esc(k) +
-          '</span></div>' +
-          '<label class="switch"><input type="checkbox" data-section="features" data-key="' +
-          esc(k) +
-          '" data-kind="flag" data-testid="flag-' +
-          esc(k) +
-          '"' +
-          (on ? ' checked' : '') +
-          ' /> <span>מוצג בטופס ההזמנה</span></label>' +
-          note +
-          '<div class="actions">' +
-          '<button class="primary" data-save type="button">שמירה</button>' +
-          '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
-          '<span class="meta status" role="status" aria-live="polite"></span>' +
-          '</div></div>'
-        );
+      function setStatus(text, cls) {
+        status.textContent = text;
+        status.className = 'meta status' + (cls ? ' ' + cls : '');
+        if (cls === 'ok') setTimeout(() => (status.textContent = ''), 2200);
       }
 
-      function render() {
-        const { registry, effective } = state;
-        qs('flagCards').innerHTML = Object.keys(registry.features)
-          .map((k) => flagCardHtml(k, effective.features[k]))
-          .join('');
+      function build(effective) {
+        card.className = 'card';
+        card.id = 'card-meta-pixel';
+        const head = document.createElement('div');
+        head.className = 'card-head';
+        const h3 = document.createElement('h3');
+        h3.className = 'card-title';
+        h3.textContent = 'פיקסל מטא (Meta Pixel)';
+        const id = document.createElement('span');
+        id.className = 'card-id';
+        id.textContent = 'analytics.meta_pixel_id';
+        head.appendChild(h3);
+        head.appendChild(id);
+
+        input.type = 'text';
+        input.inputMode = 'numeric';
+        input.dir = 'ltr';
+        input.placeholder = 'למשל 1234567890123456';
+        input.value = effective || '';
+        input.setAttribute('data-testid', 'meta-pixel-id');
+
+        const hint = document.createElement('p');
+        hint.className = 'hint';
+        hint.textContent =
+          'מספרים בלבד. מעתיקים מ-Meta Business Suite ← Events Manager ← Data Sources. ' +
+          'שדה ריק מכבה את הפיקסל לגמרי — לא נשלח שום דבר למטא.';
+
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        const save = document.createElement('button');
+        save.className = 'primary';
+        save.type = 'button';
+        save.textContent = 'שמירה';
+        save.setAttribute('data-testid', 'save-pixel');
+        save.addEventListener('click', onSave);
+        actions.appendChild(save);
+        actions.appendChild(status);
+
+        card.appendChild(head);
+        card.appendChild(input);
+        card.appendChild(hint);
+        card.appendChild(actions);
+        qs('cards').appendChild(card);
       }
 
-      // The override VALUE for a flag card is the bare boolean checkbox state.
-      function readValue(card) {
-        return card.querySelector('input[type="checkbox"]').checked;
-      }
-
-      function setStatus(card, text, cls) {
-        const s = card.querySelector('.status');
-        s.textContent = text;
-        s.className = 'meta status' + (cls ? ' ' + cls : '');
-        if (cls === 'ok') setTimeout(() => (s.textContent = ''), 2200);
-      }
-
-      // Write the effective value the server returned back into the store and
-      // re-render that one card, so the UI reflects the saved state.
-      function applyEffective(section, k, effective) {
-        state.effective[section][k] = effective;
-        const card = qs('card-' + slug(section, k));
-        card.outerHTML = flagCardHtml(k, effective);
-      }
-
-      async function saveCard(card) {
-        const section = card.dataset.section;
-        const k = card.dataset.key;
-        setStatus(card, 'שומר…');
+      async function onSave() {
+        setStatus('שומר…');
         try {
           const { effective } = await api('POST', '/api/admin/settings', {
-            section,
-            key: k,
-            value: readValue(card),
+            section: 'analytics',
+            key: 'meta_pixel_id',
+            value: input.value.trim(),
           });
-          applyEffective(section, k, effective);
-          setStatus(qs('card-' + slug(section, k)), 'נשמר ✓', 'ok');
+          input.value = effective || '';
+          setStatus(effective ? 'נשמר ✓ הפיקסל פעיל' : 'נשמר ✓ הפיקסל כבוי', 'ok');
         } catch (e) {
-          setStatus(card, 'שמירה נכשלה: ' + e.message, 'err');
+          setStatus(e.message, 'err');
         }
       }
 
-      async function resetCard(card) {
-        const section = card.dataset.section;
-        const k = card.dataset.key;
-        if (!confirm('לאפס לברירת המחדל (כבוי)?')) return;
-        setStatus(card, 'מאפס…');
+      (async () => {
+        // No key: say so and call NOTHING. A keyless page must never touch the
+        // admin API — the same posture as every other admin screen.
+        if (!key) {
+          qs('noKey').hidden = false;
+          return;
+        }
         try {
-          // DELETE bodies are often dropped in transit; the settings key travels as
-          // `settingKey` (the `key` query param is reserved for the admin secret).
-          const url =
-            '/api/admin/settings?section=' +
-            encodeURIComponent(section) +
-            '&settingKey=' +
-            encodeURIComponent(k);
-          const { effective } = await api('DELETE', url);
-          applyEffective(section, k, effective);
-          setStatus(qs('card-' + slug(section, k)), 'אופס ✓', 'ok');
+          const all = await api('GET', '/api/admin/settings');
+          build(all.effective.analytics.meta_pixel_id);
         } catch (e) {
-          setStatus(card, 'איפוס נכשל: ' + e.message, 'err');
+          const p = document.createElement('p');
+          p.className = 'hint';
+          p.textContent = 'טעינה נכשלה: ' + e.message;
+          qs('cards').appendChild(p);
         }
-      }
-
-      // Toggling the switch greys the card immediately (visual only until saved).
-      // Save / reset via event delegation on the app container.
-      qs('app').addEventListener('click', (e) => {
-        const btn = e.target.closest('button');
-        if (!btn) return;
-        const card = btn.closest('.card');
-        if (!card) return;
-        if (btn.hasAttribute('data-save')) saveCard(card);
-        else if (btn.hasAttribute('data-reset')) resetCard(card);
-      });
-      qs('app').addEventListener('change', (e) => {
-        if (e.target.matches('input[type="checkbox"][data-kind="flag"]')) {
-          e.target.closest('.card').classList.toggle('off', !e.target.checked);
-        }
-      });
-
-      async function load() {
-        try {
-          state = await api('GET', '/api/admin/settings');
-          render();
-        } catch (e) {
-          qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message + ' (מפתח שגוי?)';
-          qs('loadErr').hidden = false;
-        }
-      }
-
-      if (!key) {
-        qs('noKey').hidden = false;
-      } else {
-        qs('app').hidden = false;
-        load();
-      }
+      })();
     </script>
   </body>
 </html>

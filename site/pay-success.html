@@ -465,6 +465,11 @@
           } catch (e) {
             /* storage blocked — a possible duplicate beats a lost sale */
           }
+          // Meta's half of the same sale. It is what lets a boosted post report
+          // orders rather than clicks, and what Meta optimises delivery against.
+          if (typeof fbq === 'function') {
+            fbq('track', 'Purchase', { value: value, currency: 'ILS' });
+          }
           if (typeof gtag !== 'function') return;
           gtag('event', 'purchase', {
             transaction_id: String(id),
