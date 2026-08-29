@@ -570,3 +570,93 @@ describe('the controls that draw can also reach paper', () => {
     expect(saveable()).not.toContain("'word_lead'");
   });
 });
+
+// THE WALL HAS TO SOLVE THE CARD THE PAPER WILL PRINT. Two places where it
+// solved a different one, both found by reading the generator rather than the
+// page: an alignment the press varies per front and the page held deck-wide, and
+// an English entry the press always counts and the page let out of the fit.
+describe('the wall solves the card the press prints', () => {
+  it('the title alignment is the FRONT’s where that front has one', () => {
+    // generator/config.front_align(cfg, front_index) reads
+    // title_style.front_align["<n>"] and falls back to the deck-wide align.
+    expect(html).toContain('function alignFor(front)');
+    expect(html).toMatch(/const per = \(TS && TS\.front_align\) \|\| \{\};/);
+    expect(html).toContain('const align = alignFor(front);');
+  });
+
+  it('and every front that knows its own number passes it', () => {
+    expect(html).toContain('drawTitle(g, S.titles[k], tf, k);');
+    expect(html).toContain('drawTitle(g, box, tf, isBack ? null : key);');
+    // the back has no front alignment to look up
+    expect(html).toContain('drawTitle(bg, S.back, bf);');
+  });
+
+  it('every entry holds the card down, English included', () => {
+    // The press excludes an entry on emptiness alone (render_page.py:3039) and
+    // then mins over all of them (:2507). No script test exists in that path.
+    expect(html).toContain('const holds = live;');
+    expect(html).not.toMatch(/mode === 'scale' && drag/);
+  });
+
+  it('alignFor prefers the front, falls back to the deck', () => {
+    // Driven rather than grepped: טוקיו is flush-right on 2/4/6/8 and flush-left
+    // on 3/5/7/9, and the deck-wide value must still answer for a front that
+    // says nothing, and for the back, which passes no front at all.
+    const src = html.match(/ {2}function alignFor\(front\) \{[\s\S]*?\n {2}\}/)[0];
+    const make = (front_align, deck) => {
+      // eslint-disable-next-line no-unused-vars
+      const TS = { front_align };
+      // eslint-disable-next-line no-unused-vars
+      const $ = () => ({ value: deck });
+      return eval(src + ';alignFor');
+    };
+    const jp = make(
+      {
+        2: 'right',
+        3: 'left',
+        4: 'right',
+        5: 'left',
+        6: 'right',
+        7: 'left',
+        8: 'right',
+        9: 'left',
+      },
+      'center'
+    );
+    expect(jp(2)).toBe('right');
+    expect(jp(3)).toBe('left');
+    expect(jp(9)).toBe('left');
+    expect(jp('3')).toBe('left'); // the keys arrive as strings from the wall
+    expect(jp(99)).toBe('center'); // a front with no answer of its own
+    expect(jp(null)).toBe('center'); // the back
+    // a template with no per-front table at all is unchanged
+    expect(make(undefined, 'right')(2)).toBe('right');
+  });
+
+  it('the English fraction applies only where a second face exists', () => {
+    // Face.scale: `alt_scale if is_latin and self.alt is not None else 1.0`
+    // (render_page.py:275). Every shipped design has word_font_alt unset, and the
+    // panel fills the NAME in for display, so the question has to be asked before
+    // that fallback runs — otherwise it can never be answered.
+    expect(html).toContain('HAS_WORD_ALT = !!LIVE.word_font_alt;');
+    expect(html).toContain('if (!HAS_WORD_ALT) return 1;');
+    const src = html.match(/ {2}function latRatio\(\) \{[\s\S]*?\n {2}\}/)[0];
+    const make = (hasAlt, mode, scale) => {
+      // eslint-disable-next-line no-unused-vars
+      const HAS_WORD_ALT = hasAlt;
+      // eslint-disable-next-line no-unused-vars
+      const $ = (id) => ({ value: id === 'enMode' ? mode : scale });
+      return eval(src + ';latRatio')();
+    };
+    expect(make(false, 'scale', 0.8)).toBe(1); // no second face: the card's own size
+    expect(make(true, 'scale', 0.8)).toBe(0.8); // a real alt face: the fraction
+    expect(make(true, 'exact', 0.8)).toBe(1);
+    expect(make(true, 'free', 0.8)).toBe(1);
+  });
+
+  it('the dead face-lead helper is gone', () => {
+    // It measured the per-face ink floor the wPitch caption states as a fixed
+    // 0.9, and had no callers — the same shape as stepFor.
+    expect(html).not.toContain('function faceLead(');
+  });
+});
