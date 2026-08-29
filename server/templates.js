@@ -3108,6 +3108,22 @@ function updateTemplateSettings({ root, key, patch }) {
       return { error: 'word_pitch must be a positive number or null', httpStatus: 400 };
     }
   }
+  // WHETHER THE WORDS ARE SET HEAVY (generator/config.word_bold_w reads this
+  // exact name and returns 0.0 unless it is true). The word face has no real
+  // bold, so the weight is a stroke drawn around every glyph — which also WIDENS
+  // it, which is why the fit has to know rather than the draw alone.
+  //
+  // The bench has drawn this since the switch existed and could never save it:
+  // the switch is written into the settings payload, the API had no branch for
+  // it, and unknown keys are dropped silently — so the wall went heavy, the
+  // press printed light, and nothing in between said why. The stroke's WIDTH
+  // (word_bold_w) stays authored in the theme; the bench has no control for it.
+  if ('word_bold' in p) {
+    if (typeof p.word_bold !== 'boolean') {
+      return { error: 'word_bold must be a boolean', httpStatus: 400 };
+    }
+    changed.word_bold = p.word_bold;
+  }
   // HOW BIG THIS DESIGN SETS ITS ENGLISH WORDS, as a fraction of the card's size
   // (generator/config.word_alt_scale reads this exact name). English is set in
   // the SECOND word face, and a Latin face beside a Hebrew one at the same point

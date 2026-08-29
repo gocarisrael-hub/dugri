@@ -1497,6 +1497,12 @@
     // The panel names the four faces it is drawing with; a design that ships only
     // one word face draws English in that one, and must say so rather than
     // "undefined".
+    // WHETHER THERE IS A SECOND FACE AT ALL, read before the fallback below
+    // fills the name in. The press asks `self.alt is not None` (Face.scale,
+    // render_page.py:275) and a design that ships one word face has no alt, so
+    // a Latin run on it sets at the card's own size. Once the name is filled in
+    // for the panel, that question can no longer be asked of LIVE.
+    HAS_WORD_ALT = !!LIVE.word_font_alt;
     LIVE.word_font_alt = LIVE.word_font_alt || LIVE.word_font;
     LIVE.title_font_alt = LIVE.title_font_alt || LIVE.title_font;
 
@@ -1537,6 +1543,7 @@
   // is set in brixton-sans (Latin only) — which is why alt_scale is live.
   const WFACE = () => 'TplWord'; // the word face
   const WALT = () => 'TplWordAlt'; // the face every Latin word is set in
+  let HAS_WORD_ALT = false; // does the design actually ship a second word face?
   const TFACE = 'TplTitle',
     TALT = 'TplTitleAlt';
   // Half a slider step. A ceiling resting ON the box lands a rounding crumb below
@@ -1574,8 +1581,7 @@
     SEL = FRONTS[0];
     setR('wPin', LIVE.word_size);
     // the deck's own rhythm, expressed against its own size
-    STEP = LIVE.word_pitch || ((LIVE_BAND.y1 - LIVE_BAND.y0) * CH) / 4;
-    setR('wPitch', LIVE.word_size ? r2(STEP / LIVE.word_size) : 1.4);
+    setRhythm(LIVE.word_pitch || ((LIVE_BAND.y1 - LIVE_BAND.y0) * CH) / 4, LIVE.word_size);
     setR('wTight', 1);
     // THE CEILINGS COME OFF THE SITE when the design carries them. They used to
     // start at 999 (off) every time, which meant the only copy of a tuned ceiling
@@ -1909,14 +1915,6 @@
       0
     );
   }
-  function faceLead(family) {
-    // ascent + descent, per unit of size
-    CX.font = REF + 'px "' + family + '"';
-    const m = CX.measureText('אHgqק');
-    const a = m.fontBoundingBoxAscent || m.actualBoundingBoxAscent || REF * 0.8;
-    const d = m.fontBoundingBoxDescent || m.actualBoundingBoxDescent || REF * 0.2;
-    return (a + d) / REF;
-  }
   function inkStack(lines, family, pitch) {
     // full stacked ink height at REF
     CX.font = REF + 'px "' + family + '"';
@@ -1993,6 +1991,16 @@
     _INK = new Map(),
     _SKY = new Map();
   function latRatio() {
+    /* ONLY WHERE THERE IS A SECOND FACE TO SCALE. Face.scale is
+     `alt_scale if is_latin and self.alt is not None else 1.0`
+     (render_page.py:275) — the fraction exists to reconcile a Latin x-height
+     with a Hebrew one, so with no alt face the press sets a Latin run at the
+     card's own size and nothing is reconciled. This page applied the fraction
+     regardless, and every shipped design has word_font_alt unset, so on every
+     one of them an English entry measured 0.8 of its true width and the wall let
+     the card set larger than the paper could. Measured on סיישל with an English
+     entry: the press said 16.96 and this page said 18.70. */
+    if (!HAS_WORD_ALT) return 1;
     return $('enMode').value === 'scale' ? +$('enScale').value : 1;
   }
   /** Face.getlength: a Latin run sets at alt_scale of the card's size. */
@@ -2396,8 +2404,7 @@
     const band = S.band;
     const rowW = (band.x1 - band.x0) * CW;
     const fat = $('wBold').checked ? LIVE.word_bold_w || 0.04 : 0;
-    const mode = $('enMode').value,
-      drag = $('enDrag').checked;
+    const mode = $('enMode').value;
     const capHe = $('capOn').checked ? +$('capHe').value : Infinity;
     const capEn = $('capOn').checked ? +$('capEn').value : Infinity;
     const live = words.map((w, i) => ({ w, i })).filter((x) => x.w);
@@ -2416,8 +2423,10 @@
     // read the pitch as if the whole gap were type room. On birthday-girls that
     // showed 21.05 where the press printed 12.94 — 1.63x — so every size settled
     // here came out small on paper, and the ceilings tuned against it never bit.
-    const leadBind = markerLead > 0 ? STEP / markerLead : 999;
-    const boxBind = STEP * (ROW_TOP + ROW_BOT) * WORD_SIZE_K;
+    // The rhythm this repaint is drawn at — the slider's, not the stored one.
+    const step = pitchUnits();
+    const leadBind = markerLead > 0 ? step / markerLead : 999;
+    const boxBind = step * (ROW_TOP + ROW_BOT) * WORD_SIZE_K;
     const pinned = !$('wFit').checked;
     // The box bound is the TARGET a card takes when nothing pins it — in the press
     // `uniform = word_size if word_size else median(box heights) x _WORD_SIZE_K`,
@@ -2427,11 +2436,22 @@
     // are not a look, they are a fault.
     const hBind = pinned ? leadBind : Math.min(leadBind, boxBind);
     const uniform = pinned ? +$('wPin').value : isFinite(capHe) ? capHe : hBind;
-    // An entry set on its own size is not one of the card's demands.
-    const holds = live.filter((x) => {
-      const latinOnly = hasLat(x.w) && !hasHeb(x.w);
-      return !latinOnly || (mode === 'scale' && drag);
-    });
+    /* EVERY ENTRY IS ONE OF THE CARD'S DEMANDS, English included — because that
+     is what the press does, unconditionally. Its fit excludes an entry on one
+     test and one only, `if not word: continue` (render_page.py:3039), and then
+     takes `min([uniform] + [...for i in live])` over every entry that survived
+     (:2507). There is no script test anywhere in that path: a Latin run differs
+     only in the WIDTH it measures, pre-shrunk by alt_scale where the design ships
+     a second face (Face.scale, :275), and in the post-fit word_max_en ceiling
+     (:732), which can only come down and never re-enters the size decision.
+       This page used to let an English entry out of the size decision unless the
+     mode was `scale` AND #enDrag was ticked. Both of those describe a press that
+     does not exist: word_en and word_en_drags_card are read by nothing in
+     generator/ or server/, and `exact` (a fixed English point size) and `own-fit`
+     have no generator implementation at all — word_alt_scale, a fraction of the
+     card's one shared size, is the only English sizing the press knows. So in
+     every state but one the wall was solving a card the paper would not print. */
+    const holds = live;
     // EVERY entry goes into the fit, because every entry takes a row — even one
     // whose size is set on its own and therefore holds nothing down. Giving those
     // an unbounded width leaves them out of the size decision while keeping their
@@ -2462,8 +2482,8 @@
         room,
         live.length,
         fat,
-        rowCentres().map((cy) => [cy - STEP / 2, cy + STEP / 2]),
-        STEP,
+        rowCentres().map((cy) => [cy - step / 2, cy + step / 2]),
+        step,
         bandBox,
         ratio
       );
@@ -2477,7 +2497,6 @@
       // rectangle and nothing feeds the size back into the spacing, so nothing
       // here may either: the band she drags is the rhythm, and it stays put.
     }
-    const step = STEP;
 
     const he = solved ? solved.size : Math.min(isFinite(uniform) ? uniform : hBind, hBind);
     const bind = solved ? solved.why : 'height';
@@ -2562,12 +2581,31 @@
    box the way the title's lines share theirs — open it and each line asks for
    more of a box that is not growing, so the type comes down. _grid_pitch does the
    same thing: max(what the deck wants, what the glyphs need) x size. */
-  let STEP = 24; // the pitch the last fit settled on
-  function pitchUnits() {
-    return STEP;
+  let STEP = 24; // the stored rhythm, in card units
+  /* WHAT THE SLIDER MULTIPLIES. The rhythm has to answer to `wPitch` — it did
+   not, and the control was inert from its own minimum up to 1.53 (סיישל: STEP
+   28.01 drawn at every ratio, the only reachable effect being fitCard's box cap,
+   which cannot bite until eff x word_size passes the band). But it must answer
+   WITHOUT reading the fit's own answer back — that is the decay THE PITCH IS THE
+   BAND'S describes. So the ratio is taken against a STORED size, never a solved
+   one: `PITCH_BASE` is fixed when a template loads and nothing downstream writes
+   to it, so the loop that decayed the wall cannot form.
+     `PITCH_R0` is the ratio the template loaded at. While the slider still sits
+   there the stored number is printed to the unit rather than to the slider's 0.01
+   granularity — otherwise merely opening a template and saving it would nudge a
+   calibrated rhythm (סיישל 28.01 -> 1.50 x 18.7 = 28.05). */
+  let PITCH_BASE = 0;
+  let PITCH_R0 = -1;
+  function setRhythm(step, base) {
+    STEP = step;
+    PITCH_BASE = base > 0 ? base : step / 1.4;
+    setR('wPitch', r2(STEP / PITCH_BASE));
+    PITCH_R0 = +$('wPitch').value; // what the input actually snapped to
   }
-  function stepFor(size, lead) {
-    return Math.max(+$('wPitch').value, lead || 0) * size;
+  function pitchUnits() {
+    const r = +$('wPitch').value;
+    if (!(PITCH_BASE > 0) || r === PITCH_R0) return STEP;
+    return r * PITCH_BASE;
   }
   /* WHERE ROW 1 SITS. The block hangs from the TOP of the box: row one's ink meets
    the box's top edge, and the rest step down from there. Centring the four rows
@@ -2904,14 +2942,27 @@
     });
   }
 
-  function drawTitle(g, box, tf) {
+  /* THE ALIGNMENT IS THE FRONT'S, where that front has one of its own. The press
+   reads title_style.front_align["<n>"] per card (generator/config.front_align at
+   :788, applied at render_page.py:4757 and :5176) and falls back to the deck-wide
+   align only where a front says nothing. This page read the one deck-wide value
+   for every card, so on טוקיו — flush-right on fronts 2/4/6/8 and flush-left on
+   3/5/7/9 — half the preview disagreed with the paper it was calibrating.
+     The value itself was never in danger: writeJSON spreads ...TS and the API
+   allowlists front_align, so what the calibrator wrote survived a save. Only the
+   drawing ignored it. */
+  function alignFor(front) {
+    const per = (TS && TS.front_align) || {};
+    return (front != null && per[String(front)]) || $('tAlign').value;
+  }
+  function drawTitle(g, box, tf, front) {
     const cx = ((box.x0 + box.x1) / 2) * CW,
       x0 = box.x0 * CW,
       x1 = box.x1 * CW;
     const cy = ((box.y0 + box.y1) / 2) * CH;
     const n = tf.lines.length,
       step = tf.pitch * tf.size;
-    const align = $('tAlign').value;
+    const align = alignFor(front);
     const anchor = sideAnchor(align, tf.heb);
     const ax = align === 'center' ? cx : align === 'left' ? x0 : x1;
     const first = cy - ((n - 1) * step) / 2 + tf.size * 0.33;
@@ -3075,7 +3126,7 @@
     drawBox(g, S.band, 'band', fit.bind);
     drawWords(g, SHORT_WORDS, fit);
     drawBox(g, S.titles[k], 'title', tf.bind);
-    drawTitle(g, S.titles[k], tf);
+    drawTitle(g, S.titles[k], tf, k);
     svg.appendChild(g);
     slot.appendChild(svg);
     const why = document.createElement('div');
@@ -3208,7 +3259,7 @@
       drawWords(g, words, fit);
     }
     drawBox(g, box, isBack ? 'back' : 'title', null);
-    drawTitle(g, box, tf);
+    drawTitle(g, box, tf, isBack ? null : key);
     svg.appendChild(g);
     slot.appendChild(svg);
 
@@ -3401,7 +3452,7 @@
       );
       tf.cap = 0;
       tf.fit = tf.size;
-      drawTitle(g, box, tf);
+      drawTitle(g, box, tf, isBack ? null : key);
     }
     svg.appendChild(g);
     return svg;
@@ -3784,7 +3835,7 @@
           )
         );
       }
-      drawTitle(g, S.titles[k], tf);
+      drawTitle(g, S.titles[k], tf, k);
       svg.appendChild(g);
       slot.appendChild(svg);
       const why = document.createElement('div');
@@ -3963,6 +4014,14 @@
             ? { mode: 'own-fit' }
             : { mode: 'scale', word_alt_scale: r2(+$('enScale').value) },
       word_en_drags_card: $('enDrag').checked,
+      /* FLAT, and only in the mode that has a press to reach. `word_en` is the
+       bench's own record of the MODE, a thing the generator has no concept of —
+       it knows one number, `word_alt_scale`, which is what `scale` means. Sent
+       nested it was addressed to nobody. The other two modes are omitted rather
+       than nulled: they cannot be expressed on paper either way, and clearing a
+       calibrated fraction on the way past would be a change she did not ask
+       for. */
+      ...($('enMode').value === 'scale' ? { word_alt_scale: r2(+$('enScale').value) } : {}),
 
       theme: TPL.key,
       card_viewbox: LIVE.card_viewbox,
@@ -3974,7 +4033,7 @@
       word_bold: $('wBold').checked,
       word_pitch: r2(pitchUnits()),
       word_lead: r2(+$('wPitch').value) /* the gap as a multiple of the size */,
-      word_wrap_pitch: r2(+$('wTight').value) /* not in the generator yet */,
+      word_wrap_pitch: r2(+$('wTight').value),
       title_style: {
         ...TS,
         align: $('tAlign').value,
@@ -4373,8 +4432,14 @@
     }
     if (typeof P.word_bold === 'boolean') $('wBold').checked = P.word_bold;
     if (P.word_wrap_pitch) setR('wTight', P.word_wrap_pitch);
-    if (P.word_lead) setR('wPitch', P.word_lead);
-    else if (P.word_pitch) STEP = P.word_pitch; // resolved on the first fit
+    // BOTH HALVES OF THE SAME NUMBER. A preset carries the rhythm absolutely
+    // (word_pitch) and the ratio it was set at (word_lead). Applying one without
+    // the other left the slider and the wall describing different spacings — the
+    // slider moved and STEP did not, or STEP moved and the slider still read the
+    // template's own ratio.
+    if (P.word_pitch && P.word_lead) setRhythm(P.word_pitch, P.word_pitch / P.word_lead);
+    else if (P.word_pitch) setRhythm(P.word_pitch, P.word_size || LIVE.word_size);
+    else if (P.word_lead) setR('wPitch', P.word_lead);
     const en = P.word_en || {};
     if (en.mode) {
       $('enMode').value = en.mode;
@@ -4472,7 +4537,7 @@
     HAS_BACK_TITLE = !!(TPL.backTitle && LIVE.back && LIVE.back.frac);
     TS = LIVE.title_style;
     LIVE_BAND = bandFromSlots(LIVE.card_slots.words);
-    STEP = LIVE.word_pitch || 24;
+    setRhythm(LIVE.word_pitch || 24, LIVE.word_size);
     SAMPLE_EN = TPL.sampleEn || 'MAYA';
     SAMPLE_HE = TPL.sampleHe || 'מיה';
     STORE = 'dugri-bench-' + TPL.key;
@@ -4634,11 +4699,14 @@
   /* ---------- boot ---------- */
   let LAST_OUT = null;
 
-  /* The fields a settings save may carry. word_lead and word_alt_scale are NOT
-   here: the generator reads word_alt_scale but the settings API cannot yet
-   store it (#521), and word_lead is the same spacing word_pitch already
-   carries, in relative units. Sending a field the API drops would report a save
-   that did not happen. */
+  /* The fields a settings save may carry. Sending one the API drops would report
+   a save that did not happen, so this list and the branches in
+   server/templates.updateTemplateSettings have to say the same thing.
+     word_lead is NOT here: it is the spacing word_pitch already carries, in
+   relative units, and nothing reads it.
+     word_en / word_en_drags_card are NOT here: the generator has no field for
+   an English MODE, so only the `scale` case has anywhere to land, and it lands
+   as the flat word_alt_scale below. */
   const SAVEABLE = [
     'word_max_he',
     'word_max_en',
@@ -4648,6 +4716,8 @@
     'back_title_max_he',
     'word_pitch',
     'word_size',
+    'word_bold',
+    'word_alt_scale',
     'title_style',
     'card_slots',
     'back',
