@@ -4283,6 +4283,9 @@
           state.custom_title = r.custom_title;
           draftTitle = null; // saved: the stored title is the truth again
           $('#titleInput').value = savedTitle();
+          // The page's own heading names the deck too — refresh it here rather
+          // than leaving it contradicting her for however long the poll takes.
+          renderHeading();
           renderPreview();
         } catch (e) {
           // The server's own Hebrew message when it has one (the emoji refusal
@@ -4484,13 +4487,47 @@
       // when the lock lifts (payment, or the quota being raised).
       let freeLockPayOpened = false;
 
+      // What the page's heading is ABOUT. The buyer retitles her deck on the
+      // design tab, and the heading went on naming the honoree — so the line at
+      // the top of the very page she retitled it on contradicted the title she
+      // had just saved.
+      //
+      // It now follows the same rule as everywhere else the deck is named
+      // (`custom_title || honoree_name` — see server/hfd.js and pdf-name.js):
+      // her own title when she has set one, the honoree otherwise. Only the
+      // SAVED title, never the draft: a heading is a statement about the order,
+      // and typing that is abandoned rather than saved must not leave one behind.
+      //
+      // A title may carry a LINE BREAK (the generator prints each line as its own
+      // title line, and the field is a textarea for exactly that reason). In a
+      // one-line heading those become spaces — dropping them would fuse two words
+      // together, which is the same trap the textarea comment warns about.
+      //
+      // A contributor never gets `custom_title` (it is owner-only in the payload),
+      // so the friends arriving from the WhatsApp group keep reading the honoree's
+      // name, which is the only one of the two that means anything to them.
+      function headline() {
+        const t = savedTitle().trim();
+        if (!t) return honoree();
+        return t
+          .split('\n')
+          .map((line) => line.trim())
+          .filter(Boolean)
+          .join(' ');
+      }
+      // The two places the heading is written, together — so saving a title can
+      // refresh them without waiting for the next 5s poll to redraw the page.
+      function renderHeading() {
+        document.title = 'דוגרי · מילים על ' + headline();
+        $('#title').textContent = 'אוספים מילים על ' + headline();
+      }
+
       function render() {
         if (!state) return;
         // Now that the collection (and its event theme) is loaded, make sure the
         // idea chips match the event (kids / couple / default).
         buildCats();
-        document.title = 'דוגרי · מילים על ' + honoree();
-        $('#title').textContent = 'אוספים מילים על ' + honoree();
+        renderHeading();
         // Now that the honoree name is known, personalize the owner's share invite.
         if (isOwner) updateShareInvite();
         // The group is opened asynchronously after the order, so its link can
