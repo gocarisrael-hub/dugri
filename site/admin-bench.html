@@ -377,6 +377,11 @@
     font: 400 12.5px/1.6 var(--ui);
     color: var(--faint);
   }
+  .capend {
+    grid-column: 1 / -1;
+    font: 400 11px/1.4 var(--ui);
+    color: var(--faint);
+  }
   .hint {
     font-size: 12.5px;
     color: var(--muted);
@@ -471,43 +476,8 @@
   }
 
   /* a ceiling drawn against the box it has to live in */
-  .eg {
-    background: var(--sunk);
-    padding: 7px 9px;
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
   .eg[hidden] {
     display: none;
-  }
-  .eg svg {
-    width: 100%;
-    height: auto;
-    display: block;
-    overflow: visible;
-  }
-  .eg .lab {
-    font-family: var(--num);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    color: var(--muted);
-    font-variant-numeric: tabular-nums;
-  }
-  .eg .lab.holds {
-    color: var(--flag);
-  }
-  .eg .lab.sub {
-    color: var(--faint);
-  }
-  .eg .lab.sub bdi {
-    font-family: 'Heebo', var(--num);
-  }
-  .eg .frame {
-    fill: none;
-    stroke: var(--rule2);
-    stroke-width: 0.6;
-    stroke-dasharray: 2 2;
   }
 
   .warn {
@@ -1051,6 +1021,15 @@
         <input type="range" id="wPitch" min="0.9" max="3" step="0.01" /><output
           id="wPitchV"
         ></output>
+        <!-- WHY IT STOPS AT 0.9. The number is a multiple of the word size, and
+         the renderer prints max(this, what the glyphs need) — so under the
+         glyphs' own need the slider is inert. Measured on this face: 0.64 for
+         two-letter words, 0.84 once a final ך ן ף ץ descends into the next row.
+         0.9 is the round number just above the worst of those. It is fixed
+         rather than measured live because the binding card changes with every
+         word list, and a floor that slid under her hand would be worse than one
+         that is simply stated. -->
+        <span class="capend">מתחת ל-0.9 האותיות עצמן קובעות את הרווח</span>
       </div>
       <div class="row">
         <label for="wTight">שורות של מילה שנשברה</label>
@@ -1073,12 +1052,10 @@
         <label for="capHe">תקרה לעברית</label>
         <input type="range" id="capHe" min="8" max="48" step="0.01" /><output id="capHeV"></output>
       </div>
-      <div class="eg" id="capHeEg"></div>
       <div class="row">
         <label for="capEn">תקרה לאנגלית</label>
         <input type="range" id="capEn" min="6" max="48" step="0.01" /><output id="capEnV"></output>
       </div>
-      <div class="eg" id="capEnEg"></div>
     </section>
 
     <section class="grp">
@@ -1186,14 +1163,12 @@
           id="tCapEnV"
         ></output>
       </div>
-      <div class="eg" id="tCapEnEg"></div>
       <div class="row">
         <label for="tCapHe">תקרה לעברית</label>
         <input type="range" id="tCapHe" min="8" max="80" step="0.01" /><output
           id="tCapHeV"
         ></output>
       </div>
-      <div class="eg" id="tCapHeEg"></div>
       <div class="warn" id="heWarn"></div>
     </section>
 
@@ -1216,14 +1191,12 @@
           id="bCapEnV"
         ></output>
       </div>
-      <div class="eg" id="bCapEnEg"></div>
       <div class="row">
         <label for="bCapHe">תקרה לעברית</label>
         <input type="range" id="bCapHe" min="8" max="90" step="0.01" /><output
           id="bCapHeV"
         ></output>
       </div>
-      <div class="eg" id="bCapHeEg"></div>
     </section>
   </div>
 
@@ -3003,49 +2976,6 @@
   /** Draw one ceiling against the box it has to live in, at its true relative size.
    *  A ceiling that is not currently biting changes nothing on the cards, so this
    *  is the only place its number means anything until it does. */
-  function drawEg(id, boxW, size, text, family, mode, now, note) {
-    const host = $(id);
-    if (!host || !text) return;
-    CX.font = REF + 'px "' + family + '"';
-    const adv = (CX.measureText(text).width / REF) * size;
-    const marker = mode === 'word' ? (markerSpan() + WORD_GAP) * size : 0;
-    const total = adv + marker;
-    const pad = Math.max(size * 0.35, 3);
-    const vbW = Math.max(boxW, total) + pad * 2;
-    const vbH = size * 1.55;
-    const bx = vbW - pad - boxW; // the box hugs the right, as the row does
-    const base = vbH * 0.72;
-    const rtl = /[\u0590-\u05FF]/.test(text);
-    const holds = now != null && size < now - CAP_EPS;
-    const fill = holds ? 'var(--flag)' : '#017f8d';
-    const mk =
-      mode === 'word'
-        ? `<text x="${r2(bx + boxW)}" y="${r2(base)}" font-size="${r2(size * MARKER_SCALE)}"
-             font-family="TplWord" text-anchor="end" fill="${fill}">1.</text>`
-        : '';
-    const anchor = mode === 'word' ? sideAnchor('right', rtl) : 'middle';
-    const tx = mode === 'word' ? bx + boxW - marker : bx + boxW / 2;
-    // What the number MEANS, not what the drawing happens to do: a ceiling above
-    // what the box already gives is a ceiling that never comes down.
-    const say =
-      now == null
-        ? `${r2(size)}`
-        : holds
-          ? `${r2(size)} — holding the type down from ${r2(now)}`
-          : `${r2(size)} — clear of the ${r2(now)} ` +
-            (mode === 'word'
-              ? 'these words set at; it bites on shorter ones'
-              : 'this name sets at; it bites on shorter ones');
-    host.innerHTML =
-      `<svg viewBox="0 0 ${r2(vbW)} ${r2(vbH)}" aria-hidden="true">` +
-      `<rect class="frame" x="${r2(bx)}" y="1" width="${r2(boxW)}" height="${r2(vbH - 2)}"/>` +
-      mk +
-      `<text x="${r2(tx)}" y="${r2(base)}" font-size="${r2(size)}" font-family="${family}"
-             text-anchor="${anchor}" direction="${rtl ? 'rtl' : 'ltr'}" fill="${fill}">${esc(text)}</text>` +
-      `</svg>` +
-      `<span class="lab${holds ? ' holds' : ''}">${say}</span>` +
-      (note ? `<span class="lab sub">${note}</span>` : '');
-  }
   const esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
 
   /** The largest the box could EVER set, whatever word or name it is handed.
@@ -3063,6 +2993,20 @@
     e.max = top;
     const o = $(id + 'V');
     if (o) o.textContent = num(id, e.value);
+    // SAY WHY IT STOPS THERE. The number looked arbitrary — the owner asked
+    // twice why a ceiling ends at 14.2 rather than running to 99. It ends at the
+    // largest size THIS box could ever set: a maximum above that can never come
+    // down on anything, so the slider would be offering a setting with no
+    // effect. Naming the bound turns a mystery into a fact about the box.
+    let end = e.parentNode.querySelector('.capend');
+    if (!end) {
+      end = document.createElement('span');
+      end.className = 'capend';
+      // Under the reading, not between the slider and it — the eye goes
+      // slider, number, then the bound that explains where the slider stopped.
+      (o || e).insertAdjacentElement('afterend', end);
+    }
+    end.textContent = 'עד ' + r2(top) + ' — המקסימום של הקופסה הזו';
     return +e.value !== before;
   }
 
@@ -3152,19 +3096,16 @@
     {
       on: 'capOn',
       ids: ['capHe', 'capEn'],
-      egs: ['capHeEg', 'capEnEg'],
       at: { capHe: 'word', capEn: 'word' },
     },
     {
       on: 'tCapOn',
       ids: ['tCapEn', 'tCapHe'],
-      egs: ['tCapEnEg', 'tCapHeEg'],
       at: { tCapEn: 'titleEn', tCapHe: 'titleHe' },
     },
     {
       on: 'bCapOn',
       ids: ['bCapEn', 'bCapHe'],
-      egs: ['bCapEnEg', 'bCapHeEg'],
       at: { bCapEn: 'backEn', bCapHe: 'backHe' },
     },
   ];
@@ -3174,10 +3115,6 @@
       g.ids.forEach((id) => {
         const r = $(id).closest('.row');
         if (r) r.hidden = !on;
-      });
-      g.egs.forEach((id) => {
-        const e = $(id);
-        if (e) e.hidden = !on;
       });
     });
   }
@@ -3913,24 +3850,6 @@
         .filter(Boolean)
         .filter(pick)
         .sort((a, b) => widthAt(b, WFACE(), REF) - widthAt(a, WFACE(), REF))[0];
-    drawEg(
-      'capHeEg',
-      fit.rowW,
-      +$('capHe').value,
-      longest(hasHeb) || 'ריקודים',
-      WFACE(),
-      'word',
-      fit.fit
-    );
-    drawEg(
-      'capEnEg',
-      fit.rowW,
-      +$('capEn').value,
-      longest((w) => hasLat(w) && !hasHeb(w)) || 'Below deck',
-      WFACE(),
-      'word',
-      $('enMode').value === 'scale' ? fit.fit * +$('enScale').value : fit.en
-    );
     const tl = titleLines(wallSpec()),
       tb = S.titles[SEL];
     const widest = (fam) =>
@@ -3950,47 +3869,7 @@
     const sample = (nm, fam) =>
       `<bdi dir="ltr">${esc(titleLines(nm).lines.join(' '))}</bdi> · ` +
       (fam === 'TplTitle' ? 'Sprite Graffiti' : 'Aharoni');
-    drawEg(
-      'tCapEnEg',
-      tbw,
-      +$('tCapEn').value,
-      lineFor(NM.en, 'TplTitle'),
-      'TplTitle',
-      'title',
-      fitFor(S.titles[SEL], NM.en, FRONT_CAPS).fit,
-      sample(NM.en, 'TplTitle')
-    );
-    drawEg(
-      'tCapHeEg',
-      tbw,
-      +$('tCapHe').value,
-      lineFor(NM.he, WFACE()),
-      WFACE(),
-      'title',
-      fitFor(S.titles[SEL], NM.he, FRONT_CAPS).fit,
-      sample(NM.he, WFACE())
-    );
     if (HAS_BACK_TITLE) {
-      drawEg(
-        'bCapEnEg',
-        bbw,
-        +$('bCapEn').value,
-        lineFor(NM.en, 'TplTitle'),
-        'TplTitle',
-        'title',
-        fitFor(S.back, NM.en, BACK_CAPS).fit,
-        sample(NM.en, 'TplTitle')
-      );
-      drawEg(
-        'bCapHeEg',
-        bbw,
-        +$('bCapHe').value,
-        lineFor(NM.he, WFACE()),
-        WFACE(),
-        'title',
-        fitFor(S.back, NM.he, BACK_CAPS).fit,
-        sample(NM.he, WFACE())
-      );
     }
 
     shortCard();
