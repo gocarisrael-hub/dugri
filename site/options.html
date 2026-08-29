@@ -6185,7 +6185,22 @@
         persist(); // keeps step + selection on the current URL entry
         if (currentStep === 4 && !checkoutTracked) {
           checkoutTracked = true;
-          track('begin_checkout');
+          // Carry the money with the event. A valueless begin_checkout is still
+          // a row in GA4's ecommerce report — a row with nothing in the revenue
+          // column — so the funnel there reads as traffic that never buys.
+          const chosen = DESIGNS[designIndex] || {};
+          track('begin_checkout', {
+            value: PLANS[plan].price,
+            currency: 'ILS',
+            items: [
+              {
+                item_id: chosen.id || chosen.name || 'dugri',
+                item_name: chosen.name || 'דוגרי',
+                price: PLANS[plan].price,
+                quantity: 1,
+              },
+            ],
+          });
         }
         if (currentStep === 3) {
           if (customTitleInput) customTitleInput.focus();
