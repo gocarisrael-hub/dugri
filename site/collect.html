@@ -6399,6 +6399,10 @@
           not_found: 'קוד לא קיים',
           inactive: 'הקופון אינו פעיל',
           expired: 'תוקף הקופון פג',
+          // A limited code that has been redeemed as many times as it was good
+          // for. Named apart from 'expired' on purpose: nothing about the date is
+          // wrong, so "פג תוקף" would send her to check the calendar.
+          used_up: 'הקופון נוצל במלואו',
         };
         function setCouponMsg(text, kind) {
           couponMsg.textContent = text || '';
@@ -6663,7 +6667,15 @@
               // A coupon was sent and re-validated server-side as no longer valid.
               // Drop it (reverting the total) and let the owner re-enter one. A
               // 400 with no coupon applied is a different failure → generic copy.
-              payErr.textContent = 'הקופון אינו תקף יותר';
+              //
+              // A limited code can be spent by someone else BETWEEN her applying
+              // it and pressing pay, and "no longer valid" would read as our bug
+              // on a code that was fine a minute ago — so the refusal names that
+              // case when the server sends it.
+              payErr.textContent =
+                err.body && err.body.reason === 'used_up'
+                  ? 'הקופון נוצל במלואו'
+                  : 'הקופון אינו תקף יותר';
               clearCoupon();
             } else if (err.status === 409) {
               // already paid / an open payment window — the server sends a Hebrew

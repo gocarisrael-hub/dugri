@@ -164,6 +164,52 @@ describe('admin coupon CRUD auth', () => {
   it('404 toggling a missing coupon', async () => {
     expect((await post(key('/api/admin/coupons/nope'), { active: true })).status).toBe(404);
   });
+
+  it('creates a coupon with a redemption cap, and 400s on a bad one', async () => {
+    const created = await post(key('/api/admin/coupons'), {
+      code: 'LIMIT20',
+      discount_pct: 10,
+      max_uses: 20,
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.coupon.max_uses).toBe(20);
+
+    const bad = await post(key('/api/admin/coupons'), {
+      code: 'LIMITBAD',
+      discount_pct: 10,
+      max_uses: 0,
+    });
+    expect(bad.status).toBe(400);
+    expect(bad.body.error).toBe('bad max_uses');
+
+    // Omitting it is how every coupon was created before the cap existed.
+    const plain = await post(key('/api/admin/coupons'), { code: 'NOLIMIT', discount_pct: 10 });
+    expect(plain.body.coupon.max_uses).toBe(null);
+  });
+
+  it('changes and lifts the cap on an existing coupon; 404 unknown, 400 bad', async () => {
+    const created = await post(key('/api/admin/coupons'), {
+      code: 'RECAP',
+      discount_pct: 10,
+      max_uses: 2,
+    });
+    const id = created.body.coupon.id;
+    const raised = await post(key('/api/admin/coupons/' + id + '/max-uses'), { max_uses: 5 });
+    expect(raised.status).toBe(200);
+    expect(raised.body.coupon.max_uses).toBe(5);
+
+    const lifted = await post(key('/api/admin/coupons/' + id + '/max-uses'), { max_uses: null });
+    expect(lifted.body.coupon.max_uses).toBe(null);
+
+    expect(
+      (await post(key('/api/admin/coupons/' + id + '/max-uses'), { max_uses: -1 })).status
+    ).toBe(400);
+    expect((await post(key('/api/admin/coupons/nope/max-uses'), { max_uses: 5 })).status).toBe(404);
+    // …and it is admin-gated like the rest of the coupon routes.
+    expect(
+      (await post('/api/admin/coupons/' + id + '/max-uses?key=wrong', { max_uses: 5 })).status
+    ).toBe(403);
+  });
 });
 
 describe('POST /api/collections/:id/coupon/validate (owner-scoped)', () => {
@@ -185,6 +231,18 @@ describe('POST /api/collections/:id/coupon/validate (owner-scoped)', () => {
       code: 'GHOST',
     });
     expect(nf.body).toEqual({ valid: false, reason: 'not_found' });
+  });
+
+  it('tells the buyer a capped code is spent, not that it never existed', async () => {
+    await post(key('/api/admin/coupons'), { code: 'ONESALE', discount_pct: 10, max_uses: 1 });
+    db.incrementCouponUses('ONESALE');
+    const c = db.createCollection('קופון שנוצל');
+    const r = await post('/api/collections/' + c.id + '/coupon/validate', {
+      owner_token: c.owner_token,
+      code: 'onesale',
+    });
+    expect(r.status).toBe(200);
+    expect(r.body).toEqual({ valid: false, reason: 'used_up' });
   });
 
   it('requires the owner token (403 without it) — not an open oracle', async () => {
@@ -288,6 +346,49 @@ describe('pay/init with a coupon', () => {
     });
     expect(r.status).toBe(400);
     expect(r.body.error).toBe('invalid coupon');
+  });
+
+  it('refuses to charge on a spent coupon, and names WHY so the page can say it', async () => {
+    // The cap is enforced where the money moves, not only in the preview: the
+    // last use can be taken by someone else between applying the code and paying.
+    await post(key('/api/admin/coupons'), { code: 'SPENT1', discount_pct: 50, max_uses: 1 });
+    const first = db.createCollection('הקונה הראשונה');
+    const r1 = await post('/api/collections/' + first.id + '/pay/init', {
+      owner_token: first.owner_token,
+      version: 'pdf',
+      coupon: 'SPENT1',
+    });
+    expect(r1.status).toBe(200);
+    // The use is counted at the PAID transition, so the code is still good until
+    // that first order actually goes through.
+    expect(db.getCouponByCode('SPENT1').uses).toBe(0);
+    const token = tokenOf(first.id);
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'tx-1',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: token,
+        DebitTotal: 4000,
+        DebitApproveNumber: '86-001-006',
+      },
+    };
+    await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
+    expect(db.getCouponByCode('SPENT1').uses).toBe(1);
+
+    const second = db.createCollection('הקונה השנייה');
+    const r2 = await post('/api/collections/' + second.id + '/pay/init', {
+      owner_token: second.owner_token,
+      version: 'pdf',
+      coupon: 'SPENT1',
+    });
+    expect(r2.status).toBe(400);
+    expect(r2.body).toEqual({ error: 'invalid coupon', reason: 'used_up' });
+    // The order row is placed before the coupon is re-checked, so it exists —
+    // but nothing was charged and no gateway session was opened against it.
+    const stalled = db.getCollection(second.id).order;
+    expect(stalled.paid).toBe(false);
+    expect(stalled.pelecard).toBe(null);
   });
 
   it('a 100% coupon marks the order paid WITHOUT hitting the gateway', async () => {
