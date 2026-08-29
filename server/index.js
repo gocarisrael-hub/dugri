@@ -2320,12 +2320,23 @@ app.post('/api/admin/coupons', (req, res) => {
     code: b.code,
     discount_pct: b.discount_pct,
     valid_until: b.valid_until,
+    max_uses: b.max_uses,
     partner_name: b.partner_name,
     commission_type: b.commission_type,
     commission_value: b.commission_value,
   });
   if (coupon && coupon.error) return res.status(400).json({ error: coupon.error });
   res.status(201).json({ coupon });
+});
+
+// Admin: change or lift a coupon's redemption cap. Body: { max_uses } — a whole
+// number of uses, or null/'' for no limit. 404 unknown id, 400 a bad cap.
+app.post('/api/admin/coupons/:id/max-uses', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const coupon = db.setCouponMaxUses(req.params.id, (req.body || {}).max_uses);
+  if (!coupon) return res.status(404).json({ error: 'not found' });
+  if (coupon.error) return res.status(400).json({ error: coupon.error });
+  res.json({ coupon });
 });
 
 // Admin: edit a coupon's PARTNER terms (name + what she earns). The code and the
@@ -4344,7 +4355,10 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     // charge, so it must never be blocked by the preview endpoint's oracle budget
     // (an owner previewing a code repeatedly must still be able to pay).
     const v = db.validateCoupon(b.coupon);
-    if (!v.valid) return res.status(400).json({ error: 'invalid coupon' });
+    // The reason travels with the refusal: between the preview and this click
+    // someone else can have spent the code's last use, and "the coupon ran out"
+    // is a very different thing to read than "we could not open the payment".
+    if (!v.valid) return res.status(400).json({ error: 'invalid coupon', reason: v.reason });
     discountPct = v.coupon.discount_pct;
     couponCode = v.coupon.code;
   }

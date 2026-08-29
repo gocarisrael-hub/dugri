@@ -246,6 +246,13 @@
             <label for="until">בתוקף עד (ריק = ללא תפוגה)</label>
             <input id="until" type="date" />
           </div>
+          <!-- A cap on REDEMPTIONS, alongside the cap on time. Counted against
+               PAID orders, so a code good for 20 stops the 21st sale — not the
+               21st person who typed it in and never paid. -->
+          <div class="field">
+            <label for="maxuses">מספר שימושים (ריק = ללא הגבלה)</label>
+            <input id="maxuses" type="number" min="1" step="1" placeholder="20" />
+          </div>
           <!-- A coupon becomes a BLOGGER's code by getting a name and a rate.
                Left empty it is an ordinary discount code, exactly as before. -->
           <div class="field">
@@ -286,6 +293,7 @@
       const codeEl = document.getElementById('code');
       const pctEl = document.getElementById('pct');
       const untilEl = document.getElementById('until');
+      const maxUsesEl = document.getElementById('maxuses');
       const partnerEl = document.getElementById('partner');
       const ctypeEl = document.getElementById('ctype');
       const cvalueEl = document.getElementById('cvalue');
@@ -298,6 +306,7 @@
         'bad code': 'קוד לא תקין (3–20 תווים, אותיות וספרות בלבד).',
         'bad discount_pct': 'אחוז הנחה חייב להיות מספר שלם בין 1 ל-100.',
         'bad valid_until': 'תאריך תפוגה לא תקין.',
+        'bad max_uses': 'מספר שימושים חייב להיות מספר שלם מ-1 ומעלה (או ריק).',
         duplicate: 'קוד כזה כבר קיים.',
         forbidden: 'מפתח גישה שגוי.',
         'admin disabled: set ADMIN_KEY': 'ניהול מושבת בשרת (חסר ADMIN_KEY).',
@@ -469,14 +478,44 @@
             tdUntil.textContent = 'ללא תפוגה';
           }
 
+          // Spent = redeemed as many times as it was good for. It reads as its
+          // OWN status rather than as "כבוי": nobody switched this code off, it
+          // did the job it was created for, and the two call for different
+          // reactions (raise the cap vs. turn it back on).
+          const spent =
+            Number.isInteger(c.max_uses) && c.max_uses > 0 && (c.uses || 0) >= c.max_uses;
+
           const tdStatus = document.createElement('td');
           const pill = document.createElement('span');
-          pill.className = 'pill ' + (c.active ? 'on' : 'off');
-          pill.textContent = c.active ? 'פעיל' : 'כבוי';
+          pill.className = 'pill ' + (c.active && !spent ? 'on' : 'off');
+          pill.textContent = !c.active ? 'כבוי' : spent ? 'נוצל' : 'פעיל';
           tdStatus.appendChild(pill);
 
+          // Uses out of the cap when there is one — a bare "18" says nothing
+          // about how close the code is to the end of its run.
           const tdUses = document.createElement('td');
-          tdUses.textContent = c.uses || 0;
+          const usesLine = document.createElement('div');
+          usesLine.textContent = c.max_uses ? (c.uses || 0) + ' / ' + c.max_uses : c.uses || 0;
+          tdUses.appendChild(usesLine);
+          // The button to CHANGE the cap belongs with the other row actions, not
+          // in the number's own cell — the count is a fact to read at a glance.
+          const capBtn = document.createElement('button');
+          capBtn.className = 'ghost';
+          capBtn.textContent = c.max_uses ? 'שנה מגבלה' : 'הגבל';
+          capBtn.onclick = async () => {
+            // Deleting a code to fix a mistyped cap is not an option once it is
+            // printed in someone's post, so the cap is editable in place. An
+            // empty answer means "no limit"; Cancel changes nothing.
+            const answer = prompt(
+              'כמה שימושים מותרים בקוד ' + c.code + '? (ריק = ללא הגבלה)',
+              c.max_uses == null ? '' : String(c.max_uses)
+            );
+            if (answer === null) return;
+            const trimmed = answer.trim();
+            capBtn.disabled = true;
+            await apiMaxUses(c.id, trimmed === '' ? null : Number(trimmed));
+            load();
+          };
 
           const tdManage = document.createElement('td');
           const toggleBtn = document.createElement('button');
@@ -498,6 +537,8 @@
             await apiDelete(c.id);
             load();
           };
+          tdManage.appendChild(capBtn);
+          tdManage.appendChild(document.createTextNode(' '));
           tdManage.appendChild(toggleBtn);
           tdManage.appendChild(document.createTextNode(' '));
           tdManage.appendChild(delBtn);
@@ -564,6 +605,29 @@
         }
       }
 
+      async function apiMaxUses(id, maxUses) {
+        try {
+          const r = await fetch(withKey('/api/admin/coupons/' + id + '/max-uses'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ max_uses: maxUses }),
+          });
+          if (!r.ok) {
+            let msg = 'לא ניתן לעדכן את מגבלת השימושים.';
+            try {
+              const data = await r.json();
+              if (data && data.error) msg = ERR_HE[data.error] || data.error;
+            } catch {
+              /* keep default */
+            }
+            alert(msg);
+          }
+          return r.ok;
+        } catch {
+          return false;
+        }
+      }
+
       async function apiDelete(id) {
         try {
           const r = await fetch(withKey('/api/admin/coupons/' + id), { method: 'DELETE' });
@@ -588,6 +652,7 @@
               code,
               discount_pct: pct,
               valid_until: until || null,
+              max_uses: maxUsesEl.value === '' ? null : Number(maxUsesEl.value),
               partner_name: partnerEl.value.trim(),
               commission_type: ctypeEl.value || null,
               commission_value: Number(cvalueEl.value) || 0,

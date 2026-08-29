@@ -233,7 +233,15 @@
           (s, c) => s + (isPaid(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
           0
         );
-        const activeCoupons = coupons.filter((x) => x.active).length;
+        // "Active" means a code that would actually work if someone typed it in
+        // now. A coupon that has been redeemed as many times as it was good for
+        // is switched on and yet refuses every buyer, so counting it here would
+        // put a number on this card that the checkout disagrees with.
+        const activeCoupons = coupons.filter(
+          (x) =>
+            x.active &&
+            !(Number.isInteger(x.max_uses) && x.max_uses > 0 && (x.uses || 0) >= x.max_uses)
+        ).length;
         const items = [
           ['כל ההזמנות', totalOrders],
           ['פתוחות (טרם שולמו)', open],

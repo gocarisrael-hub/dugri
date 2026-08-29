@@ -636,6 +636,26 @@ function normalizeCommission({ partner_name, commission_type, commission_value }
   return { partner_name: name, commission_type: type, commission_value: round2(v) };
 }
 
+// A coupon's redemption cap. null/'' means NO limit — the shape every coupon
+// minted before this field existed already has, so an old row keeps working
+// untouched. Anything else must be a whole number of uses, at least one; 0 is
+// refused rather than read as "unlimited", because a cap of zero is far more
+// likely to be a typo than a code deliberately created dead.
+// Returns { value } or { error }.
+function normMaxUses(max_uses) {
+  if (max_uses == null || max_uses === '') return { value: null };
+  const n = Number(max_uses);
+  if (!Number.isInteger(n) || n < 1 || n > 1e6) return { error: 'bad max_uses' };
+  return { value: n };
+}
+
+// Has this coupon been redeemed as many times as it is good for? A coupon with
+// no cap is never spent.
+function couponSpent(c) {
+  const cap = c && c.max_uses;
+  return Number.isInteger(cap) && cap > 0 && (c.uses || 0) >= cap;
+}
+
 // What one PAID order earns its partner, given the terms in force at the time.
 // `order` is the stored order; the terms are passed in rather than read, so the
 // caller decides whether they come from the coupon (a new sale) or from the
@@ -2305,9 +2325,14 @@ const db = {
 
   // --- Discount coupons ---------------------------------------------------
   // A coupon is a percentage-off code the admin creates and the checkout
-  // applies. Shape: { id, code, discount_pct, valid_until, active, created_at,
-  // uses }. `valid_until` is a 'YYYY-MM-DD' string (inclusive) or null = never
-  // expires. `uses` counts orders that used the coupon and became paid.
+  // applies. Shape: { id, code, discount_pct, valid_until, max_uses, active,
+  // created_at, uses }. `valid_until` is a 'YYYY-MM-DD' string (inclusive) or
+  // null = never expires. `uses` counts orders that used the coupon and became
+  // paid, and `max_uses` is how many such orders it is good for (null = no
+  // limit) — a code handed to one blogger's audience can be capped at 20 sales
+  // rather than run until someone remembers to switch it off. A coupon that has
+  // reached its cap stops validating; `active` stays the owner's own switch, so
+  // raising the cap brings the same code back rather than needing a new one.
   //
   // A coupon becomes a PARTNER coupon — a blogger's code, which earns her money —
   // by gaining `commission_type` ('fixed' | 'percent'), `commission_value`, a
@@ -2331,6 +2356,7 @@ const db = {
     code,
     discount_pct,
     valid_until,
+    max_uses,
     partner_name,
     commission_type,
     commission_value,
@@ -2348,6 +2374,8 @@ const db = {
       }
       until = s;
     }
+    const cap = normMaxUses(max_uses);
+    if (cap && cap.error) return { error: cap.error };
     if (_db.coupons.some((x) => x.code === c)) return { error: 'duplicate' };
     const terms = normalizeCommission({ partner_name, commission_type, commission_value });
     if (terms.error) return { error: terms.error };
@@ -2356,6 +2384,7 @@ const db = {
       code: c,
       discount_pct,
       valid_until: until,
+      max_uses: cap.value,
       active: true,
       created_at: nowIso(),
       uses: 0,
@@ -2475,6 +2504,21 @@ const db = {
     return c;
   },
 
+  // Change (or lift) a coupon's redemption cap. The alternative to this is
+  // deleting a mistyped code and minting another, which is no good once the
+  // code is printed in someone's post. Setting it BELOW what is already spent is
+  // allowed and simply means "no more" — the past uses stand either way.
+  // Returns the coupon, null for an unknown id, { error } for a bad cap.
+  setCouponMaxUses(id, max_uses) {
+    const c = this.getCouponById(id);
+    if (!c) return null;
+    const cap = normMaxUses(max_uses);
+    if (cap.error) return { error: cap.error };
+    c.max_uses = cap.value;
+    saveDb();
+    return c;
+  },
+
   deleteCoupon(id) {
     const before = _db.coupons.length;
     _db.coupons = _db.coupons.filter((x) => x.id !== id);
@@ -2493,6 +2537,10 @@ const db = {
     if (c.valid_until && todayStrIsrael() > c.valid_until) {
       return { valid: false, reason: 'expired' };
     }
+    // Spent: the cap counts PAID orders (incrementCouponUses runs at markPaid),
+    // so a code capped at 20 stops the 21st buyer, not the 21st person to type
+    // it into the box and walk away.
+    if (couponSpent(c)) return { valid: false, reason: 'used_up' };
     return { valid: true, coupon: c };
   },
 

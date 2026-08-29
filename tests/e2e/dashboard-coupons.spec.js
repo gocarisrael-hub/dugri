@@ -107,6 +107,48 @@ test('coupons: create, list with 0 uses, toggle inactive, delete', async ({ page
   await expect(page.locator('tbody tr').filter({ hasText: code })).toHaveCount(0);
 });
 
+test('coupons: a redemption cap shows as "used / cap" and is editable in place', async ({
+  page,
+}) => {
+  const code = uniqCode();
+  await page.goto(`/coupons.html?key=${KEY}`);
+  await expect(page.locator('#createPanel')).toBeVisible();
+
+  await page.locator('#code').fill(code);
+  await page.locator('#pct').fill('10');
+  await page.locator('#maxuses').fill('3');
+  await page.getByRole('button', { name: 'צור קופון' }).click();
+
+  const row = page.locator('tbody tr').filter({ hasText: code });
+  await expect(row).toHaveCount(1);
+  // The uses cell by its HEADING, like the test above — the count now reads
+  // against the cap, which is the whole point of setting one.
+  const usesAt = await page
+    .locator('thead th')
+    .allInnerTexts()
+    .then((h) => h.indexOf('שימושים'));
+  await expect(row.locator('td').nth(usesAt)).toHaveText('0 / 3');
+  // Capped and unused is still a working code.
+  await expect(row.locator('.pill.on')).toBeVisible();
+
+  // Raising the cap in place — the alternative is deleting a code that may
+  // already be printed in someone's post.
+  page.once('dialog', (dialog) => dialog.accept('9'));
+  await row.getByRole('button', { name: 'שנה מגבלה' }).click();
+  await expect(row.locator('td').nth(usesAt)).toHaveText('0 / 9');
+
+  // …and lifting it entirely: an empty answer means no limit, and the button
+  // goes back to offering one.
+  page.once('dialog', (dialog) => dialog.accept(''));
+  await row.getByRole('button', { name: 'שנה מגבלה' }).click();
+  await expect(row.locator('td').nth(usesAt)).toHaveText('0');
+  await expect(row.getByRole('button', { name: 'הגבל' })).toBeVisible();
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await row.getByRole('button', { name: 'מחק' }).click();
+  await expect(page.locator('tbody tr').filter({ hasText: code })).toHaveCount(0);
+});
+
 test('coupons: server 400 (duplicate code) is shown inline', async ({ page }) => {
   page.on('dialog', (dialog) => dialog.accept());
   const code = uniqCode();

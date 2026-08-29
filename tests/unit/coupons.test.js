@@ -66,6 +66,36 @@ describe('createCoupon validation', () => {
     ).toBe('bad valid_until');
   });
 
+  it('stores max_uses when given, and null (no limit) when not', () => {
+    const capped = db.createCoupon({ code: 'CAP20', discount_pct: 10, max_uses: 20 });
+    expect(capped.max_uses).toBe(20);
+    // The three ways of saying "no limit" — including the shape every coupon
+    // minted before the field existed already has.
+    expect(db.createCoupon({ code: 'NOCAP1', discount_pct: 10 }).max_uses).toBe(null);
+    expect(db.createCoupon({ code: 'NOCAP2', discount_pct: 10, max_uses: null }).max_uses).toBe(
+      null
+    );
+    expect(db.createCoupon({ code: 'NOCAP3', discount_pct: 10, max_uses: '' }).max_uses).toBe(null);
+  });
+
+  it('rejects a max_uses that is not a whole number of at least one', () => {
+    // Zero is a typo, not "unlimited" — a code created dead helps nobody.
+    expect(db.createCoupon({ code: 'CAPZERO', discount_pct: 10, max_uses: 0 }).error).toBe(
+      'bad max_uses'
+    );
+    expect(db.createCoupon({ code: 'CAPNEG', discount_pct: 10, max_uses: -3 }).error).toBe(
+      'bad max_uses'
+    );
+    expect(db.createCoupon({ code: 'CAPFRAC', discount_pct: 10, max_uses: 2.5 }).error).toBe(
+      'bad max_uses'
+    );
+    expect(db.createCoupon({ code: 'CAPTEXT', discount_pct: 10, max_uses: 'many' }).error).toBe(
+      'bad max_uses'
+    );
+    // …and a rejected coupon is not half-created.
+    expect(db.getCouponByCode('CAPZERO')).toBe(null);
+  });
+
   it('rejects a duplicate code (case-insensitive)', () => {
     expect(db.createCoupon({ code: 'UNIQUE1', discount_pct: 10 }).error).toBeUndefined();
     expect(db.createCoupon({ code: 'unique1', discount_pct: 15 }).error).toBe('duplicate');
@@ -99,6 +129,63 @@ describe('validateCoupon', () => {
   it('returns expired when today is after valid_until', () => {
     db.createCoupon({ code: 'PAST', discount_pct: 10, valid_until: dateOffset(-1) });
     expect(db.validateCoupon('PAST')).toEqual({ valid: false, reason: 'expired' });
+  });
+
+  it('is good for exactly max_uses redemptions, then reads used_up', () => {
+    db.createCoupon({ code: 'TWICE', discount_pct: 10, max_uses: 2 });
+    expect(db.validateCoupon('TWICE').valid).toBe(true);
+    db.incrementCouponUses('TWICE');
+    // Still good ON the last use — the cap is how many sales it buys, not how
+    // many it stops short of.
+    expect(db.validateCoupon('TWICE').valid).toBe(true);
+    db.incrementCouponUses('TWICE');
+    expect(db.validateCoupon('TWICE')).toEqual({ valid: false, reason: 'used_up' });
+  });
+
+  it('never runs out without a cap', () => {
+    db.createCoupon({ code: 'FOREVER', discount_pct: 10 });
+    for (let i = 0; i < 50; i++) db.incrementCouponUses('FOREVER');
+    expect(db.validateCoupon('FOREVER').valid).toBe(true);
+  });
+
+  it('reports inactive rather than used_up for a spent coupon that is also off', () => {
+    // The owner's switch is the fact she acted on; it is answered first so that
+    // turning a code back on is not reported as a cap problem.
+    const c = db.createCoupon({ code: 'OFFSPENT', discount_pct: 10, max_uses: 1 });
+    db.incrementCouponUses('OFFSPENT');
+    db.setCouponActive(c.id, false);
+    expect(db.validateCoupon('OFFSPENT')).toEqual({ valid: false, reason: 'inactive' });
+  });
+});
+
+describe('setCouponMaxUses', () => {
+  it('raises a spent coupon back into use, and lifts the cap entirely', () => {
+    const c = db.createCoupon({ code: 'RAISE', discount_pct: 10, max_uses: 1 });
+    db.incrementCouponUses('RAISE');
+    expect(db.validateCoupon('RAISE').reason).toBe('used_up');
+    // Raising the cap brings the SAME code back — the point of editing it rather
+    // than minting a replacement for a code already printed in someone's post.
+    expect(db.setCouponMaxUses(c.id, 3).max_uses).toBe(3);
+    expect(db.validateCoupon('RAISE').valid).toBe(true);
+    expect(db.setCouponMaxUses(c.id, null).max_uses).toBe(null);
+    expect(db.validateCoupon('RAISE').valid).toBe(true);
+  });
+
+  it('accepts a cap below what is already spent — it means "no more"', () => {
+    const c = db.createCoupon({ code: 'LOWER', discount_pct: 10 });
+    db.incrementCouponUses('LOWER');
+    db.incrementCouponUses('LOWER');
+    expect(db.setCouponMaxUses(c.id, 1).max_uses).toBe(1);
+    // The two uses already made stand; the code simply sells nothing further.
+    expect(db.getCouponByCode('LOWER').uses).toBe(2);
+    expect(db.validateCoupon('LOWER')).toEqual({ valid: false, reason: 'used_up' });
+  });
+
+  it('null for an unknown id, { error } for a bad cap — and leaves the cap alone', () => {
+    const c = db.createCoupon({ code: 'KEEPCAP', discount_pct: 10, max_uses: 5 });
+    expect(db.setCouponMaxUses('nope', 5)).toBe(null);
+    expect(db.setCouponMaxUses(c.id, 0).error).toBe('bad max_uses');
+    expect(db.getCouponByCode('KEEPCAP').max_uses).toBe(5);
   });
 });
 
