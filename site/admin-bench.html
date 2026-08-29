@@ -1103,15 +1103,15 @@
       <div class="row" id="ageRow" hidden>
         <label for="tAge">גיל</label> <input type="text" id="tAge" value="30" /><output></output>
       </div>
-      <div class="row wide" hidden>
-        <label for="titleMode">מילים</label>
-        <select id="titleMode">
-          <option value="template">the template, filled with a name</option>
-          <option value="own">whatever I type</option>
-        </select>
-      </div>
       <!-- The field she types in lives in the top bar. This one stays as the
-           value the fit reads, so nothing in the engine has to learn a new id. -->
+           value the fit reads, so nothing in the engine has to learn a new id.
+           THERE IS NO LONGER A MODE. The page used to carry a hidden switch —
+           the design's title with a name poured in, or her own words — and it
+           was saved to localStorage with every other field. Restored on 'the
+           template', the box in the top bar became decorative: she typed, the
+           cards kept printing the design's title, and the control that decided
+           that was not on the screen for her to find. Her words are the only
+           answer now, so there is nothing left to be stuck on. -->
       <div id="ownWrap" hidden>
         <textarea id="titleText" rows="3" dir="auto" spellcheck="false"></textarea>
       </div>
@@ -1625,7 +1625,6 @@
     // ALWAYS her own words. The template's lines are what the generator already
     // prints; the thing worth looking at in an editor is the line she is about
     // to hand it. The select survives hidden because the fit reads it.
-    $('titleMode').value = 'own';
     $('titleText').value = LIVE.title_lines.join('\n').replace(/\{NAME\}/g, 'MAYA');
     SEED_TITLE = true;
     SAMPLES.he.forEach((w, i) => {
@@ -1654,8 +1653,11 @@
     id === 'enScale' || id === 'tLead' || id === 'wTight' || id === 'wPitch'
       ? (+v).toFixed(2)
       : (+v).toFixed(1);
+  // Kept as a name rather than inlined `true`: it reads as the question the
+  // rows below are actually asking — are we on her own words? — and the answer
+  // stopped being a question when the mode went.
   function own2() {
-    return $('titleMode').value === 'own';
+    return true;
   }
   /** What this particular template needs on screen. */
   function shapePanel() {
@@ -1677,8 +1679,7 @@
     $('bPinRow').hidden = $('bFit').checked;
     $('genderRow').hidden = !TPL.gender || own2();
     $('ageRow').hidden = !(TPL.extra || []).includes('AGE') || own2();
-    const own = $('titleMode').value === 'own';
-    $('ownWrap').hidden = !own;
+    $('ownWrap').hidden = false;
     const m = $('enMode').value;
     $('enScaleRow').hidden = m !== 'scale';
     $('enSizeRow').hidden = m !== 'exact';
@@ -2633,7 +2634,6 @@
    read off the resulting text either way, so a typed Hebrew title picks up the
    Hebrew face and the Hebrew ceiling without being told to. */
   function customLines() {
-    if ($('titleMode').value !== 'own') return null;
     const ls = $('titleText')
       .value.split('\n')
       .map((x) => x.trim())
@@ -4193,10 +4193,6 @@
   });
   document.addEventListener('change', (e) => {
     // A change of face invalidates every measurement taken against the old one.
-    // Switching to her own words starts from what is on the cards right now, so the
-    // first thing she sees is the title she already had, editable.
-    if (e.target.id === 'titleMode' && e.target.value === 'own')
-      $('titleText').value = titleLines().lines.join('\n');
     if (['capOn', 'tCapOn', 'bCapOn'].includes(e.target.id)) capToggled(e.target.id);
     syncHidden();
     paint();

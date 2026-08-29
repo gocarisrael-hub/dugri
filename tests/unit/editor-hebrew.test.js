@@ -178,9 +178,17 @@ describe('the look the owner approved', () => {
   it('the title she prints is in the top bar, and is always her own words', () => {
     expect(html).toContain('id="titleTop"');
     expect(html).toContain('הכותרת שתודפס');
-    expect(html).toContain("$('titleMode').value = 'own'");
-    // the select survives hidden — the fit reads it
-    expect(html).toMatch(/<div class="row wide" hidden>[\s\S]{0,80}titleMode/);
+  });
+
+  // THE SWITCH IS GONE, and that is the fix. It chose between the design's title
+  // with a name poured in and her own words, it was not on the screen, and
+  // saveState persisted it with every other field — so a page restored on 'the
+  // template' made the top-bar box decorative: she typed and the cards did not
+  // move, with nothing visible to blame. Her words are the only answer now.
+  it('there is no title mode left to be stuck on', () => {
+    expect(html).not.toContain('titleMode');
+    // customLines reads the field and nothing else — no gate in front of it
+    expect(html).toMatch(/function customLines\(\) \{\s*const ls = \$\('titleText'\)/);
   });
 
   it('the field opens on the filled title, not the template’s placeholders', () => {
