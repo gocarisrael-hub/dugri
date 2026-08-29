@@ -455,8 +455,77 @@ describe('the line gap says why it stops', () => {
     expect(html).toContain('id="wPitch" min="0.9"');
   });
 
-  it('and the draw really does take the larger of the two', () => {
-    expect(html).toContain("return Math.max(+$('wPitch').value, lead || 0) * size;");
+  it('and the fit really does take the larger of the two', () => {
     expect(html).toContain('const eff = Math.max(ratio, lead || 0);');
+  });
+});
+
+// THE CONTROL WAS INERT and a passing test said otherwise. `stepFor` held the
+// right arithmetic — max(slider, lead) x size — and had no callers; the rows were
+// drawn by `rowCentres` stepping the STORED pitch, so on סיישל every ratio from
+// the slider's own minimum to 1.53 printed the same 28.01 gap. A test that reads
+// a dead function's source is what let that live for as long as it did, so this
+// one drives the functions instead of grepping them.
+describe('the line gap actually moves the rhythm', () => {
+  // `html` is only read in beforeAll, so the source is pulled per test.
+  const rhythmBlock = () =>
+    html.match(/ {2}let STEP = 24;[\s\S]*?\n {2}function pitchUnits\(\) \{[\s\S]*?\n {2}\}/)[0];
+  // סיישל: a pinned word_size of 18.7 carrying a calibrated rhythm of 28.01.
+  const load = (pitch = 28.01, base = 18.7) => {
+    const block = rhythmBlock();
+    const slider = { value: '1.4' };
+    // eslint-disable-next-line no-unused-vars
+    const $ = () => slider;
+    // eslint-disable-next-line no-unused-vars
+    const r2 = (n) => Math.round(n * 100) / 100;
+    // eslint-disable-next-line no-unused-vars
+    const setR = (id, v) => {
+      slider.value = String(v);
+    };
+    const api = eval(block + ';({ setRhythm, pitchUnits })');
+    api.setRhythm(pitch, base);
+    return { ...api, slider };
+  };
+
+  it('an untouched slider prints the stored rhythm to the unit', () => {
+    // 28.01 / 18.7 = 1.4979, which the 0.01 input snaps to 1.50. Multiplying back
+    // would store 28.05 — a calibrated number nudged by merely opening the page.
+    const { pitchUnits, slider } = load();
+    expect(+slider.value).toBe(1.5);
+    expect(pitchUnits()).toBe(28.01);
+  });
+
+  it('moving it moves the gap, proportionally', () => {
+    const { pitchUnits, slider } = load();
+    slider.value = '0.9';
+    expect(pitchUnits()).toBeCloseTo(16.83, 6);
+    slider.value = '1.2';
+    expect(pitchUnits()).toBeCloseTo(22.44, 6);
+  });
+
+  it('0.9 and 1.2 are not the same gap — the bug itself', () => {
+    const { pitchUnits, slider } = load();
+    slider.value = '0.9';
+    const low = pitchUnits();
+    slider.value = '1.2';
+    expect(pitchUnits()).not.toBe(low);
+  });
+
+  it('a template with no pinned size still answers the slider', () => {
+    const { pitchUnits, slider } = load(24, 0); // base falls back to STEP / 1.4
+    expect(+slider.value).toBe(1.4);
+    expect(pitchUnits()).toBe(24);
+    slider.value = '2.8';
+    expect(pitchUnits()).toBeCloseTo(48, 6);
+  });
+
+  it('the rhythm never reads the fit back — the decay stays fixed', () => {
+    // THE PITCH IS THE BAND'S: feeding solved.pitch into the spacing multiplied
+    // it by ratio x 0.507 every repaint and the wall decayed card after card.
+    // PITCH_BASE is set only on load, so the loop cannot form.
+    expect(rhythmBlock()).toContain('return r * PITCH_BASE;');
+    expect(html).not.toMatch(/STEP = solved/);
+    expect(html).toContain('const step = pitchUnits();');
+    expect(html).toMatch(/first \+ i \* pitchUnits\(\)/);
   });
 });
