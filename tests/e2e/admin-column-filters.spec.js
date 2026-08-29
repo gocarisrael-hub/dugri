@@ -291,3 +291,33 @@ test('on a phone the filters are reachable even though the headings are hidden',
     .check();
   expect((await names(page)).sort()).toEqual(['איסוף-מודרני', 'איסוף-קלאסי']);
 });
+
+// The opener can sit at the very bottom edge of a phone screen (the admin nav
+// wraps to three rows there, and the strip follows it down). The browser scrolls
+// such a control into view before delivering its click, and that scroll event
+// arrives AFTER the menu has opened — so a menu that closes on any scroll used to
+// vanish the instant it appeared, and no value could ever be ticked.
+test('a menu opened from the bottom edge survives the scroll that opening it caused', async ({
+  page,
+}) => {
+  // Short enough that the strip is below the fold and the click must scroll.
+  await openAdmin(page, { width: 390, height: 640 });
+  const opener = page.getByTestId('colfilter-bar-version');
+  await opener.scrollIntoViewIfNeeded();
+  await opener.click();
+
+  const menu = page.locator('.colmenu');
+  await expect(menu).toBeVisible();
+  // Give the scroll event its frame, then a couple more: it must still be there.
+  await page.evaluate(
+    () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+  );
+  await expect(menu).toBeVisible();
+
+  await menu.locator('label', { hasText: 'משחק מוכן (איסוף)' }).locator('input').first().check();
+  expect((await names(page)).sort()).toEqual(['איסוף-מודרני', 'איסוף-קלאסי']);
+
+  // A REAL scroll still closes it — the grace is one frame, not a repeal.
+  await page.mouse.wheel(0, 120);
+  await expect(menu).toHaveCount(0);
+});
