@@ -1574,8 +1574,7 @@
     SEL = FRONTS[0];
     setR('wPin', LIVE.word_size);
     // the deck's own rhythm, expressed against its own size
-    STEP = LIVE.word_pitch || ((LIVE_BAND.y1 - LIVE_BAND.y0) * CH) / 4;
-    setR('wPitch', LIVE.word_size ? r2(STEP / LIVE.word_size) : 1.4);
+    setRhythm(LIVE.word_pitch || ((LIVE_BAND.y1 - LIVE_BAND.y0) * CH) / 4, LIVE.word_size);
     setR('wTight', 1);
     // THE CEILINGS COME OFF THE SITE when the design carries them. They used to
     // start at 999 (off) every time, which meant the only copy of a tuned ceiling
@@ -2416,8 +2415,10 @@
     // read the pitch as if the whole gap were type room. On birthday-girls that
     // showed 21.05 where the press printed 12.94 — 1.63x — so every size settled
     // here came out small on paper, and the ceilings tuned against it never bit.
-    const leadBind = markerLead > 0 ? STEP / markerLead : 999;
-    const boxBind = STEP * (ROW_TOP + ROW_BOT) * WORD_SIZE_K;
+    // The rhythm this repaint is drawn at — the slider's, not the stored one.
+    const step = pitchUnits();
+    const leadBind = markerLead > 0 ? step / markerLead : 999;
+    const boxBind = step * (ROW_TOP + ROW_BOT) * WORD_SIZE_K;
     const pinned = !$('wFit').checked;
     // The box bound is the TARGET a card takes when nothing pins it — in the press
     // `uniform = word_size if word_size else median(box heights) x _WORD_SIZE_K`,
@@ -2462,8 +2463,8 @@
         room,
         live.length,
         fat,
-        rowCentres().map((cy) => [cy - STEP / 2, cy + STEP / 2]),
-        STEP,
+        rowCentres().map((cy) => [cy - step / 2, cy + step / 2]),
+        step,
         bandBox,
         ratio
       );
@@ -2477,7 +2478,6 @@
       // rectangle and nothing feeds the size back into the spacing, so nothing
       // here may either: the band she drags is the rhythm, and it stays put.
     }
-    const step = STEP;
 
     const he = solved ? solved.size : Math.min(isFinite(uniform) ? uniform : hBind, hBind);
     const bind = solved ? solved.why : 'height';
@@ -2562,12 +2562,31 @@
    box the way the title's lines share theirs — open it and each line asks for
    more of a box that is not growing, so the type comes down. _grid_pitch does the
    same thing: max(what the deck wants, what the glyphs need) x size. */
-  let STEP = 24; // the pitch the last fit settled on
-  function pitchUnits() {
-    return STEP;
+  let STEP = 24; // the stored rhythm, in card units
+  /* WHAT THE SLIDER MULTIPLIES. The rhythm has to answer to `wPitch` — it did
+   not, and the control was inert from its own minimum up to 1.53 (סיישל: STEP
+   28.01 drawn at every ratio, the only reachable effect being fitCard's box cap,
+   which cannot bite until eff x word_size passes the band). But it must answer
+   WITHOUT reading the fit's own answer back — that is the decay THE PITCH IS THE
+   BAND'S describes. So the ratio is taken against a STORED size, never a solved
+   one: `PITCH_BASE` is fixed when a template loads and nothing downstream writes
+   to it, so the loop that decayed the wall cannot form.
+     `PITCH_R0` is the ratio the template loaded at. While the slider still sits
+   there the stored number is printed to the unit rather than to the slider's 0.01
+   granularity — otherwise merely opening a template and saving it would nudge a
+   calibrated rhythm (סיישל 28.01 -> 1.50 x 18.7 = 28.05). */
+  let PITCH_BASE = 0;
+  let PITCH_R0 = -1;
+  function setRhythm(step, base) {
+    STEP = step;
+    PITCH_BASE = base > 0 ? base : step / 1.4;
+    setR('wPitch', r2(STEP / PITCH_BASE));
+    PITCH_R0 = +$('wPitch').value; // what the input actually snapped to
   }
-  function stepFor(size, lead) {
-    return Math.max(+$('wPitch').value, lead || 0) * size;
+  function pitchUnits() {
+    const r = +$('wPitch').value;
+    if (!(PITCH_BASE > 0) || r === PITCH_R0) return STEP;
+    return r * PITCH_BASE;
   }
   /* WHERE ROW 1 SITS. The block hangs from the TOP of the box: row one's ink meets
    the box's top edge, and the rest step down from there. Centring the four rows
@@ -4373,8 +4392,14 @@
     }
     if (typeof P.word_bold === 'boolean') $('wBold').checked = P.word_bold;
     if (P.word_wrap_pitch) setR('wTight', P.word_wrap_pitch);
-    if (P.word_lead) setR('wPitch', P.word_lead);
-    else if (P.word_pitch) STEP = P.word_pitch; // resolved on the first fit
+    // BOTH HALVES OF THE SAME NUMBER. A preset carries the rhythm absolutely
+    // (word_pitch) and the ratio it was set at (word_lead). Applying one without
+    // the other left the slider and the wall describing different spacings — the
+    // slider moved and STEP did not, or STEP moved and the slider still read the
+    // template's own ratio.
+    if (P.word_pitch && P.word_lead) setRhythm(P.word_pitch, P.word_pitch / P.word_lead);
+    else if (P.word_pitch) setRhythm(P.word_pitch, P.word_size || LIVE.word_size);
+    else if (P.word_lead) setR('wPitch', P.word_lead);
     const en = P.word_en || {};
     if (en.mode) {
       $('enMode').value = en.mode;
@@ -4472,7 +4497,7 @@
     HAS_BACK_TITLE = !!(TPL.backTitle && LIVE.back && LIVE.back.frac);
     TS = LIVE.title_style;
     LIVE_BAND = bandFromSlots(LIVE.card_slots.words);
-    STEP = LIVE.word_pitch || 24;
+    setRhythm(LIVE.word_pitch || 24, LIVE.word_size);
     SAMPLE_EN = TPL.sampleEn || 'MAYA';
     SAMPLE_HE = TPL.sampleHe || 'מיה';
     STORE = 'dugri-bench-' + TPL.key;
