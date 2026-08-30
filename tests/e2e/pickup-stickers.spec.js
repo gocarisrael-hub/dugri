@@ -59,7 +59,9 @@ async function onlyMine(page, mine, { ready = [], atPrinter = [] } = {}) {
       if (!c.order) continue;
       if (keep.has(c.id)) {
         c.order.paid = true;
-        c.order.production = { state: 'generated' };
+        // Released as well as built: the sheet is the owner's print pile, and
+        // since #559 that pile is the decks she has released, not every deck built.
+        c.order.production = { state: 'generated', released_at: '2026-08-16T00:00:00.000Z' };
         c.order.ready_at = done.has(c.id) ? '2026-08-16T00:00:00.000Z' : null;
         c.order.sent_to_print_at = sent.has(c.id) ? '2026-08-16T00:00:00.000Z' : null;
         c.cancelled = false;

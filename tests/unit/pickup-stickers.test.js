@@ -84,7 +84,13 @@ function order({
   if (paid) db.markPaid(c.id, { method: 'pelecard' });
   // The deck having been BUILT is what makes a box to label. This is the state
   // the generator leaves behind on a successful run.
-  if (produced) db.setProduction(c.id, { state: 'generated', pages: 208 });
+  if (produced) {
+    db.setProduction(c.id, { state: 'generated', pages: 208 });
+    // The sheet IS the הופקו pile, and nothing reaches that pile without the
+    // owner releasing it (server/db.setProductionReleased). A deck that is built
+    // but not released has its own case below.
+    db.setProductionReleased(c.id, true);
+  }
   if (toPrint) db.setOrderSentToPrint(c.id, true);
   if (ready) db.setOrderReady(c.id, true);
   return c;
@@ -183,6 +189,7 @@ describe('what each label says', () => {
     db.setOrder(c.id, c.owner_token, { version: 'pickup' });
     db.markPaid(c.id, { method: 'pelecard' });
     db.setProduction(c.id, { state: 'generated', pages: 208 });
+    db.setProductionReleased(c.id, true);
     expect(titles()).toContain('נועה בובר');
   });
 

@@ -1351,7 +1351,12 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
   try {
     const out = await produceDeck(c, req.body || {}, { notifyOnError: true });
     if (out.refuse) return res.status(out.refuse.status).json(out.refuse.body);
-    const { production, boardFile } = out;
+    // PRESSING צור PDF IS ITSELF THE DELIBERATE ACT. The owner building a deck
+    // by hand is her saying it should go, so it is released in the same breath
+    // and this button behaves exactly as it did before #542. Only the BUYER's
+    // סיום now leaves a finished deck waiting in "נסגרו — להפקה" for her.
+    const { boardFile } = out;
+    const production = db.setProductionReleased(c.id, true) || out.production;
     const base = paymentBaseUrl();
     // Two links, and they are NOT interchangeable:
     //  - adminLink carries the master ADMIN_KEY and is for Dugri's own use only.
@@ -1817,9 +1822,37 @@ app.get('/api/collections/:id/produce', (req, res) => {
   res.json(produceState(c));
 });
 
+// Admin: RELEASE a finished deck into "הופקו — לשליחה לדפוס". A toggle: body
+// {undo:true} puts it back in the production queue.
+//
+// This exists because producing and releasing stopped being the same event. The
+// pile was read off the production record alone, which was true while only the
+// owner's צור PDF wrote one — pressing it WAS the decision. Since #542 a buyer
+// finishing her word list produces the deck herself, and orders began arriving
+// in the print pile with nobody having looked at them.
+//
+// It stamps and nothing else. The deck the buyer already built is the deck that
+// ships: no regeneration, no second file, no new pdf_token — the existing
+// record is carried through untouched but for the stamp. That matters because
+// the whole point is an order whose PDF is already correct.
+//
+// Now the FIRST of three hand-pressed steps: released -> sent to print -> ready.
+app.post('/api/admin/collections/:id/release', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const c = db.getCollection(req.params.id);
+  if (!c) return res.status(404).json({ error: 'not found' });
+  const on = !(req.body && req.body.undo);
+  // Nothing to release until a deck exists. Answering 409 rather than stamping
+  // an empty record keeps the pile's promise: everything in it has a file.
+  const r = db.setProductionReleased(c.id, on);
+  if (r === false) return res.status(404).json({ error: 'not found' });
+  if (r === null) return res.status(409).json({ error: 'not produced' });
+  res.json({ ok: true, production: r });
+});
+
 // Admin: mark an order SENT TO THE PRINT SHOP. A toggle: body {undo:true} takes
-// it back. The first of the two hand-pressed production steps, and the gate the
-// second one sits behind.
+// it back. The SECOND of the three hand-pressed production steps, and the gate
+// the third one sits behind.
 //
 // It notifies NOBODY — not the print shop, not the customer. The owner mails
 // Galor the file the way she always has; this records that she did, so the list
@@ -1948,7 +1981,12 @@ function designNameFor(theme) {
 // sticker can be found in it.
 function orderProduced(c) {
   const p = (c.order && c.order.production) || c.production || null;
-  return !!(p && p.state === 'generated');
+  // RELEASED, not merely generated. This sheet says of itself that it is
+  // "exactly the owner's הופקו — לשליחה לדפוס pile" and ONE STAGE, NOT A RANGE;
+  // once a buyer's סיום could build a deck without the order entering that pile
+  // (see db.setProductionReleased), reading `generated` here would have printed
+  // stickers for boxes that are not in tonight's batch.
+  return !!(p && p.state === 'generated' && p.released_at);
 }
 function pickupStickerOrders() {
   return db

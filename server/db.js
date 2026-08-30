@@ -2312,6 +2312,33 @@ const db = {
   // Returns the record it removed, null when there was nothing to undo, and
   // false when the collection is unknown — three answers, because the caller
   // reports them differently.
+  // WHETHER THE OWNER HAS RELEASED THIS DECK TO THE PRINT PILE.
+  //
+  // A production record used to mean both "a PDF exists" and "this order is
+  // ready to send to Galor", because only the owner's own צור PDF ever wrote
+  // one. Since #542 the BUYER's סיום produces too, so the second meaning
+  // arrived free with the first and orders walked into the print pile on their
+  // own, the moment a customer finished collecting.
+  //
+  // The two are separated here. `generated_at` still says a file was built;
+  // `released_at` says a human decided it should go. Kept ON the production
+  // record rather than on the order so that clearProduction — "בטל הפקה",
+  // which deletes the record and the files — takes the release with it, and a
+  // re-produced deck starts unreleased again, which is the safe direction.
+  setProductionReleased(id, on) {
+    const c = this.getCollection(id);
+    if (!c) return false;
+    const prev = (c.order && c.order.production) || c.production || null;
+    if (!prev || prev.state !== 'generated') return null;
+    const rec = { ...prev };
+    if (on) rec.released_at = rec.released_at || new Date().toISOString();
+    else delete rec.released_at;
+    c.production = rec;
+    if (c.order) c.order.production = rec;
+    saveDb();
+    return rec;
+  },
+
   clearProduction(id) {
     const c = this.getCollection(id);
     if (!c) return false;
