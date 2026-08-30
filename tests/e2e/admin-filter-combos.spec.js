@@ -23,7 +23,15 @@ function order(extra) {
   };
 }
 
-const generated = { state: 'generated', pdf_file: 'x.pdf', board_file: null };
+// A deck that has been built AND released. Since #559 the print pile reads
+// `released_at` — a built-but-unreleased deck stays in the production queue —
+// so a fixture that means "waiting to go to print" has to carry it.
+const generated = {
+  state: 'generated',
+  pdf_file: 'x.pdf',
+  board_file: null,
+  released_at: '2026-08-16T00:00:00.000Z',
+};
 
 // One order per state the owner works through, half of them paid.
 const COLLECTIONS = [
