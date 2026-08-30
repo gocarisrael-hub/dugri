@@ -1158,6 +1158,15 @@
         const p = production(c);
         return !!(p && p.state === 'generated');
       };
+      // A DECK EXISTS is not THIS ORDER IS READY TO SEND. It was, while only צור
+      // PDF ever built one — pressing it was the decision. Since #542 the buyer's
+      // סיום produces too, so an order finished at midnight walked into the print
+      // pile by itself. `released_at` is the owner saying it should go; see
+      // server/db.setProductionReleased.
+      const isReleased = (c) => {
+        const p = production(c);
+        return !!(p && p.state === 'generated' && p.released_at);
+      };
 
       // WHERE THE ORDER STANDS: one step per thing the owner still owes it, in
       // pipeline order. The steps are mutually exclusive — an order that went to
@@ -1177,20 +1186,23 @@
           match: (c) => !c.cancelled && c.status === 'open' && !isGenerated(c) && unstamped(c),
         },
         {
-          // Words are in and nothing has been built yet — the production queue.
+          // Words are in and the order has not been sent onward yet — the
+          // production queue. A deck may already exist here: the buyer builds one
+          // by finishing, and it waits for the owner rather than walking on.
           id: 'to-produce',
           label: 'נסגרו — להפקה',
           match: (c) =>
             !c.cancelled &&
             (c.status === 'closed' || c.status === 'expired') &&
-            !isGenerated(c) &&
+            !isReleased(c) &&
             unstamped(c),
         },
         {
-          // Built, and still sitting here: the list of what to send to Galor.
+          // Released by hand, and still sitting here: the list of what to send
+          // to Galor. Nothing arrives in this pile on its own.
           id: 'to-print',
           label: 'הופקו — לשליחה לדפוס',
-          match: (c) => !c.cancelled && isGenerated(c) && unstamped(c),
+          match: (c) => !c.cancelled && isReleased(c) && unstamped(c),
         },
         {
           id: 'printing',
@@ -3069,6 +3081,42 @@
             showPdf(prod.press);
           }
 
+          // "סמן כהופק" — put a deck the BUYER built into the print pile.
+          //
+          // Producing and releasing used to be one press, because only צור PDF
+          // ever built anything. Since #542 a buyer finishing her word list
+          // produces the deck herself, so the order now waits here until this is
+          // pressed. It STAMPS AND NOTHING ELSE: the file she already has is the
+          // file that ships — no rebuild, no second PDF, no new pdf_token. That
+          // is the whole reason this is not "press צור PDF מחדש", which would
+          // spend a headless-Chrome render replacing a deck that is already
+          // correct.
+          //
+          // Shown only on a produced-but-unreleased order: released is where the
+          // button has already done its work, and unproduced has nothing to send.
+          if (prod && prod.state === 'generated' && !prod.released_at) {
+            const relBtn = document.createElement('button');
+            relBtn.className = 'act';
+            relBtn.textContent = 'סמן כהופק';
+            relBtn.title =
+              'מעביר את ההזמנה ל"הופקו — לשליחה לדפוס". הקובץ שכבר הופק נשאר כמו שהוא — לא נוצר PDF חדש.';
+            relBtn.onclick = async () => {
+              relBtn.disabled = true;
+              const r = await adminActionResult(
+                'POST',
+                '/api/admin/collections/' + c.id + '/release',
+                {}
+              );
+              if (r.ok) load();
+              else {
+                if (r.data && r.data.message) alert(r.data.message);
+                relBtn.disabled = false;
+              }
+            };
+            td.appendChild(document.createTextNode(' '));
+            td.appendChild(relBtn);
+          }
+
           // "בטל הפקה" — take a produced order back OUT of the print queue.
           //
           // Only for a produced order: an order whose last run ERRORED never left
@@ -3299,7 +3347,9 @@
           if (!o || c.cancelled) return false;
           if (o.version !== 'pickup' || !isPaid(c)) return false;
           if (o.ready_at || o.sent_to_print_at) return false;
-          return isGenerated(c);
+          // The same set as the הופקו chip — tonight's batch, not every deck
+          // that happens to exist.
+          return isReleased(c);
         }).length;
       }
       function renderStickerBtn() {
