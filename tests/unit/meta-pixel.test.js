@@ -64,6 +64,15 @@ describe('meta-pixel injection', () => {
     // ever contacting Meta.
     expect(metaPixel.snippet(ID)).toContain("host !== 'localhost'");
   });
+
+  it('ships no <noscript> beacon — markup cannot be host-guarded', () => {
+    // Meta's snippet includes one. Reproducing it would fire from staging and
+    // from every JS-less crawler and link-preview bot, putting events that are
+    // not customers into the ad account — and the guard above could not stop it.
+    const out = metaPixel.snippet(ID);
+    expect(out).not.toContain('noscript');
+    expect(out).not.toContain('facebook.com/tr');
+  });
 });
 
 describe('the pixel id as a setting', () => {

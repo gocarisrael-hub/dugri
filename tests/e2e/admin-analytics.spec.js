@@ -8,13 +8,14 @@ const KEY = 'dugri-admin';
 const ID = '1234567890123456';
 
 // This spec WRITES the shared live settings store, which both device projects
-// share through one server. It asserts wiring, not layout, so run it once.
-test.beforeEach(({}, testInfo) => {
-  test.skip(
-    testInfo.project.name !== 'Desktop Chrome',
-    'writes the shared settings store; run once to avoid cross-worker races'
-  );
-});
+// share through one server. It asserts wiring, not layout, so run it on ONE
+// project. The guard is a describe-level skip rather than a beforeEach one:
+// afterEach hooks still run for a test skipped from beforeEach, so a beforeEach
+// guard would have let the iPhone worker fire DELETEs at the shared store while
+// the Desktop worker was mid-test — clearing the pixel between a save and the
+// assertion that reads it back.
+// The one project allowed to touch the shared store.
+const OWNS_STORE = 'Desktop Chrome';
 
 async function clearPixel(request) {
   const r = await request.delete(
@@ -24,7 +25,25 @@ async function clearPixel(request) {
 }
 
 test.describe('meta pixel, end to end', () => {
-  test.afterEach(async ({ request }) => clearPixel(request));
+  // Cleared BEFORE as well as after. .e2e-data survives between local runs, so a
+  // run that died mid-test would otherwise leave the id set and fail the
+  // "nothing is served before she sets one" assertions on every run after it,
+  // for a reason that has nothing to do with the code.
+  test.beforeEach(async ({ request }, testInfo) => {
+    test.skip(
+      testInfo.project.name !== OWNS_STORE,
+      'writes the shared settings store; run once to avoid cross-worker races'
+    );
+    await clearPixel(request);
+  });
+  // afterEach STILL RUNS for a test skipped from beforeEach, so it has to make
+  // the same check itself. Without it the other project's worker fires DELETEs
+  // at the shared store while this one is mid-test — clearing the pixel between
+  // a save and the assertion that reads it back, which reads as a load-flake.
+  test.afterEach(async ({ request }, testInfo) => {
+    if (testInfo.project.name !== OWNS_STORE) return;
+    await clearPixel(request);
+  });
 
   test('without a key the page reveals nothing and calls no admin API', async ({ page }) => {
     let hitAdmin = false;
@@ -63,6 +82,24 @@ test.describe('meta pixel, end to end', () => {
       [...document.scripts].some((s) => s.src.includes('connect.facebook.net'))
     );
     expect(loaded).toBe(false);
+  });
+
+  test('a campaign landing path that is not a file still carries the pixel', async ({
+    page,
+    request,
+  }) => {
+    await page.goto(`/admin-analytics.html?key=${KEY}`);
+    await page.getByTestId('meta-pixel-id').fill(ID);
+    await page.getByTestId('save-pixel').click();
+    await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
+
+    // An extension-less path with no page behind it falls through to the
+    // navigation fallback, which serves the home page. That is exactly the shape
+    // of a vanity link in a bio or a mistyped ad destination — the traffic this
+    // feature exists to measure — so the fallback must be pixelled too.
+    const r = await request.get('/sale');
+    expect(r.status()).toBe(200);
+    expect(await r.text()).toContain(`fbq('init', '${ID}')`);
   });
 
   test('the admin pages themselves are never pixelled', async ({ page, request }) => {
