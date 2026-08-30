@@ -4,6 +4,17 @@
     <meta charset="utf-8" />
     <meta name="dugri:page" content="pay-success.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
     <title>דוגרי · התשלום התקבל</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
@@ -436,6 +447,47 @@
           return n + ' ₪';
         }
 
+        // GA4 `purchase` — the one event that puts an order into the money
+        // reports. It lives here, not at the pay handshake in collect.html,
+        // because this is where a SERVER-authoritative amount exists: the
+        // summary reports what we actually charged, coupon and copies included.
+        // Guarded per order number so a refresh, a back-button, or a bookmarked
+        // link never counts the same sale twice.
+        function reportPurchase(s) {
+          if (!s.order || !s.order.paid) return;
+          var value = s.order.charged != null ? s.order.charged : s.order.total;
+          if (value == null) return;
+          var id = s.order_no || ref.c;
+          try {
+            var seen = 'dugri:purchase:' + id;
+            if (localStorage.getItem(seen)) return;
+            localStorage.setItem(seen, '1');
+          } catch (e) {
+            /* storage blocked — a possible duplicate beats a lost sale */
+          }
+          // Meta's half of the same sale. It is what lets a boosted post report
+          // orders rather than clicks, and what Meta optimises delivery against.
+          if (typeof fbq === 'function') {
+            fbq('track', 'Purchase', { value: value, currency: 'ILS' });
+          }
+          if (typeof gtag !== 'function') return;
+          gtag('event', 'purchase', {
+            transaction_id: String(id),
+            value: value,
+            currency: 'ILS',
+            shipping: s.order.delivery_fee || 0,
+            coupon: s.order.coupon || undefined,
+            items: [
+              {
+                item_id: s.design || 'dugri',
+                item_name: s.order.version_label || 'דוגרי',
+                price: s.order.unit_price != null ? s.order.unit_price : value,
+                quantity: s.order.quantity || 1,
+              },
+            ],
+          });
+        }
+
         fetch(
           '/api/collections/' +
             encodeURIComponent(ref.c) +
@@ -447,6 +499,7 @@
             return r.json();
           })
           .then(function (s) {
+            reportPurchase(s);
             if (s.order_no) {
               var btn = document.getElementById('orderNo');
               var val = document.getElementById('orderNoVal');

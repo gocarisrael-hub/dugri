@@ -790,6 +790,7 @@
         <a data-page="admin-pricing.html">מחירים</a>
         <a data-page="admin-images.html">תמונות מוצר</a>
         <a data-page="admin-inventory.html">מלאי</a>
+        <a data-page="admin-analytics.html">אנליטיקס</a>
       </nav>
       <h1>ניהול הזמנות · דוגרי</h1>
       <div class="sub" id="sub">טוען…</div>
@@ -2370,6 +2371,8 @@
       // rather than yanking the menu out from under the owner mid-choice.
       let openMenu = null;
       const menuBusy = () => !!openMenu;
+      // The pending rAF that arms the close-on-scroll listener (see toggleMenu).
+      let scrollArm = null;
 
       function closeMenu() {
         if (!openMenu) return;
@@ -2378,6 +2381,10 @@
           openMenu.anchor.setAttribute('aria-expanded', 'false');
         }
         openMenu = null;
+        if (scrollArm !== null) {
+          cancelAnimationFrame(scrollArm);
+          scrollArm = null;
+        }
         document.removeEventListener('mousedown', onDocDown, true);
         document.removeEventListener('keydown', onMenuKey, true);
         window.removeEventListener('scroll', closeMenu, true);
@@ -2486,7 +2493,19 @@
         // — vertically with the page, sideways inside #content. Rather than chase it,
         // close: a picker that has drifted off its own column is worse than one that
         // asks to be reopened. Capture phase, so the scroll of any container counts.
-        window.addEventListener('scroll', closeMenu, true);
+        //
+        // Armed on the NEXT frame, not this one. An opener sitting at the bottom
+        // edge of a phone screen is scrolled into view by the browser before its
+        // own click is delivered, and that scroll event is dispatched AFTER this
+        // handler returns — so arming immediately closed the menu in the same
+        // breath as opening it, and the owner saw a filter that would not stay up.
+        // A frame's grace lets that one through: a frame's scroll events are
+        // dispatched before its requestAnimationFrame callbacks, so every scroll
+        // after this point is a real one.
+        scrollArm = requestAnimationFrame(() => {
+          scrollArm = null;
+          window.addEventListener('scroll', closeMenu, true);
+        });
         const first = el.querySelector('input,button');
         if (first) first.focus();
       }

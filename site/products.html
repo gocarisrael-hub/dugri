@@ -4,6 +4,17 @@
     <meta charset="utf-8" />
     <meta name="dugri:page" content="products.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
     <title>דוגרי · העיצובים שלנו</title>
     <meta
       name="description"

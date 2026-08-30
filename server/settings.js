@@ -685,6 +685,19 @@ const REGISTRY = {
   wordlists: {
     buyer_options: { kind: 'wlopts', tokens: [], default: DEFAULT_OPTIONS },
   },
+  // --- Marketing measurement -------------------------------------------------
+  // The Meta (Facebook/Instagram) Pixel id, pasted from Events Manager. EMPTY by
+  // default and empty means OFF: no pixel is injected, nothing is sent to Meta,
+  // and the site behaves exactly as it did before this key existed. It lives in
+  // settings rather than in the HTML because the account it points at is the
+  // owner's to change — a new ad account should not need a deploy.
+  //
+  // Digits only: an id is a bare numeric string, and accepting anything else
+  // would let a paste of the whole Meta snippet (or a stray URL) reach the page
+  // as an interpolated script value.
+  analytics: {
+    meta_pixel_id: { kind: 'text', max: 20, pattern: /^\d{5,20}$/, tokens: [], default: '' },
+  },
 };
 
 // --- small object helpers -----------------------------------------------------
@@ -927,6 +940,12 @@ function validateValue(section, key, value) {
     if (/[\r\n]/.test(value)) return 'value must be a single line';
     const max = Number.isInteger(spec.max) ? spec.max : 120;
     if (value.length > max) return 'value must be at most ' + max + ' characters';
+    // An optional shape, for the keys whose value is an identifier rather than
+    // prose (the Meta pixel id). Empty stays legal — that is how such a key is
+    // switched off — so the pattern only judges a value that is actually there.
+    if (spec.pattern && value !== '' && !spec.pattern.test(value)) {
+      return 'value must match ' + String(spec.pattern);
+    }
     return null;
   }
   if (kind === 'choice') {
