@@ -82,6 +82,24 @@
          radius formula or a semibold heading anywhere in this file.
          ============================================================ */
       :root {
+        /* The dark moments. Two of them anchor the page: the hero and the
+           tagline. Everything between stays on the site's white, so the visitor
+           lands in the shop without a jolt. Values from the approved dark set. */
+        --ink-0: #000000;
+        --ink-1: #181818;
+
+        /* The product's own pink, sampled from the printed card artwork. It is
+           the ONE warm thing on a monochrome page, which is exactly why it
+           carries: the cards are the only object here that is allowed colour. */
+        --card: #f6c9d7;
+        --card-line: #6b4652;
+
+        /* Display tracking. The brand's 0.1em is right for a 20px heading and
+           wrong for a 60px one — at display size it reads airy and unsure, which
+           was half of why the first pass looked timid. Large type gets 0.02em;
+           anything under 30px keeps --h-spacing untouched. */
+        --display-tracking: 0.02em;
+
         --gap-25: 2px;
         --gap-50: 4px;
         --gap-75: 8px;
@@ -182,11 +200,15 @@
          present: hover shifts the ground, active gives physical feedback by
          sinking 1px, focus paints a ring. A CTA with no active state feels
          like a picture of a button. */
+      /* 16px/32px, not 8px/12px. The smaller padding is the documented default
+         and it made the single most important element on the page read as a
+         chip sitting beside the price. A primary CTA has to look like the thing
+         you are meant to press. Type stays 16px semibold. */
       .btn {
         display: inline-flex;
         align-items: center;
         gap: var(--gap-75);
-        padding: var(--gap-75) var(--gap-100);
+        padding: var(--gap-200) var(--gap-400);
         font-family: var(--font);
         font-size: 16px;
         line-height: 24px;
@@ -218,36 +240,147 @@
       .btn--sm {
         font-size: 14px;
         line-height: 20px;
+        padding: var(--gap-100) var(--gap-300);
+      }
+      /* On black: the CTA inverts to white so it is still the brightest thing
+         in the frame, and the ghost beside it is an outline, never a second
+         filled button competing for the same press. */
+      .on-dark .btn {
+        background: #fff;
+        color: var(--ink-0);
+        border-color: #fff;
+      }
+      .on-dark .btn:hover {
+        background: var(--card);
+        border-color: var(--card);
+      }
+      .on-dark .btn--ghost {
+        background: transparent;
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+      .on-dark .btn--ghost:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: #fff;
+      }
+      .on-dark :where(a, button):focus-visible {
+        outline-color: #fff;
       }
 
       /* ============ HEADER ============
          Deliberately not the site's full nav. A landing page has one job, and a
          menu of six competing destinations above the fold is how it loses it.
-         The only link out is the same CTA the hero carries. */
+         The only link out is the same CTA the hero carries. Transparent, because
+         it sits on the black hero and a bar across it would cut the frame. */
       .lp-header {
-        position: sticky;
+        position: absolute;
+        inset-inline: 0;
         top: 0;
         z-index: 40;
-        background: var(--bg);
-        border-bottom: 1px solid var(--line);
       }
       .lp-header__in {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: var(--gap-200);
-        padding-block: var(--gap-100);
+        padding-block: var(--gap-200);
       }
       .lp-header__logo img {
         height: 32px;
         width: auto;
       }
 
-      /* ============ HERO ============ */
+      /* ============ THE CARD ============
+         Every card face on this page is a CROP OF THE REAL PRINTED SHEET
+         (assets/designs/bachelorette/gallery-front.webp) — the same artwork the
+         shop gallery serves. Four columns by two rows, so a 400% x 200%
+         background and a corner position isolate one card. Real words, real
+         hand, real layout, and not one new asset to keep in sync.
+         data-card="col row", both 1-indexed, reading left to right. */
+      .card {
+        /* Measured off the sheet, not guessed: the cards are 500x722 on a
+           2200x1557 image, pitch 549.5 x 768. The first pass used round
+           quarters and thirds and pulled in a slice of the neighbouring row, so
+           a card carried someone else's title along its bottom edge.
+           background-size = image / card. Position % = card offset / (image -
+           card), which is how a percentage background-position actually
+           resolves. */
+        aspect-ratio: 500 / 722;
+        background-image: url('assets/designs/bachelorette/gallery-front.webp');
+        background-size: 440% 215.65%;
+        background-repeat: no-repeat;
+        /* The one rounded thing on a sharp-cornered site, because the printed
+           card genuinely has round corners. Matching the product beats matching
+           the stylesheet. */
+        border-radius: 14px;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      }
+      .card[data-card='1 1'] {
+        background-position: 1.35% 3.23%;
+      }
+      .card[data-card='2 1'] {
+        background-position: 33.71% 3.23%;
+      }
+      .card[data-card='3 1'] {
+        background-position: 66% 3.23%;
+      }
+      .card[data-card='4 1'] {
+        background-position: 98.35% 3.23%;
+      }
+      .card[data-card='1 2'] {
+        background-position: 1.35% 95.21%;
+      }
+      .card[data-card='2 2'] {
+        background-position: 33.71% 95.21%;
+      }
+      .card[data-card='3 2'] {
+        background-position: 66% 95.21%;
+      }
+      .card[data-card='4 2'] {
+        background-position: 98.35% 95.21%;
+      }
+
+      /* ============ HERO ============
+         Black, full-bleed, and the cards are the only colour in it. */
       .hero {
-        padding-block: var(--gap-400) var(--gap-500);
+        position: relative;
+        background: var(--ink-0);
+        color: #fff;
+        overflow: hidden;
+        padding-block: var(--gap-900) var(--gap-700);
+      }
+      /* The printed sheet itself, run large and dimmed to a texture. A flat
+         rgba scrim over it, never a gradient: the ground stays flat, and the
+         only gradient on the page is the one on the heading. */
+      .hero__field {
+        position: absolute;
+        /* Inset NEGATIVE, because the blur below would otherwise feather the
+           artwork away from the section's own edges and leave a pale rim. */
+        inset: -40px;
+        background-image: url('assets/designs/bachelorette/gallery-front.webp');
+        /* Run at 190%, blurred and dimmed hard. At cover/0.22 the sheet was
+           still legible — the visitor was reading background words while trying
+           to read the headline, and two things asking to be read at once means
+           neither is. It has to be TEXTURE: enough to know it is cards, not
+           enough to parse. */
+        background-size: 190%;
+        background-position: center;
+        filter: blur(3px);
+        opacity: 0.14;
+        pointer-events: none;
+      }
+      .hero__scrim {
+        position: absolute;
+        inset: 0;
+        /* Flat, never a gradient. Heavy enough that the hero reads BLACK: at
+           0.62 the whole frame came out a washed pink-grey and the promise of a
+           black ground with one warm object on it was not kept. */
+        background: rgba(0, 0, 0, 0.82);
+        pointer-events: none;
       }
       .hero__grid {
+        position: relative;
+        z-index: 1;
         display: grid;
         gap: var(--gap-500);
         align-items: center;
@@ -257,31 +390,26 @@
         line-height: 16px;
         letter-spacing: 0.14em;
         font-weight: 600;
-        color: var(--muted);
+        color: rgba(255, 255, 255, 0.6);
         margin-bottom: var(--gap-200);
       }
       /* The one gradient on the page, and it is on TEXT, never on a ground.
-         In RTL the sentence starts at the RIGHT, so the gradient runs `to left`
-         to darken at the reading start and fall away at the end. */
-      /* text-3xl on a phone. Not a timid choice: the authored break after
-         "מילים." only earns its keep if that half FITS on one line, and at 36px
-         with the brand's 0.1em tracking it did not — it wrapped and left the
-         word "מילים." stranded alone. A heading that orphans a word is worse
-         than a heading one step smaller. */
+         Dark theme, so white falling to #9B9B9B. In RTL the sentence starts at
+         the RIGHT, so it runs `to left` to hold full white at the reading start
+         and fall away at the end. */
       .hero h1 {
-        font-size: 30px;
-        line-height: 36px;
-        background-image: linear-gradient(to left, #000000, #666666);
+        font-size: 36px;
+        line-height: 40px;
+        letter-spacing: var(--display-tracking);
+        background-image: linear-gradient(to left, #ffffff, #9b9b9b);
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
-        /* Fallback for a browser that cannot clip a background to text: the
-           declaration above collapses to a transparent heading otherwise. */
         -webkit-text-fill-color: transparent;
       }
       @supports not ((background-clip: text) or (-webkit-background-clip: text)) {
         .hero h1 {
-          color: var(--ink);
+          color: #fff;
           -webkit-text-fill-color: currentColor;
         }
       }
@@ -289,45 +417,87 @@
         margin-top: var(--gap-300);
         font-size: 18px;
         line-height: 28px;
-        color: var(--muted);
+        color: rgba(255, 255, 255, 0.72);
       }
       .hero__cta {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
-        gap: var(--gap-200);
+        gap: var(--gap-300);
         margin-top: var(--gap-400);
       }
       .hero__risk {
         margin-top: var(--gap-200);
         font-size: 14px;
         line-height: 20px;
-        color: var(--muted);
+        color: rgba(255, 255, 255, 0.6);
       }
-      .hero__media {
+      .hero .amt {
+        font-size: 20px;
+        line-height: 28px;
+        color: #fff;
+      }
+
+      /* The three cards in front of the field: a hand fanned out, tilted, the
+         middle one lifted. Motion-safe only — they breathe, they do not dance. */
+      /* The cards OVERLAP rather than sitting in three tidy columns: a hand
+         someone is holding, not a row of thumbnails. Overlapping also buys each
+         card ~45% of the column instead of a third, which is the difference
+         between artwork you can read and artwork you can only identify. */
+      .hero__hand {
         position: relative;
+        display: flex;
+        justify-content: center;
+        align-items: center;
       }
-      .hero__media img {
-        width: 100%;
-        aspect-ratio: 3 / 2;
-        object-fit: cover;
+      /* The fan's total width is 3*basis minus the middle card's two negative
+         margins. At 46%/6% that comes to 126% of the column — fine inside a
+         wide desktop column, and on a phone it ran the outer two cards off both
+         screen edges. 38%/10% resolves to 94%, so the whole hand fits with room
+         for the rotation to swing. */
+      .hero__hand .card {
+        flex: 0 0 38%;
+      }
+      .hero__hand .card:nth-child(1) {
+        transform: rotate(-8deg) translateY(18px);
+      }
+      .hero__hand .card:nth-child(2) {
+        transform: rotate(1deg) translateY(-18px);
+        z-index: 2;
+        margin-inline: -10%;
+      }
+      .hero__hand .card:nth-child(3) {
+        transform: rotate(9deg) translateY(22px);
+      }
+      @media (prefers-reduced-motion: no-preference) {
+        .hero__hand .card {
+          transition: transform 0.7s var(--lp-ease);
+        }
+        .hero__hand:hover .card:nth-child(1) {
+          transform: rotate(-10deg) translateY(8px);
+        }
+        .hero__hand:hover .card:nth-child(2) {
+          transform: rotate(0deg) translateY(-28px);
+        }
+        .hero__hand:hover .card:nth-child(3) {
+          transform: rotate(11deg) translateY(12px);
+        }
       }
 
       /* ============ PROOF ============
-         Inside the hero column, under the CTA. Bordered on all four sides, not
-         on one: a single-sided rule is a decoration pretending to be structure.
-         The quote is a real message from a real buyer, the same four the home
-         page runs — it is not a garnish, it is the reason to believe the line
-         above it. */
+         Inside the hero, under the CTA, because the claim it supports is there.
+         The hairline above it is a DIVIDER, not a card edge — the no-single-
+         sided-border rule is about boxes pretending to be structure, and this
+         is a rule doing the job a rule is for. The quote is a real message from
+         a real buyer: not a garnish, the reason to believe the line above it. */
       .proof {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
         gap: var(--gap-100) var(--gap-300);
         margin-top: var(--gap-400);
-        padding: var(--gap-200);
-        border: 1px solid var(--line);
-        background: var(--section);
+        padding-top: var(--gap-300);
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
       }
       .proof__stat {
         display: flex;
@@ -337,14 +507,16 @@
       .proof__num {
         font-family: var(--display);
         font-weight: var(--h-weight);
-        font-size: 30px;
-        line-height: 36px;
+        font-size: 36px;
+        line-height: 40px;
+        letter-spacing: var(--display-tracking);
+        color: #fff;
       }
       .proof__label,
       .proof__quote {
         font-size: 14px;
         line-height: 20px;
-        color: var(--muted);
+        color: rgba(255, 255, 255, 0.6);
       }
       .proof__quote {
         max-width: 420px;
@@ -364,6 +536,7 @@
       .sec-head h2 {
         font-size: 30px;
         line-height: 36px;
+        letter-spacing: var(--display-tracking);
       }
       .sec-head p {
         margin-top: var(--gap-200);
@@ -402,6 +575,23 @@
         color: rgba(255, 255, 255, 0.72);
       }
 
+      /* ============ THE CARD DEMO ============
+         The one section that sells without arguing. Four real cards from a real
+         deck, big enough to READ — because the moment the visitor reads
+         "שניצל תירס" next to "הנפקת חשמל" and laughs at words belonging to a
+         stranger, the product is explained and no paragraph can do it faster. */
+      .deck {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--gap-200);
+      }
+      .deck .card {
+        transform: rotate(-1.5deg);
+      }
+      .deck .card:nth-child(even) {
+        transform: rotate(1.5deg);
+      }
+
       /* ============ BENEFITS ============ */
       .benefits {
         display: grid;
@@ -427,11 +617,13 @@
          lit individually, in reading order, as it crosses the trigger band. */
       .reveal-line {
         text-align: center;
+        background: var(--ink-0);
+        color: #fff;
       }
       .reveal-line p {
         font-family: var(--display);
         font-weight: var(--h-weight);
-        letter-spacing: var(--h-spacing);
+        letter-spacing: var(--display-tracking);
         font-size: 36px;
         line-height: 40px;
         max-width: 680px;
@@ -439,16 +631,16 @@
         text-wrap: balance;
       }
       .reveal-line .w {
-        color: rgba(20, 20, 20, 0.3);
+        color: rgba(255, 255, 255, 0.3);
         transition: color 0.7s var(--lp-ease);
       }
       .reveal-line .w.lit {
-        color: var(--ink);
+        color: #fff;
       }
       /* No JS, or reduced motion: the sentence is simply readable. */
       @media (prefers-reduced-motion: reduce) {
         .reveal-line .w {
-          color: var(--ink);
+          color: #fff;
           transition: none;
         }
       }
@@ -525,13 +717,14 @@
 
       /* ============ FINAL CTA ============ */
       .final {
-        background: var(--ink);
+        background: var(--ink-0);
         color: #fff;
         text-align: center;
       }
       .final h2 {
         font-size: 30px;
         line-height: 36px;
+        letter-spacing: var(--display-tracking);
         max-width: 680px;
         margin: 0 auto;
       }
@@ -546,31 +739,12 @@
       .final .hero__cta {
         justify-content: center;
       }
-      .final .btn {
-        background: #fff;
-        color: var(--ink);
-        border-color: #fff;
-      }
-      .final .btn:hover {
-        background: var(--sage-tint);
-      }
-      .final .btn--ghost {
-        background: transparent;
-        color: #fff;
-      }
-      .final .btn--ghost:hover {
-        background: rgba(255, 255, 255, 0.12);
-      }
       .final__risk {
         margin-top: var(--gap-300);
         font-size: 14px;
         line-height: 20px;
         color: rgba(255, 255, 255, 0.72);
       }
-      .final :where(a, button):focus-visible {
-        outline-color: #fff;
-      }
-
       /* ============ FOOTER ============ */
       .lp-foot {
         border-top: 1px solid var(--line);
@@ -623,22 +797,27 @@
           grid-template-columns: 1fr 1fr;
           gap: var(--gap-700);
         }
-        /* text-5xl, not text-6xl. The heading's column is 504px wide, and the
-           brand's 0.1em tracking is not free: at 60px this sentence wrapped to
-           five lines and drove the proof line clean off a 720px-tall screen.
-           48px holds it to three. */
+        /* text-6xl now that the tracking is 0.02em rather than 0.1em. At the
+           brand's display spacing this same sentence wrapped to five lines in
+           this column and drove the proof line off a 720px screen — the
+           tracking, not the size, was what could not be afforded. */
         .hero h1 {
-          font-size: 48px;
+          font-size: 60px;
           line-height: 1;
         }
         .hero__sub {
           font-size: 20px;
           line-height: 28px;
         }
-        /* Square beside the copy, so the photo ends roughly where the copy
-           does instead of hanging a third of itself below the fold. */
-        .hero__media img {
-          aspect-ratio: 1 / 1;
+        .deck {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        /* Room to spread once the hand has its own half of the hero. */
+        .hero__hand .card {
+          flex: 0 0 46%;
+        }
+        .hero__hand .card:nth-child(2) {
+          margin-inline: -6%;
         }
         .sec-head h2 {
           font-size: 36px;
@@ -679,7 +858,7 @@
   <body>
     <a class="skip" href="#main">דילוג לתוכן</a>
 
-    <header class="lp-header">
+    <header class="lp-header on-dark">
       <div class="wrap lp-header__in">
         <a class="lp-header__logo" href="index.html" aria-label="דוגרי, לעמוד הבית">
           <img src="assets/logo.png" alt="דוגרי" width="120" height="32" />
@@ -696,8 +875,15 @@
     </header>
 
     <main id="main">
-      <!-- ============ HERO ============ -->
-      <section class="hero">
+      <!-- ============ HERO ============
+           Black, and the printed cards are the only colour in the frame. The
+           field behind is the real print sheet run large and dimmed to a
+           texture; the three cards in front are crops of that same sheet at
+           full strength. No new asset, no mock-up, no stock photo: what the
+           visitor is looking at is literally the product. -->
+      <section class="hero on-dark">
+        <div class="hero__field" aria-hidden="true"></div>
+        <div class="hero__scrim" aria-hidden="true"></div>
         <div class="wrap hero__grid">
           <div class="measure">
             <p class="hero__eyebrow" data-edit="lp-hero-eyebrow">משחק מסיבה שכולו עליהם</p>
@@ -718,7 +904,7 @@
                 data-edit="lp-hero-cta"
                 >בונים את המשחק ›</a
               >
-              <span class="hero__risk" data-testid="lp-price">
+              <span data-testid="lp-price">
                 <span class="amt"><span data-testid="lp-price-now">199</span> ₪</span>
                 <s class="was"
                   ><span class="amt"><span data-testid="lp-price-was">239</span> ₪</span></s
@@ -743,14 +929,51 @@
               </p>
             </div>
           </div>
-          <div class="hero__media">
-            <img
-              src="assets/hero-1.jpg"
-              alt="חפיסת קלפים ולוח משחק של דוגרי פרושים על שולחן במסיבה"
-              width="900"
-              height="1125"
-              data-edit-img="lp-hero-photo"
-            />
+          <!-- A fanned hand. Decorative: the words on these three are shown at
+               readable size further down, so nothing is said only here. -->
+          <div class="hero__hand" aria-hidden="true">
+            <div class="card" data-card="3 1"></div>
+            <div class="card" data-card="1 1"></div>
+            <div class="card" data-card="2 1"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ THE CARD DEMO ============ -->
+      <section>
+        <div class="wrap">
+          <div class="sec-head" data-rise>
+            <h2 data-edit="lp-deck-heading">אלה קלפים אמיתיים, ממשחק אמיתי</h2>
+            <p data-edit="lp-deck-sub">
+              ארבע מילים על כל קלף, וכל אחת מהן שייכת למישהי אחת. אתם לא מכירים אותה, ובכל זאת זה
+              מצחיק. עכשיו דמיינו את המילים של מי שאתם חוגגים.
+            </p>
+          </div>
+          <div class="deck" data-rise data-testid="lp-deck">
+            <div
+              class="card"
+              data-card="4 1"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: עמוד שדרה, יש לי משהו בשיניים?, קרם תלתלים, דידי"
+            ></div>
+            <div
+              class="card"
+              data-card="1 2"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: משהו בריא, ריהוט הרגל, בונבון, דוני"
+            ></div>
+            <div
+              class="card"
+              data-card="2 2"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: פילאטיס אכשריה, גבות יפות, אוכל, שירה בקטע שלי"
+            ></div>
+            <div
+              class="card"
+              data-card="3 2"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: יובל כספית, היפוכונדרית, קרסול, גל אמיר"
+            ></div>
           </div>
         </div>
       </section>
@@ -866,7 +1089,7 @@
       </section>
 
       <!-- ============ TAGLINE REVEAL ============ -->
-      <section class="reveal-line">
+      <section class="reveal-line on-dark">
         <div class="wrap">
           <p data-testid="lp-tagline" data-edit="lp-tagline">
             מתנה אחת שאי אפשר לקנות בחנות, כי אף אחד חוץ מכם לא מכיר את הסיפורים. שולחים מילים,
@@ -1016,7 +1239,7 @@
       <!-- ============ FINAL CTA ============
            The same action, the same words as the hero. A landing page that
            renames its CTA at the bottom is asking the visitor to decide twice. -->
-      <section class="final" id="order">
+      <section class="final on-dark" id="order">
         <div class="wrap">
           <h2 data-edit="lp-final-heading">מוכנים להפתיע?</h2>
           <p class="final__sub" data-edit="lp-final-sub">
