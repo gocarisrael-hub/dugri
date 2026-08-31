@@ -131,6 +131,22 @@ describe('the staff key never reaches the money', () => {
     expect((await post(asOwner(`/api/admin/collections/${c.id}/custom`), {})).status).toBe(200);
   });
 
+  it('cannot mint one by SPELLING the carve-out differently either', async () => {
+    // Express does not route on the exact bytes: with the default settings
+    // `/CUSTOM` and `/custom/` both reach the handler registered as `/custom`.
+    // A case-sensitive, $-anchored deny pattern missed them while the allow
+    // prefix still matched — so before the path was normalised, every spelling
+    // below returned 200 with a 599 ₪ order in the response.
+    const c = db.createCollection('הזמנה בהתאמה');
+    for (const spelling of ['CUSTOM', 'Custom', 'CuStOm', 'custom/']) {
+      const r = await post(asStaff(`/api/admin/collections/${c.id}/${spelling}`), {});
+      expect(r.status, `staff reached /${spelling}`).toBe(403);
+      expect(db.getCollection(c.id).order, `/${spelling} created an order`).toBeFalsy();
+    }
+    // …and the owner still reaches it however she spells it.
+    expect((await post(asOwner(`/api/admin/collections/${c.id}/CUSTOM`), {})).status).toBe(200);
+  });
+
   it('says WHY it refused, so the page never tells her the key is wrong', async () => {
     // A valid key out of scope must not read as a bad key — that sends her
     // hunting for another one.

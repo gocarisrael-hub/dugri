@@ -990,9 +990,28 @@ const STAFF_ALLOWED = [
 // however much it looks like an order operation.
 const STAFF_DENIED = [/^\/api\/admin\/collections\/[^/]+\/custom$/];
 
+// Match against a NORMALISED path, because Express does not route on the exact
+// bytes: with the default settings `/CUSTOM` and `/custom/` both reach the
+// handler registered as `/custom`. A case-sensitive, `$`-anchored deny pattern
+// therefore missed them while the allow prefix still matched, and the staff key
+// could mint a 599 ₪ bespoke order by capitalising a letter. Verified against a
+// real collection before the fix: `/custom` 403, `/CUSTOM` 200 with an order in
+// the response.
+//
+// Lowercasing is safe here — every pattern is an all-lowercase literal — and the
+// trailing slash goes for the same reason Express ignores it. Order matters: the
+// deny list is consulted on the same normalised string as the allow list, so a
+// carve-out cannot be stepped around by a spelling the router accepts.
+function normalizeAdminPath(pathname) {
+  const lowered = String(pathname || '').toLowerCase();
+  const trimmed = lowered.replace(/\/+$/, '');
+  return trimmed || '/';
+}
+
 function staffMayReach(pathname) {
-  if (STAFF_DENIED.some((re) => re.test(pathname))) return false;
-  return STAFF_ALLOWED.some((re) => re.test(pathname));
+  const p = normalizeAdminPath(pathname);
+  if (STAFF_DENIED.some((re) => re.test(p))) return false;
+  return STAFF_ALLOWED.some((re) => re.test(p));
 }
 
 // Shared admin guard: sends the 503/403 response and returns false when the
