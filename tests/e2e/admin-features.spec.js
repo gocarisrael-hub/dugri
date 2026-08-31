@@ -1,11 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-// The owner feature-flags editor (admin-features.html) toggles the four buyer-
-// wizard flags through the same settings API as the texts editor, behind the
-// admin key. The e2e server runs with ADMIN_KEY=dugri-admin and DATA_DIR=.e2e-data
+// The owner feature-flags editor (admin-features.html) toggles the buyer-facing
+// flags through the same settings API as the texts editor, behind the admin key.
+// The e2e server runs with ADMIN_KEY=dugri-admin and DATA_DIR=.e2e-data
 // (throwaway), so overrides written here never touch real data.
 const KEY = 'dugri-admin';
+// The four wizard flags: features that never shipped, so all four default OFF.
 const FLAGS = ['color_picking', 'chasers_choice', 'font_choice', 'name_preview'];
+// …and the one that guards something ALREADY LIVE (the buyer's proof screen), so
+// it defaults ON. Kept apart from FLAGS because every assertion about it is the
+// mirror image of theirs.
+const ON_BY_DEFAULT = ['deck_proof'];
 
 // This spec WRITES the shared live features store. The two device projects
 // share one server (one DATA_DIR), so running it on all three would race the
@@ -29,8 +34,8 @@ async function resetFlag(request, k) {
 
 test.describe('admin feature flags editor', () => {
   test.afterEach(async ({ request }) => {
-    // Leave every flag at its default (off), whatever the test did.
-    for (const k of FLAGS) await resetFlag(request, k);
+    // Leave every flag at its default, whatever the test did.
+    for (const k of [...FLAGS, ...ON_BY_DEFAULT]) await resetFlag(request, k);
   });
 
   test('without a key the page reveals nothing and asks for ?key=', async ({ page }) => {
@@ -89,6 +94,45 @@ test.describe('admin feature flags editor', () => {
     expect(resetResp.ok()).toBeTruthy();
     expect((await resetResp.json()).effective).toBe(false);
     await expect(page.getByTestId('flag-color_picking')).not.toBeChecked();
+  });
+
+  test('the deck-proof card is ON by default, and says where it shows', async ({ page }) => {
+    page.on('dialog', (d) => d.accept()); // reset asks for confirmation
+    await page.goto(`/admin-features.html?key=${KEY}`);
+    const box = page.getByTestId('flag-deck_proof');
+    await expect(box).toBeVisible();
+    // CHECKED on arrival — the proof is live, and the switch appearing must not
+    // be what takes it away.
+    await expect(box).toBeChecked();
+
+    const card = page.locator('#card-features-deck-proof');
+    // Its own caption: the proof is a page she opens AFTER the order form, so it
+    // must not claim to sit inside it like the four wizard flags do.
+    await expect(card.locator('.switch span')).toHaveText('מוצג ללקוחה אחרי ההפקה');
+    await expect(card.locator('.hint')).toContainText('מופעל כברירת מחדל');
+
+    // Turning it OFF saves, survives a reload, and Reset puts it back ON.
+    await box.uncheck();
+    const [resp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/admin/settings') && r.request().method() === 'POST'
+      ),
+      card.locator('button[data-save]').click(),
+    ]);
+    expect(resp.ok()).toBeTruthy();
+    expect((await resp.json()).effective).toBe(false);
+    await page.reload();
+    await expect(page.getByTestId('flag-deck_proof')).not.toBeChecked();
+
+    const [resetResp] = await Promise.all([
+      page.waitForResponse(
+        (r) => r.url().includes('/api/admin/settings') && r.request().method() === 'DELETE'
+      ),
+      page.locator('#card-features-deck-proof button[data-reset]').click(),
+    ]);
+    expect(resetResp.ok()).toBeTruthy();
+    expect((await resetResp.json()).effective).toBe(true);
+    await expect(page.getByTestId('flag-deck_proof')).toBeChecked();
   });
 
   test('opens from the texts-editor page nav, carrying the key', async ({ page }) => {

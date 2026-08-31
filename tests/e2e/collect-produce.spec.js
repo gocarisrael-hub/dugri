@@ -128,6 +128,49 @@ test('the wait says what is being made, then the proof opens on her own order', 
   expect(k).toBeTruthy();
 });
 
+// WHEN THE OWNER HAS SWITCHED THE BUYER'S PROOF OFF.
+//
+// The deck is still produced — 'ready' says so — but the server hands back no
+// proof_url, because there is no page to send her to. The wait must END on that,
+// and end calmly: a client that only navigates when a link is present would sit
+// on the spinner for four minutes and then say the same thing anyway.
+test('ready with no proof link ends the wait calmly instead of hanging on it', async ({ page }) => {
+  await createCollection(page);
+  await stubProduce(page, (method) => {
+    if (method === 'POST') return { status: 202, body: { state: 'running', cards: 40 } };
+    return { body: { state: 'ready' } }; // ready, no proof_url — the switch is off
+  });
+
+  await pressFinish(page);
+
+  const wait = page.getByTestId('produce-wait');
+  await expect(wait).toBeVisible({ timeout: AFTER_CLOSE });
+  await expect(page.getByTestId('produce-wait-title')).toHaveText('קיבלנו! המשחק בהפקה', {
+    timeout: AFTER_CLOSE,
+  });
+  // …and NOT the line that promises an הדמיה by WhatsApp: with the proof off,
+  // nobody is going to send her one.
+  await expect(page.getByTestId('produce-wait-sub')).not.toContainText('ההדמיה');
+  // A way out, which means the spinner is done rather than still turning.
+  await expect(page.getByTestId('produce-wait-ok')).toBeVisible();
+  await expect(page).toHaveURL(/collect\.html/);
+});
+
+// The same, on the path where the deck was ALREADY produced (a second tap, or a
+// reload after it finished): POST answers 'ready' straight away.
+test('an already-produced deck with no proof link ends the same way', async ({ page }) => {
+  await createCollection(page);
+  await stubProduce(page, () => ({ body: { state: 'ready' } }));
+
+  await pressFinish(page);
+
+  await expect(page.getByTestId('produce-wait-title')).toHaveText('קיבלנו! המשחק בהפקה', {
+    timeout: AFTER_CLOSE,
+  });
+  await expect(page.getByTestId('produce-wait-ok')).toBeVisible();
+  await expect(page).toHaveURL(/collect\.html/);
+});
+
 test('a render that fails says we are on it, and never leaves her on a dead end', async ({
   page,
 }) => {
