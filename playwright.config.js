@@ -71,6 +71,10 @@ export default defineConfig({
       PORT: String(PORT),
       DATA_DIR: '.e2e-data',
       ADMIN_KEY: 'dugri-admin',
+      // The SECOND admin key: a worker who runs the orders and the typography
+      // editor but never the money. Inert for every other spec — the scope only
+      // applies to requests carrying this key.
+      STAFF_KEY: 'dugri-staff',
       // A known unsubscribe signing key, so a test can mint the same signed link
       // the server would put in a buyer's mail without a route existing to hand
       // one out. Production generates and persists its own (server/unsubscribe.js).
