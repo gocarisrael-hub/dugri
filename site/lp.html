@@ -61,6 +61,7 @@
     />
     <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
     <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/cards.css" />
 
     <style>
       /* ============================================================
@@ -290,56 +291,6 @@
         width: auto;
       }
 
-      /* ============ THE CARD ============
-         Every card face on this page is a CROP OF THE REAL PRINTED SHEET
-         (assets/designs/bachelorette/gallery-front.webp) — the same artwork the
-         shop gallery serves. Four columns by two rows, so a 400% x 200%
-         background and a corner position isolate one card. Real words, real
-         hand, real layout, and not one new asset to keep in sync.
-         data-card="col row", both 1-indexed, reading left to right. */
-      .card {
-        /* Measured off the sheet, not guessed: the cards are 500x722 on a
-           2200x1557 image, pitch 549.5 x 768. The first pass used round
-           quarters and thirds and pulled in a slice of the neighbouring row, so
-           a card carried someone else's title along its bottom edge.
-           background-size = image / card. Position % = card offset / (image -
-           card), which is how a percentage background-position actually
-           resolves. */
-        aspect-ratio: 500 / 722;
-        background-image: url('assets/designs/bachelorette/gallery-front.webp');
-        background-size: 440% 215.65%;
-        background-repeat: no-repeat;
-        /* The one rounded thing on a sharp-cornered site, because the printed
-           card genuinely has round corners. Matching the product beats matching
-           the stylesheet. */
-        border-radius: 14px;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-      }
-      .card[data-card='1 1'] {
-        background-position: 1.35% 3.23%;
-      }
-      .card[data-card='2 1'] {
-        background-position: 33.71% 3.23%;
-      }
-      .card[data-card='3 1'] {
-        background-position: 66% 3.23%;
-      }
-      .card[data-card='4 1'] {
-        background-position: 98.35% 3.23%;
-      }
-      .card[data-card='1 2'] {
-        background-position: 1.35% 95.21%;
-      }
-      .card[data-card='2 2'] {
-        background-position: 33.71% 95.21%;
-      }
-      .card[data-card='3 2'] {
-        background-position: 66% 95.21%;
-      }
-      .card[data-card='4 2'] {
-        background-position: 98.35% 95.21%;
-      }
-
       /* ============ HERO ============
          Black, full-bleed, and the cards are the only colour in it. */
       .hero {
@@ -440,50 +391,6 @@
 
       /* The three cards in front of the field: a hand fanned out, tilted, the
          middle one lifted. Motion-safe only — they breathe, they do not dance. */
-      /* The cards OVERLAP rather than sitting in three tidy columns: a hand
-         someone is holding, not a row of thumbnails. Overlapping also buys each
-         card ~45% of the column instead of a third, which is the difference
-         between artwork you can read and artwork you can only identify. */
-      .hero__hand {
-        position: relative;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-      /* The fan's total width is 3*basis minus the middle card's two negative
-         margins. At 46%/6% that comes to 126% of the column — fine inside a
-         wide desktop column, and on a phone it ran the outer two cards off both
-         screen edges. 38%/10% resolves to 94%, so the whole hand fits with room
-         for the rotation to swing. */
-      .hero__hand .card {
-        flex: 0 0 38%;
-      }
-      .hero__hand .card:nth-child(1) {
-        transform: rotate(-8deg) translateY(18px);
-      }
-      .hero__hand .card:nth-child(2) {
-        transform: rotate(1deg) translateY(-18px);
-        z-index: 2;
-        margin-inline: -10%;
-      }
-      .hero__hand .card:nth-child(3) {
-        transform: rotate(9deg) translateY(22px);
-      }
-      @media (prefers-reduced-motion: no-preference) {
-        .hero__hand .card {
-          transition: transform 0.7s var(--lp-ease);
-        }
-        .hero__hand:hover .card:nth-child(1) {
-          transform: rotate(-10deg) translateY(8px);
-        }
-        .hero__hand:hover .card:nth-child(2) {
-          transform: rotate(0deg) translateY(-28px);
-        }
-        .hero__hand:hover .card:nth-child(3) {
-          transform: rotate(11deg) translateY(12px);
-        }
-      }
-
       /* ============ PROOF ============
          Inside the hero, under the CTA, because the claim it supports is there.
          The hairline above it is a DIVIDER, not a card edge — the no-single-
@@ -812,13 +719,6 @@
         .deck {
           grid-template-columns: repeat(4, 1fr);
         }
-        /* Room to spread once the hand has its own half of the hero. */
-        .hero__hand .card {
-          flex: 0 0 46%;
-        }
-        .hero__hand .card:nth-child(2) {
-          margin-inline: -6%;
-        }
         .sec-head h2 {
           font-size: 36px;
           line-height: 40px;
@@ -931,7 +831,7 @@
           </div>
           <!-- A fanned hand. Decorative: the words on these three are shown at
                readable size further down, so nothing is said only here. -->
-          <div class="hero__hand" aria-hidden="true">
+          <div class="card-fan" aria-hidden="true">
             <div class="card" data-card="3 1"></div>
             <div class="card" data-card="1 1"></div>
             <div class="card" data-card="2 1"></div>
