@@ -6188,6 +6188,9 @@
           // Carry the money with the event. A valueless begin_checkout is still
           // a row in GA4's ecommerce report — a row with nothing in the revenue
           // column — so the funnel there reads as traffic that never buys.
+          // The design, named exactly as the ORDER will store it (s.designName —
+          // see the create call below), so this event and the purchase report the
+          // same item to GA4 rather than two rows that never line up.
           const chosen = DESIGNS[designIndex] || {};
           if (typeof fbq === 'function') {
             fbq('track', 'InitiateCheckout', { value: PLANS[plan].price, currency: 'ILS' });
@@ -6197,8 +6200,8 @@
             currency: 'ILS',
             items: [
               {
-                item_id: chosen.id || chosen.name || 'dugri',
-                item_name: chosen.name || 'דוגרי',
+                item_id: chosen.name || chosen.id || 'dugri',
+                item_name: chosen.name || chosen.id || 'דוגרי',
                 price: PLANS[plan].price,
                 quantity: 1,
               },

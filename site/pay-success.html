@@ -479,8 +479,13 @@
             coupon: s.order.coupon || undefined,
             items: [
               {
+                // The same item the wizard's begin_checkout named: the DESIGN.
+                // The package is a variant of it, not a different product — GA4
+                // keys its item reports on item_id, so two names under one id
+                // would break the view -> checkout -> purchase funnel.
                 item_id: s.design || 'dugri',
-                item_name: s.order.version_label || 'דוגרי',
+                item_name: s.design || 'דוגרי',
+                item_variant: s.order.version_label || undefined,
                 price: s.order.unit_price != null ? s.order.unit_price : value,
                 quantity: s.order.quantity || 1,
               },

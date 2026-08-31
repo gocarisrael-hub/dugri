@@ -52,9 +52,13 @@ test.describe('purchase event', () => {
       currency: 'ILS',
       shipping: 39,
     });
+    // One item identity across the funnel: the DESIGN is the item, the package
+    // is a variant of it — so begin_checkout and purchase report the same id
+    // under the same name and GA4's item funnel lines up.
     expect(purchase.items[0]).toMatchObject({
       item_id: 'bachelorette',
-      item_name: 'החבילה המלאה',
+      item_name: 'bachelorette',
+      item_variant: 'החבילה המלאה',
       price: 199,
       quantity: 2,
     });

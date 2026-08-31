@@ -15,6 +15,13 @@
 // (and the tests) may call fbq() whether or not the real library ever arrives,
 // exactly as GA's gtag stub queues into dataLayer. The <script src> is appended
 // only off localhost, so development and E2E never reach Meta.
+//
+// Meta's snippet also ships a <noscript><img src="facebook.com/tr?…"> beacon. It
+// is deliberately NOT reproduced: markup cannot be host-guarded, so it would fire
+// from staging and from every JS-less crawler and link-preview bot that touches a
+// page, putting events that are not customers into the ad account. Nothing is
+// lost — the wizard and the checkout require JavaScript, so a client that cannot
+// run the loader was never going to buy.
 function snippet(pixelId) {
   return `<script>
       (function (w, d) {
@@ -38,14 +45,6 @@ function snippet(pixelId) {
       fbq('init', '${pixelId}');
       fbq('track', 'PageView');
     </script>
-    <noscript
-      ><img
-        height="1"
-        width="1"
-        style="display: none"
-        alt=""
-        src="https://www.facebook.com/tr?id=${pixelId}&amp;ev=PageView&amp;noscript=1"
-    /></noscript>
     `;
 }
 

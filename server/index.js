@@ -6821,7 +6821,10 @@ app.get('*', (req, res) => {
   // just like a directly-served page.
   const html = fs.readFileSync(path.join(SITE_DIR, 'index.html'), 'utf8');
   res.type('html');
-  res.send(moduleAssets.inject(html));
+  // …and the pixel, for the same reason. These extension-less paths are exactly
+  // the ones an ad links to (/sale, a vanity path in a bio, a mistyped link), so
+  // a fallback with no pixel would miss precisely the traffic it is there for.
+  res.send(metaPixel.inject(moduleAssets.inject(html), settings.get('analytics', 'meta_pixel_id')));
 });
 
 // --- Words-reminder scheduler ---------------------------------------------
