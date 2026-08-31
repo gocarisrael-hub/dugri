@@ -521,18 +521,29 @@ const REGISTRY = {
     // the shapes that burn a number. 0 disables reachout entirely.
     reachout_daily_max: { kind: 'count', min: 0, max: 200, tokens: [], default: 5 },
   },
-  // --- Buyer-wizard feature flags -------------------------------------------
-  // Owner-controlled on/off switches for four buyer-facing wizard features that
-  // aren't polished enough to ship. Each is a bare boolean (kind: 'flag') that
-  // defaults OFF (the feature is hidden entirely); the owner flips it on from
-  // the admin panel when it's ready — no code deploy. When a flag is off the
-  // wizard falls back to the built-in default (color "מקורי", chasers false,
-  // word_font null, no live name preview), so no server order-logic changes.
+  // --- Buyer-facing feature flags --------------------------------------------
+  // Owner-controlled on/off switches for buyer-facing features, each a bare
+  // boolean (kind: 'flag') the owner flips from the admin panel — no code deploy.
+  //
+  // The first four are WIZARD features that aren't polished enough to ship, so
+  // they default OFF (the feature is hidden entirely). When one is off the wizard
+  // falls back to the built-in default (color "מקורי", chasers false, word_font
+  // null, no live name preview), so no server order-logic changes.
+  //
+  // `deck_proof` is the odd one out and defaults ON, because unlike the four it
+  // is ALREADY SHIPPED: the buyer's proof screen (proof.html — every page of her
+  // produced deck, read out of the PDF) has been live since it was built, so a
+  // default of false would silently switch a working feature off the day this key
+  // appears. Same reasoning as `pricing.sale_on`. Flipped OFF, the deck is still
+  // produced exactly as before — only the buyer's view of it goes away: no
+  // proof_url in the produce/status answers, no customer proof link on the order,
+  // and the proof endpoints refuse anyone but the owner's own admin key.
   features: {
     color_picking: { kind: 'flag', tokens: [], default: false },
     chasers_choice: { kind: 'flag', tokens: [], default: false },
     font_choice: { kind: 'flag', tokens: [], default: false },
     name_preview: { kind: 'flag', tokens: [], default: false },
+    deck_proof: { kind: 'flag', tokens: [], default: true },
   },
   // --- Pricing (owner-editable, no deploy) -----------------------------------
   // The storefront display price (`store_now` shown, `store_was` struck through)

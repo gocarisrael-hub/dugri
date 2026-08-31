@@ -356,6 +356,21 @@ describe('feature flags (kind: flag)', () => {
     expect(s.get('features', 'name_preview')).toBe(false);
   });
 
+  it('deck_proof defaults to TRUE — the one flag that guards a shipped feature', () => {
+    // The other four hide things that were never live. The buyer's proof was, so
+    // its default is the state the site already ships in: the key appearing
+    // changes nothing until the owner turns it off. (Same reasoning as
+    // pricing.sale_on.) Behaviour of the routes: tests/unit/deck-proof-toggle.
+    const s = loadFresh();
+    expect(s.get('features', 'deck_proof')).toBe(true);
+    // set/reset both answer with the value now in force.
+    expect(s.set('features', 'deck_proof', false)).toBe(false);
+    expect(s.get('features', 'deck_proof')).toBe(false);
+    // reset restores TRUE, not the blanket false the other flags reset to.
+    expect(s.reset('features', 'deck_proof')).toBe(true);
+    expect(s.all().overrides).toEqual({});
+  });
+
   it('set stores + persists a flag, and reset restores the default', () => {
     const s = loadFresh();
     expect(s.set('features', 'color_picking', true)).toBe(true);
@@ -385,7 +400,13 @@ describe('feature flags (kind: flag)', () => {
   it('all().registry.features advertises the flag kind for every key', () => {
     const s = loadFresh();
     const reg = s.all().registry.features;
-    for (const k of ['color_picking', 'chasers_choice', 'font_choice', 'name_preview']) {
+    for (const k of [
+      'color_picking',
+      'chasers_choice',
+      'font_choice',
+      'name_preview',
+      'deck_proof',
+    ]) {
       expect(reg[k]).toEqual({ tokens: [], kind: 'flag' });
     }
   });

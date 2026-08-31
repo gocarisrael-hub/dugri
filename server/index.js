@@ -1385,7 +1385,7 @@ app.post('/api/admin/collections/:id/generate', async (req, res) => {
     // customer link rather than mailed — production is hand-pressed, and the
     // owner decides when an order is worth a proof.
     const customerProofLink =
-      base && production && production.pdf_token
+      base && deckProofOn() && production && production.pdf_token
         ? base + '/proof.html?c=' + c.id + '&t=' + encodeURIComponent(production.pdf_token)
         : null;
     // NO email fires here any more. The old "your file is ready — download it"
@@ -1508,7 +1508,18 @@ app.get('/api/admin/collections/:id/proof', (req, res) => {
   const token = production && production.pdf_token;
   // No token means the order was never produced — there is no deck to proof.
   if (!token) return res.status(409).json({ error: 'not produced' });
-  res.redirect('/proof.html?c=' + encodeURIComponent(c.id) + '&t=' + encodeURIComponent(token));
+  // The admin key rides along to the page. The proof endpoints accept it in
+  // place of the flag, so the owner can still read a deck she has hidden from
+  // buyers; the key is already in this request's own URL, so forwarding it
+  // exposes nothing that was not exposed a redirect ago.
+  res.redirect(
+    '/proof.html?c=' +
+      encodeURIComponent(c.id) +
+      '&t=' +
+      encodeURIComponent(token) +
+      '&key=' +
+      encodeURIComponent(String(req.query.key || ''))
+  );
 });
 
 // --- The PRESS copy -------------------------------------------------------
@@ -1632,6 +1643,27 @@ app.get('/api/collections/:id/board', (req, res) => {
 });
 
 // --- The PROOF ------------------------------------------------------------
+// Is the buyer's proof switched ON? An owner flag (admin → פיצ׳רים), read at
+// request time so flipping it takes effect on the next click, with no restart
+// and no redeploy. Compared against `false` rather than to `true` so anything
+// unreadable keeps the SHIPPED behaviour: a corrupt override may not silently
+// take a live feature away from every buyer.
+function deckProofOn() {
+  return settings.get('features', 'deck_proof') !== false;
+}
+
+// The gate the two public proof routes share. The owner's own admin key passes
+// even when the flag is off — she hid the proof from BUYERS, and hiding it from
+// herself would take away the last look at a deck before it goes to the shop.
+function proofGate(req, res) {
+  if (deckProofOn()) return true;
+  if (adminKeyOk(req.query.key)) return true;
+  // 403 with a reason of its own: proof.js tells "switched off" apart from "bad
+  // token" by this body, and the two owe the buyer completely different lines.
+  res.status(403).json({ error: 'off' });
+  return false;
+}
+
 // PUBLIC, on the same per-collection capability token as the deck and the board:
 // one order, one secret, now three artifacts. The buyer gets to READ her deck
 // before it is printed — every card, front and back, as pages out of the produced
@@ -1642,6 +1674,7 @@ app.get('/api/collections/:id/proof', async (req, res) => {
   const production = (c.order && c.order.production) || c.production || null;
   const token = production && production.pdf_token;
   if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
+  if (!proofGate(req, res)) return;
   try {
     const manifest = await proof.ensure({
       generatedDir: GENERATED_DIR,
@@ -1671,6 +1704,7 @@ app.get('/api/collections/:id/proof/:n', (req, res) => {
   const production = (c.order && c.order.production) || c.production || null;
   const token = production && production.pdf_token;
   if (!pdfTokenOk(req.query.t, token)) return res.status(403).json({ error: 'forbidden' });
+  if (!proofGate(req, res)) return;
   const manifest = proof.readFresh(GENERATED_DIR, c.id);
   if (!manifest) return res.status(404).json({ error: 'no proof' });
   const file = proof.pageFile(GENERATED_DIR, c.id, req.params.n, manifest);
@@ -1725,11 +1759,17 @@ function produceState(c) {
   const production = (c.order && c.order.production) || c.production || null;
   const token = production && production.pdf_token;
   if (production && production.state === 'generated' && token && deckOnDisk(c.id)) {
-    return {
-      state: 'ready',
-      pages: production.pages || null,
-      proof_url: '/proof.html?c=' + encodeURIComponent(c.id) + '&t=' + encodeURIComponent(token),
-    };
+    // 'ready' is a fact about the DECK, so it stands whether or not she may look
+    // at it — only the link is withheld when the proof is switched off. That is
+    // exactly what collect.html reads: ready with no proof_url ends the wait on
+    // the calm "המשחק בהפקה" note instead of navigating to a page that would
+    // refuse her.
+    const ready = { state: 'ready', pages: production.pages || null };
+    if (deckProofOn()) {
+      ready.proof_url =
+        '/proof.html?c=' + encodeURIComponent(c.id) + '&t=' + encodeURIComponent(token);
+    }
+    return ready;
   }
   const job = deckJobs.get(c.id);
   if (job && (job.state === 'running' || job.state === 'queued')) return { state: job.state };
@@ -1791,14 +1831,19 @@ app.post('/api/collections/:id/produce', (req, res) => {
     // way, and proof.html builds it on arrival if this did not. What it buys is
     // that her page JOINS this build (proof.js is single-flight per collection)
     // instead of starting its own seven seconds after we told her it was ready.
-    await proof
-      .ensure({
-        generatedDir: GENERATED_DIR,
-        id: fresh.id,
-        python: PYTHON_BIN,
-        repoRoot: REPO_ROOT,
-      })
-      .catch(() => {});
+    // Skipped outright when the buyer's proof is switched off. Rasterising a
+    // whole deck is the most expensive thing this job does, and with the proof
+    // hidden there is nobody on the other end of the pages.
+    if (deckProofOn()) {
+      await proof
+        .ensure({
+          generatedDir: GENERATED_DIR,
+          id: fresh.id,
+          python: PYTHON_BIN,
+          repoRoot: REPO_ROOT,
+        })
+        .catch(() => {});
+    }
   });
   if (job.state === 'busy') {
     // Nothing was started and nothing was queued — say so, out loud, rather than

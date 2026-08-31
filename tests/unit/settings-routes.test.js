@@ -184,14 +184,17 @@ describe('DELETE /api/admin/settings', () => {
 });
 
 describe('GET /api/features (public feature flags)', () => {
-  it('needs no admin key and returns EXACTLY the four boolean flags', async () => {
+  it('needs no admin key and returns EXACTLY the features section, as booleans', async () => {
     const res = await fetch(url('/api/features'));
     expect(res.status).toBe(200);
     const body = await res.json();
-    // Exactly the four whitelisted keys — no other section leaks through.
+    // Exactly the features section's keys — no other section leaks through. The
+    // projection is derived from the registry, so a flag added there appears
+    // here automatically; that is the point, and this list moves with it.
     expect(Object.keys(body).sort()).toEqual([
       'chasers_choice',
       'color_picking',
+      'deck_proof',
       'font_choice',
       'name_preview',
     ]);
@@ -201,12 +204,14 @@ describe('GET /api/features (public feature flags)', () => {
     expect(body).not.toHaveProperty('wa');
     expect(body).not.toHaveProperty('order_paid');
     expect(body).not.toHaveProperty('trigger.group_opened');
-    // All default OFF.
+    // The four wizard flags default OFF; deck_proof guards a feature that is
+    // already live, so it defaults ON.
     expect(body).toEqual({
       color_picking: false,
       chasers_choice: false,
       font_choice: false,
       name_preview: false,
+      deck_proof: true,
     });
   });
 

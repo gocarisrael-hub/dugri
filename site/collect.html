@@ -5544,6 +5544,10 @@
         const WAIT_CALM_TITLE = 'קיבלנו! המשחק בהפקה';
         const WAIT_CALM_SUB =
           'הרשימה נסגרה והמשחק שלכם בהפקה. ההדמיה של הקלפים תגיע אליכם בוואטסאפ בקרוב.';
+        // The same calm ending, minus the promise. When the owner has switched
+        // the buyer's proof off there is no הדמיה coming, and the line above
+        // would be telling her to watch WhatsApp for something nobody will send.
+        const WAIT_NO_PROOF_SUB = 'הרשימה נסגרה והמשחק שלכם בהפקה. נעדכן אתכם בוואטסאפ.';
 
         const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -5599,8 +5603,13 @@
             return;
           }
           // Already produced (a second tap, or a reload after it finished).
-          if (start.state === 'ready' && start.proof_url) {
-            location.href = start.proof_url;
+          // 'ready' with NO proof_url is the owner having switched the buyer's
+          // proof off: the deck is made, there is simply nothing to send her to,
+          // so she gets the same calm note the slow path ends on rather than a
+          // wait for a page that will never come.
+          if (start.state === 'ready') {
+            if (start.proof_url) location.href = start.proof_url;
+            else showWait(WAIT_CALM_TITLE, WAIT_NO_PROOF_SUB, false);
             return;
           }
           const n = Number(start.cards);
@@ -5620,8 +5629,9 @@
             } catch {
               continue; // a blip mid-render is not an answer; keep asking
             }
-            if (s.state === 'ready' && s.proof_url) {
-              location.href = s.proof_url;
+            if (s.state === 'ready') {
+              if (s.proof_url) location.href = s.proof_url;
+              else showWait(WAIT_CALM_TITLE, WAIT_NO_PROOF_SUB, false);
               return;
             }
             // 'error' is a render that failed; 'idle' means the server no longer

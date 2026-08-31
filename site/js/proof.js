@@ -7,6 +7,15 @@
 const P = new URLSearchParams(location.search);
 const CID = P.get('c') || '';
 const TOKEN = P.get('t') || '';
+// The owner's admin key, present ONLY when she reached this page from her own
+// admin (the proof route redirects with it). It is what lets her keep reading a
+// deck after she has switched the buyers' proof off — a buyer's link never
+// carries one, and without the flag off it changes nothing.
+const KEY = P.get('key') || '';
+// Every proof request travels on the capability token, plus that key when we
+// have one.
+const auth = () =>
+  '?t=' + encodeURIComponent(TOKEN) + (KEY ? '&key=' + encodeURIComponent(KEY) : '');
 // The business line, for "something looks wrong". Same number the site uses.
 const WA = '972552441334';
 
@@ -19,8 +28,7 @@ const bigImg = $('bigImg');
 let PAGES = 0;
 let at = 1;
 
-const pageUrl = (n) =>
-  '/api/collections/' + encodeURIComponent(CID) + '/proof/' + n + '?t=' + encodeURIComponent(TOKEN);
+const pageUrl = (n) => '/api/collections/' + encodeURIComponent(CID) + '/proof/' + n + auth();
 
 function say(text) {
   state.hidden = false;
@@ -85,14 +93,26 @@ async function load() {
   if (!CID || !TOKEN) return say('הקישור חסר פרטים. פתחי אותו מההודעה ששלחנו.');
   let r;
   try {
-    r = await fetch(
-      '/api/collections/' + encodeURIComponent(CID) + '/proof?t=' + encodeURIComponent(TOKEN)
-    );
+    r = await fetch('/api/collections/' + encodeURIComponent(CID) + '/proof' + auth());
   } catch {
     return say('לא הצלחנו לטעון את החפיסה. נסי לרענן.');
   }
   if (r.status === 404) return say('החפיסה עוד לא מוכנה. נעדכן ברגע שהיא תהיה.');
-  if (r.status === 403) return say('הקישור לא תקף. פתחי אותו מההודעה ששלחנו.');
+  // Two different 403s, and they owe her two different sentences: a bad or
+  // expired token is something SHE can act on, while the owner having switched
+  // the proof off is not — telling her the link is broken would send her hunting
+  // for a better one that does not exist. The server names which it is.
+  if (r.status === 403) {
+    const why = await r
+      .json()
+      .then((b) => (b && b.error) || '')
+      .catch(() => '');
+    return say(
+      why === 'off'
+        ? 'הגהת החפיסה סגורה כרגע. המשחק שלך בהפקה — נעדכן ברגע שהוא מוכן.'
+        : 'הקישור לא תקף. פתחי אותו מההודעה ששלחנו.'
+    );
+  }
   if (!r.ok) return say('לא הצלחנו לטעון את החפיסה. נסי לרענן.');
   const data = await r.json();
   PAGES = Number(data.pages) || 0;

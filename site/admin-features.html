@@ -328,6 +328,7 @@
         chasers_choice: 'צ׳ייסרים (עם/בלי)',
         font_choice: 'בחירת גופן',
         name_preview: 'תצוגה מקדימה עם שם',
+        deck_proof: 'הגהת החפיסה ללקוחה',
       };
       function labelFor(k) {
         return LABELS[k] || k;
@@ -336,7 +337,18 @@
       // in the preview panel), so it only takes effect when name-preview is on too.
       const NOTES = {
         font_choice: 'דורש שגם "תצוגה מקדימה עם שם" תהיה מופעלת — אחרת בחירת הגופן לא תוצג.',
+        deck_proof:
+          'מופעל כברירת מחדל. כשהוא מכובה הלקוחה כבר לא רואה את הקלפים לפני הדפוס — החפיסה מיוצרת בדיוק כמו קודם, ואת עדיין רואה את ההגהה מתוך עמוד ההזמנה.',
       };
+      // The switch caption. Every flag but one governs something the buyer meets
+      // INSIDE the order form; the proof is a page she opens after it, so it says
+      // where it actually shows.
+      const CAPTIONS = {
+        deck_proof: 'מוצג ללקוחה אחרי ההפקה',
+      };
+      function captionFor(k) {
+        return CAPTIONS[k] || 'מוצג בטופס ההזמנה';
+      }
 
       let state = null; // last full settings.all() response
 
@@ -364,7 +376,9 @@
           esc(k) +
           '"' +
           (on ? ' checked' : '') +
-          ' /> <span>מוצג בטופס ההזמנה</span></label>' +
+          ' /> <span>' +
+          esc(captionFor(k)) +
+          '</span></label>' +
           note +
           '<div class="actions">' +
           '<button class="primary" data-save type="button">שמירה</button>' +
