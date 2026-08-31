@@ -936,23 +936,107 @@ app.post('/api/collections', (req, res) => {
 // In production ADMIN_KEY must be set; in dev it falls back to a local default.
 const ADMIN_KEY =
   process.env.ADMIN_KEY || (process.env.NODE_ENV === 'production' ? null : 'dugri-admin');
-function adminKeyOk(provided) {
-  if (!ADMIN_KEY) return false;
+// A SECOND key, for someone who works on the orders but is not the owner.
+// Unset (the default) means there is no staff key and nothing below changes:
+// one key, full access, exactly as before.
+//
+// It is refused when it equals the owner's key — a copy-paste that would
+// silently hand the owner's key out as the worker's, granting everything while
+// looking like a restriction. Better to have no staff key than a fake one.
+const STAFF_KEY =
+  process.env.STAFF_KEY && process.env.STAFF_KEY !== ADMIN_KEY ? process.env.STAFF_KEY : null;
+
+// Constant-time compare against a known key. Length is compared first because
+// timingSafeEqual throws on a length mismatch — and the length of a secret is
+// not the secret.
+function keyMatches(provided, expected) {
+  if (!expected) return false;
   const a = Buffer.from(String(provided || ''));
-  const b = Buffer.from(ADMIN_KEY);
+  const b = Buffer.from(expected);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+function adminKeyOk(provided) {
+  return keyMatches(provided, ADMIN_KEY);
+}
+// 'owner' | 'staff' | null. The owner's key is checked first, so a STAFF_KEY
+// that somehow equals it could never downgrade the owner.
+function adminRole(provided) {
+  if (adminKeyOk(provided)) return 'owner';
+  if (keyMatches(provided, STAFF_KEY)) return 'staff';
+  return null;
+}
+
+// WHAT THE STAFF KEY MAY TOUCH — an allowlist, deliberately, not a blocklist.
+// A blocklist is wrong by default: the next money route somebody adds would be
+// open to the worker until someone remembered to add it here. With an allowlist
+// the same mistake fails closed, which is the direction a mistake should fail.
+//
+// These are exactly the endpoints the two pages she is meant to use actually
+// call — ניהול הזמנות (admin.html) and עורך הטיפוגרפיה (admin-bench.html),
+// read off those two files rather than guessed.
+const STAFF_ALLOWED = [
+  /^\/api\/admin\/collections(\/|$)/,
+  /^\/api\/admin\/designs(\/|$)/,
+  /^\/api\/admin\/hfd\/status$/,
+  /^\/api\/admin\/pickup-stickers$/,
+  /^\/api\/admin\/templates(\/|$)/,
+  /^\/api\/admin\/whatsapp\/groups(\/|$)/,
+  /^\/api\/admin\/wordlists(\/|$)/,
+  /^\/api\/admin\/whoami$/,
+];
+
+// …minus the money that lives INSIDE an allowed prefix. Creating a bespoke
+// order mints a 599 ₪ charge and a payment link, which is the owner's business
+// however much it looks like an order operation.
+const STAFF_DENIED = [/^\/api\/admin\/collections\/[^/]+\/custom$/];
+
+// Match against a NORMALISED path, because Express does not route on the exact
+// bytes: with the default settings `/CUSTOM` and `/custom/` both reach the
+// handler registered as `/custom`. A case-sensitive, `$`-anchored deny pattern
+// therefore missed them while the allow prefix still matched, and the staff key
+// could mint a 599 ₪ bespoke order by capitalising a letter. Verified against a
+// real collection before the fix: `/custom` 403, `/CUSTOM` 200 with an order in
+// the response.
+//
+// Lowercasing is safe here — every pattern is an all-lowercase literal — and the
+// trailing slash goes for the same reason Express ignores it. Order matters: the
+// deny list is consulted on the same normalised string as the allow list, so a
+// carve-out cannot be stepped around by a spelling the router accepts.
+function normalizeAdminPath(pathname) {
+  const lowered = String(pathname || '').toLowerCase();
+  const trimmed = lowered.replace(/\/+$/, '');
+  return trimmed || '/';
+}
+
+function staffMayReach(pathname) {
+  const p = normalizeAdminPath(pathname);
+  if (STAFF_DENIED.some((re) => re.test(p))) return false;
+  return STAFF_ALLOWED.some((re) => re.test(p));
+}
+
 // Shared admin guard: sends the 503/403 response and returns false when the
 // request is not an authorized admin; returns true to proceed.
+//
+// Every admin route already funnels through here, so the staff scope is enforced
+// in ONE place. A new route is therefore closed to staff the moment it exists,
+// without anyone having to remember this file.
 function requireAdmin(req, res) {
   if (!ADMIN_KEY) {
     res.status(503).json({ error: 'admin disabled: set ADMIN_KEY' });
     return false;
   }
-  if (!adminKeyOk(req.query.key)) {
+  const role = adminRole(req.query.key);
+  if (!role) {
     res.status(403).json({ error: 'forbidden' });
     return false;
   }
+  if (role === 'staff' && !staffMayReach(req.path)) {
+    // Named apart from a wrong key on purpose: the worker's key IS valid, and a
+    // page that says "wrong key" would send her hunting for a better one.
+    res.status(403).json({ error: 'forbidden', reason: 'staff' });
+    return false;
+  }
+  req.adminRole = role;
   return true;
 }
 
@@ -1004,6 +1088,15 @@ app.get('/api/admin/collections', (req, res) => {
 // becomes paid only through a real money event — a verified PeleCard callback or
 // a 100%-coupon order — so `paid` always means the customer actually paid, and a
 // payment receipt can never be sent for a payment that did not happen.
+
+// WHO AM I — the role behind the key in the URL, so an admin page can lay itself
+// out for the person holding it rather than offering links that will 403. This is
+// presentation only: the scope itself is enforced in requireAdmin, on every
+// request, and hiding a link has never stopped anyone typing a URL.
+app.get('/api/admin/whoami', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ role: req.adminRole, staff_enabled: !!STAFF_KEY });
+});
 
 // Admin: create a bespoke "custom" (599₪) order on a collection and return the
 // owner pay link, so the admin can hand-set an order to version:'custom' and send

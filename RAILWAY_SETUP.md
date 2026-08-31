@@ -161,6 +161,32 @@ The private orders page is at `/admin.html?key=YOUR_ADMIN_KEY`. Set a strong
 **`ADMIN_KEY`** env var on the Railway service; only that key can open the page
 or call `/api/admin/collections`. (Locally it defaults to `dugri-admin`.)
 
+### A second key for a worker (optional)
+
+Set **`STAFF_KEY`** to give someone the orders WITHOUT the money. That key opens
+only **ניהול הזמנות** (`admin.html`), **תבנית חדשה** (`admin-templates.html`) and
+the **עורך הטיפוגרפיה** it leads to (`admin-bench.html`), and can do the real
+production work there — generate the deck, send to print, mark ready, print
+stickers, edit the word list.
+
+Everything else answers **403**: the coupons, the pricing, the settings, the
+content editor, the playbook, and creating a bespoke 599 ₪ order. The scope is an
+**allowlist** in `server/index.js` (`STAFF_ALLOWED`), so a route added later is
+closed to the staff key until someone deliberately opens it.
+
+- Leave `STAFF_KEY` unset and nothing changes — one key, full access, as before.
+- Setting it to the **same string** as `ADMIN_KEY` is ignored on purpose: that
+  typo would hand out the owner's key while looking like a restriction.
+- `GET /api/admin/whoami?key=…` reports `{ role, staff_enabled }`. The admin
+  pages use it to trim the nav; the scope itself is enforced per request.
+
+**One limit, stated plainly.** The staff key can read `/api/admin/collections`,
+which carries each order's amounts — it has to, because that is the orders page.
+So the revenue _dashboard_ is hidden and refuses to render, but its numbers are
+derivable by anyone who cares to total the orders. If revenue must be genuinely
+unreadable, the amounts have to be stripped from that payload for staff, which
+also removes them from the orders table.
+
 ## Content import from staging (production service only)
 
 The inline content editor's toolbar has an **"ייבוא תוכן מהסטייג׳ינג"** (import content
