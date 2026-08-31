@@ -308,3 +308,84 @@ def test_the_snake_still_pairs_the_heaviest_with_the_lightest():
     rows = pack.deal(words, 2, random.Random(0), sizes=wd.letter_weights(words))
     assert sorted(len(w) for w in rows[0]) == [2, 5, 6, 9], rows
     assert sorted(len(w) for w in rows[1]) == [3, 4, 7, 8], rows
+
+
+# --- WHERE an entry sits ON its card (pack.deal_measured's shuffle) ----------
+#
+# The weight decides which entries SHARE a card. It used to decide their order on
+# the card too — sorted longest last — and because render_page.order_by_room
+# breaks a tie by keeping the order it was handed, on every card whose rows are
+# equally roomy that sort WAS the printed order: the longest entry on the bottom
+# line of all of them. The owner asked for that fixed position to go. These tests
+# hold both halves of the answer: the position moves, and the grouping does not.
+
+
+def _snake_groups(words, n_cards):
+    """The snake's grouping, recomputed independently of pack.
+
+    Longest first, dealt left to right then right to left. Given entries of
+    DISTINCT lengths the sort has no ties, so this is exact and owes nothing to
+    the RNG — which is what lets it stand as the "did the grouping move?" oracle.
+    """
+    order = sorted(words, key=len, reverse=True)
+    rows = [[] for _ in range(n_cards)]
+    i = lap = 0
+    while i < len(order):
+        seq = range(n_cards) if lap % 2 == 0 else reversed(range(n_cards))
+        for c in seq:
+            if i >= len(order):
+                break
+            rows[c].append(order[i])
+            i += 1
+        lap += 1
+    return [set(r) for r in rows]
+
+
+def test_the_shuffle_never_moves_a_word_to_another_card():
+    # THE GUARANTEE. Which four words meet on a card is exactly what it was, seed
+    # by seed — the shuffle only reorders inside the card it was already given.
+    words = ["א" * n for n in range(4, 28)]           # 24 entries, all lengths distinct
+    expected = _snake_groups(words, 6)
+    for seed in range(6):
+        rows = pack.deal(words, 6, random.Random(seed), sizes=wd.letter_weights(words))
+        assert [set(w for w in r if w) for r in rows] == expected, (seed, rows)
+
+
+def test_the_longest_entry_no_longer_always_sits_in_the_same_slot():
+    # Over a deck, the longest entry of a card lands in every slot rather than
+    # always the last one. Asserted as "more than one slot" rather than an even
+    # spread: this is a shuffle, not a rotation, and a deck is not a big enough
+    # sample to promise 25% each.
+    words = ["א" * (4 + (i % 19)) + str(i) for i in range(412)]
+    rows = pack.deal(words, 103, random.Random(11), sizes=wd.letter_weights(words))
+    slots = set()
+    for row in rows:
+        live = [w for w in row if w]
+        slots.add(live.index(max(live, key=len)))
+    assert len(slots) > 1, slots
+    # …and specifically NOT the old behaviour, which put it in the last filled
+    # slot of every single card.
+    assert slots != {3}, slots
+
+
+def test_the_card_is_still_blank_padded_at_the_END():
+    # The renderer numbers the rows 1..4 downwards, so a blank between two entries
+    # prints an empty numbered line. A short final card must keep its blanks
+    # trailing after the shuffle, exactly as the sort left them.
+    words = ["א" * n for n in range(4, 10)]           # 6 entries -> 4 + 2
+    rows = pack.deal(words, 2, random.Random(1), sizes=wd.letter_weights(words))
+    last = rows[-1]
+    assert last[0] and last[1] and last[2] == "" and last[3] == "", last
+
+
+def test_a_deck_is_still_reproducible_from_its_seed():
+    # The shuffle draws from the deal's own seeded RNG, so the same seed still
+    # gives the same deck down to the slot — and a different seed gives a
+    # different one, which is what makes the position vary between orders.
+    words = ["א" * (4 + (i % 13)) + str(i) for i in range(80)]
+    sizes = wd.letter_weights(words)
+    a = pack.deal(words, 20, random.Random(7), sizes=sizes)
+    b = pack.deal(words, 20, random.Random(7), sizes=sizes)
+    c = pack.deal(words, 20, random.Random(8), sizes=sizes)
+    assert a == b
+    assert a != c
