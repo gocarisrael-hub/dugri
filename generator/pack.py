@@ -278,6 +278,14 @@ def deal_measured(uniq, n_cards, rnd, sizes):
     easiest. A plain round robin would hand card 1 the hardest entry of every
     round.
 
+    WITHIN a card the four entries are SHUFFLED, not ordered. The weight decides
+    which entries SHARE a card; it no longer decides where they sit on it. The
+    row is picked at render time against the card's own artwork
+    (``render_page.order_by_room``), and the shuffle is what that choice falls
+    back on when the rows are equally roomy and every arrangement is equally
+    good — where a sort used to put the longest entry on the bottom line of every
+    such card. See the note at the bottom of this function.
+
     An entry the caller left out of ``sizes`` is treated as AVERAGE — it lands
     where the deal puts it. With letter weights nothing is ever left out, so this
     is the guard for a hand-built score, not a path an order takes.
@@ -312,10 +320,26 @@ def deal_measured(uniq, n_cards, rnd, sizes):
 
     out = []
     for row in rows:
-        # Hardest LAST within the card. Which ROW it actually prints on is chosen
-        # later against that card's own artwork (render_page.order_by_room); this
-        # only keeps the CSV readable and the blanks trailing.
-        row = sorted((w for w in row if w), key=lambda w: -sizes.get(w, mid))
+        # SHUFFLED within the card, not sorted. Which ROW an entry actually prints
+        # on is chosen later against that card's own artwork
+        # (render_page.order_by_room), which tries all 24 arrangements and keeps
+        # the one that leaves the card's smallest entry largest. That choice is
+        # unaffected by the order handed to it — EXCEPT when the rows are equally
+        # roomy (no icon biting into any of them), where every arrangement scores
+        # the same and the tie-break keeps the order it arrived in.
+        #
+        # So on those cards the order below IS the printed order, and while it was
+        # a sort the longest entry sat on the bottom line of every one of them.
+        # The owner asked for that fixed position to go. Shuffling costs nothing
+        # to read: a tie means the arrangements are equally good, so no card can
+        # print smaller than it did — and where the artwork does make a row
+        # roomier, the renderer still steers the long entry there.
+        #
+        # Uses the deal's own seeded RNG, so a deck is still reproducible from its
+        # seed. Blanks stay TRAILING: the renderer numbers the rows 1..4 downwards
+        # and a blank between two entries prints an empty numbered line.
+        row = [w for w in row if w]
+        rnd.shuffle(row)
         out.append(row + [""] * (PER_CARD - len(row)))
     return out
 
