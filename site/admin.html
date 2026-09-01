@@ -770,6 +770,15 @@
       }
     </style>
     <script src="js/editor.js" defer></script>
+    <style>
+      /* MONEY THE OWNER SEES AND A WORKER DOES NOT. 'pending' is the moment
+         before js/admin-role.js has heard back, and is treated as staff on
+         purpose — hiding late is the same as not hiding at all. */
+      :root[data-admin-role='pending'] [data-money],
+      :root[data-admin-role='staff'] [data-money] {
+        display: none !important;
+      }
+    </style>
     <script src="js/admin-role.js" defer></script>
   </head>
   <body>
@@ -2191,13 +2200,22 @@
             cols.filter((c) => c.order && c.order.sent_to_print_at && !c.order.ready_at).length,
           ],
           ['הודפסו', cols.filter((c) => c.order && c.order.ready_at).length],
-          ['הכנסות', revenue + ' ₪'],
+          // THE BUSINESS'S TAKE. Marked as money and dropped entirely for a staff
+          // key: everything else on this row is a COUNT of work to do, which is
+          // hers, while this one number is the shop's earnings, which is not.
+          // Per-order amounts stay — she has to see what an order was worth to
+          // handle a refund or a query about it.
+          ['הכנסות', revenue + ' ₪', true],
           ['ממתינות לתשלום', pending],
         ];
         statsEl.textContent = '';
-        for (const [lab, val] of items) {
+        for (const [lab, val, isMoney] of items) {
+          if (isMoney && document.documentElement.dataset.adminRole === 'staff') continue;
           const box = document.createElement('div');
           box.className = 'stat';
+          // …and while the role is still 'pending' the CSS hides it, so it can
+          // never flash up in the moment before the answer lands.
+          if (isMoney) box.setAttribute('data-money', '');
           const v = document.createElement('div');
           v.className = 'val';
           v.textContent = val;
