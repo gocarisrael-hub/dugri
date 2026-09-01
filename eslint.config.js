@@ -27,6 +27,9 @@ const browserGlobals = {
   FormData: 'readonly',
   CustomEvent: 'readonly',
   Event: 'readonly',
+  // js/admin-role.js watches the admin tiles so a money figure the orders page
+  // redraws on its poll cannot creep back in for a staff key.
+  MutationObserver: 'readonly',
   // Synthesised by the e2e specs that drive the product page's pinch zoom.
   Touch: 'readonly',
   TouchEvent: 'readonly',

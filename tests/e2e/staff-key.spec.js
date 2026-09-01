@@ -35,6 +35,46 @@ test('the worker sees only the pages she can use', async ({ page }) => {
   }
 });
 
+test('the worker never sees the revenue total on her own orders page', async ({ page }) => {
+  await page.goto(`/admin.html?key=${STAFF}`);
+  const stats = page.locator('#stats');
+  await expect(stats).toBeVisible();
+
+  // The counts she works from are all there…
+  await expect(stats).toContainText('הזמנות');
+  await expect(stats).toContainText('בדפוס');
+  // …and the shop's takings are not, in the DOM or on the screen.
+  await expect(stats).not.toContainText('הכנסות');
+  await expect(page.locator('#stats [data-money]')).toHaveCount(0);
+});
+
+test('the revenue never flashes up before the role is known', async ({ page }) => {
+  // The failure this guards: the tile paints, then js/admin-role.js hears back
+  // and removes it. Hiding late is the same as not hiding — she has read it.
+  // Holding whoami open freezes the page in exactly that window.
+  let release;
+  const held = new Promise((r) => (release = r));
+  await page.route('**/api/admin/whoami**', async (route) => {
+    await held;
+    return route.continue();
+  });
+
+  await page.goto(`/admin.html?key=${STAFF}`, { waitUntil: 'domcontentloaded' });
+  // The orders have rendered while the role is still in flight…
+  await expect(page.locator('#stats .stat').first()).toBeVisible();
+  // …and the money is already invisible.
+  await expect(page.locator('#stats [data-money]')).toBeHidden();
+
+  release();
+  await expect(page.locator('#stats [data-money]')).toHaveCount(0);
+});
+
+test('the owner still sees her revenue', async ({ page }) => {
+  await page.goto(`/admin.html?key=${OWNER}`);
+  await expect(page.locator('#stats')).toContainText('הכנסות');
+  await expect(page.locator('#stats [data-money]')).toBeVisible();
+});
+
 test('a money page tells the worker it is not hers — not that her key is wrong', async ({
   page,
 }) => {

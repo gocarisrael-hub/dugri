@@ -34,6 +34,29 @@
     }
   }
 
+  // TAKE THE MONEY OUT OF THE PAGE, not just off the screen.
+  //
+  // The CSS hides `[data-money]` from the first paint, which is what stops it
+  // flashing up while the role is still in flight — but hidden is not gone: the
+  // number is still in the markup, and the orders page rebuilds its tiles on
+  // every poll, so a one-off removal would be undone five seconds later.
+  //
+  // So: strip what is there, then keep stripping whatever is drawn next.
+  function stripMoney() {
+    var els = document.querySelectorAll('[data-money]');
+    for (var i = 0; i < els.length; i++) els[i].remove();
+  }
+
+  function keepMoneyOut() {
+    stripMoney();
+    if (typeof MutationObserver !== 'function' || !document.body) return;
+    new MutationObserver(function () {
+      // Cheap: the query runs on a small admin page, and only re-enters the DOM
+      // when the poll has actually rebuilt a tile.
+      if (document.querySelector('[data-money]')) stripMoney();
+    }).observe(document.body, { childList: true, subtree: true });
+  }
+
   function trimNav() {
     var nav = document.getElementById('nav');
     if (!nav) return;
@@ -81,6 +104,14 @@
   var key = adminKey();
   if (!key) return; // no key at all — the page's own missing-key message covers it
 
+  // MARK THE PAGE BEFORE IT PAINTS. The role takes a round trip to learn, and a
+  // revenue tile that appears and then disappears has still been read. So the
+  // page starts as 'pending' — which the money CSS treats exactly like 'staff' —
+  // and only widens once the answer comes back saying owner. This file is loaded
+  // ahead of every page's own script, so the attribute is on the element before
+  // any tile is built.
+  document.documentElement.setAttribute('data-admin-role', 'pending');
+
   fetch('/api/admin/whoami?key=' + encodeURIComponent(key))
     .then(function (r) {
       return r.ok ? r.json() : null;
@@ -89,12 +120,20 @@
       // Anything other than a confirmed staff key leaves the page exactly as it
       // was — including a failed request, so a blip can never lock the owner out
       // of her own admin.
-      if (!data || data.role !== 'staff') return;
-      document.documentElement.setAttribute('data-admin-role', 'staff');
+      // A failed request resolves to the owner on purpose: this half is
+      // presentation, and the server refuses the money either way. Leaving it
+      // 'pending' forever would hide the owner's own revenue on a blip.
+      var role = data && data.role === 'staff' ? 'staff' : 'owner';
+      document.documentElement.setAttribute('data-admin-role', role);
+      if (role !== 'staff') return;
       if (STAFF_PAGES.indexOf(currentPage()) === -1) refuse();
-      else trimNav();
+      else {
+        trimNav();
+        keepMoneyOut();
+      }
     })
     .catch(function () {
-      /* leave the page alone */
+      // Same reasoning as above — never strand the owner behind 'pending'.
+      document.documentElement.setAttribute('data-admin-role', 'owner');
     });
 })();
