@@ -2341,7 +2341,16 @@
              single input that decides what prints, it is REQUIRED, and there is
              no default behind it to fall back to.
              The title auto-fits, so a long one just prints smaller — the live
-             preview below shows the exact result so the buyer can self-correct. -->
+             preview below shows the exact result so the buyer can self-correct.
+             The hint states the LINE-BREAK rule up front rather than waiting for
+             #customTitleWarn to fire at 18 characters: the fitter sizes a title
+             by its widest line and caps it by the box height divided by the line
+             count, so breaking a long single line in two roughly halves the
+             width it has to fit and buys back size. That is the one thing about
+             this box a buyer cannot guess, and by the time the warning appears
+             she has usually already decided her title reads badly. (Short titles
+             are height-bound, where a break shrinks instead — hence "ארוכה",
+             not "always".) -->
         <label class="wiz-field" id="customTitleField" data-testid="custom-title-field">
           <span class="wiz-lbl" data-edit="options-customtitle-label">הכותרת שתודפס על הקלפים</span>
           <textarea
@@ -2358,8 +2367,8 @@
             class="wiz-hint"
             data-testid="custom-title-hint"
             data-edit="options-customtitle-hint"
-            >אפשר בשתי שורות. הכותרת מתאימה את עצמה לגודל הקלף - כותרת ארוכה פשוט תודפס קטנה יותר,
-            וההצצה למטה מראה בדיוק איך זה ייראה.</span
+            >אפשר בשתי שורות, וזה משתלם: הכותרת מתאימה את עצמה לקלף, כך שכותרת ארוכה בשורה אחת תודפס
+            קטנה - וירידת שורה באמצע בדרך כלל תגדיל אותה. ההצצה למטה מראה בדיוק איך זה ייראה.</span
           >
           <span
             class="wiz-hint custom-title-warn"
