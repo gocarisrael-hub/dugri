@@ -17,8 +17,20 @@ for (const url of PAGES) {
     await page.goto(url, { waitUntil: 'networkidle' });
     expect(external, `hit Google Fonts: ${external.join(', ')}`).toHaveLength(0);
 
-    // The self-hosted stylesheet is served and cached hard.
-    const cssRes = await page.request.get('/assets/fonts/fonts.css');
+    // The self-hosted stylesheet is served and cached hard. Follow the URL the
+    // PAGE loads rather than the bare name: since the asset tags are
+    // content-hashed, `fonts.<hash>.css` is what every page asks for and what
+    // carries the long cache, while the bare name deliberately revalidates so
+    // an HTML copy cached before hashing shipped cannot be stuck on it for ever.
+    // Asserting on the bare name tested a path the site no longer uses.
+    const href = await page.evaluate(() => {
+      const link = [...document.querySelectorAll('link[rel="stylesheet"]')].find((l) =>
+        /\/assets\/fonts\/fonts\b/.test(l.getAttribute('href') || '')
+      );
+      return link ? link.getAttribute('href') : null;
+    });
+    expect(href, 'the page loads no self-hosted font stylesheet').toBeTruthy();
+    const cssRes = await page.request.get(href);
     expect(cssRes.status()).toBe(200);
     expect(cssRes.headers()['cache-control']).toContain('max-age');
 
