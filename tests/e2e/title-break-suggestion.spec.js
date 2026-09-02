@@ -77,3 +77,18 @@ test('a short title is left alone entirely', async ({ page }) => {
   await expect(page.getByTestId('custom-title-warn')).toBeHidden();
   await expect(page.getByTestId('custom-title-break')).toBeHidden();
 });
+
+test('the line-break rule is stated before anything is typed', async ({ page }) => {
+  // The warning above only fires once the title is already long — by then she has
+  // usually settled on her phrasing. The standing hint has to carry the one fact
+  // about this box nobody can guess: the fitter sizes a title by its WIDEST line,
+  // so putting the break in makes a long title bigger, not just tidier.
+  await toTitleStep(page);
+  const hint = page.getByTestId('custom-title-hint');
+  await expect(hint).toBeVisible();
+  await expect(hint).toContainText('ירידת שורה');
+  await expect(hint).toContainText('תגדיל');
+  // …and it says it while the box is still empty, not only after a long title.
+  await expect(page.locator('#customTitleInput')).toHaveValue('');
+  await expect(page.getByTestId('custom-title-warn')).toBeHidden();
+});
