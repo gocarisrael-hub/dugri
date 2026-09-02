@@ -2184,7 +2184,20 @@
         const leads = cols.filter((c) => !c.cancelled).length;
         const orders = cols.filter((c) => c.order).length;
         const paid = cols.filter((c) => isPaid(c)).length;
-        const revenue = cols.reduce((s, c) => s + (isPaid(c) ? c.order.total || 0 : 0), 0);
+        // WHAT THE CARD WAS ACTUALLY CHARGED, never the list price.
+        //
+        // `total` is what the order was worth before a coupon; `charged_total` is
+        // what the customer actually paid. Summing `total` counted a 100% coupon
+        // as a full sale, so this tile read 1,050 ₪ above the dashboard — which
+        // has always summed the charge — across seven discounted orders.
+        //
+        // `?? total` covers a row from before charged_total was recorded: there
+        // are none in production today, but falling back to the list price is the
+        // right answer for an order that predates coupons entirely.
+        const revenue = cols.reduce(
+          (s, c) => s + (isPaid(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
+          0
+        );
         const pending = cols.filter(
           (c) => (c.order || c.word_count > 0) && !isPaid(c) && !c.cancelled
         ).length;
