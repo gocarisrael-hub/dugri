@@ -37,10 +37,12 @@ function revenueFnOf(file) {
   const html = fs.readFileSync(path.join(SITE, file), 'utf8');
   const m = html.match(REVENUE_RE);
   if (!m) throw new Error(`no revenue expression found in ${file}`);
-  // Both pages define isPaid identically; it is supplied here so the expression
-  // can run outside its page.
-  const fn = new Function('cols', 'isPaid', `return ${m[1]};`);
-  return (cols) => fn(cols, (c) => !!(c.order && c.order.paid));
+  // Both pages define these identically; they are supplied here so the
+  // expression can run outside its page. isSale is the one revenue uses: paid,
+  // and not since cancelled.
+  const fn = new Function('cols', 'isPaid', 'isSale', `return ${m[1]};`);
+  const isPaid = (c) => !!(c.order && c.order.paid);
+  return (cols) => fn(cols, isPaid, (c) => isPaid(c) && !c.cancelled);
 }
 
 const order = (o) => ({ order: o });
@@ -60,6 +62,10 @@ const FIXTURE = [
   order({ paid: true, total: 79 }),
   // Not an order at all: a lead that never checked out.
   {},
+  // PAID, THEN CANCELLED. The money came in and went back out; counting it would
+  // mean a refunded order inflated the takings for ever. `paid` stays true —
+  // it did happen — so revenue has to ask a different question.
+  { cancelled: true, order: { paid: true, total: 239, charged_total: 239 } },
 ];
 
 // 239 + 203 + 0 + 79. The unpaid order and the bare lead contribute nothing.
@@ -92,6 +98,15 @@ describe('the revenue figure', () => {
     const legacy = [order({ paid: true, total: 79 })];
     for (const page of PAGES) {
       expect(revenueFnOf(page)(legacy), page).toBe(79);
+    }
+  });
+
+  it('drops an order that was paid and then cancelled', () => {
+    // The rule server/db.js already applies to a partner's earnings: "a cancelled
+    // order is not a sale". The revenue tiles now agree with it.
+    const voided = [{ cancelled: true, order: { paid: true, total: 239, charged_total: 239 } }];
+    for (const page of PAGES) {
+      expect(revenueFnOf(page)(voided), page).toBe(0);
     }
   });
 

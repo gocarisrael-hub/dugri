@@ -203,6 +203,15 @@
 
       const hasOrder = (c) => !!c.order;
       const isPaid = (c) => !!(c.order && c.order.paid);
+      // MONEY THE BUSINESS KEPT. Paid, and not since cancelled — a cancelled
+      // order is not a sale, which is the rule partnerReport in server/db.js has
+      // always applied to a blogger's earnings. The revenue tile never got it, so
+      // a refunded order would have gone on counting as income for ever.
+      //
+      // Deliberately NOT folded into isPaid: `paid` answers "did the money
+      // arrive", which is what the שולמו count, the receipts and the production
+      // gate all need, and it is still true of an order that was later voided.
+      const isSale = (c) => isPaid(c) && !c.cancelled;
       // An "open" order is a real order that hasn't been paid yet (a pending sale),
       // not merely a collection whose status is 'open'.
       const isOpenOrder = (c) => !!(c.order && !c.order.paid);
@@ -232,7 +241,7 @@
         const paid = cols.filter(isPaid).length;
         const paidToday = cols.filter((c) => isPaidToday(c, today)).length;
         const revenue = cols.reduce(
-          (s, c) => s + (isPaid(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
+          (s, c) => s + (isSale(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
           0
         );
         // "Active" means a code that would actually work if someone typed it in
