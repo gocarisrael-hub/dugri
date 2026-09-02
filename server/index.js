@@ -2938,6 +2938,42 @@ app.get('/api/wordlist-options', (req, res) => {
   res.json({ options: wordlistOptions.publicOptions(settings.get('wordlists', 'buyer_options')) });
 });
 
+// THE WORDS THEMSELVES, public — what wordlists.html shows.
+//
+// A buyer picking between "רווקות" and "משפחתי" is picking what ~300 of the 412
+// words on her cards will be about, from a label alone. This is the label made
+// good on: every word in every list she can actually choose.
+//
+// It is the SAME boundary as the menu above, deliberately reusing publicOptions
+// rather than reading the settings itself: a list reaches this route only by
+// being an enabled buyer option, so a half-built pool, or one the owner switched
+// off, can never be read here. And like the menu it answers labels only — the
+// pool file name behind each list stays a production detail.
+//
+// A pool that has gone missing from the volume is skipped rather than 500ing the
+// page: one broken entry must not cost the buyer the other five lists.
+app.get('/api/wordlist-preview', (req, res) => {
+  const stored = settings.get('wordlists', 'buyer_options');
+  const menu = wordlistOptions.publicOptions(stored);
+  const lists = [];
+  for (const opt of menu) {
+    const pool = wordlistOptions.poolForOption(stored, opt.id);
+    if (!pool) continue;
+    let rec;
+    try {
+      rec = wordlists.read(pool);
+    } catch {
+      rec = null; // unreadable on disk — skip it, the rest of the menu still shows
+    }
+    if (!rec || !Array.isArray(rec.words)) continue;
+    lists.push({ id: opt.id, label: opt.label, count: rec.words.length, words: rec.words });
+  }
+  // Same rule as every other JSON API here: an in-app browser caching this would
+  // show a list the owner has since edited (see the price-caching bug).
+  res.set('Cache-Control', 'no-store');
+  res.json({ lists });
+});
+
 // The buyer picks which pool fills the rest of her deck. Body: { option_id } —
 // null/'' clears the pick and lets her design decide, as before.
 //

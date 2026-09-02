@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="wordlists.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+    <title>רשימות המילים · דוגרי</title>
+    <meta
+      name="description"
+      content="כל המילים בכל אחת מרשימות ההשלמה של דוגרי - כללי, ילדים, חבורה, משפחתי, רווקות וחגי תשרי. אפשר לקרוא הכול לפני שבוחרים."
+    />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <script type="module" src="js/editor.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: var(--font);
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.75;
+      }
+      .wrap {
+        max-width: 820px;
+        margin: 0 auto;
+        padding: 0 20px;
+      }
+
+      /* The same plain bar as the terms page: someone checking what is in a word
+         list is mid-decision, not browsing, and the logo is the way back. */
+      .bar {
+        border-bottom: 1px solid var(--line);
+        padding: 14px 0;
+        background: var(--bg);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+      .bar .wrap {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .bar img {
+        height: 34px;
+        width: auto;
+        display: block;
+      }
+      .bar a.back {
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 15px;
+      }
+      .bar a.back:hover,
+      .bar a.back:focus-visible {
+        color: var(--ink);
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      header.doc {
+        padding: 44px 0 26px;
+      }
+      header.doc h1 {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
+        font-size: clamp(28px, 5vw, 40px);
+        line-height: 1.2;
+      }
+      header.doc .sub {
+        color: var(--muted);
+        margin-top: 10px;
+      }
+
+      /* SEARCH. Two thousand words across six lists is past the point where
+         scrolling answers "is my friend's name in here?" — so the page can be
+         asked instead. It filters every list at once and says how many matched. */
+      .tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 28px;
+      }
+      .tools input {
+        flex: 1 1 240px;
+        font: inherit;
+        font-size: 16px; /* iOS zooms a focused input under 16px */
+        color: var(--ink);
+        background: var(--bg);
+        border: 1px solid var(--line);
+        padding: 10px 14px;
+      }
+      .tools input:focus-visible {
+        outline: 2px solid var(--ink);
+        outline-offset: -1px;
+      }
+      .tools .found {
+        color: var(--muted);
+        font-size: 14px;
+        font-variant-numeric: tabular-nums;
+      }
+
+      nav.toc {
+        border: 1px solid var(--line);
+        padding: 20px 24px;
+        margin-bottom: 40px;
+      }
+      nav.toc h2 {
+        font-family: var(--display);
+        font-weight: 500;
+        font-size: 15px;
+        letter-spacing: 0.08em;
+        margin-bottom: 12px;
+      }
+      nav.toc ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 18px;
+        font-size: 15px;
+      }
+      nav.toc a {
+        color: var(--ink);
+        text-decoration: none;
+      }
+      nav.toc a:hover,
+      nav.toc a:focus-visible {
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+      nav.toc .n {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      main section {
+        margin-bottom: 38px;
+        scroll-margin-top: 72px;
+      }
+      main h2 {
+        font-family: var(--display);
+        font-weight: 500;
+        font-size: 20px;
+        margin-bottom: 4px;
+      }
+      main .count {
+        color: var(--muted);
+        font-size: 14px;
+        font-variant-numeric: tabular-nums;
+        margin-bottom: 14px;
+      }
+
+      /* The words themselves. A plain flowing run of chips: they are a VOCABULARY,
+         not a ranked list, so nothing here should imply an order — no numbering,
+         no columns that read top-to-bottom. */
+      .words {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .words span {
+        border: 1px solid var(--line);
+        padding: 3px 11px;
+        font-size: 15px;
+        line-height: 1.6;
+      }
+      .words span.hit {
+        border-color: var(--ink);
+        font-weight: 600;
+      }
+      section.empty {
+        display: none;
+      }
+
+      .msg {
+        border: 1px solid var(--line);
+        padding: 22px 24px;
+        color: var(--muted);
+        margin-bottom: 40px;
+      }
+      .note {
+        border-top: 1px solid var(--line);
+        padding: 22px 0 60px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .note a {
+        color: var(--ink);
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        white-space: nowrap;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="bar">
+      <div class="wrap">
+        <a href="index.html" aria-label="דוגרי - לדף הבית"
+          ><img src="assets/logo.png" alt="דוגרי" data-edit-img="wordlists-logo"
+        /></a>
+        <a class="back" href="index.html">חזרה לאתר ›</a>
+      </div>
+    </div>
+
+    <div class="wrap">
+      <header class="doc">
+        <h1 data-edit="wordlists-heading">רשימות המילים</h1>
+        <p class="sub" data-edit="wordlists-sub">
+          כל חפיסה מכילה 412 מילים. את המילים שלכם אתם שולחים - ואת השאר אנחנו משלימים מתוך רשימה
+          שאתם בוחרים. הנה כל המילים בכל רשימה, כדי שתדעו בדיוק מה נכנס לקלפים.
+        </p>
+      </header>
+
+      <div class="tools">
+        <label class="visually-hidden" for="q">חיפוש מילה</label>
+        <input id="q" type="search" placeholder="חיפוש מילה בכל הרשימות…" autocomplete="off" />
+        <span class="found" id="found" role="status" aria-live="polite"></span>
+      </div>
+
+      <nav class="toc" id="toc" hidden>
+        <h2 data-edit="wordlists-toc-heading">הרשימות</h2>
+        <ul id="tocList"></ul>
+      </nav>
+
+      <div class="msg" id="msg">טוען…</div>
+
+      <main id="lists"></main>
+
+      <p class="note" data-edit="wordlists-note">
+        המילים ברשימות מתעדכנות מעת לעת, ולכן ייתכן הבדל בין מה שמופיע כאן לבין מה שיודפס בסופו של
+        דבר. ההשלמה נעשית באקראי מתוך הרשימה שבחרתם - לא כל מילה ברשימה תופיע בחפיסה שלכם. הפרטים
+        המלאים בסעיף 7 של <a href="terms.html">התקנון</a>.
+      </p>
+    </div>
+
+    <script type="module">
+      // EVERY WORD IN EVERY LIST SHE CAN PICK.
+      //
+      // The wizard offers these lists by NAME only ("רווקות", "משפחתי"), and the
+      // name is a promise about ~300 of the 412 words that will be on her cards.
+      // This page is that promise, itemised.
+      //
+      // The server sends only lists that are enabled buyer options, and never the
+      // pool file names behind them (see /api/wordlist-preview).
+      const listsEl = document.getElementById('lists');
+      const tocEl = document.getElementById('toc');
+      const tocList = document.getElementById('tocList');
+      const msg = document.getElementById('msg');
+      const q = document.getElementById('q');
+      const found = document.getElementById('found');
+
+      // Every word node, so a search can be answered without rebuilding the page.
+      const index = [];
+
+      function section(list, i) {
+        const sec = document.createElement('section');
+        sec.id = 'list-' + i;
+
+        const h = document.createElement('h2');
+        h.textContent = list.label;
+        sec.appendChild(h);
+
+        const c = document.createElement('p');
+        c.className = 'count';
+        c.textContent = list.count + ' מילים';
+        sec.appendChild(c);
+
+        const box = document.createElement('div');
+        box.className = 'words';
+        for (const w of list.words) {
+          const span = document.createElement('span');
+          // textContent, never innerHTML: these words are owner-authored content
+          // and one of them containing a "<" must stay a word, not become markup.
+          span.textContent = w;
+          box.appendChild(span);
+          index.push({ el: span, text: w, section: sec, countEl: c, label: list.label });
+        }
+        sec.appendChild(box);
+
+        const li = document.createElement('li');
+        const a = document.createElement('a');
+        a.href = '#' + sec.id;
+        a.textContent = list.label;
+        const n = document.createElement('span');
+        n.className = 'n';
+        n.textContent = ' ' + list.count;
+        li.appendChild(a);
+        li.appendChild(n);
+        tocList.appendChild(li);
+
+        return sec;
+      }
+
+      function search(term) {
+        const t = term.trim();
+        // Empty box = the whole page back, exactly as it loaded.
+        if (!t) {
+          for (const item of index) {
+            item.el.hidden = false;
+            item.el.classList.remove('hit');
+          }
+          for (const sec of listsEl.children) {
+            sec.classList.remove('empty');
+            const c = sec.querySelector('.count');
+            if (c) c.textContent = c.dataset.all + ' מילים';
+          }
+          found.textContent = '';
+          return;
+        }
+        let total = 0;
+        const per = new Map();
+        for (const item of index) {
+          const hit = item.text.includes(t);
+          item.el.hidden = !hit;
+          item.el.classList.toggle('hit', hit);
+          if (hit) {
+            total++;
+            per.set(item.section, (per.get(item.section) || 0) + 1);
+          }
+        }
+        // A list with no match collapses rather than showing an empty heading.
+        for (const sec of listsEl.children) {
+          const n = per.get(sec) || 0;
+          sec.classList.toggle('empty', n === 0);
+          const countEl = sec.querySelector('.count');
+          if (countEl) countEl.textContent = n + ' מתוך ' + countEl.dataset.all;
+        }
+        found.textContent = total ? total + ' מילים תואמות' : 'לא נמצאה מילה כזו באף אחת מהרשימות';
+      }
+
+      fetch('/api/wordlist-preview')
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status))))
+        .then((data) => {
+          const lists = (data && data.lists) || [];
+          if (!lists.length) {
+            // No menu built yet — the wizard shows no chooser either, so there is
+            // genuinely nothing to pick between. Say that, don't show an error.
+            msg.textContent = 'הרשימות עדיין לא פורסמו. דברו איתנו ונשמח לפרט מה נכנס לחפיסה.';
+            return;
+          }
+          const frag = document.createDocumentFragment();
+          lists.forEach((list, i) => frag.appendChild(section(list, i)));
+          listsEl.appendChild(frag);
+          // Remember each list's full size, so a filtered count can say "12 of 385"
+          // and the empty box can put the real number back.
+          for (const sec of listsEl.children) {
+            const c = sec.querySelector('.count');
+            if (c) c.dataset.all = String(c.textContent).replace(' מילים', '');
+          }
+          msg.remove();
+          tocEl.hidden = false;
+        })
+        .catch(() => {
+          msg.textContent = 'לא הצלחנו לטעון את הרשימות כרגע. נסו לרענן את העמוד.';
+        });
+
+      let t = null;
+      q.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => search(q.value), 120);
+      });
+    </script>
+  </body>
+</html>
