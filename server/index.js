@@ -6859,11 +6859,15 @@ app.get('/api/promo', (req, res) => {
 // Unknown API routes -> JSON 404 (must come before static/catch-all).
 app.use('/api', (req, res) => res.status(404).json({ error: 'not found' }));
 
-// Content-hashed ES modules (server/asset-hashing.js): a new build yields NEW
-// module urls, so a CDN edge can never pair a stale script with fresh HTML — the
-// 9 Aug store outage, where a day-old design-images.js (no `SIZES` export) met an
-// index.html that imported it and the whole page module died on its import line.
-// Built once, at boot, from site/js.
+// Content-hashed scripts and stylesheets (server/asset-hashing.js): a new build
+// yields NEW urls, so a CDN edge can never pair a stale asset with fresh HTML —
+// the 9 Aug store outage, where a day-old design-images.js (no `SIZES` export) met
+// an index.html that imported it and the whole page module died on its import
+// line, and the 2 Sep staleness, where Cloudflare rewrote our `no-cache` on the
+// unhashed tags into max-age=86400 and the edge went on serving a 26-day-old
+// tokens.css. The import map covers `import` specifiers; rewriteTags covers the
+// <script src> / <link href> tags themselves. Built once, at boot, from site/js,
+// site/css and site/assets/fonts.
 const assetHashing = require('./asset-hashing');
 const moduleAssets = assetHashing.build(SITE_DIR);
 const metaPixel = require('./meta-pixel');
@@ -6873,12 +6877,12 @@ const metaPixel = require('./meta-pixel');
 // file. An unknown hash falls through (a stale HTML would 404 here, but HTML is
 // no-cache and carries a current import map, so the browser only ever asks for
 // hashes this build actually minted).
-app.get(/^\/js\/.+\.[0-9a-f]{8}\.m?js$/, (req, res, next) => {
+app.get(/^\/(?:js|css|assets\/fonts)\/.+\.[0-9a-f]{8}\.(?:m?js|css)$/, (req, res, next) => {
   const file = moduleAssets.resolveHashed(req.path);
   if (!file) return next();
   res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.type('js');
+  res.type(req.path.endsWith('.css') ? 'css' : 'js');
   res.sendFile(file);
 });
 
@@ -6921,7 +6925,12 @@ app.use((req, res, next) => {
   // module import map, and the owner's Meta pixel when she has set one. The
   // pixel reads its id per request rather than at boot so pasting a new one in
   // the admin takes effect on the next page load, with no restart.
-  res.send(metaPixel.inject(moduleAssets.inject(html), settings.get('analytics', 'meta_pixel_id')));
+  res.send(
+    metaPixel.inject(
+      moduleAssets.rewriteTags(moduleAssets.inject(html)),
+      settings.get('analytics', 'meta_pixel_id')
+    )
+  );
 });
 
 // Static site (so /collect resolves to collect.html, etc.). HTML is served
@@ -6932,11 +6941,13 @@ app.use(
     extensions: ['html'],
     setHeaders(res, filePath) {
       if (filePath.endsWith('.html')) return res.setHeader('Cache-Control', 'no-cache');
-      // A bare module url (no hash in its own name) must always revalidate, so an
-      // edge can never pin yesterday's script against today's HTML — the 9 Aug
-      // outage. The hashed copies are served immutable by the route above; this
-      // catches any direct hit on an unhashed /js/*.js.
-      if (/\.m?js$/.test(filePath)) return res.setHeader('Cache-Control', 'no-cache');
+      // A bare script/stylesheet url (no hash in its own name) must always
+      // revalidate, so an edge can never pin yesterday's asset against today's
+      // HTML — the 9 Aug outage, and the 2 Sep staleness. A page we serve now
+      // carries only hashed urls (asset-hashing's rewriteTags), which the
+      // immutable route above answers; this catches a direct hit on a bare name —
+      // a bookmark, a hand-typed url, or an HTML copy cached before the fix.
+      if (/\.(m?js|css)$/.test(filePath)) return res.setHeader('Cache-Control', 'no-cache');
       // Self-hosted fonts: woff2 filenames are content-hashed (see
       // scripts/fetch-fonts.mjs), so a regen with changed bytes yields a NEW url
       // — the immutable 1-year cache is safe and self-busting. fonts.css keeps a
@@ -6962,7 +6973,12 @@ app.get('*', (req, res) => {
   // …and the pixel, for the same reason. These extension-less paths are exactly
   // the ones an ad links to (/sale, a vanity path in a bio, a mistyped link), so
   // a fallback with no pixel would miss precisely the traffic it is there for.
-  res.send(metaPixel.inject(moduleAssets.inject(html), settings.get('analytics', 'meta_pixel_id')));
+  res.send(
+    metaPixel.inject(
+      moduleAssets.rewriteTags(moduleAssets.inject(html)),
+      settings.get('analytics', 'meta_pixel_id')
+    )
+  );
 });
 
 // --- Words-reminder scheduler ---------------------------------------------

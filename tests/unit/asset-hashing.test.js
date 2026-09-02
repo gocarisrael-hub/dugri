@@ -21,6 +21,9 @@ beforeAll(() => {
   fs.mkdirSync(path.join(dir, 'js', 'sub'), { recursive: true });
   fs.writeFileSync(path.join(dir, 'js', 'design-images.js'), 'export const SIZES = {};\n');
   fs.writeFileSync(path.join(dir, 'js', 'sub', 'b.js'), 'export const b = 1;\n');
+  fs.writeFileSync(path.join(dir, 'js', 'editor.js'), 'window.dugriEditor = {};\n');
+  fs.mkdirSync(path.join(dir, 'css'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'css', 'tokens.css'), ':root{--price-gap:14px}\n');
   fs.writeFileSync(
     path.join(dir, 'index.html'),
     '<!doctype html><html><head><meta charset="utf-8" />' +
@@ -70,6 +73,62 @@ describe('asset-hashing', () => {
       'export const SIZES = { rail: "100vw" };\n'
     );
     const after = assetHashing.build(dir).forward.get('/js/design-images.js');
+    expect(after).not.toBe(before);
+  });
+
+  // ---- rewriteTags: the tags an import map never reaches --------------------
+
+  it('hashes a classic <script src> and a stylesheet <link href>', () => {
+    const a = assetHashing.build(dir);
+    const html =
+      '<link rel="stylesheet" href="/css/tokens.css" />' +
+      '<script src="js/editor.js" defer></script>';
+    const out = a.rewriteTags(html);
+    expect(out).toContain('href="' + a.forward.get('/css/tokens.css') + '"');
+    expect(out).toContain('src="' + a.forward.get('/js/editor.js') + '"');
+    expect(out).not.toContain('href="/css/tokens.css"');
+    expect(out).not.toContain('src="js/editor.js"');
+  });
+
+  it('hashes a module ENTRY src too — an import map does not', () => {
+    const a = assetHashing.build(dir);
+    const out = a.rewriteTags('<script type="module" src="js/design-images.js"></script>');
+    expect(out).toContain(a.forward.get('/js/design-images.js'));
+  });
+
+  it('leaves foreign, absolute and query-carrying urls alone', () => {
+    const a = assetHashing.build(dir);
+    const html =
+      '<link href="https://fonts.googleapis.com/css2?family=Heebo" rel="stylesheet" />' +
+      '<script src="//cdn.example.com/js/editor.js"></script>' +
+      '<script src="/js/editor.js?v=1"></script>' +
+      '<a href="/products.html">shop</a>';
+    expect(a.rewriteTags(html)).toBe(html);
+  });
+
+  it('does not rewrite a path that only LOOKS like ours inside prose', () => {
+    const a = assetHashing.build(dir);
+    const html = '<p>edit js/editor.js to change it</p>';
+    expect(a.rewriteTags(html)).toBe(html);
+  });
+
+  it('a hashed stylesheet url resolves back to the real file', () => {
+    const a = assetHashing.build(dir);
+    const hashed = a.forward.get('/css/tokens.css');
+    expect(hashed).toMatch(/^\/css\/tokens\.[0-9a-f]{8}\.css$/);
+    expect(a.resolveHashed(hashed)).toBe(path.join(dir, 'css', 'tokens.css'));
+  });
+
+  it('keeps stylesheets OUT of the import map — it resolves modules only', () => {
+    const a = assetHashing.build(dir);
+    expect(a.importMap.imports['/js/design-images.js']).toBeTruthy();
+    expect(a.importMap.imports['/css/tokens.css']).toBeUndefined();
+  });
+
+  it('mints a new hash when a stylesheet changes (the 2 Sep staleness)', () => {
+    const before = assetHashing.build(dir).forward.get('/css/tokens.css');
+    fs.writeFileSync(path.join(dir, 'css', 'tokens.css'), ':root{--price-gap:16px}\n');
+    const after = assetHashing.build(dir).forward.get('/css/tokens.css');
     expect(after).not.toBe(before);
   });
 });
