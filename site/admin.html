@@ -1152,6 +1152,15 @@
       }
 
       const isPaid = (c) => !!(c.order && c.order.paid);
+      // MONEY THE BUSINESS KEPT. Paid, and not since cancelled — a cancelled
+      // order is not a sale, which is the rule partnerReport in server/db.js has
+      // always applied to a blogger's earnings. The revenue tile never got it, so
+      // a refunded order would have gone on counting as income for ever.
+      //
+      // Deliberately NOT folded into isPaid: `paid` answers "did the money
+      // arrive", which is what the שולמו count, the receipts and the production
+      // gate all need, and it is still true of an order that was later voided.
+      const isSale = (c) => isPaid(c) && !c.cancelled;
 
       // PAYMENT filter: id, Hebrew label, and the predicate over a collection.
       // Kept as FILTERS (and on #tabs) because it is the row that was always
@@ -2195,7 +2204,7 @@
         // are none in production today, but falling back to the list price is the
         // right answer for an order that predates coupons entirely.
         const revenue = cols.reduce(
-          (s, c) => s + (isPaid(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
+          (s, c) => s + (isSale(c) ? (c.order.charged_total ?? c.order.total ?? 0) : 0),
           0
         );
         const pending = cols.filter(
