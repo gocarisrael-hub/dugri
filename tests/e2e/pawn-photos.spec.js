@@ -66,6 +66,13 @@ const CUT_PNG =
 async function stubCutter(page, { succeeds, png }) {
   const misses = succeeds === true ? 0 : succeeds === 'after-1' ? 1 : Infinity;
   const body = `let n = 0;
+     // The page also asks this module to re-encode a picked photo before upload
+     // (shrinkForUpload). These tests hand the input a tiny PNG that is already
+     // under every cap, so the honest stand-in is the identity — and exporting it
+     // keeps the stub the same SHAPE as the module it replaces.
+     export async function shrinkForUpload(file) {
+       return file;
+     }
      export async function cutPawnPhoto() {
        if (n++ < ${misses === Infinity ? 'Infinity' : misses}) return null;
        const bin = atob(${JSON.stringify(png || CUT_PNG)});

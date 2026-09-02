@@ -85,6 +85,79 @@ export async function decodeUpright(file, maxPx = MAX_PX) {
   return canvas;
 }
 
+// PREPARE A PICKED PHOTO FOR UPLOAD — the other half of "her photo reached us".
+//
+// The server stores a pawn photo through content.saveImageBytes, which accepts
+// PNG/JPEG/WEBP up to 4MB and THROWS on anything else; the pawn route catches
+// that and skips the file, fail-soft. So a photo straight off an iPhone has two
+// ways to vanish before it is ever cut:
+//   * SIZE. A 12MP photo re-encoded by iOS for an <input type=file> routinely
+//     lands at 5-10MB — over the cap, dropped.
+//   * TYPE. HEIC is what the camera actually writes. When the browser hands it
+//     over untranscoded (in-app webviews are the usual place), the magic-byte
+//     sniff does not recognise it and it is dropped.
+// Both were silent: the request still answered 200, and the photo simply was not
+// in the list that came back.
+//
+// Re-encoding here fixes both at the source, on her device, before a byte is
+// sent: whatever the phone produced is decoded (browsers decode HEIC natively
+// even where they cannot encode it), scaled to at most UPLOAD_MAX_PX, and
+// written back out as a JPEG a few hundred KB in size. The decode is
+// `decodeUpright`, so the EXIF rotation is baked into the pixels — the same
+// reason the cutout needs it, and the reason this cannot simply be a byte-level
+// pass.
+//
+// A photo that is ALREADY small enough and already a type the server takes is
+// passed through untouched: re-encoding it would only cost quality.
+//
+// BEST-EFFORT, like everything else here. A browser with no createImageBitmap,
+// a decode that fails, a canvas that will not encode — all return the ORIGINAL
+// file, which is exactly the behaviour that existed before this function. It
+// never throws and never blocks an upload.
+
+// The card only ever draws ~512px of a pawn (docs/photo-card.md) and the
+// generator crops a square out of the photo first, so 2048 on the long side is
+// already generous for print and leaves the encode fast on a phone.
+export const UPLOAD_MAX_PX = 2048;
+// Comfortably under the server's 4MB IMAGE_CAP, with room for the multipart
+// envelope and for a JPEG that encodes worse than expected.
+export const UPLOAD_SAFE_BYTES = 3 * 1024 * 1024;
+// The types content.extFromMagic sniffs. Anything else has to be re-encoded.
+const SERVER_TYPES = /^image\/(jpeg|jpg|png|webp)$/;
+// Fallbacks, tried in order, if the first encode still comes back over the cap
+// (a very large panorama at high quality).
+const ENCODE_STEPS = [
+  { px: UPLOAD_MAX_PX, q: 0.85 },
+  { px: 1600, q: 0.8 },
+  { px: 1024, q: 0.75 },
+];
+
+export async function shrinkForUpload(file) {
+  if (!file) return file;
+  const type = String(file.type || '').toLowerCase();
+  if (SERVER_TYPES.test(type) && file.size <= UPLOAD_SAFE_BYTES) return file;
+  try {
+    let blob = null;
+    for (const step of ENCODE_STEPS) {
+      const canvas = await decodeUpright(file, step.px);
+      blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', step.q));
+      if (!blob) return file;
+      if (blob.size <= UPLOAD_SAFE_BYTES) break;
+    }
+    if (!blob || blob.size > UPLOAD_SAFE_BYTES) return file;
+    // Keep it a File where the browser has the constructor, so callers that read
+    // `.name` still get one; a plain Blob uploads identically otherwise.
+    const name = String(file.name || 'pawn').replace(/\.[^.]*$/, '') + '.jpg';
+    try {
+      return new window.File([blob], name, { type: 'image/jpeg' });
+    } catch {
+      return blob;
+    }
+  } catch {
+    return file; // never let preparing a photo be the thing that loses it
+  }
+}
+
 // Keep only the biggest connected blob of the mask.
 //
 // The model happily labels a bystander's shoulder in the corner of the frame as

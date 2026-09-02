@@ -1066,6 +1066,38 @@
         font-size: 14px;
         margin-top: 10px;
       }
+      /* The "working on it" line, with a spinner that says it is still moving.
+         Same size and rhythm as .pawn-err beside it — the two never show at once
+         and swapping between them should not shift the card. */
+      .pawn-busy {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 10px;
+      }
+      .pawn-busy::before {
+        content: '';
+        width: 14px;
+        height: 14px;
+        flex: none;
+        border: 2px solid currentColor;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: pawn-busy-spin 0.8s linear infinite;
+      }
+      @keyframes pawn-busy-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      /* A phone set to "reduce motion" gets the line without the spin. */
+      @media (prefers-reduced-motion: reduce) {
+        .pawn-busy::before {
+          animation: none;
+        }
+      }
       /* Full-size view. Deliberately plain: a dark sheet, the photo, and any tap
          closes it — nothing to learn, and no way to get stuck in it. */
       .pawn-view {
@@ -2127,6 +2159,21 @@
             data-edit="collect-sheet-photos-none-sent"
             >לא שלחתם תמונות - הדפסנו את החיילים הרגילים של דוגרי.</small
           >
+          <!-- WHAT IS HAPPENING TO THE PHOTOS RIGHT NOW. Adding one runs a cut on
+               this device (the segmenter is ~18MB the first time, and is allowed
+               up to 15s per photo before it gives up) and then an upload — and
+               until now every second of that showed NOTHING: `renderPawns`
+               returns early while `pawnBusy`, so the strip did not change, no
+               spinner appeared, and the buyer's own reading was that her tap had
+               done nothing. She then picked again, or left. This is the line that
+               says otherwise. Politeness, not decoration: on a phone over
+               cellular this is the only evidence the tap landed. -->
+          <div
+            class="pawn-busy hidden"
+            id="pawnBusyNote"
+            role="status"
+            data-testid="pawn-busy"
+          ></div>
           <div class="pawn-err hidden" id="pawnErr" role="alert"></div>
         </div>
       </section>
@@ -3248,6 +3295,17 @@
         el.textContent = msg || '';
         el.hidden = !msg;
         el.classList.toggle('hidden', !msg);
+      }
+      // The same, for the "still working" line. Never on at the same time as the
+      // error: they answer the same question ("what happened to my photo?") and
+      // two answers at once is one too many.
+      function showPawnBusy(msg) {
+        const el = $('#pawnBusyNote');
+        if (!el) return;
+        el.textContent = msg || '';
+        el.hidden = !msg;
+        el.classList.toggle('hidden', !msg);
+        if (msg) showPawnErr('');
       }
       // Full-size view of one photo. Any tap (or Esc) closes it — see .pawn-view.
       function openPawnView(src) {
@@ -4381,14 +4439,24 @@
       async function addPawns(files) {
         showPawnErr('');
         const room = PAWN_MAX - pawnList().length;
-        const picked = Array.from(files || []).slice(0, Math.max(0, room));
-        if (!picked.length) return;
+        const all = Array.from(files || []);
+        const picked = all.slice(0, Math.max(0, room));
+        if (!picked.length) {
+          if (all.length) showPawnErr(PAWN_SKIP_MSG.no_room);
+          return;
+        }
         pawnBusy = true;
+        // From here to the answer is a cut per photo (up to 15s each on a slow
+        // device, plus the segmenter download the first time) and then an upload.
+        // Say so, because `renderPawns` draws nothing at all while pawnBusy.
+        showPawnBusy(picked.length > 1 ? 'מעלים את התמונות…' : 'מעלים את התמונה…');
+        const before = pawnList().length;
         try {
-          const cuts = await cutForUpload(picked);
+          const ready = await shrinkForUpload(picked);
+          const cuts = await cutForUpload(ready);
           const fd = new FormData();
           const failed = [];
-          picked.forEach((f, i) => {
+          ready.forEach((f, i) => {
             const name = 'pawn' + i;
             fd.append(name, f, f.name || name);
             if (cuts[i]) fd.append('cut:' + name, cuts[i], name + '-cut.png');
@@ -4402,10 +4470,22 @@
           state.pawn_images = r.pawn_images;
           state.pawn_cutouts = r.pawn_cutouts || state.pawn_cutouts;
           pawnBusy = false;
+          showPawnBusy('');
           renderPawns();
           renderPawnCard();
+          // The route is fail-soft: a photo it could not store is missing from the
+          // list it just returned, and nothing else would ever mention it. Say it.
+          if (!reportPawnSkips(r.skipped)) {
+            // Belt and braces for an older server that does not report skips: if
+            // the list did not grow, her photos did not arrive, whatever the
+            // status code said.
+            if (pawnList().length <= before) {
+              showPawnErr('התמונות לא נקלטו. נסו שוב, או שלחו אותן כ-JPG.');
+            }
+          }
         } catch (e) {
           pawnBusy = false;
+          showPawnBusy('');
           showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
         }
       }
@@ -4429,6 +4509,51 @@
           }
         }
         return out;
+      }
+      // Re-encode each picked photo to something the server will actually keep:
+      // a JPEG under the 4MB cap, EXIF rotation baked in. See shrinkForUpload —
+      // an iPhone photo is regularly over the cap, and a HEIC is a type the store
+      // does not recognise at all; both used to be dropped server-side with a 200
+      // and no message, which is the bug this whole path is here to close.
+      // Best-effort: a browser that cannot do it hands back the original, which
+      // is what was being sent before.
+      async function shrinkForUpload(files) {
+        let shrink = null;
+        try {
+          shrink = (await import('./js/pawn-cutout.js')).shrinkForUpload;
+        } catch (e) {
+          return files;
+        }
+        // A build (or a test stub) without it: send what she picked, as before.
+        if (typeof shrink !== 'function') return files;
+        const out = [];
+        for (const f of files) {
+          try {
+            out.push((await shrink(f)) || f);
+          } catch (e) {
+            out.push(f);
+          }
+        }
+        return out;
+      }
+      // What to tell her about a photo the server would not keep. Counting rather
+      // than naming files: she picked them seconds ago and the reason is the part
+      // that helps.
+      const PAWN_SKIP_MSG = {
+        too_large: 'תמונה אחת כבדה מדי ולא נקלטה. נסו לשלוח אותה שוב או לבחור אחרת.',
+        unsupported: 'תמונה אחת בפורמט שאנחנו לא קוראים ולא נקלטה. נסו לצלם או לשמור אותה כ-JPG.',
+        no_room: 'אפשר עד 4 תמונות - מה שמעבר לא נשמר.',
+      };
+      function reportPawnSkips(skipped) {
+        const list = Array.isArray(skipped) ? skipped : [];
+        if (!list.length) return false;
+        // One reason, the first one: a mixed batch is rare and a paragraph of
+        // caveats helps nobody. Plural is stated as a count so the sentence stays
+        // true when two photos failed for the same reason.
+        const reason = list[0].reason;
+        const one = PAWN_SKIP_MSG[reason] || PAWN_SKIP_MSG.unsupported;
+        showPawnErr(list.length > 1 ? one.replace('תמונה אחת', list.length + ' תמונות') : one);
+        return true;
       }
       (function wirePawnInput() {
         const input = document.getElementById('pawnAddInput');

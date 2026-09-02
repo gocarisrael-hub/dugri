@@ -6482,14 +6482,45 @@
       // the miss and the owner can cut them by hand — a photo whose cut was never
       // ATTEMPTED (an old browser) is simply absent from both, which the server
       // treats as "never attempted" and leaves alone.
+      // See site/js/pawn-cutout.js — same helper the collection page uses, so the
+      // two doors onto this route send the same shape of file.
+      async function shrinkPawnFiles(files) {
+        let shrink = null;
+        try {
+          shrink = (await import('./js/pawn-cutout.js')).shrinkForUpload;
+        } catch (e) {
+          return files;
+        }
+        // A build (or a test stub) without it: send what she picked, as before.
+        if (typeof shrink !== 'function') return files;
+        const out = [];
+        for (const f of files) {
+          try {
+            out.push((await shrink(f)) || f);
+          } catch (e) {
+            out.push(f);
+          }
+        }
+        return out;
+      }
+
       async function uploadPawns(id, ownerToken) {
         const picked = pawnFiles.map((f, i) => ({ f, i })).filter((x) => x.f);
         if (!picked.length) return;
         await awaitPawnCuts();
         try {
+          // Re-encode each photo to something the store will actually keep: a
+          // JPEG under its 4MB cap, EXIF rotation baked in. An iPhone photo is
+          // regularly over that cap and a HEIC is a type it cannot sniff at all,
+          // and either was dropped server-side with a 200 and no message — the
+          // buyer paid, went to her page, and her people were not on the card.
+          // Best-effort: a browser that cannot re-encode hands the original back,
+          // which is exactly what was being sent before.
+          const ready = await shrinkPawnFiles(picked.map((x) => x.f));
           const fd = new FormData();
           const failed = [];
-          picked.forEach(({ f, i }, n) => {
+          picked.forEach(({ i }, n) => {
+            const f = ready[n];
             const name = 'pawn' + n;
             fd.append(name, f, f.name || name);
             if (pawnCutouts[i]) fd.append('cut:' + name, pawnCutouts[i], name + '-cut.png');

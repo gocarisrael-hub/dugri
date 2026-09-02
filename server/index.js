@@ -2733,7 +2733,9 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
 // can't force a large allocation). Multipart, same magic-byte typing + 4MB/image
 // cap as the content-photo route (content.saveImageBytes). Pictures are a
 // nice-to-have: a single bad/oversized image part is SKIPPED, not fatal, so a
-// partial batch still succeeds.
+// partial batch still succeeds — but it is REPORTED (`skipped: [{name, filename,
+// reason}]`) rather than dropped in silence, so the page can tell the buyer which
+// photo did not make it instead of just showing her fewer than she picked.
 //
 // The 4-image cap is enforced at WRITE time (POST /api/collections is public, so
 // anyone gets a valid {id, owner_token} and could hammer this route): we compute
@@ -3005,6 +3007,17 @@ const CUTOUT_PREFIX = 'cut:';
 // by the collection's owner token) and the ADMIN one below (authenticated by the
 // admin key, then acting with the collection's own owner token). Everything after
 // authentication is identical, so the cap/orphan-reclaim rules can't drift apart.
+// The uploaded filename, reduced to something safe to hand back: a basename only
+// (never a path) and bounded, because it is client-supplied text that a page then
+// shows. The page renders it as textContent, so this is belt and braces.
+function shortName(f) {
+  const raw = String((f && f.filename) || '')
+    .split(/[\\/]/)
+    .pop()
+    .trim();
+  return raw ? raw.slice(0, 80) : null;
+}
+
 function handlePawnUpload(req, res, id, ownerToken) {
   const boundary = templates.boundaryFromContentType(req.headers['content-type']);
   if (!boundary || !Buffer.isBuffer(req.body)) {
@@ -3022,12 +3035,28 @@ function handlePawnUpload(req, res, id, ownerToken) {
   const c = db.getCollection(id);
   const room = Math.max(0, 4 - (Array.isArray(c.pawn_images) ? c.pawn_images.length : 0));
   const written = []; // { name, path, created } for every file THIS request wrote
+  // ...and every part we could NOT store, with the reason. Fail-soft is right —
+  // one bad photo must not lose the good ones — but SILENT fail-soft is not: this
+  // answered 200 with a shorter list than the buyer picked, and her page had no
+  // way to tell "you sent three, we kept two" from "you sent two". Reported back
+  // so the page can say which photo did not make it and why.
+  const skipped = [];
   for (const [name, f] of parts.slice(0, room)) {
     try {
       written.push({ name, ...content.saveImageBytes(f.data) });
-    } catch {
-      // Oversized/unsupported image — skip this file, keep the rest (fail-soft).
+    } catch (e) {
+      skipped.push({
+        name,
+        filename: shortName(f),
+        reason: /too large/i.test(String((e && e.message) || '')) ? 'too_large' : 'unsupported',
+      });
     }
+  }
+  // A part we never even looked at because the collection was already full. The
+  // client caps at 4 too, so this is the second tab / the shared link racing —
+  // still hers to know about rather than a photo that quietly evaporated.
+  for (const [name, f] of parts.slice(room)) {
+    skipped.push({ name, filename: shortName(f), reason: 'no_room' });
   }
   const stored = db.addPawnImages(
     id,
@@ -3050,6 +3079,7 @@ function handlePawnUpload(req, res, id, ownerToken) {
     ok: true,
     pawn_images: stored,
     pawn_cutouts: (fresh && fresh.pawn_cutouts) || {},
+    skipped,
   });
 }
 
