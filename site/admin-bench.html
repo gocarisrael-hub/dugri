@@ -3035,7 +3035,20 @@
    *  width half depends on the text. So no ceiling above it can ever come down on
    *  anything, and the slider simply stops there. Returns true if it had to pull
    *  the current value in. */
-  function capMax(id, bound) {
+  /* WHAT ACTUALLY MOVES THE CEILING'S CEILING, per kind of box.
+     WORD: hBind = min(step / markerLead, step x (ROW_TOP+ROW_BOT) x WORD_SIZE_K).
+     Both terms are the row PITCH times a constant, so the number answers to
+     "רווח בין שורות" and to nothing else — dragging the word box, wider or
+     taller, leaves it exactly where it was.
+     TITLE: capH divides the title box's own height (bh), so the box IS the
+     answer there — its height, not its width, which only ever enters through
+     the other half of min(width fit, height fit). */
+  const CAP_WHY = {
+    word: 'הכי גדול שהשורה מחזיקה. מרימים אותו ב"רווח בין שורות" — גודל הקופסה לא משנה כאן.',
+    box: 'הכי גדול שהקופסה הזו מחזיקה לגובה. הרחבה לצדדים לא משנה את זה.',
+  };
+
+  function capMax(id, bound, why) {
     const e = $(id),
       top = Math.max(+e.min, r2(bound));
     const before = +e.value;
@@ -3050,6 +3063,14 @@
     // largest size THIS box could ever set: a maximum above that can never come
     // down on anything, so the slider would be offering a setting with no
     // effect. Naming the bound turns a mystery into a fact about the box.
+    //
+    // …and it has to name the RIGHT box, which is where the one sentence for all
+    // six sliders was wrong. "המקסימום של הקופסה הזו" is true of a TITLE ceiling
+    // (fitFor's capH divides the title box's own height bh) and false of a WORD
+    // ceiling: hBind is min(leadBind, boxBind) and BOTH are step x a constant —
+    // the row pitch, never S.band's rectangle. So the owner read "the box", made
+    // the word box bigger, and watched the number refuse to move. Each caller now
+    // says which measurement it is bounded by, and what to reach for.
     let end = e.parentNode.querySelector('.capend');
     if (!end) {
       end = document.createElement('span');
@@ -3058,7 +3079,7 @@
       // slider, number, then the bound that explains where the slider stopped.
       (o || e).insertAdjacentElement('afterend', end);
     }
-    end.textContent = 'עד ' + r2(top) + ' — המקסימום של הקופסה הזו';
+    end.textContent = 'עד ' + r2(top) + ' — ' + (why || CAP_WHY.box);
     return +e.value !== before;
   }
 
@@ -3754,7 +3775,7 @@
     // to them cannot chase its own tail; only a clamp that actually moved a value
     // needs the fit taken again.
     const pulled = ['capHe', 'capEn', 'wPin', 'enSize']
-      .map((id) => capMax(id, fit.hBind))
+      .map((id) => capMax(id, fit.hBind, CAP_WHY.word))
       .some(Boolean);
     if (pulled) fit = wordFit(words, SEL);
     {
