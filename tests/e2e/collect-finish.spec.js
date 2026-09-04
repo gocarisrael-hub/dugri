@@ -269,6 +269,13 @@ test('the design tab centres the card and no longer explains the empty-title tri
   const hint = page.locator('#titleHint');
   await expect(hint).toContainText('עד 63 תווים');
   await expect(hint).not.toContainText('השאירו ריק');
+  // …and it carries the one thing about this box nobody can guess: the renderer
+  // sizes a title by its widest line, so breaking a long one in two makes it
+  // BIGGER. "אפשר בשתי שורות" only ever granted permission — this says why she
+  // would want it, with the picture above the field redrawing as she types.
+  // (Same sentence the wizard's title step carries; it is the same field.)
+  await expect(hint).toContainText('ירידת שורה');
+  await expect(hint).toContainText('מגדילה');
 });
 
 test('the photo tab says the card above is the finished thing', async ({ page }) => {
