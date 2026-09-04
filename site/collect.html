@@ -2092,8 +2092,17 @@
                field's rules under a dead field read as an invitation to try. It
                goes with the save button; what is left is the title itself, and
                #sheetClosedNote saying why it cannot move. -->
+          <!-- "אפשר בשתי שורות" was a PERMISSION, and the thing worth knowing is
+               that taking it usually makes the title BIGGER. The renderer sizes a
+               title by its widest line and caps it by the box height over the line
+               count (generator/render_page.py, title_block), so breaking a long
+               single line in two roughly halves the width it has to fit and buys
+               back size — and the picture above this field redraws as she types,
+               so she can see it happen. "ארוכה", not "always": a short title is
+               height-bound, where a second line makes it smaller. Same sentence
+               the wizard's title step carries, because this is the same field. -->
           <small class="muted" id="titleHint" data-edit="collect-sheet-title-hint"
-            >עד 63 תווים · אפשר בשתי שורות · בלי אימוג׳י</small
+            >עד 63 תווים · בלי אימוג׳י · ירידת שורה מגדילה כותרת ארוכה</small
           >
           <div class="sheet-err hidden" id="titleErr" role="alert" data-testid="title-err"></div>
           <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">
