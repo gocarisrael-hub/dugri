@@ -260,6 +260,51 @@ describe('POST /api/collections/:id/pawns', () => {
     expect(r.body.pawn_images[0]).toMatch(/\.png$/);
   });
 
+  // FAIL-SOFT IS RIGHT; FAIL-SILENT WAS NOT. Both tests above assert the good
+  // photo survives — which is the half that was already true. The half that was
+  // missing is the answer telling the caller that the other one did NOT, so the
+  // page can say "your photo was too heavy" instead of showing her one thumbnail
+  // where she picked two and no explanation at all.
+  it('reports every part it skipped, with the reason', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const huge = Buffer.concat([pngWith('big2'), Buffer.alloc(5 * 1024 * 1024, 0x62)]);
+    const r = await uploadPawns(c.id, c.owner_token, [
+      { name: 'big', filename: 'IMG_0001.PNG', data: huge },
+      { name: 'weird', filename: 'clip.heic', data: Buffer.from('not an image at all!!') },
+      { name: 'ok', filename: 'ok.png', data: pngWith('ok2') },
+    ]);
+    expect(r.status).toBe(200);
+    expect(r.body.pawn_images).toHaveLength(1);
+    expect(r.body.skipped).toEqual([
+      { name: 'big', filename: 'IMG_0001.PNG', reason: 'too_large' },
+      { name: 'weird', filename: 'clip.heic', reason: 'unsupported' },
+    ]);
+  });
+
+  it('reports the parts it had no room for rather than dropping them quietly', async () => {
+    const c = db.createCollection('בדיקה', {});
+    await uploadPawns(c.id, c.owner_token, [
+      { name: 'a', filename: 'a.png', data: pngWith('room-a') },
+      { name: 'b', filename: 'b.png', data: pngWith('room-b') },
+      { name: 'c', filename: 'c.png', data: pngWith('room-c') },
+      { name: 'd', filename: 'd.png', data: pngWith('room-d') },
+    ]);
+    const r = await uploadPawns(c.id, c.owner_token, [
+      { name: 'e', filename: 'e.png', data: pngWith('room-e') },
+    ]);
+    expect(r.status).toBe(200);
+    expect(r.body.pawn_images).toHaveLength(4);
+    expect(r.body.skipped).toEqual([{ name: 'e', filename: 'e.png', reason: 'no_room' }]);
+  });
+
+  it('a clean batch reports nothing skipped', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await uploadPawns(c.id, c.owner_token, [
+      { name: 'ok', filename: 'ok.png', data: pngWith('clean') },
+    ]);
+    expect(r.body.skipped).toEqual([]);
+  });
+
   it('400 when the multipart envelope is malformed (no boundary)', async () => {
     const c = db.createCollection('בדיקה', {});
     // A multipart content-type with NO boundary param: express.raw buffers it, but

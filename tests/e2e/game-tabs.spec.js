@@ -294,6 +294,103 @@ test('she adds a photo back, and the fourth fills the card', async ({ page }) =>
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(4);
 });
 
+// A PHOTO THAT DOES NOT MAKE IT SAYS SO.
+//
+// The upload route is fail-soft on purpose — one bad photo must not lose the
+// good ones — but it used to be fail-SILENT: it answered 200 with a shorter list
+// than the buyer picked, and this page just re-rendered the shorter list. She saw
+// her tap do nothing, with no error and no reason. (Reported from a phone: pick
+// two photos in the Instagram in-app browser, come back, nothing there.)
+//
+// The route now reports what it skipped, and this is where that reaches her.
+test('a photo the server would not keep is reported, not swallowed', async ({ page }) => {
+  const { url } = await createCollection(page);
+  await page.route('**/api/collections/*/pawns*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        pawn_images: [],
+        pawn_cutouts: {},
+        skipped: [{ name: 'pawn0', filename: 'IMG_0001.HEIC', reason: 'too_large' }],
+      }),
+    })
+  );
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await page.getByTestId('pawn-add-input').setInputFiles({
+    name: 'huge.png',
+    mimeType: 'image/png',
+    buffer: Buffer.concat([PNG_BYTES, Buffer.from('too-big-for-the-store')]),
+  });
+
+  const err = page.locator('#pawnErr');
+  await expect(err).toBeVisible();
+  await expect(err).toContainText('כבדה מדי');
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(0);
+});
+
+// …and the same when the answer says nothing at all about skips (an older server,
+// or any other reason the list simply did not grow). "Your photo is not here" is
+// still the truth, and silence was the one answer that was not.
+test('an upload that adds nothing is never left looking like success', async ({ page }) => {
+  const { url } = await createCollection(page);
+  await page.route('**/api/collections/*/pawns*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, pawn_images: [], pawn_cutouts: {} }),
+    })
+  );
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await page.getByTestId('pawn-add-input').setInputFiles({
+    name: 'nope.png',
+    mimeType: 'image/png',
+    buffer: Buffer.concat([PNG_BYTES, Buffer.from('vanishes')]),
+  });
+  await expect(page.locator('#pawnErr')).toContainText('לא נקלטו');
+});
+
+// WHILE IT IS WORKING, IT SAYS SO. Adding a photo runs a cut on the device (the
+// segmenter is ~18MB the first time and is allowed 15s per photo) and then an
+// upload; renderPawns draws nothing at all while pawnBusy, so every second of
+// that used to look exactly like a tap that did not register.
+test('the photo strip says it is working while the upload is in flight', async ({ page }) => {
+  const { url } = await createCollection(page);
+  let release;
+  const held = new Promise((r) => {
+    release = r;
+  });
+  await page.route('**/api/collections/*/pawns*', async (route) => {
+    await held;
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        ok: true,
+        pawn_images: ['/content-uploads/aaaaaaaaaaaaaaaa.png'],
+        pawn_cutouts: {},
+        skipped: [],
+      }),
+    });
+  });
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await page.getByTestId('pawn-add-input').setInputFiles({
+    name: 'slow.png',
+    mimeType: 'image/png',
+    buffer: Buffer.concat([PNG_BYTES, Buffer.from('in-flight')]),
+  });
+
+  await expect(page.getByTestId('pawn-busy')).toBeVisible();
+  release();
+  // …and it goes away the moment the answer lands, leaving the photo behind.
+  await expect(page.getByTestId('pawn-busy')).toBeHidden();
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(1);
+});
+
 test('a contributor never sees her photos', async ({ page }) => {
   const { id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 2);
