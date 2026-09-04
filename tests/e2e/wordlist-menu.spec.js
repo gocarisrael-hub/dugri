@@ -193,6 +193,76 @@ test('a closed collection she never answered shows no menu at all', async ({ pag
   await expect(page.getByTestId('finish-title-val')).toBeVisible();
 });
 
+// SHE HAS TO ANSWER IT. The style of the filler words is a decision about the
+// printed deck that only she can make, and closing is the last moment it can be
+// made — after it the deck is at the printer. It used to be optional: the button
+// went live on the sign-off tick alone, so the commonest outcome for the one
+// question we put in front of her was no answer at all, and the server quietly
+// filled from her design.
+test('the deck cannot be sent to production until she picks a style', async ({ page }) => {
+  const pools = await poolNames(page);
+  await setMenu(page, [
+    { id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true },
+    { id: 'romantic', label: 'רומנטי', pool: pools[1] || pools[0], enabled: true },
+  ]);
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await openFinishTab(page);
+
+  const close = page.locator('#closeBtn');
+  const note = page.getByTestId('close-gate-note');
+  await expect(close).toBeDisabled();
+  // A disabled button explains itself to a mouse and to nobody on a phone, so
+  // the reason is on the page — and it names the pool, which is the FIRST thing
+  // outstanding, not the tick further down.
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('סגנון');
+
+  // The tick alone is no longer enough.
+  await page.getByTestId('finish-ack').check();
+  await expect(close).toBeDisabled();
+  await expect(note).toContainText('סגנון');
+
+  // Picking is what opens it.
+  await page.getByTestId('pool-opt-jokes').check();
+  await expect(close).toBeEnabled();
+  await expect(note).toBeHidden();
+});
+
+test('with a style picked, the sign-off tick is still its own gate', async ({ page }) => {
+  // The two conditions are independent: this is an ADDITIONAL gate, not a
+  // replacement for the attestation.
+  const pools = await poolNames(page);
+  await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await openFinishTab(page);
+
+  await page.getByTestId('pool-opt-jokes').check();
+  const close = page.locator('#closeBtn');
+  await expect(close).toBeDisabled();
+  await expect(page.getByTestId('close-gate-note')).toContainText('לאשר');
+  await page.getByTestId('finish-ack').check();
+  await expect(close).toBeEnabled();
+});
+
+// …and where there is nothing to pick FROM, there is nothing to demand. A
+// requirement to choose from an empty list is a door with no handle, and an
+// install that never built a menu is the state every install ships in.
+test('no menu, no requirement — the tick alone still closes it', async ({ page }) => {
+  await setMenu(page, []);
+  const { url } = await createCollection(page);
+  await page.goto(url);
+  await openFinishTab(page);
+  await expect(page.getByTestId('pool-field')).toBeHidden();
+
+  const close = page.locator('#closeBtn');
+  await expect(close).toBeDisabled();
+  await page.getByTestId('finish-ack').check();
+  await expect(close).toBeEnabled();
+  await expect(page.getByTestId('close-gate-note')).toBeHidden();
+});
+
 // THE MENU THE CUSTOMER SEES, built here.
 // The panel above this one decides the pool by DESIGN; this one decides which
 // pools a BUYER may pick between on her own collection page, and what each is
@@ -269,4 +339,14 @@ test.describe('the buyer-facing pool menu', () => {
     await page.getByTestId('save-opts').click();
     await expect(page.locator('#optsStatus')).toContainText('שם');
   });
+});
+
+// The menu is ONE global setting shared with every other spec on this server.
+// These tests fill it; leaving it filled would hand the next file a state it
+// never asked for — and closing an order now waits on a pick whenever a menu
+// exists. Put it back the way every install ships.
+test('leaves the shared menu empty behind it', async ({ page }) => {
+  await setMenu(page, []);
+  const menu = await page.request.get('/api/wordlist-options').then((r) => r.json());
+  expect(menu.options).toHaveLength(0);
 });

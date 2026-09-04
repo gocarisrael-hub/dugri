@@ -920,6 +920,12 @@
         border-top: 1px solid var(--line);
         padding-top: 12px;
       }
+      /* The reason the סיום button is dead, directly under it. Quiet, not red:
+         nothing has gone wrong — there is simply one more answer to give. */
+      .close-gate {
+        font-size: 13px;
+        margin: 10px 0 0;
+      }
       /* The delivery-upgrade form sits inside a card rather than inside the pay
          panel, so it needs the panel's insets taken back off. */
       #shipAddCard .addr-form {
@@ -2415,6 +2421,17 @@
             מספיק! סיימנו לאסוף ✅
           </button>
         </div>
+        <!-- WHY THE BUTTON IS DEAD. A disabled button with only a `title` on it
+             explains itself to a mouse and to nobody on a phone, which is where
+             almost every buyer signs off — so the reason is on the page. Filled
+             in by the gate below (never from the markup), because it names the
+             FIRST thing still outstanding and that changes as she answers. -->
+        <p
+          class="muted close-gate hidden"
+          id="closeGateNote"
+          data-testid="close-gate-note"
+          role="status"
+        ></p>
       </div>
 
       <!-- OWNER, unpaid: the pay CTA, at the TOP as well as in the sticky bar at
@@ -4053,6 +4070,29 @@
       function poolPick() {
         return (state && state.wordlist_option) || '';
       }
+      // Re-checks the close button against everything it waits on. Assigned in
+      // setupOwner (which owns the button); a no-op until then, so the chooser
+      // can call it on every redraw without knowing whether the owner UI is up.
+      let syncCloseGate = () => {};
+      // TRUE WHILE SHE STILL OWES US THE ONE ANSWER THIS TAB ASKS FOR.
+      //
+      // The style of the filler words is a decision about the printed deck that
+      // only she can make, and closing is the last moment it can be made — after
+      // it the deck is at the printer. It used to be optional: the button went
+      // live on the tick alone, and an untouched chooser meant the server quietly
+      // filled from her design. So the commonest outcome for the question we put
+      // in front of her was no answer at all.
+      //
+      // Asked only when there is something to ask: the field is hidden when the
+      // owner has built no menu (and on a closed collection), and a requirement
+      // to pick from an empty list would be a door with no handle. Reading the
+      // field's own visibility rather than re-deriving it keeps the two from ever
+      // disagreeing — renderPoolOpts decides what is on screen, this reads it.
+      function poolPickMissing() {
+        const fld = $('#poolFld');
+        if (!fld || fld.classList.contains('hidden')) return false;
+        return state.status === 'open' && !poolPick();
+      }
       function renderPoolOpts() {
         const fld = $('#poolFld');
         const box = $('#poolOpts');
@@ -4099,6 +4139,9 @@
           label.appendChild(txt);
           box.appendChild(label);
         }
+        // The chooser and the button that waits on it are on the same tab, so the
+        // button has to answer the moment she ticks a row.
+        syncCloseGate();
       }
       async function savePool(optionId) {
         const err = $('#poolErr');
@@ -4110,6 +4153,7 @@
             body: JSON.stringify({ option_id: optionId }),
           });
           state.wordlist_option = r.option_id;
+          err.textContent = '';
           renderPoolOpts();
         } catch (e) {
           // Re-render from `state`, which is still the server's answer — so a
@@ -5770,15 +5814,28 @@
         // checkbox still has a usable button.
         const ack = $('#finishAck');
         const closeBtn = $('#closeBtn');
-        if (ack && closeBtn) {
+        // What is still missing, in the order it appears above the button — so
+        // the note names the thing she reaches first, not the last one we happen
+        // to check. Null when nothing is.
+        const gateNote = () => {
+          if (poolPickMissing()) return 'בחרו איזה סגנון נשלים לכם (סעיף 3) כדי לשלוח לייצור.';
+          if (ack && !ack.checked) return 'צריך לאשר שעברתם על הפרטים למעלה.';
+          return null;
+        };
+        if (closeBtn) {
+          const note = $('#closeGateNote');
           const sync = () => {
-            closeBtn.disabled = !ack.checked;
-            closeBtn.title = ack.checked ? '' : 'צריך לאשר שעברתם על הפרטים למעלה';
+            const why = gateNote();
+            closeBtn.disabled = Boolean(why);
+            closeBtn.title = why || '';
+            if (note) {
+              note.textContent = why || '';
+              note.classList.toggle('hidden', !why);
+            }
           };
-          ack.addEventListener('change', sync);
+          if (ack) ack.addEventListener('change', sync);
+          syncCloseGate = sync;
           sync();
-        } else if (closeBtn) {
-          closeBtn.disabled = false;
         }
         closeBtn.onclick = closeCollection;
         // The paid card carries the same סיום, so it goes through the same gate:
@@ -5787,6 +5844,20 @@
         const paidCloseBtn = $('#paidCloseBtn');
         if (paidCloseBtn) {
           paidCloseBtn.onclick = () => {
+            // Same two conditions, and the same order: send her to whichever one
+            // is still open rather than to a disabled button she has to work out
+            // for herself.
+            if (poolPickMissing()) {
+              showTab('finish');
+              // A paid order closes from the pay card, where the gate note under
+              // #closeBtn is not on screen — so say it where she is sent.
+              const err = $('#poolErr');
+              err.textContent = 'בחרו סגנון מילים להשלמה כדי לשלוח לייצור.';
+              err.classList.remove('hidden');
+              const first = $('#poolOpts').querySelector('input[type="radio"]');
+              if (first) first.focus();
+              return;
+            }
             if (ack && !ack.checked) {
               showTab('finish');
               ack.focus();
