@@ -20,7 +20,21 @@ const PNG =
 
 test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
+  await noPoolMenu(page);
 });
+
+// THE WORD-POOL MENU IS A GLOBAL SETTING, and closing an order now requires a
+// pick from it whenever one is offered (see wordlist-menu.spec.js for that
+// gate's own tests). Its default is empty, but tests/e2e/wordlist-menu.spec.js
+// fills it while it runs, and spec FILES run in parallel workers against one
+// server — so a test here that closes a collection would pass or fail on
+// whichever file happened to be mid-flight. Answering the menu request per page
+// makes these tests say what they are about: the sign-off tick, not the pool.
+async function noPoolMenu(page) {
+  await page.route('**/api/wordlist-options', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '{"options":[]}' })
+  );
+}
 
 async function createCollection(page) {
   await page.route('**/api/preview', (route) =>
