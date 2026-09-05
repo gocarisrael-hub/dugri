@@ -693,8 +693,24 @@ const REGISTRY = {
   // front of her. Shape + safety rules live in server/wordlist-options.js (wired
   // in via kind:'wlopts' below); that the pool still EXISTS is checked by the
   // route, which is the only layer that can see the volume.
+  //
+  // `blank_label` is the LAST ROW of that same menu: the answer that names no
+  // pool at all. Some buyers do not want our words on their cards — they want
+  // the rest of the deck blank, laminated, and written on at the table — and
+  // that is this question answered, not a different question, so it is a row of
+  // the radio group and not a control beside it.
+  //
+  // It is a LABEL and not a switch because the row needs one and the owner owns
+  // her customer-facing wording; empty means the row is not offered, the same
+  // "empty is off" the pixel id uses. It ships with the wording she wrote.
   wordlists: {
     buyer_options: { kind: 'wlopts', tokens: [], default: DEFAULT_OPTIONS },
+    blank_label: {
+      kind: 'text',
+      max: 60,
+      tokens: [],
+      default: 'לא להשלים לי מילים (קלפים ריקים עם למינציה)',
+    },
   },
   // --- Marketing measurement -------------------------------------------------
   // The Meta (Facebook/Instagram) Pixel id, pasted from Events Manager. EMPTY by

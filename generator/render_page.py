@@ -2948,6 +2948,35 @@ def row_bounds(slots, slot, row, cell, obstacles, floor=None):
     return right, left, on_icon
 
 
+def _uniform_size(slots, word_size=None, max_size=None):
+    """The card's TARGET word size — what every entry is set at unless one of
+    them cannot fit and drags the whole card down.
+
+    A theme may PIN it (the Canva point size, in recipe units) instead of it
+    being derived from the recipe box heights — used where the detected boxes
+    overshoot (e.g. bachelorette rendered ~26 vs the real 19).
+
+    THE HEBREW WORD CEILING is folded in here rather than applied after the fit.
+    This number is what ``_fit_card`` treats as the largest the card may set and
+    what ``_candidates`` measures a mid-word break against, so lowering it caps
+    the type AND keeps the break decision honest — a ceiling applied afterwards
+    would shrink the type while the wrapping stayed solved for a size nobody is
+    printing.
+
+    It is also the answer for a card with NOTHING to fit: the empty cards of a
+    'no top-up' deck have no entry to measure, and this is the size the design
+    itself asked for.
+    """
+    import statistics
+    heights = [s["y1"] - s["y0"] for s in slots]
+    if not heights:
+        return 0.0
+    uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
+    if max_size and max_size > 0:
+        uniform = min(uniform, max_size)
+    return uniform
+
+
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
                   obstacles=None, title_box=None, even_lines=False,
@@ -2985,22 +3014,9 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     rather than compressing its pitch; without it the calibrated span is the
     envelope, as before.
     """
-    import statistics
-    heights = [s["y1"] - s["y0"] for s in slots]
-    if not heights:
+    if not slots:
         return [None] * len(slots)
-    # A theme may PIN the uniform word size (the Canva point size, in recipe
-    # units) instead of deriving it from the recipe box heights — used where the
-    # detected boxes overshoot (e.g. bachelorette rendered ~26 vs the real 19).
-    uniform = word_size if word_size else statistics.median(heights) * _WORD_SIZE_K
-    # THE HEBREW WORD CEILING, folded into the card's target rather than applied
-    # after it. `uniform` is what `_fit_card` already treats as the largest the
-    # card may set and what `_candidates` measures a mid-word break against, so
-    # lowering it here caps the type AND keeps the break decision honest — a
-    # ceiling applied afterwards would shrink the type while the wrapping stayed
-    # solved for a size nobody is printing.
-    if max_size and max_size > 0:
-        uniform = min(uniform, max_size)
+    uniform = _uniform_size(slots, word_size=word_size, max_size=max_size)
     floor = cell[0] + (cell[2] - cell[0]) * safe if cell else None
     # A synthetic-bold word is WIDER than the advance the fit measures: the
     # stroke is centred on the outline, so it hangs half its width past each end
@@ -4587,9 +4603,43 @@ def _title_overlay(tbox_list, title_lines, cfg, title_font, cell, offset=None,
                        width_probe=True)
 
 
+def _blank_lines(slots, layouts, cfg):
+    """``{slot: (size, centre, lead)}`` for the numbered lines with NO word.
+
+    Only ever asked for on a 'no top-up' deck — the buyer who told us not to fill
+    her deck with our words (see ``pack.pack``'s ``min_cards``). The words are
+    missing; the CARD is not. She is going to write on these lines herself, so
+    they print their number and nothing else.
+
+    Blanks are TRAILING on every card (``order_by_room``), which is what makes
+    the two cases below the only two:
+
+    * the card carries words — the empty lines CONTINUE their grid, one pitch
+      apart at the same size, so the four numbers stay one column at one rhythm
+      rather than the written half of the card being set to one grid and the
+      empty half to another;
+    * the card carries none — there is nothing to fit, so the design's own target
+      size (``_uniform_size``) on the calibrated line centres, which is exactly
+      where the origin's four entries sat.
+    """
+    live = [(wi, lay) for wi, lay in enumerate(layouts) if lay is not None]
+    empty = [wi for wi, lay in enumerate(layouts) if lay is None]
+    if live:
+        last_wi, last = live[-1]
+        pitch = last.lead * last.size
+        base = (last.center if last.center is not None
+                else (slots[last_wi]["y0"] + slots[last_wi]["y1"]) / 2)
+        return {wi: (last.size, base + (wi - last_wi) * pitch, last.lead)
+                for wi in empty}
+    size = _uniform_size(slots, word_size=cfg.get("word_size"),
+                         max_size=config.type_ceiling(cfg, "word_max_he"))
+    return {wi: (size, (slots[wi]["y0"] + slots[wi]["y1"]) / 2, 0.0)
+            for wi in empty}
+
+
 def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                    obstacles=None, word_font_alt=None, title_box=None,
-                   deck_pitch=None):
+                   deck_pitch=None, blank_markers=False):
     """The four numbered word lines for one card, as SVG markup.
 
     ``room`` is the lowest y a line's ink may reach (see ``room_bottom``) — the
@@ -4601,6 +4651,11 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     threaded through the FIT as well as the render because they have to agree:
     a width reserved off one face and painted in another is how a line ends up
     over the trim.
+
+    ``blank_markers`` prints the number of an EMPTY slot (see ``_blank_lines``).
+    Off by default, and it has to be: a slot is empty on an ordinary deck too —
+    the last card of an oversized order, the short card at a group seam — and
+    those cards have always printed the lines they have and nothing else.
     """
     if not slots:
         return ""
@@ -4637,9 +4692,20 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     # measured for.
     x_right = _card_right_edge(slots, cell)
     advance = _marker_advance(face.primary, len(slots))
+    blanks = _blank_lines(slots, layouts, cfg) if blank_markers else {}
     out = []
     for wi, slot in enumerate(slots):
         if layouts[wi] is None:
+            if wi not in blanks:
+                continue
+            b_size, b_center, b_lead = blanks[wi]
+            # The marker alone: one empty line, so the pitch never applies and
+            # the digit column and its size are the card's own.
+            out.append(word_lines(x_right, b_center, b_size, slot["color"],
+                                  wi + 1, [""], word_font, lead=b_lead,
+                                  marker_advance=advance, bold_w=bold_w,
+                                  alt_font_path=word_font_alt,
+                                  alt_scale=latin_scale(cfg, b_size, alt_scale)))
             continue
         lay = layouts[wi]
         # The card's own grid centre — one pitch for every gap on the card.
@@ -4708,7 +4774,7 @@ def card_pitch_need(theme, recipe, words, front_index=None, word_font=None,
 
 def card_overlay(theme, recipe, words, title_lines, front_index=None,
                  word_font=None, kind="word", card_vb=None, card_svg=None,
-                 deck_pitch=None):
+                 deck_pitch=None, blank_markers=False):
     """Title + word markup for ONE card, in the card's own viewBox units.
 
     ``front_index`` selects which front's title box to use: the words are SHARED
@@ -4727,6 +4793,10 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     nowhere else (see THE PRINTED FRAME). Every production caller already holds
     the text, so it is passed rather than re-read; omitted, the card falls back to
     the trim-safe area, which is where a v2 card sat before the frame was read.
+
+    ``blank_markers`` is the 'no top-up' deck: an empty slot still prints its
+    number, because the buyer asked for the room to write her own (see
+    ``_blank_lines``).
     """
     if kind == "photo":
         return ""
@@ -4764,7 +4834,8 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
                              obstacles=icons,
                              word_font_alt=word_alt_path,
                              title_box=title_span,
-                             deck_pitch=deck_pitch))
+                             deck_pitch=deck_pitch,
+                             blank_markers=blank_markers))
 
 
 def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):

@@ -224,6 +224,7 @@ function orderArgs({
   gender,
   photos,
   photoFrames,
+  noTopup,
 }) {
   const args = [
     path.join(REPO_ROOT, 'generator', 'order_to_pdf.py'),
@@ -248,6 +249,12 @@ function orderArgs({
   // against the real pools before it is stored, and the generator's own path
   // guard bounds it to the two wordlist directories.
   if (wordlist) args.push('--wordlist=' + wordlist);
+  // ...and the order that asked for NO filler at all. The deck is still the full
+  // 104 cards; the ones her words do not reach print empty and numbered, for her
+  // to write on. It is exclusive with the pool above by nature — there is nothing
+  // to fill from when nothing is being filled — so it is passed alone, and her
+  // stored pool pick is simply not asked for.
+  if (noTopup) args.push('--no-topup');
   // How the words are laid onto cards for THIS order (pack.py ORDERS): her own
   // words first, Hebrew and Latin cards kept apart, or the default blend. Only
   // ever one of the validated values, and omitted for the default so an old
@@ -374,6 +381,7 @@ function runGenerator({
   wordlist,
   cardOrder,
   personalCount,
+  noTopup,
 }) {
   return new Promise((resolve, reject) => {
     let wordsFile;
@@ -399,6 +407,7 @@ function runGenerator({
       gender,
       photos,
       photoFrames,
+      noTopup,
     });
     const child = spawnGenerator(args);
     let stdout = '';
@@ -804,7 +813,12 @@ function publicView(c, { owner = false } = {}) {
           // by OPTION ID — never the pool's file name, which is a production
           // detail she is not choosing and has no use for. null = no pick, so the
           // deck fills the way her design says.
-          wordlist_option: optionIdForPool(c.wordlist),
+          // Which row of the pool menu this order is on — including the row
+          // that says "don't fill it at all", which stores no pool.
+          wordlist_option: optionIdForCollection(c),
+          // ...and that same answer as the bare fact production reads: the rest
+          // of the deck is printed EMPTY rather than filled with our words.
+          no_topup: !!c.no_topup,
           // Can she still add door-to-door delivery to an order she has already
           // paid for, and what would it cost? Computed by the store (one place,
           // so the offer on screen and the charge behind it cannot disagree) and
@@ -1377,6 +1391,10 @@ async function produceDeck(c, b, opts = {}) {
     // means "use the theme's own", which is what every order did before this
     // existed. Read from the STORED collection, like everything else here.
     wordlist: c.wordlist || null,
+    // ...unless she asked us not to fill the deck at all. Her words print, the
+    // rest of the deck prints empty and numbered, and the pool above is simply
+    // never read (db.setNoTopupForOwner).
+    noTopup: !!c.no_topup,
     cardOrder: c.card_order || null,
     // Where HER words end in the list above — see personalCountForProduction.
     personalCount: wordBank.personalCountForProduction(c),
@@ -3080,12 +3098,20 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   }
 });
 
-// Which buyer-facing option a stored pool corresponds to, or null. The order
-// stores the POOL (that is what the generator needs); the menu is keyed by option
-// id, and the sheet needs the id back to show which one is ticked. Resolved on
-// read rather than stored twice, so renaming a pool in one place cannot leave the
-// two disagreeing.
-function optionIdForPool(pool) {
+// Which row of the buyer-facing menu THIS ORDER is on, or null for none.
+//
+// Two kinds of row, and the order records each of them its own way: an ordinary
+// row stores the POOL (that is what the generator needs) and is matched back to
+// its id here, while the decline stores `no_topup` and names no pool at all.
+// Resolved on read rather than stored twice, so renaming a pool in one place
+// cannot leave the two disagreeing.
+//
+// The decline is checked FIRST: an order can carry a pool she picked before she
+// changed her mind (we keep it, so the row she used to be on is still there when
+// she comes back), and what is TICKED is what we are actually going to print.
+function optionIdForCollection(c) {
+  if (c && c.no_topup) return wordlistOptions.BLANK_ID;
+  const pool = c && c.wordlist;
   if (!pool) return null;
   const list = settings.get('wordlists', 'buyer_options') || [];
   const found = list.find((o) => o && o.enabled && o.pool === pool);
@@ -3095,8 +3121,18 @@ function optionIdForPool(pool) {
 // The buyer-facing pool menu, public. Labels only — the pool file names behind
 // them are production detail (see server/wordlist-options.js). Empty until the
 // owner builds the menu, which is exactly when the chooser should not appear.
+//
+// The last row is "don't fill it at all" when the owner has given it a label
+// (`blank_label`). It rides along with the menu rather than standing on its own:
+// a radio group cannot be un-picked, so a decline with no pool row beside it
+// would be a choice with no way back out of it.
 app.get('/api/wordlist-options', (req, res) => {
-  res.json({ options: wordlistOptions.publicOptions(settings.get('wordlists', 'buyer_options')) });
+  res.json({
+    options: wordlistOptions.publicOptions(
+      settings.get('wordlists', 'buyer_options'),
+      settings.get('wordlists', 'blank_label')
+    ),
+  });
 });
 
 // THE WORDS THEMSELVES, public — what wordlists.html shows.
@@ -3138,6 +3174,11 @@ app.get('/api/wordlist-preview', (req, res) => {
 // The buyer picks which pool fills the rest of her deck. Body: { option_id } —
 // null/'' clears the pick and lets her design decide, as before.
 //
+// ...or picks the row that says DON'T fill it: her words print and the rest of
+// the deck comes out blank and numbered for her to write on. It is the same
+// question and so the same route — one radio group cannot be answered through two
+// doors without the two eventually disagreeing about which answer is live.
+//
 // Allowed until she CLOSES the collection, the same rule as her title and photos:
 // closing freezes the 412-word bank and starts production, and this choice is one
 // of the inputs that bank is frozen FROM.
@@ -3149,6 +3190,32 @@ app.put('/api/collections/:id/wordlist', express.json({ limit: '4kb' }), (req, r
   }
   const raw = (req.body || {}).option_id;
   const optionId = raw == null ? '' : String(raw).trim();
+  // THE DECLINE, and it is checked against the MENU THAT IS OFFERED — not merely
+  // against the id. An owner who has cleared the label, or who has no menu for it
+  // to ride along with, is not offering this row, and a row nobody is offering
+  // must not be reachable by naming it: the buyer would get a half-empty deck the
+  // owner never agreed to sell. Turning it OFF is always allowed, whatever the
+  // menu says now, or clearing the label would trap every order that took it.
+  const offered = wordlistOptions
+    .publicOptions(
+      settings.get('wordlists', 'buyer_options'),
+      settings.get('wordlists', 'blank_label')
+    )
+    .some((o) => o.id === wordlistOptions.BLANK_ID);
+  if (optionId === wordlistOptions.BLANK_ID) {
+    if (!offered) return res.status(409).json({ error: 'not offered' });
+    const set = db.setNoTopupForOwner(req.params.id, req.query.k, true);
+    if (set === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+    return res.json({
+      ok: true,
+      option_id: optionIdForCollection(db.getCollection(req.params.id)),
+    });
+  }
+  // Any other answer is an answer to the same question, so it un-declines: she
+  // has just told us which of our words to use.
+  if (db.setNoTopupForOwner(req.params.id, req.query.k, false) === 'forbidden') {
+    return res.status(403).json({ error: 'forbidden' });
+  }
   let pool = null;
   if (optionId) {
     // Resolved through the OWNER'S MENU, never taken from the client: the body
@@ -3166,7 +3233,7 @@ app.put('/api/collections/:id/wordlist', express.json({ limit: '4kb' }), (req, r
   }
   const stored = db.setWordlistForOwner(req.params.id, req.query.k, pool);
   if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
-  res.json({ ok: true, option_id: optionIdForPool(stored) });
+  res.json({ ok: true, option_id: optionIdForCollection(db.getCollection(req.params.id)) });
 });
 
 // The buyer RETITLES her own deck from the collection page. Body: { custom_title }
@@ -3823,6 +3890,10 @@ app.post('/api/collections/:id/close', (req, res) => {
         personalWords: db.listWords(c.id).map((w) => w.text),
         theme,
         pool: c.wordlist || null,
+        // A no-fill order freezes HER WORDS and nothing else — that IS the bank
+        // for this order, and freezing a topped-up one would store 412 words
+        // production is then told not to print.
+        noTopup: !!c.no_topup,
         python: PYTHON_BIN,
       });
       if (bank) db.setWordBank(c.id, bank);

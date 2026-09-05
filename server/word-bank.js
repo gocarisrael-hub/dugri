@@ -75,11 +75,15 @@ function personalSpan(frozen, personal) {
   return n;
 }
 
-function record({ words, theme, pool, personalCount }) {
+function record({ words, theme, pool, personalCount, noTopup }) {
   return {
     created_at: new Date().toISOString(),
     theme,
     pool: pool || null,
+    // Whether this bank was frozen for an order that asked for NO filler. Stored
+    // so the same drift check that catches a changed pool catches a buyer who
+    // changed her mind about being filled at all (see isStale).
+    no_topup: !!noTopup,
     personal_count: personalCount,
     words,
   };
@@ -94,7 +98,7 @@ function record({ words, theme, pool, personalCount }) {
  * production behaves exactly as it did before this module existed, so the cost
  * of a failed freeze is the old behaviour, not a broken order.
  */
-function freeze({ personalWords, theme, pool, python }) {
+function freeze({ personalWords, theme, pool, noTopup, python }) {
   const words = (Array.isArray(personalWords) ? personalWords : [])
     .map((w) => String(w == null ? '' : w).trim())
     .filter(Boolean);
@@ -106,6 +110,12 @@ function freeze({ personalWords, theme, pool, python }) {
     fs.writeFileSync(src, words.join('\n') + '\n', 'utf8');
     const args = [path.join(REPO_ROOT, 'generator', 'topup.py'), src, theme, out];
     if (pool) args.push(pool);
+    // A NO-FILL order still goes through topup.py, at target 0. It is the same
+    // function answering "fill it to nothing", so her words come back deduped by
+    // the one implementation of that rule and no pool is read — which is exactly
+    // what this module refuses to reimplement in JavaScript for the ordinary
+    // case, and has no more business reimplementing here.
+    if (noTopup) args.push('--target=0');
     const r = spawnSync(python || process.env.PYTHON_BIN || 'python3', args, {
       timeout: TIMEOUT_MS,
       encoding: 'utf8',
@@ -121,6 +131,7 @@ function freeze({ personalWords, theme, pool, python }) {
       words: frozen,
       theme,
       pool,
+      noTopup,
       // WHERE HER WORDS END in the frozen list — measured on the OUTPUT, not
       // taken from the input's length. topup dedupes (trimmed, inner whitespace
       // collapsed, lowercased) before it fills, so a list with two spellings of
@@ -181,14 +192,19 @@ function wordsForProduction(collection, personalWords) {
 /**
  * Whether a stored bank still matches the inputs it was frozen from.
  *
- * Only the seed pool and the theme can drift under it: the words themselves are
- * frozen, and a change to those means a reopen, which drops the bank outright.
+ * Only the seed pool, the theme and whether she wanted filling AT ALL can drift
+ * under it: the words themselves are frozen, and a change to those means a
+ * reopen, which drops the bank outright.
  */
 function isStale(collection) {
   const bank = collection && collection.word_bank;
   if (!bank) return false;
   const pool = collection.wordlist || null;
   const theme = collection.theme || null;
+  if (!!bank.no_topup !== !!collection.no_topup) return true;
+  // A bank frozen for a no-fill order holds no filler, so the pool it names is
+  // not an input it was made from and cannot drift under it.
+  if (bank.no_topup) return !!(theme && bank.theme !== theme);
   return (bank.pool || null) !== pool || (theme && bank.theme !== theme);
 }
 

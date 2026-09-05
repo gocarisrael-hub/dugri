@@ -2262,6 +2262,13 @@
           <span class="fld hidden" id="poolLabelSent" data-edit="collect-sheet-pool-label-sent"
             >3. סגנון המילים שהשלמנו</span
           >
+          <!-- ...and the third state, which is neither question nor answer about a
+               STYLE: she asked us not to fill the deck, so there is no pool to
+               name and "the style we completed with" would name a thing that did
+               not happen. -->
+          <span class="fld hidden" id="poolLabelBlank" data-edit="collect-sheet-pool-label-blank"
+            >3. קלפים ריקים למילוי עצמי</span
+          >
           <!-- The old copy explained the ORDER of the words ("yours always go in
                first"), which is a fact about our packing and not a question she
                was being asked. What she wants to know here is that she is done
@@ -2274,6 +2281,16 @@
             >מהרשימה המסומנת השלמנו את המילים ל-412 מילים בחפיסה.</small
           >
           <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
+          <!-- The LAST row of that group is "don't fill it at all", when the owner
+               is offering it: her words print and the rest of the deck comes out
+               blank and numbered. It is an answer to this question and not a
+               control beside it, so it is a row like any other and its label
+               arrives with the rest of the menu. This line says what the row
+               MEANS, and only once she is on it. -->
+          <small class="muted hidden" id="poolBlankHint" data-edit="collect-sheet-pool-blank-hint"
+            >נדפיס רק את המילים שלכם. שאר הקלפים בחפיסה יגיעו ריקים עם המספרים 1-4 - אפשר לעשות להם
+            למינציה ולכתוב עליהם בטוש מחיק תוך כדי המשחק.</small
+          >
           <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
         </div>
         <!-- SHE CONFIRMS SHE LOOKED. Closing sends the deck to print and nothing
@@ -4076,8 +4093,16 @@
       // means no chooser at all: the deck then fills the way it always has, by
       // her design, and she is not shown a control with nothing behind it.
       let poolOptions = null;
+      // The id of the menu row that means "don't fill it at all" — the one answer
+      // that names no pool. It comes down with the menu like any other row; this
+      // is only the id the page recognises it by, and it matches the server's
+      // (server/wordlist-options.js BLANK_ID).
+      const POOL_BLANK = '__blank__';
       function poolPick() {
         return (state && state.wordlist_option) || '';
+      }
+      function poolBlank() {
+        return poolPick() === POOL_BLANK;
       }
       // Re-checks the close button against everything it waits on. Assigned in
       // setupOwner (which owns the button); a no-op until then, so the chooser
@@ -4097,6 +4122,8 @@
       // to pick from an empty list would be a door with no handle. Reading the
       // field's own visibility rather than re-deriving it keeps the two from ever
       // disagreeing — renderPoolOpts decides what is on screen, this reads it.
+      // Declining the fill IS an answer, and it satisfies this the same way any
+      // other row does — it is one of them.
       function poolPickMissing() {
         const fld = $('#poolFld');
         if (!fld || fld.classList.contains('hidden')) return false;
@@ -4109,6 +4136,7 @@
         const opts = Array.isArray(poolOptions) ? poolOptions : [];
         const open = state.status === 'open';
         const picked = poolPick();
+        const blank = poolBlank();
         // Hidden when the owner has built no menu — an empty chooser advertises
         // a choice that does not exist. The panel AROUND it stays, because it is
         // the sign-off tab and it has two other things to say.
@@ -4118,11 +4146,15 @@
         fld.classList.toggle('hidden', !opts.length || !isOwner || (!open && !picked));
         if (!opts.length) return;
         // Asking is over once the deck is at the printer; the ticked row below is
-        // the answer, and these two say so.
-        $('#poolLabel').classList.toggle('hidden', !open);
-        $('#poolLabelSent').classList.toggle('hidden', open);
-        $('#poolHint').classList.toggle('hidden', !open);
-        $('#poolHintSent').classList.toggle('hidden', open);
+        // the answer, and these say so. The row that DECLINED the fill gets its
+        // own heading and its own line in both states: nothing was completed, so
+        // "the style we completed with" would name a thing that did not happen.
+        $('#poolLabel').classList.toggle('hidden', !open || blank);
+        $('#poolLabelSent').classList.toggle('hidden', open || blank);
+        $('#poolLabelBlank').classList.toggle('hidden', !blank);
+        $('#poolHint').classList.toggle('hidden', !open || blank);
+        $('#poolHintSent').classList.toggle('hidden', open || blank);
+        $('#poolBlankHint').classList.toggle('hidden', !blank);
         box.textContent = '';
         // NO "whatever suits my design" row: she picks, or nothing is ticked. It
         // used to lead the list and be selected by default, which meant the

@@ -973,6 +973,14 @@
             <label class="fld check"
               ><input type="checkbox" id="e-chasers" /><span>צ׳ייסרים</span></label
             >
+            <!-- The buyer's own choice, editable here because she asks for it by
+                 phone as often as through the page — and because after her
+                 collection closes the owner is the only one who still can. -->
+            <label class="fld check"
+              ><input type="checkbox" id="e-no-topup" data-testid="e-no-topup" /><span
+                >בלי השלמת מילים (קלפים ריקים)</span
+              ></label
+            >
           </div>
         </fieldset>
 
@@ -1732,6 +1740,7 @@
         el('e-title').value = c.custom_title || '';
         el('e-comment').value = c.comment || '';
         el('e-chasers').checked = !!c.chasers;
+        el('e-no-topup').checked = !!c.no_topup;
 
         await loadThemeList();
         const designs = await loadDesignList();
@@ -2140,6 +2149,9 @@
           custom_title: el('e-title').value,
           comment: el('e-comment').value,
           chasers: el('e-chasers').checked,
+          // Ticked, the deck is printed from HER words alone and the rest of the
+          // cards come out empty and numbered — the pool below is then never read.
+          no_topup: el('e-no-topup').checked,
           // '' clears the override back to the theme's own pool. The server
           // refuses a name that doesn't match a real pool.
           wordlist: el('e-wordlist').value,

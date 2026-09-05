@@ -182,18 +182,30 @@ def topup(personal_words, theme_key, target=TARGET, wordlist=None,
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) < 3:
-        sys.exit("usage: topup.py <personal_words.txt> <theme_key> [out.txt] [pool]")
-    src, theme_key = sys.argv[1], sys.argv[2]
+    # --target=N anywhere in argv, pulled out before the positionals so the
+    # existing four-argument call is byte-for-byte what it was. It exists for the
+    # NO-FILL order (server/word-bank.js freezing a bank the buyer asked us not
+    # to top up): target=0 is this same function answering "fill it to nothing",
+    # so her words come back deduped by the one implementation of the rule and no
+    # pool is read.
+    argv = [a for a in sys.argv[1:] if not a.startswith("--target=")]
+    target = TARGET
+    for a in sys.argv[1:]:
+        if a.startswith("--target="):
+            target = int(a.split("=", 1)[1])
+    if len(argv) < 2:
+        sys.exit("usage: topup.py <personal_words.txt> <theme_key> [out.txt] "
+                 "[pool] [--target=N]")
+    src, theme_key = argv[0], argv[1]
     # The optional 4th argument is the order's own seed pool (#410) — the same
     # override order_to_pdf takes as --wordlist. The server passes it when it
     # FREEZES a collection's word bank (server/word-bank.js); a freeze that
     # ignored it would store a bank the print does not reproduce, which is the
     # one thing freezing exists to prevent.
-    pool = sys.argv[4] if len(sys.argv) > 4 else None
+    pool = argv[3] if len(argv) > 3 else None
     personal = open(src, encoding="utf-8-sig").read().splitlines()
-    result = topup(personal, theme_key, wordlist=pool)
-    if len(sys.argv) > 3:
-        with open(sys.argv[3], "w", encoding="utf-8") as f:
+    result = topup(personal, theme_key, target=target, wordlist=pool)
+    if len(argv) > 2:
+        with open(argv[2], "w", encoding="utf-8") as f:
             f.write("\n".join(result) + "\n")
     print(f"topped up {len(personal)} personal -> {len(result)} words ({theme_key})")

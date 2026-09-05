@@ -383,6 +383,30 @@
             <button class="btn primary" id="saveOpts" data-testid="save-opts">שמירה</button>
             <span class="status" id="optsStatus"></span>
           </div>
+          <!-- THE LAST ROW OF THE SAME MENU, and the one that is not a list: the
+               customer answering "don't fill it at all". It is a LABEL and not a
+               tick because the row needs wording and the wording is the owner's;
+               empty means the row is not offered. It only ever appears BELOW the
+               rows above — a radio group cannot be un-picked, so a decline with
+               no list beside it would be a choice with no way back. -->
+          <div class="row" style="margin-top: 16px; border-top: 1px solid #eee; padding-top: 14px">
+            <label>
+              השורה של "בלי השלמה" (ריק = לא מציעים אותה)
+              <input
+                type="text"
+                id="blankLabel"
+                data-testid="blank-label"
+                maxlength="60"
+                placeholder="לא להשלים לי מילים (קלפים ריקים עם למינציה)"
+              />
+            </label>
+            <button class="btn primary" id="saveBlank" data-testid="save-blank">שמירה</button>
+            <span class="status" id="blankStatus"></span>
+          </div>
+          <p class="status" id="blankNote">
+            הלקוחה בוחרת את השורה הזו במקום רשימה, ואנחנו מדפיסים רק את המילים שלה. שאר הקלפים
+            בחפיסה יוצאים ריקים עם המספרים 1-4, לכתיבה עצמית. אותה כמות קלפים - פחות מילים שלנו.
+          </p>
         </div>
 
         <div class="panel" style="margin-top: 26px">
@@ -627,6 +651,7 @@
           const st = await api('GET', '/api/admin/settings');
           const eff = (st && st.effective && st.effective.wordlists) || {};
           buyerOpts = Array.isArray(eff.buyer_options) ? eff.buyer_options : [];
+          qs('blankLabel').value = eff.blank_label || '';
           if (openName) {
             const full = await api('GET', '/api/admin/wordlists/' + encodeURIComponent(openName));
             const i = data.wordlists.findIndex((w) => w.name === openName);
@@ -680,6 +705,23 @@
           } catch (err) {
             setMsg(qs('optsStatus'), 'שמירה נכשלה: ' + err.message, 'err');
           }
+        }
+      });
+
+      // The decline row's label, saved on its own button beside the menu's: it is
+      // one field and one key, and folding it into the table's save would mean a
+      // typo in a menu row could block a change that has nothing to do with it.
+      document.addEventListener('click', async (e) => {
+        if (e.target.id !== 'saveBlank') return;
+        try {
+          await api('POST', '/api/admin/settings', {
+            section: 'wordlists',
+            key: 'blank_label',
+            value: qs('blankLabel').value.trim(),
+          });
+          setMsg(qs('blankStatus'), 'נשמר ✓', 'ok');
+        } catch (err) {
+          setMsg(qs('blankStatus'), 'שמירה נכשלה: ' + err.message, 'err');
         }
       });
 

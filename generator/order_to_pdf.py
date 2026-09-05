@@ -34,7 +34,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  custom_title=None, photos=None, photo_views=None,
                  press_icc=None,
                  press_bleed=None, press_cmyk=True, gender=None, wordlist=None,
-                 order=pack.ORDER_RANDOM, personal_count=None):
+                 order=pack.ORDER_RANDOM, personal_count=None, no_topup=False):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -78,6 +78,14 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                   measurement below would say "all 412 are hers" and the deck
                   would print blended with nothing to show it. The server knows
                   the real boundary and passes it.
+    no_topup      the buyer asked us NOT to fill her deck with our words. The
+                  filler is skipped entirely and the shortfall is printed as EMPTY
+                  numbered cards instead — she laminates them and writes her own
+                  at the table. The deck keeps its full length either way: what
+                  she is buying is 104 cards, and 'don't fill it' is a decision
+                  about the WORDS on them, not about how many she gets. v1 (sheet)
+                  templates only skip the filler — the padding and the numbers on
+                  an empty card are v2 work, and every live template is v2
     order         how the words are laid onto cards (see pack.ORDERS), chosen per
                   order by the owner: 'random' blends everything, 'personal-first'
                   opens the deck with HER words, 'by-script' keeps Hebrew cards and
@@ -108,7 +116,12 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         # Under `exact` her repeats are kept: she wrote the list in fours and each
         # four is a card, so a word she used as a clue on two cards must appear
         # twice or every card after the first repeat shifts. See pack.ORDERS.
+        # ...or not, when she asked us not to. `target=0` is the same function
+        # answering "fill it to nothing": her words, deduped exactly as they
+        # would have been, and no pool read at all. One implementation of the
+        # dedup, which is the only part of the top-up a no-fill order still wants.
         words = topup(personal_words, theme_key, wordlist=wordlist,
+                      target=0 if no_topup else topupmod.TARGET,
                       keep_duplicates=(order == pack.ORDER_EXACT))
         # Where her own words end and the filler begins — the boundary the
         # 'personal-first' order splits on. It is a count because the deck is one
@@ -142,8 +155,11 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         sizes = word_demand.measure(words, theme_key, word_font=word_font)
         weights = word_demand.letter_weights(words)
         if config.is_single_card(cfg):
+            # A no-fill deck is padded back out to its full length with EMPTY
+            # cards rather than stopping where her words do (pack.min_cards).
             pack.pack(words, csv_path, fronts=len(config.fronts(cfg)),
-                      order=order, personal_count=boundary, sizes=weights)
+                      order=order, personal_count=boundary, sizes=weights,
+                      min_cards=pack.WORD_CARDS if no_topup else None)
         else:
             pack.pack(words, csv_path, order=order, personal_count=boundary,
                       sizes=weights)
@@ -169,6 +185,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                 photo_views=photo_views,
                 press_icc=press_icc, press_bleed=press_bleed,
                 press_cmyk=press_cmyk, gender=gender,
+                blank_markers=no_topup,
             )
 
         fronts = config.clean_path(theme_key, "fronts")
@@ -240,6 +257,10 @@ def main():
                     help="bleed depth in mm for --press (default: the agreed 3)")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--no-topup", action="store_true",
+                    help="do NOT fill the deck from a seed pool: print the "
+                         "buyer's own words and leave the rest of the deck as "
+                         "empty numbered cards for her to write on")
     ap.add_argument("--wordlist", default=None, metavar="NAME",
                     help="seed pool that tops this deck up, replacing the "
                          "theme's own (personal words and generic-350 are "
@@ -278,7 +299,7 @@ def main():
         press_icc=args.press, press_bleed=args.bleed,
         press_cmyk=not args.press_passthrough, gender=args.gender,
         wordlist=args.wordlist, order=args.order,
-        personal_count=args.personal_count,
+        personal_count=args.personal_count, no_topup=args.no_topup,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of
