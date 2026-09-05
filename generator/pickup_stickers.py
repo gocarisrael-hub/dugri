@@ -21,6 +21,19 @@ cut and no cut guides to line up. It used to be eight to an A4 sheet in a 2x4
 grid, guillotined apart; the page carries exactly one label now, at the same
 size that grid gave it, so nothing about the label's own layout moved.
 
+NOT EVERY BOX IN THE PILE IS COLLECTED, though, and the ones going out by courier
+carry HFD's own sticker — a barcode the driver scans, which we cannot draw. So an
+entry in the input may instead be ``{"pdf": "<path>"}``: a label PDF already
+fetched from HFD, which is carried into the output AS IS, in its place in the
+batch. The owner asked for one download for the whole pile rather than ours here
+and HFD's from their website, and the pile is mixed, so the file has to be.
+
+That is what the ghostscript pass at the bottom is for: Chrome renders OUR labels
+in one go (one browser start, not one per label), ghostscript cuts that into
+single pages, and a second ghostscript pass interleaves them with HFD's in the
+order the batch came in. Page sizes survive the merge — ours stay 105x74 and
+HFD's stay whatever HFD prints.
+
 The fonts are INLINED from site/assets/fonts rather than named and hoped for:
 this renders in a container whose font situation is not ours to assume, and a
 missing Hebrew face does not fail loudly — it prints a page of boxes.
@@ -29,9 +42,14 @@ import base64
 import html
 import json
 import os
+import subprocess
 import sys
 
 import chrome
+
+# The same override name press.py, proof_sheet.py and press_marks.py use, so one
+# container-level GHOSTSCRIPT setting moves every pass that needs it.
+GS = os.environ.get("GHOSTSCRIPT", "gs")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -183,14 +201,105 @@ def sheet_html(stickers):
     )
 
 
+def is_courier_label(entry):
+    """True for an entry that is already a PDF — HFD's sticker, not ours.
+
+    The courier's label carries a barcode the driver scans; it comes down from
+    HFD and is carried into the batch untouched.
+    """
+    return bool(isinstance(entry, dict) and entry.get("pdf"))
+
+
+def _gs(args, what):
+    """One ghostscript run, or a RuntimeError carrying its complaint."""
+    proc = subprocess.run(
+        [GS, "-q", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pdfwrite"] + args,
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        detail = (proc.stderr or proc.stdout or "").strip()[-400:]
+        raise RuntimeError(f"ghostscript failed ({what}, exit {proc.returncode}): {detail}")
+
+
+def _readable_pdf(path):
+    """True when ``path`` is a file that actually begins %PDF.
+
+    A label that did not come down cleanly is skipped rather than merged: one
+    unreadable sticker must not cost the owner the other twenty.
+    """
+    try:
+        with open(path, "rb") as f:
+            return f.read(5).startswith(b"%PDF")
+    except OSError:
+        return False
+
+
 def build(stickers, out_pdf, workdir=None):
-    """Render the labels to ``out_pdf`` and return the path."""
+    """Render the batch to ``out_pdf`` and return the path.
+
+    ``stickers`` is the pile in the order it should print: our own labels as
+    dicts, HFD's as ``{"pdf": path}``. Entries whose PDF cannot be read are
+    dropped — see ``_readable_pdf``.
+    """
     workdir = workdir or os.path.dirname(os.path.abspath(out_pdf))
     os.makedirs(workdir, exist_ok=True)
-    html_path = os.path.join(workdir, "pickup-stickers.html")
-    with open(html_path, "w", encoding="utf-8") as f:
-        f.write(sheet_html(stickers))
-    chrome.print_pdf(html_path, out_pdf, what="pickup stickers")
+
+    entries = list(stickers or [])
+    courier = [e for e in entries if is_courier_label(e)]
+    ours = [e for e in entries if not is_courier_label(e)]
+
+    # The plain case, and the only one an all-self-collection night takes: one
+    # Chrome print and no ghostscript at all.
+    if not courier:
+        html_path = os.path.join(workdir, "pickup-stickers.html")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(sheet_html(ours))
+        chrome.print_pdf(html_path, out_pdf, what="pickup stickers")
+        return out_pdf
+
+    parts_dir = os.path.join(workdir, "parts")
+    os.makedirs(parts_dir, exist_ok=True)
+
+    # OUR labels, all of them in ONE browser run, then cut into single pages by
+    # ONE ghostscript run (`%d` writes a file per page). Rendering them
+    # separately would start Chrome once per sticker, and Chrome runs are capped
+    # to four at a time across the whole container for good reasons.
+    mine = []
+    if ours:
+        html_path = os.path.join(workdir, "pickup-stickers.html")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(sheet_html(ours))
+        sheet_pdf = os.path.join(workdir, "ours.pdf")
+        chrome.print_pdf(html_path, sheet_pdf, what="pickup stickers")
+        _gs(["-sOutputFile=" + os.path.join(parts_dir, "ours-%d.pdf"), sheet_pdf],
+            "splitting our labels")
+        mine = [os.path.join(parts_dir, f"ours-{i}.pdf") for i in range(1, len(ours) + 1)]
+
+    # Back into the order the batch came in: ours and HFD's interleaved, so the
+    # PDF reads down the owner's list rather than sorting itself by who printed
+    # what.
+    ordered = []
+    take = iter(mine)
+    for entry in entries:
+        if is_courier_label(entry):
+            path = str(entry.get("pdf"))
+            if _readable_pdf(path):
+                ordered.append(path)
+            continue
+        nxt = next(take, None)
+        if nxt and _readable_pdf(nxt):
+            ordered.append(nxt)
+
+    if not ordered:
+        # Everything fell away. One blank label beats a zero-page PDF, which most
+        # readers refuse to open at all — the same rule ``pages`` keeps.
+        html_path = os.path.join(workdir, "pickup-stickers.html")
+        with open(html_path, "w", encoding="utf-8") as f:
+            f.write(sheet_html([]))
+        chrome.print_pdf(html_path, out_pdf, what="pickup stickers")
+        return out_pdf
+
+    _gs(["-sOutputFile=" + out_pdf] + ordered, "merging the batch")
     return out_pdf
 
 
@@ -201,8 +310,8 @@ def main():
     with open(sys.argv[1], encoding="utf-8") as f:
         stickers = json.load(f)
     out = build(stickers, sys.argv[2])
-    print(json.dumps({"pdf": out, "stickers": len(stickers),
-                      "pages": len(pages(stickers))}))
+    courier = sum(1 for s in stickers if is_courier_label(s))
+    print(json.dumps({"pdf": out, "ours": len(stickers) - courier, "courier": courier}))
     return 0
 
 

@@ -236,6 +236,27 @@ describe('DELETE /api/admin/collections/:id/hfd', () => {
     expect(r.body.message).toBe('כבר נאסף');
     expect(db.getCollection(c.id).order.hfd.cancelled_at).toBeFalsy();
   });
+
+  it('always says SOMETHING when it refuses — never an empty reason', async () => {
+    // The owner reported this one as "it just says הפעולה נכשלה", which is what
+    // the page falls back to when the response carries no reason at all. A 502
+    // from here must always carry a sentence, even when HFD answers with a body
+    // that is not JSON and tells us nothing.
+    const c = seedDelivery('סירוב בלי מילים');
+    await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    hfdAnswer = () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'text/html' },
+      json: async () => {
+        throw new Error('not json');
+      },
+    });
+    const r = await send('DELETE', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(r.status).toBe(502);
+    expect(String(r.body.message || '').trim().length).toBeGreaterThan(0);
+    expect(db.getCollection(c.id).order.hfd.cancelled_at).toBeFalsy();
+  });
 });
 
 describe('GET /api/admin/hfd/status', () => {

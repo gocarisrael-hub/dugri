@@ -59,6 +59,8 @@ afterAll(() => {
 // An order at whatever point in the pipeline the test needs.
 function order({
   version = 'pickup',
+  shipment = null,
+  shipmentCancelled = false,
   paid = true,
   produced = true,
   toPrint = false,
@@ -74,13 +76,22 @@ function order({
     buyer_name: buyer,
     phone,
   });
-  db.setOrder(c.id, c.owner_token, {
-    version,
-    address:
-      version === 'delivery'
-        ? { street: 'הרצל 12', city: 'תל אביב', postal: '6100000' }
-        : undefined,
-  });
+  db.setOrder(
+    c.id,
+    c.owner_token,
+    {
+      version,
+      address:
+        version === 'delivery'
+          ? { street: 'הרצל 12', city: 'תל אביב', postal: '6100000' }
+          : undefined,
+    },
+    // As the owner, because a fresh settings store has the delivery version
+    // switched OFF and a public setOrder would be refused ('version
+    // unavailable') — which is how the delivery case here used to pass while
+    // never actually creating a delivery order.
+    { admin: version === 'delivery' }
+  );
   if (paid) db.markPaid(c.id, { method: 'pelecard' });
   // The deck having been BUILT is what makes a box to label. This is the state
   // the generator leaves behind on a successful run.
@@ -91,10 +102,24 @@ function order({
     // but not released has its own case below.
     db.setProductionReleased(c.id, true);
   }
+  // A booked courier parcel — the only thing that gives a DELIVERY order a
+  // label, since the sticker for one is HFD's and not ours.
+  if (shipment) {
+    db.setHfdShipment(c.id, {
+      shipment_number: String(shipment),
+      rand_number: '65678' + shipment,
+      tracking_url: 'https://run.hfd.co.il/info/65678' + shipment,
+      sent_at: '2026-09-01T00:00:00.000Z',
+      cancelled_at: shipmentCancelled ? '2026-09-02T00:00:00.000Z' : null,
+    });
+  }
   if (toPrint) db.setOrderSentToPrint(c.id, true);
   if (ready) db.setOrderReady(c.id, true);
   return c;
 }
+
+const batchTitles = () => app.stickerBatch().map((e) => e.label.title);
+const entryFor = (title) => app.stickerBatch().find((e) => e.label.title === title);
 
 const titles = () => app.pickupStickerOrders().map((s) => s.title);
 
@@ -215,9 +240,111 @@ describe('what each label says', () => {
   });
 });
 
+// THE PILE IS MIXED, AND SO IS THE PDF.
+//
+// A produced box either gets collected or gets carried, and the label differs:
+// ours (drawn here) for a collection, HFD's own courier sticker for a delivery.
+// The owner was getting the first from this button and the second from HFD's
+// website; the batch below is both, in the order the orders table shows them.
+describe('the delivery half of tonight’s batch', () => {
+  it('a produced delivery order with a booked parcel is on it, as the courier’s', () => {
+    order({ version: 'delivery', shipment: '95314644', title: 'נוסע במשלוח' });
+    const e = entryFor('נוסע במשלוח');
+    expect(e).toBeTruthy();
+    expect(e.kind).toBe('delivery');
+    expect(e.shipment_number).toBe('95314644');
+    // …and NOT among the labels this server draws: HFD prints that one.
+    expect(titles()).not.toContain('נוסע במשלוח');
+  });
+
+  it('one with no shipment booked is listed but has nothing to fetch', () => {
+    // It stays in the batch on purpose: the caller has to be able to name it
+    // back to the owner ("these got no sticker"), which it cannot do for an
+    // order that was filtered away.
+    order({ version: 'delivery', title: 'בלי משלוח' });
+    const e = entryFor('בלי משלוח');
+    expect(e.kind).toBe('delivery');
+    expect(e.shipment_number).toBeNull();
+  });
+
+  it('one whose parcel was CANCELLED has nothing to fetch either', () => {
+    // The number is kept as history; a stood-down van has no label to print.
+    order({
+      version: 'delivery',
+      shipment: '95314647',
+      shipmentCancelled: true,
+      title: 'משלוח בוטל',
+    });
+    expect(entryFor('משלוח בוטל').shipment_number).toBeNull();
+  });
+
+  it('a DIGITAL order is on neither list — there is no box', () => {
+    order({ version: 'pdf', title: 'קובץ בלבד 2' });
+    expect(batchTitles()).not.toContain('קובץ בלבד 2');
+  });
+
+  it('the batch is oldest first, collections and deliveries together', () => {
+    // The PDF has to read down the owner's list. Sorting the two kinds apart
+    // would mean counting boxes in one order and stickers in another.
+    const all = app.stickerBatch();
+    const nums = all.map((e) => Number(String(e.label.order_no).replace(/\D/g, '')));
+    expect([...nums].sort((a, b) => a - b)).toEqual(nums);
+    expect(new Set(all.map((e) => e.kind))).toEqual(new Set(['pickup', 'delivery']));
+  });
+
+  it('the self-collection list is exactly the pickups of that batch', () => {
+    // Derived, not re-filtered: the two must not drift into disagreeing about
+    // what tonight's pile is.
+    const fromBatch = app
+      .stickerBatch()
+      .filter((e) => e.kind === 'pickup')
+      .map((e) => e.label);
+    expect(app.pickupStickerOrders()).toEqual(fromBatch);
+  });
+});
+
+// WHAT GOES INTO THE PDF, in what order. The generator takes our labels as
+// fields and the courier's as a file it merges in whole, and the sequence of
+// this list IS the page order of the download.
+describe('the batch handed to the renderer', () => {
+  const pickup = (n) => ({ id: 'p' + n, kind: 'pickup', label: { title: 'איסוף ' + n } });
+  const delivery = (n) => ({
+    id: 'd' + n,
+    kind: 'delivery',
+    shipment_number: '9531464' + n,
+    label: { title: 'משלוח ' + n },
+  });
+
+  it('keeps table order, ours as fields and HFD’s as the file', () => {
+    const entries = app.stickerEntries(
+      [pickup(1), delivery(2), pickup(3)],
+      new Map([['d2', '/tmp/hfd-95314642.pdf']])
+    );
+    expect(entries).toEqual([
+      { title: 'איסוף 1' },
+      { pdf: '/tmp/hfd-95314642.pdf' },
+      { title: 'איסוף 3' },
+    ]);
+  });
+
+  it('drops a delivery whose label never came down, and keeps the rest', () => {
+    // One sticker HFD would not hand over must not cost the owner the other
+    // twenty; the page tells her which parcels to fetch by hand.
+    const entries = app.stickerEntries([delivery(1), pickup(2), delivery(3)], new Map());
+    expect(entries).toEqual([{ title: 'איסוף 2' }]);
+  });
+});
+
 describe('GET /api/admin/pickup-stickers', () => {
   it('is closed without the admin key', async () => {
     expect((await fetch(base + '/api/admin/pickup-stickers')).status).toBe(403);
+  });
+
+  it('the batch also answers on its own name', async () => {
+    // /api/admin/pickup-stickers is what the button shipped as and what the
+    // staff allowlist names; /api/admin/stickers is what it does now that the
+    // pile is mixed. Both reach the same handler.
+    expect((await fetch(base + '/api/admin/stickers')).status).toBe(403);
   });
 
   it('says so plainly on a night with nothing to collect', async () => {
@@ -241,6 +368,48 @@ describe('GET /api/admin/pickup-stickers', () => {
     expect((await res.json()).error).toBe('none');
     srv.close();
     fs.rmSync(empty, { recursive: true, force: true });
+    process.env.DATA_DIR = dataDir;
+  });
+
+  it('says WHY when the only boxes waiting are unbooked deliveries', async () => {
+    // Nothing to print is not the same as nothing to do: these need one press of
+    // שלח ל-HFD each, and a flat "there are none tonight" would hide that.
+    const only = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-stickers-unbooked-'));
+    process.env.DATA_DIR = only;
+    for (const f of ['db.js', 'pelecard.js', 'notify.js', 'content.js', 'index.js']) {
+      const p = require.resolve(path.join(serverDir, f));
+      if (require.cache[p]) delete require.cache[p];
+    }
+    const freshDb = require(path.join(serverDir, 'db.js'));
+    const freshApp = require(path.join(serverDir, 'index.js'));
+    const c = freshDb.createCollection('שירה', {
+      theme: 'anniversary',
+      custom_title: 'ממתין למשלוח',
+      buyer_name: 'אופק',
+      phone: '0527275047',
+    });
+    freshDb.setOrder(
+      c.id,
+      c.owner_token,
+      { version: 'delivery', address: { street: 'הרצל 12', city: 'תל אביב', postal: '6100000' } },
+      { admin: true }
+    );
+    freshDb.markPaid(c.id, { method: 'pelecard' });
+    freshDb.setProduction(c.id, { state: 'generated', pages: 208 });
+    freshDb.setProductionReleased(c.id, true);
+    const srv = await new Promise((resolve) => {
+      const s2 = freshApp.listen(0, () => resolve(s2));
+    });
+    const res = await fetch(
+      'http://127.0.0.1:' + srv.address().port + '/api/admin/stickers?key=dugri-admin'
+    );
+    expect(res.status).toBe(409);
+    const body = await res.json();
+    expect(body.error).toBe('none');
+    expect(body.message).toContain('HFD');
+    expect(body.unbooked).toEqual([freshDb.orderRef(freshDb.getCollection(c.id))]);
+    srv.close();
+    fs.rmSync(only, { recursive: true, force: true });
     process.env.DATA_DIR = dataDir;
   });
 });

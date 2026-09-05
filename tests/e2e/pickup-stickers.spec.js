@@ -48,10 +48,21 @@ async function pickupAwaitingPrint(page, title) {
 // state this server cannot be walked into (it needs a real print run), and one
 // that must be applied in the SAME handler: a second page.route on the same
 // pattern replaces the first rather than chaining onto it.
-async function onlyMine(page, mine, { ready = [], atPrinter = [] } = {}) {
+// `delivery` names the ones that go out by courier rather than being collected,
+// and `booked` the ones among those with a parcel open at HFD — the only kind
+// with a courier label to fetch. Both are states this server cannot be walked
+// into (delivery is switched off in a fresh settings store, and a shipment needs
+// real HFD credentials), so they are stamped on in the same handler.
+async function onlyMine(
+  page,
+  mine,
+  { ready = [], atPrinter = [], delivery = [], booked = [] } = {}
+) {
   const keep = new Set(mine.map((c) => c.id));
   const done = new Set(ready.map((c) => c.id));
   const sent = new Set(atPrinter.map((c) => c.id));
+  const ships = new Set(delivery.map((c) => c.id));
+  const parcels = new Set(booked.map((c) => c.id));
   await page.route('**/api/admin/collections*', async (route) => {
     const res = await route.fetch();
     const body = await res.json();
@@ -64,6 +75,10 @@ async function onlyMine(page, mine, { ready = [], atPrinter = [] } = {}) {
         c.order.production = { state: 'generated', released_at: '2026-08-16T00:00:00.000Z' };
         c.order.ready_at = done.has(c.id) ? '2026-08-16T00:00:00.000Z' : null;
         c.order.sent_to_print_at = sent.has(c.id) ? '2026-08-16T00:00:00.000Z' : null;
+        if (ships.has(c.id)) c.order.version = 'delivery';
+        c.order.hfd = parcels.has(c.id)
+          ? { shipment_number: '95314644', cancelled_at: null }
+          : null;
         c.cancelled = false;
       } else {
         c.order.production = null;
@@ -89,7 +104,7 @@ test('the button counts tonight’s stickers and points at the sheet', async ({ 
   // The count is on the button, so it is never a press that turns out to have
   // had nothing behind it.
   await expect(page.locator('#stickerCount')).toHaveText('3');
-  await expect(btn).toHaveAttribute('href', /\/api\/admin\/pickup-stickers\?key=dugri-admin/);
+  await expect(btn).toHaveAttribute('href', /\/api\/admin\/stickers\?key=dugri-admin/);
 });
 
 test('an order already marked ready is not on tonight’s sheet', async ({ page }) => {
@@ -155,4 +170,38 @@ test('the count is not narrowed by the table’s filters', async ({ page }) => {
 test('the sheet is admin-only', async ({ page }) => {
   const res = await page.request.get('/api/admin/pickup-stickers');
   expect(res.status()).toBe(403);
+  // …under its new name too, which is the one the button points at.
+  expect((await page.request.get('/api/admin/stickers')).status()).toBe(403);
+});
+
+// THE PILE IS MIXED. A produced box is either collected (our label) or carried
+// by HFD (their label, fetched per parcel), and the button covers both — the
+// owner was getting the second half off HFD's website.
+test('a delivery order with a parcel booked is counted too', async ({ page }) => {
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה י'),
+    await pickupAwaitingPrint(page, 'שירה יא'),
+  ];
+  await onlyMine(page, mine, { delivery: [mine[1]], booked: [mine[1]] });
+  await page.goto(ADMIN);
+
+  await expect(page.locator('#stickerCount')).toHaveText('2');
+  await expect(page.locator('#stickerNote')).toBeHidden();
+});
+
+test('a delivery order with no parcel is left out, and said so', async ({ page }) => {
+  // Nothing is booked on her behalf: a shipment is a real van and a real charge.
+  // So the button says which orders it cannot label, where she is already
+  // looking, and one press of שלח ל-HFD on that row fixes it.
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה יב'),
+    await pickupAwaitingPrint(page, 'בלי משלוח'),
+  ];
+  await onlyMine(page, mine, { delivery: [mine[1]] });
+  await page.goto(ADMIN);
+
+  await expect(page.locator('#stickerCount')).toHaveText('1');
+  const note = page.locator('#stickerNote');
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('בלי משלוח');
 });
