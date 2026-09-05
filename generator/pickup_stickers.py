@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The self-collection sticker sheet: one label per order waiting at the printer.
+"""The self-collection stickers: one label per order waiting at the printer.
 
     python3 generator/pickup_stickers.py <orders.json> <out.pdf>
 
@@ -15,10 +15,11 @@ ONE STICKER, four lines of it:
     עיצוב:   <design>    ← which game, when two boxes look alike
     טלפון:   <phone>     ← the one thing needed to chase a no-show
 
-EIGHT TO A PAGE — a 2x4 grid on A4, which is the 105x74 mm label the sheets are
-cut to. Filled RIGHT to LEFT and then down, because the page is Hebrew and that
-is the order the eye reads them in; a left-to-right fill would put sticker #1
-where she looks for #2.
+ONE TO A PAGE, AND THE PAGE IS THE LABEL — 105x74 mm, the size of the label
+itself, so the PDF prints straight onto the label stock at 100% with nothing to
+cut and no cut guides to line up. It used to be eight to an A4 sheet in a 2x4
+grid, guillotined apart; the page carries exactly one label now, at the same
+size that grid gave it, so nothing about the label's own layout moved.
 
 The fonts are INLINED from site/assets/fonts rather than named and hoped for:
 this renders in a container whose font situation is not ours to assume, and a
@@ -48,7 +49,13 @@ FONT_FILES = [
      "U+2212, U+2215, U+FEFF, U+FFFD"),
 ]
 
-PER_PAGE = 8
+PER_PAGE = 1
+
+# The label, and therefore the page. 105x74 mm is the label the sheets are cut
+# to — the same rectangle one cell of the old 2x4 A4 grid measured, which is why
+# the type sizes below did not have to move.
+LABEL_W = "105mm"
+LABEL_H = "74mm"
 
 # The heading size, and the sizes a long title steps down to. A title is the
 # customer's own words and can be one syllable ("אחיה") or five
@@ -90,8 +97,9 @@ def font_faces():
 def pages(stickers, per_page=PER_PAGE):
     """``stickers`` split into pages, the last one padded with blanks.
 
-    Padding is not cosmetic: the grid has to keep its shape or the last page's
-    cut lines land somewhere other than where the guillotine is set.
+    At one to a page the padding only ever does one thing, and it is the thing
+    that matters: a night with nothing to collect still yields ONE page. A
+    zero-page PDF is a file most readers refuse to open at all.
     """
     out = []
     for i in range(0, max(len(stickers), 1), per_page):
@@ -109,7 +117,7 @@ def _row(label, value):
 
 
 def cell_html(sticker):
-    """One label. ``None`` is an empty cell — the sheet keeps its grid."""
+    """One label. ``None`` is an empty cell — the page keeps its shape."""
     if not sticker:
         return '<div class="cell"></div>'
     title = str(sticker.get("title") or "").strip()
@@ -127,7 +135,7 @@ def cell_html(sticker):
 
 
 def sheet_html(stickers):
-    """The whole sheet as one printable HTML document."""
+    """The whole run of labels as one printable HTML document."""
     body = "".join(
         '<div class="page">' + "".join(cell_html(s) for s in page) + "</div>"
         for page in pages(stickers)
@@ -136,23 +144,19 @@ def sheet_html(stickers):
         "<!doctype html><html lang='he' dir='rtl'><head><meta charset='utf-8'>"
         "<style>"
         + font_faces() +
-        # No page margin: the grid IS the label sheet, and a printer margin would
-        # shift every cut line by however much the driver felt like.
-        "@page{size:A4;margin:0}"
+        # The page IS the label, edge to edge. No printer margin: one would shrink
+        # the artwork to fit inside it and leave the text off-centre on the stock.
+        f"@page{{size:{LABEL_W} {LABEL_H};margin:0}}"
         "html,body{margin:0;padding:0}"
         "body{font-family:'Heebo',Arial,sans-serif;color:#000;"
         "-webkit-print-color-adjust:exact;print-color-adjust:exact}"
-        ".page{width:210mm;height:297mm;display:grid;"
-        "grid-template-columns:1fr 1fr;grid-template-rows:repeat(4,1fr);"
+        f".page{{width:{LABEL_W};height:{LABEL_H};display:flex;"
         "box-sizing:border-box;break-after:page;overflow:hidden}"
         ".page:last-child{break-after:auto}"
-        # The dashed guide is where she cuts. Drawn on every cell's inner edges
-        # so the shared lines do not double in weight.
-        ".cell{box-sizing:border-box;padding:5mm 7mm 4mm;display:flex;"
-        "flex-direction:column;overflow:hidden;"
-        "border-inline-start:1px dashed #8a8a8a;border-bottom:1px dashed #8a8a8a}"
-        ".cell:nth-child(odd){border-inline-start:0}"
-        ".cell:nth-child(7),.cell:nth-child(8){border-bottom:0}"
+        # No cut guides: there is nothing to cut. The label's edge is the page's
+        # edge, and a dashed line there would print along the die-cut.
+        ".cell{flex:1;box-sizing:border-box;padding:5mm 7mm 4mm;display:flex;"
+        "flex-direction:column;overflow:hidden}"
         # Heebo ships here at weight 300 only, so a requested 700 is SYNTHESISED
         # and comes out lighter than the hand-made sheet's bold. The hairline
         # stroke puts that weight back: on a 300-DPI label it reads as a bold
@@ -180,7 +184,7 @@ def sheet_html(stickers):
 
 
 def build(stickers, out_pdf, workdir=None):
-    """Render the sheet to ``out_pdf`` and return the path."""
+    """Render the labels to ``out_pdf`` and return the path."""
     workdir = workdir or os.path.dirname(os.path.abspath(out_pdf))
     os.makedirs(workdir, exist_ok=True)
     html_path = os.path.join(workdir, "pickup-stickers.html")

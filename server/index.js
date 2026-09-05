@@ -2207,7 +2207,8 @@ function runPickupStickers(stickers) {
   });
 }
 
-// Admin: the night's sticker sheet, as a PDF to print.
+// Admin: the night's stickers, as a PDF to print — one label to a page, and the
+// page is the label (105x74 mm), so it goes straight onto the label stock.
 //
 // A GET so the button can be a plain link and the browser's own download does
 // the work — there is nothing to post, and the sheet is derived entirely from
