@@ -6,9 +6,16 @@
 // BLANK — numbered 1-4 and otherwise empty — to laminate and write on at the
 // table. This is that choice, end to end.
 //
+// It is not a control beside the pool menu — it is the LAST ROW OF IT. One
+// question ("which of our words go on the rest of your cards?"), one radio group,
+// and this is one of the answers.
+//
 // What has to hold:
-//   • it is the OWNER'S to offer: switched off, the control never renders AND the
-//     route refuses it, because a switch that only hides a control is not one,
+//   • it is the OWNER'S to offer: with no label it is not a row at all AND the
+//     route refuses it, because a menu that only hides a row is not a menu,
+//   • it rides along with the menu and is never the only row — a radio group
+//     cannot be un-picked, so a lone decline would be a choice with no way back,
+//   • picking a real list un-declines, because they are answers to one question,
 //   • it is the buyer's to make while her collection is open, and nobody's after
 //     it closes,
 //   • it DISCARDS a frozen word bank, which was frozen with our filler in it,
@@ -29,8 +36,11 @@ const realFetch = globalThis.fetch;
 
 let db;
 let settings;
+let wordlists;
 let wordBank;
 let app;
+let pool; // a real pool name, so the menu these tests build is one that works
+const BLANK = '__blank__';
 let server;
 let base;
 let dataDir;
@@ -44,8 +54,10 @@ beforeAll(async () => {
   }
   db = require(path.join(serverDir, 'db.js'));
   settings = require(path.join(serverDir, 'settings.js'));
+  wordlists = require(path.join(serverDir, 'wordlists.js'));
   wordBank = require(path.join(serverDir, 'word-bank.js'));
   app = require(path.join(serverDir, 'index.js'));
+  pool = wordlists.list()[0].name;
   await new Promise((resolve) => {
     server = app.listen(0, () => {
       base = 'http://127.0.0.1:' + server.address().port;
@@ -59,19 +71,24 @@ afterAll(() => {
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
 
-const offer = (on) => settings.set('wordlists', 'blank_option', on);
+// The decline is offered by GIVING IT A LABEL; empty means it is not a row.
+const offer = (label) => settings.set('wordlists', 'blank_label', label);
+// ...and it only ever rides along with a menu, so most tests need one.
+const setMenu = (list) => settings.set('wordlists', 'buyer_options', list);
+const aMenu = () => setMenu([{ id: 'jokes', label: 'בדיחות פנימיות', pool, enabled: true }]);
 
-async function putNoTopup(id, k, no_topup) {
+async function pick(id, k, option_id) {
   const res = await realFetch(
-    base + '/api/collections/' + id + '/no-topup?k=' + encodeURIComponent(k),
+    base + '/api/collections/' + id + '/wordlist?k=' + encodeURIComponent(k),
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ no_topup }),
+      body: JSON.stringify({ option_id }),
     }
   );
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
+const putNoTopup = (id, k, on) => pick(id, k, on ? BLANK : '');
 
 const BASE_ARGS = {
   theme: 'bachelorette',
@@ -80,53 +97,94 @@ const BASE_ARGS = {
   outPath: '/tmp/out.pdf',
 };
 
-describe('the owner decides whether it is offered at all', () => {
-  it('is offered by default, alongside whatever pool menu she has built', async () => {
-    offer(true);
+describe('it is the last row of the pool menu', () => {
+  it('is served with the pools, under the label the owner gave it', async () => {
+    aMenu();
+    offer('לא להשלים לי מילים');
     const r = await realFetch(base + '/api/wordlist-options').then((x) => x.json());
-    expect(r.blank).toBe(true);
+    expect(r.options).toEqual([
+      { id: 'jokes', label: 'בדיחות פנימיות' },
+      { id: BLANK, label: 'לא להשלים לי מילים' },
+    ]);
   });
 
-  it('switched off, the menu says so', async () => {
-    offer(false);
+  it('is NEVER the only row — a radio group has no way back out of one', async () => {
+    // The menu is what makes the decline undoable: she un-declines by picking a
+    // list. Offered alone it would be a one-way door on the last screen.
+    setMenu([]);
+    offer('לא להשלים לי מילים');
     const r = await realFetch(base + '/api/wordlist-options').then((x) => x.json());
-    expect(r.blank).toBe(false);
-    offer(true);
+    expect(r.options).toEqual([]);
+    aMenu();
   });
 
-  it('switched off, the route REFUSES it — hiding the control is not enough', async () => {
-    offer(false);
+  it('with no label it is not a row, and the route REFUSES it', async () => {
+    aMenu();
+    offer('');
     const c = db.createCollection('בדיקה', {});
-    const r = await putNoTopup(c.id, c.owner_token, true);
+    const r = await pick(c.id, c.owner_token, BLANK);
     expect(r.status).toBe(409);
     expect(db.getCollection(c.id).no_topup).toBeFalsy();
-    offer(true);
+    offer('לא להשלים לי מילים');
   });
 
-  it('switched off, she can still UNSET one she already had', async () => {
-    // Otherwise the switch traps every order that took the offer while it stood:
-    // the control is gone, the route refuses, and the deck prints half empty.
-    offer(true);
+  it('withdrawn, she can still un-decline an order that already took it', async () => {
+    // Otherwise clearing the label traps every order made while it stood: the
+    // row is gone, the route refuses, and the deck prints half empty.
+    aMenu();
+    offer('לא להשלים לי מילים');
     const c = db.createCollection('בדיקה', {});
-    await putNoTopup(c.id, c.owner_token, true);
-    offer(false);
-    const r = await putNoTopup(c.id, c.owner_token, false);
+    await pick(c.id, c.owner_token, BLANK);
+    offer('');
+    const r = await pick(c.id, c.owner_token, '');
     expect(r.status).toBe(200);
     expect(db.getCollection(c.id).no_topup).toBe(false);
-    offer(true);
+    offer('לא להשלים לי מילים');
   });
 });
 
-describe('PUT /api/collections/:id/no-topup', () => {
-  it('stores the choice and answers with it', async () => {
+describe('picking it, and picking away from it', () => {
+  it('stores the choice and answers with the row she is on', async () => {
+    aMenu();
+    offer('לא להשלים לי מילים');
     const c = db.createCollection('בדיקה', {});
-    const r = await putNoTopup(c.id, c.owner_token, true);
+    const r = await pick(c.id, c.owner_token, BLANK);
     expect(r.status).toBe(200);
-    expect(r.body.no_topup).toBe(true);
+    expect(r.body.option_id).toBe(BLANK);
     expect(db.getCollection(c.id).no_topup).toBe(true);
   });
 
+  it('picking a real list un-declines — they answer the same question', async () => {
+    aMenu();
+    offer('לא להשלים לי מילים');
+    const c = db.createCollection('בדיקה', {});
+    await pick(c.id, c.owner_token, BLANK);
+    const r = await pick(c.id, c.owner_token, 'jokes');
+    expect(r.status).toBe(200);
+    expect(r.body.option_id).toBe('jokes');
+    expect(db.getCollection(c.id).no_topup).toBe(false);
+    expect(db.getCollection(c.id).wordlist).toBe(pool);
+  });
+
+  it('the declined row is what the sheet reports, over any pool underneath it', async () => {
+    // She may have picked a list before changing her mind. We keep the pool (so
+    // the row she used to be on is still there), but what is TICKED has to be
+    // what we are actually going to print.
+    aMenu();
+    offer('לא להשלים לי מילים');
+    const c = db.createCollection('בדיקה', {});
+    await pick(c.id, c.owner_token, 'jokes');
+    await pick(c.id, c.owner_token, BLANK);
+    expect(db.getCollection(c.id).wordlist).toBe(pool);
+    const sheet = await realFetch(
+      base + '/api/collections/' + c.id + '?k=' + encodeURIComponent(c.owner_token)
+    ).then((x) => x.json());
+    expect(sheet.wordlist_option).toBe(BLANK);
+  });
+
   it('is owner-token gated, like every other choice on her sheet', async () => {
+    aMenu();
+    offer('לא להשלים לי מילים');
     const c = db.createCollection('בדיקה', {});
     const r = await putNoTopup(c.id, 'not-her-token', true);
     expect(r.status).toBe(403);
@@ -134,6 +192,8 @@ describe('PUT /api/collections/:id/no-topup', () => {
   });
 
   it('is refused once the collection is closed and the deck is in production', async () => {
+    aMenu();
+    offer('לא להשלים לי מילים');
     const c = db.createCollection('בדיקה', {});
     db.closeCollection(c.id, c.owner_token);
     const r = await putNoTopup(c.id, c.owner_token, true);
@@ -141,16 +201,9 @@ describe('PUT /api/collections/:id/no-topup', () => {
     expect(db.getCollection(c.id).no_topup).toBeFalsy();
   });
 
-  it('leaves her seed-pool pick alone, so un-ticking gives it back', async () => {
-    const c = db.createCollection('בדיקה', {});
-    db.adminUpdateCollection(c.id, { wordlist: 'generic-350.txt' });
-    await putNoTopup(c.id, c.owner_token, true);
-    expect(db.getCollection(c.id).wordlist).toBe('generic-350.txt');
-    await putNoTopup(c.id, c.owner_token, false);
-    expect(db.getCollection(c.id).wordlist).toBe('generic-350.txt');
-  });
-
   it('is on the view the collection page reads, and only for the owner', async () => {
+    aMenu();
+    offer('לא להשלים לי מילים');
     const c = db.createCollection('בדיקה', {});
     await putNoTopup(c.id, c.owner_token, true);
     const mine = await realFetch(

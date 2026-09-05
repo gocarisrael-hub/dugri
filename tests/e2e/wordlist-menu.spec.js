@@ -74,13 +74,13 @@ async function setMenu(page, options) {
   });
   expect(res.status()).toBe(200);
 }
-// The OTHER answer to the same question — "don't fill it at all" — which is a
-// separate owner switch and not a row of the menu above. Set here for the same
-// reason the menu is: it is one global setting, and these tests are the file
-// that owns writing it.
-async function setBlank(page, on) {
+// The LAST ROW of that same menu — "don't fill it at all" — offered by giving it
+// a label and withdrawn by clearing it. Set here for the same reason the menu is:
+// it is one global setting, and these tests are the file that owns writing it.
+const BLANK = '__blank__';
+async function setBlank(page, label) {
   const res = await page.request.post('/api/admin/settings?key=dugri-admin', {
-    data: { section: 'wordlists', key: 'blank_option', value: on },
+    data: { section: 'wordlists', key: 'blank_label', value: label },
   });
   expect(res.status()).toBe(200);
 }
@@ -100,9 +100,10 @@ async function openFinishTab(page) {
 
 test('no menu, no chooser — the deck fills by her design as before', async ({ page }) => {
   await setMenu(page, []);
-  // ...and no decline offered either. The decline is the one other thing that can
-  // put this field on screen, and this test is about the POOL menu being empty.
-  await setBlank(page, false);
+  // The decline rides ALONG with the menu, so an empty menu has no rows at all —
+  // but clear its label anyway, so this test says what it is about rather than
+  // leaning on that.
+  await setBlank(page, '');
   const { url } = await createCollection(page);
   await page.goto(url);
   await openFinishTab(page);
@@ -358,79 +359,72 @@ test.describe('the buyer-facing pool menu', () => {
 // These tests fill it; leaving it filled would hand the next file a state it
 // never asked for — and closing an order now waits on a pick whenever a menu
 // exists. Put it back the way every install ships.
-test('leaves the shared menu empty behind it', async ({ page }) => {
-  await setMenu(page, []);
-  const menu = await page.request.get('/api/wordlist-options').then((r) => r.json());
-  expect(menu.options).toHaveLength(0);
-});
-
-// ---- "don't fill it at all" ------------------------------------------------
+// ---- the row that says "don't fill it at all" -----------------------------
 // Some buyers do not want our words on their cards: they want the rest of the
 // deck printed BLANK — numbered 1-4 and otherwise empty — to laminate and write
-// on at the table. It is the same question the menu asks, answered by declining
-// it, which is why it lives beside the menu and not inside it.
+// on at the table. That is an answer to the question this menu asks, so it is a
+// ROW of it: same radio group, same save, and picking a list is how she takes it
+// back.
 
-test('she can decline the fill, with or without a menu to decline it from', async ({ page }) => {
-  await setMenu(page, []);
-  await setBlank(page, true);
+test('the decline is the last row of the menu, and picking it sticks', async ({ page }) => {
+  const pools = await poolNames(page);
+  await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
+  await setBlank(page, 'לא להשלים לי מילים (קלפים ריקים עם למינציה)');
   const { url, id, k } = await createCollection(page);
   await page.goto(url);
   await openFinishTab(page);
 
-  // The field is on screen even with an EMPTY menu: the decline is a real choice
-  // that stands on its own, and it is not one of the pools.
-  await expect(page.getByTestId('pool-field')).toBeVisible();
-  const box = page.getByTestId('pool-blank-box');
-  await expect(box).not.toBeChecked();
-  await box.check();
+  // It is in the group with the lists, under the owner's own wording, and last.
+  const rows = page.locator('#poolOpts .pool-opt');
+  await expect(rows).toHaveCount(2);
+  await expect(rows.last()).toContainText('לא להשלים לי מילים');
+  await page.getByTestId('pool-opt-__blank__').check();
 
   await expect
     .poll(async () =>
       page.request
         .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
         .then((r) => r.json())
-        .then((sheet) => sheet.no_topup)
+        .then((sheet) => [sheet.wordlist_option, sheet.no_topup])
     )
-    .toBe(true);
+    .toEqual([BLANK, true]);
 
-  // ...and it survives a reload, like every other answer on this tab.
+  // ...and it is still the ticked row after a reload, like any other answer here.
   await page.reload();
   await openFinishTab(page);
-  await expect(page.getByTestId('pool-blank-box')).toBeChecked();
-  await setBlank(page, false);
+  await expect(page.getByTestId('pool-opt-__blank__')).toBeChecked();
+  await setBlank(page, '');
 });
 
-test('declining puts the styles away — they are moot, not merely greyed', async ({ page }) => {
+test('the sheet says what that row means, and stops promising 412', async ({ page }) => {
   const pools = await poolNames(page);
   await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
-  await setBlank(page, true);
+  await setBlank(page, 'לא להשלים לי מילים');
   const { url } = await createCollection(page);
   await page.goto(url);
   await openFinishTab(page);
 
-  await expect(page.getByTestId('pool-opt-jokes')).toBeVisible();
-  await page.getByTestId('pool-blank-box').check();
-  // No style was chosen, so the heading that names one would be a lie — this
-  // state gets its own.
-  await expect(page.getByTestId('pool-opt-jokes')).toBeHidden();
+  await expect(page.locator('#poolBlankHint')).toBeHidden();
+  await page.getByTestId('pool-opt-__blank__').check();
+  // Nothing is being completed, so the heading and the hint that say we complete
+  // to 412 would both be describing a thing that is not going to happen.
   await expect(page.locator('#poolLabel')).toBeHidden();
   await expect(page.locator('#poolLabelBlank')).toBeVisible();
+  await expect(page.locator('#poolHint')).toBeHidden();
   await expect(page.locator('#poolBlankHint')).toBeVisible();
 
-  // Un-ticking gives the question back, unanswered.
-  await page.getByTestId('pool-blank-box').uncheck();
-  await expect(page.getByTestId('pool-opt-jokes')).toBeVisible();
-  await expect(page.getByTestId('pool-opt-jokes')).not.toBeChecked();
-  await setBlank(page, false);
+  // Picking a list is the way back, and it takes the page back with it.
+  await page.getByTestId('pool-opt-jokes').check();
+  await expect(page.locator('#poolLabel')).toBeVisible();
+  await expect(page.locator('#poolBlankHint')).toBeHidden();
+  await setBlank(page, '');
 });
 
-test('a declined fill is itself the answer, so the deck can go to production', async ({ page }) => {
-  // The close gate asks her to pick a STYLE. Declining the fill means there is
-  // no filler to have a style, and a gate that still demanded one would trap her
-  // on the last screen with no way to satisfy it.
+test('declining is an answer, so the deck can go to production', async ({ page }) => {
+  // The close gate waits for an answer to this menu. The decline is one of them.
   const pools = await poolNames(page);
   await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
-  await setBlank(page, true);
+  await setBlank(page, 'לא להשלים לי מילים');
   const { url } = await createCollection(page);
   await page.goto(url);
   await openFinishTab(page);
@@ -438,17 +432,28 @@ test('a declined fill is itself the answer, so the deck can go to production', a
   const close = page.locator('#closeBtn');
   await page.getByTestId('finish-ack').check();
   await expect(close).toBeDisabled();
-  await page.getByTestId('pool-blank-box').check();
+  await page.getByTestId('pool-opt-__blank__').check();
   await expect(close).toBeEnabled();
-  await setBlank(page, false);
+  await setBlank(page, '');
 });
 
-test('the owner can stop offering it, and then it is not on the page', async ({ page }) => {
-  await setMenu(page, []);
-  await setBlank(page, false);
+test('the owner can withdraw the row, and then it is not on the menu', async ({ page }) => {
+  const pools = await poolNames(page);
+  await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
+  await setBlank(page, '');
   const { url } = await createCollection(page);
   await page.goto(url);
   await openFinishTab(page);
-  await expect(page.getByTestId('pool-field')).toBeHidden();
-  await expect(page.getByTestId('pool-blank')).toBeHidden();
+  await expect(page.locator('#poolOpts .pool-opt')).toHaveCount(1);
+  await expect(page.getByTestId('pool-opt-__blank__')).toHaveCount(0);
+});
+
+test('leaves the shared menu empty behind it', async ({ page }) => {
+  // LAST in the file on purpose: every test above fills the menu, and this is the
+  // one that hands the next file the state every install ships with. The decline
+  // row's label goes back with it — it is part of the same menu.
+  await setMenu(page, []);
+  await setBlank(page, '');
+  const menu = await page.request.get('/api/wordlist-options').then((r) => r.json());
+  expect(menu.options).toHaveLength(0);
 });

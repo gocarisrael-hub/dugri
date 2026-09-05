@@ -112,6 +112,13 @@ Two deliberate departures from a fixed 104:
 the filler entirely: she is laminating the rest of the deck and writing her own
 words at the table, so we print hers and leave the rest EMPTY.
 
+She says so by picking the LAST ROW of the pool menu on her sign-off tab — the
+one row that names no pool (`wordlist-options.BLANK_ID`, labelled by the owner's
+`wordlists.blank_label`, empty = not offered). It is a row and not a control
+beside the menu because it answers the same question the menu asks, so picking a
+list is what takes it back; and it only ever appears alongside at least one list,
+since a radio group cannot be un-picked.
+
 It reverses the first departure above and nothing else. The deck keeps its full
 103 + 1 — what she bought is 104 cards, and "don't fill it" is a decision about
 the words, not the size — so the shortfall becomes blank cards
@@ -124,9 +131,9 @@ The numbering of empty lines is opt-in for exactly that reason: a slot is empty
 on ordinary decks too (a group seam, the last card of an oversized list) and
 those have always printed the lines they have and no others.
 
-The seed pool is left stored and simply never read, so un-declining gives her
-back the style she picked. The frozen word bank is discarded on the change and
-re-freezes as her words alone.
+The seed pool she may have picked earlier is left stored and simply never read,
+so the row she was on is still there when she comes back. The frozen word bank is
+discarded on the change and re-freezes as her words alone.
 
 ### Which words share a card (per order)
 

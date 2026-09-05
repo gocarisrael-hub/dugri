@@ -694,16 +694,23 @@ const REGISTRY = {
   // in via kind:'wlopts' below); that the pool still EXISTS is checked by the
   // route, which is the only layer that can see the volume.
   //
-  // `blank_option` is the OTHER answer to the same question: don't fill it at
-  // all. Some buyers want the rest of the deck blank and laminated so they can
-  // write their own at the table, and this is the switch that offers them that.
-  // It is not a pool, so it is not one of the menu entries above — it is a
-  // separate choice the buyer makes alongside them, and it can be offered even
-  // when the owner has built no menu at all. Defaults ON: it costs production
-  // nothing (fewer words, same deck) and it is a choice she asked to give.
+  // `blank_label` is the LAST ROW of that same menu: the answer that names no
+  // pool at all. Some buyers do not want our words on their cards — they want
+  // the rest of the deck blank, laminated, and written on at the table — and
+  // that is this question answered, not a different question, so it is a row of
+  // the radio group and not a control beside it.
+  //
+  // It is a LABEL and not a switch because the row needs one and the owner owns
+  // her customer-facing wording; empty means the row is not offered, the same
+  // "empty is off" the pixel id uses. It ships with the wording she wrote.
   wordlists: {
     buyer_options: { kind: 'wlopts', tokens: [], default: DEFAULT_OPTIONS },
-    blank_option: { kind: 'flag', tokens: [], default: true },
+    blank_label: {
+      kind: 'text',
+      max: 60,
+      tokens: [],
+      default: 'לא להשלים לי מילים (קלפים ריקים עם למינציה)',
+    },
   },
   // --- Marketing measurement -------------------------------------------------
   // The Meta (Facebook/Instagram) Pixel id, pasted from Events Manager. EMPTY by

@@ -158,6 +158,11 @@ describe('it agrees with the menu the wizard shows', () => {
     ]);
     const menu = await fetch(base + '/api/wordlist-options').then((r) => r.json());
     const { lists } = await preview();
-    expect(lists.map((l) => ({ id: l.id, label: l.label }))).toEqual(menu.options);
+    // ...every row of it that IS a list. The menu's last row can be "don't fill
+    // it at all" (server/wordlist-options.js BLANK_ID), which names no pool and
+    // so has no words to show — this page is the labels made good on, and there
+    // is nothing to make good on there.
+    const listRows = menu.options.filter((o) => o.id !== '__blank__');
+    expect(lists.map((l) => ({ id: l.id, label: l.label }))).toEqual(listRows);
   });
 });

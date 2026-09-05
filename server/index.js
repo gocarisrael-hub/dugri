@@ -813,9 +813,11 @@ function publicView(c, { owner = false } = {}) {
           // by OPTION ID — never the pool's file name, which is a production
           // detail she is not choosing and has no use for. null = no pick, so the
           // deck fills the way her design says.
-          wordlist_option: optionIdForPool(c.wordlist),
-          // ...and whether she answered the same question the other way: leave
-          // the rest of the deck EMPTY rather than filling it with our words.
+          // Which row of the pool menu this order is on — including the row
+          // that says "don't fill it at all", which stores no pool.
+          wordlist_option: optionIdForCollection(c),
+          // ...and that same answer as the bare fact production reads: the rest
+          // of the deck is printed EMPTY rather than filled with our words.
           no_topup: !!c.no_topup,
           // Can she still add door-to-door delivery to an order she has already
           // paid for, and what would it cost? Computed by the store (one place,
@@ -2937,12 +2939,20 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   }
 });
 
-// Which buyer-facing option a stored pool corresponds to, or null. The order
-// stores the POOL (that is what the generator needs); the menu is keyed by option
-// id, and the sheet needs the id back to show which one is ticked. Resolved on
-// read rather than stored twice, so renaming a pool in one place cannot leave the
-// two disagreeing.
-function optionIdForPool(pool) {
+// Which row of the buyer-facing menu THIS ORDER is on, or null for none.
+//
+// Two kinds of row, and the order records each of them its own way: an ordinary
+// row stores the POOL (that is what the generator needs) and is matched back to
+// its id here, while the decline stores `no_topup` and names no pool at all.
+// Resolved on read rather than stored twice, so renaming a pool in one place
+// cannot leave the two disagreeing.
+//
+// The decline is checked FIRST: an order can carry a pool she picked before she
+// changed her mind (we keep it, so the row she used to be on is still there when
+// she comes back), and what is TICKED is what we are actually going to print.
+function optionIdForCollection(c) {
+  if (c && c.no_topup) return wordlistOptions.BLANK_ID;
+  const pool = c && c.wordlist;
   if (!pool) return null;
   const list = settings.get('wordlists', 'buyer_options') || [];
   const found = list.find((o) => o && o.enabled && o.pool === pool);
@@ -2952,40 +2962,18 @@ function optionIdForPool(pool) {
 // The buyer-facing pool menu, public. Labels only — the pool file names behind
 // them are production detail (see server/wordlist-options.js). Empty until the
 // owner builds the menu, which is exactly when the chooser should not appear.
+//
+// The last row is "don't fill it at all" when the owner has given it a label
+// (`blank_label`). It rides along with the menu rather than standing on its own:
+// a radio group cannot be un-picked, so a decline with no pool row beside it
+// would be a choice with no way back out of it.
 app.get('/api/wordlist-options', (req, res) => {
   res.json({
-    options: wordlistOptions.publicOptions(settings.get('wordlists', 'buyer_options')),
-    // ...and whether she may answer the question the other way: don't fill it.
-    // Not one of the options above, because it names no pool — it is a separate
-    // choice, and one that can be offered when the owner has built no menu at all.
-    blank: !!settings.get('wordlists', 'blank_option'),
+    options: wordlistOptions.publicOptions(
+      settings.get('wordlists', 'buyer_options'),
+      settings.get('wordlists', 'blank_label')
+    ),
   });
-});
-
-// The buyer asks us NOT to fill the rest of her deck with our words: it prints
-// blank and numbered instead, for her to laminate and write on. Body:
-// { no_topup: true|false }.
-//
-// Same gate and same window as her pool pick above — hers until she CLOSES the
-// collection, because closing freezes the word bank and this is one of the
-// inputs it is frozen from.
-//
-// Refused when the owner is not offering it. A buyer who could set it through
-// the API anyway would get a half-empty deck the owner never agreed to sell, and
-// a switch that only hides the control is not a switch.
-app.put('/api/collections/:id/no-topup', express.json({ limit: '1kb' }), (req, res) => {
-  const c = db.getCollection(req.params.id);
-  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
-  if (db.effectiveStatus(c) !== 'open') {
-    return res.status(409).json({ error: 'closed', message: 'האיסוף נסגר והמשחק בהפקה' });
-  }
-  const on = !!(req.body || {}).no_topup;
-  if (on && !settings.get('wordlists', 'blank_option')) {
-    return res.status(409).json({ error: 'not offered' });
-  }
-  const stored = db.setNoTopupForOwner(req.params.id, req.query.k, on);
-  if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
-  res.json({ ok: true, no_topup: stored });
 });
 
 // THE WORDS THEMSELVES, public — what wordlists.html shows.
@@ -3027,6 +3015,11 @@ app.get('/api/wordlist-preview', (req, res) => {
 // The buyer picks which pool fills the rest of her deck. Body: { option_id } —
 // null/'' clears the pick and lets her design decide, as before.
 //
+// ...or picks the row that says DON'T fill it: her words print and the rest of
+// the deck comes out blank and numbered for her to write on. It is the same
+// question and so the same route — one radio group cannot be answered through two
+// doors without the two eventually disagreeing about which answer is live.
+//
 // Allowed until she CLOSES the collection, the same rule as her title and photos:
 // closing freezes the 412-word bank and starts production, and this choice is one
 // of the inputs that bank is frozen FROM.
@@ -3038,6 +3031,32 @@ app.put('/api/collections/:id/wordlist', express.json({ limit: '4kb' }), (req, r
   }
   const raw = (req.body || {}).option_id;
   const optionId = raw == null ? '' : String(raw).trim();
+  // THE DECLINE, and it is checked against the MENU THAT IS OFFERED — not merely
+  // against the id. An owner who has cleared the label, or who has no menu for it
+  // to ride along with, is not offering this row, and a row nobody is offering
+  // must not be reachable by naming it: the buyer would get a half-empty deck the
+  // owner never agreed to sell. Turning it OFF is always allowed, whatever the
+  // menu says now, or clearing the label would trap every order that took it.
+  const offered = wordlistOptions
+    .publicOptions(
+      settings.get('wordlists', 'buyer_options'),
+      settings.get('wordlists', 'blank_label')
+    )
+    .some((o) => o.id === wordlistOptions.BLANK_ID);
+  if (optionId === wordlistOptions.BLANK_ID) {
+    if (!offered) return res.status(409).json({ error: 'not offered' });
+    const set = db.setNoTopupForOwner(req.params.id, req.query.k, true);
+    if (set === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+    return res.json({
+      ok: true,
+      option_id: optionIdForCollection(db.getCollection(req.params.id)),
+    });
+  }
+  // Any other answer is an answer to the same question, so it un-declines: she
+  // has just told us which of our words to use.
+  if (db.setNoTopupForOwner(req.params.id, req.query.k, false) === 'forbidden') {
+    return res.status(403).json({ error: 'forbidden' });
+  }
   let pool = null;
   if (optionId) {
     // Resolved through the OWNER'S MENU, never taken from the client: the body
@@ -3055,7 +3074,7 @@ app.put('/api/collections/:id/wordlist', express.json({ limit: '4kb' }), (req, r
   }
   const stored = db.setWordlistForOwner(req.params.id, req.query.k, pool);
   if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
-  res.json({ ok: true, option_id: optionIdForPool(stored) });
+  res.json({ ok: true, option_id: optionIdForCollection(db.getCollection(req.params.id)) });
 });
 
 // The buyer RETITLES her own deck from the collection page. Body: { custom_title }

@@ -94,6 +94,10 @@ describe('the menu the owner builds', () => {
   });
 
   it('shows enabled options by label, and never the pool file name', async () => {
+    // The menu's LISTS. Its last row can also be "don't fill it at all", which
+    // names no pool and has its own tests (tests/unit/no-topup.test.js); cleared
+    // here so this one is about the pools it is asking about.
+    settings.set('wordlists', 'blank_label', '');
     setMenu([
       { id: 'jokes', label: 'בדיחות פנימיות', pool, enabled: true },
       { id: 'hidden', label: 'עוד לא מוכן', pool, enabled: false },
