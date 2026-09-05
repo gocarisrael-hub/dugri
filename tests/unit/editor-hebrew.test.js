@@ -437,9 +437,31 @@ describe('a ceiling says where it stops', () => {
   // largest size that box could ever set — above it a ceiling can never bite —
   // so the slider names that number instead of leaving it a mystery.
   it('capMax writes the bound out in words, under the reading', () => {
-    expect(html).toContain('המקסימום של הקופסה הזו');
-    expect(html).toMatch(/end\.textContent = 'עד ' \+ r2\(top\)/);
+    expect(html).toMatch(
+      /end\.textContent = 'עד ' \+ r2\(top\) \+ ' — ' \+ \(why \|\| CAP_WHY\.box\)/
+    );
     expect(html).toContain("(o || e).insertAdjacentElement('afterend', end)");
+  });
+
+  // …AND IT NAMES THE RIGHT MEASUREMENT. One sentence served all six sliders and
+  // was true of only three of them: a TITLE ceiling really is bounded by its own
+  // box (fitFor's capH divides bh), while a WORD ceiling is bounded by the row
+  // PITCH — hBind is min(step / markerLead, step x (ROW_TOP + ROW_BOT) x
+  // WORD_SIZE_K) and neither term reads S.band's rectangle at all. So "make the
+  // box bigger" moved a title's number and could never move a word's, which is
+  // exactly what the owner hit.
+  it('a word ceiling points at the line gap, not at the box', () => {
+    expect(html).toMatch(/word: 'הכי גדול שהשורה מחזיקה\..*רווח בין שורות/);
+    expect(html).toContain('capMax(id, fit.hBind, CAP_WHY.word)');
+  });
+
+  it('a title ceiling is the one bounded by its own box, and says height', () => {
+    // The title sliders take the default, so nothing passes them a reason — the
+    // fallback IS their sentence, and it is about height: the width only ever
+    // enters through the other half of min(width fit, height fit).
+    expect(html).toMatch(/box: 'הכי גדול שהקופסה הזו מחזיקה לגובה/);
+    expect(html).toContain("capMax('tCapEn', tEn)");
+    expect(html).toContain("capMax('bCapEn', bEn)");
   });
 
   it('the bound is the box maximum, not a fixed 99', () => {
