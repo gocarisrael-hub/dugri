@@ -1395,6 +1395,38 @@ const db = {
     return c.wordlist || null;
   },
 
+  // The buyer asks us NOT to fill her deck with our words, owner-token gated.
+  //
+  // The deck is 412 words and almost nobody writes that many, so most of it is
+  // ours — and some buyers do not want it to be. They print the rest of the deck
+  // blank, laminate it, and write their own at the table. What that changes is
+  // the WORDS, never the SIZE: she is buying 104 cards either way, so the
+  // shortfall becomes empty numbered cards rather than a deck that stops early
+  // (generator/pack.js `min_cards`, render_page `_blank_lines`).
+  //
+  // Her seed-pool pick is left ALONE rather than cleared. The two are separate
+  // answers to separate questions, and un-ticking this must give her back the
+  // pool she chose instead of silently having forgotten it; production reads the
+  // pool only when it is going to fill (see orderArgs).
+  //
+  // Discards a frozen word bank on a real change, for the same reason the pool
+  // does: the bank IS the 412 words already chosen, and a bank frozen with our
+  // filler in it is not the deck a no-fill order prints.
+  //
+  // Returns the stored boolean, or 'forbidden' for a bad token / unknown
+  // collection.
+  setNoTopupForOwner(id, ownerToken, on) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return 'forbidden';
+    const next = !!on;
+    if (!!c.no_topup !== next) {
+      if (c.word_bank) delete c.word_bank;
+      c.no_topup = next;
+      saveDb();
+    }
+    return !!c.no_topup;
+  },
+
   // The buyer RETITLES her own deck, owner-token gated. Sanitized with the very
   // same sanitizeCustomTitle the order flow uses, so what she is shown in the
   // preview is what the generator will print — one rule, not two that can drift.
@@ -1586,6 +1618,16 @@ const db = {
       // change, so re-saving the dialog untouched cannot cost an order its bank.
       if (c.word_bank && (c.wordlist || '') !== (next || '')) delete c.word_bank;
       c.wordlist = next;
+    }
+    // ...and whether we fill the deck AT ALL. Normally the buyer's own answer
+    // (setNoTopupForOwner), here because the owner takes it by phone as often as
+    // not, and because after the collection closes she is the only one who still
+    // can. Same bank rule as the pool, and for the same reason: a bank frozen
+    // with our filler in it is not the deck a no-fill order prints.
+    if (has('no_topup')) {
+      const next = !!p.no_topup;
+      if (c.word_bank && !!c.no_topup !== next) delete c.word_bank;
+      c.no_topup = next;
     }
     // How this order's words are laid onto cards (generator/pack.py ORDERS).
     // Unlike the seed pool this does NOT invalidate the frozen word bank: the

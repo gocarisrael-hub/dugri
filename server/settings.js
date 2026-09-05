@@ -693,8 +693,17 @@ const REGISTRY = {
   // front of her. Shape + safety rules live in server/wordlist-options.js (wired
   // in via kind:'wlopts' below); that the pool still EXISTS is checked by the
   // route, which is the only layer that can see the volume.
+  //
+  // `blank_option` is the OTHER answer to the same question: don't fill it at
+  // all. Some buyers want the rest of the deck blank and laminated so they can
+  // write their own at the table, and this is the switch that offers them that.
+  // It is not a pool, so it is not one of the menu entries above — it is a
+  // separate choice the buyer makes alongside them, and it can be offered even
+  // when the owner has built no menu at all. Defaults ON: it costs production
+  // nothing (fewer words, same deck) and it is a choice she asked to give.
   wordlists: {
     buyer_options: { kind: 'wlopts', tokens: [], default: DEFAULT_OPTIONS },
+    blank_option: { kind: 'flag', tokens: [], default: true },
   },
   // --- Marketing measurement -------------------------------------------------
   // The Meta (Facebook/Instagram) Pixel id, pasted from Events Manager. EMPTY by

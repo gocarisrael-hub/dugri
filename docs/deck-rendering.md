@@ -106,6 +106,28 @@ Two deliberate departures from a fixed 104:
   promises no upper limit), so an oversized list grows the deck past 103 instead
   of silently dropping the overflow. Front cycling stays even at any size.
 
+### The deck she asked us not to fill (per order)
+
+`no_topup` on the collection, `--no-topup` on the generator. The buyer declines
+the filler entirely: she is laminating the rest of the deck and writing her own
+words at the table, so we print hers and leave the rest EMPTY.
+
+It reverses the first departure above and nothing else. The deck keeps its full
+103 + 1 — what she bought is 104 cards, and "don't fill it" is a decision about
+the words, not the size — so the shortfall becomes blank cards
+(`pack.pack(min_cards=…)`) rather than a short deck. Those cards still print
+`1. 2. 3. 4.` in the card's own digit column, at the same size and on the same
+baselines as a written card (`render_page._blank_lines`), because she is going
+to write beside those numbers.
+
+The numbering of empty lines is opt-in for exactly that reason: a slot is empty
+on ordinary decks too (a group seam, the last card of an oversized list) and
+those have always printed the lines they have and no others.
+
+The seed pool is left stored and simply never read, so un-declining gives her
+back the style she picked. The frozen word bank is discarded on the change and
+re-freezes as her words alone.
+
 ### Which words share a card (per order)
 
 The owner picks this per order, in the admin order dialog beside the seed pool

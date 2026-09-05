@@ -383,6 +383,22 @@
             <button class="btn primary" id="saveOpts" data-testid="save-opts">שמירה</button>
             <span class="status" id="optsStatus"></span>
           </div>
+          <!-- The OTHER answer to the same question, and not a row of the table
+               above: it names no list, so it has nothing to choose from. Saved on
+               its own key and on its own tick, because it is independent — it can
+               be offered with an empty menu, and the menu can be offered without
+               it. -->
+          <div class="row" style="margin-top: 16px; border-top: 1px solid #eee; padding-top: 14px">
+            <label>
+              <input type="checkbox" id="blankOpt" data-testid="blank-opt" />
+              להציע ללקוחה גם "לא להשלים לי מילים"
+            </label>
+            <span class="status" id="blankStatus"></span>
+          </div>
+          <p class="status" id="blankNote">
+            הלקוחה מסמנת, ואנחנו מדפיסים רק את המילים שלה. שאר הקלפים בחפיסה יוצאים ריקים עם המספרים
+            1-4, לכתיבה עצמית. אותה כמות קלפים - פחות מילים שלנו.
+          </p>
         </div>
 
         <div class="panel" style="margin-top: 26px">
@@ -627,6 +643,7 @@
           const st = await api('GET', '/api/admin/settings');
           const eff = (st && st.effective && st.effective.wordlists) || {};
           buyerOpts = Array.isArray(eff.buyer_options) ? eff.buyer_options : [];
+          qs('blankOpt').checked = !!eff.blank_option;
           if (openName) {
             const full = await api('GET', '/api/admin/wordlists/' + encodeURIComponent(openName));
             const i = data.wordlists.findIndex((w) => w.name === openName);
@@ -680,6 +697,25 @@
           } catch (err) {
             setMsg(qs('optsStatus'), 'שמירה נכשלה: ' + err.message, 'err');
           }
+        }
+      });
+
+      // The decline switch saves ON THE TICK, with no separate save button: it is
+      // one boolean, and a checkbox that needs a second click to mean anything is
+      // how a screen ends up lying about what is live.
+      document.addEventListener('change', async (e) => {
+        if (e.target.id !== 'blankOpt') return;
+        const on = e.target.checked;
+        try {
+          await api('POST', '/api/admin/settings', {
+            section: 'wordlists',
+            key: 'blank_option',
+            value: on,
+          });
+          setMsg(qs('blankStatus'), 'נשמר ✓', 'ok');
+        } catch (err) {
+          e.target.checked = !on;
+          setMsg(qs('blankStatus'), 'שמירה נכשלה: ' + err.message, 'err');
         }
       });
 

@@ -148,6 +148,8 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
     surface (fronts/backs/board); empty/absent keeps the theme default.
     ``gender`` ('male'/'female'/None) resolves the title's {feminine|masculine}
     markers (config.resolve_gender_markers); a title without one is unaffected.
+    ``blank_markers`` is the 'no top-up' order — the empty cards padding the deck
+    out to its full length still print their four numbers (``deck_document``).
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
@@ -311,7 +313,7 @@ def _pitch_note(cfg, wants, pitch):
 
 def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                   progress=False, workdir=None, press_geom=None, paper=None,
-                  photo_views=None):
+                  photo_views=None, blank_markers=False):
     """Assemble the whole deck as a ``(DeckDocument, viewBox_string)`` pair.
 
     Split out from ``build_deck`` so the deck's STRUCTURE — page count, duplex
@@ -323,6 +325,10 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     It is a parameter and not a lookup precisely to keep the promise above:
     measuring means rendering a card, and structure does not depend on colour.
     ``None`` leaves the pawn card on the background it was drawn with.
+
+    ``blank_markers`` is the 'no top-up' order: the deck was padded out to its
+    full length with EMPTY cards (``pack.pack``'s ``min_cards``) and those cards
+    still print 1. 2. 3. 4., because the buyer is writing on them herself.
     """
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
@@ -438,7 +444,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                          rp.card_overlay(theme, recipe, card["words"], title_lines,
                                          front_index=front, word_font=word_font,
                                          card_vb=vb, card_svg=front_svgs[front],
-                                         deck_pitch=deck_pitch))
+                                         deck_pitch=deck_pitch,
+                                         blank_markers=blank_markers))
         if progress and n % 25 == 0:
             log(f"card {n}/{len(cards)}")
 
@@ -448,7 +455,8 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
                workdir="/tmp/gen/deck", progress=True, chasers=False,
                custom_title=None, photos=None, press_icc=None, press_bleed=None,
-               press_cmyk=True, gender=None, photo_views=None):
+               press_cmyk=True, gender=None, photo_views=None,
+               blank_markers=False):
     """Assemble a v2 order: the card deck PDF + the board PDF.
 
     Returns ``(out_pdf, page_count, board_pdf)``. The deck is
@@ -513,7 +521,7 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
                              photos=photos, photo_views=photo_views,
                              progress=progress, workdir=workdir,
-                             press_geom=geom,
+                             press_geom=geom, blank_markers=blank_markers,
                              paper=card_paper.front_paper(theme, workdir=workdir))
     print_to_pdf(doc.html(vbs), out_pdf, workdir, tag="deck")
     if geom is not None:

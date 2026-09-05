@@ -28,6 +28,13 @@ feeds it. Two deliberate departures:
   past 103 instead of silently dropping the overflow. The front cycling is
   round-robin, so the styles stay even at any size.
 
+...and one departure from the FIRST of those, asked for by ``min_cards``: the
+'no top-up' order, where the buyer told us not to fill her deck with our words.
+There the shortfall is not a shorter deck but EMPTY cards — she is laminating
+them and writing her own at the table — so the deck keeps its 103 + 1 and the
+tail rows carry no words at all. They still print their 1. 2. 3. 4.; that half
+lives in the renderer (render_page._blank_lines).
+
 PHRASE MIX (why the deal is not a plain slice)
 ----------------------------------------------
 A customer "word" is often a PHRASE — "להקת שבעת הכוכבים", "ארוחת בוקר בנמל".
@@ -419,7 +426,7 @@ def deal_in_order(uniq, n_cards):
 
 
 def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
-         order=ORDER_RANDOM, personal_count=None, sizes=None):
+         order=ORDER_RANDOM, personal_count=None, sizes=None, min_cards=None):
     """Write the deck CSV and return ``(unique_words, card_count)``.
 
     ``card_count`` INCLUDES the photo card when one is emitted, so it is the
@@ -432,6 +439,16 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     the balance up to do it. ``personal_count`` is how many of the leading words
     are the customer's own — the boundary `personal-first` splits on, and ignored
     by the others.
+
+    ``min_cards`` pads the deck out to that many WORD cards with EMPTY ones — the
+    'no top-up' order, where the buyer asked us not to fill her deck with our
+    words (she is laminating the blanks and writing her own at the table). The
+    deck's SHAPE is not hers to shrink: she is buying 104 cards, so the shortfall
+    has to become blank cards rather than a deck that stops early, which is the
+    ordinary behaviour above (see DECK SIZE). The blanks are pure padding — they
+    carry no words, they keep the round-robin front cycling, and the photo card
+    still comes last. Omitted (the normal order), nothing is padded and the deck
+    is exactly as long as its words make it.
     """
     # `exact` keeps repeats; every other order drops them. See the note above
     # ORDERS: when the ARRANGEMENT is the caller's, a repeat is part of what she
@@ -465,6 +482,11 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
             rows.extend(deal_in_order(g, n_cards))
         else:
             rows.extend(deal(g, n_cards, rnd, sizes=sizes))
+    # The blank tail of a 'no top-up' deck. Appended AFTER the deal so nothing
+    # above has to know about them: the balance, the groups and the seams are all
+    # decided over her real words, and these are the empty cards that follow.
+    if min_cards:
+        rows.extend([""] * PER_CARD for _ in range(max(0, int(min_cards) - len(rows))))
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(FIELDS)

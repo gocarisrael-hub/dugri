@@ -914,6 +914,11 @@
         opacity: 0.55;
         cursor: default;
       }
+      /* The decline sits apart from the styles it declines — a rule of air above
+         it, so it reads as a different question and not a ninth pool. */
+      .pool-opt.blank-opt {
+        margin-top: 10px;
+      }
       .sheet-note {
         color: var(--muted);
         font-size: 13px;
@@ -2262,6 +2267,13 @@
           <span class="fld hidden" id="poolLabelSent" data-edit="collect-sheet-pool-label-sent"
             >3. סגנון המילים שהשלמנו</span
           >
+          <!-- ...and the third state, which is neither question nor answer about a
+               STYLE: she asked us not to fill the deck, so there is no pool to
+               name and "the style we completed with" would name a thing that did
+               not happen. -->
+          <span class="fld hidden" id="poolLabelBlank" data-edit="collect-sheet-pool-label-blank"
+            >3. קלפים ריקים למילוי עצמי</span
+          >
           <!-- The old copy explained the ORDER of the words ("yours always go in
                first"), which is a fact about our packing and not a question she
                was being asked. What she wants to know here is that she is done
@@ -2274,6 +2286,22 @@
             >מהרשימה המסומנת השלמנו את המילים ל-412 מילים בחפיסה.</small
           >
           <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
+          <!-- THE OTHER ANSWER: don't fill it. A checkbox and not a ninth row of
+               the radio group, because it is not another style — it is the
+               question above being declined, and ticking it makes every style
+               moot (the rows go quiet while it is on). Owner-switchable: the
+               server sends `blank` with the menu, and off means this never
+               renders and the route refuses it. -->
+          <label class="pool-opt blank-opt hidden" id="poolBlank" data-testid="pool-blank">
+            <input type="checkbox" id="poolBlankBox" data-testid="pool-blank-box" />
+            <span data-edit="collect-sheet-pool-blank"
+              >לא להשלים לי מילים - שאר הקלפים יודפסו ריקים</span
+            >
+          </label>
+          <small class="muted hidden" id="poolBlankHint" data-edit="collect-sheet-pool-blank-hint"
+            >נדפיס רק את המילים שלכם. שאר הקלפים בחפיסה יגיעו ריקים עם המספרים 1-4 - אפשר לעשות להם
+            למינציה ולכתוב עליהם בטוש מחיק תוך כדי המשחק.</small
+          >
           <div class="sheet-err hidden" id="poolErr" role="alert" data-testid="pool-err"></div>
         </div>
         <!-- SHE CONFIRMS SHE LOOKED. Closing sends the deck to print and nothing
@@ -4076,8 +4104,15 @@
       // means no chooser at all: the deck then fills the way it always has, by
       // her design, and she is not shown a control with nothing behind it.
       let poolOptions = null;
+      // Whether the owner is offering "don't fill it at all". Sent with the menu
+      // and independent of it: she may offer the decline with no pools on the
+      // menu, or pools with no decline.
+      let poolBlankOffered = false;
       function poolPick() {
         return (state && state.wordlist_option) || '';
+      }
+      function poolBlank() {
+        return !!(state && state.no_topup);
       }
       // Re-checks the close button against everything it waits on. Assigned in
       // setupOwner (which owns the button); a no-op until then, so the chooser
@@ -4097,9 +4132,15 @@
       // to pick from an empty list would be a door with no handle. Reading the
       // field's own visibility rather than re-deriving it keeps the two from ever
       // disagreeing — renderPoolOpts decides what is on screen, this reads it.
+      // ...and not asked of a buyer who has DECLINED the fill: there is then no
+      // filler to have a style, and the field she is looking at is a ticked
+      // decline, not an unanswered menu. Nor when the field is on screen only
+      // because the decline is offered — an empty menu is the door with no handle
+      // again, just reached from the other side.
       function poolPickMissing() {
         const fld = $('#poolFld');
         if (!fld || fld.classList.contains('hidden')) return false;
+        if (poolBlank() || !(poolOptions || []).length) return false;
         return state.status === 'open' && !poolPick();
       }
       function renderPoolOpts() {
@@ -4109,21 +4150,38 @@
         const opts = Array.isArray(poolOptions) ? poolOptions : [];
         const open = state.status === 'open';
         const picked = poolPick();
+        const blank = poolBlank();
         // Hidden when the owner has built no menu — an empty chooser advertises
         // a choice that does not exist. The panel AROUND it stays, because it is
         // the sign-off tab and it has two other things to say.
         // Hidden too on a CLOSED collection she never answered on: the server
         // then filled the deck from her design (see savePool's note), so a menu
         // with nothing ticked would be a list of things that did not happen.
-        fld.classList.toggle('hidden', !opts.length || !isOwner || (!open && !picked));
-        if (!opts.length) return;
+        fld.classList.toggle(
+          'hidden',
+          (!opts.length && !poolBlankOffered) || !isOwner || (!open && !picked && !blank)
+        );
+        // The decline, and what it does to the question above it: ticked, the
+        // styles are moot, so they go away rather than sitting there greyed and
+        // inviting a second decision. Hidden entirely on a closed order she never
+        // ticked it on — it would read as an offer she can still take.
+        const blankRow = $('#poolBlank');
+        blankRow.classList.toggle('hidden', !poolBlankOffered || (!open && !blank));
+        blankRow.classList.toggle('disabled', !open);
+        $('#poolBlankBox').checked = blank;
+        $('#poolBlankBox').disabled = !open;
+        $('#poolBlankHint').classList.toggle('hidden', !blank);
         // Asking is over once the deck is at the printer; the ticked row below is
-        // the answer, and these two say so.
-        $('#poolLabel').classList.toggle('hidden', !open);
-        $('#poolLabelSent').classList.toggle('hidden', open);
-        $('#poolHint').classList.toggle('hidden', !open);
-        $('#poolHintSent').classList.toggle('hidden', open);
+        // the answer, and these say so. A declined fill gets its own heading in
+        // both states: no style was chosen, so naming one would be a lie.
+        $('#poolLabel').classList.toggle('hidden', !open || blank);
+        $('#poolLabelSent').classList.toggle('hidden', open || blank);
+        $('#poolLabelBlank').classList.toggle('hidden', !blank);
+        $('#poolHint').classList.toggle('hidden', !open || blank);
+        $('#poolHintSent').classList.toggle('hidden', open || blank);
         box.textContent = '';
+        box.classList.toggle('hidden', blank);
+        if (!opts.length) return;
         // NO "whatever suits my design" row: she picks, or nothing is ticked. It
         // used to lead the list and be selected by default, which meant the
         // commonest outcome was a deck filled by a choice she never made and
@@ -4152,6 +4210,30 @@
         // button has to answer the moment she ticks a row.
         syncCloseGate();
       }
+      // The decline is saved on its own route, and the server's answer is what
+      // sticks — the same shape as savePool, for the same reason: a refused change
+      // has to snap back to what the order really says rather than leave a tick on
+      // a choice that did not take.
+      async function saveBlank(on) {
+        const err = $('#poolErr');
+        err.classList.add('hidden');
+        try {
+          const r = await api('/no-topup?k=' + encodeURIComponent(ownerToken), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ no_topup: !!on }),
+          });
+          state.no_topup = !!r.no_topup;
+        } catch (e) {
+          err.textContent =
+            (e.body && e.body.message) ||
+            (e.status === 409 ? 'האיסוף נסגר - אי אפשר לשנות עכשיו' : 'לא הצלחנו לשמור, נסו שוב');
+          err.classList.remove('hidden');
+        }
+        renderPoolOpts();
+        syncCloseGate();
+      }
+
       async function savePool(optionId) {
         const err = $('#poolErr');
         err.classList.add('hidden');
@@ -4183,11 +4265,17 @@
       async function loadPoolOptions() {
         if (poolLoaded) return;
         poolLoaded = true;
+        // The decline is STATIC markup (the styles below it are built per render),
+        // so its listener is bound once here rather than in renderPoolOpts, which
+        // runs on every redraw and would stack a handler each time.
+        $('#poolBlankBox').addEventListener('change', (e) => saveBlank(e.target.checked));
         try {
           const r = await fetch('/api/wordlist-options').then((res) => res.json());
           poolOptions = Array.isArray(r.options) ? r.options : [];
+          poolBlankOffered = !!r.blank;
         } catch (e) {
           poolOptions = []; // no menu rather than a broken one
+          poolBlankOffered = false;
         }
         renderPoolOpts();
       }
