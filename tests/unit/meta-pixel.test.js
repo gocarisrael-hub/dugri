@@ -36,6 +36,16 @@ describe('meta-pixel injection', () => {
     }
   });
 
+  it('reaches the campaign landing page, which is the one ads point at', () => {
+    // lp.html is the destination of paid Meta traffic. A landing page the pixel
+    // does not see cannot report a conversion, cannot build an audience and
+    // cannot optimise a campaign — so this is the page it can least afford to
+    // miss. It qualifies by carrying the GA stub, the same marker every other
+    // buyer page uses; this test is here so a future edit to that <head> cannot
+    // silently drop it out of measurement.
+    expect(metaPixel.inject(read('lp.html'), ID)).toContain(`fbq('init', '${ID}')`);
+  });
+
   it('leaves every page untouched when no id is set — the shipped state', () => {
     for (const page of ['index.html', 'products.html', 'pay-success.html']) {
       const html = read(page);

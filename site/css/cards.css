@@ -1,0 +1,126 @@
+/*
+ * cards.css — the printed card, as a piece of the real artwork.
+ *
+ * Every card face on the site is a CROP OF THE REAL PRINT SHEET
+ * (/assets/designs/bachelorette/gallery-front.webp) — the same file the shop
+ * gallery serves. No mock-up, no per-card export, no second copy of the artwork
+ * to keep in step with the deck: change the sheet and every card on every page
+ * changes with it.
+ *
+ * THE GEOMETRY IS MEASURED, NOT GUESSED. The sheet is 2200x1557, which is
+ * exactly sqrt(2) — A4 landscape — so 2200px is 297mm and one millimetre is
+ * 7.407px. On it sit 8 cards of 500x722 (67.5 x 97.5mm), pitch 549.5 x 768.
+ *
+ * Each window is the card PLUS 3mm of bleed on all four sides (22px), so a card
+ * carries the sheet's own ground around it and reads as a trimmed card rather
+ * than one sliced off flush at the cut line. That costs 44px of the 50px
+ * horizontal gap and 46px vertical, which is why the bleed is 3mm and not 4.
+ *
+ * The two numbers below follow from that and nothing else:
+ *   background-size     = image / window
+ *   background-position = window offset / (image - window)   <- how a
+ *   percentage background-position actually resolves; it is NOT offset/image,
+ *   and using round quarters and thirds instead pulled a slice of the
+ *   neighbouring row into the frame.
+ *
+ * data-card="<col> <row>", both 1-indexed, columns counted left to right on the
+ * sheet regardless of the page's RTL direction — background-position is
+ * physical, not logical.
+ */
+
+.card {
+  aspect-ratio: 544 / 766;
+  background-image: url('/assets/designs/bachelorette/gallery-front.webp');
+  background-size: 404.41% 203.26%;
+  background-repeat: no-repeat;
+  /* No radius here: the bleed means the card's OWN rounded corners are inside
+     the frame now, and rounding the frame too would shave the ground off them. */
+  box-shadow: var(--card-shadow, 0 24px 60px rgba(0, 0, 0, 0.55));
+}
+
+.card[data-card='1 1'] {
+  background-position: 0.06% 0.63%;
+}
+.card[data-card='2 1'] {
+  background-position: 33.27% 0.63%;
+}
+.card[data-card='3 1'] {
+  background-position: 66.43% 0.63%;
+}
+.card[data-card='4 1'] {
+  background-position: 99.64% 0.63%;
+}
+.card[data-card='1 2'] {
+  background-position: 0.06% 97.72%;
+}
+.card[data-card='2 2'] {
+  background-position: 33.27% 97.72%;
+}
+.card[data-card='3 2'] {
+  background-position: 66.43% 97.72%;
+}
+.card[data-card='4 2'] {
+  background-position: 99.64% 97.72%;
+}
+
+/*
+ * THE FAN — three cards held as a hand, not laid out as three thumbnails.
+ *
+ * THE ROW MUST EQUAL ITS CONTAINER. The cards are `flex: 0 0 <basis>` — no
+ * shrink — so the row's width is 3*basis minus the middle card's two negative
+ * margins, and if that comes to more than 100% the fan silently overflows
+ * whatever it is dropped into. At 46%/6% it is 126%: inside a wide hero column
+ * with overflow hidden nobody notices, and dropped into a 520px block on the
+ * home page it burst its box by ~90px a side.
+ *
+ * So the basis is DERIVED from the overlap rather than chosen: 3b - 2m = 1,
+ * which at m = 10% gives b = 40%. One geometry, every container, no breakpoint
+ * override to keep in step.
+ *
+ * The padding is the other half of the same problem: rotation and translateY
+ * are transforms, so they paint outside the element's layout box and take no
+ * space. Untamed, the tilted cards laid themselves over the counter beneath
+ * them. The padding reserves the room the transforms actually use.
+ */
+.card-fan {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 28px;
+}
+.card-fan .card {
+  flex: 0 0 40%;
+}
+.card-fan .card:nth-child(1) {
+  transform: rotate(-8deg) translateY(18px);
+}
+.card-fan .card:nth-child(2) {
+  transform: rotate(1deg) translateY(-18px);
+  z-index: 2;
+  margin-inline: -10%;
+}
+.card-fan .card:nth-child(3) {
+  transform: rotate(9deg) translateY(22px);
+}
+
+/* The hand opens when you reach for it. Motion-safe only, and on the page's own
+   heavy curve — the cards have mass, they do not snap. focus-within as well as
+   hover, so the movement is not reserved for people using a mouse. */
+@media (prefers-reduced-motion: no-preference) {
+  .card-fan .card {
+    transition: transform 0.7s var(--lp-ease, cubic-bezier(0.32, 0.72, 0, 1));
+  }
+  .card-fan:hover .card:nth-child(1),
+  .card-fan:focus-within .card:nth-child(1) {
+    transform: rotate(-11deg) translateY(6px);
+  }
+  .card-fan:hover .card:nth-child(2),
+  .card-fan:focus-within .card:nth-child(2) {
+    transform: rotate(0deg) translateY(-30px);
+  }
+  .card-fan:hover .card:nth-child(3),
+  .card-fan:focus-within .card:nth-child(3) {
+    transform: rotate(12deg) translateY(10px);
+  }
+}

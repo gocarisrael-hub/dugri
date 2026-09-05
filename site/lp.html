@@ -1,0 +1,1295 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="lp.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Campaign landing page: ad / DM / bio-link destination.
+         NOINDEX on purpose. It wins the same intent, in the same language, as
+         index.html; letting Google choose between them splits the ranking and
+         the ad quality score both. Nothing here is a second brand voice — every
+         number, price, quote and question is read from the same sources the
+         storefront uses (/api/pricing, /api/faq, /api/stats/orders), so the page
+         cannot drift from the shop after an owner edit. -->
+    <meta name="robots" content="noindex, follow" />
+
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+
+    <title>דוגרי - משחק המסיבה שכולו עליהם</title>
+    <meta
+      name="description"
+      content="שולחים מילים על בעל השמחה ומקבלים חפיסת קלפים ולוח משחק מודפסים ואישיים. רווקות, יום הולדת עגול, יום נישואין ומסיבת פרידה. מוכן תוך 3 ימי עסקים."
+    />
+
+    <!-- Open Graph (for sharing in WhatsApp / Instagram). Absolute URL on the
+         apex domain: www.dugri-israel.co.il does not resolve, and a relative
+         og:image is dropped by every scraper. -->
+    <meta property="og:title" content="דוגרי - משחק המסיבה שכולו עליהם" />
+    <meta
+      property="og:description"
+      content="שולחים מילים על בעל השמחה, מקבלים משחק מודפס שכל קלף בו הוא בדיחה פנימית."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="he_IL" />
+    <meta property="og:image" content="https://dugri-israel.co.il/assets/hero-1.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#141414" />
+    <meta name="apple-mobile-web-app-title" content="דוגרי" />
+
+    <link rel="preload" as="image" href="assets/hero-1.jpg" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <link rel="stylesheet" href="/css/cards.css" />
+
+    <style>
+      /* ============================================================
+         THE PAGE'S OWN SYSTEM.
+
+         Two rules govern every number below, and nothing is picked by eye:
+
+         • SIZE comes from the Tailwind type scale, and a size always travels
+           with its paired line height (16/24, 18/28, 30/36, 36/40, 48/1 …).
+           Responsive type steps BETWEEN scale steps at a breakpoint rather
+           than sliding through clamp(), which would land on values the scale
+           does not contain.
+         • SPACE comes from the token ladder (2 4 8 12 16 24 32 40 48 64 80 96)
+           and nothing between. --gap-* below names the few rungs this page
+           actually uses, so a section cannot quietly invent a 22px.
+
+         Corners stay sharp (--radius: 0) and headings stay thin Heebo Light:
+         that is the locked brand direction, and it is why you will not find a
+         radius formula or a semibold heading anywhere in this file.
+         ============================================================ */
+      :root {
+        /* The dark moments. Two of them anchor the page: the hero and the
+           tagline. Everything between stays on the site's white, so the visitor
+           lands in the shop without a jolt. Values from the approved dark set. */
+        --ink-0: #000000;
+        --ink-1: #181818;
+
+        /* The product's own pink, sampled from the printed card artwork. It is
+           the ONE warm thing on a monochrome page, which is exactly why it
+           carries: the cards are the only object here that is allowed colour. */
+        --card: #f6c9d7;
+        --card-line: #6b4652;
+
+        /* Display tracking. The brand's 0.1em is right for a 20px heading and
+           wrong for a 60px one — at display size it reads airy and unsure, which
+           was half of why the first pass looked timid. Large type gets 0.02em;
+           anything under 30px keeps --h-spacing untouched. */
+        --display-tracking: 0.02em;
+
+        --gap-25: 2px;
+        --gap-50: 4px;
+        --gap-75: 8px;
+        --gap-100: 12px;
+        --gap-200: 16px;
+        --gap-300: 24px;
+        --gap-400: 32px;
+        --gap-500: 40px;
+        --gap-600: 48px;
+        --gap-700: 64px;
+        --gap-800: 80px;
+        --gap-900: 96px;
+
+        /* One curve for the whole page. Heavy, fluid, decelerating: motion that
+           reads as mass rather than as a CSS default. */
+        --lp-ease: cubic-bezier(0.32, 0.72, 0, 1);
+      }
+
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html {
+          scroll-behavior: auto;
+        }
+      }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        font-size: 16px;
+        line-height: 24px;
+        text-wrap: pretty;
+        -webkit-font-smoothing: antialiased;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+      }
+
+      h1,
+      h2,
+      h3 {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--h-spacing);
+        text-wrap: balance;
+      }
+
+      .wrap {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding-inline: var(--gap-300);
+      }
+      /* The hero's reading column. 680px caps the headline AND the subheading
+         together, so the two break on the same measure. */
+      .measure {
+        max-width: 680px;
+      }
+
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
+
+      /* Keyboard users get out of the header in one key. */
+      .skip {
+        position: absolute;
+        inset-inline-start: var(--gap-200);
+        top: var(--gap-25);
+        transform: translateY(-200%);
+        background: var(--ink);
+        color: #fff;
+        padding: var(--gap-75) var(--gap-100);
+        font-size: 14px;
+        line-height: 20px;
+        font-weight: 600;
+        z-index: 50;
+        transition: transform 0.7s var(--lp-ease);
+      }
+      .skip:focus {
+        transform: translateY(0);
+      }
+
+      /* ============ BUTTONS ============
+         8px vertical / 12px horizontal padding, 16px semibold. Every state is
+         present: hover shifts the ground, active gives physical feedback by
+         sinking 1px, focus paints a ring. A CTA with no active state feels
+         like a picture of a button. */
+      /* 16px/32px, not 8px/12px. The smaller padding is the documented default
+         and it made the single most important element on the page read as a
+         chip sitting beside the price. A primary CTA has to look like the thing
+         you are meant to press. Type stays 16px semibold. */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--gap-75);
+        padding: var(--gap-200) var(--gap-400);
+        font-family: var(--font);
+        font-size: 16px;
+        line-height: 24px;
+        font-weight: 600;
+        text-decoration: none;
+        border: 1px solid var(--ink);
+        background: var(--ink);
+        color: #fff;
+        cursor: pointer;
+        transition:
+          background 0.7s var(--lp-ease),
+          color 0.7s var(--lp-ease),
+          transform 0.7s var(--lp-ease);
+      }
+      .btn:hover {
+        background: var(--sage-deep);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+      .btn--ghost {
+        background: transparent;
+        color: var(--ink);
+      }
+      .btn--ghost:hover {
+        background: var(--sage-tint);
+      }
+      /* The header CTA is the same action as the hero CTA, one step smaller. */
+      .btn--sm {
+        font-size: 14px;
+        line-height: 20px;
+        padding: var(--gap-100) var(--gap-300);
+      }
+      /* On black: the CTA inverts to white so it is still the brightest thing
+         in the frame, and the ghost beside it is an outline, never a second
+         filled button competing for the same press. */
+      .on-dark .btn {
+        background: #fff;
+        color: var(--ink-0);
+        border-color: #fff;
+      }
+      .on-dark .btn:hover {
+        background: var(--card);
+        border-color: var(--card);
+      }
+      .on-dark .btn--ghost {
+        background: transparent;
+        color: #fff;
+        border-color: rgba(255, 255, 255, 0.4);
+      }
+      .on-dark .btn--ghost:hover {
+        background: rgba(255, 255, 255, 0.1);
+        border-color: #fff;
+      }
+      .on-dark :where(a, button):focus-visible {
+        outline-color: #fff;
+      }
+
+      /* ============ HEADER ============
+         Deliberately not the site's full nav. A landing page has one job, and a
+         menu of six competing destinations above the fold is how it loses it.
+         The only link out is the same CTA the hero carries. Transparent, because
+         it sits on the black hero and a bar across it would cut the frame. */
+      .lp-header {
+        position: absolute;
+        inset-inline: 0;
+        top: 0;
+        z-index: 40;
+      }
+      .lp-header__in {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--gap-200);
+        padding-block: var(--gap-200);
+      }
+      .lp-header__logo img {
+        height: 32px;
+        width: auto;
+      }
+
+      /* ============ HERO ============
+         Black, full-bleed, and the cards are the only colour in it. */
+      .hero {
+        position: relative;
+        background: var(--ink-0);
+        color: #fff;
+        overflow: hidden;
+        padding-block: var(--gap-900) var(--gap-700);
+      }
+      /* The printed sheet itself, run large and dimmed to a texture. A flat
+         rgba scrim over it, never a gradient: the ground stays flat, and the
+         only gradient on the page is the one on the heading. */
+      .hero__field {
+        position: absolute;
+        /* Inset NEGATIVE, because the blur below would otherwise feather the
+           artwork away from the section's own edges and leave a pale rim. */
+        inset: -40px;
+        background-image: url('assets/designs/bachelorette/gallery-front.webp');
+        /* Run at 190%, blurred and dimmed hard. At cover/0.22 the sheet was
+           still legible — the visitor was reading background words while trying
+           to read the headline, and two things asking to be read at once means
+           neither is. It has to be TEXTURE: enough to know it is cards, not
+           enough to parse. */
+        background-size: 190%;
+        background-position: center;
+        filter: blur(3px);
+        opacity: 0.14;
+        pointer-events: none;
+      }
+      .hero__scrim {
+        position: absolute;
+        inset: 0;
+        /* Flat, never a gradient. Heavy enough that the hero reads BLACK: at
+           0.62 the whole frame came out a washed pink-grey and the promise of a
+           black ground with one warm object on it was not kept. */
+        background: rgba(0, 0, 0, 0.82);
+        pointer-events: none;
+      }
+      .hero__grid {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        gap: var(--gap-500);
+        align-items: center;
+      }
+      .hero__eyebrow {
+        font-size: 12px;
+        line-height: 16px;
+        letter-spacing: 0.14em;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.6);
+        margin-bottom: var(--gap-200);
+      }
+      /* The one gradient on the page, and it is on TEXT, never on a ground.
+         Dark theme, so white falling to #9B9B9B. In RTL the sentence starts at
+         the RIGHT, so it runs `to left` to hold full white at the reading start
+         and fall away at the end. */
+      .hero h1 {
+        font-size: 36px;
+        line-height: 40px;
+        letter-spacing: var(--display-tracking);
+        background-image: linear-gradient(to left, #ffffff, #9b9b9b);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+      }
+      @supports not ((background-clip: text) or (-webkit-background-clip: text)) {
+        .hero h1 {
+          color: #fff;
+          -webkit-text-fill-color: currentColor;
+        }
+      }
+      .hero__sub {
+        margin-top: var(--gap-300);
+        font-size: 18px;
+        line-height: 28px;
+        color: rgba(255, 255, 255, 0.72);
+      }
+      .hero__cta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--gap-300);
+        margin-top: var(--gap-400);
+      }
+      .hero__risk {
+        margin-top: var(--gap-200);
+        font-size: 14px;
+        line-height: 20px;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .hero .amt {
+        font-size: 20px;
+        line-height: 28px;
+        color: #fff;
+      }
+
+      /* The three cards in front of the field: a hand fanned out, tilted, the
+         middle one lifted. Motion-safe only — they breathe, they do not dance. */
+      /* ============ PROOF ============
+         Inside the hero, under the CTA, because the claim it supports is there.
+         The hairline above it is a DIVIDER, not a card edge — the no-single-
+         sided-border rule is about boxes pretending to be structure, and this
+         is a rule doing the job a rule is for. The quote is a real message from
+         a real buyer: not a garnish, the reason to believe the line above it. */
+      .proof {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--gap-100) var(--gap-300);
+        margin-top: var(--gap-400);
+        padding-top: var(--gap-300);
+        border-top: 1px solid rgba(255, 255, 255, 0.16);
+      }
+      .proof__stat {
+        display: flex;
+        align-items: baseline;
+        gap: var(--gap-75);
+      }
+      .proof__num {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        font-size: 36px;
+        line-height: 40px;
+        letter-spacing: var(--display-tracking);
+        color: #fff;
+      }
+      .proof__label,
+      .proof__quote {
+        font-size: 14px;
+        line-height: 20px;
+        color: rgba(255, 255, 255, 0.6);
+      }
+      .proof__quote {
+        max-width: 420px;
+      }
+
+      /* ============ SECTIONS ============ */
+      section {
+        padding-block: var(--gap-800);
+      }
+      .alt {
+        background: var(--section);
+      }
+      .sec-head {
+        max-width: 680px;
+        margin-bottom: var(--gap-600);
+      }
+      .sec-head h2 {
+        font-size: 30px;
+        line-height: 36px;
+        letter-spacing: var(--display-tracking);
+      }
+      .sec-head p {
+        margin-top: var(--gap-200);
+        font-size: 18px;
+        line-height: 28px;
+        color: var(--muted);
+      }
+
+      /* problem to solution: two panels, one argument */
+      .flip {
+        display: grid;
+        gap: var(--gap-300);
+      }
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: var(--gap-400);
+      }
+      .panel--muted {
+        background: transparent;
+      }
+      .panel h3 {
+        font-size: 20px;
+        line-height: 28px;
+        margin-bottom: var(--gap-200);
+      }
+      .panel p {
+        color: var(--muted);
+      }
+      .panel--solid {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: #fff;
+      }
+      .panel--solid p {
+        color: rgba(255, 255, 255, 0.72);
+      }
+
+      /* ============ THE CARD DEMO ============
+         The one section that sells without arguing. Four real cards from a real
+         deck, big enough to READ — because the moment the visitor reads
+         "שניצל תירס" next to "הנפקת חשמל" and laughs at words belonging to a
+         stranger, the product is explained and no paragraph can do it faster. */
+      .deck {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: var(--gap-200);
+      }
+      .deck .card {
+        transform: rotate(-1.5deg);
+      }
+      .deck .card:nth-child(even) {
+        transform: rotate(1.5deg);
+      }
+
+      /* ============ BENEFITS ============ */
+      .benefits {
+        display: grid;
+        gap: var(--gap-500);
+      }
+      .benefit__icon {
+        width: 24px;
+        height: 24px;
+        color: var(--ink);
+        margin-bottom: var(--gap-200);
+      }
+      .benefit h3 {
+        font-size: 20px;
+        line-height: 28px;
+        margin-bottom: var(--gap-75);
+      }
+      .benefit p {
+        color: var(--muted);
+      }
+
+      /* ============ TAGLINE REVEAL ============
+         Its own moment, far from the hero. Every word starts at 30% ink and is
+         lit individually, in reading order, as it crosses the trigger band. */
+      .reveal-line {
+        text-align: center;
+        background: var(--ink-0);
+        color: #fff;
+      }
+      .reveal-line p {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        letter-spacing: var(--display-tracking);
+        font-size: 36px;
+        line-height: 40px;
+        max-width: 680px;
+        margin: 0 auto;
+        text-wrap: balance;
+      }
+      .reveal-line .w {
+        color: rgba(255, 255, 255, 0.3);
+        transition: color 0.7s var(--lp-ease);
+      }
+      .reveal-line .w.lit {
+        color: #fff;
+      }
+      /* No JS, or reduced motion: the sentence is simply readable. */
+      @media (prefers-reduced-motion: reduce) {
+        .reveal-line .w {
+          color: #fff;
+          transition: none;
+        }
+      }
+
+      /* ============ STEPS ============ */
+      .steps {
+        display: grid;
+        gap: var(--gap-500);
+        counter-reset: step;
+      }
+      .step__n {
+        font-family: var(--display);
+        font-weight: var(--h-weight);
+        font-size: 36px;
+        line-height: 40px;
+        color: var(--muted);
+        margin-bottom: var(--gap-100);
+      }
+      .step h3 {
+        font-size: 20px;
+        line-height: 28px;
+        margin-bottom: var(--gap-75);
+      }
+      .step p {
+        color: var(--muted);
+      }
+
+      /* ============ WHATSAPP PROOF ============ */
+      .shots {
+        display: grid;
+        gap: var(--gap-300);
+      }
+      .shot {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: var(--gap-75);
+      }
+      .shot img {
+        width: 100%;
+        height: auto;
+      }
+      .shot figcaption {
+        font-size: 14px;
+        line-height: 20px;
+        color: var(--muted);
+        padding: var(--gap-100) var(--gap-50) var(--gap-50);
+      }
+
+      /* ============ FAQ ============ */
+      .faq {
+        max-width: 680px;
+      }
+      .faq details {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        padding: var(--gap-200);
+        margin-bottom: var(--gap-100);
+      }
+      .faq summary {
+        cursor: pointer;
+        font-weight: 600;
+        list-style: none;
+      }
+      .faq summary::-webkit-details-marker {
+        display: none;
+      }
+      .faq summary:hover {
+        color: var(--sage-deep);
+      }
+      .faq details p {
+        margin-top: var(--gap-100);
+        color: var(--muted);
+      }
+
+      /* ============ FINAL CTA ============ */
+      .final {
+        background: var(--ink-0);
+        color: #fff;
+        text-align: center;
+      }
+      .final h2 {
+        font-size: 30px;
+        line-height: 36px;
+        letter-spacing: var(--display-tracking);
+        max-width: 680px;
+        margin: 0 auto;
+      }
+      .final__sub {
+        margin-top: var(--gap-200);
+        color: rgba(255, 255, 255, 0.72);
+        max-width: 680px;
+        margin-inline: auto;
+        font-size: 18px;
+        line-height: 28px;
+      }
+      .final .hero__cta {
+        justify-content: center;
+      }
+      .final__risk {
+        margin-top: var(--gap-300);
+        font-size: 14px;
+        line-height: 20px;
+        color: rgba(255, 255, 255, 0.72);
+      }
+      /* ============ FOOTER ============ */
+      .lp-foot {
+        border-top: 1px solid var(--line);
+        padding-block: var(--gap-500);
+        font-size: 14px;
+        line-height: 20px;
+        color: var(--muted);
+      }
+      .lp-foot__row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--gap-200) var(--gap-300);
+        align-items: center;
+        justify-content: space-between;
+      }
+      .lp-foot a {
+        color: var(--muted);
+      }
+
+      /* ============ SCROLL CHOREOGRAPHY ============
+         Sections arrive with weight: they rise 64px, out of focus, and settle
+         over 800ms on the page curve. Driven by IntersectionObserver, never by
+         a scroll listener, which would reflow on every frame and destroy the
+         page on a mid-range phone. */
+      @media (prefers-reduced-motion: no-preference) {
+        [data-rise] {
+          opacity: 0;
+          transform: translateY(64px);
+          filter: blur(12px);
+          transition:
+            opacity 0.8s var(--lp-ease),
+            transform 0.8s var(--lp-ease),
+            filter 0.8s var(--lp-ease);
+          will-change: opacity, transform;
+        }
+        [data-rise].is-in {
+          opacity: 1;
+          transform: none;
+          filter: none;
+        }
+      }
+
+      /* ============ BREAKPOINTS ============
+         Type steps between scale rungs here; it never slides between them. */
+      @media (min-width: 760px) {
+        .hero {
+          padding-block: var(--gap-900) var(--gap-700);
+        }
+        .hero__grid {
+          grid-template-columns: 1fr 1fr;
+          gap: var(--gap-700);
+        }
+        /* text-6xl now that the tracking is 0.02em rather than 0.1em. At the
+           brand's display spacing this same sentence wrapped to five lines in
+           this column and drove the proof line off a 720px screen — the
+           tracking, not the size, was what could not be afforded. */
+        .hero h1 {
+          font-size: 60px;
+          line-height: 1;
+        }
+        .hero__sub {
+          font-size: 20px;
+          line-height: 28px;
+        }
+        .deck {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        .sec-head h2 {
+          font-size: 36px;
+          line-height: 40px;
+        }
+        .reveal-line p {
+          font-size: 48px;
+          line-height: 1;
+        }
+        .flip {
+          grid-template-columns: 1fr 1fr;
+        }
+        .benefits {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .steps {
+          grid-template-columns: repeat(3, 1fr);
+        }
+        .shots {
+          grid-template-columns: repeat(2, 1fr);
+        }
+        .final h2 {
+          font-size: 36px;
+          line-height: 40px;
+        }
+      }
+      @media (min-width: 1040px) {
+        .benefits {
+          grid-template-columns: repeat(4, 1fr);
+        }
+        .shots {
+          grid-template-columns: repeat(4, 1fr);
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <a class="skip" href="#main">דילוג לתוכן</a>
+
+    <header class="lp-header on-dark">
+      <div class="wrap lp-header__in">
+        <a class="lp-header__logo" href="index.html" aria-label="דוגרי, לעמוד הבית">
+          <img src="assets/logo.png" alt="דוגרי" width="120" height="32" />
+        </a>
+        <a
+          class="btn btn--sm"
+          href="products.html"
+          data-ga="order_started"
+          data-ga-cta="lp-header"
+          data-edit="lp-header-cta"
+          >בונים את המשחק ›</a
+        >
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- ============ HERO ============
+           Black, and the printed cards are the only colour in the frame. The
+           field behind is the real print sheet run large and dimmed to a
+           texture; the three cards in front are crops of that same sheet at
+           full strength. No new asset, no mock-up, no stock photo: what the
+           visitor is looking at is literally the product. -->
+      <section class="hero on-dark">
+        <div class="hero__field" aria-hidden="true"></div>
+        <div class="hero__scrim" aria-hidden="true"></div>
+        <div class="wrap hero__grid">
+          <div class="measure">
+            <p class="hero__eyebrow" data-edit="lp-hero-eyebrow">משחק מסיבה שכולו עליהם</p>
+            <!-- The line break is authored, not accidental: the sentence breaks
+                 where the thought breaks, between what the buyer gives and what
+                 she gets back. -->
+            <h1 data-edit="lp-hero-title">אתם שולחים מילים.<br />אנחנו מחזירים ערב שכולם יזכרו.</h1>
+            <p class="hero__sub" data-edit="lp-hero-sub">
+              משחק ניחוש מילים מודפס, שכל קלף בו הוא בדיחה פנימית על בעל השמחה. רווקות, יום הולדת
+              עגול, יום נישואין או מסיבת פרידה: אותה חפיסה, תמיד עליהם.
+            </p>
+            <div class="hero__cta">
+              <a
+                class="btn"
+                href="products.html"
+                data-ga="order_started"
+                data-ga-cta="lp-hero"
+                data-edit="lp-hero-cta"
+                >בונים את המשחק ›</a
+              >
+              <span data-testid="lp-price">
+                <span class="amt"><span data-testid="lp-price-now">199</span> ₪</span>
+                <s class="was"
+                  ><span class="amt"><span data-testid="lp-price-was">239</span> ₪</span></s
+                >
+              </span>
+            </div>
+            <p class="hero__risk" data-edit="lp-hero-risk">
+              מוכן תוך 3 ימי עסקים מרגע שליחת המילים, לא מרגע התשלום. תשלום מאובטח באתר.
+            </p>
+            <!-- The proof signal lives INSIDE the hero, not in a strip beneath
+                 it. As its own section it cleared the fold on a desktop and sat
+                 a screen and a half down on a phone, which is the same as not
+                 having it: the claim is made here, so the evidence has to be
+                 here too. -->
+            <div class="proof">
+              <p class="proof__stat">
+                <span class="proof__num" data-testid="orders-count">23</span>
+                <span class="proof__label" data-edit="lp-proof-label">חגיגות עד היום</span>
+              </p>
+              <p class="proof__quote" data-edit="lp-proof-quote">
+                „דוגרי גנב את ההצגה. לא הפסקנו לצחוק שעה וחצי.” מסיבת רווקות, אוגוסט
+              </p>
+            </div>
+          </div>
+          <!-- A fanned hand. Decorative: the words on these three are shown at
+               readable size further down, so nothing is said only here. -->
+          <div class="card-fan" aria-hidden="true">
+            <div class="card" data-card="3 1"></div>
+            <div class="card" data-card="1 1"></div>
+            <div class="card" data-card="2 1"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ THE CARD DEMO ============ -->
+      <section>
+        <div class="wrap">
+          <div class="sec-head" data-rise>
+            <h2 data-edit="lp-deck-heading">אלה קלפים אמיתיים, ממשחק אמיתי</h2>
+            <p data-edit="lp-deck-sub">
+              ארבע מילים על כל קלף, וכל אחת מהן שייכת למישהי אחת. אתם לא מכירים אותה, ובכל זאת זה
+              מצחיק. עכשיו דמיינו את המילים של מי שאתם חוגגים.
+            </p>
+          </div>
+          <div class="deck" data-rise data-testid="lp-deck">
+            <div
+              class="card"
+              data-card="4 1"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: עמוד שדרה, יש לי משהו בשיניים?, קרם תלתלים, דידי"
+            ></div>
+            <div
+              class="card"
+              data-card="1 2"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: משהו בריא, ריהוט הרגל, בונבון, דוני"
+            ></div>
+            <div
+              class="card"
+              data-card="2 2"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: פילאטיס אכשריה, גבות יפות, אוכל, שירה בקטע שלי"
+            ></div>
+            <div
+              class="card"
+              data-card="3 2"
+              role="img"
+              aria-label="קלף אמיתי מחפיסה: יובל כספית, היפוכונדרית, קרסול, גל אמיר"
+            ></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ PROBLEM TO SOLUTION ============ -->
+      <section>
+        <div class="wrap">
+          <div class="sec-head" data-rise>
+            <h2 data-edit="lp-flip-heading">הבעיה היא לא המתנה. הבעיה היא שכולם כבר ראו אותה.</h2>
+          </div>
+          <div class="flip" data-rise>
+            <div class="panel panel--muted">
+              <h3 data-edit="lp-flip-a-title">מה קורה היום</h3>
+              <p data-edit="lp-flip-a-body">
+                קונים משחק קופסה גנרי שאף אחד לא פותח, או מרכיבים מצגת בשתיים בלילה. בשני המקרים
+                החדר מנומס, צוחק חמש דקות, וחוזר לטלפונים.
+              </p>
+            </div>
+            <div class="panel panel--solid">
+              <h3 data-edit="lp-flip-b-title">מה קורה עם דוגרי</h3>
+              <p data-edit="lp-flip-b-body">
+                כל קלף הוא שם, מקום או ביטוי שרק אתם מכירים. מי שמנחש צוחק, מי שמתאר נשרף, ובעל
+                השמחה מבין שכל החדר ישב וכתב עליו. זה החלק שנשאר בסוף הערב.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ BENEFITS ============
+           Icons are inline Phosphor glyphs. Inline, not a CDN icon font: the
+           page would otherwise block first paint on a third-party request to
+           draw four 24px shapes. -->
+      <section class="alt">
+        <div class="wrap">
+          <div class="sec-head" data-rise>
+            <h2 data-edit="lp-benefits-heading">למה זה עובד, ולמה זה קל</h2>
+            <p data-edit="lp-benefits-sub">
+              החלק הקשה במתנה אישית הוא לאסוף את החומר. את זה לקחנו על עצמנו.
+            </p>
+          </div>
+          <div class="benefits" data-rise>
+            <article class="benefit">
+              <svg
+                class="benefit__icon"
+                viewBox="0 0 256 256"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M128 24a104 104 0 0 0-91.2 153.6L25 214.3a16 16 0 0 0 20 20l36.7-11.9A104 104 0 1 0 128 24Zm0 192a87.5 87.5 0 0 1-44.6-12.2 8 8 0 0 0-6.5-.7l-36.1 11.7 11.7-36.1a8 8 0 0 0-.7-6.5A88 88 0 1 1 128 216Z"
+                />
+              </svg>
+              <h3 data-edit="lp-benefit-1-title">קבוצת וואטסאפ אוספת במקומכם</h3>
+              <p data-edit="lp-benefit-1-body">
+                פותחים לכם קבוצה, מצרפים את כל מי שמכיר אותו, וכל אחד זורק את הסיפורים שהוא זוכר. לא
+                נשארתם לבד מול דף ריק.
+              </p>
+            </article>
+            <article class="benefit">
+              <svg
+                class="benefit__icon"
+                viewBox="0 0 256 256"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M224 48H32a8 8 0 0 0-8 8v144a8 8 0 0 0 8 8h192a8 8 0 0 0 8-8V56a8 8 0 0 0-8-8Zm-8 144H40V64h176ZM72 100a8 8 0 0 1 8-8h96a8 8 0 0 1 0 16H80a8 8 0 0 1-8-8Zm0 40a8 8 0 0 1 8-8h64a8 8 0 0 1 0 16H80a8 8 0 0 1-8-8Z"
+                />
+              </svg>
+              <h3 data-edit="lp-benefit-2-title">מאה מילים, עם דף עזר</h3>
+              <p data-edit="lp-benefit-2-body">
+                מינימום 100 ועד 400. מגיע עם קטגוריות ודוגמאות, מאנשים ומקומות ועד בדיחות פנימיות
+                ואקסים, ופתאום נזכרים בהכל.
+              </p>
+            </article>
+            <article class="benefit">
+              <svg
+                class="benefit__icon"
+                viewBox="0 0 256 256"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M214.6 105.4 176 66.7V40a16 16 0 0 0-16-16H96a16 16 0 0 0-16 16v26.7l-38.6 38.7A15.9 15.9 0 0 0 36 116.7V208a16 16 0 0 0 16 16h152a16 16 0 0 0 16-16v-91.3a15.9 15.9 0 0 0-5.4-11.3ZM96 40h64v24H96Zm108 168H52v-91.3l40-40V120a8 8 0 0 0 16 0V83.3l20-20 20 20V120a8 8 0 0 0 16 0V76.7l40 40Z"
+                />
+              </svg>
+              <h3 data-edit="lp-benefit-3-title">מגיע מודפס, לא כקובץ</h3>
+              <p data-edit="lp-benefit-3-body">
+                חפיסה ולוח מודפסים וחתוכים, מוכנים לשולחן. אין בית דפוס לחפש, אין הגדרות הדפסה
+                לפספס, אין מספריים בערב האירוע.
+              </p>
+            </article>
+            <article class="benefit">
+              <svg
+                class="benefit__icon"
+                viewBox="0 0 256 256"
+                fill="currentColor"
+                aria-hidden="true"
+              >
+                <path
+                  d="M128 24a104 104 0 1 0 104 104A104.1 104.1 0 0 0 128 24Zm0 192a88 88 0 1 1 88-88 88.1 88.1 0 0 1-88 88Zm56-88a8 8 0 0 1-8 8h-48a8 8 0 0 1-8-8V72a8 8 0 0 1 16 0v48h40a8 8 0 0 1 8 8Z"
+                />
+              </svg>
+              <h3 data-edit="lp-benefit-4-title">3 ימי עסקים, מהמילים</h3>
+              <p data-edit="lp-benefit-4-body">
+                הספירה מתחילה כשהרשימה אצלנו, לא כשהתשלום עבר. אירוע בעוד יומיים? כתבו בוואטסאפ
+                ונגיד לכם מיד אם אנחנו מספיקים.
+              </p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ TAGLINE REVEAL ============ -->
+      <section class="reveal-line on-dark">
+        <div class="wrap">
+          <p data-testid="lp-tagline" data-edit="lp-tagline">
+            מתנה אחת שאי אפשר לקנות בחנות, כי אף אחד חוץ מכם לא מכיר את הסיפורים. שולחים מילים,
+            מקבלים ערב שמדברים עליו חודש אחרי.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============ HOW IT WORKS ============ -->
+      <section class="alt">
+        <div class="wrap">
+          <div class="sec-head" data-rise>
+            <h2 data-edit="lp-steps-heading">שלושה צעדים, בלי כאב ראש</h2>
+          </div>
+          <div class="steps" data-rise>
+            <div class="step">
+              <p class="step__n" aria-hidden="true">01</p>
+              <h3 data-edit="lp-step-1-title">בוחרים עיצוב ומשלמים</h3>
+              <p data-edit="lp-step-1-body">
+                בוחרים את הסגנון והצבעים, משלמים בתשלום מאובטח, ומיד מקבלים במייל קישור לאיסוף
+                המילים.
+              </p>
+            </div>
+            <div class="step">
+              <p class="step__n" aria-hidden="true">02</p>
+              <h3 data-edit="lp-step-2-title">אוספים מילים עם כולם</h3>
+              <p data-edit="lp-step-2-body">
+                פותחים קבוצת וואטסאפ, מצרפים חברים ומשפחה, וכל אחד מוסיף את המילים שלו. אתם רואים את
+                הרשימה גדלה וסוגרים כשמספיק.
+              </p>
+            </div>
+            <div class="step">
+              <p class="step__n" aria-hidden="true">03</p>
+              <h3 data-edit="lp-step-3-title">מקבלים ומשחקים</h3>
+              <p data-edit="lp-step-3-body">
+                אנחנו מעצבים, מדפיסים וחותכים. אוספים או מקבלים עד הבית, פורסים על השולחן ומתחילים
+                לצחוק.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ WHATSAPP PROOF ============
+           Real screenshots from real buyers, the same four the home page runs.
+           Each caption carries the quote as text so it is readable to a screen
+           reader and to anyone whose images have not loaded. -->
+      <section>
+        <div class="wrap">
+          <div class="sec-head" data-rise>
+            <h2 data-edit="lp-reviews-heading">מה מספרים עלינו</h2>
+            <p data-edit="lp-reviews-sub">הודעות אמיתיות, אחרי הערב עצמו</p>
+          </div>
+          <div class="shots" data-rise data-testid="proof-reviews">
+            <figure class="shot">
+              <img
+                src="assets/testimonials/review-1.jpg"
+                alt="המלצה אמיתית בוואטסאפ ממסיבת רווקות: דוגרי גנב את ההצגה, לא הפסקנו לצחוק שעה וחצי"
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>„דוגרי גנב את ההצגה. לא הפסקנו לצחוק שעה וחצי.”</figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="assets/testimonials/review-2.jpg"
+                alt="המלצה אמיתית בוואטסאפ: היה מושלם, בסוף הערב אמרה שזה החלק הכי אהוב במסיבה"
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>„בסוף הערב היא אמרה שזה החלק הכי אהוב במסיבה.”</figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="assets/testimonials/review-3.jpg"
+                alt="המלצה אמיתית בוואטסאפ: היה ממש כיף, כולם באטרף, מתנה שווה בטירוף"
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>„כולם באטרף. מתנה שווה בטירוף.”</figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="assets/testimonials/review-4.jpg"
+                alt="המלצה אמיתית בוואטסאפ: שעה וחצי של צחוק רצוף, אישי ומצחיק ומרגש"
+                loading="lazy"
+                decoding="async"
+              />
+              <figcaption>„שעה וחצי של צחוק רצוף. אישי, מצחיק ומרגש.”</figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FAQ ============
+           Shipped as real markup so a visitor with no JS still reads a full FAQ,
+           then REPLACED by the owner's live list from /api/faq. The five below
+           are the seed in server/faq.js, copied verbatim: the two are required
+           to stay in step, so this block is the one place on the page whose
+           wording is not mine to tidy. -->
+      <section class="alt">
+        <div class="wrap">
+          <div class="sec-head" data-rise>
+            <h2 data-edit="lp-faq-heading">שאלות נפוצות</h2>
+          </div>
+          <div class="faq" id="faqList" data-rise>
+            <details>
+              <summary>מה זה בעצם המשחק?</summary>
+              <p>
+                משחק ניחוש מילים שמבוסס כולו עליכם. שולפים קלף ומתארים את המילה בלי להגיד אותה,
+                הקבוצה שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל. הקאץ׳ הוא שכל המילים עליכם!
+                הכי מצחיק, אישי ומרגש!
+              </p>
+            </details>
+            <details>
+              <summary>כמה מילים צריך לשלוח?</summary>
+              <p>
+                מינימום 100, ועד 400. אנחנו שולחים דף עזר עם קטגוריות ודוגמאות שמקל מאוד להיזכר -
+                אנשים, מקומות, בדיחות פנימיות, ביטויים ואקסים!
+              </p>
+            </details>
+            <details>
+              <summary>מתי בדיוק מקבלים?</summary>
+              <p>
+                הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. איסוף עצמי אפשרי
+                תוך 3 ימי עסקים. יש לכם תאריך אירוע קרוב? דברו איתנו בוואטסאפ.
+              </p>
+            </details>
+            <details>
+              <summary>איך מזמינים ומשלמים?</summary>
+              <p>
+                בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה במייל לאיסוף
+                המילים, ומשם אנחנו מתחילים.
+              </p>
+            </details>
+            <details>
+              <summary>אנחנו חברה או מארגני אירועים - אפשר כמה משחקים?</summary>
+              <p>
+                בהחלט. לכמות, לאירוע חברה או לאירוע גדול - שלחו וואטסאפ ל-0546577715 ונתאים לכם את
+                הפורמט והמחיר.
+              </p>
+            </details>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ FINAL CTA ============
+           The same action, the same words as the hero. A landing page that
+           renames its CTA at the bottom is asking the visitor to decide twice. -->
+      <section class="final on-dark" id="order">
+        <div class="wrap">
+          <h2 data-edit="lp-final-heading">מוכנים להפתיע?</h2>
+          <p class="final__sub" data-edit="lp-final-sub">
+            כמה מילים מכם, וכל החדר יצחק עליו. או עליה. בדרך הכי אישית שיש.
+          </p>
+          <div class="hero__cta">
+            <a
+              class="btn"
+              href="products.html"
+              data-ga="order_started"
+              data-ga-cta="lp-final"
+              data-edit="lp-final-cta"
+              >בונים את המשחק ›</a
+            >
+            <a
+              class="btn btn--ghost"
+              id="waCtaLink"
+              href="https://wa.me/972552441334"
+              target="_blank"
+              rel="noopener"
+              data-ga="contact_click"
+              data-ga-channel="whatsapp"
+              data-ga-where="lp-final"
+              data-edit="lp-final-wa"
+              >יש שאלה? דברו איתנו בוואטסאפ</a
+            >
+          </div>
+          <p class="final__risk" data-edit="lp-final-risk">
+            תשלום מאובטח באתר. אירוע דחוף? כתבו לנו לפני שאתם מזמינים ונאשר שאנחנו מספיקים.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="lp-foot">
+      <div class="wrap lp-foot__row">
+        <p>דוגרי</p>
+        <p>
+          וואטסאפ וטלפון: 0552441334 · מייל:
+          <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a>
+        </p>
+        <p><a href="index.html">חזרה לעמוד הבית</a></p>
+      </div>
+    </footer>
+
+    <script type="module">
+      import { fetchPricing, applySale } from './js/pricing.js';
+      import { initFaq } from './js/faq.js';
+
+      /* ---- Scroll choreography -------------------------------------------
+         One observer for every [data-rise] section. Elements are revealed once
+         and then released, so nothing keeps observing after it has arrived.
+         Without IntersectionObserver (or with reduced motion) the CSS above
+         never hides anything, so the page is simply static and complete. */
+      const reduce =
+        window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (!reduce && 'IntersectionObserver' in window) {
+        const rise = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (!e.isIntersecting) continue;
+              e.target.classList.add('is-in');
+              rise.unobserve(e.target);
+            }
+          },
+          { threshold: 0.12 }
+        );
+        for (const el of document.querySelectorAll('[data-rise]')) rise.observe(el);
+      }
+
+      /* ---- Tagline reveal -------------------------------------------------
+         The sentence is split into one <span> per word and each word is lit as
+         it crosses a trigger band in the middle of the viewport. Per-word
+         observers, not a scroll listener: this runs while the user is
+         scrolling, which is exactly when a scroll handler would cost frames.
+
+         The split happens in JS on purpose. The HTML ships as one readable
+         sentence, so a screen reader announces a sentence rather than thirty
+         disconnected words, and no-JS still reads it at full contrast. */
+      const tagline = document.querySelector('[data-testid="lp-tagline"]');
+      if (tagline && !reduce && 'IntersectionObserver' in window) {
+        const words = tagline.textContent.trim().split(/\s+/);
+        tagline.textContent = '';
+        const spans = words.map((word, i) => {
+          const span = document.createElement('span');
+          span.className = 'w';
+          span.textContent = word;
+          /* A small per-word delay on top of the crossing, so words on the same
+             line still light one after another rather than together. Capped at
+             240ms per line's worth, or a long sentence would end up waiting on
+             its own animation. */
+          span.style.transitionDelay = (i % 6) * 40 + 'ms';
+          tagline.append(span, document.createTextNode(' '));
+          return span;
+        });
+        /* The observed region is the viewport's TOP HALF, so a word lights as
+           it crosses the middle line — and everything already past that line
+           stays inside the region. A thin band across the middle would read
+           better on paper and fail in the hand: a fling carries a word from
+           below the band to above it within a single frame, the observer never
+           sees it intersect, and it stays muted for good. */
+        const lite = new IntersectionObserver(
+          (entries) => {
+            for (const e of entries) {
+              if (!e.isIntersecting) continue;
+              e.target.classList.add('lit');
+              lite.unobserve(e.target);
+            }
+          },
+          { rootMargin: '0px 0px -50% 0px' }
+        );
+        for (const span of spans) lite.observe(span);
+      }
+
+      /* ---- Live price -----------------------------------------------------
+         Never a hardcoded number that can outlive an owner edit. The markup
+         ships the launch default so the page is complete before this resolves,
+         and fetchPricing is fail-safe: a slow or broken API leaves the seeded
+         199 / 239 exactly where they are. applySale decides whether the struck
+         price is shown at all. */
+      fetchPricing().then((p) => {
+        const now = document.querySelector('[data-testid="lp-price-now"]');
+        const was = document.querySelector('[data-testid="lp-price-was"]');
+        if (now) now.textContent = String(p.store.now);
+        if (was) was.textContent = String(p.store.was);
+        applySale(p.sale);
+      });
+
+      /* ---- Live FAQ -------------------------------------------------------
+         Replaces the shipped questions with the owner's list from /api/faq.
+         Fail-soft by contract: anything malformed leaves the markup alone. */
+      initFaq(document.getElementById('faqList'));
+
+      /* ---- Celebrations to date ------------------------------------------
+         Only a real positive integer is allowed to overwrite the seeded 23; a
+         200 carrying null, "" or 0 must not turn the proof line into "0
+         celebrations", which is worse than no proof at all. */
+      const countEl = document.querySelector('[data-testid="orders-count"]');
+      if (countEl) {
+        fetch('/api/stats/orders')
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            const c = data && data.count;
+            if (Number.isFinite(c) && c > 0) countEl.textContent = String(c);
+          })
+          .catch(() => {
+            /* fail-safe: the seeded count stays */
+          });
+      }
+    </script>
+  </body>
+</html>
