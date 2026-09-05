@@ -420,6 +420,14 @@
       .sticker-btn[hidden] {
         display: none;
       }
+      .sticker-note {
+        font-size: 12px;
+        color: #8a5a2b;
+        align-self: center;
+      }
+      .sticker-note[hidden] {
+        display: none;
+      }
       /* Same trap as .fgrid[hidden] below: `display: flex` on the class outranks
          the UA's [hidden] rule, so hideControls() would leave the bar on screen
          — an empty one for the tabs, and a press-mode switch showing a state
@@ -826,15 +834,21 @@
           </p>
         </div>
         <div class="ctl-right">
-          <!-- THE NIGHT'S STICKER SHEET. Every printed game the customer collects
-               herself gets a label on its box, and that sheet was being typed by
-               hand every night. It sits with the filters because it is about the
-               orders currently on screen, and it carries its own COUNT so it is
-               never a button you press to find out there was nothing to press it
-               for. Hidden entirely when the count is zero. -->
+          <!-- TONIGHT'S STICKERS, ALL OF THEM. Every produced box gets a label:
+               ours for a box the customer collects, HFD's own courier sticker
+               for one that ships. Both come down in ONE PDF, in table order, so
+               the labels are not collected from two places. It sits with the
+               filters because it is about the orders currently on screen, and it
+               carries its own COUNT so it is never a button you press to find
+               out there was nothing to press it for. Hidden entirely at zero. -->
           <a class="sticker-btn" id="stickerBtn" data-testid="pickup-stickers" href="#" hidden>
-            🏷️ מדבקות איסוף עצמי (<span id="stickerCount">0</span>)
+            🏷️ מדבקות (<span id="stickerCount">0</span>)
           </a>
+          <!-- A delivery box with no HFD shipment has no courier label to fetch,
+               and this button will not book one — a shipment is a real van and a
+               real charge. So it says which orders it is leaving out, where the
+               owner is already looking. -->
+          <span class="sticker-note" id="stickerNote" hidden></span>
           <label class="sortwrap"
             >מיון:
             <select id="sort">
@@ -1317,7 +1331,15 @@
             );
             const data = await r.json().catch(() => ({}));
             if (!r.ok) {
-              alert(data.message || data.error || 'הפעולה נכשלה');
+              // NAME the failure. "הפעולה נכשלה" was all this said, which is
+              // indistinguishable from a courier refusal, an expired key and a
+              // proxy eating the request — three different things to do next.
+              // The server sends a Hebrew reason for everything it knows about;
+              // the status code is the fallback for a body that is not ours.
+              const why =
+                data.message || data.error || 'ההזמנה לא בוטלה מול HFD (שגיאה ' + r.status + ')';
+              console.error('hfd', method, r.status, data);
+              alert(why);
               // A 409 means a shipment already exists — the server sends it
               // back, and showing it is more useful than restoring the button.
               if (data.hfd) return store(data.hfd);
@@ -3385,42 +3407,71 @@
         document.getElementById('colfilters').hidden = true;
       }
 
-      // THE NIGHT'S STICKER SHEET. The same rule the server applies (see
-      // pickupStickerOrders): a self-collection order whose deck has been
-      // PRODUCED and which has not been handed over — the boxes still to be
-      // packed. Counted from the orders already on this page rather than
-      // fetched, so the button costs nothing and cannot disagree with the table
-      // under it.
+      // TONIGHT'S STICKERS. The same rule the server applies (see stickerBatch):
+      // every PRODUCED order that has not been handed over — the boxes still to
+      // be packed — whichever way the box reaches the customer. A collection box
+      // gets our own label; a delivery box gets HFD's courier sticker, which we
+      // fetch per shipment. Both arrive in one PDF.
       //
-      // Exactly the "הופקו — לשליחה לדפוס" chip, narrowed to self-collection:
-      // the batch about to leave for Galor is the batch that needs labels. An
-      // order already stamped to print had its sticker printed with that batch,
-      // so it is NOT counted again — see the server's pickupStickerOrders, which
-      // must stay in step with this or the button's number and its PDF disagree.
+      // Counted from the orders already on this page rather than fetched, so the
+      // button costs nothing and cannot disagree with the table under it.
+      //
+      // Exactly the "הופקו — לשליחה לדפוס" chip: the batch about to leave for
+      // Galor is the batch that needs labels. An order already stamped to print
+      // had its sticker printed with that batch, so it is NOT counted again —
+      // see the server's stickerBatch, which must stay in step with this or the
+      // button's number and its PDF disagree.
       //
       // Deliberately NOT narrowed by the table's filters: this is the whole
-      // night's work, and a sheet that quietly shrank because a filter chip was
+      // night's work, and a batch that quietly shrank because a filter chip was
       // left on is a customer whose box goes out unlabelled.
-      function pickupStickerCount() {
+      function stickerPile() {
         return allCols.filter((c) => {
           const o = c.order;
           if (!o || c.cancelled) return false;
-          if (o.version !== 'pickup' || !isPaid(c)) return false;
+          if (!isPaid(c)) return false;
+          // A digital order has no box to label.
+          if (o.version !== 'pickup' && o.version !== 'delivery') return false;
           if (o.ready_at || o.sent_to_print_at) return false;
           // The same set as the הופקו chip — tonight's batch, not every deck
           // that happens to exist.
           return isReleased(c);
-        }).length;
+        });
+      }
+      // A delivery order whose parcel is booked with HFD — the only kind with a
+      // courier label to fetch. A cancelled shipment is not one.
+      function hasLiveShipment(c) {
+        const rec = c.order && c.order.hfd;
+        return !!(rec && rec.shipment_number && !rec.cancelled_at);
       }
       function renderStickerBtn() {
         const btn = document.getElementById('stickerBtn');
         if (!btn) return;
-        const n = pickupStickerCount();
-        document.getElementById('stickerCount').textContent = n;
+        const pile = stickerPile();
+        const printable = pile.filter((c) => c.order.version === 'pickup' || hasLiveShipment(c));
+        const unbooked = pile.filter((c) => c.order.version === 'delivery' && !hasLiveShipment(c));
+        document.getElementById('stickerCount').textContent = printable.length;
         // Hidden at zero: a button that answers "there was nothing to print" is
         // a button that wasted a press.
-        btn.hidden = n === 0;
-        btn.href = '/api/admin/pickup-stickers?key=' + encodeURIComponent(key);
+        btn.hidden = printable.length === 0;
+        btn.href = '/api/admin/stickers?key=' + encodeURIComponent(key);
+
+        // Name the ones being left out, and say why in one line. The fix is one
+        // press of שלח ל-HFD on those rows, so the message points at it rather
+        // than at us.
+        const note = document.getElementById('stickerNote');
+        if (!note) return;
+        note.hidden = unbooked.length === 0;
+        note.textContent = unbooked.length
+          ? unbooked.length +
+            ' משלוחים בלי משלוח ב-HFD — בלי מדבקה (' +
+            unbooked
+              .slice(0, 3)
+              .map((c) => (c.custom_title || c.honoree_name || '').trim() || '—')
+              .join(', ') +
+            (unbooked.length > 3 ? ' ועוד' : '') +
+            ')'
+          : '';
       }
 
       sortSelect.onchange = () => {

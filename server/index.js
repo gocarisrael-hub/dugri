@@ -979,6 +979,7 @@ const STAFF_ALLOWED = [
   /^\/api\/admin\/designs(\/|$)/,
   /^\/api\/admin\/hfd\/status$/,
   /^\/api\/admin\/pickup-stickers$/,
+  /^\/api\/admin\/stickers$/,
   /^\/api\/admin\/templates(\/|$)/,
   /^\/api\/admin\/whatsapp\/groups(\/|$)/,
   /^\/api\/admin\/wordlists(\/|$)/,
@@ -2126,55 +2127,84 @@ function orderProduced(c) {
   // stickers for boxes that are not in tonight's batch.
   return !!(p && p.state === 'generated' && p.released_at);
 }
-function pickupStickerOrders() {
+// EVERY box in tonight's pile, in the order the orders table shows them, each
+// with the label it needs. Two kinds, because we sell two ways of getting the
+// box to the customer:
+//
+//   pickup   — she collects it. The label is OURS: the one below, printed here.
+//   delivery — HFD carries it. The label is THEIRS: a barcode the driver scans,
+//              which we cannot draw and have to fetch per shipment.
+//
+// A digital order has no box and no label at all.
+//
+// A delivery order with no HFD shipment booked (or one that was cancelled) has
+// nothing to fetch — `shipment_number` is null and the caller leaves it out of
+// the PDF and says which ones it left out. Booking is a real van and a real
+// charge, so it stays a button the owner presses, never a side effect of asking
+// for the stickers.
+function stickerBatch() {
   return db
     .listAllCollections()
     .filter((c) => {
       const o = c.order;
       if (!o || c.cancelled) return false;
-      if (o.version !== 'pickup' || !o.paid) return false;
+      if (!o.paid) return false;
+      // A PDF-only order is a file in an inbox; there is nothing to stick a
+      // label on.
+      if (o.version !== 'pickup' && o.version !== 'delivery') return false;
       if (o.ready_at || o.sent_to_print_at) return false;
       return orderProduced(c);
     })
     .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
-    .map((c) => ({
-      order_no: db.orderRef(c),
-      // What the deck is CALLED — her own title when she wrote one, else the
-      // honoree's name, which is the same thing the cards print.
-      title: (c.custom_title || c.honoree_name || '').trim(),
-      // The person COLLECTING, who is the buyer and not the honoree. Blank when
-      // the order never captured one: an empty line is honest, and the phone
-      // underneath still identifies them.
-      buyer_name: (c.buyer_name || '').trim(),
-      design: designNameFor(c.theme),
-      phone: (c.owner_phone || '').trim(),
-    }));
+    .map((c) => {
+      const rec = (c.order && c.order.hfd) || null;
+      const live = rec && rec.shipment_number && !rec.cancelled_at;
+      return {
+        id: c.id,
+        kind: c.order.version === 'delivery' ? 'delivery' : 'pickup',
+        // The courier's shipment, when there is one to fetch a label for.
+        shipment_number: live ? String(rec.shipment_number) : null,
+        // What OUR label says. Built for every entry, not just the pickups: it
+        // is also how a skipped delivery order is named back to the owner.
+        label: {
+          order_no: db.orderRef(c),
+          // What the deck is CALLED — her own title when she wrote one, else the
+          // honoree's name, which is the same thing the cards print.
+          title: (c.custom_title || c.honoree_name || '').trim(),
+          // The person COLLECTING, who is the buyer and not the honoree. Blank
+          // when the order never captured one: an empty line is honest, and the
+          // phone underneath still identifies them.
+          buyer_name: (c.buyer_name || '').trim(),
+          design: designNameFor(c.theme),
+          phone: (c.owner_phone || '').trim(),
+        },
+      };
+    });
 }
 
-// Spawn ONE pickup_stickers.py run and resolve the PDF's path plus a cleanup.
-// The sheet is a single Chrome print — the same path the deck uses — so it goes
+// The self-collection half of that pile — the labels this server draws itself.
+// Derived from stickerBatch rather than re-filtered, so the two cannot drift
+// into disagreeing about what tonight's pile is.
+function pickupStickerOrders() {
+  return stickerBatch()
+    .filter((e) => e.kind === 'pickup')
+    .map((e) => e.label);
+}
+
+// Spawn ONE pickup_stickers.py run over `entries` — our labels and the courier's
+// already-downloaded PDFs, in the order they should print — and resolve the
+// finished PDF's path. `outDir` belongs to the CALLER, which fetched the courier
+// labels into it and removes it afterwards.
+//
+// One Chrome print for all of ours, the same path the deck uses, so it goes
 // through spawnGenerator and inherits its concurrency slot and its kill.
-function runPickupStickers(stickers) {
+function runStickerBatch(entries, outDir) {
   return new Promise((resolve, reject) => {
-    let outDir;
-    try {
-      outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-stickers-'));
-    } catch (e) {
-      return reject(e);
-    }
-    const cleanup = () => {
-      try {
-        fs.rmSync(outDir, { recursive: true, force: true });
-      } catch {
-        /* best-effort cleanup */
-      }
-    };
     const jsonPath = path.join(outDir, 'stickers.json');
     const outPdf = path.join(outDir, 'pickup-stickers.pdf');
     try {
-      fs.writeFileSync(jsonPath, JSON.stringify(stickers), 'utf8');
+      fs.writeFileSync(jsonPath, JSON.stringify(entries), 'utf8');
     } catch (e) {
-      cleanup();
       return reject(e);
     }
     const child = spawnGenerator([PICKUP_STICKERS_SCRIPT, jsonPath, outPdf]);
@@ -2189,58 +2219,180 @@ function runPickupStickers(stickers) {
     child.stderr.on('data', (d) => (stderr += d));
     child.on('error', (e) => {
       clearTimeout(timer);
-      cleanup();
       reject(e);
     });
     child.on('close', (code) => {
       clearTimeout(timer);
-      if (timedOut) {
-        cleanup();
-        return reject(new Error('sticker sheet render timed out'));
-      }
+      if (timedOut) return reject(new Error('sticker render timed out'));
       if (code !== 0 || !fs.existsSync(outPdf)) {
-        cleanup();
         return reject(new Error((stderr || stdout || 'exit ' + code).trim().slice(0, 800)));
       }
-      resolve({ pdf: outPdf, cleanup });
+      resolve(outPdf);
     });
   });
 }
 
-// Admin: the night's sticker sheet, as a PDF to print.
+// How many courier labels are pulled from HFD at once. A batch is ten or twenty
+// parcels and each label is one small request; four at a time empties the queue
+// in about as long as one round trip without opening twenty sockets to a
+// courier that has no idea we are batching.
+const HFD_LABEL_CONCURRENCY = 4;
+
+// Download the courier's label for every delivery entry that has a shipment,
+// into `outDir`. Resolves { files, failed } — a Map from entry id to the file on
+// disk, and the ones HFD would not give us, each with the reason.
+//
+// A label that does not come down is NOT fatal: the rest of the pile still
+// prints, and the owner is told which parcels to fetch by hand. Losing twenty
+// labels because HFD hiccuped on one is the failure worth avoiding here.
+async function fetchCourierLabels(entries, outDir) {
+  const wanted = entries.filter((e) => e.kind === 'delivery' && e.shipment_number);
+  const files = new Map();
+  const failed = [];
+  let next = 0;
+  const worker = async () => {
+    for (;;) {
+      const i = next++;
+      if (i >= wanted.length) return;
+      const e = wanted[i];
+      let r;
+      try {
+        r = await hfd.fetchLabel(e.shipment_number);
+      } catch (err) {
+        r = { ok: false, error: (err && err.message) || String(err) };
+      }
+      if (!r.ok) {
+        console.error('hfd label failed for', e.shipment_number, '-', r.error);
+        failed.push({
+          order_no: e.label.order_no,
+          shipment_number: e.shipment_number,
+          message: r.error,
+        });
+        continue;
+      }
+      const file = path.join(outDir, 'hfd-' + e.shipment_number + '.pdf');
+      try {
+        fs.writeFileSync(file, r.pdf);
+        files.set(e.id, file);
+      } catch (err) {
+        failed.push({
+          order_no: e.label.order_no,
+          shipment_number: e.shipment_number,
+          message: (err && err.message) || String(err),
+        });
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(HFD_LABEL_CONCURRENCY, wanted.length) }, worker));
+  return { files, failed };
+}
+
+// The batch as the generator wants it: our labels as their own fields, the
+// courier's as the file already fetched to disk, both in the order they should
+// print. A delivery whose label did not come down drops out here — the caller
+// counts what is missing and the page names it.
+function stickerEntries(printable, files) {
+  return printable
+    .map((e) => {
+      if (e.kind === 'pickup') return e.label;
+      const file = files.get(e.id);
+      return file ? { pdf: file } : null;
+    })
+    .filter(Boolean);
+}
+
+// Admin: tonight's stickers, as ONE PDF to print.
+//
+// The pile is mixed — boxes the customer collects and boxes HFD carries — and it
+// used to take two places to get its labels: this button for the self-collection
+// ones and HFD's own website for the rest. So this is the whole pile in one
+// download, in the order the orders table shows it: our own label (105x74 mm,
+// one to a page, straight onto the label stock) for a collection, and HFD's own
+// sticker, fetched per shipment, for a delivery.
+//
+// A delivery order with no shipment booked is LEFT OUT and named in the response
+// header rather than booked on the spot: a shipment is a real van and a real
+// charge, and pressing "print my stickers" is not consent to order one.
 //
 // A GET so the button can be a plain link and the browser's own download does
-// the work — there is nothing to post, and the sheet is derived entirely from
+// the work — there is nothing to post, and the batch is derived entirely from
 // orders that already exist.
-app.get('/api/admin/pickup-stickers', async (req, res) => {
+async function sendStickerBatch(req, res) {
   if (!requireAdmin(req, res)) return;
-  const stickers = pickupStickerOrders();
-  if (!stickers.length) {
+  const batch = stickerBatch();
+  // What we can actually print: every collection label, and every delivery that
+  // has a shipment to fetch a label for.
+  const printable = batch.filter((e) => e.kind === 'pickup' || e.shipment_number);
+  const unbooked = batch.filter((e) => e.kind === 'delivery' && !e.shipment_number);
+  if (!printable.length) {
     // Not an error page: "there are none tonight" is a normal night, and it
-    // should read as one rather than as something that failed.
+    // should read as one rather than as something that failed. An evening whose
+    // only orders are deliveries waiting to be booked says THAT instead.
     return res.status(409).json({
       error: 'none',
-      message: 'אין כרגע הזמנות איסוף עצמי שהופקו וממתינות לשליחה לדפוס.',
+      message: unbooked.length
+        ? 'כל ההזמנות שממתינות לדפוס הן משלוחים שעוד לא נפתח להם משלוח ב-HFD.'
+        : 'אין כרגע הזמנות שהופקו וממתינות לשליחה לדפוס.',
+      unbooked: unbooked.map((e) => e.label.order_no),
     });
   }
-  let out;
+
+  let outDir;
   try {
-    out = await runPickupStickers(stickers);
+    outDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-stickers-'));
   } catch (e) {
-    console.error('pickup stickers failed:', (e && e.message) || e);
+    console.error('stickers: no temp dir:', (e && e.message) || e);
+    return res.status(500).json({ error: 'render failed' });
+  }
+  const cleanup = () => {
+    try {
+      fs.rmSync(outDir, { recursive: true, force: true });
+    } catch {
+      /* best-effort cleanup */
+    }
+  };
+
+  let out;
+  let failed = [];
+  try {
+    const labels = await fetchCourierLabels(printable, outDir);
+    failed = labels.failed;
+    const entries = stickerEntries(printable, labels.files);
+    if (!entries.length) {
+      cleanup();
+      return res.status(502).json({
+        error: 'no labels',
+        message: 'HFD לא החזירה אף מדבקה: ' + ((failed[0] && failed[0].message) || 'שגיאה'),
+      });
+    }
+    out = await runStickerBatch(entries, outDir);
+  } catch (e) {
+    cleanup();
+    console.error('stickers failed:', (e && e.message) || e);
     return res.status(502).json({ error: 'render failed' });
   }
-  const name = 'מדבקות איסוף עצמי ' + new Date().toISOString().slice(0, 10) + '.pdf';
+
+  const name = 'מדבקות ' + new Date().toISOString().slice(0, 10) + '.pdf';
   res.setHeader('Content-Type', 'application/pdf');
+  // Counts, not names: a header is latin-1 and an order title is not. The page
+  // shows the owner WHICH orders are missing a shipment; these are here so a
+  // download that came out short can be explained from the response alone.
+  res.setHeader('X-Stickers-Unbooked', String(unbooked.length));
+  res.setHeader('X-Stickers-Failed', String(failed.length));
   res.setHeader(
     'Content-Disposition',
-    'attachment; filename="pickup-stickers.pdf"; filename*=UTF-8\'\'' + encodeURIComponent(name)
+    'attachment; filename="stickers.pdf"; filename*=UTF-8\'\'' + encodeURIComponent(name)
   );
-  res.sendFile(out.pdf, (err) => {
-    out.cleanup();
-    if (err) console.error('pickup stickers send failed:', (err && err.message) || err);
+  res.sendFile(out, (err) => {
+    cleanup();
+    if (err) console.error('stickers send failed:', (err && err.message) || err);
   });
-});
+}
+
+app.get('/api/admin/stickers', sendStickerBatch);
+// The name it shipped under, kept working: it is in the staff allowlist, in the
+// owner's browser history, and on a button that may be open in a tab right now.
+app.get('/api/admin/pickup-stickers', sendStickerBatch);
 
 // --- physical stock -----------------------------------------------------------
 // Boards, boxes, thank-you notes, stickers. See the block above db.stockSnapshot
@@ -2402,6 +2554,7 @@ app.post('/api/admin/collections/:id/hfd', async (req, res) => {
     }
     // HFD refused. Remember why: the owner comes back to this row later, and
     // "it didn't work" with no reason is what sends her to the phone.
+    console.error('hfd create refused for', c.id, '-', r.error);
     const record = db.setHfdShipment(c.id, {
       error: r.error,
       error_at: new Date().toISOString(),
@@ -2447,7 +2600,13 @@ app.delete('/api/admin/collections/:id/hfd', async (req, res) => {
   if (!record || !record.shipment_number) return res.status(404).json({ error: 'no shipment' });
   if (record.cancelled_at) return res.json({ ok: true, hfd: record });
   const r = await hfd.cancelShipment(record.shipment_number);
-  if (!r.ok) return res.status(502).json({ error: 'hfd refused', message: r.error, hfd: record });
+  if (!r.ok) {
+    // LOGGED, not only returned. A refusal the owner reports as "it says it
+    // failed" is unanswerable without HFD's own words for it, and this is the
+    // only place they exist.
+    console.error('hfd cancel refused for', record.shipment_number, '-', r.error);
+    return res.status(502).json({ error: 'hfd refused', message: r.error, hfd: record });
+  }
   const next = db.setHfdShipment(c.id, { cancelled_at: new Date().toISOString() });
   res.json({ ok: true, hfd: next });
 });
@@ -7275,6 +7434,8 @@ module.exports.buyerLandedInGroup = buyerLandedInGroup;
 // have one, the original otherwise) — exposed so the choice can be asserted
 // directly instead of through a full generation run.
 module.exports.pickupStickerOrders = pickupStickerOrders;
+module.exports.stickerBatch = stickerBatch;
+module.exports.stickerEntries = stickerEntries;
 module.exports.pawnPhotoFiles = pawnPhotoFiles;
 module.exports.pawnPhotoFrames = pawnPhotoFrames;
 module.exports.orderArgs = orderArgs;
