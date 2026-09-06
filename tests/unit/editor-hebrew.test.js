@@ -432,6 +432,50 @@ describe('the ceiling examples are gone', () => {
   });
 });
 
+describe('a row\u2019s height is the template\u2019s, not a constant', () => {
+  // The press sizes words at median(row height) x _WORD_SIZE_K, so a row's share
+  // of the gap IS the size. This page wrote 0.39 over whatever a design actually
+  // had — a claim about every template rather than a measurement of any.
+  //
+  // Measured on staging: five templates sit at exactly 0.390 (the constant,
+  // written back by this page) while birthday-girls sits at 0.848 and prints at
+  // 21.05 against a box that allows 21.62. Saving birthday-girls from this page
+  // would have rewritten its rows to 0.39 and taken the type down by nearly half,
+  // silently. That is what this stops.
+  it('the share is read from the template, not hardcoded', () => {
+    expect(html).toContain('function shareFromSlots(');
+    expect(html).toMatch(/ROW_SHARE = own && own > 0 \? own : ROW_SHARE_0;/);
+    // ROW_TOP/ROW_BOT keep their 0.30 : 0.09 proportion INSIDE the share — that
+    // ratio is the shape of a line of type, and only the total was in question.
+    expect(html).toContain('const rowTop = () => (ROW_TOP_0 / ROW_SHARE_0) * ROW_SHARE;');
+    expect(html).toContain('const rowBot = () => (ROW_BOT_0 / ROW_SHARE_0) * ROW_SHARE;');
+  });
+
+  it('the fit and the save both measure with the live share', () => {
+    expect(html).toContain('const boxBind = step * ROW_SHARE * WORD_SIZE_K;');
+    expect(html).toContain('y0: r4((cy - fit.step * rowTop()) / CH),');
+    expect(html).toContain('y1: r4((cy + fit.step * rowBot()) / CH),');
+    // …and nothing measures with the bare constants any more.
+    expect(html).not.toMatch(/step \* \(ROW_TOP \+ ROW_BOT\)/);
+  });
+
+  it('it is a slider, and it stops where two rows would touch', () => {
+    expect(html).toMatch(/<label for="wRowH">גובה השורה<\/label>/);
+    expect(html).toMatch(/id="wRowH"[^>]*type="range"|type="range" id="wRowH"/);
+    // The bound is the face's own leading need, not a second constant.
+    expect(html).toContain('r2(1 / (WORD_SIZE_K * fit.lead))');
+    expect(html).toContain('מעבר לזה שתי שורות נוגעות');
+  });
+
+  it('an un-calibrated template still opens on the old constant', () => {
+    // A detected recipe has four DIFFERENT row heights (birthday-girls' spread is
+    // 69%), so there is no single share to read; flattening those quietly is the
+    // thing being fixed, not something to do earlier.
+    expect(html).toContain('const ROW_SHARE_0 = 0.39;');
+    expect(html).toMatch(/if \(!Array\.isArray\(w\) \|\| w\.length < 2\) return null;/);
+  });
+});
+
 describe('a ceiling says where it stops', () => {
   // The owner asked twice why a ceiling ends at 14.2 and not 99. It ends at the
   // largest size that box could ever set — above it a ceiling can never bite —

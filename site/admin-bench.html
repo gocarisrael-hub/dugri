@@ -1032,6 +1032,19 @@
          that is simply stated. -->
         <span class="capend">מתחת ל-0.9 האותיות עצמן קובעות את הרווח</span>
       </div>
+      <!-- HOW TALL A ROW IS, as a fraction of the gap above. This is the control
+           that was missing: the press sizes words at `median(row height) x 1.3`,
+           so this IS the size — and the size stays bounded by the box the whole
+           time, because the box is drawn from these same rows. Raising it does
+           not move the words apart; it gives each row more of the gap it already
+           has. -->
+      <div class="row">
+        <label for="wRowH">גובה השורה</label>
+        <input type="range" id="wRowH" min="0.3" max="0.9" step="0.01" /><output
+          id="wRowHV"
+        ></output>
+        <span class="capend" id="wRowHEnd"></span>
+      </div>
       <div class="row">
         <label for="wTight">שורות של מילה שנשברה</label>
         <input type="range" id="wTight" min="0.5" max="1" step="0.01" /><output
@@ -1584,6 +1597,12 @@
     // the deck's own rhythm, expressed against its own size
     setRhythm(LIVE.word_pitch || ((LIVE_BAND.y1 - LIVE_BAND.y0) * CH) / 4, LIVE.word_size);
     setR('wTight', 1);
+    // The template's OWN share, not the constant — see ROW_SHARE. An
+    // un-calibrated template (a detected recipe, four unequal rows) has no single
+    // answer to read, so it opens on the constant exactly as before.
+    const own = shareFromSlots(((LIVE.card_slots || {}).words || []).slice(0, 4));
+    ROW_SHARE = own && own > 0 ? own : ROW_SHARE_0;
+    setR('wRowH', r2(ROW_SHARE));
     // THE CEILINGS COME OFF THE SITE when the design carries them. They used to
     // start at 999 (off) every time, which meant the only copy of a tuned ceiling
     // lived in this browser — and a browser store is not somewhere measurements
@@ -1651,7 +1670,7 @@
     if (o) o.textContent = num(id, v);
   };
   const num = (id, v) =>
-    id === 'enScale' || id === 'tLead' || id === 'wTight' || id === 'wPitch'
+    id === 'enScale' || id === 'tLead' || id === 'wTight' || id === 'wPitch' || id === 'wRowH'
       ? (+v).toFixed(2)
       : (+v).toFixed(1);
   // Kept as a name rather than inlined `true`: it reads as the question the
@@ -1951,8 +1970,43 @@
    _WORD_SIZE_K`, so THAT is the room the press has — and it is the room this
    page has to measure against, or it reads more than the press will give.
    Named here and used by BOTH the fit and the export, so the two cannot drift. */
-  const ROW_TOP = 0.3,
-    ROW_BOT = 0.09;
+  /* HOW MUCH OF THE GAP ONE ROW OWNS.
+     0.30 above the centre for the ascender, 0.09 below for the descender — 0.39
+     of the pitch in total. Those two numbers were hardcoded, and that is a claim
+     about every template rather than a measurement of any: the press sizes words
+     at `median(row heights) x _WORD_SIZE_K`, so a row's share of the gap IS the
+     size, and writing 0.39 over whatever a design actually had re-sized its
+     cards on the way past.
+     It is not hypothetical. On staging, five templates sit at exactly 0.390 —
+     the constant, written back by this page — while birthday-girls sits at
+     0.848 and prints at 21.05 where the box would allow 21.62. Saving that
+     template from this page would have rewritten its rows to 0.39 and taken the
+     type down by nearly half, without asking and without saying so.
+     So the share is READ from the template (median height over mean gap) and is
+     hers to move. ROW_TOP/ROW_BOT keep their 0.30 : 0.09 proportion inside it,
+     because that is the shape of a line of type — ascender long, descender
+     short — and only the total is in question. */
+  const ROW_SHARE_0 = 0.39;
+  const ROW_TOP_0 = 0.3,
+    ROW_BOT_0 = 0.09;
+  let ROW_SHARE = ROW_SHARE_0;
+  const rowTop = () => (ROW_TOP_0 / ROW_SHARE_0) * ROW_SHARE;
+  const rowBot = () => (ROW_BOT_0 / ROW_SHARE_0) * ROW_SHARE;
+  /* The share this template's own slots are drawn at: median row height over the
+     mean gap between rows. Null when it has no saved slots — a detected recipe
+     has four DIFFERENT heights (birthday-girls' spread 69%), and flattening
+     those to one number is the very thing this is trying to stop doing silently,
+     so an un-calibrated template opens on the old constant and says nothing. */
+  function shareFromSlots(w) {
+    if (!Array.isArray(w) || w.length < 2) return null;
+    const hs = w.map((s) => s.y1 - s.y0).sort((a, b) => a - b);
+    const med = (hs[(hs.length - 1) >> 1] + hs[hs.length >> 1]) / 2;
+    let gap = 0;
+    for (let i = 1; i < w.length; i++) gap += w[i].y0 - w[i - 1].y0;
+    gap /= w.length - 1;
+    if (!(gap > 0) || !(med > 0)) return null;
+    return med / gap;
+  }
   const WORD_SIZE_K = 1.3; // generator/render_page._WORD_SIZE_K
   let ADV = 83,
     DOTW = 28; // measured once the face has loaded
@@ -2428,7 +2482,7 @@
     // The rhythm this repaint is drawn at — the slider's, not the stored one.
     const step = pitchUnits();
     const leadBind = markerLead > 0 ? step / markerLead : 999;
-    const boxBind = step * (ROW_TOP + ROW_BOT) * WORD_SIZE_K;
+    const boxBind = step * ROW_SHARE * WORD_SIZE_K;
     const pinned = !$('wFit').checked;
     // The box bound is the TARGET a card takes when nothing pins it — in the press
     // `uniform = word_size if word_size else median(box heights) x _WORD_SIZE_K`,
@@ -3759,6 +3813,9 @@
   let SEED_TITLE = false;
 
   function paint() {
+    // The share the rest of this pass measures against. Read here, once, so the
+    // fit, the drawing and the save can never disagree about how tall a row is.
+    if ($('wRowH')) ROW_SHARE = +$('wRowH').value || ROW_SHARE_0;
     // FILLED, not raw: {AGE} and {m:בן|f:בת} are instructions to the generator,
     // and a field that opens on them asks the owner to read machine syntax to
     // find her own words. titleLines() resolves them, but only once the entry
@@ -3774,6 +3831,22 @@
     // The bounds are read BEFORE any ceiling is applied, so clamping the sliders
     // to them cannot chase its own tail; only a clamp that actually moved a value
     // needs the fit taken again.
+    // WHERE THE SHARE STOPS. A row taller than this sets type whose ink reaches
+    // the row above it — the one rule the renderer will not break (it prints
+    // max(the deck's spacing, what the glyphs need), so past this point the rows
+    // are pushed apart and the gap she set stops being the gap she gets).
+    // `fit.lead` is that need, measured on this face, so the bound is the
+    // template's own rather than a second constant.
+    {
+      const e = $('wRowH');
+      if (e && fit.lead > 0) {
+        const top = Math.min(+e.max || 0.9, r2(1 / (WORD_SIZE_K * fit.lead)));
+        e.max = top;
+        if (+e.value > top) setR('wRowH', top);
+        const end = $('wRowHEnd');
+        if (end) end.textContent = 'עד ' + r2(top) + ' — מעבר לזה שתי שורות נוגעות';
+      }
+    }
     const pulled = ['capHe', 'capEn', 'wPin', 'enSize']
       .map((id) => capMax(id, fit.hBind, CAP_WHY.word))
       .some(Boolean);
@@ -4066,9 +4139,9 @@
       card_slots: {
         words: rowCentres().map((cy) => ({
           x0: r4(S.band.x0),
-          y0: r4((cy - fit.step * ROW_TOP) / CH),
+          y0: r4((cy - fit.step * rowTop()) / CH),
           x1: r4(S.band.x1),
-          y1: r4((cy + fit.step * ROW_BOT) / CH),
+          y1: r4((cy + fit.step * rowBot()) / CH),
         })),
         titles: Object.fromEntries(
           FRONTS.map((k) => [
