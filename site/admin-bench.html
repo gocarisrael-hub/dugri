@@ -1002,28 +1002,16 @@
 
     <section class="grp">
       <h2
-        title="קופסה אחת מחזיקה את כל ארבע השורות. גררו אותה כדי להזיז; משכו צלע כדי להגדיל לכיוון אחד, או פינה לשני כיוונים יחד. לגופן אין משקל מודגש אמיתי, ולכן ההדגשה נעשית בקו סביב כל אות. זה מעבה אותה — וגם מרחיב אותה, כי הקו בולט מעבר לשני קצות השורה. אפשר לקבע מספר במקום, וקיבוע גובר על הקופסה: הדפוס קורא קודם את המספר שקבעתם ורק בהיעדרו נגזר גודל מהמלבנים. מה שעדיין מחזיק גם מספר מקובע הוא שתי שורות לא ייגעו זו בזו, ומילה ארוכה מדי לשורה שלה עדיין נשברת. כפולה של גודל המילה, בדיוק כמו הרווח בין שורות הכותרת — 1.40 אומר שכל שורה יושבת 1.4 מגודלה שלה מתחת לזו שמעליה. פתחו אותו וארבע השורות מבקשות יותר מקופסה שלא גדלה, ולכן הטיפוגרפיה קטנה; סגרו אותו והיא גדלה עד שרוחב השורה עוצר אותה. היא לעולם לא יורדת מתחת למה שהאותיות צריכות כדי לא להתנגש. מילה ארוכה מדי לשורה שלה נשברת לשתי שורות. זה כמה קרוב שתי השורות האלה יושבות זו לזו, כחלק מהרווח הרגיל בין מילים. 100% — אותו רווח בכל מקום, כך ששני החצאים נראים כמו שתי מילים נפרדות. 70% — הן יושבות קרוב ונקראות שוב כמילה אחת. זה רק מקרב שורות, אף פעם לא מרחיק, כך ששום דבר לא יכול לצאת מהקלף."
+        title="קופסה אחת מחזיקה את כל ארבע השורות. גררו אותה כדי להזיז; משכו צלע כדי להגדיל לכיוון אחד, או פינה לשני כיוונים יחד. לגופן אין משקל מודגש אמיתי, ולכן ההדגשה נעשית בקו סביב כל אות. זה מעבה אותה — וגם מרחיב אותה, כי הקו בולט מעבר לשני קצות השורה. אפשר לקבע מספר במקום — אבל הקופסה עדיין מנצחת: קיבוע נעצר בקופסה בדיוק כמו תקרה. שום דבר בעמוד הזה לא יכול להידפס גדול מהמלבן שלו. כפולה של גודל המילה, בדיוק כמו הרווח בין שורות הכותרת — 1.40 אומר שכל שורה יושבת 1.4 מגודלה שלה מתחת לזו שמעליה. פתחו אותו וארבע השורות מבקשות יותר מקופסה שלא גדלה, ולכן הטיפוגרפיה קטנה; סגרו אותו והיא גדלה עד שרוחב השורה עוצר אותה. היא לעולם לא יורדת מתחת למה שהאותיות צריכות כדי לא להתנגש. מילה ארוכה מדי לשורה שלה נשברת לשתי שורות. זה כמה קרוב שתי השורות האלה יושבות זו לזו, כחלק מהרווח הרגיל בין מילים. 100% — אותו רווח בכל מקום, כך ששני החצאים נראים כמו שתי מילים נפרדות. 70% — הן יושבות קרוב ונקראות שוב כמילה אחת. זה רק מקרב שורות, אף פעם לא מרחיק, כך ששום דבר לא יכול לצאת מהקלף."
       >
         קופסת המילים <span class="tagx all">כל הקלפים</span>
       </h2>
       <label class="sw"><input type="checkbox" id="wBold" /> להשמין את האותיות</label>
 
-      <!-- THE ONLY CONTROL ON THIS PAGE THAT MAKES WORDS BIGGER, and it used to be
-           `hidden`. With it off the size is derived from the row rectangles
-           (`median(heights) x _WORD_SIZE_K`), which are themselves written from
-           the line gap — so on a template with no pin the gap was the ONLY thing
-           that could grow the type, and the owner's question was the reasonable
-           one: "why can I not just make the font bigger?". She could not: the
-           switch that reveals the size was not on the screen, and only a template
-           that already pinned a size ever showed the slider.
-           The pin is not a workaround. It is what the press reads first
-           (`uniform = word_size if word_size else ...`), and three of the shipped
-           templates already print from it. -->
-      <label class="sw"
-        ><input type="checkbox" id="wFit" checked /> להתאים את גודל המילים לקופסה</label
-      >
+      <input type="checkbox" id="wFit" checked hidden />
       <p class="hint" id="wPinWhy" hidden>
-        כבוי — <b>אתם</b> קובעים את הגודל, והוא לא נגזר מהקופסה. זה מה שהדפוס יעשה עם התבנית הזו.
+        התבנית הזו <b>מקבעת</b> את גודל המילים, ולכן הן לא נגזרות מהקופסה. זה מה שהדפוס עושה איתה
+        היום.
       </p>
       <div class="row" id="wPinRow" hidden>
         <label for="wPin">גודל מקובע</label>
@@ -3210,19 +3198,6 @@
     capRows();
   }
 
-  /* TURNING THE PIN ON MUST NOT MOVE ANYTHING BY ITSELF — the same rule the
-     ceilings follow: a switch that changes the card the moment it is flipped
-     makes the next drag impossible to read, because she is no longer comparing
-     against what she had. So the pin opens at exactly the size the card is
-     setting right now (`BOUND.lastWordSize`, what the last fit landed on), and
-     the picture is identical until she drags it.
-     Only when switching ON: turning the pin OFF hands the decision back to the
-     box, which is the whole point of turning it off. */
-  function fitToggled() {
-    if (!$('wFit').checked && BOUND.lastWordSize > 0) setR('wPin', r2(BOUND.lastWordSize));
-    syncHidden();
-  }
-
   /* A hand-set card. Nothing here is fitted: the sizes are the ones typed in, so
    what the box does or does not hold is the whole answer. It is the question a
    ceiling is really asking — "at this number, does my worst word still sit
@@ -4241,7 +4216,6 @@
   document.addEventListener('change', (e) => {
     // A change of face invalidates every measurement taken against the old one.
     if (['capOn', 'tCapOn', 'bCapOn'].includes(e.target.id)) capToggled(e.target.id);
-    if (e.target.id === 'wFit') fitToggled();
     syncHidden();
     paint();
     saveState();
