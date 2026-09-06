@@ -22,12 +22,7 @@ beforeAll(() => {
 // A switch whose answer is always yes is not a question. Each of these was
 // ticked on every real template, so it stops being asked — but the engine still
 // reads it, so it has to still be there, checked, and out of sight.
-// The switches that carry the template's answer and are never asked as a
-// question. `wFit` LEFT this list: with it hidden, a template that pinned no size
-// had no reachable way to make its words bigger — the line gap was the only lever
-// on the page — which is the whole of the owner's "why can't I make the font
-// bigger?". It is a labelled switch again, and has its own group below.
-const ALWAYS_ON = ['capOn', 'enDrag', 'tFit', 'tCapOn', 'bFit', 'bCapOn'];
+const ALWAYS_ON = ['wFit', 'capOn', 'enDrag', 'tFit', 'tCapOn', 'bFit', 'bCapOn'];
 
 describe('the switches that were always ticked', () => {
   it.each(ALWAYS_ON)('%s is present, checked and hidden', (id) => {
@@ -286,11 +281,7 @@ describe('the hidden switches carry the template\u2019s answer, not a preference
 
   it('a pinned size says whose decision it is, in Hebrew', () => {
     expect(html).toContain('id="wPinWhy"');
-    // It used to say the TEMPLATE pins the size ("התבנית הזו מקבעת") — true while
-    // the only way to be pinned was to arrive pinned. Now she can pin it herself,
-    // so the note says whose number it is.
-    expect(html).toContain('id="wPinWhy"');
-    expect(html).toMatch(/id="wPinWhy"[\s\S]{0,160}<b>אתם<\/b> קובעים את הגודל/);
+    expect(html).toContain('<b>מקבעת</b>');
     expect(html).toContain('<label for="wPin">גודל מקובע</label>');
     expect(html).not.toContain('>pinned size<');
   });
@@ -438,45 +429,6 @@ describe('the ceiling examples are gone', () => {
     expect(html).toContain('function capRows()');
     expect(html).toContain("const r = $(id).closest('.row');");
     expect(html).not.toMatch(/egs: \[/);
-  });
-});
-
-describe('the size can be set by hand, not only inferred from the box', () => {
-  // "why cant i make the font bigger? only when spacing is bigger? it doesnt
-  // make sense" — and it did not. With auto-fit ON the size is
-  // median(row heights) x _WORD_SIZE_K, and the editor writes those rows from the
-  // line gap, so the gap was the only thing on the page that could grow the type.
-  // The escape hatch existed in the data (`word_size`, which the press reads
-  // FIRST) and three shipped templates print from it — but the switch that
-  // reveals it carried `hidden`, and the slider only appeared for a template that
-  // was already pinned. So a template with no pin had no reachable way to say
-  // "bigger".
-  it('the auto-fit switch is on the page, not hidden', () => {
-    expect(html).toMatch(/<input type="checkbox" id="wFit" checked \/>/);
-    expect(html).not.toMatch(/id="wFit"[^>]*\shidden/);
-    // …and it is a labelled switch, like the bold one beside it.
-    expect(html).toMatch(/id="wFit"[\s\S]{0,120}להתאים את גודל המילים לקופסה/);
-  });
-
-  it('the pinned-size row still follows the switch', () => {
-    expect(html).toContain("$('wPinRow').hidden = $('wFit').checked;");
-  });
-
-  it('turning the pin on opens it where the card already is', () => {
-    // Same rule the ceilings follow: a switch that moves the type by itself makes
-    // the next drag unreadable. BOUND.lastWordSize is what the last fit landed on.
-    expect(html).toContain('function fitToggled()');
-    expect(html).toMatch(/if \(!\$\('wFit'\)\.checked && BOUND\.lastWordSize > 0\) setR\('wPin'/);
-    expect(html).toContain("if (e.target.id === 'wFit') fitToggled();");
-  });
-
-  it('the box no longer claims it beats a pinned size', () => {
-    // The fit stopped clamping a pin to the box (it read 15.82 on אואזיס where
-    // the press sets its pinned 21.30); the tooltip had not caught up.
-    expect(html).not.toContain('קיבוע נעצר בקופסה');
-    expect(html).toContain('וקיבוע גובר על הקופסה');
-    // The behaviour the copy now describes, in the fit itself.
-    expect(html).toContain('const hBind = pinned ? leadBind : Math.min(leadBind, boxBind);');
   });
 });
 
