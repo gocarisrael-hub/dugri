@@ -432,6 +432,40 @@ describe('the ceiling examples are gone', () => {
   });
 });
 
+describe('the rows are on screen, so the height slider can be read', () => {
+  // "what is גובה השורה? when i change it in the editor it changes nothing" —
+  // and on a card held by its WIDTH that was very nearly true. The slider edits
+  // the four row rectangles, which are what the press sizes from and what the
+  // save writes, and this page drew only the band AROUND them. So its whole
+  // effect was one grey number under the ceilings.
+  it('the four rows are drawn, wherever the band is', () => {
+    expect(html).toContain('function drawRows(g)');
+    // Every place the band is painted paints the rows inside it — the big card,
+    // the per-front wall, and the try-a-card panel.
+    expect(html.match(/drawRows\(g\);/g) || []).toHaveLength(3);
+  });
+
+  it('a row is drawn at exactly the height the save writes', () => {
+    // The same rowTop()/rowBot() the save uses, so the picture cannot claim a row
+    // the recipe will not get.
+    expect(html).toMatch(/y: cy - step \* rowTop\(\),/);
+    expect(html).toMatch(/height: step \* \(rowTop\(\) \+ rowBot\(\)\),/);
+  });
+
+  it('they read as description, not as a handle', () => {
+    // The band is what she grabs; four more grabbable rectangles inside it would
+    // fight her thumb, and at the band's weight they would bury the words.
+    expect(html).toMatch(/\.rowband \{[^}]*fill: none;/);
+    expect(html).toMatch(/\.rowband \{[^}]*pointer-events: none;/);
+  });
+
+  it('the ceiling names both sliders that raise it now', () => {
+    // #574 wrote that copy when the gap was the only thing behind the bound;
+    // #578 put a second control behind it.
+    expect(html).toContain('רווח בין שורות" או ב"גובה השורה"');
+  });
+});
+
 describe('a row\u2019s height is the template\u2019s, not a constant', () => {
   // The press sizes words at median(row height) x _WORD_SIZE_K, so a row's share
   // of the gap IS the size. This page wrote 0.39 over whatever a design actually

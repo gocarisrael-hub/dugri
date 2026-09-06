@@ -733,6 +733,17 @@
     fill: var(--band);
     stroke: none;
   }
+  /* One word's row — the rectangle the press sizes from. Quieter than the band
+     around them: these are read, not grabbed, and four of them at the band's own
+     weight would bury the words they exist to describe. */
+  .rowband {
+    fill: none;
+    stroke: var(--bandline);
+    stroke-width: 0.6;
+    stroke-dasharray: 3 3;
+    opacity: 0.72;
+    pointer-events: none;
+  }
   .bx.t {
     fill: var(--tbox);
   }
@@ -2820,6 +2831,30 @@
 
   /** A box: tinted fill, four separately-drawn edges (so the binding one can shout),
    *  eight grab targets, and eight knobs. */
+  /* THE FOUR ROWS, DRAWN. They are the rectangles the press actually sizes from
+     (`median(row height) x _WORD_SIZE_K`) and the ones the save writes — and
+     until now this page never drew them. Only the outer band was on screen, so
+     "גובה השורה" edited something invisible: on a card held by its WIDTH, moving
+     that slider changed no picture and no number a person would notice, and the
+     owner reasonably reported it as a control that does nothing.
+     Faint on purpose. The band stays the thing she grabs; these say what the
+     rows inside it are, and they are the only reason the height slider can be
+     read at all. */
+  function drawRows(g) {
+    rowCentres().forEach((cy) => {
+      const step = pitchUnits();
+      g.appendChild(
+        el('rect', {
+          class: 'rowband',
+          x: S.band.x0 * CW,
+          y: cy - step * rowTop(),
+          width: (S.band.x1 - S.band.x0) * CW,
+          height: step * (rowTop() + rowBot()),
+        })
+      );
+    });
+  }
+
   function drawBox(g, box, kind, binds) {
     const TAG = kind;
     const x = box.x0 * CW,
@@ -3098,7 +3133,7 @@
      answer there — its height, not its width, which only ever enters through
      the other half of min(width fit, height fit). */
   const CAP_WHY = {
-    word: 'הכי גדול שהשורה מחזיקה. מרימים אותו ב"רווח בין שורות" — גודל הקופסה לא משנה כאן.',
+    word: 'הכי גדול שהשורה מחזיקה. מרימים אותו ב"רווח בין שורות" או ב"גובה השורה" — גודל הקופסה לא משנה כאן.',
     box: 'הכי גדול שהקופסה הזו מחזיקה לגובה. הרחבה לצדדים לא משנה את זה.',
   };
 
@@ -3200,6 +3235,7 @@
     const svg = cardSVG(k);
     const g = el('g', {});
     drawBox(g, S.band, 'band', fit.bind);
+    drawRows(g);
     drawWords(g, SHORT_WORDS, fit);
     drawBox(g, S.titles[k], 'title', tf.bind);
     drawTitle(g, S.titles[k], tf, k);
@@ -3332,6 +3368,7 @@
     const g = el('g', {});
     if (!isBack) {
       drawBox(g, S.band, 'band', null);
+      drawRows(g);
       drawWords(g, words, fit);
     }
     drawBox(g, box, isBack ? 'back' : 'title', null);
@@ -3914,6 +3951,7 @@
       const g = el('g', {});
       const cfit = wordFit(words, k);
       drawBox(g, S.band, 'band', cfit.bind);
+      drawRows(g);
       drawWords(g, words, cfit);
       drawBox(g, S.titles[k], 'title', tf.bind);
       if (k === SEL) {
