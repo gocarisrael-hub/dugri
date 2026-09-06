@@ -361,15 +361,15 @@ test.describe('the buyer-facing pool menu', () => {
 // exists. Put it back the way every install ships.
 // ---- the row that says "don't fill it at all" -----------------------------
 // Some buyers do not want our words on their cards: they want the rest of the
-// deck printed BLANK — numbered 1-4 and otherwise empty — to laminate and write
-// on at the table. That is an answer to the question this menu asks, so it is a
+// deck printed BLANK — numbered 1-4 and otherwise empty — so they can write their
+// own at the table. That is an answer to the question this menu asks, so it is a
 // ROW of it: same radio group, same save, and picking a list is how she takes it
 // back.
 
 test('the decline is the last row of the menu, and picking it sticks', async ({ page }) => {
   const pools = await poolNames(page);
   await setMenu(page, [{ id: 'jokes', label: 'בדיחות פנימיות', pool: pools[0], enabled: true }]);
-  await setBlank(page, 'לא להשלים לי מילים (קלפים ריקים עם למינציה)');
+  await setBlank(page, 'לא להשלים לי מילים (קלפים ריקים - פחות מומלץ על ידינו)');
   const { url, id, k } = await createCollection(page);
   await page.goto(url);
   await openFinishTab(page);

@@ -80,8 +80,8 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                   the real boundary and passes it.
     no_topup      the buyer asked us NOT to fill her deck with our words. The
                   filler is skipped entirely and the shortfall is printed as EMPTY
-                  numbered cards instead — she laminates them and writes her own
-                  at the table. The deck keeps its full length either way: what
+                  numbered cards instead — she writes her own words on them at
+                  the table. The deck keeps its full length either way: what
                   she is buying is 104 cards, and 'don't fill it' is a decision
                   about the WORDS on them, not about how many she gets. v1 (sheet)
                   templates only skip the filler — the padding and the numbers on

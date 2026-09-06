@@ -30,9 +30,9 @@ feeds it. Two deliberate departures:
 
 ...and one departure from the FIRST of those, asked for by ``min_cards``: the
 'no top-up' order, where the buyer told us not to fill her deck with our words.
-There the shortfall is not a shorter deck but EMPTY cards — she is laminating
-them and writing her own at the table — so the deck keeps its 103 + 1 and the
-tail rows carry no words at all. They still print their 1. 2. 3. 4.; that half
+There the shortfall is not a shorter deck but EMPTY cards — she is writing her
+own words on them at the table — so the deck keeps its 103 + 1 and the tail rows
+carry no words at all. They still print their 1. 2. 3. 4.; that half
 lives in the renderer (render_page._blank_lines).
 
 PHRASE MIX (why the deal is not a plain slice)
@@ -442,7 +442,7 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
 
     ``min_cards`` pads the deck out to that many WORD cards with EMPTY ones — the
     'no top-up' order, where the buyer asked us not to fill her deck with our
-    words (she is laminating the blanks and writing her own at the table). The
+    words (she is writing her own on the blanks at the table). The
     deck's SHAPE is not hers to shrink: she is buying 104 cards, so the shortfall
     has to become blank cards rather than a deck that stops early, which is the
     ordinary behaviour above (see DECK SIZE). The blanks are pure padding — they
