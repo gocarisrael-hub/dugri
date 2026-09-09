@@ -432,6 +432,211 @@ describe('the ceiling examples are gone', () => {
   });
 });
 
+describe('the rows are on screen, so the height slider can be read', () => {
+  // "what is גובה השורה? when i change it in the editor it changes nothing" —
+  // and on a card held by its WIDTH that was very nearly true. The slider edits
+  // the four row rectangles, which are what the press sizes from and what the
+  // save writes, and this page drew only the band AROUND them. So its whole
+  // effect was one grey number under the ceilings.
+  it('the four rows are drawn, wherever the band is', () => {
+    expect(html).toContain('function drawRows(g)');
+    // Every place the band is painted paints the rows inside it — the big card,
+    // the per-front wall, and the try-a-card panel.
+    expect(html.match(/drawRows\(g\);/g) || []).toHaveLength(3);
+  });
+
+  it('the drawing and the save are one helper, so they cannot drift', () => {
+    // They used to work the rectangle out twice, off two different pitches:
+    // rowCentres() steps by pitchUnits(), the save sized the row by fit.step.
+    // One of them is now the only one.
+    expect(html).toContain('function rowSlots()');
+    expect(html).toMatch(/rowSlots\(\)\.forEach\(\(r\) => \{/);
+    expect(html).toMatch(/words: rowSlots\(\)\.map\(\(r\) => \(\{/);
+    // and nothing computes a row rectangle anywhere else: rowTop()/rowBot() are
+    // each called from exactly one place now, and that place is rowSlots.
+    expect(html.match(/rowTop\(\)/g) || []).toHaveLength(1);
+    expect(html.match(/rowBot\(\)/g) || []).toHaveLength(1);
+  });
+
+  it('they read as description, not as a handle, and in a key of their own', () => {
+    // The band is what she grabs; four more grabbable rectangles inside it would
+    // fight her thumb, and at the band's weight they would bury the words.
+    expect(html).toMatch(/\.rowband \{[^}]*fill: none;/);
+    expect(html).toMatch(/\.rowband \{[^}]*pointer-events: none;/);
+    // …and NOT in the word box's colour or its dash. One dashed --bandline
+    // swatch in the legend cannot stand for two different rectangles.
+    expect(html).toMatch(/\.rowband \{[^}]*stroke: var\(--rowline\);/);
+    expect(html).not.toMatch(/\.rowband \{[^}]*stroke: var\(--bandline\);/);
+    // every theme block defines the new key — light, the media query, the toggle
+    expect(html.match(/--rowline:/g) || []).toHaveLength(3);
+    // and the legend names it
+    expect(html).toMatch(/border-color: var\(--rowline\); border-top-style: dotted/);
+    expect(html).toContain('שורות המילים');
+    // the dead class that encoded the same idea and was never drawn is gone
+    expect(html).not.toContain('.rowrule');
+  });
+
+  it('the ceiling names the sliders that can actually raise it, and only those', () => {
+    // #574 wrote that copy when the gap was the only thing behind the bound;
+    // #578 put a second control behind it — but only in ONE state. hBind is
+    // leadBind alone when a size is pinned, and leadBind is the smaller term
+    // whenever the marker's pitch bites first; ROW_SHARE lives in boxBind and
+    // nowhere else. So the sentence is chosen from the fit, and in the state
+    // where "גובה השורה" cannot move the number it says so.
+    expect(html).toContain('רווח בין שורות" או ב"גובה השורה"');
+    expect(html).toContain('כאן רק "רווח בין שורות" מרים אותו');
+    expect(html).toMatch(/rowBinds: !pinned && boxBind < leadBind,/);
+    expect(html).toContain('capMax(id, fit.hBind, CAP_WHY.word(fit))');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// …and the same thing again, RUN rather than read.
+//
+// Everything above this line is a text match, which is all the surface tests
+// need to be — but "the dashes are the rows the file gets" is a claim about
+// arithmetic, and an earlier attempt at this fix re-anchored the rectangles on
+// the WORD PAINTER's walk and passed every string assertion while drawing four
+// rows the save had never heard of. So the page's own code is lifted out of the
+// HTML and executed here, and the drawing is compared against the save.
+//
+// THE INVARIANT IS THE SAVE, not drawWords. The press reads `card_slots.words`:
+// exactly four slots (generator/config.py CARD_WORD_SLOTS = 4, and card_slots()
+// rejects a shorter list), and render_page._grid_centers anchors every entry on
+// THOSE centres — a wrapped entry grows about its own slot rather than claiming
+// a second one. What the owner drags against therefore has to be what `saveOut`
+// writes, or she calibrates against a picture the paper never receives.
+describe('the drawn rows are the rows the file gets (executed)', () => {
+  // The painters are plain declarations in one inline <script>, so they can be
+  // cut out by brace-matching and compiled on their own. Nothing in them is a
+  // string or comment holding an unbalanced brace.
+  function fnSource(name) {
+    const at = html.indexOf('\n  function ' + name + '(');
+    expect(at, name + ' is no longer a top-level function on the page').toBeGreaterThan(-1);
+    let d = 0,
+      i = html.indexOf('{', at);
+    for (; i < html.length; i++) {
+      if (html[i] === '{') d++;
+      else if (html[i] === '}' && --d === 0) break;
+    }
+    const src = html.slice(at + 1, i + 1);
+    expect(src.endsWith('\n  }'), name + ' did not close where expected').toBe(true);
+    return src;
+  }
+
+  /** The save's OWN expression for card_slots.words, lifted out of writeJSON and
+   *  run — so this compares two live pieces of the page rather than two readings
+   *  of one helper name. */
+  function saveExpr() {
+    const m = html.match(/words: (rowSlots\(\)\.map\(\(r\) => \(\{[\s\S]*?\}\)\)),\n/);
+    expect(m, 'saveOut no longer builds card_slots.words the way this test reads it').toBeTruthy();
+    return m[1];
+  }
+
+  const CARD = { CW: 300, CH: 420 };
+  const REF = 200;
+  // A face where the tall letters matter, so an anchor taken off the alphabet
+  // and one taken off a short word are visibly different numbers.
+  const ASC = (t) => (/[לךףץ]/.test(t) ? 0.78 : 0.55) * REF;
+
+  /** Compile the page's row geometry against stubs and read both ends of it. */
+  function bench({ share = 0.39, pitch = 1, base = 0, step = 26, last = 18 } = {}) {
+    const env = {
+      S: { band: { x0: 0.1, x1: 0.9, y0: 0.25, y1: 0.8 } },
+      CW: CARD.CW,
+      CH: CARD.CH,
+      REF,
+      CENTER_DROP: 0.34,
+      ROW_TOP_0: 0.3,
+      ROW_BOT_0: 0.09,
+      ROW_SHARE_0: 0.39,
+      inkBox: (t) => ({ a: ASC(t), d: 0.2 * REF }),
+      $: (id) => ({ value: id === 'wPitch' ? String(pitch) : '0' }),
+      el: (tag, attrs) => ({ tag, attrs, textContent: '' }),
+      r4: (n) => Math.round(n * 1e4) / 1e4,
+    };
+    // rowTop/rowBot are the page's own arrows, so ROW_SHARE really is the thing
+    // "גובה השורה" moves — the whole claim of this change.
+    const arrows = html.match(/ {2}const rowTop = \(\) => .+\n {2}const rowBot = \(\) => .+\n/);
+    expect(arrows, 'rowTop/rowBot are no longer where this test reads them').toBeTruthy();
+    const src =
+      `let _ASC = null;\nlet LASTSIZE = ${last};\nlet ROW_SHARE = ${share};\n` +
+      `let STEP = ${step};\nlet PITCH_BASE = ${base};\nlet PITCH_R0 = -1;\n` +
+      arrows[0] +
+      ['faceAscent', 'blockTop', 'pitchUnits', 'rowCentres', 'rowSlots', 'drawRows']
+        .map(fnSource)
+        .join('\n');
+    const make = new Function(
+      ...Object.keys(env),
+      src + `\nreturn { blockTop, rowCentres, rowSlots, drawRows, saved: () => (${saveExpr()}) };`
+    );
+    const M = make(...Object.values(env));
+
+    const rects = [];
+    M.drawRows({ appendChild: (n) => rects.push(n) });
+    return { M, rects, saved: M.saved() };
+  }
+
+  it('there are exactly four, because the press takes four and refuses fewer', () => {
+    // config.CARD_WORD_SLOTS = 4; card_slots() returns None on a shorter list, so
+    // the template silently falls back to a detected recipe. A drawing with any
+    // other count is a drawing of a card that cannot be saved.
+    const b = bench();
+    expect(b.rects).toHaveLength(4);
+    expect(b.saved).toHaveLength(4);
+  });
+
+  it('each drawn rectangle IS the slot the save writes', () => {
+    const b = bench();
+    b.rects.forEach((r, i) => {
+      expect(r.attrs.y / CARD.CH).toBeCloseTo(b.saved[i].y0, 3);
+      expect((r.attrs.y + r.attrs.height) / CARD.CH).toBeCloseTo(b.saved[i].y1, 3);
+      expect(r.attrs.x / CARD.CW).toBeCloseTo(b.saved[i].x0, 3);
+      expect((r.attrs.x + r.attrs.width) / CARD.CW).toBeCloseTo(b.saved[i].x1, 3);
+    });
+  });
+
+  it('and they are anchored where the save anchors them, not on a word', () => {
+    // Guard against the assertion above passing for the wrong reason. The save
+    // hangs the grid off blockTop(LASTSIZE) — faceAscent, the WHOLE alphabet's
+    // ascent. An anchor taken off a short first word ('ים' opens the short case)
+    // lands more than a third of a row away, and a row is 0.39 of the pitch.
+    const b = bench();
+    const alphabet = b.M.blockTop(18);
+    const firstCentre = b.rects[0].attrs.y + 26 * 0.3;
+    expect(firstCentre).toBeCloseTo(alphabet, 9);
+    expect(Math.abs(b.M.blockTop(18, 'ים') - alphabet)).toBeGreaterThan(0.39 * 26 * 0.33);
+  });
+
+  it('"גובה השורה" moves the rectangle — and moves the saved slot with it', () => {
+    // The reason the change exists: the slider edits ROW_SHARE, which until now
+    // was drawn nowhere. Both ends have to answer it, and by the same amount.
+    const a = bench({ share: 0.39 });
+    const b = bench({ share: 0.78 });
+    const hA = a.rects[0].attrs.height,
+      hB = b.rects[0].attrs.height;
+    expect(hB).toBeCloseTo(hA * 2, 9);
+    expect(b.saved[0].y1 - b.saved[0].y0).toBeCloseTo((a.saved[0].y1 - a.saved[0].y0) * 2, 3);
+    // the CENTRES do not move — a row grows about its own calibrated middle
+    const mid = (r, h) => r.attrs.y + h * (0.3 / 0.39);
+    expect(mid(b.rects[0], hB)).toBeCloseTo(mid(a.rects[0], hA), 6);
+  });
+
+  it('the pitch under the drawing is the pitch under the save', () => {
+    // These were two different numbers: rowCentres() steps by pitchUnits() while
+    // the save sized the row by fit.step, so a slider moved after the last fit
+    // wrote a rectangle nothing on screen had drawn.
+    const a = bench({ base: 20, pitch: 1.3 });
+    const b = bench({ base: 20, pitch: 1.6 });
+    const gapA = a.rects[1].attrs.y - a.rects[0].attrs.y;
+    const gapB = b.rects[1].attrs.y - b.rects[0].attrs.y;
+    expect(gapA).toBeCloseTo(26, 9);
+    expect(gapB).toBeCloseTo(32, 9);
+    a.rects.forEach((r, i) => expect(r.attrs.y / CARD.CH).toBeCloseTo(a.saved[i].y0, 3));
+    b.rects.forEach((r, i) => expect(r.attrs.y / CARD.CH).toBeCloseTo(b.saved[i].y0, 3));
+  });
+});
+
 describe('a row\u2019s height is the template\u2019s, not a constant', () => {
   // The press sizes words at median(row height) x _WORD_SIZE_K, so a row's share
   // of the gap IS the size. This page wrote 0.39 over whatever a design actually
@@ -453,8 +658,11 @@ describe('a row\u2019s height is the template\u2019s, not a constant', () => {
 
   it('the fit and the save both measure with the live share', () => {
     expect(html).toContain('const boxBind = step * ROW_SHARE * WORD_SIZE_K;');
-    expect(html).toContain('y0: r4((cy - fit.step * rowTop()) / CH),');
-    expect(html).toContain('y1: r4((cy + fit.step * rowBot()) / CH),');
+    // The save reads the rectangle off rowSlots(), which is where the share
+    // arithmetic now lives — one copy, shared with the drawing.
+    expect(html).toContain('return rowCentres().map((cy) => ({ y0: cy - step * rowTop()');
+    expect(html).toContain('y1: cy + step * rowBot() }));');
+    expect(html).toMatch(/words: rowSlots\(\)\.map\(\(r\) => \(\{/);
     // …and nothing measures with the bare constants any more.
     expect(html).not.toMatch(/step \* \(ROW_TOP \+ ROW_BOT\)/);
   });
@@ -490,13 +698,16 @@ describe('a ceiling says where it stops', () => {
   // …AND IT NAMES THE RIGHT MEASUREMENT. One sentence served all six sliders and
   // was true of only three of them: a TITLE ceiling really is bounded by its own
   // box (fitFor's capH divides bh), while a WORD ceiling is bounded by the row
-  // PITCH — hBind is min(step / markerLead, step x (ROW_TOP + ROW_BOT) x
-  // WORD_SIZE_K) and neither term reads S.band's rectangle at all. So "make the
-  // box bigger" moved a title's number and could never move a word's, which is
-  // exactly what the owner hit.
-  it('a word ceiling points at the line gap, not at the box', () => {
-    expect(html).toMatch(/word: 'הכי גדול שהשורה מחזיקה\..*רווח בין שורות/);
-    expect(html).toContain('capMax(id, fit.hBind, CAP_WHY.word)');
+  // PITCH — hBind is leadBind (step / markerLead), or min of that and boxBind
+  // (step x ROW_SHARE x WORD_SIZE_K) where nothing pins the size, and no term
+  // reads S.band's rectangle at all. So "make the box bigger" moved a title's
+  // number and could never move a word's, which is exactly what the owner hit.
+  it('a word ceiling points at the line gap, not at the box, in every state', () => {
+    expect(html).toMatch(/word: \(fit\) =>/);
+    expect(html).toMatch(/'הכי גדול שהשורה מחזיקה\..*רווח בין שורות/);
+    // Both branches keep saying the box is not the answer here.
+    expect(html.match(/גודל הקופסה לא משנ/g) || []).toHaveLength(2);
+    expect(html).toContain('capMax(id, fit.hBind, CAP_WHY.word(fit))');
   });
 
   it('a title ceiling is the one bounded by its own box, and says height', () => {
