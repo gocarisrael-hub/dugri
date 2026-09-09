@@ -109,8 +109,8 @@ Two deliberate departures from a fixed 104:
 ### The deck she asked us not to fill (per order)
 
 `no_topup` on the collection, `--no-topup` on the generator. The buyer declines
-the filler entirely: she is laminating the rest of the deck and writing her own
-words at the table, so we print hers and leave the rest EMPTY.
+the filler entirely: she is writing her own words on the rest of the deck at the
+table, so we print hers and leave the rest EMPTY.
 
 She says so by picking the LAST ROW of the pool menu on her sign-off tab — the
 one row that names no pool (`wordlist-options.BLANK_ID`, labelled by the owner's

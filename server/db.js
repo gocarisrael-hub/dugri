@@ -1399,7 +1399,7 @@ const db = {
   //
   // The deck is 412 words and almost nobody writes that many, so most of it is
   // ours — and some buyers do not want it to be. They print the rest of the deck
-  // blank, laminate it, and write their own at the table. What that changes is
+  // blank and write their own on it at the table. What that changes is
   // the WORDS, never the SIZE: she is buying 104 cards either way, so the
   // shortfall becomes empty numbered cards rather than a deck that stops early
   // (generator/pack.js `min_cards`, render_page `_blank_lines`).

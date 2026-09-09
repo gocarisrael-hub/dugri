@@ -696,7 +696,7 @@ const REGISTRY = {
   //
   // `blank_label` is the LAST ROW of that same menu: the answer that names no
   // pool at all. Some buyers do not want our words on their cards — they want
-  // the rest of the deck blank, laminated, and written on at the table — and
+  // the rest of the deck blank and written on at the table — and
   // that is this question answered, not a different question, so it is a row of
   // the radio group and not a control beside it.
   //
@@ -709,7 +709,7 @@ const REGISTRY = {
       kind: 'text',
       max: 60,
       tokens: [],
-      default: 'לא להשלים לי מילים (קלפים ריקים עם למינציה)',
+      default: 'לא להשלים לי מילים (קלפים ריקים - פחות מומלץ על ידינו)',
     },
   },
   // --- Marketing measurement -------------------------------------------------

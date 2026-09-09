@@ -2,7 +2,7 @@
 """Tests for the 'no top-up' order — the deck the buyer asked us NOT to fill.
 
 She sends 90 words, we normally add ~320 of ours, and some buyers do not want
-them: they laminate the rest of the deck and write their own at the table. What
+them: they write their own words on the rest of the deck at the table. What
 that has to produce is not a shorter deck — she is buying 104 cards either way —
 but a FULL deck whose tail cards are empty and still numbered.
 

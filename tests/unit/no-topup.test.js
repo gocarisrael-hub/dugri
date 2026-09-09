@@ -3,7 +3,7 @@
 //
 // A deck is 412 words and almost nobody writes 412, so the rest come from a seed
 // pool. Some buyers do not want them: they want the remaining cards printed
-// BLANK — numbered 1-4 and otherwise empty — to laminate and write on at the
+// BLANK — numbered 1-4 and otherwise empty — so they can write their own at the
 // table. This is that choice, end to end.
 //
 // It is not a control beside the pool menu — it is the LAST ROW OF IT. One
