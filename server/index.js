@@ -42,6 +42,8 @@ const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 const generatorProc = require('./generator-proc');
 const proof = require('./proof');
 const deckJobs = require('./deck-jobs');
+// First-party ad attribution: which campaign produced which paid order.
+const attribution = require('./attribution');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -6701,6 +6703,66 @@ app.post('/api/admin/templates/import-from-staging', async (req, res) => {
   }
   if (!result.ok) return res.status(result.status || 400).json(result);
   res.json(result);
+});
+
+// --- Ad attribution (first-party) --------------------------------------------
+// The site's own answer to "which ad produced this order", independent of GA4
+// and of Meta's Ads Manager. The browser (site/js/attribution.js) remembers the
+// landing URL it arrived on and replays it with each funnel event; the parsing
+// and the money both happen HERE, so a page can neither invent a campaign nor
+// declare a revenue figure.
+
+// Its own bucket, generous: this is one small POST per visitor per session (plus
+// two per buyer), and a measurement call must never be the thing that 429s a
+// real shopper. The cap exists only to stop a script pointed at the endpoint
+// from filling the ledger.
+const trackRate = makeRateLimiter({
+  limit: Number(process.env.TRACK_RATE_LIMIT || 60),
+  windowMs: 60 * 1000,
+  maxKeys: Number(process.env.COUPON_RATE_MAX_KEYS || 10000),
+});
+
+app.post('/api/track', (req, res) => {
+  if (!trackRate.ok(clientKey(req))) return res.status(429).json({ error: 'too many attempts' });
+  const body = req.body || {};
+  const kind = String(body.kind || '');
+  let value;
+  let orderNo;
+  // A purchase is the only kind that carries money, and the browser supplies
+  // none of it. It names an order it can prove it owns (the same collection id +
+  // owner token the confirmation page already holds for the summary), and the
+  // amount, the order number and the fact of payment are read from the order
+  // store. An unpaid or unprovable order records nothing at all.
+  if (kind === 'purchase') {
+    const c = db.getCollection(String(body.collection || ''));
+    if (!c || !c.order || !c.order.paid) return res.status(204).end();
+    if (!body.k || body.k !== c.owner_token) return res.status(204).end();
+    value = c.order.charged_total != null ? c.order.charged_total : c.order.total;
+    orderNo = db.orderRef(c);
+  }
+  attribution.record({
+    kind,
+    landing: String(body.landing || '').slice(0, 2000),
+    referrer: String(body.referrer || '').slice(0, 500),
+    visitor: body.visitor,
+    order_no: orderNo,
+    value,
+  });
+  // 204 always, even for a refused event: this endpoint tells a caller nothing
+  // about what it stored, and a measurement beacon has no use for an answer.
+  res.status(204).end();
+});
+
+// Admin: the report — one row per campaign over the last N days, plus the feed
+// of the last events for the live view.
+app.get('/api/admin/ads', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const days = Math.min(Math.max(1, Number(req.query.days) || 30), 400);
+  res.json(attribution.report({ days }));
+});
+app.get('/api/admin/ads/live', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  res.json({ events: attribution.recent(Number(req.query.limit) || 60) });
 });
 
 // Admin: owner-editable message templates + settings. The email subject/body

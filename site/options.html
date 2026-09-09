@@ -3736,6 +3736,7 @@
       // site/js/emoji.js; server/validate.js is the authority behind it.
       import { hasEmoji, titleEmojiMessage } from './js/emoji.js';
       import { track } from './js/analytics.js';
+      import { sendEvent } from './js/attribution.js';
       import { initCarousel } from './js/carousel.js';
       import { initPinchZoom } from './js/pinch-zoom.js';
       import {
@@ -6204,6 +6205,11 @@
           if (typeof fbq === 'function') {
             fbq('track', 'InitiateCheckout', { value: PLANS[plan].price, currency: 'ILS' });
           }
+          // Our own ledger's middle step. GA4 and Meta each get the same moment
+          // above; this one is the copy we can still read when a tag was blocked
+          // — and the denominator that turns "the ad got clicks" into "the ad got
+          // people as far as the checkout".
+          sendEvent('checkout');
           track('begin_checkout', {
             value: PLANS[plan].price,
             currency: 'ILS',

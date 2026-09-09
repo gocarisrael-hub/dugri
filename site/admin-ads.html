@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="dugri:page" content="admin-ads.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>פרסום ומקורות — דוגרי (ניהול)</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --ink: #1a1a1a;
+        --muted: #6b6b6b;
+        --line: #ececec;
+        --section: #fdf2f5;
+        --pink: #e85a97;
+        --pink-deep: #c53f79;
+        --radius: 10px;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--ink);
+        font-family:
+          'Heebo',
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Arial,
+          sans-serif;
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 18px 100px;
+      }
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 22px 0 0;
+      }
+      .nav a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #e4ddd0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      .nav a.active {
+        background: #8ca287;
+        border-color: #8ca287;
+        color: #fff;
+      }
+      header {
+        padding: 34px 0 18px;
+        border-bottom: 3px solid var(--pink);
+        margin-bottom: 18px;
+      }
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        color: var(--pink-deep);
+        margin: 0 0 6px;
+        font-weight: 700;
+      }
+      h1 {
+        margin: 0 0 6px;
+        font-size: clamp(24px, 5.5vw, 34px);
+        font-weight: 800;
+      }
+      header p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14.5px;
+      }
+      h2 {
+        font-size: 18px;
+        font-weight: 800;
+        margin: 30px 0 10px;
+      }
+      .hint {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+      .hint code {
+        background: #fafafa;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        padding: 1px 6px;
+        direction: ltr;
+        unicode-bidi: embed;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 11.5px;
+      }
+      .ranges {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin: 18px 0 0;
+      }
+      button {
+        font: inherit;
+        cursor: pointer;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        padding: 8px 15px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      button.on {
+        background: var(--pink);
+        border-color: var(--pink);
+        color: #fff;
+      }
+      /* The headline numbers. Four tiles, one row on a desktop, two on a phone. */
+      .tiles {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+        margin: 16px 0 0;
+      }
+      .tile {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 14px 16px;
+        background: #fff;
+      }
+      .tile .n {
+        font-size: 26px;
+        font-weight: 800;
+        line-height: 1.2;
+      }
+      .tile .l {
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+      .scroller {
+        overflow-x: auto;
+        margin-top: 12px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        padding: 9px 12px;
+        text-align: right;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      th {
+        font-size: 12.5px;
+        color: var(--muted);
+        font-weight: 700;
+        background: #fbfbfb;
+        position: sticky;
+        top: 0;
+      }
+      tbody tr:last-child td {
+        border-bottom: 0;
+      }
+      /* Campaign names arrive from the ad platform in Latin script; they read as
+         nonsense when the RTL page mirrors their punctuation. */
+      td.ltr {
+        direction: ltr;
+        unicode-bidi: embed;
+        text-align: right;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+        font-size: 12.5px;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+      }
+      td.money {
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+      }
+      .paid td {
+        background: #fffaf1;
+      }
+      .empty {
+        padding: 26px 16px;
+        color: var(--muted);
+        font-size: 14px;
+        text-align: center;
+      }
+      /* The live feed. Deliberately plain: it is watched, not read. */
+      .feed {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        max-height: 320px;
+        overflow-y: auto;
+      }
+      .ev {
+        display: flex;
+        gap: 10px;
+        align-items: baseline;
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--line);
+        font-size: 13px;
+      }
+      .ev:last-child {
+        border-bottom: 0;
+      }
+      .ev .when {
+        color: var(--muted);
+        font-size: 12px;
+        font-variant-numeric: tabular-nums;
+        flex: 0 0 auto;
+      }
+      .ev .what {
+        font-weight: 700;
+        flex: 0 0 auto;
+      }
+      .ev .who {
+        color: var(--muted);
+        direction: ltr;
+        unicode-bidi: embed;
+        font-size: 12px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ev.buy {
+        background: #f3faf5;
+      }
+      .ev.buy .what {
+        color: #2e7d4f;
+      }
+      .live-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #2e7d4f;
+        display: inline-block;
+      }
+      /* The link builder. A plain form, because its whole value is that the
+         result can be copied without thinking about it. */
+      .builder {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 16px;
+        background: #fff;
+      }
+      .fields {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 12px;
+      }
+      .fields label {
+        display: block;
+        font-size: 13px;
+        font-weight: 700;
+      }
+      .fields input,
+      .fields select {
+        width: 100%;
+        margin-top: 5px;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font: inherit;
+        font-size: 14px;
+      }
+      .fields input:focus,
+      .fields select:focus {
+        outline: 2px solid var(--pink);
+        outline-offset: 1px;
+      }
+      .out {
+        display: flex;
+        gap: 8px;
+        align-items: stretch;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+      .out input {
+        flex: 1 1 260px;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font: inherit;
+        font-size: 13px;
+        direction: ltr;
+        unicode-bidi: embed;
+        background: #fafafa;
+        font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+      }
+      footer {
+        margin-top: 34px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+    <script src="js/admin-role.js" defer></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav class="nav" id="nav">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+        <a data-page="design-codes.html">קודי עיצוב</a>
+        <a data-page="admin-templates.html">תבנית חדשה</a>
+        <a data-page="admin-designs.html">עיצובים</a>
+        <a data-page="admin-wordlists.html">רשימות מילים</a>
+        <a data-page="admin-playbook.html">פלייבוק</a>
+        <a data-page="admin-texts.html">הודעות וטקסטים</a>
+        <a data-page="admin-faq.html">שאלות נפוצות</a>
+        <a data-page="admin-newgame.html">המשחק החדש</a>
+        <a data-page="admin-preview.html">תצוגה מקדימה</a>
+        <a data-page="admin-features.html">פיצ׳רים</a>
+        <a data-page="admin-pricing.html">מחירים</a>
+        <a data-page="admin-images.html">תמונות מוצר</a>
+        <a data-page="admin-inventory.html">מלאי</a>
+        <a data-page="admin-analytics.html">אנליטיקס</a>
+        <a data-page="admin-ads.html" class="active">פרסום ומקורות</a>
+      </nav>
+      <header>
+        <p class="kicker">Internal · מדידה ופרסום</p>
+        <h1>מאיפה מגיעות ההזמנות</h1>
+        <p>
+          הספירה שלנו, לא של מטא: כל מבקר/ת נרשמים עם הקמפיין שממנו הגיעו, וההזמנה ששולמה נזקפת
+          לאותו קמפיין. אפשר להשוות את המספר הזה למה שמנהל המודעות מדווח.
+        </p>
+      </header>
+
+      <p class="hint" id="noKey" hidden>חסר מפתח גישה. פתחו את הדף עם <code>?key=…</code>.</p>
+
+      <div id="main" hidden>
+        <div class="ranges" id="ranges"></div>
+        <div class="tiles" id="tiles"></div>
+
+        <h2>לפי מקור וקמפיין</h2>
+        <div class="scroller">
+          <table>
+            <thead>
+              <tr>
+                <th>מקור</th>
+                <th>סוג</th>
+                <th>קמפיין</th>
+                <th>מודעה</th>
+                <th>מבקרים</th>
+                <th>הגיעו לתשלום</th>
+                <th>הזמנות</th>
+                <th>הכנסה</th>
+                <th>המרה</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <p class="hint">
+          שורה מודגשת = תנועה בתשלום (מודעה). כדי שקמפיין יופיע בשם שלו, מוסיפים לקישור במודעה
+          <code>?utm_source=instagram&amp;utm_medium=paid&amp;utm_campaign=SHM_ROVAKOT</code> — בלי
+          זה קליק מאינסטגרם עדיין נספר (לפי <code>fbclid</code>), אבל בלי שם קמפיין.
+        </p>
+
+        <h2>הקישור למודעה</h2>
+        <div class="builder">
+          <div class="fields">
+            <label
+              >לאן הקישור מוביל
+              <select id="bDest">
+                <option value="/">דף הבית</option>
+                <option value="/products.html">העיצובים</option>
+                <option value="/lp">דף נחיתה לקמפיין</option>
+                <option value="/how.html">איך זה עובד</option>
+              </select>
+            </label>
+            <label
+              >שם הקמפיין
+              <input id="bCampaign" type="text" dir="ltr" placeholder="rovakot_sep" />
+            </label>
+            <label
+              >שם המודעה (אופציונלי)
+              <input id="bContent" type="text" dir="ltr" placeholder="reel_01" />
+            </label>
+            <label
+              >מאיפה
+              <select id="bSource">
+                <option value="instagram">אינסטגרם</option>
+                <option value="facebook">פייסבוק</option>
+                <option value="tiktok">טיקטוק</option>
+                <option value="whatsapp">וואטסאפ</option>
+              </select>
+            </label>
+            <label
+              >סוג
+              <select id="bMedium">
+                <option value="paid">מודעה בתשלום</option>
+                <option value="story">סטורי / פוסט אורגני</option>
+                <option value="bio">קישור בביו</option>
+                <option value="influencer">משפיענית</option>
+              </select>
+            </label>
+          </div>
+          <div class="out">
+            <input id="bOut" type="text" readonly data-testid="ad-link" />
+            <button type="button" class="on" id="bCopy" data-testid="copy-ad-link">העתקה</button>
+          </div>
+          <p class="hint" id="bStatus">
+            מדביקים את הקישור הזה בשדה היעד של המודעה. שם הקמפיין ושם המודעה הם מה שיופיע בטבלה
+            למעלה — אז שווה לתת לכל מודעה שם שמזהים.
+          </p>
+        </div>
+
+        <h2 class="live-head"><span class="dot"></span> מה קורה עכשיו</h2>
+        <div class="feed" id="feed"></div>
+        <p class="hint">מתרענן לבד כל 15 שניות. מציג את האירועים האחרונים בזמן אמת.</p>
+      </div>
+
+      <footer>
+        אין כאן שום מידע אישי — לא שם, לא מייל, לא טלפון ולא כתובת IP. רק "דפדפן כלשהו הגיע מקמפיין
+        כלשהו וקנה".
+      </footer>
+    </div>
+
+    <script>
+      const key = new URLSearchParams(location.search).get('key') || '';
+      const qs = (id) => document.getElementById(id);
+      for (const a of document.querySelectorAll('#nav a')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+
+      const RANGES = [
+        [7, '7 ימים'],
+        [30, '30 יום'],
+        [90, '90 יום'],
+        [365, 'שנה'],
+      ];
+      let days = 30;
+      let timer = null;
+
+      async function api(path) {
+        const r = await fetch(
+          path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key)
+        );
+        if (!r.ok) {
+          let msg = 'HTTP ' + r.status;
+          try {
+            const j = await r.json();
+            if (j && j.error) msg = j.error;
+          } catch {
+            /* non-JSON body — keep the status */
+          }
+          throw new Error(msg);
+        }
+        return r.json();
+      }
+
+      const nis = (n) => Math.round(n).toLocaleString('he-IL') + ' ₪';
+
+      function buildRanges() {
+        const box = qs('ranges');
+        box.textContent = '';
+        for (const [d, label] of RANGES) {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.textContent = label;
+          b.className = d === days ? 'on' : '';
+          b.setAttribute('data-days', String(d));
+          b.addEventListener('click', () => {
+            days = d;
+            buildRanges();
+            loadReport();
+          });
+          box.appendChild(b);
+        }
+      }
+
+      function renderTiles(t) {
+        const box = qs('tiles');
+        box.textContent = '';
+        const items = [
+          ['מבקרים', String(t.visits)],
+          ['הגיעו לתשלום', String(t.checkouts)],
+          ['הזמנות ששולמו', String(t.orders)],
+          ['הכנסה', nis(t.revenue)],
+        ];
+        for (const [label, value] of items) {
+          const tile = document.createElement('div');
+          tile.className = 'tile';
+          const n = document.createElement('div');
+          n.className = 'n';
+          n.textContent = value;
+          const l = document.createElement('div');
+          l.className = 'l';
+          l.textContent = label;
+          tile.appendChild(n);
+          tile.appendChild(l);
+          box.appendChild(tile);
+        }
+      }
+
+      // A medium of paid/cpc/… means money was spent to get the row. Kept in step
+      // with isPaid() in server/attribution.js.
+      const isPaidRow = (r) => /^(paid|cpc|ppc|cpm|ads?)/.test(r.medium || '');
+
+      function renderRows(rows) {
+        const body = qs('rows');
+        body.textContent = '';
+        if (!rows.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 9;
+          td.className = 'empty';
+          td.textContent = 'עוד אין נתונים לטווח הזה. ברגע שמישהו יגיע לאתר, הוא יופיע כאן.';
+          tr.appendChild(td);
+          body.appendChild(tr);
+          return;
+        }
+        for (const r of rows) {
+          const tr = document.createElement('tr');
+          if (isPaidRow(r)) tr.className = 'paid';
+          const cells = [
+            [r.source || '—', 'ltr'],
+            [r.medium || '—', 'ltr'],
+            [r.campaign || '—', 'ltr'],
+            [r.content || '—', 'ltr'],
+            [String(r.visits), 'num'],
+            [String(r.checkouts), 'num'],
+            [String(r.orders), 'num'],
+            [nis(r.revenue), 'money'],
+            [r.conversion == null ? '—' : r.conversion + '%', 'num'],
+          ];
+          for (const [text, cls] of cells) {
+            const td = document.createElement('td');
+            td.className = cls;
+            td.textContent = text;
+            tr.appendChild(td);
+          }
+          body.appendChild(tr);
+        }
+      }
+
+      const KIND_LABEL = { visit: 'ביקור', checkout: 'תשלום', purchase: 'הזמנה!' };
+
+      function renderFeed(events) {
+        const box = qs('feed');
+        box.textContent = '';
+        if (!events.length) {
+          const p = document.createElement('div');
+          p.className = 'empty';
+          p.textContent = 'שקט. אף אחד לא באתר כרגע.';
+          box.appendChild(p);
+          return;
+        }
+        for (const e of events) {
+          const row = document.createElement('div');
+          row.className = 'ev' + (e.k === 'purchase' ? ' buy' : '');
+          const when = document.createElement('span');
+          when.className = 'when';
+          when.textContent = new Date(e.t).toLocaleTimeString('he-IL', {
+            hour: '2-digit',
+            minute: '2-digit',
+          });
+          const what = document.createElement('span');
+          what.className = 'what';
+          what.textContent = KIND_LABEL[e.k] || e.k;
+          const who = document.createElement('span');
+          who.className = 'who';
+          who.textContent = [e.s, e.m, e.c, e.ct].filter(Boolean).join(' · ');
+          row.appendChild(when);
+          row.appendChild(what);
+          row.appendChild(who);
+          if (e.k === 'purchase' && e.val != null) {
+            const v = document.createElement('span');
+            v.className = 'what';
+            v.textContent = nis(e.val);
+            row.appendChild(v);
+          }
+          box.appendChild(row);
+        }
+      }
+
+      // --- the link builder ---------------------------------------------------
+      // Tagging is the ONLY way a campaign gets its own name in the table above:
+      // an untagged click still counts (via fbclid) but arrives as a nameless
+      // "meta / paid" row. Building the link here, rather than explaining the
+      // parameters in a hint, is the difference between a report with campaign
+      // names in it and one without.
+      const B = ['bDest', 'bCampaign', 'bContent', 'bSource', 'bMedium'];
+
+      // The ad platform strips nothing, so the value has to be link-safe before
+      // it ever reaches a URL: spaces and punctuation become underscores.
+      const slug = (v) =>
+        String(v || '')
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9_\-\u0590-\u05ff]+/g, '_')
+          .replace(/^_+|_+$/g, '');
+
+      function buildLink() {
+        const dest = qs('bDest').value;
+        const url = new URL(dest, location.origin);
+        url.searchParams.set('utm_source', qs('bSource').value);
+        url.searchParams.set('utm_medium', qs('bMedium').value);
+        const campaign = slug(qs('bCampaign').value);
+        if (campaign) url.searchParams.set('utm_campaign', campaign);
+        const content = slug(qs('bContent').value);
+        if (content) url.searchParams.set('utm_content', content);
+        qs('bOut').value = url.toString();
+      }
+
+      async function copyLink() {
+        const out = qs('bOut');
+        try {
+          await navigator.clipboard.writeText(out.value);
+          qs('bStatus').textContent = 'הועתק ✓ אפשר להדביק בשדה היעד של המודעה.';
+        } catch {
+          // Clipboard permission is refused often enough that a silent failure
+          // would look like a broken button. Select the text so she can copy it
+          // herself with the keyboard.
+          out.focus();
+          out.select();
+          qs('bStatus').textContent = 'לא הצלחתי להעתיק — הקישור מסומן, אפשר להעתיק ידנית.';
+        }
+      }
+
+      function fail(message) {
+        const p = document.createElement('p');
+        p.className = 'hint';
+        p.textContent = 'טעינה נכשלה: ' + message;
+        qs('main').appendChild(p);
+      }
+
+      async function loadReport() {
+        try {
+          const data = await api('/api/admin/ads?days=' + days);
+          renderTiles(data.totals);
+          renderRows(data.rows);
+        } catch (e) {
+          fail(e.message);
+        }
+      }
+
+      async function loadFeed() {
+        try {
+          const data = await api('/api/admin/ads/live');
+          renderFeed(data.events || []);
+        } catch {
+          /* the feed is a nicety; a failed poll must not disturb the report */
+        }
+      }
+
+      (async () => {
+        // No key: say so and call NOTHING — the same posture as every other admin
+        // screen.
+        if (!key) {
+          qs('noKey').hidden = false;
+          return;
+        }
+        qs('main').hidden = false;
+        for (const id of B) qs(id).addEventListener('input', buildLink);
+        qs('bCopy').addEventListener('click', copyLink);
+        buildLink();
+        buildRanges();
+        await loadReport();
+        await loadFeed();
+        // Poll the feed only. The report is a whole aggregation and does not
+        // change meaningfully between two glances; the feed is the part that is
+        // supposed to move while she watches it.
+        timer = setInterval(loadFeed, 15000);
+        window.addEventListener('pagehide', () => clearInterval(timer));
+      })();
+    </script>
+  </body>
+</html>
