@@ -144,6 +144,26 @@ test.describe('the ad report', () => {
     ).toHaveText('reel_07');
   });
 
+  // The page must fit the phone. It failed to: the tagged-link example in the
+  // hint is one unbreakable token, so it widened the whole document, and the
+  // controls at the top then sat off-screen — a click on the range buttons
+  // landed on the header instead.
+  test('the page never scrolls sideways on a phone', async ({ page }) => {
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.locator('#ranges button').first()).toBeVisible();
+    const overflow = await page.evaluate(() => ({
+      doc: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      // The wide table is allowed to scroll — inside its own box, not the page's.
+      scroller: !!document.querySelector('.scroller'),
+    }));
+    expect(overflow.scroller).toBe(true);
+    expect(overflow.doc).toBeLessThanOrEqual(1);
+
+    // And the controls are therefore clickable where they sit.
+    await page.getByRole('button', { name: '90 יום' }).click();
+    await expect(page.getByRole('button', { name: '90 יום' })).toHaveClass(/on/);
+  });
+
   test('the admin pages are never counted as traffic', async ({ page }) => {
     let tracked = false;
     page.on('request', (req) => {

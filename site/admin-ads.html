@@ -102,6 +102,10 @@
         unicode-bidi: embed;
         font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
         font-size: 11.5px;
+        /* A tagged link is one long unbreakable token. Without this it widens
+           the whole document on a phone, and everything above it then sits
+           off-screen — including the buttons. */
+        overflow-wrap: anywhere;
       }
       .ranges {
         display: flex;
@@ -237,6 +241,9 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+        /* A flex item's default min-width is its content, so without this the
+           campaign name pushes the row wider instead of being truncated. */
+        min-width: 0;
       }
       .ev.buy {
         background: #f3faf5;
@@ -298,7 +305,8 @@
         flex-wrap: wrap;
       }
       .out input {
-        flex: 1 1 260px;
+        flex: 1 1 160px;
+        min-width: 0;
         padding: 9px 11px;
         border: 1px solid var(--line);
         border-radius: 8px;
