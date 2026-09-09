@@ -386,6 +386,102 @@
         }
       }
 
+      // --- the server's own copy of a sale ------------------------------------
+      // The pixel alone reports only the sales the BUYER's browser managed to
+      // report: an iOS buyer who declined tracking, a content blocker or a tab
+      // closed too early each removes a real order from Ads Manager, and Meta
+      // then optimises delivery against numbers that are too low. The
+      // Conversions API sends the same sale from our server, deduplicated
+      // against the pixel's by order number.
+      function buildCapi(status, contactOn) {
+        const card = document.createElement('div');
+        card.className = 'card' + (status.armed ? '' : ' off');
+        card.id = 'card-meta-capi';
+
+        const head = document.createElement('div');
+        head.className = 'card-head';
+        const h3 = document.createElement('h3');
+        h3.className = 'card-title';
+        h3.textContent = 'דיווח מכירות משרת (Conversions API)';
+        const state = document.createElement('span');
+        state.className = 'meta' + (status.armed ? ' ok' : '');
+        state.setAttribute('data-testid', 'capi-state');
+        state.textContent = status.armed ? 'פעיל ✓' : 'כבוי';
+        head.appendChild(h3);
+        head.appendChild(state);
+
+        const why = document.createElement('p');
+        why.className = 'hint';
+        why.textContent = status.armed
+          ? 'כל הזמנה ששולמה מדווחת גם מהשרת שלנו, עם אותו מזהה כמו הפיקסל — כך שמטא סופרת אותה פעם אחת בלבד, גם כשהדפדפן של הלקוחה חסם את הפיקסל.'
+          : !status.has_pixel
+            ? 'צריך קודם להזין את מזהה הפיקסל למעלה.'
+            : 'חסר טוקן. מוסיפים ב-Railway משתנה סביבה בשם META_CAPI_TOKEN (נוצר ב-Events Manager ← Settings ← Conversions API ← Generate access token).';
+        card.appendChild(head);
+        card.appendChild(why);
+
+        if (status.test_mode) {
+          const test = document.createElement('p');
+          test.className = 'hint';
+          test.textContent =
+            'מצב בדיקה פעיל (META_CAPI_TEST_CODE): האירועים מגיעים ללשונית Test events בלבד. להסיר את המשתנה כשמסיימים לבדוק.';
+          card.appendChild(test);
+        }
+
+        // Contact matching: the only field here that describes a PERSON, so it
+        // is switched on by hand or not at all.
+        const label = document.createElement('label');
+        label.className = 'switch';
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = !!contactOn;
+        box.setAttribute('data-testid', 'capi-contact');
+        const text = document.createElement('span');
+        text.textContent = 'לשלוח גם מייל וטלפון של הלקוחה (מוצפנים)';
+        label.appendChild(box);
+        label.appendChild(text);
+
+        const note = document.createElement('p');
+        note.className = 'hint';
+        note.textContent =
+          'משפר את היכולת של מטא לזהות את הקונה ולכן את דיוק הדיווח. הפרטים נשלחים מוצפנים (SHA-256) ולא בטקסט גלוי. המכירה מדווחת ממילא גם בלי זה — זו החלטה שלך.';
+
+        // Its OWN class, not the pixel card's `.status`: two elements sharing
+        // that class would make every existing assertion on the pixel's save
+        // message ambiguous.
+        const status2 = document.createElement('span');
+        status2.className = 'meta capi-status';
+        status2.setAttribute('data-testid', 'capi-save-state');
+        const actions = document.createElement('div');
+        actions.className = 'actions';
+        actions.appendChild(status2);
+
+        box.addEventListener('change', async () => {
+          status2.textContent = 'שומר…';
+          status2.className = 'meta status';
+          try {
+            await api('POST', '/api/admin/settings', {
+              section: 'analytics',
+              key: 'meta_capi_contact',
+              value: box.checked,
+            });
+            status2.textContent = box.checked
+              ? 'נשמר ✓ נשלח גם מייל וטלפון'
+              : 'נשמר ✓ לא נשלחים פרטים';
+            status2.className = 'meta status ok';
+          } catch (e) {
+            box.checked = !box.checked;
+            status2.textContent = e.message;
+            status2.className = 'meta capi-status err';
+          }
+        });
+
+        card.appendChild(label);
+        card.appendChild(note);
+        card.appendChild(actions);
+        qs('cards').appendChild(card);
+      }
+
       (async () => {
         // No key: say so and call NOTHING. A keyless page must never touch the
         // admin API — the same posture as every other admin screen.
@@ -396,6 +492,8 @@
         try {
           const all = await api('GET', '/api/admin/settings');
           build(all.effective.analytics.meta_pixel_id);
+          const status = await api('GET', '/api/admin/meta-capi/status');
+          buildCapi(status, all.effective.analytics.meta_capi_contact);
         } catch (e) {
           const p = document.createElement('p');
           p.className = 'hint';

@@ -44,6 +44,9 @@ const proof = require('./proof');
 const deckJobs = require('./deck-jobs');
 // First-party ad attribution: which campaign produced which paid order.
 const attribution = require('./attribution');
+// The server's own copy of a sale, sent to Meta so a blocked browser cannot
+// swallow it. Dormant with no META_CAPI_TOKEN.
+const metaCapi = require('./meta-capi');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -6722,6 +6725,34 @@ const trackRate = makeRateLimiter({
   maxKeys: Number(process.env.COUPON_RATE_MAX_KEYS || 10000),
 });
 
+// Report one paid order to Meta's Conversions API. Fire-and-forget and
+// fail-soft: a failure is logged and nothing else — an ad platform that cannot
+// be reached must never affect an order that already happened.
+function sendPurchaseToMeta({ order, orderNo, value, landing, body }) {
+  const pixelId = settings.get('analytics', 'meta_pixel_id');
+  const token = process.env.META_CAPI_TOKEN || '';
+  if (!metaCapi.isArmed({ pixelId, token })) return;
+  // Contact matching is the owner's call and ships OFF: it is the only part of
+  // this payload that describes a person rather than a purchase.
+  const contact = settings.get('analytics', 'meta_capi_contact')
+    ? { email: order.owner_email, phone: order.owner_phone }
+    : {};
+  const event = metaCapi.purchaseEvent({
+    orderNo,
+    value,
+    landing,
+    sourceUrl: String(body.source_url || '').slice(0, 500),
+    fbp: String(body.fbp || '').slice(0, 100),
+    contact,
+  });
+  metaCapi
+    .send({ pixelId, token, testCode: process.env.META_CAPI_TEST_CODE || '', event })
+    .then((r) => {
+      if (!r.ok && !r.skipped) console.error('[meta-capi] ' + orderNo + ': ' + r.error);
+    })
+    .catch((e) => console.error('[meta-capi] ' + orderNo + ': ' + ((e && e.message) || e)));
+}
+
 app.post('/api/track', (req, res) => {
   if (!trackRate.ok(clientKey(req))) return res.status(429).json({ error: 'too many attempts' });
   const body = req.body || {};
@@ -6733,21 +6764,35 @@ app.post('/api/track', (req, res) => {
   // owner token the confirmation page already holds for the summary), and the
   // amount, the order number and the fact of payment are read from the order
   // store. An unpaid or unprovable order records nothing at all.
+  let order = null;
   if (kind === 'purchase') {
     const c = db.getCollection(String(body.collection || ''));
     if (!c || !c.order || !c.order.paid) return res.status(204).end();
     if (!body.k || body.k !== c.owner_token) return res.status(204).end();
     value = c.order.charged_total != null ? c.order.charged_total : c.order.total;
     orderNo = db.orderRef(c);
+    order = c;
   }
-  attribution.record({
+  const landing = String(body.landing || '').slice(0, 2000);
+  const stored = attribution.record({
     kind,
-    landing: String(body.landing || '').slice(0, 2000),
+    landing,
     referrer: String(body.referrer || '').slice(0, 500),
     visitor: body.visitor,
     order_no: orderNo,
     value,
   });
+  // Meta's copy of the same sale, sent from here rather than from the buyer's
+  // browser — which is exactly where the pixel's Purchase goes missing (an iOS
+  // buyer who declined tracking, a content blocker, a tab closed too early).
+  // Gated on `stored`: the ledger refuses a purchase it has already counted, so
+  // a reloaded confirmation page cannot send Meta a second event either.
+  //
+  // Not awaited. The buyer is waiting for a 204 on their confirmation page, and
+  // whether Meta accepted the event is no business of theirs.
+  if (kind === 'purchase' && stored) {
+    sendPurchaseToMeta({ order, orderNo, value, landing, body });
+  }
   // 204 always, even for a refused event: this endpoint tells a caller nothing
   // about what it stored, and a measurement beacon has no use for an answer.
   res.status(204).end();
@@ -6755,6 +6800,23 @@ app.post('/api/track', (req, res) => {
 
 // Admin: the report — one row per campaign over the last N days, plus the feed
 // of the last events for the live view.
+// Admin: is the server-side reporting to Meta actually switched on? The token
+// is an environment secret and is never returned — only whether it is there, so
+// the admin page can say "armed" or "the token is missing" instead of leaving
+// the owner to guess why Ads Manager still under-reports.
+app.get('/api/admin/meta-capi/status', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const pixelId = settings.get('analytics', 'meta_pixel_id');
+  res.json({
+    armed: metaCapi.isArmed({ pixelId, token: process.env.META_CAPI_TOKEN || '' }),
+    has_pixel: Boolean(pixelId),
+    has_token: Boolean(process.env.META_CAPI_TOKEN),
+    test_mode: Boolean(process.env.META_CAPI_TEST_CODE),
+    contact_matching: Boolean(settings.get('analytics', 'meta_capi_contact')),
+    graph_version: metaCapi.GRAPH_VERSION,
+  });
+});
+
 app.get('/api/admin/ads', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const days = Math.min(Math.max(1, Number(req.query.days) || 30), 400);

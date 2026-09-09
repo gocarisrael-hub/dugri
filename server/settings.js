@@ -724,6 +724,13 @@ const REGISTRY = {
   // as an interpolated script value.
   analytics: {
     meta_pixel_id: { kind: 'text', max: 20, pattern: /^\d{5,20}$/, tokens: [], default: '' },
+    // Send the buyer's email and phone (SHA-256 hashed, never in the clear) with
+    // the server-side purchase, so Meta can match the sale to a person it knows.
+    // It measurably improves attribution — and it is contact information leaving
+    // for an advertising platform, which is the OWNER's decision and nobody
+    // else's. Default OFF; the sale is reported either way, this only changes
+    // how well Meta can match it.
+    meta_capi_contact: { kind: 'flag', tokens: [], default: false },
   },
 };
 

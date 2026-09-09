@@ -113,6 +113,38 @@ test.describe('meta pixel, end to end', () => {
     }
   });
 
+  // The server-side half is a credential in the environment, and the E2E server
+  // runs without one. The page must say so plainly — an owner who cannot tell
+  // "off" from "broken" has no way to finish setting it up.
+  test('the conversions-api card says what is missing before it is armed', async ({ page }) => {
+    await page.goto(`/admin-analytics.html?key=${KEY}`);
+    const card = page.locator('#card-meta-capi');
+    await expect(card).toBeVisible();
+    await expect(page.getByTestId('capi-state')).toHaveText('כבוי');
+    // No pixel id yet (afterEach clears it), so THAT is the thing to fix first.
+    await expect(card).toContainText('מזהה הפיקסל');
+
+    await page.getByTestId('meta-pixel-id').fill(ID);
+    await page.getByTestId('save-pixel').click();
+    await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
+    await page.reload();
+    // With a pixel but no token, the missing half is named by its env var.
+    await expect(page.locator('#card-meta-capi')).toContainText('META_CAPI_TOKEN');
+  });
+
+  test('contact matching is off until she switches it on herself', async ({ page }) => {
+    await page.goto(`/admin-analytics.html?key=${KEY}`);
+    const box = page.getByTestId('capi-contact');
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/נשלח גם מייל וטלפון/);
+    await page.reload();
+    await expect(page.getByTestId('capi-contact')).toBeChecked();
+    // Left as it was found: the setting store is shared across these tests.
+    await page.getByTestId('capi-contact').uncheck();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/לא נשלחים פרטים/);
+  });
+
   test('a bad paste is refused with the reason, and nothing is served', async ({
     page,
     request,
@@ -162,6 +194,10 @@ test.describe('meta pixel, end to end', () => {
     const purchase = queued.find((e) => e[0] === 'track' && e[1] === 'Purchase');
     expect(purchase).toBeTruthy();
     expect(purchase[2]).toEqual({ value: 238, currency: 'ILS' });
+    // The dedupe key. Our server reports the same sale to the Conversions API
+    // with this exact id; without it Meta would count the sale twice and every
+    // number downstream, ROAS included, would be inflated.
+    expect(purchase[3]).toEqual({ eventID: 'DG-2001' });
 
     // Left for the request that follows — the storefront must not keep it after
     // afterEach clears the setting.
