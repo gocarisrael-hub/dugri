@@ -25,6 +25,7 @@
     --ok: #2c6e4b;
     --band: rgba(15, 143, 143, 0.1);
     --bandline: rgba(15, 143, 143, 0.55);
+    --rowline: rgba(122, 66, 168, 0.6);
     --warnbg: #fdf3d8;
     --warnink: #5a3410;
     --tbox: rgba(2, 64, 140, 0.08);
@@ -51,6 +52,7 @@
       --ok: #5fc79a;
       --band: rgba(79, 198, 212, 0.13);
       --bandline: rgba(79, 198, 212, 0.42);
+      --rowline: rgba(197, 160, 240, 0.5);
       --tbox: rgba(151, 216, 230, 0.09);
       --tboxline: rgba(151, 216, 230, 0.38);
       --warnbg: rgba(232, 133, 63, 0.14);
@@ -75,6 +77,7 @@
     --ok: #5fc79a;
     --band: rgba(79, 198, 212, 0.13);
     --bandline: rgba(79, 198, 212, 0.42);
+    --rowline: rgba(197, 160, 240, 0.5);
     --tbox: rgba(151, 216, 230, 0.09);
     --tboxline: rgba(151, 216, 230, 0.38);
     --warnbg: rgba(232, 133, 63, 0.14);
@@ -735,13 +738,19 @@
   }
   /* One word's row — the rectangle the press sizes from. Quieter than the band
      around them: these are read, not grabbed, and four of them at the band's own
-     weight would bury the words they exist to describe. */
+     weight would bury the words they exist to describe.
+     AND IN A KEY OF ITS OWN. It first shipped dashed in `--bandline`, which is
+     the word BOX's colour and very nearly the box's dash (`.edge` is 2.4 2) — so
+     the legend's one dashed teal swatch, captioned "קופסת המילים", stood for two
+     different rectangles at once on the one page whose whole job is making the
+     geometry readable. Its own hue, and a dotted key rather than a dashed one,
+     so the two are told apart even where colour is not. */
   .rowband {
     fill: none;
-    stroke: var(--bandline);
+    stroke: var(--rowline);
     stroke-width: 0.6;
-    stroke-dasharray: 3 3;
-    opacity: 0.72;
+    stroke-dasharray: 1 2;
+    opacity: 0.85;
     pointer-events: none;
   }
   .bx.t {
@@ -794,11 +803,6 @@
   .knob.binds {
     stroke: var(--flag);
     stroke-width: 1.2;
-  }
-  .rowrule {
-    stroke: var(--bandline);
-    stroke-width: 0.35;
-    stroke-dasharray: 1.5 1.8;
   }
   .wtext,
   .ttext {
@@ -1230,6 +1234,10 @@
       <span
         ><i style="border-color: var(--bandline); border-top-style: dashed"></i>קופסת המילים — אחת
         לתבנית</span
+      >
+      <span
+        ><i style="border-color: var(--rowline); border-top-style: dotted"></i>שורות המילים — ארבע,
+        אלה שנשמרות לקובץ</span
       >
       <span
         ><i style="border-color: var(--tboxline); border-top-style: dashed"></i>קופסת הכותרת — לכל
@@ -2628,6 +2636,12 @@
       enSpilled,
       wBind: widest,
       hBind,
+      /* WHICH of the two terms is the one holding hBind down, because that is
+         what decides which slider can raise it. `boxBind` is the only term with
+         ROW_SHARE in it, so "גובה השורה" moves the bound when — and only when —
+         it is the smaller of the two AND nothing pins the size (a pinned card
+         takes leadBind alone: the box does not reduce a size that was given). */
+      rowBinds: !pinned && boxBind < leadBind,
       wWord,
       rowW,
       step,
@@ -2692,6 +2706,16 @@
   function rowCentres() {
     const first = blockTop(LASTSIZE);
     return [0, 1, 2, 3].map((i) => first + i * pitchUnits());
+  }
+  /* THE FOUR SLOTS, in card units — and the ONLY place they are worked out. The
+     drawing and `saveOut` each had their own copy of `cy -/+ pitch x rowTop/Bot`,
+     off two different pitches (`pitchUnits()` under rowCentres, `fit.step` at the
+     save), and two copies of one rectangle is how a picture starts promising a
+     row the recipe does not get. Four of them, always, because the press takes
+     four and refuses fewer (config.CARD_WORD_SLOTS). */
+  function rowSlots() {
+    const step = pitchUnits();
+    return rowCentres().map((cy) => ({ y0: cy - step * rowTop(), y1: cy + step * rowBot() }));
   }
 
   /* ---------- the title fit ---------- */
@@ -2829,32 +2853,42 @@
     return n;
   };
 
-  /** A box: tinted fill, four separately-drawn edges (so the binding one can shout),
-   *  eight grab targets, and eight knobs. */
-  /* THE FOUR ROWS, DRAWN. They are the rectangles the press actually sizes from
+  /* THE ROWS, DRAWN. They are the rectangles the press actually sizes from
      (`median(row height) x _WORD_SIZE_K`) and the ones the save writes — and
      until now this page never drew them. Only the outer band was on screen, so
      "גובה השורה" edited something invisible: on a card held by its WIDTH, moving
      that slider changed no picture and no number a person would notice, and the
      owner reasonably reported it as a control that does nothing.
-     Faint on purpose. The band stays the thing she grabs; these say what the
-     rows inside it are, and they are the only reason the height slider can be
-     read at all. */
+     Faint on purpose, and in a key of their own. The band stays the thing she
+     grabs; these say what the rows inside it are, and they are the only reason
+     the height slider can be read at all.
+     THE ROWS ARE THE SAVE'S, NOT THE WORD PAINTER'S. It is tempting to hang them
+     off `drawWords`'s own walk so the dashes sit under the type — and it is
+     wrong. The press reads `card_slots.words`: exactly four slots
+     (config.CARD_WORD_SLOTS = 4, and card_slots() rejects a shorter list), and
+     _grid_centers anchors every entry, wrapped or not, on THOSE centres — a
+     two-line entry grows about its slot rather than claiming a second one. So
+     the four rectangles the owner is looking at have to be the four `saveOut`
+     writes, or she calibrates against a picture the paper never receives. They
+     read `rowSlots()`, which is the one the save reads too.
+     Where the words do NOT sit on them, that is a real disagreement between this
+     page's word preview and `_grid_centers`, and it is meant to be visible. */
   function drawRows(g) {
-    rowCentres().forEach((cy) => {
-      const step = pitchUnits();
+    rowSlots().forEach((r) => {
       g.appendChild(
         el('rect', {
           class: 'rowband',
           x: S.band.x0 * CW,
-          y: cy - step * rowTop(),
+          y: r.y0,
           width: (S.band.x1 - S.band.x0) * CW,
-          height: step * (rowTop() + rowBot()),
+          height: r.y1 - r.y0,
         })
       );
     });
   }
 
+  /** A box: tinted fill, four separately-drawn edges (so the binding one can shout),
+   *  eight grab targets, and eight knobs. */
   function drawBox(g, box, kind, binds) {
     const TAG = kind;
     const x = box.x0 * CW,
@@ -3125,15 +3159,24 @@
    *  anything, and the slider simply stops there. Returns true if it had to pull
    *  the current value in. */
   /* WHAT ACTUALLY MOVES THE CEILING'S CEILING, per kind of box.
-     WORD: hBind = min(step / markerLead, step x (ROW_TOP+ROW_BOT) x WORD_SIZE_K).
-     Both terms are the row PITCH times a constant, so the number answers to
-     "רווח בין שורות" and to nothing else — dragging the word box, wider or
-     taller, leaves it exactly where it was.
+     WORD: hBind = pinned ? leadBind : min(leadBind, boxBind), where
+     leadBind = step / markerLead and boxBind = step x ROW_SHARE x WORD_SIZE_K.
+     Neither term is the word BOX — both are the row pitch times a constant — so
+     dragging that rectangle, wider or taller, leaves the number exactly where it
+     was. But only ONE of them carries ROW_SHARE, so "גובה השורה" raises the
+     bound in one state and provably cannot in the others: not when a pinned size
+     drops boxBind out of the min, and not when the marker's own pitch is already
+     the smaller term. The sentence is therefore written from the fit — naming a
+     control that cannot move the number is the same lie as not naming one that
+     can, and that lie is exactly what this ceiling was reported for.
      TITLE: capH divides the title box's own height (bh), so the box IS the
      answer there — its height, not its width, which only ever enters through
      the other half of min(width fit, height fit). */
   const CAP_WHY = {
-    word: 'הכי גדול שהשורה מחזיקה. מרימים אותו ב"רווח בין שורות" או ב"גובה השורה" — גודל הקופסה לא משנה כאן.',
+    word: (fit) =>
+      fit && fit.rowBinds
+        ? 'הכי גדול שהשורה מחזיקה. מרימים אותו ב"רווח בין שורות" או ב"גובה השורה" — גודל הקופסה לא משנה כאן.'
+        : 'הכי גדול שהשורה מחזיקה. כאן רק "רווח בין שורות" מרים אותו — "גובה השורה" וגודל הקופסה לא משנים כאן.',
     box: 'הכי גדול שהקופסה הזו מחזיקה לגובה. הרחבה לצדדים לא משנה את זה.',
   };
 
@@ -3156,10 +3199,11 @@
     // …and it has to name the RIGHT box, which is where the one sentence for all
     // six sliders was wrong. "המקסימום של הקופסה הזו" is true of a TITLE ceiling
     // (fitFor's capH divides the title box's own height bh) and false of a WORD
-    // ceiling: hBind is min(leadBind, boxBind) and BOTH are step x a constant —
-    // the row pitch, never S.band's rectangle. So the owner read "the box", made
-    // the word box bigger, and watched the number refuse to move. Each caller now
-    // says which measurement it is bounded by, and what to reach for.
+    // ceiling: hBind is leadBind, or min(leadBind, boxBind) where nothing pins
+    // the size, and every one of those is step x a constant — the row pitch,
+    // never S.band's rectangle. So the owner read "the box", made the word box
+    // bigger, and watched the number refuse to move. Each caller now says which
+    // measurement it is bounded by, and what to reach for.
     let end = e.parentNode.querySelector('.capend');
     if (!end) {
       end = document.createElement('span');
@@ -3885,7 +3929,7 @@
       }
     }
     const pulled = ['capHe', 'capEn', 'wPin', 'enSize']
-      .map((id) => capMax(id, fit.hBind, CAP_WHY.word))
+      .map((id) => capMax(id, fit.hBind, CAP_WHY.word(fit)))
       .some(Boolean);
     if (pulled) fit = wordFit(words, SEL);
     {
@@ -4063,7 +4107,7 @@
     deckCaps();
     reMirror();
     readouts(fit);
-    writeJSON(fit);
+    writeJSON();
   }
 
   function readouts(fit) {
@@ -4129,7 +4173,7 @@
           'so that preview stands in Aharoni.';
   }
 
-  function writeJSON(fit) {
+  function writeJSON() {
     // The five decisions this bench exists to settle come FIRST — they are what
     // she came here for; the geometry below is the same shape the template
     // already stores.
@@ -4175,11 +4219,11 @@
         back_size: $('bFit').checked ? null : r2(+$('bPin').value),
       },
       card_slots: {
-        words: rowCentres().map((cy) => ({
+        words: rowSlots().map((r) => ({
           x0: r4(S.band.x0),
-          y0: r4((cy - fit.step * rowTop()) / CH),
+          y0: r4(r.y0 / CH),
           x1: r4(S.band.x1),
-          y1: r4((cy + fit.step * rowBot()) / CH),
+          y1: r4(r.y1 / CH),
         })),
         titles: Object.fromEntries(
           FRONTS.map((k) => [
