@@ -4851,6 +4851,13 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     return res.status(400).json({ error: 'invalid order total' });
   }
 
+  // The buyer's own request, captured HERE because it is the last one they make
+  // before the money moves: their IP, their browser, Meta's first-party cookies
+  // and the ad they landed on. The sale is reported to Meta from the PeleCard
+  // callback, which is a request from PeleCard's server — none of this exists
+  // there. Null when the Conversions API is not armed.
+  const adCtx = metaAdContext(req, b);
+
   // Free order (a coupon discounts it to <= 0): skip PeleCard entirely, mark it
   // paid now, count the coupon use, and tell the client it's paid. BUT NOT while a
   // real (non-free) card session is still in flight — otherwise the customer could
@@ -4866,6 +4873,10 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       discount_pct: couponCode ? discountPct : null,
     });
     if (couponCode) db.incrementCouponUses(couponCode);
+    // A free order is a conversion too, and this is the request the buyer made
+    // themselves — so Meta is told here and now, with their own browser's
+    // details, rather than waiting for a confirmation page that may never load.
+    sendPurchaseToMeta(req.params.id, adCtx);
     // A free (100%-coupon) order is now paid — fire the same payment receipts as
     // the PeleCard callback, showing the real charged amount (0, which the emails
     // render as "free — 100% coupon" rather than a bare price).
@@ -4894,6 +4905,7 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       charged_total: charged,
       coupon: couponCode,
       discount_pct: couponCode ? discountPct : null,
+      metaCtx: adCtx,
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
@@ -5060,6 +5072,12 @@ app.post('/api/payment/callback', async (req, res) => {
     // email being configured inside onOrderPaid, and fire-and-forget — a failed
     // send must never turn a successful charge into a failed callback.
     onOrderPaid(c.id, paymentBaseUrl(), session.charged_total);
+    // Meta's copy of the sale, sent from HERE — the moment the money actually
+    // landed, in a request made by PeleCard's server. Nothing about the buyer's
+    // browser can suppress it: a closed tab, a blocked pixel and an in-app
+    // browser that drops third-party scripts all still produce this call. The
+    // buyer's own details ride along from the pay/init handshake (meta_ctx).
+    sendPurchaseToMeta(c.id);
   }
   res.json({ ok: true });
 });
@@ -6725,32 +6743,117 @@ const trackRate = makeRateLimiter({
   maxKeys: Number(process.env.COUPON_RATE_MAX_KEYS || 10000),
 });
 
-// Report one paid order to Meta's Conversions API. Fire-and-forget and
-// fail-soft: a failure is logged and nothing else — an ad platform that cannot
-// be reached must never affect an order that already happened.
-function sendPurchaseToMeta({ order, orderNo, value, landing, body }) {
+// Is the Conversions API armed? One answer, so the capture, the send and the
+// status card cannot disagree about it.
+function metaCapiArmed() {
+  return metaCapi.isArmed({
+    pixelId: settings.get('analytics', 'meta_pixel_id'),
+    token: process.env.META_CAPI_TOKEN || '',
+  });
+}
+
+/**
+ * Everything about the BUYER's own request that the sale will need later, taken
+ * at the one moment they are certainly present: the pay/init they made to open
+ * the payment.
+ *
+ * Meta needs this. A website event is documented as requiring client_user_agent
+ * and event_source_url, and matching leans on the IP and on Meta's own _fbc /
+ * _fbp cookies — all of which are properties of a browser, and none of which
+ * exist in the PeleCard callback that actually tells us the sale happened. So
+ * they are captured here and carried forward.
+ *
+ * Returns null when the API is not armed: a shop that never reports to Meta has
+ * no business storing a buyer's IP address.
+ */
+function metaAdContext(req, body = {}) {
+  if (!metaCapiArmed()) return null;
+  const cookies = metaCapi.fbCookies(req.headers && req.headers.cookie);
+  const ctx = {
+    ip: String(req.ip || '').slice(0, 45),
+    ua: String(req.get('user-agent') || '').slice(0, 500),
+    // Meta's cookies as the browser holds them. The _fbc one carries Meta's OWN
+    // click timestamp, which is why it is always preferred over one we rebuild.
+    fbc: String(cookies.fbc || '').slice(0, 255),
+    fbp: String(cookies.fbp || '').slice(0, 255),
+    // The ad that brought them, replayed by site/js/attribution.js out of the
+    // buyer's localStorage. Only used to rebuild an _fbc we never received.
+    landing: String(body.landing || '').slice(0, 2000),
+    // Required for a website event. The page that started the payment, not the
+    // confirmation page — the callback has no idea one was ever reached.
+    source_url: String(body.source_url || req.get('referer') || '').slice(0, 500),
+    // When WE saw this landing URL. Not the click (the touch the browser replays
+    // carries no timestamp of its own), but the start of a checkout is far closer
+    // to it than the payment is, and it is the earliest instant we can prove.
+    seen_at: Date.now(),
+  };
+  return ctx;
+}
+
+/**
+ * Report one paid order to Meta's Conversions API.
+ *
+ * CALLED FROM THE PAYMENT ITSELF — the PeleCard callback and the free-coupon
+ * path — not from the buyer's browser. That is the entire point of a server-side
+ * report: a buyer who closes the tab before the confirmation page renders has
+ * still bought the deck, and Meta has to be told. The confirmation page's
+ * /api/track calls this too, as the fallback for an order paid by some other
+ * route; db.claimMetaReport lets exactly one of them through.
+ *
+ * Fire-and-forget and fail-soft: a failure is logged and nothing else — an ad
+ * platform that cannot be reached must never affect an order that already
+ * happened.
+ */
+function sendPurchaseToMeta(collectionId, ctx = null) {
   const pixelId = settings.get('analytics', 'meta_pixel_id');
   const token = process.env.META_CAPI_TOKEN || '';
   if (!metaCapi.isArmed({ pixelId, token })) return;
+  const c = db.getCollection(collectionId);
+  if (!c || !c.order || !c.order.paid) return;
+  // Once per paid order, whichever path gets here first.
+  if (!db.claimMetaReport(collectionId)) return;
+  const orderNo = db.orderRef(c);
+  // The amount is read from the order store, never from a caller.
+  const value = c.order.charged_total != null ? c.order.charged_total : c.order.total;
+  // What we captured at pay/init, refreshed by anything the caller can add.
+  // Only a REAL value overrides: the confirmation page knows the landing URL but
+  // not the cookies, the callback knows the cookies but not the landing, and an
+  // empty string from either must not erase what the other one had.
+  const a = { ...((c.order.pelecard && c.order.pelecard.meta_ctx) || {}) };
+  for (const [k, v] of Object.entries(ctx || {})) if (v) a[k] = v;
   // Contact matching is the owner's call and ships OFF: it is the only part of
   // this payload that describes a person rather than a purchase.
   const contact = settings.get('analytics', 'meta_capi_contact')
-    ? { email: order.owner_email, phone: order.owner_phone }
+    ? { email: c.owner_email, phone: c.owner_phone }
     : {};
   const event = metaCapi.purchaseEvent({
     orderNo,
     value,
-    landing,
-    sourceUrl: String(body.source_url || '').slice(0, 500),
-    fbp: String(body.fbp || '').slice(0, 100),
+    landing: a.landing || '',
+    sourceUrl: a.source_url || paymentBaseUrl(),
+    fbp: a.fbp || '',
+    fbc: a.fbc || '',
+    ip: a.ip || '',
+    userAgent: a.ua || '',
+    // Our own id for the sale, so user_data is never empty even for the buyer
+    // whose browser gave Meta nothing — the buyer this whole feature is for.
+    externalId: orderNo,
+    clickAt: Number(a.seen_at) || 0,
     contact,
   });
   metaCapi
     .send({ pixelId, token, testCode: process.env.META_CAPI_TEST_CODE || '', event })
     .then((r) => {
-      if (!r.ok && !r.skipped) console.error('[meta-capi] ' + orderNo + ': ' + r.error);
+      if (r.ok || r.skipped) return;
+      console.error('[meta-capi] ' + orderNo + ': ' + r.error);
+      // Meta was NOT told, so the claim was not earned: hand it back, and the
+      // confirmation page's fallback gets to try the same sale again.
+      db.releaseMetaReport(collectionId);
     })
-    .catch((e) => console.error('[meta-capi] ' + orderNo + ': ' + ((e && e.message) || e)));
+    .catch((e) => {
+      console.error('[meta-capi] ' + orderNo + ': ' + ((e && e.message) || e));
+      db.releaseMetaReport(collectionId);
+    });
 }
 
 app.post('/api/track', (req, res) => {
@@ -6774,7 +6877,7 @@ app.post('/api/track', (req, res) => {
     order = c;
   }
   const landing = String(body.landing || '').slice(0, 2000);
-  const stored = attribution.record({
+  attribution.record({
     kind,
     landing,
     referrer: String(body.referrer || '').slice(0, 500),
@@ -6782,16 +6885,28 @@ app.post('/api/track', (req, res) => {
     order_no: orderNo,
     value,
   });
-  // Meta's copy of the same sale, sent from here rather than from the buyer's
-  // browser — which is exactly where the pixel's Purchase goes missing (an iOS
-  // buyer who declined tracking, a content blocker, a tab closed too early).
-  // Gated on `stored`: the ledger refuses a purchase it has already counted, so
-  // a reloaded confirmation page cannot send Meta a second event either.
+  // Meta's copy of the same sale — the FALLBACK half. The report that matters
+  // left from the payment itself (see sendPurchaseToMeta), because a buyer who
+  // closed the tab before this page rendered has still bought the deck. This
+  // path only catches an order that reached paid by some route the callback
+  // never saw, and db.claimMetaReport makes sure only one of them sends.
+  //
+  // It is still worth having: when the confirmation page DOES load it carries
+  // things the callback could not — the landing URL out of the buyer's own
+  // storage, the _fbp of a browser that never sent us a cookie.
   //
   // Not awaited. The buyer is waiting for a 204 on their confirmation page, and
   // whether Meta accepted the event is no business of theirs.
-  if (kind === 'purchase' && stored) {
-    sendPurchaseToMeta({ order, orderNo, value, landing, body });
+  if (kind === 'purchase' && order) {
+    const cookies = metaCapi.fbCookies(req.headers && req.headers.cookie);
+    sendPurchaseToMeta(order.id, {
+      landing,
+      source_url: String(body.source_url || '').slice(0, 500),
+      fbp: String(body.fbp || cookies.fbp || '').slice(0, 255),
+      fbc: String(cookies.fbc || '').slice(0, 255),
+      ip: String(req.ip || '').slice(0, 45),
+      ua: String(req.get('user-agent') || '').slice(0, 500),
+    });
   }
   // 204 always, even for a refused event: this endpoint tells a caller nothing
   // about what it stored, and a measurement beacon has no use for an answer.

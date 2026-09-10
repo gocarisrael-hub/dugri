@@ -3185,6 +3185,10 @@
         batchNiqqudMessage,
       } from './js/niqqud.js';
       import { track } from './js/analytics.js';
+      // Read-only: which ad this browser arrived on. Handed to pay/init so the
+      // server can tell Meta which click the sale belongs to — the sale is
+      // reported from the payment callback now, where no browser exists.
+      import { currentTouch } from './js/attribution.js';
       import {
         fetchPricing,
         fetchDeliveryExceptions,
@@ -6921,6 +6925,18 @@
           // decks for the price of one.
           const payload = { owner_token: ownerToken, version, address, quantity: copies };
           if (appliedCoupon) payload.coupon = appliedCoupon.code;
+          // The ad that brought her, and the page she is paying from. This is the
+          // LAST moment the browser gets to say either: from here the sale is
+          // reported to Meta by our server, off the payment callback, which knows
+          // nothing about the tab it came from. Storage can be blocked in an
+          // in-app browser — then the sale still reports, just matched less well.
+          try {
+            const touch = currentTouch(location.href, document.referrer);
+            if (touch && touch.landing) payload.landing = touch.landing;
+          } catch (e) {
+            /* no stored touch — the server falls back to the referrer */
+          }
+          payload.source_url = String(location.href).slice(0, 500);
           try {
             const res = await api('/pay/init', {
               method: 'POST',

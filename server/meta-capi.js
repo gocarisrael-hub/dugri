@@ -42,13 +42,45 @@ function hashed(value) {
   return crypto.createHash('sha256').update(v).digest('hex');
 }
 
+/**
+ * A phone number reduced to the bare international digits Meta matches on.
+ *
+ * This mirrors ilPhoneToWaId() in server/index.js, which is the form the shop
+ * already normalises a buyer's number into for WhatsApp — the same four cases,
+ * in the same order, because two different answers to "what is this person's
+ * number?" is exactly how a hash silently stops matching anything:
+ *   • '00972…' is an international dialling prefix, stripped FIRST so it is not
+ *     mistaken for a local leading 0 and doubled into '9720972…';
+ *   • '+…' is already international and is left alone (a redundant 0 after a
+ *     972 country code is dropped);
+ *   • a local '05x…' becomes '9725x…';
+ *   • a bare national number gets the country code — this shop sells in Israel,
+ *     and the same assumption the WhatsApp id makes is the right one here.
+ * Returns '' for anything with no digits in it.
+ */
+function normalisedPhone(value) {
+  const raw = String(value || '').trim();
+  // A leading '+' (or a '00' prefix) says the number is ALREADY international:
+  // whatever country it belongs to, no country code may be added to it.
+  let international = raw.startsWith('+');
+  let s = raw.replace(/\D/g, '');
+  if (!s) return '';
+  // '00' is the international dialling prefix. Stripped FIRST — and then the
+  // rest is re-examined, because '00972-052-…' still has a redundant local 0
+  // sitting behind the country code.
+  if (s.startsWith('00')) {
+    s = s.slice(2);
+    international = true;
+  }
+  if (s.startsWith('972')) return '972' + s.slice(3).replace(/^0+/, '');
+  if (international) return s;
+  if (s.startsWith('0')) return '972' + s.replace(/^0+/, '');
+  return '972' + s;
+}
+
 function hashedPhone(value) {
-  let digits = String(value || '').replace(/\D/g, '');
+  const digits = normalisedPhone(value);
   if (!digits) return null;
-  // An Israeli local number ('052…') is the same person as '97252…'; Meta
-  // matches on the international form, so a local one is converted rather than
-  // sent as a number that can never match.
-  if (digits.startsWith('0')) digits = '972' + digits.slice(1);
   return hashed(digits);
 }
 
@@ -69,6 +101,29 @@ function fbcFrom(landing, at = Date.now()) {
   return `fb.1.${at}.${fbclid}`;
 }
 
+// Meta's own _fbc / _fbp, read from the request the BUYER's browser made — they
+// are first-party cookies on our own domain, so the server can pick them up
+// without the page having to hand them over. This is what lets the sale be
+// reported from the payment callback, where no page exists at all.
+// Returns {} for a request that carries neither.
+function fbCookies(header) {
+  const out = {};
+  for (const part of String(header || '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0) continue;
+    const name = part.slice(0, eq).trim();
+    if (name !== '_fbc' && name !== '_fbp') continue;
+    let value = part.slice(eq + 1).trim();
+    try {
+      value = decodeURIComponent(value);
+    } catch {
+      /* a cookie that is not valid percent-encoding is used as it stands */
+    }
+    if (value) out[name.slice(1)] = value.slice(0, 255);
+  }
+  return out;
+}
+
 /**
  * Build the event payload for one purchase. Pure — no I/O, no clock unless one
  * is passed — so the shape can be asserted without touching the network.
@@ -76,6 +131,16 @@ function fbcFrom(landing, at = Date.now()) {
  * `contact` (email/phone) is included ONLY when the caller passes it, which the
  * route does only when the owner has switched contact matching on. Everything
  * else here is either the order's own money or the click that produced it.
+ *
+ * USER_DATA IS NEVER EMPTY. Meta requires at least one customer-information
+ * parameter and rejects the whole event (error 100) without one — and the buyer
+ * this feature exists for, the one whose pixel never loaded, is precisely the
+ * buyer with no _fbc and no _fbp. So `externalId` — our own order id, hashed —
+ * always goes: Meta counts an external id as one of the identifiers that satisfy
+ * the requirement, and it is the only one of them that describes a sale rather
+ * than a person. `client_ip_address` and `client_user_agent` ride along as well;
+ * Meta documents client_user_agent as REQUIRED for a website event, and both
+ * improve matching.
  */
 function purchaseEvent({
   orderNo,
@@ -85,13 +150,28 @@ function purchaseEvent({
   sourceUrl = '',
   fbp = '',
   fbc = '',
+  ip = '',
+  userAgent = '',
+  externalId = '',
   contact = {},
   at = Date.now(),
+  // When the click was OBSERVED, for a _fbc we have to rebuild ourselves. The
+  // purchase instant is the wrong answer — the touch that produced the sale is
+  // routinely days old — so the caller passes the earliest moment it can prove
+  // it saw this landing URL, and only falls back to `at` with nothing better.
+  clickAt = 0,
 } = {}) {
   const user_data = {};
-  const click = fbc || fbcFrom(landing, at);
+  const click = fbc || fbcFrom(landing, clickAt || at);
   if (click) user_data.fbc = click;
   if (fbp) user_data.fbp = String(fbp);
+  // Our own id for this sale, hashed like every other identifier so the store's
+  // ids never leave in the clear. Always present, which is what guarantees the
+  // event carries a match key even when nothing else survived the browser.
+  const ext = hashed(externalId || orderNo);
+  if (ext) user_data.external_id = [ext];
+  if (ip) user_data.client_ip_address = String(ip);
+  if (userAgent) user_data.client_user_agent = String(userAgent).slice(0, 500);
   const em = hashed(contact.email);
   if (em) user_data.em = [em];
   const ph = hashedPhone(contact.phone);
@@ -160,8 +240,10 @@ async function send({ pixelId, token, testCode, event, fetchImpl = globalThis.fe
 module.exports = {
   isArmed,
   hashed,
+  normalisedPhone,
   hashedPhone,
   fbcFrom,
+  fbCookies,
   purchaseEvent,
   send,
   GRAPH_VERSION,

@@ -311,10 +311,17 @@ function deliveryFee() {
 // not be able to drift between the two.
 function pushPaySession(
   holder,
-  { paramToken, transactionId, charged_total, coupon, discount_pct }
+  { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx }
 ) {
   const p = holder || { sessions: [] };
   if (!Array.isArray(p.sessions)) p.sessions = [];
+  // What the BUYER's own request to pay/init carried: their IP, their browser,
+  // Meta's first-party cookies, the ad they landed on. Kept on the handshake
+  // holder (which setOrder preserves) because the sale is reported to Meta from
+  // the PAYMENT CALLBACK — a request made by PeleCard's server, where the buyer's
+  // browser is nowhere to be found. Written only while the Conversions API is
+  // actually armed, so a shop that never reports to Meta never stores it.
+  if (metaCtx) p.meta_ctx = metaCtx;
   if (paramToken && !p.sessions.some((s) => s.token === paramToken)) {
     p.sessions.push({
       token: paramToken,
@@ -1864,7 +1871,10 @@ const db = {
   // (with different coupons), and PeleCard's callback for ANY of those sessions
   // must verify against THAT session's own amount, not a shared order value.
   // Sessions ACCUMULATE (capped). Returns false when there is no order.
-  recordPaymentInit(id, { paramToken, transactionId, charged_total, coupon, discount_pct } = {}) {
+  recordPaymentInit(
+    id,
+    { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx } = {}
+  ) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
     c.order.pelecard = pushPaySession(c.order.pelecard, {
@@ -1873,6 +1883,7 @@ const db = {
       charged_total,
       coupon,
       discount_pct,
+      metaCtx,
     });
     saveDb();
     return true;
@@ -2283,6 +2294,39 @@ const db = {
       c.order.production = rec;
       c.production = rec;
     }
+    saveDb();
+    return true;
+  },
+
+  // Claim the right to report this sale to Meta's Conversions API — ONCE.
+  //
+  // The report now leaves from the payment callback, which is the only place
+  // that does not depend on the buyer's browser still being open. But the
+  // confirmation page still POSTs /api/track when it does load, and that path
+  // reports too (it is the fallback for an order paid by a route the callback
+  // never saw). Both would otherwise send the same sale.
+  //
+  // Meta deduplicates on event_id and would keep one anyway; this makes it not
+  // arise. The stamp is on the ORDER, so it survives a restart between the two —
+  // an in-memory guard would not, and a deploy mid-checkout is not rare.
+  // Returns true to exactly one caller per paid order.
+  claimMetaReport(id) {
+    const c = this.getCollection(id);
+    if (!c || !c.order || !c.order.paid) return false;
+    if (c.order.meta_reported_at) return false;
+    c.order.meta_reported_at = nowIso();
+    saveDb();
+    return true;
+  },
+
+  // Hand the claim back when Meta could not be told after all — a timeout, a
+  // refusal, a network that was not there. Without this the stamp would say the
+  // sale was reported when it was not, and the confirmation page's fallback
+  // would decline to try again. Returns false for an order nobody claimed.
+  releaseMetaReport(id) {
+    const c = this.getCollection(id);
+    if (!c || !c.order || !c.order.meta_reported_at) return false;
+    delete c.order.meta_reported_at;
     saveDb();
     return true;
   },

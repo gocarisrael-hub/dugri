@@ -328,6 +328,16 @@ the one switch that is a real decision rather than a setting:
   is contact information leaving for an advertising platform, so it is the
   owner's decision. The sale is reported either way.
 
+The report leaves at the **moment the card clears**, from PeleCard's callback —
+not from the confirmation page. A buyer who closes the tab the second the payment
+goes through has still bought the deck, and that is the same buyer whose pixel
+was blocked, so waiting for their browser would lose the sale on both halves.
+Meta needs a few things about that browser which the callback cannot see (it is a
+request from PeleCard's server), so while the API is armed the pending payment
+handshake keeps the buyer's IP, their browser's user-agent string, Meta's own
+`_fbc`/`_fbp` cookies and the ad they landed on. With no token set, none of it is
+stored at all.
+
 On **staging**, leave `META_CAPI_TOKEN` unset — otherwise test orders land in the
 real ad account and teach Meta's optimiser nonsense.
 

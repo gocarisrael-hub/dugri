@@ -114,6 +114,86 @@ describe('the purchase event', () => {
     expect(local.user_data.ph).toEqual(intl.user_data.ph);
   });
 
+  // Every shape a phone number actually arrives in. Each of these is the SAME
+  // person, and a variant that normalises wrong hashes to something Meta can
+  // never match — a silent failure nobody would notice for weeks.
+  it('normalises every form of the same number to one hash', () => {
+    const forms = [
+      '052-244-1334',
+      '0522441334',
+      '+972 52 244 1334',
+      '+972-052-244-1334',
+      '00972522441334',
+      '00972-052-2441334',
+      '972522441334',
+      '9720522441334',
+      '522441334',
+    ];
+    for (const f of forms) expect([f, capi.normalisedPhone(f)]).toEqual([f, '972522441334']);
+    for (const f of forms) expect(capi.hashedPhone(f)).toBe(sha('972522441334'));
+  });
+
+  it('leaves a number that is already international alone', () => {
+    // A '00' prefix and a '+' both say "this is a full international number":
+    // adding a country code to one produces a number that belongs to nobody.
+    expect(capi.normalisedPhone('+1 (415) 555-0123')).toBe('14155550123');
+    expect(capi.normalisedPhone('001 415 555 0123')).toBe('14155550123');
+    expect(capi.normalisedPhone('')).toBe('');
+    expect(capi.normalisedPhone('abc')).toBe('');
+  });
+
+  // Meta requires at least one customer-information parameter and refuses the
+  // whole event without one. The buyer this feature exists for — pixel blocked,
+  // no _fbc, no _fbp — is exactly the buyer who would otherwise send an empty
+  // user_data and have the sale rejected.
+  it('always carries a match key, even for a browser that gave Meta nothing', () => {
+    const e = capi.purchaseEvent({ orderNo: 'DG-1', value: 199 });
+    expect(Object.keys(e.user_data).length).toBeGreaterThan(0);
+    expect(e.user_data.external_id).toEqual([sha('dg-1')]);
+  });
+
+  it('sends the buyer’s ip and browser, which a website event is required to carry', () => {
+    const e = capi.purchaseEvent({
+      orderNo: 'DG-1',
+      value: 199,
+      ip: '203.0.113.7',
+      userAgent: 'Mozilla/5.0 (iPhone)',
+      externalId: 'DG-1',
+    });
+    expect(e.user_data.client_ip_address).toBe('203.0.113.7');
+    expect(e.user_data.client_user_agent).toBe('Mozilla/5.0 (iPhone)');
+  });
+
+  // A rebuilt _fbc stamped with the PURCHASE time claims a click that may be
+  // days old was just observed, and disagrees with the _fbc the browser really
+  // holds. The caller passes the earliest moment it can prove it saw the click.
+  it('stamps a rebuilt click id with the click time, not the sale time', () => {
+    const clickAt = 1_700_000_000_000;
+    const e = capi.purchaseEvent({
+      orderNo: 'DG-1',
+      value: 199,
+      landing: 'https://dugri-israel.co.il/?fbclid=IwAR_xyz',
+      at: clickAt + 3 * 24 * 60 * 60 * 1000,
+      clickAt,
+    });
+    expect(e.user_data.fbc).toBe(`fb.1.${clickAt}.IwAR_xyz`);
+  });
+
+  // Meta's own cookies are first-party on our domain, so the server can read
+  // them straight off the buyer's request — which is what lets the sale be
+  // reported from a payment callback, where no page exists to hand them over.
+  it('reads Meta’s cookies off the request', () => {
+    expect(capi.fbCookies('_fbp=fb.1.1.2; _fbc=fb.1.9.Click; other=x')).toEqual({
+      fbp: 'fb.1.1.2',
+      fbc: 'fb.1.9.Click',
+    });
+    expect(capi.fbCookies('session=abc')).toEqual({});
+    expect(capi.fbCookies('')).toEqual({});
+    expect(capi.fbCookies(undefined)).toEqual({});
+    // Percent-encoded, as a browser may store it.
+    expect(capi.fbCookies('_fbc=fb.1.9.a%2Bb').fbc).toBe('fb.1.9.a+b');
+  });
+
   it('drops an empty contact rather than hashing the empty string', () => {
     const e = capi.purchaseEvent({
       orderNo: 'DG-1',

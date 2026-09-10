@@ -145,6 +145,27 @@ test.describe('meta pixel, end to end', () => {
     await expect(page.getByTestId('capi-save-state')).toHaveText(/לא נשלחים פרטים/);
   });
 
+  // `.status` is the PIXEL card's own hook, and half this file asserts on it
+  // under strict mode — where a second element wearing the class is not a
+  // cosmetic slip but an outright failure of every one of those assertions.
+  test('saving the contact switch never claims the pixel card’s status class', async ({ page }) => {
+    await page.goto(`/admin-analytics.html?key=${KEY}`);
+    await page.getByTestId('meta-pixel-id').fill(ID);
+    await page.getByTestId('save-pixel').click();
+    await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
+
+    const box = page.getByTestId('capi-contact');
+    await box.check();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/נשלח גם מייל וטלפון/);
+    // Still exactly one .status on the page — the pixel's, saying what it said.
+    await expect(page.locator('.status')).toHaveCount(1);
+    await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
+
+    await box.uncheck();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/לא נשלחים פרטים/);
+    await expect(page.locator('.status')).toHaveCount(1);
+  });
+
   test('a bad paste is refused with the reason, and nothing is served', async ({
     page,
     request,

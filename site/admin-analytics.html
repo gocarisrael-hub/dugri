@@ -458,7 +458,12 @@
 
         box.addEventListener('change', async () => {
           status2.textContent = 'שומר…';
-          status2.className = 'meta status';
+          // `capi-status` on EVERY path, saving and saved included. `.status` is
+          // the pixel card's own hook and the E2E asserts on it under strict
+          // mode: a second element wearing it makes those assertions ambiguous
+          // and the whole spec fails, which is what happened when the success
+          // path here wrote 'meta status ok'.
+          status2.className = 'meta capi-status';
           try {
             await api('POST', '/api/admin/settings', {
               section: 'analytics',
@@ -468,7 +473,7 @@
             status2.textContent = box.checked
               ? 'נשמר ✓ נשלח גם מייל וטלפון'
               : 'נשמר ✓ לא נשלחים פרטים';
-            status2.className = 'meta status ok';
+            status2.className = 'meta capi-status ok';
           } catch (e) {
             box.checked = !box.checked;
             status2.textContent = e.message;
