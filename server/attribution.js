@@ -62,17 +62,38 @@ const CLICK_IDS = [
   ['ttclid', 'tiktok'],
 ];
 
+// An ad platform's own placeholder, arriving UNSUBSTITUTED. Meta fills
+// {{campaign.name}} in as it delivers the ad, but a link pasted into a story, a
+// preview, or an ad that was never published can arrive with the braces intact.
+// Reported as a campaign, it would be a row named "{{campaign.name}}" sitting
+// there looking like a real one — so an unresolved placeholder is treated as
+// what it is: no answer. Both the raw and URL-encoded forms.
+const MACRO_RE = /^(\{\{.*\}\}|%7b%7b.*%7d%7d)$/i;
+
 // One field of a touch: trimmed, lowercased, control characters removed, capped.
 // Everything here ends up as a row label in the admin table and as a group key,
 // so it is normalised once, at the door.
 function field(v, max = 80) {
   if (v == null) return '';
-  return String(v)
+  const clean = String(v)
     .replace(/[\u0000-\u001f\u007f]/g, '')
     .trim()
     .toLowerCase()
     .slice(0, max);
+  return MACRO_RE.test(clean) ? '' : clean;
 }
+
+// Meta's {{site_source_name}} answers in its own shorthand. Spelling it out
+// keeps one platform to one row: an ad running on both feeds would otherwise
+// report as 'ig' here and 'instagram' on a hand-tagged link, and the report
+// would show the same campaign twice.
+const SITE_SOURCE = {
+  ig: 'instagram',
+  fb: 'facebook',
+  an: 'audience_network',
+  msg: 'messenger',
+  bz: 'business_suite',
+};
 
 function hostLabel(host) {
   const h = field(host, 120).replace(/^www\./, '');
@@ -103,7 +124,7 @@ function parseTouch({ landing = '', referrer = '' } = {}) {
   }
   const get = (k) => field(q ? q.get(k) : '');
 
-  const utmSource = get('utm_source');
+  const utmSource = SITE_SOURCE[get('utm_source')] || get('utm_source');
   const utmMedium = get('utm_medium');
   const touch = {
     source: utmSource,

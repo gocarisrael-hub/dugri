@@ -392,8 +392,31 @@
           זה קליק מאינסטגרם עדיין נספר (לפי <code>fbclid</code>), אבל בלי שם קמפיין.
         </p>
 
-        <h2>הקישור למודעה</h2>
+        <h2>מטא ממלאת את השמות לבד</h2>
         <div class="builder">
+          <p class="hint" style="margin-top: 0">
+            את השורה הזאת מדביקים <strong>פעם אחת בכל מודעה</strong>, בשדה
+            <code>URL parameters</code> (בעריכת המודעה, בתחתית העמוד, תחת Tracking). היא זהה לכל
+            המודעות — אין מה למלא ואין מה לשנות. מטא מחליפה את הסוגריים בשם הקמפיין ובשם המודעה
+            האמיתיים בכל קליק, והם אלה שיופיעו בטבלה למעלה.
+          </p>
+          <div class="out">
+            <input id="bAuto" type="text" readonly data-testid="auto-params" />
+            <button type="button" class="on" id="bAutoCopy" data-testid="copy-auto-params">
+              העתקה
+            </button>
+          </div>
+          <p class="hint" id="bAutoStatus">
+            טיפ: כשמשכפלים מודעה במטא, השדה הזה משוכפל איתה — אז בפועל מדביקים אותו פעם אחת
+            ומשכפלים.
+          </p>
+        </div>
+
+        <h2>קישור ידני — לביו, לסטורי, למשפיענית</h2>
+        <div class="builder">
+          <p class="hint" style="margin-top: 0">
+            רק למקומות שאין בהם מודעה שתמלא את השמות לבד. כאן כן צריך לתת שם.
+          </p>
           <div class="fields">
             <label
               >לאן הקישור מוביל
@@ -405,12 +428,8 @@
               </select>
             </label>
             <label
-              >שם הקמפיין
-              <input id="bCampaign" type="text" dir="ltr" placeholder="rovakot_sep" />
-            </label>
-            <label
-              >שם המודעה (אופציונלי)
-              <input id="bContent" type="text" dir="ltr" placeholder="reel_01" />
+              >שם (מה זה, בשבילך)
+              <input id="bCampaign" type="text" dir="ltr" placeholder="bio_sep" />
             </label>
             <label
               >מאיפה
@@ -424,10 +443,10 @@
             <label
               >סוג
               <select id="bMedium">
-                <option value="paid">מודעה בתשלום</option>
-                <option value="story">סטורי / פוסט אורגני</option>
                 <option value="bio">קישור בביו</option>
+                <option value="story">סטורי / פוסט אורגני</option>
                 <option value="influencer">משפיענית</option>
+                <option value="paid">מודעה בתשלום</option>
               </select>
             </label>
           </div>
@@ -435,10 +454,7 @@
             <input id="bOut" type="text" readonly data-testid="ad-link" />
             <button type="button" class="on" id="bCopy" data-testid="copy-ad-link">העתקה</button>
           </div>
-          <p class="hint" id="bStatus">
-            מדביקים את הקישור הזה בשדה היעד של המודעה. שם הקמפיין ושם המודעה הם מה שיופיע בטבלה
-            למעלה — אז שווה לתת לכל מודעה שם שמזהים.
-          </p>
+          <p class="hint" id="bStatus">מדביקים את הקישור הזה במקום כתובת האתר הרגילה.</p>
         </div>
 
         <h2 class="live-head"><span class="dot"></span> מה קורה עכשיו</h2>
@@ -616,7 +632,20 @@
       // "meta / paid" row. Building the link here, rather than explaining the
       // parameters in a hint, is the difference between a report with campaign
       // names in it and one without.
-      const B = ['bDest', 'bCampaign', 'bContent', 'bSource', 'bMedium'];
+      const B = ['bDest', 'bCampaign', 'bSource', 'bMedium'];
+
+      // THE ONE STRING. Meta substitutes each {{…}} as it delivers the ad, so a
+      // campaign names itself and nothing has to be typed per ad — which is the
+      // difference between a report with campaign names in it and one that is
+      // right in principle and empty in practice.
+      //
+      // {{site_source_name}} answers 'ig' or 'fb', spelled out again on our side
+      // so one platform stays one row. utm_medium is the only fixed value: Meta
+      // has no macro for "this cost money", and everything carrying these
+      // parameters is a paid placement by definition.
+      const AUTO_PARAMS =
+        'utm_source={{site_source_name}}&utm_medium=paid' +
+        '&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}';
 
       // The ad platform strips nothing, so the value has to be link-safe before
       // it ever reaches a URL: spaces and punctuation become underscores.
@@ -634,23 +663,21 @@
         url.searchParams.set('utm_medium', qs('bMedium').value);
         const campaign = slug(qs('bCampaign').value);
         if (campaign) url.searchParams.set('utm_campaign', campaign);
-        const content = slug(qs('bContent').value);
-        if (content) url.searchParams.set('utm_content', content);
         qs('bOut').value = url.toString();
       }
 
-      async function copyLink() {
-        const out = qs('bOut');
+      async function copyFrom(fieldId, statusId, done) {
+        const out = qs(fieldId);
         try {
           await navigator.clipboard.writeText(out.value);
-          qs('bStatus').textContent = 'הועתק ✓ אפשר להדביק בשדה היעד של המודעה.';
+          qs(statusId).textContent = done;
         } catch {
           // Clipboard permission is refused often enough that a silent failure
           // would look like a broken button. Select the text so she can copy it
           // herself with the keyboard.
           out.focus();
           out.select();
-          qs('bStatus').textContent = 'לא הצלחתי להעתיק — הקישור מסומן, אפשר להעתיק ידנית.';
+          qs(statusId).textContent = 'לא הצלחתי להעתיק — הטקסט מסומן, אפשר להעתיק ידנית.';
         }
       }
 
@@ -688,8 +715,14 @@
           return;
         }
         qs('main').hidden = false;
+        qs('bAuto').value = AUTO_PARAMS;
+        qs('bAutoCopy').addEventListener('click', () =>
+          copyFrom('bAuto', 'bAutoStatus', 'הועתק ✓ להדביק בשדה URL parameters של המודעה במטא.')
+        );
         for (const id of B) qs(id).addEventListener('input', buildLink);
-        qs('bCopy').addEventListener('click', copyLink);
+        qs('bCopy').addEventListener('click', () =>
+          copyFrom('bOut', 'bStatus', 'הועתק ✓ אפשר להדביק במקום כתובת האתר.')
+        );
         buildLink();
         buildRanges();
         await loadReport();

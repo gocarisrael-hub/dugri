@@ -121,27 +121,63 @@ test.describe('the ad report', () => {
     await expect(page.getByRole('button', { name: '7 ימים' })).toHaveClass(/on/);
   });
 
-  test('the link builder writes a link the report can read back', async ({ page }) => {
+  // THE ONE THING SHE HAS TO DO, and it is one paste that is the same for every
+  // ad. Meta substitutes the placeholders itself, so no campaign name is ever
+  // typed by hand — a report that needed manual tagging per ad would be right in
+  // principle and empty in practice.
+  test('the Meta string is fixed, and the names it produces land in the report', async ({
+    page,
+  }) => {
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    const campaign = unique('builder');
-    await page.locator('#bCampaign').fill(campaign.toUpperCase() + ' סתיו');
-    await page.locator('#bContent').fill('reel 07');
-    const link = await page.getByTestId('ad-link').inputValue();
-    // Spaces and case are normalised on the way into the URL, because an ad
-    // platform passes the destination through untouched.
-    expect(link).toContain('utm_campaign=' + campaign + '_');
-    expect(link).toContain('utm_content=reel_07');
-    expect(link).toContain('utm_source=instagram');
-    expect(link).toContain('utm_medium=paid');
+    const params = await page.getByTestId('auto-params').inputValue();
+    expect(params).toContain('utm_campaign={{campaign.name}}');
+    expect(params).toContain('utm_content={{ad.name}}');
+    expect(params).toContain('utm_source={{site_source_name}}');
+    expect(params).toContain('utm_medium=paid');
+    // No field to fill in: it is the same string for every ad she ever runs.
+    await expect(page.getByTestId('auto-params')).toHaveAttribute('readonly', '');
 
-    // The real proof: follow the link it just built, and the row appears.
+    // Now arrive the way a real click does — with Meta's substitutions already
+    // made — and the campaign names itself in the table.
+    const campaign = unique('auto');
+    await arriveAt(
+      page,
+      `/index.html?utm_source=ig&utm_medium=paid&utm_campaign=${campaign}&utm_content=Reel%2003`
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const row = rowFor(page, campaign);
+    await expect(row.locator('td').nth(0)).toHaveText('instagram');
+    await expect(row.locator('td').nth(3)).toHaveText('reel 03');
+  });
+
+  test('an ad whose placeholders never got filled in makes no phantom campaign', async ({
+    page,
+  }) => {
+    await arriveAt(
+      page,
+      '/index.html?utm_source=instagram&utm_medium=paid&utm_campaign={{campaign.name}}'
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.locator('#rows tr:has(td:text-is("{{campaign.name}}"))')).toHaveCount(0);
+  });
+
+  test('the manual builder still writes a link for the bio and the stories', async ({ page }) => {
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const campaign = unique('bio');
+    await page.locator('#bCampaign').fill(campaign.toUpperCase() + ' סתיו');
+    const link = await page.getByTestId('ad-link').inputValue();
+    // Spaces and case are normalised on the way into the URL, because whatever
+    // it is pasted into passes the destination through untouched.
+    expect(link).toContain('utm_campaign=' + campaign + '_');
+    expect(link).toContain('utm_medium=bio');
+
     await arriveAt(page, new URL(link).pathname + new URL(link).search);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(
       rowFor(page, campaign + '_סתיו')
         .locator('td')
-        .nth(3)
-    ).toHaveText('reel_07');
+        .nth(1)
+    ).toHaveText('bio');
   });
 
   // The page must fit the phone. It failed to: the tagged-link example in the

@@ -113,6 +113,55 @@ describe('parseTouch — reading a landing URL', () => {
     expect(a.parseTouch()).toMatchObject({ source: 'direct', medium: 'none' });
   });
 
+  // THE POINT OF THE WHOLE TAGGING SCHEME: the owner pastes ONE fixed string
+  // into Meta and never types a campaign name again. Meta substitutes each
+  // placeholder as it delivers the ad.
+  it('reads the names Meta substitutes into its own placeholders', async () => {
+    const a = await store();
+    const t = a.parseTouch({
+      landing:
+        'https://dugri-israel.co.il/?utm_source=ig&utm_medium=paid' +
+        '&utm_campaign=Rovakot%20September&utm_content=Reel%2003&utm_term=Women%2025-34',
+    });
+    // 'ig' is Meta's shorthand; spelled out so a hand-tagged link and an
+    // auto-tagged one land on the SAME row instead of two.
+    expect(t.source).toBe('instagram');
+    expect(t.campaign).toBe('rovakot september');
+    expect(t.content).toBe('reel 03');
+    expect(t.term).toBe('women 25-34');
+  });
+
+  it('spells out every one of Meta’s source shorthands', async () => {
+    const a = await store();
+    const src = (v) => a.parseTouch({ landing: 'https://x.co/?utm_source=' + v }).source;
+    expect(src('ig')).toBe('instagram');
+    expect(src('fb')).toBe('facebook');
+    expect(src('msg')).toBe('messenger');
+    expect(src('an')).toBe('audience_network');
+    // Anything not on the list is left exactly as it was written.
+    expect(src('newsletter')).toBe('newsletter');
+  });
+
+  // A placeholder that was never substituted — a link pasted into a story, or an
+  // ad that never ran — must not become a row named "{{campaign.name}}" sitting
+  // in the table looking like a real campaign.
+  it('treats an unsubstituted placeholder as no answer at all', async () => {
+    const a = await store();
+    const raw = a.parseTouch({
+      landing: 'https://dugri-israel.co.il/?utm_source=instagram&utm_campaign={{campaign.name}}',
+    });
+    expect(raw.campaign).toBe('');
+    expect(raw.source).toBe('instagram');
+    const encoded = a.parseTouch({
+      landing: 'https://dugri-israel.co.il/?utm_campaign=%7B%7Bcampaign.name%7D%7D&utm_source=ig',
+    });
+    expect(encoded.campaign).toBe('');
+    // And it does not swallow a campaign that merely CONTAINS a brace.
+    expect(a.parseTouch({ landing: 'https://x.co/?utm_campaign=sale{summer}now' }).campaign).toBe(
+      'sale{summer}now'
+    );
+  });
+
   it('normalises campaign labels so one campaign is one row', async () => {
     const a = await store();
     const upper = a.parseTouch({ landing: 'https://x.co/?utm_source=IG&utm_campaign=  Rovakot  ' });
