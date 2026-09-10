@@ -306,9 +306,16 @@ number), so Meta keeps one and the sale is never double-counted.
 **Off until the token is set.** With no `META_CAPI_TOKEN` nothing is sent and
 nothing is attempted — the state the site ships in.
 
-- **`META_CAPI_TOKEN`** — the access token. Events Manager → your pixel →
-  **Settings** → **Conversions API** → **Generate access token**. It is a
-  credential, so it lives here rather than in the admin settings store.
+- **`META_CAPI_TOKEN`** — the access token, used for **both** halves of this:
+  reporting sales to Meta, and reading back what the ads cost. Make it as a
+  **System User** token (Business Settings → System Users → Add → assign the ad
+  account and the pixel → Generate new token) with **`ads_management`** and
+  **`ads_read`**. The quick token from Events Manager → **Conversions API** →
+  _Generate access token_ also works for sending sales, but usually cannot read
+  the ad account, so the spend table will show Meta's own refusal
+  (`(#200) Requires ads_read permission`) — that message is the signal to make a
+  System User token instead. It is a credential, so it lives here rather than in
+  the admin settings store.
 - **`META_CAPI_TEST_CODE`** — _optional, for verifying the wiring._ Events
   Manager → **Test events** shows a code (`TEST12345`); set it here and the
   events appear in that tab instead of the live report. **Remove it when you are
@@ -346,6 +353,72 @@ deleted. It is never returned by the admin orders API, and with no
 `META_CAPI_TOKEN` set none of it is ever written. The buyer's own order link
 carries a token that opens her order — that token is stripped from every URL
 before anything is stored or sent, so it cannot reach Events Manager.
+
+### What the token buys, beyond reporting sales
+
+With `ads_read`, `/admin-ads.html` also pulls **spend, impressions, clicks and
+Meta's own reported purchases per ad** straight from the ad account. Nothing has
+to be tagged for this: Meta names every campaign and ad itself.
+
+That matters because **Meta offers no way to tag ads once.** There is no
+account-level URL-parameters setting, and `url_tags` can be set when a creative
+is _created_ but is not an updatable field — so existing ads cannot be stamped
+through the API either (the usual workaround swaps the creative and discards the
+ad's likes and comments). Per-ad tagging is per-ad work, permanently. Hence the
+division the page is built around:
+
+| number           | who can know it                          |
+| ---------------- | ---------------------------------------- |
+| what an ad cost  | **only Meta** — read via the API         |
+| orders + revenue | **only us** — from the order store       |
+| purchases per ad | both, and the two are shown side by side |
+
+The blended figure — **our** revenue from Meta traffic over **Meta's** spend — is
+the one line where neither platform is grading its own homework. Both halves have
+to describe the same traffic: all site revenue over Meta spend is a bigger number
+that merely looks like a return on ad spend.
+
+It is an **estimate, and it errs in both directions**, which the page says out
+loud. Too low: an ad tagged with a source name we don't recognise is left out of
+it. Too high: Facebook and Instagram append a click id (`fbclid`) to **every**
+outbound link, an organic post's included, and a bare click id is the only
+evidence most real ad clicks carry — so sales from an organic post are counted
+against ad spend as well. Excluding click-id-only visits would fix the over-count
+and empty the figure, since Meta offers no way to tag ads once.
+
+What can be separated is **tagged from untagged**: a visit carrying a campaign or
+an ad name arrived on a link built for an ad, and nothing else puts one there. It
+is a strong signal, not a proof — that address travels. A buyer who arrived on the
+ad can copy it out of the in-app browser into the bachelorette group, and every
+click from that group carries the same campaign; a bookmark does the same. So
+word-of-mouth spread from an ad counts as tagged, which for a product distributed
+by group shares is ordinary rather than exceptional. The page shows the split under
+the ratio — the larger the tagged half, the more the ratio can be leaned on. The
+cheapest way to grow it is to use a **separate, tagged link for the organic posts
+and the bio**, so organic traffic identifies itself instead of hiding inside the ad
+bucket.
+
+If the spend table says it could not read all the ads in the window, the spend and
+click totals are a **floor** — and the ratio above them is therefore a **ceiling**,
+because the number that came up short is the one being divided by.
+
+The optional per-ad string on that page adds campaign names to _our_ table as
+well. It changes nothing about spend or ROAS, and nothing breaks without it: an
+untagged Instagram click is still counted, just under a nameless `meta / paid`
+row.
+
+- **`META_AD_ACCOUNT_ID`** — _optional._ **Not needed when the token can see
+  exactly one ad account**: that one is discovered. With several, `/admin-ads.html`
+  lists them by name and id with a button to pick one, and refuses to guess in the
+  meantime — one account's spend labelled as all of it is a number that looks
+  right and isn't. The pick is saved in the admin store
+  (`analytics.meta_ad_account_id`) and **wins over this variable**, which is here
+  so an account can be pinned on Railway next to the token without opening the
+  admin at all. Digits only, with or without the `act_` prefix.
+
+The spend window is **whole days in the ad account's own timezone** — that is how
+Meta reads `time_range`, so the report asks for the account's timezone and lines
+our own revenue up with it before dividing one by the other.
 
 On **staging**, leave `META_CAPI_TOKEN` unset — otherwise test orders land in the
 real ad account and teach Meta's optimiser nonsense.

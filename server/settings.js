@@ -731,6 +731,11 @@ const REGISTRY = {
     // else's. Default OFF; the sale is reported either way, this only changes
     // how well Meta can match it.
     meta_capi_contact: { kind: 'flag', tokens: [], default: false },
+    // Which ad account to report spend for. Normally EMPTY and discovered from
+    // the token — with one ad account behind it there is nothing to choose, and
+    // an id the owner has to go and find is one more thing to get wrong. Only
+    // needed when the token can see several accounts.
+    meta_ad_account_id: { kind: 'text', max: 24, pattern: /^\d{5,24}$/, tokens: [], default: '' },
   },
 };
 

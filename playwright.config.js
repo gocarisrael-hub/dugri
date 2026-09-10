@@ -82,6 +82,16 @@ export default defineConfig({
       // The SMS gateway's own secret, so the outbox routes are live in E2E. The
       // feature switch itself is a setting, flipped by the spec that needs it.
       SMS_GATEWAY_KEY: 'e2e-sms-gateway-key',
+      // The measurement beacon is rate-limited PER CLIENT (60/min in production,
+      // which is generous for one browser). In E2E every worker, every project
+      // and every page is the same client — 127.0.0.1 — so a full parallel run
+      // blows through it in seconds, the beacon comes back 429, and the visit is
+      // never recorded. That surfaces as an ad-report row that is simply missing:
+      // a red that looks like flake, is a DIFFERENT test each run, and passes in
+      // isolation. Raised here rather than weakened in the server, because the
+      // limit is protecting a public endpoint and only the test client is
+      // unrealistic.
+      TRACK_RATE_LIMIT: '100000',
       TEMPLATE_ROOT: FIXTURE_ROOT,
     },
     port: PORT,

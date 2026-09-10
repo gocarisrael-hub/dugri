@@ -47,6 +47,8 @@ const attribution = require('./attribution');
 // The server's own copy of a sale, sent to Meta so a blocked browser cannot
 // swallow it. Dormant with no META_CAPI_TOKEN.
 const metaCapi = require('./meta-capi');
+// What Meta knows that we cannot: what the ads COST.
+const metaInsights = require('./meta-insights');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -7012,6 +7014,96 @@ app.get('/api/admin/meta-capi/status', (req, res) => {
     contact_matching: Boolean(settings.get('analytics', 'meta_capi_contact')),
     graph_version: metaCapi.GRAPH_VERSION,
   });
+});
+
+// Which ad account to report on. Normally NEITHER of these is set: with one ad
+// account behind the token there is nothing to choose and it is discovered. The
+// saved admin setting wins over the environment, because it is the one the owner
+// can change without a redeploy; META_AD_ACCOUNT_ID exists so that an account
+// pinned on Railway alongside the token actually takes effect (it was documented
+// as a variable before anything read it).
+//
+// The two are reported to the page SEPARATELY as well as combined: emptying the
+// admin field does not mean "discover it again" when the environment still names
+// an account, and a page that said so would be telling the owner something she
+// can see with her own eyes is untrue.
+// `act_` comes off case-insensitively and however many times it was pasted:
+// Ads Manager shows `act_99887766`, and both a copied prefix and a shouted one
+// would otherwise build `act_act_99887766` / `act_ACT_99887766` into the Graph
+// path, which fails as a bad account rather than as a bad paste.
+const stripAct = (v) =>
+  String(v || '')
+    .trim()
+    .replace(/^(act_)+/i, '');
+const metaAdAccountSaved = () => stripAct(settings.get('analytics', 'meta_ad_account_id'));
+const metaAdAccountEnv = () => stripAct(process.env.META_AD_ACCOUNT_ID);
+function metaAdAccountId() {
+  return metaAdAccountSaved() || metaAdAccountEnv();
+}
+
+// Admin: Meta's own per-ad numbers — spend above all, since that is the half of
+// ROAS no first-party ledger can ever see. Same token as the Conversions API,
+// which needs ads_read on the account as well; a token without it comes back
+// with Meta's own message rather than a bare failure, because "(#200) Requires
+// ads_read permission" tells the owner exactly which token to make.
+app.get('/api/admin/ads/meta', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const days = Math.min(Math.max(1, Number(req.query.days) || 30), 400);
+  const accountId = metaAdAccountId();
+  const result = await metaInsights.cachedInsights({
+    token: process.env.META_CAPI_TOKEN || '',
+    accountId,
+    days,
+  });
+  // A shallow copy: `result` may be the object sitting in the module's cache, and
+  // the per-request numbers below must not be written into it.
+  const out = {
+    ...result,
+    // What the admin field holds, and what the environment holds, as two separate
+    // answers — the page has to be able to say which of them is in force.
+    account_setting: metaAdAccountSaved(),
+    account_env: metaAdAccountEnv(),
+  };
+  if (result.ok) {
+    // OUR half of the blended line, cut at the SAME INSTANT Meta's window opens.
+    // Meta counts whole calendar days in the ad account's timezone; report() is a
+    // rolling now-minus-N-days cutoff. Left alone, ours runs ~9-24h longer than
+    // Meta's and the division is of unlike windows. report()'s cutoff is
+    // now - days*24h, so handing it a `now` of since_ms + the span puts the cut
+    // exactly on Meta's opening instant; both sides then end at the present
+    // moment, which is as far as either has data.
+    const ours = attribution.report({
+      days: result.days,
+      now: result.since_ms + result.days * 24 * 60 * 60 * 1000,
+    });
+    // META's revenue over META's spend — not the whole site's. isPaid is handed
+    // over rather than re-implemented so "cost money" keeps one definition.
+    //
+    // This is an ESTIMATE and it errs in both directions — see metaAttributed().
+    // The part of it that came in on a deliberately tagged link is separated out,
+    // because that half cannot be organic and is therefore the half the owner can
+    // lean on. The page shows the split rather than calling the total a floor.
+    const mine = metaInsights.metaAttributed(ours.rows, attribution.isPaid);
+    out.ours = {
+      revenue: mine.revenue,
+      orders: mine.orders,
+      rows: mine.matched,
+      // Arrived on an ad's own link — it carried a campaign or an ad name. Near
+      // certain, not certain: that address travels the moment somebody pastes it
+      // on into a group chat, and brings its campaign with it.
+      tagged: mine.tagged,
+      // A Meta click id and nothing else. Facebook and Instagram put one on every
+      // outbound link, so an organic post's clicks are in here too.
+      untagged: mine.untagged,
+      // Every source, for context only: the gap between the two is what says
+      // how much of the shop's takings the ads are even being credited with.
+      revenue_all: ours.totals.revenue,
+      orders_all: ours.totals.orders,
+    };
+    out.roas =
+      result.totals.spend > 0 ? Math.round((mine.revenue / result.totals.spend) * 100) / 100 : null;
+  }
+  res.json(out);
 });
 
 app.get('/api/admin/ads', (req, res) => {
