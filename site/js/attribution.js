@@ -35,14 +35,35 @@ const TAGS = [
 // Storage is unavailable in some in-app browsers and blocked in others, and an
 // ad click very often lands in exactly such a browser. Every access is guarded:
 // tracking degrades to "this visit only" rather than throwing on the page.
-function read(store, key) {
+//
+// The STORAGE OBJECT ITSELF is resolved by name, inside the guard, because that
+// is where the failure actually happens. In Chrome with "block all cookies", in
+// a sandboxed webview, and in Firefox with dom.storage disabled, merely reading
+// window.localStorage throws a SecurityError — before any getItem is reached. A
+// try/catch around getItem alone catches nothing there, and the throw escapes
+// into whatever called us: the wizard's step change (which would then never
+// paint the checkout summary) or the confirmation page (which would lose the
+// order number). Measurement is never allowed to cost a page its function.
+function storage(name) {
+  try {
+    const s = globalThis[name];
+    return s && typeof s.getItem === 'function' && typeof s.setItem === 'function' ? s : null;
+  } catch {
+    return null;
+  }
+}
+function read(name, key) {
+  const store = storage(name);
+  if (!store) return null;
   try {
     return store.getItem(key);
   } catch {
     return null;
   }
 }
-function write(store, key, value) {
+function write(name, key, value) {
+  const store = storage(name);
+  if (!store) return;
   try {
     store.setItem(key, value);
   } catch {
@@ -62,10 +83,10 @@ function newId() {
 /** A stable, meaningless id for this browser. Identifies no person — it exists
  *  only so six page views by one visitor count as one visit. */
 export function visitorId() {
-  let id = read(localStorage, VISITOR_KEY);
+  let id = read('localStorage', VISITOR_KEY);
   if (!id) {
     id = newId();
-    write(localStorage, VISITOR_KEY, id);
+    write('localStorage', VISITOR_KEY, id);
   }
   return id;
 }
@@ -86,10 +107,10 @@ export function isTagged(url) {
  * IS a new campaign arrival. Pure-ish: reads/writes localStorage, nothing else.
  */
 export function currentTouch(href, referrer) {
-  const stored = read(localStorage, TOUCH_KEY);
+  const stored = read('localStorage', TOUCH_KEY);
   if (isTagged(href)) {
     const touch = { landing: String(href).slice(0, 2000), referrer: String(referrer || '') };
-    write(localStorage, TOUCH_KEY, JSON.stringify(touch));
+    write('localStorage', TOUCH_KEY, JSON.stringify(touch));
     return touch;
   }
   if (stored) {
@@ -103,7 +124,7 @@ export function currentTouch(href, referrer) {
   // First ever arrival, untagged: the referrer is all the evidence there is, and
   // it is worth keeping (it separates Instagram-profile traffic from direct).
   const touch = { landing: String(href).slice(0, 2000), referrer: String(referrer || '') };
-  write(localStorage, TOUCH_KEY, JSON.stringify(touch));
+  write('localStorage', TOUCH_KEY, JSON.stringify(touch));
   return touch;
 }
 
@@ -133,11 +154,30 @@ export function sendEvent(kind, extra = {}) {
     .catch(() => false);
 }
 
-/** One visit per browser session, so a five-page browse is one visit and the
- *  conversion rate on the report means what it says. */
+/**
+ * One visit per browser session, so a five-page browse is one visit and the
+ * conversion rate on the report means what it says.
+ *
+ * With one exception: a NEW campaign arrival in the same session is a new visit.
+ * The stored touch is replaced whenever a tagged URL is opened, so a visitor who
+ * finds us on Google and then clicks an Instagram ad in the same tab would hand
+ * the ad the order while the visit stayed on Google's row — the ad's row reading
+ * "1 order, 0 visits, conversion —" and Google's an unconverted visit it never
+ * had. Both halves of that are wrong, and the report exists to be compared
+ * against Ads Manager, which counts that second click.
+ *
+ * The session mark is therefore the tagged URL that was counted, not a flag: the
+ * same tagged page reloaded matches it and counts once, a different campaign
+ * link does not and counts again. An untagged page never re-fires, whatever the
+ * mark says.
+ */
 export function trackVisit() {
-  if (read(sessionStorage, SESSION_KEY)) return false;
-  write(sessionStorage, SESSION_KEY, '1');
+  const here = typeof location !== 'undefined' ? String(location.href) : '';
+  const tagged = isTagged(here);
+  const mark = tagged ? here.slice(0, 2000) : '1';
+  const counted = read('sessionStorage', SESSION_KEY);
+  if (counted && (!tagged || counted === mark)) return false;
+  write('sessionStorage', SESSION_KEY, mark);
   sendEvent('visit');
   return true;
 }

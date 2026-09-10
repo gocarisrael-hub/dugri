@@ -34,6 +34,24 @@ function throwingStorage() {
   return { getItem: boom, setItem: boom, removeItem: boom, clear: boom };
 }
 
+// The harsher case, and the common one on an ad click: site data is refused
+// outright (Chrome's "block all cookies", a sandboxed webview, Firefox with
+// dom.storage off) and reading the PROPERTY throws a SecurityError — there is no
+// storage object to call a method on. Returns its own undo.
+function blockStorageProperty(name) {
+  const before = Object.getOwnPropertyDescriptor(globalThis, name);
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    get() {
+      throw new Error('SecurityError: access to storage is not allowed from this context');
+    },
+  });
+  return () => {
+    if (before) Object.defineProperty(globalThis, name, before);
+    else delete globalThis[name];
+  };
+}
+
 let fetchMock;
 beforeEach(() => {
   vi.stubGlobal('localStorage', memoryStorage());
@@ -149,5 +167,74 @@ describe('sending events', () => {
     await expect(sendEvent('visit')).resolves.toBe(true);
     expect(lastBody().landing).toContain('utm_campaign=rovakot');
     expect(lastBody().visitor).toBeTruthy();
+  });
+});
+
+// An ad click lands in an in-app browser more often than not, and some of them
+// refuse site data at the property: `window.localStorage` throws before any
+// method is reached. Everything downstream of the call that throws is lost — the
+// wizard's step change would stop before it painted the checkout summary, and the
+// confirmation page before it filled in the order number. A measurement must
+// never be able to do that.
+describe('a browser that refuses site data outright', () => {
+  let undo = [];
+  afterEach(() => {
+    while (undo.length) undo.pop()();
+  });
+
+  it('still measures, and never throws into the page that called it', async () => {
+    setUrl('http://localhost/?utm_campaign=rovakot');
+    const mod = await load();
+    undo.push(blockStorageProperty('localStorage'));
+    undo.push(blockStorageProperty('sessionStorage'));
+
+    expect(() => mod.visitorId()).not.toThrow();
+    expect(() => mod.currentTouch(location.href, '')).not.toThrow();
+    await expect(mod.sendEvent('checkout')).resolves.toBe(true);
+    expect(lastBody().landing).toContain('utm_campaign=rovakot');
+    expect(lastBody().visitor).toBeTruthy();
+    expect(() => mod.trackVisit()).not.toThrow();
+  });
+
+  it('reports the campaign even when nothing can be remembered', async () => {
+    setUrl('http://localhost/?utm_source=instagram&utm_medium=paid');
+    const mod = await load();
+    undo.push(blockStorageProperty('localStorage'));
+    undo.push(blockStorageProperty('sessionStorage'));
+    expect(mod.trackVisit()).toBe(true);
+    expect(lastBody().kind).toBe('visit');
+    expect(lastBody().landing).toContain('utm_source=instagram');
+  });
+});
+
+// Last non-direct touch replaces the stored campaign on any tagged arrival. If
+// the VISIT is only ever counted once per session, the second ad gets the order
+// and none of the traffic: its row reads "1 order, 0 visits, conversion —" while
+// the first source keeps a visit that did not convert. Both halves are wrong, and
+// Ads Manager — the thing this report exists to be compared against — counts that
+// second click.
+describe('a second campaign in the same session', () => {
+  it('counts a visit for the ad that took the credit', async () => {
+    setUrl('http://localhost/?utm_source=google&utm_medium=organic');
+    const mod = await load();
+    expect(mod.trackVisit()).toBe(true);
+    expect(lastBody().landing).toContain('utm_source=google');
+
+    // Same tab, later: the visitor clicks an Instagram ad.
+    setUrl('http://localhost/?utm_source=instagram&utm_medium=paid&utm_campaign=rovakot');
+    expect(mod.trackVisit()).toBe(true);
+    expect(lastBody().landing).toContain('utm_campaign=rovakot');
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/track')).toHaveLength(2);
+  });
+
+  it('does not count the same ad link twice when the page is reloaded', async () => {
+    setUrl('http://localhost/?utm_source=instagram&utm_campaign=rovakot');
+    const mod = await load();
+    expect(mod.trackVisit()).toBe(true);
+    expect(mod.trackVisit()).toBe(false);
+    // And an ordinary page deeper into the site is not a new arrival either.
+    setUrl('http://localhost/options.html?step=4');
+    expect(mod.trackVisit()).toBe(false);
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/track')).toHaveLength(1);
   });
 });
