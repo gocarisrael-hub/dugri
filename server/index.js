@@ -6765,6 +6765,42 @@ app.get('/api/admin/ads/live', (req, res) => {
   res.json({ events: attribution.recent(Number(req.query.limit) || 60) });
 });
 
+// Save the ledger when the process is asked to stop. Events are queued in memory
+// for up to a second and a half so that a burst of ad traffic is not a burst of
+// whole-file writes — and Railway ends the old container with SIGTERM on every
+// single deploy. Node's default action for that signal is to die immediately,
+// running no exit handler, so without this the last events before every deploy
+// are simply gone, and a deploy is exactly when the owner is watching the page.
+//
+// flush() is synchronous from end to end, which is what makes it usable here:
+// there is no await to be cut short, and it cannot interleave with the queued
+// write it is racing (that one publishes synchronously too, and skips a snapshot
+// that has been overtaken). Handling the signal is also what now decides that
+// the process ends at all — nothing else in the app listens — hence the explicit
+// exit with the conventional code for each signal.
+let stopping = false;
+function stopWithSignal(code) {
+  if (stopping) return;
+  stopping = true;
+  try {
+    attribution.flush();
+  } catch {
+    /* a counting ledger is never a reason to hold up a shutdown */
+  }
+  process.exit(code);
+}
+process.once('SIGTERM', () => stopWithSignal(143));
+process.once('SIGINT', () => stopWithSignal(130));
+// Any other way out (an explicit exit elsewhere, a fatal error) still gets the
+// queue written. A second call with nothing new to say writes nothing.
+process.once('exit', () => {
+  try {
+    attribution.flush();
+  } catch {
+    /* nothing left to do about it at this point */
+  }
+});
+
 // Admin: owner-editable message templates + settings. The email subject/body
 // templates, the editable label maps and the WhatsApp trigger catalog all live
 // in server/settings.js (a DATA_DIR store overlaying the registry defaults). The

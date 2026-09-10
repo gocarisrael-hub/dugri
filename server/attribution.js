@@ -228,9 +228,18 @@ function load() {
  * reopened a bookmarked confirmation link would be counted as a second sale.
  * Only visits and checkouts are dropped, oldest first.
  *
- * A ledger of nothing but purchases would therefore sit above the cap. At this
- * shop's volume that is decades of orders, and of everything in here the sales
- * are the part worth the bytes.
+ * The costs of that exemption, stated plainly. Every purchase kept is one slot
+ * of traffic given up, permanently. And once the purchases ALONE fill the cap
+ * the ledger stops recording traffic altogether: each new visit is pushed and
+ * evicted by the same call, so the report shows orders against no visits and a
+ * conversion rate of null. That needs MAX_EVENTS orders inside the age window —
+ * twenty thousand at the default, decades of this shop — which is why the
+ * exemption is still the right trade: of everything in here the sales are the
+ * part worth the bytes.
+ *
+ * Cost per call: the scan skips the run of purchases at the front of the ledger,
+ * and each eviction is an O(n) splice. Normally that is one splice of one
+ * element at index 0.
  */
 function capEvents() {
   let excess = _events.length - MAX_EVENTS;
@@ -264,6 +273,13 @@ function prune(now = Date.now()) {
   }
 }
 
+// The sweep is armed by record(), so a server with no traffic stops pruning
+// after boot, and record() itself no longer applies the age limit at all: an
+// event dated outside the window — a caller-supplied `at`, a skewed clock —
+// lingers in the live feed and on disk until the next sweep, which on a silent
+// server never comes. report() filters by its own window, so the numbers are
+// unaffected either way; what is at stake is only how long a stale event takes
+// to leave the file.
 function schedulePrune() {
   if (_pruneTimer) return;
   _pruneTimer = setTimeout(() => {
@@ -274,30 +290,42 @@ function schedulePrune() {
 }
 
 /**
- * Write the ledger out. ASYNCHRONOUSLY: the file runs to a couple of megabytes
- * at the cap, and fs.writeFileSync of that much, re-armed every second and a
- * half, is a stall the buyer's request waits behind — on an instance that is
- * already fragile under concurrency. Nothing here is money, so nothing here is
- * worth blocking a page view for.
+ * Write the ledger out. The BYTES go out asynchronously: the file runs to a
+ * couple of megabytes at the cap, and fs.writeFileSync of that much, re-armed
+ * every second and a half, is a stall the buyer's request waits behind — on an
+ * instance that is already fragile under concurrency. Nothing in here is money,
+ * so nothing in here is worth blocking a page view for.
  *
  * Writes are serialised through one chain and stamped with the version they
- * carry, so an overlapping or overtaken write can never restore older content.
+ * carry, so an overtaken write never restores older content.
+ *
+ * THE PUBLISH STEP IS SYNCHRONOUS, and that is the whole ordering argument.
+ * `rename` is a metadata operation measured in microseconds — nothing like the
+ * write it follows — and doing it without yielding makes "check the version,
+ * then publish" one indivisible step as far as the rest of the process is
+ * concerned. With an async rename there is a window between the check and the
+ * publish in which the main thread runs, and flush() is synchronous: a shutdown
+ * flush landing in that window would publish the newer ledger and then have this
+ * older rename dropped on top of it, silently rolling a sale back off the disk.
+ * Nothing sequences the two paths on the file itself, so the window is the bug.
  */
 function writeNow() {
   _timer = null;
   const version = _version;
-  if (version === _written) return _chain;
+  if (version <= _written) return _chain;
   const data = JSON.stringify(_events);
   _chain = _chain.then(async () => {
     if (version <= _written) return; // a newer snapshot already reached the file
     try {
       await fs.promises.writeFile(TMP, data, 'utf8');
+      // Re-checked after the await, because the main thread ran while it was
+      // out: flush() may have published something newer in the meantime.
       if (version <= _written) {
         await fs.promises.unlink(TMP).catch(() => {});
         return;
       }
-      await fs.promises.rename(TMP, FILE);
-      _written = version;
+      fs.renameSync(TMP, FILE); // no await between the check and the publish
+      _written = Math.max(_written, version);
     } catch {
       /* a failed write must never break a page view */
     }
@@ -312,17 +340,26 @@ function scheduleWrite() {
   if (typeof _timer.unref === 'function') _timer.unref();
 }
 
-/** Write any queued events to disk immediately. Synchronous on purpose: this is
- *  the deterministic seam (tests, shutdown), not the hot path. */
+/**
+ * Write any queued events to disk immediately. Synchronous from end to end on
+ * purpose: this is the deterministic seam — the tests, and the SIGTERM of every
+ * deploy — where the process may not survive long enough to await anything.
+ *
+ * Its own tmp file, so it cannot collide with a queued write halfway through
+ * one; and being synchronous, it cannot interleave with the chain's publish
+ * step, which is synchronous for the same reason. Whichever of the two goes
+ * last, the version stamp keeps the newer content: `_written` only ever moves
+ * forward, and the chain skips any snapshot that has been overtaken.
+ */
 function flush() {
   if (_timer) clearTimeout(_timer);
   _timer = null;
   const version = _version;
-  if (version === _written) return _chain;
+  if (version <= _written) return _chain;
   try {
     fs.writeFileSync(FLUSH_TMP, JSON.stringify(_events), 'utf8');
     fs.renameSync(FLUSH_TMP, FILE);
-    _written = version;
+    _written = Math.max(_written, version);
   } catch {
     try {
       fs.unlinkSync(FLUSH_TMP);
@@ -399,9 +436,14 @@ function report({ days = 30, now = Date.now() } = {}) {
   const seen = new Map(); // row key -> { visit: Set, checkout: Set } of visitor ids
   const seenAll = { visit: new Set(), checkout: new Set() }; // the same, site-wide
 
-  // An event with no visitor id (storage blocked in the buyer's browser) can only
-  // ever be itself: its timestamp stands in for an identity, so two such events
-  // count twice rather than collapsing into one.
+  // An event with no visitor id can only ever be itself: its timestamp stands in
+  // for an identity, so two such events count twice rather than collapsing into
+  // one. That case is rare in practice — and NOT the blocked-storage one. A
+  // browser that refuses site data mints a fresh id per event (site/js/
+  // attribution.js), so it arrives as a stream of one-page visitors: every page
+  // view it makes is a visitor in this tile. The in-app browsers an ad click
+  // lands in are exactly those browsers, so "מבקרים" reads a little high, and
+  // the way to fix it is a first-party cookie, not a change here.
   const whoOf = (e) => e.v || 't:' + e.t;
 
   for (const e of _events) {

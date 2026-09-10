@@ -440,10 +440,62 @@ describe('the link builder', () => {
     expect(values.length).toBeGreaterThan(0);
     for (const v of values) {
       const file = v === '/' ? 'index.html' : v.replace(/^\//, '');
-      expect({ dest: v, exists: fs.existsSync(path.join(SITE, file)) }).toEqual({
-        dest: v,
-        exists: true,
+      // The site is served with express.static({ extensions: ['html'] }), so a
+      // bare /lp WOULD work the day lp.html exists. This must model that, or it
+      // reds for a destination that serves perfectly well.
+      const served =
+        fs.existsSync(path.join(SITE, file)) || fs.existsSync(path.join(SITE, file + '.html'));
+      expect({ dest: v, served }).toEqual({ dest: v, served: true });
+    }
+  });
+});
+
+// The queued write and the shutdown write are two paths to ONE file, and only
+// one of them can be awaited. If the publish step yields, the other can land
+// inside the gap: a sale written by the shutdown flush and then buried under the
+// older snapshot the queued write was already carrying. That rollback is silent,
+// and the ledger only repairs itself on the next event — which at shutdown is
+// the one thing that never comes.
+describe('two writers, one file', () => {
+  it('never rolls a flushed sale back off the disk', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const file = path.join(dir, 'attribution-events.json');
+    const ad = 'https://dugri-israel.co.il/?utm_source=ig&utm_medium=paid&utm_campaign=rovakot';
+    const realRename = nodeFs.promises.rename;
+    let publishing = false;
+    const rename = vi.spyOn(nodeFs.promises, 'rename').mockImplementation(async (from, to) => {
+      // A busy volume, or simply a threadpool that gets to this after the main
+      // thread has run again.
+      publishing = true;
+      await new Promise((r) => setTimeout(r, 120));
+      return realRename(from, to);
+    });
+    try {
+      const a = await loadStore(dir, { ATTRIBUTION_SAVE_MS: 5 });
+      a.record({ kind: 'visit', landing: ad, visitor: 'v1' });
+      // Wait until that write is at its publish step (or has already published).
+      await vi.waitFor(() => expect(publishing || fs.existsSync(file)).toBe(true), {
+        timeout: 3000,
       });
+
+      // The sale lands, and the process is told to stop.
+      a.record({ kind: 'purchase', landing: ad, order_no: 'DG-1', value: 199 });
+      a.flush();
+      const onDisk = () => JSON.parse(fs.readFileSync(file, 'utf8')).map((e) => e.k);
+      expect(onDisk()).toEqual(['visit', 'purchase']);
+
+      // And it is still there after everything in flight has landed — the older
+      // snapshot must not be published on top of the newer one.
+      await new Promise((r) => setTimeout(r, 300));
+      expect(onDisk()).toEqual(['visit', 'purchase']);
+
+      // A restart reads back what the flush promised, which is the whole point
+      // of having flushed.
+      const reloaded = await loadStore(dir);
+      expect(reloaded.report({ days: 30 }).totals).toMatchObject({ orders: 1, revenue: 199 });
+    } finally {
+      rename.mockRestore();
     }
   });
 });

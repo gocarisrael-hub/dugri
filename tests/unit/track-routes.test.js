@@ -4,7 +4,7 @@
 // can post to it — so most of what matters here is what a caller is NOT allowed
 // to do: name its own campaign, name its own revenue, or claim a sale on an
 // order it cannot prove it owns.
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -184,5 +184,32 @@ describe('the report is admin-only', () => {
     await track({ kind: 'visit', landing: AD, visitor: 'new' });
     expect((await report('&days=7')).body.totals.visits).toBe(1);
     expect((await report('&days=90')).body.totals.visits).toBe(2);
+  });
+});
+
+// Events are queued in memory for up to a second and a half, and Railway ends
+// the old container with SIGTERM on every deploy. Node's default action for that
+// signal runs no exit handler at all, so unless the server handles it the queue
+// goes with the container — and a deploy is exactly when the owner is watching
+// this page.
+describe('the ledger survives a shutdown', () => {
+  it('writes what is queued when the process is told to stop', async () => {
+    const file = path.join(process.env.DATA_DIR, 'attribution-events.json');
+    fs.rmSync(file, { force: true });
+    // A visit that is now queued and not yet on disk (the throttle is seconds
+    // away, and nothing else is going to fire it).
+    await track({ kind: 'visit', landing: AD, visitor: 'v-shutdown' });
+    expect(fs.existsSync(file)).toBe(false);
+
+    expect(process.listeners('SIGTERM').length).toBeGreaterThan(0);
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => {});
+    try {
+      process.emit('SIGTERM');
+      expect(exit).toHaveBeenCalled();
+    } finally {
+      exit.mockRestore();
+    }
+    const saved = JSON.parse(fs.readFileSync(file, 'utf8'));
+    expect(saved.some((e) => e.v === 'v-shutdown')).toBe(true);
   });
 });
