@@ -32,6 +32,11 @@ const MAX_AGE_MS = Number(process.env.ATTRIBUTION_MAX_AGE_DAYS || 400) * 24 * 60
 // not a real loss, and flush() makes it deterministic for tests.
 const SAVE_THROTTLE_MS = Number(process.env.ATTRIBUTION_SAVE_MS || 1500);
 
+// How often the ledger is swept for events past the age limit. On a timer rather
+// than on every event: the sweep reads every stored timestamp, and doing that per
+// page view is a cost that grows with the traffic it is measuring.
+const PRUNE_INTERVAL_MS = Number(process.env.ATTRIBUTION_PRUNE_MS || 5 * 60 * 1000);
+
 const KINDS = new Set(['visit', 'checkout', 'purchase']);
 
 // --- parsing ------------------------------------------------------------------
@@ -87,13 +92,20 @@ function field(v, max = 80) {
 // keeps one platform to one row: an ad running on both feeds would otherwise
 // report as 'ig' here and 'instagram' on a hand-tagged link, and the report
 // would show the same campaign twice.
-const SITE_SOURCE = {
+// Null-prototype ON PURPOSE. The key is a string the VISITOR chooses — it comes
+// straight off ?utm_source= — and a plain object answers for 'constructor' and
+// '__proto__' with something that is not a source name at all: a function (which
+// JSON.stringify drops, leaving a blank row label) or Object.prototype (a row
+// labelled "[object Object]"). Anyone with the address of /api/track could plant
+// those rows in the owner's report; an object with no prototype has nothing to
+// inherit and answers only for the five names written here.
+const SITE_SOURCE = Object.assign(Object.create(null), {
   ig: 'instagram',
   fb: 'facebook',
   an: 'audience_network',
   msg: 'messenger',
   bz: 'business_suite',
-};
+});
 
 function hostLabel(host) {
   const h = field(host, 120).replace(/^www\./, '');
@@ -174,6 +186,24 @@ function isPaid(touch) {
 
 let _events = [];
 let _timer = null;
+let _pruneTimer = null;
+// The order numbers already counted as a sale. Kept beside the ledger so the
+// once-per-order guard is a lookup rather than a scan of every event ever
+// stored; rebuilt whenever the ledger is replaced or pruned.
+let _orders = new Set();
+// Bumped on every change to _events. A write captures the version it serialised,
+// so a slow write can never land on top of a newer one.
+let _version = 0;
+let _written = -1;
+let _chain = Promise.resolve();
+
+const TMP = FILE + '.tmp';
+const FLUSH_TMP = FILE + '.flush.tmp';
+
+function reindex() {
+  _orders = new Set();
+  for (const e of _events) if (e.k === 'purchase' && e.o) _orders.add(e.o);
+}
 
 function load() {
   try {
@@ -188,25 +218,91 @@ function load() {
   prune();
 }
 
-// Drop events past the age limit, then past the count limit (oldest first).
+/**
+ * The count cap, with ONE exemption: a purchase is never evicted by it.
+ *
+ * Visits outnumber sales by about a thousand to one, so an oldest-first cap over
+ * the whole ledger deletes the ORDERS inside the reporting window long before it
+ * deletes the traffic around them: revenue would fall with nothing on the page
+ * to say why, and the once-per-order guard would stop holding, so a buyer who
+ * reopened a bookmarked confirmation link would be counted as a second sale.
+ * Only visits and checkouts are dropped, oldest first.
+ *
+ * A ledger of nothing but purchases would therefore sit above the cap. At this
+ * shop's volume that is decades of orders, and of everything in here the sales
+ * are the part worth the bytes.
+ */
+function capEvents() {
+  let excess = _events.length - MAX_EVENTS;
+  if (excess <= 0) return;
+  let i = 0;
+  while (excess > 0 && i < _events.length) {
+    if (_events[i].k === 'purchase') i += 1;
+    else {
+      _events.splice(i, 1);
+      excess -= 1;
+    }
+  }
+}
+
+// Drop events past the age limit, then past the count limit. This walks the
+// whole ledger with a Date.parse per event, so it runs at boot and on a slow
+// timer — never per event. An ad burst is exactly the moment the server can
+// least afford to re-read twenty thousand timestamps on every page view.
 function prune(now = Date.now()) {
+  const before = _events.length;
   const cutoff = now - MAX_AGE_MS;
   _events = _events.filter((e) => {
     const t = Date.parse(e.t);
     return Number.isFinite(t) && t >= cutoff;
   });
-  if (_events.length > MAX_EVENTS) _events = _events.slice(_events.length - MAX_EVENTS);
+  capEvents();
+  reindex();
+  if (_events.length !== before) {
+    _version += 1;
+    scheduleWrite();
+  }
 }
 
+function schedulePrune() {
+  if (_pruneTimer) return;
+  _pruneTimer = setTimeout(() => {
+    _pruneTimer = null;
+    prune();
+  }, PRUNE_INTERVAL_MS);
+  if (typeof _pruneTimer.unref === 'function') _pruneTimer.unref();
+}
+
+/**
+ * Write the ledger out. ASYNCHRONOUSLY: the file runs to a couple of megabytes
+ * at the cap, and fs.writeFileSync of that much, re-armed every second and a
+ * half, is a stall the buyer's request waits behind — on an instance that is
+ * already fragile under concurrency. Nothing here is money, so nothing here is
+ * worth blocking a page view for.
+ *
+ * Writes are serialised through one chain and stamped with the version they
+ * carry, so an overlapping or overtaken write can never restore older content.
+ */
 function writeNow() {
   _timer = null;
-  try {
-    const tmp = FILE + '.tmp';
-    fs.writeFileSync(tmp, JSON.stringify(_events), 'utf8');
-    fs.renameSync(tmp, FILE);
-  } catch {
-    /* a failed write must never break a page view */
-  }
+  const version = _version;
+  if (version === _written) return _chain;
+  const data = JSON.stringify(_events);
+  _chain = _chain.then(async () => {
+    if (version <= _written) return; // a newer snapshot already reached the file
+    try {
+      await fs.promises.writeFile(TMP, data, 'utf8');
+      if (version <= _written) {
+        await fs.promises.unlink(TMP).catch(() => {});
+        return;
+      }
+      await fs.promises.rename(TMP, FILE);
+      _written = version;
+    } catch {
+      /* a failed write must never break a page view */
+    }
+  });
+  return _chain;
 }
 
 function scheduleWrite() {
@@ -216,10 +312,25 @@ function scheduleWrite() {
   if (typeof _timer.unref === 'function') _timer.unref();
 }
 
-/** Write any queued events to disk immediately. */
+/** Write any queued events to disk immediately. Synchronous on purpose: this is
+ *  the deterministic seam (tests, shutdown), not the hot path. */
 function flush() {
   if (_timer) clearTimeout(_timer);
-  writeNow();
+  _timer = null;
+  const version = _version;
+  if (version === _written) return _chain;
+  try {
+    fs.writeFileSync(FLUSH_TMP, JSON.stringify(_events), 'utf8');
+    fs.renameSync(FLUSH_TMP, FILE);
+    _written = version;
+  } catch {
+    try {
+      fs.unlinkSync(FLUSH_TMP);
+    } catch {
+      /* nothing to clean up */
+    }
+  }
+  return _chain;
 }
 
 /**
@@ -239,7 +350,7 @@ function record({ kind, landing, referrer, visitor, order_no, value, at } = {}) 
   // is the guard that actually holds.
   if (kind === 'purchase') {
     if (!order) return null;
-    if (_events.some((e) => e.k === 'purchase' && e.o === order)) return null;
+    if (_orders.has(order)) return null;
   }
   const ev = {
     t: at || new Date().toISOString(),
@@ -254,8 +365,11 @@ function record({ kind, landing, referrer, visitor, order_no, value, at } = {}) 
   if (order) ev.o = order;
   if (Number.isFinite(value)) ev.val = Math.round(Number(value) * 100) / 100;
   _events.push(ev);
-  prune();
+  if (kind === 'purchase') _orders.add(order);
+  capEvents(); // cheap and clockless; the age sweep is the timer's job
+  _version += 1;
   scheduleWrite();
+  schedulePrune();
   return ev;
 }
 
@@ -267,14 +381,28 @@ const rowKey = (e) => [e.s || '', e.m || '', e.c || '', e.ct || ''].join('|');
  * Aggregate the ledger into one row per (source, medium, campaign, content),
  * newest `days` only, best-selling first.
  *
- * `visits` counts DISTINCT visitors rather than events, so a buyer who reloads
- * the shop six times is one visit and the conversion rate stays honest.
+ * `visits` and `checkouts` both count DISTINCT VISITORS rather than events, so a
+ * buyer who reloads the shop six times is one visit, and a wizard that puts the
+ * step in the URL — so a reload, a back button or a shared ?step=4 link re-enters
+ * the checkout step — is still one checkout. Counting the checkouts per event
+ * while counting the visits per visitor is what produced rows reading "3 visits,
+ * 7 checkouts": a funnel that widens as it descends is not a funnel.
+ *
+ * The TOTALS tiles are deduplicated across the whole window, not per row. One
+ * visitor who arrives once organically and once from an ad is two rows and one
+ * browser, and the tile says "visitors".
  */
 function report({ days = 30, now = Date.now() } = {}) {
   const cutoff = now - Math.max(1, Number(days) || 30) * 24 * 60 * 60 * 1000;
   const rows = new Map();
   const totals = { visits: 0, checkouts: 0, orders: 0, revenue: 0, paid_orders: 0 };
-  const seen = new Map(); // row key -> Set of visitor ids
+  const seen = new Map(); // row key -> { visit: Set, checkout: Set } of visitor ids
+  const seenAll = { visit: new Set(), checkout: new Set() }; // the same, site-wide
+
+  // An event with no visitor id (storage blocked in the buyer's browser) can only
+  // ever be itself: its timestamp stands in for an identity, so two such events
+  // count twice rather than collapsing into one.
+  const whoOf = (e) => e.v || 't:' + e.t;
 
   for (const e of _events) {
     const t = Date.parse(e.t);
@@ -293,18 +421,21 @@ function report({ days = 30, now = Date.now() } = {}) {
         revenue: 0,
       };
       rows.set(key, row);
-      seen.set(key, new Set());
+      seen.set(key, { visit: new Set(), checkout: new Set() });
     }
-    if (e.k === 'visit') {
-      const who = e.v || 't:' + e.t;
-      if (!seen.get(key).has(who)) {
-        seen.get(key).add(who);
-        row.visits += 1;
-        totals.visits += 1;
+    if (e.k === 'visit' || e.k === 'checkout') {
+      const who = whoOf(e);
+      const perRow = seen.get(key)[e.k];
+      if (!perRow.has(who)) {
+        perRow.add(who);
+        if (e.k === 'visit') row.visits += 1;
+        else row.checkouts += 1;
       }
-    } else if (e.k === 'checkout') {
-      row.checkouts += 1;
-      totals.checkouts += 1;
+      if (!seenAll[e.k].has(who)) {
+        seenAll[e.k].add(who);
+        if (e.k === 'visit') totals.visits += 1;
+        else totals.checkouts += 1;
+      }
     } else if (e.k === 'purchase') {
       row.orders += 1;
       totals.orders += 1;
@@ -338,6 +469,8 @@ function recent(limit = 50) {
 /** Test seam: replace the whole ledger. */
 function _setEvents(events) {
   _events = Array.isArray(events) ? events : [];
+  reindex();
+  _version += 1;
 }
 
 load();

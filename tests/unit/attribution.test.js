@@ -8,6 +8,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SITE = path.join(__dirname, '..', '..', 'site');
+// The same fs object the module under test requires, so a spy on it sees the
+// module's own calls (an ESM namespace import would not).
+const nodeFs = createRequire(import.meta.url)('fs');
 
 function freshTmpDir() {
   const dir = path.join(
@@ -288,5 +296,154 @@ describe('the ledger stays small and survives a restart', () => {
     fs.writeFileSync(path.join(dir, 'attribution-events.json'), '{not json', 'utf8');
     const a = await loadStore(dir);
     expect(a.report({ days: 30 }).rows).toEqual([]);
+  });
+});
+
+// A source name is whatever the VISITOR put in the URL, and it is used as a key
+// into the shorthand map. A plain object hands back an inherited value for the
+// names every object has, and neither of those is a string: the function form
+// vanishes in JSON.stringify (a blank row label) and Object.prototype prints as
+// "[object Object]". Anyone who knows the address of /api/track could plant such
+// a row in the owner's report.
+describe('a campaign label is only ever text', () => {
+  it('does not answer with what every object inherits', async () => {
+    const a = await store();
+    for (const name of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+      const t = a.parseTouch({ landing: 'https://x.co/?utm_source=' + name });
+      expect(typeof t.source).toBe('string');
+      // Reported as written (lowercased like every other label), not as the
+      // thing an object of that name would have handed back.
+      expect(t.source).toBe(name.toLowerCase());
+    }
+  });
+
+  it('keeps the row label a label all the way to the report', async () => {
+    const a = await store();
+    a.record({ kind: 'visit', landing: 'https://x.co/?utm_source=constructor', visitor: 'v1' });
+    const row = a.report({ days: 30 }).rows[0];
+    expect(row.source).toBe('constructor');
+    // The report is served as JSON, which is where a function would disappear.
+    expect(JSON.parse(JSON.stringify(row)).source).toBe('constructor');
+  });
+});
+
+describe('what the caps are allowed to throw away', () => {
+  // Visits outnumber sales about a thousand to one. An oldest-first cap over the
+  // whole ledger therefore deletes the ORDERS inside the reporting window first:
+  // revenue falls with nothing to explain it, and the once-per-order guard —
+  // which is a search of the stored events — stops holding, so a bookmarked
+  // confirmation page re-counts the sale.
+  it('never lets a flood of visits evict a sale', async () => {
+    const a = await store({ ATTRIBUTION_MAX_EVENTS: 5 });
+    const ad = 'https://dugri-israel.co.il/?utm_source=ig&utm_medium=paid&utm_campaign=rovakot';
+    a.record({ kind: 'purchase', landing: ad, order_no: 'DG-1001', value: 199 });
+    for (let i = 0; i < 20; i++) a.record({ kind: 'visit', landing: ad, visitor: 'v' + i });
+
+    expect(a.report({ days: 30 }).totals).toMatchObject({ orders: 1, revenue: 199 });
+    // And the guard that stops a reopened confirmation page counting twice is
+    // still standing, because the event it checks against is still there.
+    expect(a.record({ kind: 'purchase', landing: ad, order_no: 'DG-1001', value: 199 })).toBeNull();
+  });
+});
+
+// This instance is capacity-fragile, and an ad burst is precisely when it is
+// under load: the measurement of the traffic must not be what the traffic waits
+// behind.
+describe('measuring costs the page nothing', () => {
+  it('saves the ledger without a synchronous whole-file write', async () => {
+    const dir = freshTmpDir();
+    dirs.push(dir);
+    const spy = vi.spyOn(nodeFs, 'writeFileSync');
+    try {
+      const a = await loadStore(dir, { ATTRIBUTION_SAVE_MS: 5 });
+      a.record({ kind: 'visit', landing: 'https://x.co/?utm_source=ig', visitor: 'v1' });
+      const file = path.join(dir, 'attribution-events.json');
+      await vi.waitFor(() => expect(fs.existsSync(file)).toBe(true), { timeout: 3000 });
+      expect(JSON.parse(fs.readFileSync(file, 'utf8'))).toHaveLength(1);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('does not re-read every stored timestamp on every page view', async () => {
+    const a = await store();
+    const now = new Date().toISOString();
+    a._setEvents(
+      Array.from({ length: 2000 }, (_, i) => ({
+        t: now,
+        k: 'visit',
+        v: 'v' + i,
+        s: 'instagram',
+        m: 'paid',
+        c: 'rovakot',
+        ct: '',
+        tm: '',
+      }))
+    );
+    const spy = vi.spyOn(Date, 'parse');
+    try {
+      a.record({ kind: 'visit', landing: 'https://x.co/?utm_source=ig', visitor: 'v-new' });
+      // A handful would be forgivable; one per stored event is a cost that grows
+      // with the traffic it is measuring.
+      expect(spy.mock.calls.length).toBeLessThan(10);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('the funnel reads like a funnel', () => {
+  // The tile says "visitors". One browser is one visitor however many campaigns
+  // it arrived on — the ROWS split by campaign, the tile does not.
+  it('counts one browser once in the totals, whatever it arrived on', async () => {
+    const a = await store();
+    a.record({
+      kind: 'visit',
+      landing: 'https://x.co/?utm_source=ig&utm_medium=paid&utm_campaign=rovakot',
+      visitor: 'v1',
+    });
+    a.record({ kind: 'visit', landing: 'https://x.co/', visitor: 'v1' });
+    const { rows, totals } = a.report({ days: 30 });
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.visits)).toEqual([1, 1]);
+    expect(totals.visits).toBe(1);
+  });
+
+  // The wizard writes the step into the URL and restores it, so a reload, the
+  // back button or a shared ?step=4 link re-enters the checkout step. Counted per
+  // event against visits counted per visitor, a row could show more checkouts
+  // than visits — a funnel that widens as it descends.
+  it('counts one buyer’s checkout once, however often the step is reopened', async () => {
+    const a = await store();
+    const ad = 'https://dugri-israel.co.il/?utm_source=ig&utm_medium=paid&utm_campaign=rovakot';
+    a.record({ kind: 'visit', landing: ad, visitor: 'v1' });
+    for (let i = 0; i < 4; i++) a.record({ kind: 'checkout', landing: ad, visitor: 'v1' });
+    a.record({ kind: 'checkout', landing: ad, visitor: 'v2' });
+
+    const { rows, totals } = a.report({ days: 30 });
+    expect(rows[0].checkouts).toBe(2);
+    expect(totals.checkouts).toBe(2);
+  });
+});
+
+// The builder writes links that go into paid ads. A destination that does not
+// exist does not 404 — the server's navigation fallback serves the homepage with
+// a 200 — so a wrong option here is money spent on traffic that lands somewhere
+// other than the page the ad promised, with nothing to reveal it.
+describe('the link builder', () => {
+  it('offers only destinations the site actually serves', async () => {
+    const html = fs.readFileSync(path.join(SITE, 'admin-ads.html'), 'utf8');
+    const block = html.match(/<select id="bDest">([\s\S]*?)<\/select>/);
+    expect(block).toBeTruthy();
+    const values = [...block[1].matchAll(/value="([^"]*)"/g)].map((m) => m[1]);
+    expect(values.length).toBeGreaterThan(0);
+    for (const v of values) {
+      const file = v === '/' ? 'index.html' : v.replace(/^\//, '');
+      expect({ dest: v, exists: fs.existsSync(path.join(SITE, file)) }).toEqual({
+        dest: v,
+        exists: true,
+      });
+    }
   });
 });
