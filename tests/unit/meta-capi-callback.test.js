@@ -233,7 +233,22 @@ describe('the sale is reported without the buyer’s browser', () => {
   // these makes every buyer behind it look like the same person — the same
   // reason loopback is dropped, and just as much nobody's address.
   it('drops a private address rather than matching everyone behind it', async () => {
-    for (const priv of ['10.0.0.4', '192.168.1.20', '172.20.5.5', '127.0.0.1', '::1']) {
+    for (const priv of [
+      '10.0.0.4',
+      '192.168.1.20',
+      '172.20.5.5',
+      '127.0.0.1',
+      '::1',
+      // Multicast and reserved space is as much nobody's address as 10/8 is.
+      '224.0.0.1',
+      '240.1.2.3',
+      '255.255.255.255',
+      // FOUR DOTTED NUMBERS IS NOT AN ADDRESS. These match the shape of an IPv4
+      // address and are not one, so no range test can fire on them — without an
+      // octet check they would be forwarded to Meta verbatim as a match key.
+      '999.1.1.1',
+      '256.0.0.1',
+    ]) {
       sent = [];
       // A public address in the header the CLIENT controls, so a fallback to it
       // would be visible — nothing may be sent, not the private one and not the
@@ -653,5 +668,67 @@ describe('a swept report is dated at the sale', () => {
     expect(event.event_time).toBe(Math.floor(Date.parse(paidAt) / 1000));
     // Not the send. Three days apart is well outside any rounding.
     expect(event.event_time).toBeLessThan(Math.floor(Date.now() / 1000) - 2 * 24 * 60 * 60);
+  });
+});
+
+// CLEARING FIVE HUNDRED AND SWEEPING FIFTY LEAVES 450 SALES SCHEDULED BY
+// NOTHING. They are claimable, but the only thing that would come back for them
+// is a later boot, fifty at a time — and the response would not have said so.
+describe('the retry route sweeps everything it cleared', () => {
+  /** A paid order written off as final, without going through a whole payment. */
+  function deadSale(i) {
+    const c = db.createCollection('רותם ' + i, { email: 'r' + i + '@example.com' });
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id, { charged_total: 79 });
+    db.getCollection(c.id).order.meta_report = {
+      at: new Date().toISOString(),
+      permanent: true,
+      error: 'Invalid OAuth access token',
+    };
+    return c.id;
+  }
+
+  it('takes the batch in one pass and says what is left', async () => {
+    const ids = [];
+    for (let i = 0; i < 60; i++) ids.push(deadSale(i));
+    for (const id of ids) expect(db.staleMetaReports()).not.toContain(id);
+
+    const r = await post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, {});
+    expect(r.status).toBe(200);
+    expect(r.body.cleared).toBeGreaterThanOrEqual(60);
+    // The whole cleared batch, not the default cap of fifty.
+    expect(r.body.swept).toBe(r.body.cleared);
+    // And nothing is left sitting claimable with nothing scheduling it.
+    expect(r.body.remaining).toBe(0);
+    await vi.waitFor(() => expect(db.getCollection(ids[0]).order.meta_report.ok).toBe(true), {
+      timeout: 3000,
+    });
+  });
+});
+
+// A RETRY THAT WAITS IS A RETRY THAT CAN FAIL QUIETLY FOR HOURS. The scenario
+// the whole retry mechanism exists for — a token that is expired or scoped
+// wrong — would otherwise run invisibly: nothing on the status card said a
+// single report had ever failed.
+describe('the status card can see the reports failing', () => {
+  it('counts what is reported, failing, waiting and written off', async () => {
+    const status = async () =>
+      (await realFetch(base + '/api/admin/meta-capi/status?key=' + ADMIN_KEY)).json();
+    const before = (await status()).reports;
+    expect(before).toBeTruthy();
+
+    graphFails = 400;
+    graphError = { message: 'Error validating access token', type: 'OAuthException', code: 190 };
+    const c = await payByCard();
+    await settle();
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.tries).toBe(1));
+    graphFails = 0;
+    graphError = {};
+
+    const now = (await status()).reports;
+    expect(now.failing).toBe(before.failing + 1);
+    // The message is what points at the cause: "fix the token" is not something
+    // a bare count can say.
+    expect(now.oldest_error).toBeTruthy();
   });
 });

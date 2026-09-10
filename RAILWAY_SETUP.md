@@ -354,7 +354,16 @@ the HTTP status, because the status does not separate the two: throttling (codes
 scoped wrong (code 190, an `OAuthException`) all arrive as ordinary `4xx`s and
 all get another try later. If something is nevertheless written off wrongly, the
 sales are not lost — `POST /api/admin/meta-capi/retry?key=<ADMIN_KEY>` (optional
-body `{"collection":"<id>"}`) clears the mark and re-runs the sweep.
+body `{"collection":"<id>"}`) clears the mark and re-runs the sweep, and answers
+with `remaining` when there were more than one pass could take.
+
+A report that keeps failing **backs off**: the first retry is immediate (so the
+buyer's own confirmation page can rescue a send that died in the callback), then
+1 minute, 5, 30, 2 hours, and 6 hours from there. Without that, a wrong token
+would re-send every sale in the seven-day window on every boot and every
+confirmation-page reload. `GET /api/admin/meta-capi/status` reports the counts —
+`reports.failing`, `reports.waiting`, `reports.permanent` and the oldest error
+message — so a token that is quietly wrong is visible rather than silent.
 
 **What is kept about the buyer, and for how long.** Meta needs a few things about
 the browser that the callback cannot see (it is a request from PeleCard's
@@ -371,19 +380,25 @@ because plenty of checkouts never get that far, it also expires on its own:
 - a paid order still owed a report drops it **seven days** after capture, which
   is when the retry window closes and the details stop having any use.
 
-A sweep runs shortly after boot and every six hours after that, armed or not, so
-details captured while the API was on still age out once it is off. (Override
-with `META_CTX_UNPAID_TTL_MS`, `META_REPORT_MAX_AGE_MS`, `META_CTX_SWEEP_EVERY_MS`
-— none of which you should need.)
+The sweep that does it runs shortly after boot and every six hours after that,
+armed or not, so details captured while the API was on still age out once it is
+off. Six-hourly means the real worst case is the TTL plus one interval — about
+**30 hours** for an abandoned checkout, not a flat 24. (Override with
+`META_CTX_UNPAID_TTL_MS`, `META_REPORT_MAX_AGE_MS`, `META_CTX_SWEEP_EVERY_MS` —
+none of which you should need.)
 
 The buyer's own order link carries a token that opens her order — that token is
 stripped from every URL before anything is stored or sent, so it cannot reach
-Events Manager. The IP is taken from Cloudflare's `CF-Connecting-IP` — the one
-address in the request a caller cannot choose for themselves, since `trust proxy`
-makes `X-Forwarded-For` anyone's to write — and if that header is missing behind
-a proxy, no IP is sent at all. A private or loopback address is dropped too:
-matching on one would make every buyer behind the same office NAT look like the
-same person.
+Events Manager. The IP is taken from Cloudflare's `CF-Connecting-IP` rather than
+from `X-Forwarded-For`, which `trust proxy` makes anyone's to write, and if that
+header is missing behind a proxy no IP is sent at all. That is a narrower target,
+**not a guarantee**: nothing in the app proves a request came through Cloudflare,
+the Railway origin stays reachable on its own generated host, and a caller who
+goes straight there with a `CF-Connecting-IP` of its choosing is believed. Closing
+that needs an origin-level check, and the peer this process sees is Railway's
+proxy rather than Cloudflare's edge, so it cannot be done in the app. A private or
+loopback address is dropped either way: matching on one would make every buyer
+behind the same office NAT look like the same person.
 
 ### What the token buys, beyond reporting sales
 

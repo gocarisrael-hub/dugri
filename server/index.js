@@ -6827,12 +6827,20 @@ function isNonPublicIp(ip) {
   if (!ip) return true;
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
   if (v4) {
-    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    const o = v4.slice(1, 5).map(Number);
+    // FOUR DOTTED NUMBERS IS NOT AN ADDRESS. The shape alone would pass
+    // 999.1.1.1 and 256.0.0.1 straight through to Meta as a match key, because
+    // no range test below can fire on an octet that cannot exist.
+    if (o.some((n) => n > 255)) return true;
+    const [a, b] = o;
     if (a === 10 || a === 127 || a === 0) return true;
     if (a === 192 && b === 168) return true;
     if (a === 172 && b >= 16 && b <= 31) return true;
     if (a === 169 && b === 254) return true; // link-local / cloud metadata
     if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT
+    // Multicast (224/4) and reserved (240/4, and 255.255.255.255 inside it) are
+    // as much nobody's address as 10/8 is.
+    if (a >= 224) return true;
     return false;
   }
   if (!ip.includes(':')) return true; // not an address at all
@@ -6852,17 +6860,27 @@ function isNonPublicIp(ip) {
 // therefore CHOOSE the address we hand to an ad platform as the buyer's, and
 // have every one of its sales attributed to somebody else's neighbourhood.
 //
-// So this field does not use req.ip when a client could have written it:
-//   • CF-Connecting-IP is preferred, and is the one address here a client
-//     cannot choose — Cloudflare sets it itself and overwrites whatever arrived
-//     under that name. In front of this site that header is always present;
+// So this field prefers the header a caller is least likely to be able to set:
+//   • CF-Connecting-IP. Cloudflare writes it itself and overwrites whatever
+//     arrived under that name, so for a request that came through Cloudflare —
+//     which is every request to the site's own domain — it is the real client;
 //   • with no Cloudflare header AND no X-Forwarded-For, req.ip is the socket
 //     peer, which nobody but the peer can decide. That is the local run;
 //   • an X-Forwarded-For with no CF-Connecting-IP means SOMETHING proxied this
 //     and we cannot tell a proxy's word from a client's. Send nothing. Meta
 //     always has external_id to match on, so the sale still counts.
 //
-// Narrowing `trust proxy` from `true` to a hop count is the complete fix and is
+// WHAT THIS IS NOT: proof. Nothing here verifies the request came through
+// Cloudflare — the origin stays reachable on its own generated host, and a caller
+// that posts pay/init straight there with a CF-Connecting-IP of its choosing and
+// no X-Forwarded-For is believed. Verifying it properly means an origin-level
+// check (Cloudflare's own IP ranges against the peer, or a shared secret header),
+// and the peer this process sees is Railway's proxy, not Cloudflare's edge, so
+// that check cannot be written here. This narrows the spoofable surface from
+// "any request" to "a request that skips the front door"; it does not close it,
+// and neither this comment nor RAILWAY_SETUP.md claims it does.
+//
+// Narrowing `trust proxy` from `true` to a hop count is the deeper fix and is
 // not this function's to make: it also governs the rate limiters and the
 // abuse-facing client key, and getting the count wrong there breaks those.
 function clientIpForMeta(req) {
@@ -7005,13 +7023,13 @@ function isPermanentMetaError(r) {
 // and never loads a confirmation page) NOTHING else would ever come back for it.
 //
 // Delayed and unref'd so it never delays a boot or holds the process open.
-function sweepUnfinishedMetaReports() {
+function sweepUnfinishedMetaReports({ limit = 50 } = {}) {
   if (!metaCapiArmed()) return 0;
   // THE WHOLE BATCH IS CLAIMED UNDER ONE WRITE. Letting sendPurchaseToMeta take
   // its own claim per order would be up to fifty whole-store writes back to
   // back — hundreds of milliseconds each at real order counts — twenty seconds
   // after boot, on a box that is already answering requests.
-  const ids = db.claimMetaReports(db.staleMetaReports());
+  const ids = db.claimMetaReports(db.staleMetaReports({ limit }));
   for (const id of ids) {
     try {
       sendPurchaseToMeta(id, null, { preclaimed: true });
@@ -7124,6 +7142,12 @@ app.get('/api/admin/meta-capi/status', (req, res) => {
     test_mode: Boolean(process.env.META_CAPI_TEST_CODE),
     contact_matching: Boolean(settings.get('analytics', 'meta_capi_contact')),
     graph_version: metaCapi.GRAPH_VERSION,
+    // A failed report now WAITS before trying again, which means it can be
+    // quietly failing for hours. Without these the scenario the retry logic was
+    // built for — a token that is expired or scoped wrong — runs invisibly:
+    // `failing` with a plausible `oldest_error` is the owner's signal to look at
+    // the token, and `permanent` is the signal to call /retry after fixing it.
+    reports: db.metaReportCounts(),
   });
 });
 
@@ -7233,7 +7257,18 @@ app.get('/api/admin/ads/meta', async (req, res) => {
 app.post('/api/admin/meta-capi/retry', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const cleared = db.clearPermanentMetaReports({ id: String((req.body || {}).collection || '') });
-  res.json({ cleared: cleared.length, ids: cleared, swept: sweepUnfinishedMetaReports() });
+  // SWEEP AS MANY AS WE CLEARED. The default sweep cap is fifty and the clear cap
+  // is five hundred, so taking the default here would hand back 450 sales that
+  // are claimable but scheduled by nothing — they would trickle out fifty at a
+  // time on later boots, and the response would not have said so. `remaining` is
+  // what the cap did leave, so the owner knows to call again rather than guess.
+  const swept = sweepUnfinishedMetaReports({ limit: Math.max(50, cleared.length) });
+  res.json({
+    cleared: cleared.length,
+    ids: cleared,
+    swept,
+    remaining: db.staleMetaReports({ limit: Number.MAX_SAFE_INTEGER }).length,
+  });
 });
 
 app.get('/api/admin/ads', (req, res) => {

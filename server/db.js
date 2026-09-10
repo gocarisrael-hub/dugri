@@ -308,8 +308,18 @@ const META_REPORT_STALE_MS = Number(process.env.META_REPORT_STALE_MS || 5 * 60 *
 // How long a report is still worth sending at all. Meta rejects a Purchase whose
 // event_time is more than seven days old, so past this the retry will never go
 // out — and the buyer's device details, which exist for nothing else, stop
-// having any purpose. ONE constant for both the retry window and the retention
-// window, so they cannot drift apart and strand data with nothing left to use it.
+// having any purpose.
+//
+// The same number is used for both windows, but they are NOT the same window:
+// staleMetaReports ages an order from `paid_at`, sweepMetaCtx ages the details
+// from `ctx.seen_at`, which was captured at pay/init. seen_at is always the
+// earlier of the two, so there is a sliver — from seen_at+7d to paid_at+7d — in
+// which a report is still sweepable but its device details are already gone, and
+// the retry goes out with no ip/ua/fbp/fbc and a fallback source_url. That
+// sliver is exactly the gap between opening the card form and the charge
+// landing, which a payment session caps at twenty minutes. It is a weaker match
+// on a sale at the very edge of the window, not a lost one: external_id is
+// always present.
 const META_REPORT_MAX_AGE_MS = Number(
   process.env.META_REPORT_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000
 );
@@ -321,11 +331,32 @@ const META_REPORT_MAX_AGE_MS = Number(
 // and a user-agent in the store forever.
 const META_CTX_UNPAID_TTL_MS = Number(process.env.META_CTX_UNPAID_TTL_MS || 24 * 60 * 60 * 1000);
 
+// HOW LONG A FAILED REPORT WAITS BEFORE THE NEXT TRY, by attempt number.
+//
+// The first retry is immediate, and deliberately: the commonest transient
+// failure is a send that died inside the payment callback, and the buyer's own
+// confirmation page — loading seconds later, and knowing things the callback did
+// not — is the best-placed thing to fix it. Everything after that backs off,
+// because the failure most likely to REPEAT is a token that is expired or scoped
+// wrong, and without a brake every paid order in the seven-day window would be
+// re-sent on every boot and on every confirmation-page reload, at two
+// whole-store writes an attempt. Capped rather than unbounded so a fixed token
+// still recovers on its own within hours.
+const META_RETRY_BACKOFF_MS = [0, 60 * 1000, 5 * 60 * 1000, 30 * 60 * 1000, 2 * 3600 * 1000];
+const META_RETRY_BACKOFF_MAX_MS = 6 * 3600 * 1000;
+const metaRetryDelay = (tries) => {
+  const wait = META_RETRY_BACKOFF_MS[Math.max(0, tries - 1)];
+  return wait === undefined ? META_RETRY_BACKOFF_MAX_MS : wait;
+};
+
 // May this order's Meta report be (re)claimed? Not once it has finally succeeded
-// or finally failed, and not while a send started moments ago is still running.
+// or finally failed, not while a send started moments ago is still running, and
+// not before the backoff from the last failure is up.
 function claimable(report, now = Date.now()) {
   if (!report) return true;
   if (report.ok || report.permanent) return false;
+  const next = report.next_at ? Date.parse(report.next_at) : NaN;
+  if (Number.isFinite(next) && now < next) return false;
   if (!report.at) return true;
   const at = Date.parse(report.at);
   return !Number.isFinite(at) || now - at >= META_REPORT_STALE_MS;
@@ -652,9 +683,20 @@ backfillOrderNumbers();
 //
 // The current code reads such an order as never-claimed (claimable(undefined) is
 // true), so one reload of that buyer's confirmation page would send Meta a sale
-// it already has — deduped inside Meta's 48-hour event_id window, double-counted
-// outside it. The old stamp only ever existed on a successful send, so it is
-// carried across as a finished, successful report and never sent again.
+// it already has.
+//
+// AND THE STAMP CANNOT SAY WHETHER META EVER ANSWERED. That build set
+// meta_reported_at BEFORE the request left and removed it again from the .then
+// and the .catch, so a surviving stamp means either "Meta took it" or "the
+// process died between the claim and the answer" — which is the mid-flight case
+// the current design exists to recover. Carrying it across as a SUCCESS would
+// therefore bury exactly those sales: claimable would refuse them for good, and
+// nothing would ever say so.
+//
+// So it is carried across as a TRANSIENT failure instead — an outcome nobody
+// knows, handed to the sweep to decide. The cost of guessing wrong that way is a
+// duplicate send, which Meta deduplicates on event_id; the cost of guessing
+// wrong the other way is a sale silently never reported.
 //
 // A no-op (and no write) on a store that never saw that build, which is every
 // store we run. Cheap insurance, not a live bug.
@@ -663,7 +705,7 @@ function migrateMetaReports() {
   for (const c of _db.collections) {
     const o = c && c.order;
     if (!o || !o.meta_reported_at || o.meta_report) continue;
-    o.meta_report = { at: o.meta_reported_at, ok: true };
+    o.meta_report = { error: 'migrated: claim of unknown outcome' };
     delete o.meta_reported_at;
     n += 1;
   }
@@ -2373,7 +2415,8 @@ const db = {
       c.order.pelecard.meta_ctx = meta.metaCtx;
     }
     if (meta.metaClaim && claimable(c.order.meta_report)) {
-      c.order.meta_report = { at: nowIso() };
+      const tries = Number((c.order.meta_report && c.order.meta_report.tries) || 0);
+      c.order.meta_report = { at: nowIso(), ...(tries ? { tries } : {}) };
     }
     // Mark the matched pay session resolved so it's no longer "in flight".
     if (meta.token && c.order.pelecard && Array.isArray(c.order.pelecard.sessions)) {
@@ -2414,7 +2457,11 @@ const db = {
     const c = this.getCollection(id);
     if (!c || !c.order || !c.order.paid) return false;
     if (!claimable(c.order.meta_report)) return false;
-    c.order.meta_report = { at: nowIso() };
+    // THE ATTEMPT COUNT SURVIVES THE CLAIM. It is the only thing that knows this
+    // order has failed before, and a claim that reset it to zero would hand the
+    // backoff a fresh start on every attempt — which is no backoff at all.
+    const tries = Number((c.order.meta_report && c.order.meta_report.tries) || 0);
+    c.order.meta_report = { at: nowIso(), ...(tries ? { tries } : {}) };
     if (save) saveDb();
     return true;
   },
@@ -2503,10 +2550,53 @@ const db = {
     // fallback, or by the sweep at the next boot. The device details STAY, since
     // that retry has no other way to get them — but only until sweepMetaCtx ages
     // them out with the retry window itself.
-    else c.order.meta_report = { error: String(error || '') };
+    //
+    // `tries` and `next_at` are the brake. The first retry is free, so the
+    // confirmation page can still rescue a send that died in the callback; after
+    // that the wait grows, which is what stops a wrong token from re-sending
+    // every sale in the window on every boot and every page load.
+    else {
+      const tries = Number((c.order.meta_report && c.order.meta_report.tries) || 0) + 1;
+      const wait = metaRetryDelay(tries);
+      c.order.meta_report = {
+        error: String(error || ''),
+        tries,
+        ...(wait ? { next_at: new Date(Date.now() + wait).toISOString() } : {}),
+      };
+    }
     if (ok || permanent) dropMetaCtx(c);
     saveDb();
     return true;
+  },
+
+  // WHAT THE META REPORTS ARE ACTUALLY DOING, in one pass. A retry that backs
+  // off is a retry that can be quietly failing for hours, so the admin status
+  // card needs to be able to say so — otherwise the one scenario this whole
+  // mechanism was built for (a token that is wrong) runs invisibly.
+  metaReportCounts({ now = Date.now() } = {}) {
+    const n = { reported: 0, failing: 0, permanent: 0, in_flight: 0, waiting: 0, oldest_error: '' };
+    let oldest = Infinity;
+    for (const c of _db.collections) {
+      const r = c.order && c.order.paid && c.order.meta_report;
+      if (!r) continue;
+      if (r.ok) n.reported += 1;
+      else if (r.permanent) n.permanent += 1;
+      else if (r.at && !claimable(r, now)) n.in_flight += 1;
+      else {
+        n.failing += 1;
+        if (!claimable(r, now)) n.waiting += 1;
+        // The message from the oldest failing report THAT HAS ONE: how long it
+        // has been broken, and why. A report can legitimately carry an empty
+        // error (a bare `{ error: '' }` written by an older path), and letting
+        // one of those win would blank out the only diagnostic on the card.
+        const paidAt = Date.parse(c.order.paid_at || c.created_at || '');
+        if (r.error && Number.isFinite(paidAt) && paidAt < oldest) {
+          oldest = paidAt;
+          n.oldest_error = String(r.error);
+        }
+      }
+    }
+    return n;
   },
 
   // Paid orders whose report was claimed and never finished — a send that died
@@ -2519,8 +2609,11 @@ const db = {
         const r = c.order.meta_report;
         // Never claimed at all is NOT stale: it is an order from before the API
         // was armed, and sweeping those would report the whole back catalogue.
-        if (!r || r.ok || r.permanent) return false;
-        if (r.at && now - Date.parse(r.at) < META_REPORT_STALE_MS) return false;
+        if (!r) return false;
+        // Exactly what claimMetaReport will accept — including the backoff. Two
+        // separate readings of "may be claimed" is how a sweep ends up handing
+        // ids to a claim that refuses every one of them.
+        if (!claimable(r, now)) return false;
         const paidAt = Date.parse(c.order.paid_at || c.created_at || '');
         return Number.isFinite(paidAt) && now - paidAt <= maxAgeMs;
       })

@@ -201,21 +201,132 @@ describe('a report written off as final can be handed back', () => {
 // code reads such an order as never-claimed, so one reload of the confirmation
 // page would send Meta a sale it already has.
 describe('an order stamped by the old build is not reported twice', () => {
-  it('carries the old flag across as a finished report', () => {
+  it('carries the old flag across as an outcome NOBODY KNOWS, not as a success', () => {
     const id = startedCheckout({ paid: true });
     const stamped = new Date(Date.now() - 3 * DAY).toISOString();
     delete db.getCollection(id).order.meta_report;
     db.getCollection(id).order.meta_reported_at = stamped;
 
     expect(db.migrateMetaReports()).toBeGreaterThanOrEqual(1);
-    expect(db.getCollection(id).order.meta_report).toEqual({ at: stamped, ok: true });
+    const r = db.getCollection(id).order.meta_report;
     expect(db.getCollection(id).order.meta_reported_at).toBeUndefined();
-    // Which is what stops the second send.
-    expect(db.claimMetaReport(id)).toBe(false);
-    expect(db.staleMetaReports()).not.toContain(id);
-    // And it is idempotent: nothing left to do, nothing written.
+
+    // NOT { ok: true }. That build stamped the order BEFORE the request left and
+    // unstamped it from the .then and the .catch alike, so a surviving stamp
+    // means "Meta took it" OR "the process died mid-flight" — and the stamp
+    // cannot tell which. Recording it as a success would bury every one of the
+    // second kind: claimable would refuse them for good and nothing would say so.
+    expect(r.ok).toBeUndefined();
+    expect(r.permanent).toBeUndefined();
+    expect(r.error).toContain('unknown outcome');
+    // So the sweep gets to decide. A duplicate is deduplicated by Meta on
+    // event_id; a sale silently never reported is not recoverable at all.
+    expect(db.staleMetaReports()).toContain(id);
+    expect(db.claimMetaReport(id)).toBe(true);
+  });
+
+  it('is idempotent — nothing left to do, nothing written', () => {
+    const id = startedCheckout({ paid: true });
+    db.getCollection(id).order.meta_reported_at = new Date().toISOString();
+    expect(db.migrateMetaReports()).toBeGreaterThanOrEqual(1);
     const write = vi.spyOn(fs, 'writeFileSync');
     expect(db.migrateMetaReports()).toBe(0);
     expect(write).not.toHaveBeenCalled();
+  });
+});
+
+// A FAILURE THAT REPEATS MUST NOT REPEAT AT FULL SPEED.
+//
+// Treating an expired token as transient is right — it is fixable, and writing
+// those sales off loses them. But the transient record carries no `at`, so it is
+// claimable again the instant it is written, and the failure most likely to
+// repeat is exactly the one this is for. Without a brake, every paid order in
+// the seven-day window is re-sent on every boot and on every confirmation-page
+// reload, at two whole-store writes an attempt.
+describe('a report that keeps failing waits longer each time', () => {
+  const fail = (id) => {
+    db.claimMetaReport(id);
+    db.finishMetaReport(id, { error: 'Error validating access token' });
+    return db.getCollection(id).order.meta_report;
+  };
+
+  it('lets the FIRST retry go immediately, so the confirmation page can rescue it', () => {
+    const id = startedCheckout({ paid: true });
+    const r = fail(id);
+    // The commonest transient failure is a send that died inside the payment
+    // callback; the buyer's own confirmation page loads seconds later and knows
+    // things the callback did not. Delaying that one would help nobody.
+    expect(r.tries).toBe(1);
+    expect(r.next_at).toBeUndefined();
+    expect(db.claimMetaReport(id)).toBe(true);
+  });
+
+  it('makes every attempt after that wait, and wait longer', () => {
+    const id = startedCheckout({ paid: true });
+    const waits = [];
+    for (let i = 0; i < 6; i++) {
+      const r = fail(id);
+      expect(r.tries).toBe(i + 1);
+      if (r.next_at) waits.push(Date.parse(r.next_at) - Date.now());
+      // Claimed by nothing while the backoff is running — not the sweep, and not
+      // a reload of the confirmation page.
+      if (r.next_at) {
+        expect(db.staleMetaReports()).not.toContain(id);
+        expect(db.claimMetaReport(id)).toBe(false);
+      }
+      db.getCollection(id).order.meta_report.next_at = new Date(Date.now() - 1000).toISOString();
+    }
+    expect(waits).toHaveLength(5);
+    for (let i = 1; i < waits.length; i++) expect(waits[i]).toBeGreaterThanOrEqual(waits[i - 1]);
+    // Capped, not unbounded: a token fixed at lunchtime still recovers the same
+    // day rather than waiting a week.
+    expect(waits[waits.length - 1]).toBeLessThanOrEqual(6 * HOUR + 1000);
+  });
+
+  it('lets it through again the moment the wait is up', () => {
+    const id = startedCheckout({ paid: true });
+    fail(id);
+    fail(id);
+    expect(db.getCollection(id).order.meta_report.next_at).toBeTruthy();
+    expect(db.staleMetaReports()).not.toContain(id);
+    db.getCollection(id).order.meta_report.next_at = new Date(Date.now() - 1).toISOString();
+    expect(db.staleMetaReports()).toContain(id);
+    expect(db.claimMetaReport(id)).toBe(true);
+  });
+
+  it('starts the count over once a send finally succeeds', () => {
+    const id = startedCheckout({ paid: true });
+    fail(id);
+    db.claimMetaReport(id);
+    db.finishMetaReport(id, { ok: true });
+    expect(db.getCollection(id).order.meta_report).toEqual({
+      at: expect.any(String),
+      ok: true,
+    });
+  });
+
+  // A retry that waits is a retry that can be failing quietly for hours. The
+  // admin status card has to be able to say so, or the one scenario this whole
+  // mechanism was built for runs invisibly.
+  it('is visible in the counts the admin status card reads', () => {
+    const before = db.metaReportCounts();
+    const bad = startedCheckout({ paid: true });
+    fail(bad);
+    fail(bad);
+    const good = startedCheckout({ paid: true });
+    db.claimMetaReport(good);
+    db.finishMetaReport(good, { ok: true });
+    const dead = startedCheckout({ paid: true });
+    db.claimMetaReport(dead);
+    db.finishMetaReport(dead, { permanent: true, error: 'Invalid parameter' });
+
+    const now = db.metaReportCounts();
+    expect(now.failing).toBe(before.failing + 1);
+    expect(now.waiting).toBeGreaterThanOrEqual(1);
+    expect(now.reported).toBe(before.reported + 1);
+    expect(now.permanent).toBe(before.permanent + 1);
+    // The message is what points at the cause. "Fix the token" is not something
+    // a bare count can tell her.
+    expect(now.oldest_error).toBeTruthy();
   });
 });
