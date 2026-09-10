@@ -317,9 +317,12 @@ const META_REPORT_STALE_MS = Number(process.env.META_REPORT_STALE_MS || 5 * 60 *
 // which a report is still sweepable but its device details are already gone, and
 // the retry goes out with no ip/ua/fbp/fbc and a fallback source_url. That
 // sliver is exactly the gap between opening the card form and the charge
-// landing, which a payment session caps at twenty minutes. It is a weaker match
-// on a sale at the very edge of the window, not a lost one: external_id is
-// always present.
+// landing, which is minutes for anyone who actually pays. Nothing CAPS it,
+// though: SESSION_TTL_MS bounds only the free-coupon in-flight guard, and the
+// PeleCard callback finds its session by token with no age check at all, so a
+// callback that arrives hours late is still honoured and the sliver is however
+// long that gap was. It is a weaker match on a sale at the very edge of the
+// window, never a lost one: external_id is always present.
 const META_REPORT_MAX_AGE_MS = Number(
   process.env.META_REPORT_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000
 );
@@ -341,7 +344,9 @@ const META_CTX_UNPAID_TTL_MS = Number(process.env.META_CTX_UNPAID_TTL_MS || 24 *
 // wrong, and without a brake every paid order in the seven-day window would be
 // re-sent on every boot and on every confirmation-page reload, at two
 // whole-store writes an attempt. Capped rather than unbounded so a fixed token
-// still recovers on its own within hours.
+// still recovers on its own within hours — which is a promise only because the
+// sweep is armed on an interval, not just at boot (see armMetaCapiTimers): a
+// backoff nothing wakes up for is not a backoff, it is an abandonment.
 const META_RETRY_BACKOFF_MS = [0, 60 * 1000, 5 * 60 * 1000, 30 * 60 * 1000, 2 * 3600 * 1000];
 const META_RETRY_BACKOFF_MAX_MS = 6 * 3600 * 1000;
 const metaRetryDelay = (tries) => {
@@ -695,8 +700,12 @@ backfillOrderNumbers();
 //
 // So it is carried across as a TRANSIENT failure instead — an outcome nobody
 // knows, handed to the sweep to decide. The cost of guessing wrong that way is a
-// duplicate send, which Meta deduplicates on event_id; the cost of guessing
-// wrong the other way is a sale silently never reported.
+// duplicate send, deduplicated inside Meta's 48-hour event_id window and DOUBLE
+// COUNTED outside it — event_id is the order number, which is stable forever, and
+// the sweep will revive an order paid up to seven days ago whose original send
+// may have been more than 48 hours before that. The cost of guessing wrong the
+// other way is a sale silently never reported at all, which nothing can recover.
+// A double count somebody can see beats a loss nobody can.
 //
 // A no-op (and no write) on a store that never saw that build, which is every
 // store we run. Cheap insurance, not a live bug.
@@ -2574,6 +2583,9 @@ const db = {
   // card needs to be able to say so — otherwise the one scenario this whole
   // mechanism was built for (a token that is wrong) runs invisibly.
   metaReportCounts({ now = Date.now() } = {}) {
+    // `waiting` is a SUBSET of `failing`, not a category beside it: the ones
+    // whose backoff has not expired yet. Reading them as separate totals turns
+    // twelve broken reports into twenty-four.
     const n = { reported: 0, failing: 0, permanent: 0, in_flight: 0, waiting: 0, oldest_error: '' };
     let oldest = Infinity;
     for (const c of _db.collections) {

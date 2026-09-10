@@ -361,9 +361,20 @@ A report that keeps failing **backs off**: the first retry is immediate (so the
 buyer's own confirmation page can rescue a send that died in the callback), then
 1 minute, 5, 30, 2 hours, and 6 hours from there. Without that, a wrong token
 would re-send every sale in the seven-day window on every boot and every
-confirmation-page reload. `GET /api/admin/meta-capi/status` reports the counts —
-`reports.failing`, `reports.waiting`, `reports.permanent` and the oldest error
-message — so a token that is quietly wrong is visible rather than silent.
+confirmation-page reload. The sweep that honours those waits runs at boot **and
+hourly after it** — a backoff nothing wakes up for would just be an abandonment,
+since deploys here are manual and a box can run untouched for days. A pass takes
+at most 100 orders and drains a few at a time, so a large catch-up cannot arrive
+as one block of writes or time itself out against its own connection pool;
+whatever is left comes back on the next pass, and `/retry` reports it as
+`remaining`.
+
+`GET /api/admin/meta-capi/status?key=<ADMIN_KEY>` reports the counts, so a token
+that is quietly wrong is visible rather than silent: `reports.failing` (how many
+are owed a retry — **`reports.waiting` is the subset of those still inside their
+backoff**, not a separate group), `reports.permanent` (written off, what `/retry`
+clears), `reports.reported`, `reports.in_flight`, and `reports.oldest_error`,
+which is the message from the oldest one still failing.
 
 **What is kept about the buyer, and for how long.** Meta needs a few things about
 the browser that the callback cannot see (it is a request from PeleCard's

@@ -42,6 +42,7 @@ let nextGetTx;
 let graphFails; // http status Meta should answer with (0 = accept)
 let graphError; // the error object inside that answer (code/type/message)
 let graphThrows; // make the request to Meta reject outright (dns, socket)
+let graphHold; // () => Promise held open, so "how many are in flight" is visible
 
 function jsonRes(obj) {
   return { ok: true, status: 200, json: async () => obj };
@@ -75,6 +76,7 @@ beforeAll(async () => {
     const u = String(url);
     if (u.includes('graph.facebook.com')) {
       sent.push({ url: u, body: JSON.parse(opts.body) });
+      if (graphHold) await graphHold();
       if (graphThrows) throw new Error('getaddrinfo ENOTFOUND graph.facebook.com');
       if (graphFails) {
         return {
@@ -114,6 +116,7 @@ beforeEach(() => {
   graphFails = 0;
   graphError = {};
   graphThrows = false;
+  graphHold = null;
 });
 
 async function post(urlPath, body, headers = {}) {
@@ -730,5 +733,123 @@ describe('the status card can see the reports failing', () => {
     // The message is what points at the cause: "fix the token" is not something
     // a bare count can say.
     expect(now.oldest_error).toBeTruthy();
+  });
+});
+
+// A BACKOFF NOTHING WAKES UP FOR IS NOT A BACKOFF.
+//
+// The longest wait between retries is six hours, and the report sweep used to be
+// armed with a ONE-SHOT boot timer. On a box that runs untouched for days —
+// deploys here are manual — the only things that could re-claim a waiting report
+// were the next boot and a buyer reloading their own confirmation page, so a
+// handful of orders parked at a six-hour backoff would sit there until the
+// seven-day age gate dropped them for good.
+describe('the sweep comes back on its own', () => {
+  it('arms a REPEATING trigger for the report sweep, not just a boot one', () => {
+    const timeouts = [];
+    const intervals = [];
+    const stub = (list) => (fn, ms) => {
+      list.push({ fn, ms });
+      return { unref() {} };
+    };
+    app.locals.metaCapiArmTimers({
+      setTimeoutFn: stub(timeouts),
+      setIntervalFn: stub(intervals),
+    });
+
+    // Both sweeps get a boot timer AND a repeat. The report one is the addition:
+    // it is what honours next_at on a long-lived box.
+    expect(timeouts.map((t) => t.fn)).toContain(app.locals.metaCapiSweep);
+    const repeat = intervals.find((t) => t.fn === app.locals.metaCapiSweep);
+    expect(repeat).toBeTruthy();
+    // Comfortably inside the longest backoff (6h), or a report could still be
+    // dropped by the seven-day age gate while nominally "waiting".
+    expect(repeat.ms).toBeGreaterThan(0);
+    expect(repeat.ms).toBeLessThanOrEqual(6 * 60 * 60 * 1000);
+    expect(intervals.map((t) => t.fn)).toContain(app.locals.metaCtxSweep);
+  });
+
+  it('really does run the sweep when that trigger fires', async () => {
+    const c = await payByCard();
+    await settle();
+    const stored = db.getCollection(c.id);
+    stored.order.meta_report = { at: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+    expect(db.staleMetaReports()).toContain(c.id);
+
+    const intervals = [];
+    app.locals.metaCapiArmTimers({
+      setTimeoutFn: () => ({ unref() {} }),
+      setIntervalFn: (fn) => {
+        intervals.push(fn);
+        return { unref() {} };
+      },
+    });
+    const before = sent.length;
+    for (const fn of intervals) fn();
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before));
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.ok).toBe(true));
+  });
+});
+
+// FIRING FIVE HUNDRED SENDS IN ONE LOOP IS TWO BUGS, NOT A BIG BATCH.
+//
+// Every send's six-second abort timer is armed when send() is called, before any
+// of them has a socket, so anything queued behind the connection pool aborts as
+// a timeout WE caused — a transient failure that burns a `tries` increment and
+// pushes a healthy order into backoff. And each response that lands writes the
+// whole store.
+describe('a big catch-up is drained, not dumped', () => {
+  function deadSale(i) {
+    const c = db.createCollection('בבת אחת ' + i, { email: 'b' + i + '@example.com' });
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id, { charged_total: 79 });
+    db.getCollection(c.id).order.meta_report = {
+      at: new Date().toISOString(),
+      permanent: true,
+      error: 'Invalid OAuth access token',
+    };
+    return c.id;
+  }
+
+  it('never has the whole batch in flight at once', async () => {
+    const ids = [];
+    for (let i = 0; i < 40; i++) ids.push(deadSale(i));
+
+    // Hold every request open until we let go, so "in flight" is observable.
+    let inFlight = 0;
+    let peak = 0;
+    const release = [];
+    graphHold = () =>
+      new Promise((resolve) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        release.push(() => {
+          inFlight -= 1;
+          resolve();
+        });
+      });
+    try {
+      const r = await post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, {});
+      expect(r.body.cleared).toBeGreaterThanOrEqual(40);
+      await vi.waitFor(() => expect(release.length).toBeGreaterThan(0));
+      // A few lanes, not forty. The exact number is a tuning knob; that it is
+      // BOUNDED and far below the batch is the property under test.
+      await vi.waitFor(() => expect(peak).toBeGreaterThan(0));
+      expect(peak).toBeLessThan(10);
+      while (release.length) release.shift()();
+    } finally {
+      graphHold = null;
+      while (release.length) release.shift()();
+    }
+  });
+
+  it('caps how much one pass takes, and says what is left over', async () => {
+    for (let i = 0; i < 130; i++) deadSale(1000 + i);
+    const r = await post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, {});
+    expect(r.body.cleared).toBeGreaterThanOrEqual(130);
+    // The clear cap is 500 and a sweep pass is capped far below it, so the
+    // response must not imply everything went out.
+    expect(r.body.swept).toBeLessThanOrEqual(100);
+    expect(r.body.remaining).toBe(r.body.cleared - r.body.swept);
   });
 });

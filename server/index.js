@@ -6873,12 +6873,15 @@ function isNonPublicIp(ip) {
 // WHAT THIS IS NOT: proof. Nothing here verifies the request came through
 // Cloudflare — the origin stays reachable on its own generated host, and a caller
 // that posts pay/init straight there with a CF-Connecting-IP of its choosing and
-// no X-Forwarded-For is believed. Verifying it properly means an origin-level
-// check (Cloudflare's own IP ranges against the peer, or a shared secret header),
-// and the peer this process sees is Railway's proxy, not Cloudflare's edge, so
-// that check cannot be written here. This narrows the spoofable surface from
-// "any request" to "a request that skips the front door"; it does not close it,
-// and neither this comment nor RAILWAY_SETUP.md claims it does.
+// no X-Forwarded-For is believed. Verifying it properly means checking that the
+// hop which handed us the request really was Cloudflare, and the peer this
+// process sees is Railway's proxy rather than Cloudflare's edge — so the check
+// cannot be written WITHOUT the trust-proxy change below. With a hop count set,
+// the RIGHTMOST X-Forwarded-For entry is the one the last trusted hop appended,
+// which is Cloudflare's edge address, and that is range-checkable. Until then
+// this narrows the spoofable surface from "any request" to "a request that skips
+// the front door"; it does not close it, and neither this comment nor
+// RAILWAY_SETUP.md claims it does.
 //
 // Narrowing `trust proxy` from `true` to a hop count is the deeper fix and is
 // not this function's to make: it also governs the rate limiters and the
@@ -6957,7 +6960,11 @@ function sendPurchaseToMeta(collectionId, ctx = null, { preclaimed = false } = {
     at: Date.parse(c.order.paid_at) || Date.now(),
     contact,
   });
-  metaCapi
+  // RETURNED, not fired and forgotten. Nothing on the payment path waits for
+  // this — the whole point is that a charge never blocks on an ad platform — but
+  // the sweep has to be able to pace itself, and it cannot pace what it cannot
+  // await.
+  return metaCapi
     .send({ pixelId, token, testCode: process.env.META_CAPI_TEST_CODE || '', event })
     .then((r) => {
       if (r.skipped) return;
@@ -7023,20 +7030,53 @@ function isPermanentMetaError(r) {
 // and never loads a confirmation page) NOTHING else would ever come back for it.
 //
 // Delayed and unref'd so it never delays a boot or holds the process open.
+const META_SWEEP_MAX = Number(process.env.META_CAPI_SWEEP_MAX || 100);
+const META_SWEEP_CONCURRENCY = Number(process.env.META_CAPI_SWEEP_CONCURRENCY || 4);
+
+// A FEW AT A TIME, NOT ALL OF THEM AT ONCE.
+//
+// Firing the whole batch in one synchronous loop is wrong twice over. Each
+// send's six-second abort timer is armed when send() is CALLED, before any of
+// them has a socket, so everything queued behind the connection pool can abort
+// as a self-inflicted timeout — a transient failure that burns a `tries`
+// increment and pushes a perfectly healthy order into backoff. And every
+// response that lands writes the whole store, so a big batch is that many
+// synchronous full-file writes back to back.
+//
+// Draining a few in flight at a time fixes both: nothing waits on the pool long
+// enough to time out on us, and the writes are spread across the drain instead
+// of arriving as one block. It does not make them fewer — that would mean
+// collecting outcomes and finishing them in one write, which means the send path
+// no longer recording its own result — so the batch is capped as well.
+function drainMetaReports(ids) {
+  const queue = ids.slice();
+  const worker = async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      try {
+        await sendPurchaseToMeta(id, null, { preclaimed: true });
+      } catch (e) {
+        console.error('[meta-capi] sweep ' + id + ': ' + ((e && e.message) || e));
+      }
+    }
+  };
+  const lanes = Math.max(1, Math.min(META_SWEEP_CONCURRENCY, queue.length));
+  return Promise.all(Array.from({ length: lanes }, worker));
+}
+
 function sweepUnfinishedMetaReports({ limit = 50 } = {}) {
   if (!metaCapiArmed()) return 0;
   // THE WHOLE BATCH IS CLAIMED UNDER ONE WRITE. Letting sendPurchaseToMeta take
-  // its own claim per order would be up to fifty whole-store writes back to
-  // back — hundreds of milliseconds each at real order counts — twenty seconds
-  // after boot, on a box that is already answering requests.
-  const ids = db.claimMetaReports(db.staleMetaReports({ limit }));
-  for (const id of ids) {
-    try {
-      sendPurchaseToMeta(id, null, { preclaimed: true });
-    } catch (e) {
-      console.error('[meta-capi] sweep ' + id + ': ' + ((e && e.message) || e));
-    }
-  }
+  // its own claim per order would be one whole-store write per order — hundreds
+  // of milliseconds each at real order counts — twenty seconds after boot, on a
+  // box that is already answering requests. The cap is what bounds the rest: the
+  // finishes cannot be batched the same way, so a pass is never allowed to be
+  // enormous however many the caller asks for. Whatever is left comes back on
+  // the next pass, and the retry route reports it as `remaining`.
+  const ids = db.claimMetaReports(db.staleMetaReports({ limit: Math.min(limit, META_SWEEP_MAX) }));
+  drainMetaReports(ids).catch((e) =>
+    console.error('[meta-capi] sweep: ' + ((e && e.message) || e))
+  );
   if (ids.length)
     console.log('[meta-capi] sweep: retrying ' + ids.length + ' unfinished report(s)');
   return ids.length;
@@ -7055,16 +7095,40 @@ function sweepMetaCtx() {
   if (n) console.log('[meta-capi] dropped stored device details for ' + n + ' order(s)');
   return n;
 }
-if (process.env.NODE_ENV !== 'test') {
-  setTimeout(sweepUnfinishedMetaReports, Number(process.env.META_CAPI_SWEEP_MS || 20000)).unref();
-  setTimeout(sweepMetaCtx, Number(process.env.META_CTX_SWEEP_MS || 30000)).unref();
-  setInterval(sweepMetaCtx, Number(process.env.META_CTX_SWEEP_EVERY_MS || 6 * 3600 * 1000)).unref();
+// WHAT ACTUALLY WAKES THESE UP.
+//
+// The report sweep needs a REPEATING trigger, not just a boot one. A failed
+// report now waits before its next try, and the longest wait is six hours — but
+// nothing was scheduled to come back when that wait expired. On a box that runs
+// untouched for days (deploys here are manual) the only re-claim triggers were
+// the next boot and a buyer reloading their own confirmation page, so a handful
+// of orders parked at a six-hour backoff would simply sit there until the
+// seven-day age gate dropped them for good. Hourly is well under that longest
+// wait, and a pass with nothing to do costs one filtered scan and no write.
+//
+// Every timer is unref'd, so none of them delays a boot or holds the process
+// open, and the intervals are what keep a long-lived box sweeping rather than
+// sweeping once and never again.
+function armMetaCapiTimers({ setTimeoutFn = setTimeout, setIntervalFn = setInterval } = {}) {
+  const timers = [
+    setTimeoutFn(sweepUnfinishedMetaReports, Number(process.env.META_CAPI_SWEEP_MS || 20000)),
+    setIntervalFn(
+      sweepUnfinishedMetaReports,
+      Number(process.env.META_CAPI_SWEEP_EVERY_MS || 3600 * 1000)
+    ),
+    setTimeoutFn(sweepMetaCtx, Number(process.env.META_CTX_SWEEP_MS || 30000)),
+    setIntervalFn(sweepMetaCtx, Number(process.env.META_CTX_SWEEP_EVERY_MS || 6 * 3600 * 1000)),
+  ];
+  for (const t of timers) if (t && typeof t.unref === 'function') t.unref();
+  return timers;
 }
+if (process.env.NODE_ENV !== 'test') armMetaCapiTimers();
 // The seam the tests drive it through, since the boot timer is deliberately not
 // armed under NODE_ENV=test — a suite that booted the app should not start
 // firing at an ad platform.
 app.locals.metaCapiSweep = sweepUnfinishedMetaReports;
 app.locals.metaCtxSweep = sweepMetaCtx;
+app.locals.metaCapiArmTimers = armMetaCapiTimers;
 
 app.post('/api/track', (req, res) => {
   if (!trackRate.ok(clientKey(req))) return res.status(429).json({ error: 'too many attempts' });
