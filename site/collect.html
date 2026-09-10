@@ -3185,6 +3185,12 @@
         batchNiqqudMessage,
       } from './js/niqqud.js';
       import { track } from './js/analytics.js';
+      // Which ad this browser arrived on, handed to pay/init so the server can
+      // tell Meta which click the sale belongs to — the sale is reported from
+      // the payment callback now, where no browser exists. NOT a pure read: with
+      // no touch stored yet it records this arrival as the touch (see
+      // js/attribution.js), which is the same thing every page load already does.
+      import { currentTouch } from './js/attribution.js';
       import {
         fetchPricing,
         fetchDeliveryExceptions,
@@ -6921,6 +6927,23 @@
           // decks for the price of one.
           const payload = { owner_token: ownerToken, version, address, quantity: copies };
           if (appliedCoupon) payload.coupon = appliedCoupon.code;
+          // The ad that brought her, and the page she is paying from. This is the
+          // LAST moment the browser gets to say either: from here the sale is
+          // reported to Meta by our server, off the payment callback, which knows
+          // nothing about the tab it came from. Storage can be blocked in an
+          // in-app browser — then the sale still reports, just matched less well.
+          try {
+            const touch = currentTouch(location.href, document.referrer);
+            if (touch && touch.landing) payload.landing = touch.landing;
+          } catch (e) {
+            /* no stored touch — the server falls back to the referrer */
+          }
+          // Page, WITHOUT the query — this page's URL carries ?c=&k=, and k is
+          // the owner token: the credential that reads and writes this order.
+          // It must never reach Meta, where it would sit in Events Manager for
+          // anyone on the ad account. The server strips it again on arrival; a
+          // secret this cheap to drop gets dropped at both ends.
+          payload.source_url = location.origin + location.pathname;
           try {
             const res = await api('/pay/init', {
               method: 'POST',

@@ -476,7 +476,11 @@
           // Meta's half of the same sale. It is what lets a boosted post report
           // orders rather than clicks, and what Meta optimises delivery against.
           if (typeof fbq === 'function') {
-            fbq('track', 'Purchase', { value: value, currency: 'ILS' });
+            // eventID is the DEDUPLICATION key. Our server sends the same sale
+            // to Meta's Conversions API with this exact id, and Meta keeps one
+            // of the two — without it, a sale seen by both halves is counted
+            // twice and every number downstream, ROAS included, is inflated.
+            fbq('track', 'Purchase', { value: value, currency: 'ILS' }, { eventID: String(id) });
           }
           if (typeof gtag !== 'function') return;
           gtag('event', 'purchase', {

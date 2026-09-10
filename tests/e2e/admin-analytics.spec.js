@@ -17,11 +17,18 @@ const ID = '1234567890123456';
 // The one project allowed to touch the shared store.
 const OWNS_STORE = 'Desktop Chrome';
 
-async function clearPixel(request) {
-  const r = await request.delete(
-    `/api/admin/settings?section=analytics&settingKey=meta_pixel_id&key=${KEY}`
-  );
-  expect(r.ok()).toBeTruthy();
+// Both analytics settings back to shipped defaults. The CONTACT switch is
+// cleared here too, not just the pixel: .e2e-data survives between local runs,
+// and a run that died between checking that box and unchecking it left the
+// switch on — after which every later run failed on "it starts off", for a
+// reason that has nothing to do with the code.
+async function clearAnalytics(request) {
+  for (const settingKey of ['meta_pixel_id', 'meta_capi_contact']) {
+    const r = await request.delete(
+      `/api/admin/settings?section=analytics&settingKey=${settingKey}&key=${KEY}`
+    );
+    expect(r.ok()).toBeTruthy();
+  }
 }
 
 test.describe('meta pixel, end to end', () => {
@@ -34,7 +41,7 @@ test.describe('meta pixel, end to end', () => {
       testInfo.project.name !== OWNS_STORE,
       'writes the shared settings store; run once to avoid cross-worker races'
     );
-    await clearPixel(request);
+    await clearAnalytics(request);
   });
   // afterEach STILL RUNS for a test skipped from beforeEach, so it has to make
   // the same check itself. Without it the other project's worker fires DELETEs
@@ -42,7 +49,7 @@ test.describe('meta pixel, end to end', () => {
   // a save and the assertion that reads it back, which reads as a load-flake.
   test.afterEach(async ({ request }, testInfo) => {
     if (testInfo.project.name !== OWNS_STORE) return;
-    await clearPixel(request);
+    await clearAnalytics(request);
   });
 
   test('without a key the page reveals nothing and calls no admin API', async ({ page }) => {
@@ -113,6 +120,59 @@ test.describe('meta pixel, end to end', () => {
     }
   });
 
+  // The server-side half is a credential in the environment, and the E2E server
+  // runs without one. The page must say so plainly — an owner who cannot tell
+  // "off" from "broken" has no way to finish setting it up.
+  test('the conversions-api card says what is missing before it is armed', async ({ page }) => {
+    await page.goto(`/admin-analytics.html?key=${KEY}`);
+    const card = page.locator('#card-meta-capi');
+    await expect(card).toBeVisible();
+    await expect(page.getByTestId('capi-state')).toHaveText('כבוי');
+    // No pixel id yet (afterEach clears it), so THAT is the thing to fix first.
+    await expect(card).toContainText('מזהה הפיקסל');
+
+    await page.getByTestId('meta-pixel-id').fill(ID);
+    await page.getByTestId('save-pixel').click();
+    await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
+    await page.reload();
+    // With a pixel but no token, the missing half is named by its env var.
+    await expect(page.locator('#card-meta-capi')).toContainText('META_CAPI_TOKEN');
+  });
+
+  test('contact matching is off until she switches it on herself', async ({ page }) => {
+    await page.goto(`/admin-analytics.html?key=${KEY}`);
+    const box = page.getByTestId('capi-contact');
+    await expect(box).not.toBeChecked();
+    await box.check();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/נשלח גם מייל וטלפון/);
+    await page.reload();
+    await expect(page.getByTestId('capi-contact')).toBeChecked();
+    // Left as it was found: the setting store is shared across these tests.
+    await page.getByTestId('capi-contact').uncheck();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/לא נשלחים פרטים/);
+  });
+
+  // `.status` is the PIXEL card's own hook, and half this file asserts on it
+  // under strict mode — where a second element wearing the class is not a
+  // cosmetic slip but an outright failure of every one of those assertions.
+  test('saving the contact switch never claims the pixel card’s status class', async ({ page }) => {
+    await page.goto(`/admin-analytics.html?key=${KEY}`);
+    await page.getByTestId('meta-pixel-id').fill(ID);
+    await page.getByTestId('save-pixel').click();
+    await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
+
+    const box = page.getByTestId('capi-contact');
+    await box.check();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/נשלח גם מייל וטלפון/);
+    // Still exactly one .status on the page — the pixel's, saying what it said.
+    await expect(page.locator('.status')).toHaveCount(1);
+    await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
+
+    await box.uncheck();
+    await expect(page.getByTestId('capi-save-state')).toHaveText(/לא נשלחים פרטים/);
+    await expect(page.locator('.status')).toHaveCount(1);
+  });
+
   test('a bad paste is refused with the reason, and nothing is served', async ({
     page,
     request,
@@ -162,6 +222,10 @@ test.describe('meta pixel, end to end', () => {
     const purchase = queued.find((e) => e[0] === 'track' && e[1] === 'Purchase');
     expect(purchase).toBeTruthy();
     expect(purchase[2]).toEqual({ value: 238, currency: 'ILS' });
+    // The dedupe key. Our server reports the same sale to the Conversions API
+    // with this exact id; without it Meta would count the sale twice and every
+    // number downstream, ROAS included, would be inflated.
+    expect(purchase[3]).toEqual({ eventID: 'DG-2001' });
 
     // Left for the request that follows — the storefront must not keep it after
     // afterEach clears the setting.

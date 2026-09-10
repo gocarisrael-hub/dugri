@@ -205,6 +205,19 @@ export function currentTouch(href, referrer) {
   return touch;
 }
 
+// Meta's own browser cookie. It is not ours and we never interpret it — it is
+// forwarded, unread, so the server's copy of a purchase can be matched to the
+// same browser Meta already recognises. Sent ONLY with a purchase: on an
+// ordinary page view it would be a Meta identifier travelling for no reason.
+function fbpCookie() {
+  try {
+    const hit = /(?:^|;\s*)_fbp=([^;]+)/.exec(document.cookie || '');
+    return hit ? decodeURIComponent(hit[1]) : '';
+  } catch {
+    return '';
+  }
+}
+
 /**
  * Send one funnel event to our own server. Fire-and-forget: the response is
  * never read and a failure is swallowed, because nothing on the page may depend
@@ -226,6 +239,14 @@ export function sendEvent(kind, extra = {}) {
     visitor: visitorId(),
     ...extra,
   };
+  // The purchase is the one event that also leaves our server for Meta, and
+  // these two fields are what let Meta match it to the click it already knows
+  // about. Nothing else needs them.
+  if (kind === 'purchase') {
+    const fbp = fbpCookie();
+    if (fbp) body.fbp = fbp;
+    body.source_url = String(location.href).slice(0, 500);
+  }
   return fetch('/api/track', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

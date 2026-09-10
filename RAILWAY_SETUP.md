@@ -290,6 +290,66 @@ Set these on **staging first** and book one parcel end to end before putting the
 on production: HFD has no sandbox, so every booking is a real one (cancel it from
 the same row when you're done testing).
 
+## Meta Conversions API — server-side sale reporting (optional)
+
+The Meta pixel reports a sale from the **buyer's browser**, which is exactly
+where that message gets lost: an iOS buyer who declined tracking, a content
+blocker, an in-app browser that drops third-party scripts, a tab closed before
+the beacon left. Each of those is a real order that Ads Manager never counts, so
+the campaign looks worse than it is and Meta optimises delivery towards the wrong
+people — which costs money twice.
+
+The Conversions API sends the same sale from **our server**, where nothing on the
+buyer's device can suppress it. Both halves carry the same `event_id` (the order
+number), so Meta keeps one and the sale is never double-counted.
+
+**Off until the token is set.** With no `META_CAPI_TOKEN` nothing is sent and
+nothing is attempted — the state the site ships in.
+
+- **`META_CAPI_TOKEN`** — the access token. Events Manager → your pixel →
+  **Settings** → **Conversions API** → **Generate access token**. It is a
+  credential, so it lives here rather than in the admin settings store.
+- **`META_CAPI_TEST_CODE`** — _optional, for verifying the wiring._ Events
+  Manager → **Test events** shows a code (`TEST12345`); set it here and the
+  events appear in that tab instead of the live report. **Remove it when you are
+  done** — with it set, real sales are only ever test events.
+- **`META_GRAPH_VERSION`** — _optional_, defaults to `v21.0`. Pinned on purpose:
+  an unpinned version changes the payload contract on Meta's schedule and a
+  silently rejected purchase is invisible until someone reads the ad account.
+
+The **pixel id** is not an env var — it stays owner-editable in the admin
+(אנליטיקס). Both are needed: the pixel id says which ad account, the token
+authorises writing to it. That page shows whether the pair is armed, and carries
+the one switch that is a real decision rather than a setting:
+
+- **"לשלוח גם מייל וטלפון של הלקוחה"** — default **off**. On, the buyer's email
+  and phone are sent SHA-256 **hashed** (never in the clear) so Meta can match
+  the sale to a person it recognises, which measurably improves attribution. It
+  is contact information leaving for an advertising platform, so it is the
+  owner's decision. The sale is reported either way.
+
+The report leaves at the **moment the card clears**, from PeleCard's callback —
+not from the confirmation page. A buyer who closes the tab the second the payment
+goes through has still bought the deck, and that is the same buyer whose pixel
+was blocked, so waiting for their browser would lose the sale on both halves. If
+a send dies mid-flight (a deploy inside the six-second timeout), the next boot
+sweeps it up and tries again; a refusal Meta will give every time — a revoked
+token, a deleted pixel — is recorded and not retried.
+
+**What is kept about the buyer, and for how long.** Meta needs a few things about
+the browser that the callback cannot see (it is a request from PeleCard's
+server), so while the API is armed the pending payment handshake holds the
+buyer's IP, their user-agent string, Meta's `_fbc`/`_fbp` cookies and the click
+id from the ad. That is the whole list, and it lives only until the report is
+done: the moment Meta accepts the sale (or finally refuses it) the lot is
+deleted. It is never returned by the admin orders API, and with no
+`META_CAPI_TOKEN` set none of it is ever written. The buyer's own order link
+carries a token that opens her order — that token is stripped from every URL
+before anything is stored or sent, so it cannot reach Events Manager.
+
+On **staging**, leave `META_CAPI_TOKEN` unset — otherwise test orders land in the
+real ad account and teach Meta's optimiser nonsense.
+
 ## Email notifications (optional)
 
 The server can email on two events: a payment comes in (the owner gets an alert
