@@ -340,19 +340,76 @@ not from the confirmation page. A buyer who closes the tab the second the paymen
 goes through has still bought the deck, and that is the same buyer whose pixel
 was blocked, so waiting for their browser would lose the sale on both halves. If
 a send dies mid-flight (a deploy inside the six-second timeout), the next boot
-sweeps it up and tries again; a refusal Meta will give every time — a revoked
-token, a deleted pixel — is recorded and not retried.
+sweeps it up and tries again, for up to seven days after the sale — the window
+Meta will still accept an event in.
+
+(Seven days is Meta's own limit, not ours: an event whose `event_time` is more
+than seven days old makes Meta reject the whole request. The event is stamped
+with when the card cleared, so a swept retry still reports the right instant.)
+
+**A failure Meta will give every time** — a deleted pixel, a malformed event — is
+recorded and not retried. That is decided on Meta's own **error code**, not on
+the HTTP status, because the status does not separate the two: throttling (codes
+4, 17, 32, 613 and the 80000-series) and a token that is expired, revoked or
+scoped wrong (code 190, an `OAuthException`) all arrive as ordinary `4xx`s and
+all get another try later. If something is nevertheless written off wrongly, the
+sales are not lost — `POST /api/admin/meta-capi/retry?key=<ADMIN_KEY>` (optional
+body `{"collection":"<id>"}`) clears the mark and re-runs the sweep, and answers
+with `remaining` when there were more than one pass could take.
+
+A report that keeps failing **backs off**: the first retry is immediate (so the
+buyer's own confirmation page can rescue a send that died in the callback), then
+1 minute, 5, 30, 2 hours, and 6 hours from there. Without that, a wrong token
+would re-send every sale in the seven-day window on every boot and every
+confirmation-page reload. The sweep that honours those waits runs at boot **and
+hourly after it** — a backoff nothing wakes up for would just be an abandonment,
+since deploys here are manual and a box can run untouched for days. A pass takes
+at most 100 orders and drains a few at a time, so a large catch-up cannot arrive
+as one block of writes or time itself out against its own connection pool;
+whatever is left comes back on the next pass, and `/retry` reports it as
+`remaining`.
+
+`GET /api/admin/meta-capi/status?key=<ADMIN_KEY>` reports the counts, so a token
+that is quietly wrong is visible rather than silent: `reports.failing` (how many
+are owed a retry — **`reports.waiting` is the subset of those still inside their
+backoff**, not a separate group), `reports.permanent` (written off, what `/retry`
+clears), `reports.reported`, `reports.in_flight`, and `reports.oldest_error`,
+which is the message from the oldest one still failing.
 
 **What is kept about the buyer, and for how long.** Meta needs a few things about
 the browser that the callback cannot see (it is a request from PeleCard's
 server), so while the API is armed the pending payment handshake holds the
 buyer's IP, their user-agent string, Meta's `_fbc`/`_fbp` cookies and the click
-id from the ad. That is the whole list, and it lives only until the report is
-done: the moment Meta accepts the sale (or finally refuses it) the lot is
-deleted. It is never returned by the admin orders API, and with no
-`META_CAPI_TOKEN` set none of it is ever written. The buyer's own order link
-carries a token that opens her order — that token is stripped from every URL
-before anything is stored or sent, so it cannot reach Events Manager.
+id from the ad. That is the whole list, it is never returned by the admin orders
+API, and with no `META_CAPI_TOKEN` set none of it is ever written.
+
+It is deleted the moment Meta accepts the sale (or finally refuses it) — and,
+because plenty of checkouts never get that far, it also expires on its own:
+
+- a checkout that was **never paid** (the buyer opened the card form and walked
+  away) drops it after **24 hours**;
+- a paid order still owed a report drops it **seven days** after capture, which
+  is when the retry window closes and the details stop having any use.
+
+The sweep that does it runs shortly after boot and every six hours after that,
+armed or not, so details captured while the API was on still age out once it is
+off. Six-hourly means the real worst case is the TTL plus one interval — about
+**30 hours** for an abandoned checkout, not a flat 24. (Override with
+`META_CTX_UNPAID_TTL_MS`, `META_REPORT_MAX_AGE_MS`, `META_CTX_SWEEP_EVERY_MS` —
+none of which you should need.)
+
+The buyer's own order link carries a token that opens her order — that token is
+stripped from every URL before anything is stored or sent, so it cannot reach
+Events Manager. The IP is taken from Cloudflare's `CF-Connecting-IP` rather than
+from `X-Forwarded-For`, which `trust proxy` makes anyone's to write, and if that
+header is missing behind a proxy no IP is sent at all. That is a narrower target,
+**not a guarantee**: nothing in the app proves a request came through Cloudflare,
+the Railway origin stays reachable on its own generated host, and a caller who
+goes straight there with a `CF-Connecting-IP` of its choosing is believed. Closing
+that needs an origin-level check, and the peer this process sees is Railway's
+proxy rather than Cloudflare's edge, so it cannot be done in the app. A private or
+loopback address is dropped either way: matching on one would make every buyer
+behind the same office NAT look like the same person.
 
 ### What the token buys, beyond reporting sales
 

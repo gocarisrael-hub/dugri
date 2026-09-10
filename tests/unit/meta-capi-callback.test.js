@@ -40,7 +40,9 @@ let sent; // everything Meta would have received
 let nextInit;
 let nextGetTx;
 let graphFails; // http status Meta should answer with (0 = accept)
+let graphError; // the error object inside that answer (code/type/message)
 let graphThrows; // make the request to Meta reject outright (dns, socket)
+let graphHold; // () => Promise held open, so "how many are in flight" is visible
 
 function jsonRes(obj) {
   return { ok: true, status: 200, json: async () => obj };
@@ -74,12 +76,16 @@ beforeAll(async () => {
     const u = String(url);
     if (u.includes('graph.facebook.com')) {
       sent.push({ url: u, body: JSON.parse(opts.body) });
+      if (graphHold) await graphHold();
       if (graphThrows) throw new Error('getaddrinfo ENOTFOUND graph.facebook.com');
       if (graphFails) {
         return {
           ok: false,
           status: graphFails,
-          json: async () => ({ error: { message: 'Invalid parameter' } }),
+          // The BODY is what says which failure this is. Meta answers a 4xx for
+          // an expired token and for throttling alike, so a test that only sets
+          // a status cannot tell the two apart — and neither could the code.
+          json: async () => ({ error: { message: 'Invalid parameter', ...graphError } }),
         };
       }
       return jsonRes({ events_received: 1 });
@@ -108,7 +114,9 @@ beforeEach(() => {
   nextInit = { URL: 'https://gateway21.pelecard.biz/PaymentGW?tx=1', Error: { ErrCode: 0 } };
   nextGetTx = null;
   graphFails = 0;
+  graphError = {};
   graphThrows = false;
+  graphHold = null;
 });
 
 async function post(urlPath, body, headers = {}) {
@@ -127,7 +135,14 @@ const settle = () => vi.waitFor(() => expect(sent.length).toBeGreaterThan(0), { 
  * and PeleCard would: pay/init from the BUYER's request (cookies, user agent,
  * the ad they landed on), then the callback from PELECARD's server.
  */
-async function startPayment({ cookie = '', landing = AD, sourceUrl = PAY_PAGE, referer, ip } = {}) {
+async function startPayment({
+  cookie = '',
+  landing = AD,
+  sourceUrl = PAY_PAGE,
+  referer,
+  ip,
+  cfIp,
+} = {}) {
   const c = db.createCollection('שירה', { email: 'shira@example.com', phone: '052-244-1334' });
   await post(
     '/api/collections/' + c.id + '/pay/init',
@@ -142,6 +157,7 @@ async function startPayment({ cookie = '', landing = AD, sourceUrl = PAY_PAGE, r
       ...(cookie ? { Cookie: cookie } : {}),
       ...(referer ? { Referer: referer } : {}),
       ...(ip ? { 'X-Forwarded-For': ip } : {}),
+      ...(cfIp ? { 'CF-Connecting-IP': cfIp } : {}),
     }
   );
   return c;
@@ -189,10 +205,62 @@ describe('the sale is reported without the buyer’s browser', () => {
     expect(event.user_data.client_ip_address).toBeUndefined();
   });
 
-  it('sends the buyer’s real address when there is one, in its bare form', async () => {
-    await completePayment(await startPayment({ ip: '203.0.113.7' }));
+  // THE ADDRESS WE HAND AN AD PLATFORM MUST NOT BE ONE THE CALLER CHOSE.
+  //
+  // `trust proxy` is on, so req.ip is the leftmost X-Forwarded-For entry, and
+  // Cloudflare APPENDS to that header rather than replacing it — so whatever a
+  // client writes there arrives ahead of the address Cloudflare actually saw. A
+  // buyer (or a bot) could pick the IP attached to their own purchase.
+  it('sends the address Cloudflare saw, in its bare form', async () => {
+    await completePayment(await startPayment({ cfIp: '203.0.113.7' }));
     await settle();
     expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
+  });
+
+  it('refuses an address the client wrote into X-Forwarded-For', async () => {
+    // Exactly the request a spoofer makes: a forwarded-for of their choosing and
+    // no CF-Connecting-IP, because that one is Cloudflare's to set.
+    await completePayment(await startPayment({ ip: '198.51.100.9' }));
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
+    expect(JSON.stringify(sent[0].body)).not.toContain('198.51.100.9');
+  });
+
+  it('believes Cloudflare over the client when both are present', async () => {
+    await completePayment(await startPayment({ ip: '198.51.100.9', cfIp: '203.0.113.7' }));
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
+  });
+
+  // An office NAT, a VPN concentrator, a container network. Matching on one of
+  // these makes every buyer behind it look like the same person — the same
+  // reason loopback is dropped, and just as much nobody's address.
+  it('drops a private address rather than matching everyone behind it', async () => {
+    for (const priv of [
+      '10.0.0.4',
+      '192.168.1.20',
+      '172.20.5.5',
+      '127.0.0.1',
+      '::1',
+      // Multicast and reserved space is as much nobody's address as 10/8 is.
+      '224.0.0.1',
+      '240.1.2.3',
+      '255.255.255.255',
+      // FOUR DOTTED NUMBERS IS NOT AN ADDRESS. These match the shape of an IPv4
+      // address and are not one, so no range test can fire on them — without an
+      // octet check they would be forwarded to Meta verbatim as a match key.
+      '999.1.1.1',
+      '256.0.0.1',
+    ]) {
+      sent = [];
+      // A public address in the header the CLIENT controls, so a fallback to it
+      // would be visible — nothing may be sent, not the private one and not the
+      // one the caller would like us to believe.
+      await completePayment(await startPayment({ cfIp: priv, ip: '203.0.113.7' }));
+      await settle();
+      expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
+      expect(JSON.stringify(sent[0].body)).not.toContain('203.0.113.7');
+    }
   });
 
   it('never leaves user_data empty — Meta rejects the whole event without it', async () => {
@@ -386,6 +454,20 @@ describe('a buyer’s device details are kept for one report and no longer', () 
     const row = body.collections.find((x) => x.id === c.id);
     expect(row.order.pelecard.meta_ctx).toBeUndefined();
     expect(JSON.stringify(body)).not.toContain(UA);
+
+    // AND THEY DO NOT STAY. This checkout is never going to be paid — the buyer
+    // opened the card form and walked away, which is what most people who open
+    // one do. No payment means no report, and the report finishing used to be
+    // the only thing that deleted these, so they would have sat here for good:
+    // in an order the admin API deliberately will not show her, so she could
+    // not have found them to clear them either.
+    db.getCollection(c.id).order.pelecard.meta_ctx.seen_at = Date.now() - 25 * 60 * 60 * 1000;
+    expect(app.locals.metaCtxSweep()).toBeGreaterThanOrEqual(1);
+    expect(db.getCollection(c.id).order.pelecard.meta_ctx).toBeUndefined();
+    expect(JSON.stringify(db.getCollection(c.id).order)).not.toContain(UA);
+    // The payment handshake itself survives — a late callback verifies its
+    // amount against those sessions.
+    expect(db.getCollection(c.id).order.pelecard.sessions).toHaveLength(1);
   });
 
   it('keeps nothing at all when the Conversions API is not armed', async () => {
@@ -470,5 +552,304 @@ describe('a report that died in flight is picked up again', () => {
     stored.order.meta_report = { at: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
     stored.order.paid_at = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     expect(db.staleMetaReports()).not.toContain(c.id);
+  });
+});
+
+// A REFUSAL AND A "NOT NOW" ARRIVE LOOKING THE SAME. Meta's Graph API answers a
+// plain 400 both for a request it will never accept and for the two things most
+// likely to actually go wrong here — throttling, and a token that is expired or
+// scoped wrong. Only the error CODE separates them, which is why the code is
+// what the classification reads. (Meta's own error reference: "Error handling
+// should be done using only the Error Codes.")
+describe('a 400 is not automatically final', () => {
+  const failWith = async (error) => {
+    graphFails = 400;
+    graphError = error;
+    const c = await payByCard();
+    await settle();
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report).toBeTruthy());
+    graphFails = 0;
+    graphError = {};
+    return c;
+  };
+
+  // THE MOST LIKELY MISTAKE THE FIRST TIME THE API IS ARMED: a token that has
+  // expired, or was minted without the right scope. Writing that off as final
+  // would lose every sale made before it is noticed — the sweep excludes a
+  // permanent mark and /api/track refuses to re-claim it.
+  it('keeps retrying an expired access token (code 190)', async () => {
+    const c = await failWith({
+      message: 'Error validating access token: Session has expired',
+      type: 'OAuthException',
+      code: 190,
+    });
+    const report = db.getCollection(c.id).order.meta_report;
+    expect(report.permanent).toBeUndefined();
+    expect(report.at).toBeUndefined();
+    // Which is what lets a fixed token recover the sale.
+    const before = sent.length;
+    await post('/api/track', { kind: 'purchase', landing: AD, collection: c.id, k: c.owner_token });
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before), { timeout: 2000 });
+    expect(db.getCollection(c.id).order.meta_report.ok).toBe(true);
+  });
+
+  // A throttle is identified by its CODE, not by a 429: 4 is app-level, 17
+  // user-level and 32 page-level (Meta's Graph API rate-limiting docs), 613 the
+  // ad-account limit, and 80000–80014 the business-use-case series.
+  it('keeps retrying a throttle that arrives as a 400 with a rate-limit code', async () => {
+    for (const code of [4, 17, 32, 613, 80004]) {
+      const c = await failWith({ message: '(#' + code + ') rate limit', code });
+      expect(db.getCollection(c.id).order.meta_report.permanent).toBeUndefined();
+      expect(db.staleMetaReports()).toContain(c.id);
+    }
+  });
+
+  // And the case the classification exists for is still classified: a payload
+  // Meta will reject identically every time. Retrying it once per confirmation
+  // reload, forever, buys nothing and costs a whole-store write each time.
+  it('still writes off a request that is simply wrong (code 100)', async () => {
+    const c = await failWith({
+      message: 'Invalid parameter',
+      type: 'GraphMethodException',
+      code: 100,
+    });
+    expect(db.getCollection(c.id).order.meta_report.permanent).toBe(true);
+  });
+});
+
+// "The token was wrong and I fixed it." Without a door out of a permanent mark
+// there is no way back from that: claimMetaReport refuses, the boot sweep
+// excludes it, and nothing else clears it — the sales are lost short of editing
+// the store by hand.
+describe('the owner can hand a written-off sale back', () => {
+  const retry = (body = {}) => post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, body);
+
+  it('clears the mark and re-sends the sale', async () => {
+    graphFails = 400;
+    graphError = { message: 'Invalid parameter', code: 100 };
+    const c = await payByCard();
+    await settle();
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.permanent).toBe(true));
+    graphFails = 0;
+    graphError = {};
+
+    const before = sent.length;
+    const r = await retry({ collection: c.id });
+    expect(r.status).toBe(200);
+    expect(r.body.ids).toEqual([c.id]);
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before), { timeout: 2000 });
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.ok).toBe(true));
+    expect(sent.some((x) => x.body.data[0].event_id === db.orderRef(db.getCollection(c.id)))).toBe(
+      true
+    );
+  });
+
+  it('is closed without the admin key', async () => {
+    expect((await post('/api/admin/meta-capi/retry', {})).status).toBe(403);
+  });
+});
+
+// WHEN THE SALE HAPPENED, NOT WHEN WE GOT ROUND TO TELLING META. Meta rejects a
+// Purchase whose event_time is more than seven days old and processes none of
+// the request — so a report resurrected days later that stamps itself with the
+// send would both misdate the sale and make the seven-day sweep window
+// meaningless, since the event would always look brand new.
+describe('a swept report is dated at the sale', () => {
+  it('sends the payment instant, not the moment of the retry', async () => {
+    const c = await payByCard();
+    await settle();
+    const stored = db.getCollection(c.id);
+    const paidAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    stored.order.paid_at = paidAt;
+    stored.order.meta_report = { at: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+
+    const before = sent.length;
+    expect(app.locals.metaCapiSweep()).toBeGreaterThanOrEqual(1);
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before));
+    const ref = db.orderRef(stored);
+    const event = sent.slice(before).find((x) => x.body.data[0].event_id === ref).body.data[0];
+    expect(event.event_time).toBe(Math.floor(Date.parse(paidAt) / 1000));
+    // Not the send. Three days apart is well outside any rounding.
+    expect(event.event_time).toBeLessThan(Math.floor(Date.now() / 1000) - 2 * 24 * 60 * 60);
+  });
+});
+
+// CLEARING FIVE HUNDRED AND SWEEPING FIFTY LEAVES 450 SALES SCHEDULED BY
+// NOTHING. They are claimable, but the only thing that would come back for them
+// is a later boot, fifty at a time — and the response would not have said so.
+describe('the retry route sweeps everything it cleared', () => {
+  /** A paid order written off as final, without going through a whole payment. */
+  function deadSale(i) {
+    const c = db.createCollection('רותם ' + i, { email: 'r' + i + '@example.com' });
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id, { charged_total: 79 });
+    db.getCollection(c.id).order.meta_report = {
+      at: new Date().toISOString(),
+      permanent: true,
+      error: 'Invalid OAuth access token',
+    };
+    return c.id;
+  }
+
+  it('takes the batch in one pass and says what is left', async () => {
+    const ids = [];
+    for (let i = 0; i < 60; i++) ids.push(deadSale(i));
+    for (const id of ids) expect(db.staleMetaReports()).not.toContain(id);
+
+    const r = await post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, {});
+    expect(r.status).toBe(200);
+    expect(r.body.cleared).toBeGreaterThanOrEqual(60);
+    // The whole cleared batch, not the default cap of fifty.
+    expect(r.body.swept).toBe(r.body.cleared);
+    // And nothing is left sitting claimable with nothing scheduling it.
+    expect(r.body.remaining).toBe(0);
+    await vi.waitFor(() => expect(db.getCollection(ids[0]).order.meta_report.ok).toBe(true), {
+      timeout: 3000,
+    });
+  });
+});
+
+// A RETRY THAT WAITS IS A RETRY THAT CAN FAIL QUIETLY FOR HOURS. The scenario
+// the whole retry mechanism exists for — a token that is expired or scoped
+// wrong — would otherwise run invisibly: nothing on the status card said a
+// single report had ever failed.
+describe('the status card can see the reports failing', () => {
+  it('counts what is reported, failing, waiting and written off', async () => {
+    const status = async () =>
+      (await realFetch(base + '/api/admin/meta-capi/status?key=' + ADMIN_KEY)).json();
+    const before = (await status()).reports;
+    expect(before).toBeTruthy();
+
+    graphFails = 400;
+    graphError = { message: 'Error validating access token', type: 'OAuthException', code: 190 };
+    const c = await payByCard();
+    await settle();
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.tries).toBe(1));
+    graphFails = 0;
+    graphError = {};
+
+    const now = (await status()).reports;
+    expect(now.failing).toBe(before.failing + 1);
+    // The message is what points at the cause: "fix the token" is not something
+    // a bare count can say.
+    expect(now.oldest_error).toBeTruthy();
+  });
+});
+
+// A BACKOFF NOTHING WAKES UP FOR IS NOT A BACKOFF.
+//
+// The longest wait between retries is six hours, and the report sweep used to be
+// armed with a ONE-SHOT boot timer. On a box that runs untouched for days —
+// deploys here are manual — the only things that could re-claim a waiting report
+// were the next boot and a buyer reloading their own confirmation page, so a
+// handful of orders parked at a six-hour backoff would sit there until the
+// seven-day age gate dropped them for good.
+describe('the sweep comes back on its own', () => {
+  it('arms a REPEATING trigger for the report sweep, not just a boot one', () => {
+    const timeouts = [];
+    const intervals = [];
+    const stub = (list) => (fn, ms) => {
+      list.push({ fn, ms });
+      return { unref() {} };
+    };
+    app.locals.metaCapiArmTimers({
+      setTimeoutFn: stub(timeouts),
+      setIntervalFn: stub(intervals),
+    });
+
+    // Both sweeps get a boot timer AND a repeat. The report one is the addition:
+    // it is what honours next_at on a long-lived box.
+    expect(timeouts.map((t) => t.fn)).toContain(app.locals.metaCapiSweep);
+    const repeat = intervals.find((t) => t.fn === app.locals.metaCapiSweep);
+    expect(repeat).toBeTruthy();
+    // Comfortably inside the longest backoff (6h), or a report could still be
+    // dropped by the seven-day age gate while nominally "waiting".
+    expect(repeat.ms).toBeGreaterThan(0);
+    expect(repeat.ms).toBeLessThanOrEqual(6 * 60 * 60 * 1000);
+    expect(intervals.map((t) => t.fn)).toContain(app.locals.metaCtxSweep);
+  });
+
+  it('really does run the sweep when that trigger fires', async () => {
+    const c = await payByCard();
+    await settle();
+    const stored = db.getCollection(c.id);
+    stored.order.meta_report = { at: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+    expect(db.staleMetaReports()).toContain(c.id);
+
+    const intervals = [];
+    app.locals.metaCapiArmTimers({
+      setTimeoutFn: () => ({ unref() {} }),
+      setIntervalFn: (fn) => {
+        intervals.push(fn);
+        return { unref() {} };
+      },
+    });
+    const before = sent.length;
+    for (const fn of intervals) fn();
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before));
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.ok).toBe(true));
+  });
+});
+
+// FIRING FIVE HUNDRED SENDS IN ONE LOOP IS TWO BUGS, NOT A BIG BATCH.
+//
+// Every send's six-second abort timer is armed when send() is called, before any
+// of them has a socket, so anything queued behind the connection pool aborts as
+// a timeout WE caused — a transient failure that burns a `tries` increment and
+// pushes a healthy order into backoff. And each response that lands writes the
+// whole store.
+describe('a big catch-up is drained, not dumped', () => {
+  function deadSale(i) {
+    const c = db.createCollection('בבת אחת ' + i, { email: 'b' + i + '@example.com' });
+    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
+    db.markPaid(c.id, { charged_total: 79 });
+    db.getCollection(c.id).order.meta_report = {
+      at: new Date().toISOString(),
+      permanent: true,
+      error: 'Invalid OAuth access token',
+    };
+    return c.id;
+  }
+
+  it('never has the whole batch in flight at once', async () => {
+    const ids = [];
+    for (let i = 0; i < 40; i++) ids.push(deadSale(i));
+
+    // Hold every request open until we let go, so "in flight" is observable.
+    let inFlight = 0;
+    let peak = 0;
+    const release = [];
+    graphHold = () =>
+      new Promise((resolve) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        release.push(() => {
+          inFlight -= 1;
+          resolve();
+        });
+      });
+    try {
+      const r = await post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, {});
+      expect(r.body.cleared).toBeGreaterThanOrEqual(40);
+      await vi.waitFor(() => expect(release.length).toBeGreaterThan(0));
+      // A few lanes, not forty. The exact number is a tuning knob; that it is
+      // BOUNDED and far below the batch is the property under test.
+      await vi.waitFor(() => expect(peak).toBeGreaterThan(0));
+      expect(peak).toBeLessThan(10);
+      while (release.length) release.shift()();
+    } finally {
+      graphHold = null;
+      while (release.length) release.shift()();
+    }
+  });
+
+  it('caps how much one pass takes, and says what is left over', async () => {
+    for (let i = 0; i < 130; i++) deadSale(1000 + i);
+    const r = await post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, {});
+    expect(r.body.cleared).toBeGreaterThanOrEqual(130);
+    // The clear cap is 500 and a sweep pass is capped far below it, so the
+    // response must not imply everything went out.
+    expect(r.body.swept).toBeLessThanOrEqual(100);
+    expect(r.body.remaining).toBe(r.body.cleared - r.body.swept);
   });
 });

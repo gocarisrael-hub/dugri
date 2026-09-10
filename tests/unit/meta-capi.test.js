@@ -282,6 +282,39 @@ describe('sending', () => {
     expect(r).toMatchObject({ ok: false, status: 400, error: 'Invalid parameter' });
   });
 
+  // THE CODE, not the status. Meta answers a plain 400 for an expired token and
+  // for throttling alike, so the status on its own cannot tell a refusal from a
+  // "later" — the caller needs the code, and can only have it if send() hands it
+  // over.
+  it('hands back Meta’s error code, not only the http status', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          message: 'Error validating access token: Session has expired',
+          type: 'OAuthException',
+          code: 190,
+          error_subcode: 463,
+        },
+      }),
+    }));
+    const r = await capi.send({ pixelId: PIXEL, token: TOKEN, event, fetchImpl });
+    expect(r).toMatchObject({ ok: false, status: 400, code: 190, subcode: 463 });
+    expect(r.type).toBe('OAuthException');
+  });
+
+  it('reports no code at all as 0 rather than as a guess', async () => {
+    const fetchImpl = vi.fn(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => null,
+    }));
+    const r = await capi.send({ pixelId: PIXEL, token: TOKEN, event, fetchImpl });
+    expect(r).toMatchObject({ ok: false, status: 500, code: 0, subcode: 0, type: '' });
+    expect(r.error).toBe('http 500');
+  });
+
   it('never throws when the network does', async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error('getaddrinfo ENOTFOUND');
