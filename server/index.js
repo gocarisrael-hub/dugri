@@ -7022,12 +7022,21 @@ app.get('/api/admin/meta-capi/status', (req, res) => {
 // can change without a redeploy; META_AD_ACCOUNT_ID exists so that an account
 // pinned on Railway alongside the token actually takes effect (it was documented
 // as a variable before anything read it).
-function metaAdAccountId() {
-  const saved = String(settings.get('analytics', 'meta_ad_account_id') || '').trim();
-  if (saved) return saved;
-  return String(process.env.META_AD_ACCOUNT_ID || '')
+//
+// The two are reported to the page SEPARATELY as well as combined: emptying the
+// admin field does not mean "discover it again" when the environment still names
+// an account, and a page that said so would be telling the owner something she
+// can see with her own eyes is untrue.
+const metaAdAccountSaved = () =>
+  String(settings.get('analytics', 'meta_ad_account_id') || '')
     .trim()
     .replace(/^act_/, '');
+const metaAdAccountEnv = () =>
+  String(process.env.META_AD_ACCOUNT_ID || '')
+    .trim()
+    .replace(/^act_/, '');
+function metaAdAccountId() {
+  return metaAdAccountSaved() || metaAdAccountEnv();
 }
 
 // Admin: Meta's own per-ad numbers — spend above all, since that is the half of
@@ -7046,7 +7055,13 @@ app.get('/api/admin/ads/meta', async (req, res) => {
   });
   // A shallow copy: `result` may be the object sitting in the module's cache, and
   // the per-request numbers below must not be written into it.
-  const out = { ...result, account_setting: accountId };
+  const out = {
+    ...result,
+    // What the admin field holds, and what the environment holds, as two separate
+    // answers — the page has to be able to say which of them is in force.
+    account_setting: metaAdAccountSaved(),
+    account_env: metaAdAccountEnv(),
+  };
   if (result.ok) {
     // OUR half of the blended line, cut at the SAME INSTANT Meta's window opens.
     // Meta counts whole calendar days in the ad account's timezone; report() is a
@@ -7061,13 +7076,23 @@ app.get('/api/admin/ads/meta', async (req, res) => {
     });
     // META's revenue over META's spend — not the whole site's. isPaid is handed
     // over rather than re-implemented so "cost money" keeps one definition.
+    //
+    // This is an ESTIMATE and it errs in both directions — see metaAttributed().
+    // The part of it that came in on a deliberately tagged link is separated out,
+    // because that half cannot be organic and is therefore the half the owner can
+    // lean on. The page shows the split rather than calling the total a floor.
     const mine = metaInsights.metaAttributed(ours.rows, attribution.isPaid);
     out.ours = {
       revenue: mine.revenue,
       orders: mine.orders,
       rows: mine.matched,
+      // Certainly an ad: the link carried a campaign or an ad name.
+      tagged: mine.tagged,
+      // A Meta click id and nothing else. Facebook and Instagram put one on every
+      // outbound link, so an organic post's clicks are in here too.
+      untagged: mine.untagged,
       // Every source, for context only: the gap between the two is what says
-      // whether the attributed figure is a floor or the whole story.
+      // how much of the shop's takings the ads are even being credited with.
       revenue_all: ours.totals.revenue,
       orders_all: ours.totals.orders,
     };

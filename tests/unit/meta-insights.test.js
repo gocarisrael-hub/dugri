@@ -12,6 +12,11 @@ import { fileURLToPath } from 'node:url';
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const insights = require(path.join(__dirname, '..', '..', 'server', 'meta-insights.js'));
+// The REAL rule, not a copy of it. metaAttributed() is handed attribution.isPaid
+// in production; a locally re-typed regex here would let the two drift apart and
+// pin nothing.
+const attribution = require(path.join(__dirname, '..', '..', 'server', 'attribution.js'));
+const isPaid = attribution.isPaid;
 
 const TOKEN = 'EAA-test-token';
 const NOW = Date.parse('2026-09-10T09:00:00Z');
@@ -377,20 +382,93 @@ describe('paging', () => {
   });
 
   it('says so rather than lying when the page cap stops the walk', async () => {
-    const impl = pager([
-      {
-        data: [{ ad_name: 'a', spend: '1' }],
-        paging: { cursors: { after: 'C' }, next: 'https://graph.facebook.com/x' },
-      },
-    ]);
+    // Distinct cursors, so it is the CAP that stops this and nothing else.
+    let n = 0;
+    const impl = vi.fn(async () => {
+      n += 1;
+      return ok({
+        data: [{ ad_name: 'ad ' + n, spend: '1' }],
+        paging: { cursors: { after: 'C' + n }, next: 'https://graph.facebook.com/x' },
+      });
+    });
     const r = await insights.graphList('act_1/insights?level=ad', {
       token: TOKEN,
       fetchImpl: impl,
       maxPages: 2,
     });
     expect(r.ok).toBe(true);
-    expect(r.data).toHaveLength(2);
+    expect(r.data.map((x) => x.ad_name)).toEqual(['ad 1', 'ad 2']);
     expect(r.truncated).toBe(true);
+  });
+
+  // A cursor that does not move. Followed blindly, the same page is fetched and
+  // concatenated up to the cap: one page of spend becomes twenty pages of it, the
+  // total comes out multiplied, and `truncated` then makes the page call a figure
+  // that is far too HIGH a floor. Every early stop here has to under-count.
+  it('stops when Meta hands back the cursor it was just given', async () => {
+    const impl = pager([
+      {
+        data: [{ ad_name: 'only', spend: '100' }],
+        paging: { cursors: { after: 'STUCK' }, next: 'https://graph.facebook.com/x' },
+      },
+    ]);
+    const r = await insights.fetchInsights({
+      token: TOKEN,
+      accountId: '99887766',
+      fetchImpl: impl,
+    });
+    expect(r.rows.map((x) => x.ad)).toEqual(['only']);
+    // 100, not 2000: the repeated page is discarded, not added a second time.
+    expect(r.totals.spend).toBe(100);
+    expect(r.truncated).toBe(true);
+    // And it gave up straight away rather than spending twenty calls on it.
+    expect(impl.calls.filter((u) => u.includes('/insights')).length).toBe(2);
+  });
+
+  it('stops on a longer loop too, keeping the rows it really saw', async () => {
+    const pages = {
+      '': { data: [{ ad_name: 'one', spend: '10' }], after: 'C2' },
+      C2: { data: [{ ad_name: 'two', spend: '20' }], after: 'C3' },
+      C3: { data: [{ ad_name: 'three', spend: '30' }], after: 'C2' },
+    };
+    const impl = vi.fn(async (url) => {
+      const m = /[?&]after=([^&]+)/.exec(String(url));
+      const page = pages[m ? decodeURIComponent(m[1]) : ''];
+      return ok({
+        data: page.data,
+        paging: { cursors: { after: page.after }, next: 'https://graph.facebook.com/x' },
+      });
+    });
+    const r = await insights.graphList('act_1/insights?level=ad', {
+      token: TOKEN,
+      fetchImpl: impl,
+    });
+    expect(r.data.map((x) => x.ad_name)).toEqual(['one', 'two', 'three']);
+    expect(r.truncated).toBe(true);
+  });
+
+  // "It refuses to guess between accounts" is only true if a list it could not
+  // read to the end counts as more than one. A short list with one visible
+  // account would otherwise be taken as THE account, and its spend printed as the
+  // whole picture.
+  it('refuses to pick the only VISIBLE account when the list was cut short', async () => {
+    const impl = vi.fn(async (url) => {
+      if (String(url).includes('me/adaccounts')) {
+        return ok({
+          data: [{ account_id: '111', name: 'Dugri' }],
+          // A next link with no cursor anywhere in it: the walk cannot continue.
+          paging: { next: 'https://graph.facebook.com/next-page' },
+        });
+      }
+      throw new Error('unexpected url ' + url);
+    });
+    const r = await insights.fetchInsights({ token: TOKEN, fetchImpl: impl });
+    expect(r.ok).toBe(false);
+    expect(r.truncated).toBe(true);
+    expect(r.error).toContain('whole ad-account list');
+    expect(r.accounts.map((a) => a.id)).toEqual(['111']);
+    // And it never went on to report that one account's spend as everything.
+    expect(impl.mock.calls.some(([u]) => String(u).includes('/insights'))).toBe(false);
   });
 
   it('lists every ad account, not just the first page of them', async () => {
@@ -411,8 +489,6 @@ describe('paging', () => {
 // revenue with ₪2,000 of it from Meta, against ₪1,000 of spend, reads 10.00
 // where the truth is 2.00 — on the page ad budgets get set from.
 describe('matching our revenue to Meta’s spend', () => {
-  const isPaid = (r) => /^(paid|cpc|ppc|cpm|ads?)/.test(r.medium || '');
-
   it('counts only the paid rows our ledger attributed to Meta', () => {
     const rows = [
       { source: 'instagram', medium: 'paid', revenue: 1500, orders: 5 },
@@ -423,7 +499,7 @@ describe('matching our revenue to Meta’s spend', () => {
       { source: 'instagram', medium: 'social', revenue: 3000, orders: 7 },
       { source: 'direct', medium: 'none', revenue: 1000, orders: 3 },
     ];
-    expect(insights.metaAttributed(rows, isPaid)).toEqual({
+    expect(insights.metaAttributed(rows, isPaid)).toMatchObject({
       revenue: 2000,
       orders: 7,
       matched: 2,
@@ -440,10 +516,68 @@ describe('matching our revenue to Meta’s spend', () => {
   });
 
   it('is empty, not noisy, when there is nothing to match', () => {
-    expect(insights.metaAttributed(undefined, isPaid)).toEqual({
+    expect(insights.metaAttributed(undefined, isPaid)).toMatchObject({
       revenue: 0,
       orders: 0,
       matched: 0,
+    });
+  });
+
+  // Called without the rule, the old version counted EVERY Meta-source row —
+  // organic included — which is the bug the whole function exists to prevent.
+  // A default that silently restores it is worse than no default.
+  it('refuses to run without the paid rule rather than counting everything', () => {
+    const organic = [{ source: 'instagram', medium: 'social', revenue: 5000, orders: 9 }];
+    expect(() => insights.metaAttributed(organic)).toThrow(/isPaid is required/);
+  });
+
+  // THE thing the old "this is a floor" caveat got backwards. Facebook and
+  // Instagram stamp `fbclid` on EVERY outbound link, an organic post's included,
+  // and attribution.js reads a bare fbclid as { source: 'meta', medium: 'paid' }
+  // because for a real ad that is usually the only evidence there is. So organic
+  // revenue lands in the total and pushes it UP — it is not a floor.
+  describe('the tagged half, which organic traffic cannot reach', () => {
+    // ₪600 organic (a post she shared), ₪400 from a tagged ad.
+    const rows = [
+      { source: 'meta', medium: 'paid', campaign: '', content: '', revenue: 600, orders: 3 },
+      {
+        source: 'instagram',
+        medium: 'paid',
+        campaign: 'rovakot_september',
+        content: 'reel_03',
+        revenue: 400,
+        orders: 2,
+      },
+    ];
+
+    it('separates the deliberately tagged revenue from the click-id-only revenue', () => {
+      const m = insights.metaAttributed(rows, isPaid);
+      expect(m.revenue).toBe(1000);
+      // Only this half is certainly an ad — organic sharing copies the bare URL
+      // and can never carry a campaign name.
+      expect(m.tagged).toEqual({ revenue: 400, orders: 2, rows: 1 });
+      // And this half could be either, which is the whole caveat.
+      expect(m.untagged).toEqual({ revenue: 600, orders: 3, rows: 1 });
+      expect(m.tagged.revenue + m.untagged.revenue).toBe(m.revenue);
+    });
+
+    // The real rule, on the real shape attribution.js produces for a bare
+    // fbclid: it IS 'paid', and no rule reading the medium can say otherwise.
+    it('confirms a bare click id really does read as paid, so the split is the only guard', () => {
+      const touch = attribution.parseTouch({ landing: 'https://x.test/?fbclid=AbC123' });
+      expect(touch).toMatchObject({ source: 'meta', medium: 'paid', campaign: '' });
+      expect(isPaid(touch)).toBe(true);
+      expect(insights.isMetaSource(touch.source)).toBe(true);
+      expect(insights.isTaggedRow(touch)).toBe(false);
+    });
+
+    it('counts an ad name alone as tagged, not just a campaign', () => {
+      const m = insights.metaAttributed(
+        [{ source: 'facebook', medium: 'paid', content: 'reel_07', revenue: 250, orders: 1 }],
+        isPaid
+      );
+      expect(m.tagged.revenue).toBe(250);
+      expect(m.untagged.revenue).toBe(0);
     });
   });
 });

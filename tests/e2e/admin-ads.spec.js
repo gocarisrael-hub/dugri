@@ -209,6 +209,7 @@ test.describe('the ad report', () => {
     armed: true,
     account: '99887766',
     account_setting: '99887766',
+    account_env: '',
     days: 30,
     since: '2026-08-12',
     until: '2026-09-10',
@@ -229,7 +230,15 @@ test.describe('the ad report', () => {
       },
     ],
     totals: { spend: 400, impressions: 18422, clicks: 331, meta_orders: 3, meta_revenue: 717 },
-    ours: { revenue: 800, orders: 4, rows: 1, revenue_all: 800, orders_all: 4 },
+    ours: {
+      revenue: 800,
+      orders: 4,
+      rows: 1,
+      tagged: { revenue: 800, orders: 4, rows: 1 },
+      untagged: { revenue: 0, orders: 0, rows: 0 },
+      revenue_all: 800,
+      orders_all: 4,
+    },
     roas: 2,
     ...over,
   });
@@ -280,7 +289,15 @@ test.describe('the ad report', () => {
           meta_orders: 9,
           meta_revenue: 3000,
         },
-        ours: { revenue: 2000, orders: 2, rows: 2, revenue_all: 10000, orders_all: 12 },
+        ours: {
+          revenue: 2000,
+          orders: 2,
+          rows: 2,
+          tagged: { revenue: 1400, orders: 1, rows: 1 },
+          untagged: { revenue: 600, orders: 1, rows: 1 },
+          revenue_all: 10000,
+          orders_all: 12,
+        },
         roas: 2,
       })
     );
@@ -290,6 +307,48 @@ test.describe('the ad report', () => {
     await expect(tiles).not.toContainText('10.00₪');
     // And it says which revenue it divided, so the figure can be checked.
     await expect(page.locator('#metaBox')).toContainText('שיוחס לפרסום במטא');
+  });
+
+  // The caveat used to call the figure a floor. It is not one: Facebook and
+  // Instagram put a click id on EVERY outbound link, an organic post's included,
+  // and a bare click id reads as paid — so organic sales push the ratio UP. The
+  // page has to say that, and show how much of the figure is the certain half.
+  test('the caveat admits the figure can be too high, and shows the certain half', async ({
+    page,
+  }) => {
+    await serveMeta(
+      page,
+      metaAnswer({
+        totals: {
+          spend: 1000,
+          impressions: 40000,
+          clicks: 900,
+          meta_orders: 9,
+          meta_revenue: 3000,
+        },
+        ours: {
+          revenue: 1000,
+          orders: 4,
+          rows: 2,
+          tagged: { revenue: 400, orders: 1, rows: 1 },
+          untagged: { revenue: 600, orders: 3, rows: 1 },
+          revenue_all: 5000,
+          orders_all: 20,
+        },
+        roas: 1,
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const box = page.locator('#metaBox');
+    // No longer claimed as a floor…
+    await expect(box).not.toContainText('ולכן זו רצפה');
+    // …and the over-count is named, with its cause.
+    await expect(box).toContainText('הערכה');
+    await expect(box).toContainText('פוסט אורגני');
+    // The split, in money: ₪400 certainly an ad, ₪600 possibly organic.
+    await expect(box).toContainText('400 ₪');
+    await expect(box).toContainText('600 ₪');
+    await expect(box).toContainText('מזהה קליק בלבד');
   });
 
   // A window switched faster than the answers come back. A cached 30-day reply
@@ -343,6 +402,7 @@ test.describe('the ad report', () => {
       ok: false,
       armed: true,
       account_setting: '',
+      account_env: '',
       error: 'more than one ad account — choose which one to report on',
       accounts: [
         { id: '111', name: 'Dugri' },
@@ -361,6 +421,7 @@ test.describe('the ad report', () => {
       ok: false,
       armed: true,
       account_setting: '',
+      account_env: '',
       error: 'more than one ad account — choose which one to report on',
       accounts: [
         { id: '11122233', name: 'Dugri' },
@@ -390,26 +451,62 @@ test.describe('the ad report', () => {
     });
   });
 
-  test('the account can also be typed in and cleared back to auto-discovery', async ({ page }) => {
-    await serveMeta(page, metaAnswer());
-    const sent = [];
-    await page.route('**/api/admin/settings**', async (route) => {
+  // A helper that answers the settings POST and reports what was sent.
+  const catchSaves = async (page, sent) =>
+    page.route('**/api/admin/settings**', async (route) => {
       if (route.request().method() !== 'POST') return route.continue();
       sent.push(JSON.parse(route.request().postData() || '{}').value);
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ effective: '' }),
+        body: JSON.stringify({ effective: sent[sent.length - 1] }),
       });
     });
+
+  test('the account can also be typed in and cleared back to auto-discovery', async ({ page }) => {
+    await serveMeta(page, metaAnswer({ account_setting: '' }));
+    const sent = [];
+    await catchSaves(page, sent);
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    // The field shows what is in force now, so it can be changed rather than
-    // guessed at.
-    await expect(page.getByTestId('meta-account-id')).toHaveValue('99887766');
     await page.getByTestId('meta-account-id').fill('');
     await page.getByTestId('save-meta-account').click();
     await expect(page.getByTestId('meta-account-status')).toContainText('גילוי אוטומטי');
     expect(sent).toEqual(['']);
+  });
+
+  // Ads Manager shows the account as `act_99887766` and that is what gets pasted.
+  // The stored setting is digits only, so an unstripped paste came back as the
+  // raw English regex printed in the middle of a Hebrew page.
+  test('an account id pasted in Meta’s own act_ form is accepted, not refused', async ({
+    page,
+  }) => {
+    await serveMeta(page, metaAnswer());
+    const sent = [];
+    await catchSaves(page, sent);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    // The field shows what is in force now, so it can be changed rather than
+    // guessed at.
+    await expect(page.getByTestId('meta-account-id')).toHaveValue('99887766');
+    await page.getByTestId('meta-account-id').fill('act_44455566');
+    await page.getByTestId('save-meta-account').click();
+    await expect(page.getByTestId('meta-account-status')).toContainText('44455566');
+    expect(sent).toEqual(['44455566']);
+  });
+
+  // "Back to auto-discovery" is a lie when META_AD_ACCOUNT_ID is set on the
+  // server: the save empties the admin field, the server falls through to the
+  // environment, and the reload visibly refills the box with the env account.
+  test('emptying the field says the server variable took over, when it did', async ({ page }) => {
+    await serveMeta(page, metaAnswer({ account_setting: '', account_env: '55566677' }));
+    const sent = [];
+    await catchSaves(page, sent);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('meta-account-id').fill('');
+    await page.getByTestId('save-meta-account').click();
+    const status = page.getByTestId('meta-account-status');
+    await expect(status).toContainText('META_AD_ACCOUNT_ID');
+    await expect(status).toContainText('55566677');
+    await expect(status).not.toContainText('גילוי אוטומטי');
   });
 
   // Meta's server being slow or refusing must never keep OUR numbers off the

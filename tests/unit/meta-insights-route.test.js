@@ -141,6 +141,35 @@ describe('the blended ROAS line', () => {
     expect(body.roas).toBe(2);
   });
 
+  // The caveat that was false in the direction that matters. Facebook and
+  // Instagram stamp a click id on EVERY outbound link, an organic post's
+  // included, and a bare fbclid reads as { source: 'meta', medium: 'paid' }. So
+  // an organic sale is inside `ours.revenue` and the ratio is a CEILING, not the
+  // floor the page used to claim. It cannot be excluded — most real ad clicks
+  // carry nothing else — so the split is what has to be told.
+  it('separates the certainly-an-ad revenue from the revenue that may be organic', async () => {
+    settings.set('analytics', 'meta_ad_account_id', ACCOUNT);
+    attribution._setEvents([
+      // She posted the deck; three people bought from the post. Facebook put an
+      // fbclid on the link, so these arrive as meta / paid.
+      purchase('meta', 'paid', 200),
+      purchase('meta', 'paid', 200),
+      purchase('meta', 'paid', 200),
+      // And the ads produced one sale, on a link that names its campaign.
+      { ...purchase('instagram', 'paid', 400), c: 'rovakot_september', ct: 'reel_03' },
+    ]);
+    const { body } = await ads(7);
+    // The headline is still 1.00 — it cannot be anything else without throwing
+    // away every untagged ad click with it.
+    expect(body.ours.revenue).toBe(1000);
+    expect(body.roas).toBe(1);
+    // But the page is handed the number that says how much of that to believe:
+    // ₪400 came in on a tagged link and cannot be organic; ₪600 arrived on a
+    // click id alone, which an organic post carries too.
+    expect(body.ours.tagged).toMatchObject({ revenue: 400, orders: 1 });
+    expect(body.ours.untagged).toMatchObject({ revenue: 600, orders: 3 });
+  });
+
   it('has no ROAS at all when nothing was spent', async () => {
     settings.set('analytics', 'meta_ad_account_id', ACCOUNT);
     adRows = [{ ad_name: 'paused', spend: '0' }];
@@ -178,6 +207,7 @@ describe('which ad account', () => {
     settings.set('analytics', 'meta_ad_account_id', ACCOUNT);
     const { body } = await ads(7);
     expect(body.account_setting).toBe(ACCOUNT);
+    expect(body.account_env).toBe('');
     expect(graphCalls.some((u) => u.includes('act_' + ACCOUNT + '/insights'))).toBe(true);
   });
 
@@ -186,10 +216,27 @@ describe('which ad account', () => {
   it('honours META_AD_ACCOUNT_ID when nothing is saved in the admin', async () => {
     process.env.META_AD_ACCOUNT_ID = 'act_' + ACCOUNT;
     const { body } = await ads(7);
-    expect(body.account_setting).toBe(ACCOUNT);
+    // The `act_` prefix is stripped, and the account it reports on is that one.
+    expect(body.account).toBe(ACCOUNT);
     expect(graphCalls.some((u) => u.includes('act_' + ACCOUNT + '/insights'))).toBe(true);
     // And never asked the token to guess between accounts.
     expect(graphCalls.some((u) => u.includes('me/adaccounts'))).toBe(false);
+  });
+
+  // The admin field and the environment are reported APART, because emptying the
+  // field does not mean "discover it again" while the environment still names an
+  // account — and the page would otherwise say so while visibly refilling itself.
+  it('says which of the two is set, not just which one won', async () => {
+    process.env.META_AD_ACCOUNT_ID = 'act_' + ACCOUNT;
+    const empty = await ads(7);
+    expect(empty.body.account_setting).toBe('');
+    expect(empty.body.account_env).toBe(ACCOUNT);
+
+    settings.set('analytics', 'meta_ad_account_id', '11112222');
+    insights._clearCache();
+    const saved = await ads(7);
+    expect(saved.body.account_setting).toBe('11112222');
+    expect(saved.body.account_env).toBe(ACCOUNT);
   });
 
   it('lets the saved setting win over the environment', async () => {
@@ -197,7 +244,7 @@ describe('which ad account', () => {
     settings.set('analytics', 'meta_ad_account_id', ACCOUNT);
     const { body } = await ads(7);
     expect(body.account_setting).toBe(ACCOUNT);
-    expect(graphCalls.some((u) => u.includes('act_11112222'))).toBe(false);
+    expect(graphCalls.some((u) => u.includes('act_11112222/insights'))).toBe(false);
   });
 
   it('still needs the admin key', async () => {

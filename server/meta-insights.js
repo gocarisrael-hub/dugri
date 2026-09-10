@@ -105,13 +105,19 @@ function nextCursor(payload) {
 /**
  * A whole Graph list, followed to the end of its cursor.
  *
- * Returns { ok, data: [...all rows], truncated } — `truncated` true when the page
- * cap was reached before Meta ran out of rows, so a caller can say that its
- * totals are a floor rather than the answer.
+ * Returns { ok, data: [...all rows], truncated } — `truncated` true when the walk
+ * stopped before Meta ran out of rows, so a caller can say that its totals are a
+ * floor rather than the answer. Every early stop here under-counts, never over-
+ * counts, because "floor" is the only claim the caller can then honestly make.
  */
 async function graphList(pathAndQuery, { token, fetchImpl, maxPages = MAX_PAGES } = {}) {
   const rows = [];
   let after = '';
+  // Every cursor already walked. A list that loops back on itself would
+  // otherwise be concatenated over and over until the page cap — turning one
+  // page of spend into twenty pages of it, which INFLATES the total and inverts
+  // the "these numbers are a floor" the truncation flag makes the page say.
+  const walked = new Set();
   const cap = Math.max(1, Number(maxPages) || 1);
   for (let page = 0; page < cap; page++) {
     const r = await graph(pathAndQuery + (after ? '&after=' + encodeURIComponent(after) : ''), {
@@ -120,12 +126,24 @@ async function graphList(pathAndQuery, { token, fetchImpl, maxPages = MAX_PAGES 
     });
     if (!r.ok) return r;
     const payload = r.data || {};
+    const hasNext = Boolean(payload.paging && payload.paging.next);
+    const next = hasNext ? nextCursor(payload) : '';
+    // Meta handing back the SAME cursor it was just given means it did not
+    // advance: `after` means "everything past this item", so a well-behaved page
+    // can never end on the cursor that opened it. This page is therefore the
+    // previous one again — DISCARD its rows rather than adding a second copy of
+    // the same spend, and stop.
+    if (after && next && next === after) return { ok: true, data: rows, truncated: true };
     if (Array.isArray(payload.data)) rows.push(...payload.data);
-    if (!(payload.paging && payload.paging.next)) return { ok: true, data: rows, truncated: false };
-    after = nextCursor(payload);
+    if (!hasNext) return { ok: true, data: rows, truncated: false };
     // A next link we cannot turn into a cursor: stop, and SAY the list is short
     // rather than presenting a partial total as a complete one.
-    if (!after) return { ok: true, data: rows, truncated: true };
+    if (!next) return { ok: true, data: rows, truncated: true };
+    // A longer loop (C1 -> C2 -> C1). The rows already collected are real, so
+    // they are kept; going round again would only duplicate them.
+    if (walked.has(next)) return { ok: true, data: rows, truncated: true };
+    walked.add(next);
+    after = next;
   }
   return { ok: true, data: rows, truncated: true };
 }
@@ -261,12 +279,18 @@ async function fetchInsights({ token, accountId, days = 30, fetchImpl, now = Dat
     if (found.accounts.length === 0) {
       return { ok: false, armed: true, error: 'this token can see no ad account' };
     }
-    if (found.accounts.length > 1) {
+    // `truncated` counts as "more than one", because it means the list is SHORT:
+    // a second account may exist that this walk never saw, and taking the first
+    // of a list we know is incomplete is exactly the guess this refuses to make.
+    if (found.accounts.length > 1 || found.truncated) {
       return {
         ok: false,
         armed: true,
         accounts: found.accounts,
-        error: 'more than one ad account — choose which one to report on',
+        truncated: !!found.truncated,
+        error: found.truncated
+          ? 'could not read the whole ad-account list — say which account to report on'
+          : 'more than one ad account — choose which one to report on',
       };
     }
     account = found.accounts[0];
@@ -336,6 +360,28 @@ async function fetchInsights({ token, accountId, days = 30, fetchImpl, now = Dat
 // ₪2,000 of it from Meta, against ₪1,000 of spend, reads 10.00 where the truth
 // is 2.00 — and it is the number ad budgets get set from).
 //
+// WHAT THIS CANNOT DO, and why the page must say so. The result is an
+// APPROXIMATION, and it is wrong in BOTH directions:
+//
+//   TOO LOW — a real ad click that arrives under a source name not in the list
+//   below (a hand-tagged link with some other utm_source) is left out.
+//
+//   TOO HIGH — Facebook and Instagram append `fbclid` to EVERY outbound link
+//   click, an organic post's included, and attribution.js reads a bare fbclid as
+//   { source: 'meta', medium: 'paid' } because for most real ads that is the only
+//   evidence there is. So revenue from an organic post lands here too. `isPaid`
+//   cannot prevent that: the 'paid' medium is SYNTHESISED from a click id that
+//   organic traffic carries as well. Excluding click-id-only touches would fix
+//   the over-count and empty the numerator — Meta offers no way to tag ads once
+//   (see RAILWAY_SETUP.md), so most genuine ad clicks arrive carrying nothing
+//   else.
+//
+// What can be separated honestly is TAGGED from UNTAGGED. A touch carrying a
+// campaign or an ad name came from a link somebody deliberately tagged, which
+// organic sharing does not do; a touch with a Meta source and no names at all
+// arrived on a click id alone, and could be either. Both are returned, so the
+// page can show how much of the figure is the certain half.
+//
 // The source names are the ones attribution.js can produce for a Meta click:
 // 'meta' is an fbclid arriving with no utm parameters at all, and the rest are
 // what Meta's {{site_source_name}} macro is spelled out to.
@@ -356,30 +402,50 @@ function isMetaSource(source) {
   );
 }
 
+// A row somebody tagged on purpose: it carries a campaign or an ad name, which
+// only a link built for an ad ever does. Sharing a post organically copies the
+// bare URL, so an organic click can never land in here.
+function isTaggedRow(row) {
+  return Boolean((row && row.campaign) || (row && row.content));
+}
+
 /**
  * OUR revenue and orders from META traffic, over attribution.report() rows.
  *
- * `isPaid` is passed in rather than re-implemented so that "this row cost money"
- * has exactly one definition (attribution.isPaid) — two copies of that rule would
- * drift, and the page would quietly start counting organic Instagram against ad
- * spend.
+ * Returns { revenue, orders, matched, tagged, untagged } — `tagged` is the part
+ * that came in on a deliberately tagged link and `untagged` the part that arrived
+ * on a click id alone, which organic Facebook and Instagram traffic also carries.
+ * They sum to the total. See the note above: the total is an estimate, and the
+ * split is what says how far it can be trusted.
  *
- * This is a FLOOR, not a proof: a Meta ad tagged with some source name not in the
- * list above lands outside it. The page must therefore say what the figure is
- * rather than calling it ROAS full stop.
+ * `isPaid` is REQUIRED, and is passed in rather than re-implemented so that "this
+ * row cost money" has exactly one definition (attribution.isPaid). Defaulting it
+ * to "count everything" would silently restore the very bug this exists to
+ * prevent, so a missing one throws instead.
  */
 function metaAttributed(rows, isPaid) {
-  let revenue = 0;
-  let orders = 0;
-  let matched = 0;
+  if (typeof isPaid !== 'function') {
+    throw new TypeError('metaAttributed(rows, isPaid): isPaid is required');
+  }
+  const tally = () => ({ revenue: 0, orders: 0, rows: 0 });
+  const tagged = tally();
+  const untagged = tally();
   for (const r of Array.isArray(rows) ? rows : []) {
     if (!r || !isMetaSource(r.source)) continue;
-    if (typeof isPaid === 'function' && !isPaid(r)) continue;
-    revenue += Number(r.revenue) || 0;
-    orders += Number(r.orders) || 0;
-    matched += 1;
+    if (!isPaid(r)) continue;
+    const into = isTaggedRow(r) ? tagged : untagged;
+    into.revenue += Number(r.revenue) || 0;
+    into.orders += Number(r.orders) || 0;
+    into.rows += 1;
   }
-  return { revenue: Math.round(revenue * 100) / 100, orders, matched };
+  const round = (t) => ({ ...t, revenue: Math.round(t.revenue * 100) / 100 });
+  return {
+    revenue: Math.round((tagged.revenue + untagged.revenue) * 100) / 100,
+    orders: tagged.orders + untagged.orders,
+    matched: tagged.rows + untagged.rows,
+    tagged: round(tagged),
+    untagged: round(untagged),
+  };
 }
 
 // --- cache --------------------------------------------------------------------
@@ -413,6 +479,7 @@ module.exports = {
   accountWindow,
   graphList,
   isMetaSource,
+  isTaggedRow,
   metaAttributed,
   fetchInsights,
   cachedInsights,

@@ -378,6 +378,21 @@ the one line where neither platform is grading its own homework. Both halves hav
 to describe the same traffic: all site revenue over Meta spend is a bigger number
 that merely looks like a return on ad spend.
 
+It is an **estimate, and it errs in both directions**, which the page says out
+loud. Too low: an ad tagged with a source name we don't recognise is left out of
+it. Too high: Facebook and Instagram append a click id (`fbclid`) to **every**
+outbound link, an organic post's included, and a bare click id is the only
+evidence most real ad clicks carry — so sales from an organic post are counted
+against ad spend as well. Excluding click-id-only visits would fix the over-count
+and empty the figure, since Meta offers no way to tag ads once.
+
+What can be separated honestly is **tagged from untagged**: a visit carrying a
+campaign or an ad name came from a link built for an ad, and organic sharing never
+carries one. The page shows that split under the ratio — the larger the tagged
+half, the more the ratio can be leaned on. The cheapest way to grow it is to use a
+**separate, tagged link for the organic posts and the bio**, so organic traffic
+identifies itself instead of hiding inside the ad bucket.
+
 The optional per-ad string on that page adds campaign names to _our_ table as
 well. It changes nothing about spend or ROAS, and nothing breaks without it: an
 untagged Instagram click is still counted, just under a nameless `meta / paid`

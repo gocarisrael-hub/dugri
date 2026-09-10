@@ -720,9 +720,20 @@
       }
 
       // A successful save re-renders the whole box, which would take the "saved"
-      // message down with it. Parked here instead, and picked up by the picker
-      // that the reload builds.
-      let accountStatus = null;
+      // message down with it. Both of these survive that reload and are consumed
+      // by the picker it builds.
+      let accountStatus = null; // { text, cls } — shown verbatim
+      // The value just saved. What it MEANS is only knowable after the reload:
+      // emptying the field falls through to META_AD_ACCOUNT_ID when the server
+      // has one, so "back to auto-discovery" would be a lie the owner can see is
+      // a lie, because the field comes back filled.
+      let accountSaved = null;
+
+      function savedText(value, envId) {
+        if (value) return 'נשמר ✓ מדווח על חשבון ' + value;
+        if (envId) return 'נשמר ✓ השדה רוקן — בתוקף עכשיו META_AD_ACCOUNT_ID מהשרת (' + envId + ')';
+        return 'נשמר ✓ חוזר לגילוי אוטומטי מהטוקן';
+      }
 
       function sayAccount(text, cls, park) {
         if (park) accountStatus = { text, cls };
@@ -738,7 +749,10 @@
       // way to choose one — which is the exact case the account listing is for.
       // It lives here rather than on admin-analytics.html because this is the
       // page whose numbers it changes.
-      function accountPicker(current, accounts) {
+      function accountPicker(data) {
+        const current = (data && data.account_setting) || '';
+        const envId = (data && data.account_env) || '';
+        const accounts = (data && data.accounts) || null;
         const wrap = document.createElement('div');
         wrap.className = 'builder';
         wrap.style.marginTop = '14px';
@@ -747,8 +761,11 @@
         const p = document.createElement('p');
         p.className = 'hint';
         p.style.marginTop = '0';
-        p.textContent =
-          'חשבון המודעות שמדווחים עליו. שדה ריק = מתגלה לבד, וזה הנכון כשיש חשבון אחד מאחורי הטוקן.';
+        p.textContent = envId
+          ? 'חשבון המודעות שמדווחים עליו. שדה ריק כאן = משתמשים ב-META_AD_ACCOUNT_ID שמוגדר בשרת (' +
+            envId +
+            ').'
+          : 'חשבון המודעות שמדווחים עליו. שדה ריק = מתגלה לבד, וזה הנכון כשיש חשבון אחד מאחורי הטוקן.';
         wrap.appendChild(p);
 
         if (Array.isArray(accounts) && accounts.length) {
@@ -785,29 +802,44 @@
         wrap.appendChild(row);
 
         const status = document.createElement('p');
-        status.className =
-          'hint' + (accountStatus && accountStatus.cls ? ' ' + accountStatus.cls : '');
         status.id = 'metaAccountStatus';
         status.setAttribute('data-testid', 'meta-account-status');
-        status.textContent = accountStatus ? accountStatus.text : '';
-        // Consumed once: a save's confirmation belongs to the render it caused,
-        // not to every render after it.
+        // A save's message is written HERE, on the render the save caused, so it
+        // can describe what the server came back with rather than what the click
+        // hoped for. Consumed once, not repeated on every later render.
+        if (accountSaved !== null) {
+          status.textContent = savedText(accountSaved, envId);
+          status.className = 'hint ok';
+          accountSaved = null;
+        } else {
+          status.textContent = accountStatus ? accountStatus.text : '';
+          status.className =
+            'hint' + (accountStatus && accountStatus.cls ? ' ' + accountStatus.cls : '');
+        }
         accountStatus = null;
         wrap.appendChild(status);
         return wrap;
       }
 
       async function saveAccount(id) {
+        // Ads Manager shows the account as `act_99887766`, and that is what gets
+        // pasted. The stored setting is digits only (and so is the environment
+        // variable, which the server strips the same way), so the prefix comes
+        // off here rather than coming back as an English regex in a Hebrew page.
+        const value = String(id || '')
+          .trim()
+          .replace(/^act_/i, '');
         sayAccount('שומר…');
         try {
           await api('/api/admin/settings', {
             section: 'analytics',
             key: 'meta_ad_account_id',
-            value: id,
+            value,
           });
-          // Parked, because the reload below rebuilds the picker this message
-          // is sitting in.
-          sayAccount(id ? 'נשמר ✓ מדווח על חשבון ' + id : 'נשמר ✓ חוזר לגילוי אוטומטי', 'ok', true);
+          // Parked for the reload below, which rebuilds the picker this message
+          // sits in — and which is the first moment we know what emptying the
+          // field actually did.
+          accountSaved = value;
           loadMeta();
         } catch (e) {
           // No reload on a refusal: the numbers on screen are the ones that were
@@ -845,13 +877,13 @@
           box.appendChild(metaNote('מטא החזירה: ' + (data.error || 'שגיאה'), 'err'));
           // Several accounts behind one token: name them, AND let her pick one —
           // naming them without a control is a dead end.
-          box.appendChild(accountPicker(data.account_setting || '', data.accounts || null));
+          box.appendChild(accountPicker(data));
           return;
         }
         if (!data.rows.length) {
           box.appendChild(metaNote('אין מודעות שרצו בטווח הזה.'));
           box.appendChild(windowNote(data));
-          box.appendChild(accountPicker(data.account_setting || '', null));
+          box.appendChild(accountPicker({ ...data, accounts: null }));
           return;
         }
 
@@ -860,8 +892,19 @@
         // the server sends back only the revenue our own ledger attributed to
         // Meta, because all site revenue over Meta spend is not a return on ad
         // spend, it is a bigger number that looks like one.
+        //
+        // It is still an ESTIMATE, and the note below says so in both directions.
+        // Facebook and Instagram stamp a click id on every outbound link, an
+        // organic post's included, so some organic sales are counted here; and an
+        // ad tagged with a source we don't recognise is missed. What CAN be
+        // separated is the part that arrived on a deliberately tagged link —
+        // organic sharing never carries a campaign name — so that split is shown
+        // as the measure of how far the ratio can be trusted.
         const t = data.totals;
+        const zero = { revenue: 0, orders: 0, rows: 0 };
         const ours = data.ours || { revenue: 0, orders: 0, revenue_all: 0 };
+        const tagged = ours.tagged || zero;
+        const untagged = ours.untagged || zero;
         const roas = data.roas == null ? null : Number(data.roas);
         const tiles = document.createElement('div');
         tiles.className = 'tiles';
@@ -870,9 +913,9 @@
           ['קליקים', String(t.clicks), 'לפי מטא'],
           ['הזמנות מפרסום', String(ours.orders), 'הספירה שלנו'],
           [
-            'החזר על כל שקל פרסום',
+            'החזר על כל שקל פרסום (הערכה)',
             roas == null ? '—' : roas.toFixed(2) + '₪',
-            'ההכנסה שלנו מפרסום במטא חלקי ההוצאה במטא',
+            'ההכנסה שיוחסה למטא חלקי ההוצאה במטא',
           ],
         ];
         for (const [label, value, sub] of items) {
@@ -896,7 +939,29 @@
               nis(ours.revenue) +
               ' — החלק מההכנסה שלנו (' +
               nis(ours.revenue_all) +
-              ' בסך הכל בטווח הזה) שיוחס לפרסום במטא. הכנסה ממודעה שלא זוהתה כמטא לא נספרת כאן, ולכן זו רצפה.'
+              ' בסך הכל בטווח הזה) שיוחס לפרסום במטא.'
+          )
+        );
+        // The honest caveat, in BOTH directions. The earlier wording called this
+        // a floor; it is not one. Facebook and Instagram add a click id to every
+        // outbound link, so an organic post's sales land in the same bucket as an
+        // ad's and push the figure UP — the larger error of the two, and the one
+        // that flatters the ads.
+        box.appendChild(
+          metaNote(
+            'זו הערכה, ולא בהכרח בכיוון אחד: מודעה שהגיעה בלי סימון שאנחנו מזהים חסרה מהחישוב ומורידה אותו, ולעומת זאת פייסבוק ואינסטגרם מוסיפות מזהה קליק גם לקישור בפוסט אורגני — ומכירות מפוסט כזה נספרות כאן ומעלות אותו.'
+          )
+        );
+        // The split that says how much of it is certain: a campaign or an ad name
+        // only ever comes from a link built for an ad.
+        box.appendChild(
+          metaNote(
+            'מתוך זה: ' +
+              nis(tagged.revenue) +
+              ' הגיעו מקישור מסומן (קמפיין או מודעה בשם) — זה בוודאות פרסום; ' +
+              nis(untagged.revenue) +
+              ' הגיעו עם מזהה קליק בלבד, וזה יכול להיות פרסום או אורגני. ככל שהחלק המסומן גדול יותר, ההחזר למעלה מדויק יותר.',
+            untagged.revenue > tagged.revenue ? 'err' : ''
           )
         );
         if (t.spend > 0 && ours.orders === 0) {
@@ -965,7 +1030,7 @@
             'העמודות המסומנות "מטא" הן הספירה שלה, וההזמנות בטבלה שמתחת הן שלנו — הפער בין השתיים הוא מידע, לא תקלה.'
           )
         );
-        box.appendChild(accountPicker(data.account_setting || '', null));
+        box.appendChild(accountPicker({ ...data, accounts: null }));
       }
 
       function fail(message) {
