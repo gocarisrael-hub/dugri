@@ -367,7 +367,14 @@
         <div class="ranges" id="ranges"></div>
         <div class="tiles" id="tiles"></div>
 
-        <h2>לפי מקור וקמפיין</h2>
+        <h2>מה מטא מדווחת — ומה זה עלה</h2>
+        <p class="hint" style="margin: 0 0 4px">
+          נמשך ישירות מחשבון המודעות שלך. אין מה לסמן ואין מה להדביק בכל מודעה — העלות היא המספר שרק
+          מטא יודעת, וההזמנות בטבלה השנייה הן המספר שרק אנחנו יודעים.
+        </p>
+        <div id="metaBox"></div>
+
+        <h2>הספירה שלנו — לפי מקור</h2>
         <div class="scroller">
           <table>
             <thead>
@@ -392,13 +399,14 @@
           זה קליק מאינסטגרם עדיין נספר (לפי <code>fbclid</code>), אבל בלי שם קמפיין.
         </p>
 
-        <h2>מטא ממלאת את השמות לבד</h2>
+        <h2>שמות קמפיינים בטבלה שלנו (לא חובה)</h2>
         <div class="builder">
           <p class="hint" style="margin-top: 0">
-            את השורה הזאת מדביקים <strong>פעם אחת בכל מודעה</strong>, בשדה
-            <code>URL parameters</code> (בעריכת המודעה, בתחתית העמוד, תחת Tracking). היא זהה לכל
-            המודעות — אין מה למלא ואין מה לשנות. מטא מחליפה את הסוגריים בשם הקמפיין ובשם המודעה
-            האמיתיים בכל קליק, והם אלה שיופיעו בטבלה למעלה.
+            הטבלה של מטא למעלה כבר מראה כל מודעה בשם שלה, בלי לעשות כלום. השורה הזאת נחוצה רק אם
+            רוצים שגם <strong>הספירה שלנו</strong> תדע לפי איזו מודעה הגיעה כל הזמנה. מדביקים אותה
+            בשדה <code>URL parameters</code> של מודעה (תחת Tracking), והיא נגררת אוטומטית לכל מודעה
+            שמשכפלים ממנה. למטא אין דרך להחיל אותה על כל החשבון בבת אחת — לכן זה לא חובה, וכלום לא
+            נשבר בלעדיה.
           </p>
           <div class="out">
             <input id="bAuto" type="text" readonly data-testid="auto-params" />
@@ -407,8 +415,7 @@
             </button>
           </div>
           <p class="hint" id="bAutoStatus">
-            טיפ: כשמשכפלים מודעה במטא, השדה הזה משוכפל איתה — אז בפועל מדביקים אותו פעם אחת
-            ומשכפלים.
+            בלי זה: קליק מאינסטגרם עדיין נספר אצלנו, פשוט בשורה אחת בשם meta / paid.
           </p>
         </div>
 
@@ -680,6 +687,134 @@
         }
       }
 
+      // --- Meta's own numbers -------------------------------------------------
+      // Spend is the half of ROAS that no first-party ledger can see, so this
+      // table is where the money question is actually answered. It is drawn
+      // entirely in JS because it has four states — not armed, an error from
+      // Meta, several accounts to choose between, and rows — and each of them
+      // has to say something useful rather than being blank.
+      function metaNote(text, cls) {
+        const p = document.createElement('p');
+        p.className = 'hint' + (cls ? ' ' + cls : '');
+        p.setAttribute('data-testid', 'meta-note');
+        p.textContent = text;
+        return p;
+      }
+
+      function renderMeta(data, ourRevenue) {
+        const box = qs('metaBox');
+        box.textContent = '';
+
+        if (!data.armed) {
+          box.appendChild(
+            metaNote(
+              'לא מחובר לחשבון המודעות. מוסיפים ב-Railway את META_CAPI_TOKEN (טוקן של System User עם הרשאות ads_read ו-ads_management) — ואז העלות וה-ROAS של כל מודעה יופיעו כאן לבד.'
+            )
+          );
+          return;
+        }
+        if (!data.ok) {
+          box.appendChild(metaNote('מטא החזירה: ' + (data.error || 'שגיאה'), 'err'));
+          // Several accounts behind one token: name them, so the owner pastes an
+          // id she can see rather than one she has to go and find.
+          if (Array.isArray(data.accounts)) {
+            for (const a of data.accounts) {
+              box.appendChild(metaNote(a.name + ' — ' + a.id));
+            }
+          }
+          return;
+        }
+        if (!data.rows.length) {
+          box.appendChild(metaNote('אין מודעות שרצו בטווח הזה.'));
+          return;
+        }
+
+        // The one line that answers "did the advertising pay for itself" — OUR
+        // revenue over META's spend. Deliberately mixed: each side contributes
+        // the number only it can know, and neither platform grades its own
+        // homework.
+        const t = data.totals;
+        const real = t.spend > 0 ? Math.round((ourRevenue / t.spend) * 100) / 100 : null;
+        const tiles = document.createElement('div');
+        tiles.className = 'tiles';
+        const items = [
+          ['הוצאה על פרסום', nis(t.spend)],
+          ['קליקים', String(t.clicks)],
+          ['הזמנות לפי מטא', String(t.meta_orders)],
+          [
+            'החזר על כל שקל פרסום',
+            real == null ? '—' : real.toFixed(2) + '₪',
+            'לפי ההכנסה שלנו חלקי ההוצאה של מטא',
+          ],
+        ];
+        for (const [label, value, sub] of items) {
+          const tile = document.createElement('div');
+          tile.className = 'tile';
+          const n = document.createElement('div');
+          n.className = 'n';
+          n.textContent = value;
+          const l = document.createElement('div');
+          l.className = 'l';
+          l.textContent = sub ? label + ' · ' + sub : label;
+          tile.appendChild(n);
+          tile.appendChild(l);
+          tiles.appendChild(tile);
+        }
+        box.appendChild(tiles);
+
+        const scroller = document.createElement('div');
+        scroller.className = 'scroller';
+        const table = document.createElement('table');
+        table.setAttribute('data-testid', 'meta-table');
+        const head = document.createElement('thead');
+        const hr = document.createElement('tr');
+        for (const label of [
+          'קמפיין',
+          'מודעה',
+          'הוצאה',
+          'הצגות',
+          'קליקים',
+          'הזמנות (מטא)',
+          'הכנסה (מטא)',
+          'ROAS',
+        ]) {
+          const th = document.createElement('th');
+          th.textContent = label;
+          hr.appendChild(th);
+        }
+        head.appendChild(hr);
+        table.appendChild(head);
+        const body = document.createElement('tbody');
+        for (const r of data.rows) {
+          const tr = document.createElement('tr');
+          const cells = [
+            [r.campaign || '—', 'ltr'],
+            [r.ad || '—', 'ltr'],
+            [nis(r.spend), 'money'],
+            [String(r.impressions), 'num'],
+            [String(r.clicks), 'num'],
+            [String(r.meta_orders), 'num'],
+            [nis(r.meta_revenue), 'num'],
+            [r.roas == null ? '—' : r.roas.toFixed(2), 'num'],
+          ];
+          for (const [text, cls] of cells) {
+            const td = document.createElement('td');
+            td.className = cls;
+            td.textContent = text;
+            tr.appendChild(td);
+          }
+          body.appendChild(tr);
+        }
+        table.appendChild(body);
+        scroller.appendChild(table);
+        box.appendChild(scroller);
+        box.appendChild(
+          metaNote(
+            'מספרי ההזמנות של מטא הם ההערכה שלה. הטבלה שמתחת היא הספירה שלנו — הפער בין השתיים הוא מידע, לא תקלה.'
+          )
+        );
+      }
+
       function fail(message) {
         const p = document.createElement('p');
         p.className = 'hint';
@@ -692,8 +827,23 @@
           const data = await api('/api/admin/ads?days=' + days);
           renderTiles(data.totals);
           renderRows(data.rows);
+          // Meta's half is loaded after ours and never blocks it: it is a call
+          // to somebody else's server, and a slow or refused one must not keep
+          // our own numbers off the screen.
+          loadMeta(data.totals.revenue);
         } catch (e) {
           fail(e.message);
+        }
+      }
+
+      async function loadMeta(ourRevenue) {
+        qs('metaBox').textContent = '';
+        qs('metaBox').appendChild(metaNote('טוען מנתוני מטא…'));
+        try {
+          renderMeta(await api('/api/admin/ads/meta?days=' + days), ourRevenue);
+        } catch (e) {
+          qs('metaBox').textContent = '';
+          qs('metaBox').appendChild(metaNote('טעינת נתוני מטא נכשלה: ' + e.message, 'err'));
         }
       }
 

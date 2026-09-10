@@ -121,10 +121,10 @@ test.describe('the ad report', () => {
     await expect(page.getByRole('button', { name: '7 ימים' })).toHaveClass(/on/);
   });
 
-  // THE ONE THING SHE HAS TO DO, and it is one paste that is the same for every
-  // ad. Meta substitutes the placeholders itself, so no campaign name is ever
-  // typed by hand — a report that needed manual tagging per ad would be right in
-  // principle and empty in practice.
+  // OPTIONAL, and the page has to say so. Meta has no way to apply URL
+  // parameters across an account, so requiring them per ad would make the report
+  // depend on work that will not happen. It buys one thing — campaign names in
+  // OUR table too — and the string is at least identical for every ad.
   test('the Meta string is fixed, and the names it produces land in the report', async ({
     page,
   }) => {
@@ -178,6 +178,96 @@ test.describe('the ad report', () => {
         .locator('td')
         .nth(1)
     ).toHaveText('bio');
+  });
+
+  // Meta's half of the page. The E2E server has no ad-account token, which is
+  // the state the site ships in — so the page must SAY that, and say what to do
+  // about it. A blank space here would read as "no ads ran".
+  test('without a token, Meta’s table names the setting that is missing', async ({ page }) => {
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const note = page.getByTestId('meta-note').first();
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('META_CAPI_TOKEN');
+    await expect(note).toContainText('ads_read');
+  });
+
+  test('Meta’s spend sits above our own count, and the two are labelled apart', async ({
+    page,
+  }) => {
+    // Meta's API is somebody else's server; the E2E fixture stands in for it.
+    await page.route('**/api/admin/ads/meta**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          armed: true,
+          account: '99887766',
+          rows: [
+            {
+              campaign: 'Rovakot September',
+              adset: 'Women 25-34',
+              ad: 'Reel 03',
+              spend: 400,
+              impressions: 18422,
+              clicks: 331,
+              meta_orders: 3,
+              meta_revenue: 717,
+              roas: 1.79,
+            },
+          ],
+          totals: {
+            spend: 400,
+            impressions: 18422,
+            clicks: 331,
+            meta_orders: 3,
+            meta_revenue: 717,
+          },
+        }),
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const table = page.getByTestId('meta-table');
+    await expect(table).toBeVisible();
+    await expect(table.locator('tbody tr').first()).toContainText('Rovakot September');
+    await expect(table.locator('tbody tr').first()).toContainText('Reel 03');
+    // Spend — the number no first-party ledger can ever see.
+    await expect(table.locator('tbody tr').first()).toContainText('400');
+    // And Meta's orders are named as Meta's, never merged into ours.
+    await expect(page.locator('#metaBox')).toContainText('הזמנות לפי מטא');
+    await expect(page.locator('#metaBox')).toContainText('הפער בין השתיים');
+  });
+
+  test('several ad accounts are listed rather than one being guessed at', async ({ page }) => {
+    await page.route('**/api/admin/ads/meta**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: false,
+          armed: true,
+          error: 'more than one ad account — choose which one to report on',
+          accounts: [
+            { id: '111', name: 'Dugri' },
+            { id: '222', name: 'Star Experiences' },
+          ],
+        }),
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.locator('#metaBox')).toContainText('Dugri — 111');
+    await expect(page.locator('#metaBox')).toContainText('Star Experiences — 222');
+  });
+
+  // Meta's server being slow or refusing must never keep OUR numbers off the
+  // screen: they are the ones that do not depend on anybody else.
+  test('our own table still renders when Meta’s half fails', async ({ page }) => {
+    await page.route('**/api/admin/ads/meta**', (route) => route.abort());
+    const campaign = unique('resilient');
+    await arriveAt(page, `/index.html?utm_source=ig&utm_medium=paid&utm_campaign=${campaign}`);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, campaign)).toBeVisible();
+    await expect(page.locator('#metaBox')).toContainText('נכשל');
   });
 
   // The page must fit the phone. It failed to: the tagged-link example in the

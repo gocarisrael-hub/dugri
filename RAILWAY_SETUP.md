@@ -306,9 +306,16 @@ number), so Meta keeps one and the sale is never double-counted.
 **Off until the token is set.** With no `META_CAPI_TOKEN` nothing is sent and
 nothing is attempted — the state the site ships in.
 
-- **`META_CAPI_TOKEN`** — the access token. Events Manager → your pixel →
-  **Settings** → **Conversions API** → **Generate access token**. It is a
-  credential, so it lives here rather than in the admin settings store.
+- **`META_CAPI_TOKEN`** — the access token, used for **both** halves of this:
+  reporting sales to Meta, and reading back what the ads cost. Make it as a
+  **System User** token (Business Settings → System Users → Add → assign the ad
+  account and the pixel → Generate new token) with **`ads_management`** and
+  **`ads_read`**. The quick token from Events Manager → **Conversions API** →
+  _Generate access token_ also works for sending sales, but usually cannot read
+  the ad account, so the spend table will show Meta's own refusal
+  (`(#200) Requires ads_read permission`) — that message is the signal to make a
+  System User token instead. It is a credential, so it lives here rather than in
+  the admin settings store.
 - **`META_CAPI_TEST_CODE`** — _optional, for verifying the wiring._ Events
   Manager → **Test events** shows a code (`TEST12345`); set it here and the
   events appear in that tab instead of the live report. **Remove it when you are
@@ -346,6 +353,38 @@ deleted. It is never returned by the admin orders API, and with no
 `META_CAPI_TOKEN` set none of it is ever written. The buyer's own order link
 carries a token that opens her order — that token is stripped from every URL
 before anything is stored or sent, so it cannot reach Events Manager.
+
+### What the token buys, beyond reporting sales
+
+With `ads_read`, `/admin-ads.html` also pulls **spend, impressions, clicks and
+Meta's own reported purchases per ad** straight from the ad account. Nothing has
+to be tagged for this: Meta names every campaign and ad itself.
+
+That matters because **Meta offers no way to tag ads once.** There is no
+account-level URL-parameters setting, and `url_tags` can be set when a creative
+is _created_ but is not an updatable field — so existing ads cannot be stamped
+through the API either (the usual workaround swaps the creative and discards the
+ad's likes and comments). Per-ad tagging is per-ad work, permanently. Hence the
+division the page is built around:
+
+| number           | who can know it                          |
+| ---------------- | ---------------------------------------- |
+| what an ad cost  | **only Meta** — read via the API         |
+| orders + revenue | **only us** — from the order store       |
+| purchases per ad | both, and the two are shown side by side |
+
+The blended figure — **our** revenue over **Meta's** spend — is the one line
+where neither platform is grading its own homework.
+
+The optional per-ad string on that page adds campaign names to _our_ table as
+well. It changes nothing about spend or ROAS, and nothing breaks without it: an
+untagged Instagram click is still counted, just under a nameless `meta / paid`
+row.
+
+**`META_AD_ACCOUNT_ID`** is not needed when the token can see exactly one ad
+account — it is discovered. With several, the page lists them by name and id and
+the chosen one is saved from the admin (`analytics.meta_ad_account_id`), rather
+than one being guessed at and its spend labelled as all of it.
 
 On **staging**, leave `META_CAPI_TOKEN` unset — otherwise test orders land in the
 real ad account and teach Meta's optimiser nonsense.
