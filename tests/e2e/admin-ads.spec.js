@@ -200,6 +200,32 @@ test.describe('the ad report', () => {
     await expect(page.getByRole('button', { name: '90 יום' })).toHaveClass(/on/);
   });
 
+  // The confirmation page and the collection page are both opened with the
+  // order's OWNER TOKEN in the address bar, and both load the measurement
+  // module. The beacon must not carry that token to our own server, and the
+  // browser must not keep a copy of it to replay with every later event.
+  test('the beacon never carries the order token that is in the address', async ({ page }) => {
+    const [request] = await Promise.all([
+      page.waitForRequest((r) => r.url().includes('/api/track') && r.method() === 'POST'),
+      page.goto(
+        '/pay-success.html?c=e2e-collection-id&k=e2e-owner-token&utm_source=instagram' +
+          '&utm_medium=paid&utm_campaign=' +
+          unique('token')
+      ),
+    ]);
+    const body = JSON.parse(request.postData() || '{}');
+    // The campaign still arrives — this is not a test of sending nothing.
+    expect(body.landing).toContain('utm_source=instagram');
+    expect(body.landing).toContain('/pay-success.html');
+    expect(body.landing).not.toContain('e2e-owner-token');
+    expect(body.landing).not.toContain('e2e-collection-id');
+
+    const stored = await page.evaluate(() => localStorage.getItem('dugri_attr') || '');
+    expect(stored).toContain('utm_source=instagram');
+    expect(stored).not.toContain('e2e-owner-token');
+    expect(stored).not.toContain('e2e-collection-id');
+  });
+
   test('the admin pages are never counted as traffic', async ({ page }) => {
     let tracked = false;
     page.on('request', (req) => {

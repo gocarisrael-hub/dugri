@@ -18,19 +18,57 @@ const VISITOR_KEY = 'dugri_vid';
 const TOUCH_KEY = 'dugri_attr';
 const SESSION_KEY = 'dugri_visit';
 
-// The parameters that mark a URL as campaign-tagged. Mirrors the server's list;
-// this side only needs to know THAT there is a campaign, never which.
+// The campaign parameters, and the ONLY parameters this module will carry. It
+// mirrors the list server/attribution.js parses out of a landing URL — nothing
+// else in a query string is of any use to the report, and one of the things in
+// there is a credential (see safeUrl).
 const TAGS = [
   'utm_source',
   'utm_medium',
   'utm_campaign',
   'utm_content',
+  'utm_ad', // the server reads this as a fallback for utm_content
   'utm_term',
   'fbclid',
   'igshid',
   'gclid',
   'ttclid',
 ];
+
+/**
+ * A URL reduced to what a measurement is allowed to know: origin, path, and the
+ * campaign parameters above. Everything else in the query, and the whole
+ * fragment, is dropped.
+ *
+ * THIS IS A SECURITY BOUNDARY, not tidiness. Two of our own pages are opened
+ * with the collection's OWNER TOKEN in the address —
+ * collect.html?c=<id>&k=<token> and pay-success.html?c=&k= — and that token is
+ * write access: the owner's view of the order and the delivery address, what she
+ * was charged, and the routes that change the order, cancel the payment, edit the
+ * word list or close the collection. A landing URL is stored in localStorage and
+ * replayed with every later event, so an unfiltered href would put a credential
+ * into a request body, into the browser's storage, and into whatever downstream
+ * consumer later decides to persist or forward these fields. The report can do
+ * its whole job with origin + path + campaign, so that is all it gets.
+ *
+ * Returns '' for anything that will not parse, which the server treats as no
+ * evidence at all — the safe answer.
+ */
+export function safeUrl(url) {
+  let u;
+  try {
+    u = new URL(String(url));
+  } catch {
+    return '';
+  }
+  const kept = new URLSearchParams();
+  for (const t of TAGS) {
+    const v = u.searchParams.get(t);
+    if (v) kept.set(t, v);
+  }
+  const query = kept.toString();
+  return (u.origin + u.pathname + (query ? '?' + query : '')).slice(0, 2000);
+}
 
 // Storage is unavailable in some in-app browsers and blocked in others, and an
 // ad click very often lands in exactly such a browser. Every access is guarded:
@@ -126,26 +164,43 @@ export function isTagged(url) {
 
 /**
  * Return the touch to report, updating the stored one first when this page load
- * IS a new campaign arrival. Pure-ish: reads/writes localStorage, nothing else.
+ * IS a new campaign arrival.
+ *
+ * NOT read-only: it writes the stored touch on a tagged arrival, and again on a
+ * first arrival with nothing stored yet. Everything it writes or returns has
+ * been through safeUrl — the referrer too, since a buyer moving on from
+ * collect.html carries that page's tokenised address as the referrer of the next
+ * one.
  */
 export function currentTouch(href, referrer) {
   const stored = read('localStorage', TOUCH_KEY);
+  const arrival = () => ({ landing: safeUrl(href), referrer: safeUrl(referrer) });
   if (isTagged(href)) {
-    const touch = { landing: String(href).slice(0, 2000), referrer: String(referrer || '') };
+    const touch = arrival();
     write('localStorage', TOUCH_KEY, JSON.stringify(touch));
     return touch;
   }
   if (stored) {
     try {
       const t = JSON.parse(stored);
-      if (t && typeof t.landing === 'string') return t;
+      if (t && typeof t.landing === 'string') {
+        const clean = { landing: safeUrl(t.landing), referrer: safeUrl(t.referrer) };
+        // Sanitised on the way out as well as in, and REWRITTEN when it had to
+        // be: a touch stored by an older version of this file may still hold the
+        // order token, and leaving it there means it sits in the buyer's browser
+        // and goes out again with every event until something replaces it.
+        if (clean.landing !== t.landing || clean.referrer !== t.referrer) {
+          write('localStorage', TOUCH_KEY, JSON.stringify(clean));
+        }
+        return clean;
+      }
     } catch {
       /* corrupt value — fall through and report this arrival instead */
     }
   }
   // First ever arrival, untagged: the referrer is all the evidence there is, and
   // it is worth keeping (it separates Instagram-profile traffic from direct).
-  const touch = { landing: String(href).slice(0, 2000), referrer: String(referrer || '') };
+  const touch = arrival();
   write('localStorage', TOUCH_KEY, JSON.stringify(touch));
   return touch;
 }
@@ -158,6 +213,11 @@ export function currentTouch(href, referrer) {
  */
 export function sendEvent(kind, extra = {}) {
   if (typeof fetch !== 'function') return Promise.resolve(false);
+  // The only URLs that leave this module come from currentTouch, and everything
+  // it returns has been through safeUrl. `extra` is the caller's business: the
+  // confirmation page passes the collection id and its owner token there, which
+  // the server checks against the order store and stores nothing of — that is a
+  // proof of ownership for one request, not a URL that gets written down.
   const touch = currentTouch(location.href, document.referrer);
   const body = {
     kind,

@@ -284,3 +284,83 @@ describe('campaignKey', () => {
     expect(campaignKey('nonsense')).toBe('');
   });
 });
+
+// TWO OF OUR OWN PAGES CARRY A CREDENTIAL IN THE ADDRESS BAR.
+// collect.html?c=<id>&k=<owner token> and pay-success.html?c=&k= are both
+// buyer-facing pages that load this module, and that token is write access to
+// the order: the delivery address, what she was charged, and the routes that
+// change the order, cancel the payment, edit the word list or close the
+// collection. A landing URL is stored and then replayed with every later event,
+// so an unfiltered href would put the token in localStorage and in every request
+// body from then on — and anything downstream that persists or forwards these
+// fields (an ad platform's event_source_url, say) would carry it further.
+describe('a measurement never carries a credential', () => {
+  const TOKENS = '?c=8f6b2c1e-3f1a-4f0e-9a2b-000000000001&k=3c9e77aa-1d55-4a90-b0b1-000000000002';
+  const seen = () =>
+    JSON.stringify(fetchMock.mock.calls) + (localStorage.getItem('dugri_attr') || '');
+
+  it('strips the order token out of what it sends and what it stores', async () => {
+    setUrl('http://localhost/collect.html' + TOKENS + '&utm_source=instagram&utm_medium=paid');
+    const mod = await load();
+    await mod.sendEvent('visit');
+
+    const body = lastBody();
+    // The campaign still gets through — that is the whole point of the field.
+    expect(body.landing).toContain('utm_source=instagram');
+    expect(body.landing).toContain('utm_medium=paid');
+    expect(body.landing).toContain('/collect.html');
+    // And the credential does not, anywhere.
+    for (const secret of ['3c9e77aa', '8f6b2c1e', 'k=', 'c=']) {
+      expect(body.landing).not.toContain(secret);
+    }
+    expect(seen()).not.toContain('3c9e77aa');
+    expect(seen()).not.toContain('8f6b2c1e');
+    // Including the copy kept in the browser for the rest of the funnel.
+    const stored = JSON.parse(localStorage.getItem('dugri_attr'));
+    expect(stored.landing).toContain('utm_source=instagram');
+    expect(stored.landing).not.toContain('k=');
+  });
+
+  it('drops the fragment and every parameter that is not a campaign', async () => {
+    setUrl('http://localhost/options.html?utm_campaign=rovakot&plan=premium&step=4#pay');
+    const mod = await load();
+    const touch = mod.currentTouch(location.href, '');
+    expect(touch.landing).toBe(location.origin + '/options.html?utm_campaign=rovakot');
+  });
+
+  // A buyer who moves on from the collection page hands the NEXT page that
+  // tokenised address as its referrer, so the referrer is the same leak.
+  it('strips the referrer too', async () => {
+    setUrl('http://localhost/');
+    const mod = await load();
+    const referrer = 'http://localhost/collect.html' + TOKENS;
+    const touch = mod.currentTouch(location.href, referrer);
+    expect(touch.referrer).toBe('http://localhost/collect.html');
+    expect(seen()).not.toContain('3c9e77aa');
+  });
+
+  // A value written by an earlier version of this file is still sitting in real
+  // browsers, and it gets replayed with every event until it is replaced.
+  it('sanitises a tokenised touch that was stored before this rule existed', async () => {
+    const mod = await load();
+    localStorage.setItem(
+      'dugri_attr',
+      JSON.stringify({
+        landing: 'http://localhost/collect.html' + TOKENS + '&utm_campaign=rovakot',
+        referrer: 'http://localhost/pay-success.html' + TOKENS,
+      })
+    );
+    setUrl('http://localhost/how.html');
+    await mod.sendEvent('visit');
+    expect(lastBody().landing).toContain('utm_campaign=rovakot');
+    expect(seen()).not.toContain('3c9e77aa');
+    expect(seen()).not.toContain('8f6b2c1e');
+  });
+
+  it('keeps the ad parameter the server reads as a fallback for the creative', async () => {
+    setUrl('http://localhost/?utm_source=ig&utm_ad=reel_03');
+    const mod = await load();
+    const touch = mod.currentTouch(location.href, '');
+    expect(touch.landing).toContain('utm_ad=reel_03');
+  });
+});
