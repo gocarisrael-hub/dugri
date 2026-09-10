@@ -317,6 +317,14 @@
         background: #fafafa;
         font-family: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
       }
+      /* metaNote() already asks for these; without them a refusal from Meta and a
+         successful save read exactly alike. */
+      .hint.err {
+        color: #b3261e;
+      }
+      .hint.ok {
+        color: #2e7d4f;
+      }
       footer {
         margin-top: 34px;
         padding-top: 16px;
@@ -490,9 +498,19 @@
       let days = 30;
       let timer = null;
 
-      async function api(path) {
+      const withKey = (path) =>
+        path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+
+      async function api(path, body) {
         const r = await fetch(
-          path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key)
+          withKey(path),
+          body
+            ? {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+              }
+            : undefined
         );
         if (!r.ok) {
           let msg = 'HTTP ' + r.status;
@@ -701,7 +719,117 @@
         return p;
       }
 
-      function renderMeta(data, ourRevenue) {
+      // A successful save re-renders the whole box, which would take the "saved"
+      // message down with it. Parked here instead, and picked up by the picker
+      // that the reload builds.
+      let accountStatus = null;
+
+      function sayAccount(text, cls, park) {
+        if (park) accountStatus = { text, cls };
+        const live = qs('metaAccountStatus');
+        if (live) {
+          live.textContent = text;
+          live.className = 'hint' + (cls ? ' ' + cls : '');
+        }
+      }
+
+      // The ad account this report is pinned to. Without a control the multi-
+      // account case dead-ends: the page names the accounts and then offers no
+      // way to choose one — which is the exact case the account listing is for.
+      // It lives here rather than on admin-analytics.html because this is the
+      // page whose numbers it changes.
+      function accountPicker(current, accounts) {
+        const wrap = document.createElement('div');
+        wrap.className = 'builder';
+        wrap.style.marginTop = '14px';
+        wrap.setAttribute('data-testid', 'meta-account');
+
+        const p = document.createElement('p');
+        p.className = 'hint';
+        p.style.marginTop = '0';
+        p.textContent =
+          'חשבון המודעות שמדווחים עליו. שדה ריק = מתגלה לבד, וזה הנכון כשיש חשבון אחד מאחורי הטוקן.';
+        wrap.appendChild(p);
+
+        if (Array.isArray(accounts) && accounts.length) {
+          const list = document.createElement('div');
+          list.className = 'out';
+          for (const a of accounts) {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = (a.name || 'חשבון') + ' — ' + a.id;
+            b.setAttribute('data-account', a.id);
+            b.addEventListener('click', () => saveAccount(a.id));
+            list.appendChild(b);
+          }
+          wrap.appendChild(list);
+        }
+
+        const row = document.createElement('div');
+        row.className = 'out';
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.inputMode = 'numeric';
+        input.dir = 'ltr';
+        input.placeholder = 'למשל 99887766';
+        input.value = current || '';
+        input.setAttribute('data-testid', 'meta-account-id');
+        const save = document.createElement('button');
+        save.type = 'button';
+        save.className = 'on';
+        save.textContent = 'שמירה';
+        save.setAttribute('data-testid', 'save-meta-account');
+        save.addEventListener('click', () => saveAccount(input.value.trim()));
+        row.appendChild(input);
+        row.appendChild(save);
+        wrap.appendChild(row);
+
+        const status = document.createElement('p');
+        status.className =
+          'hint' + (accountStatus && accountStatus.cls ? ' ' + accountStatus.cls : '');
+        status.id = 'metaAccountStatus';
+        status.setAttribute('data-testid', 'meta-account-status');
+        status.textContent = accountStatus ? accountStatus.text : '';
+        // Consumed once: a save's confirmation belongs to the render it caused,
+        // not to every render after it.
+        accountStatus = null;
+        wrap.appendChild(status);
+        return wrap;
+      }
+
+      async function saveAccount(id) {
+        sayAccount('שומר…');
+        try {
+          await api('/api/admin/settings', {
+            section: 'analytics',
+            key: 'meta_ad_account_id',
+            value: id,
+          });
+          // Parked, because the reload below rebuilds the picker this message
+          // is sitting in.
+          sayAccount(id ? 'נשמר ✓ מדווח על חשבון ' + id : 'נשמר ✓ חוזר לגילוי אוטומטי', 'ok', true);
+          loadMeta();
+        } catch (e) {
+          // No reload on a refusal: the numbers on screen are the ones that were
+          // there before, and they are still right.
+          sayAccount(e.message, 'err');
+        }
+      }
+
+      // Which days Meta actually answered for. Said out loud because it is NOT
+      // the same shape of window as ours by nature: Meta counts whole calendar
+      // days in the ad account's own timezone, and the server lines our ledger up
+      // with the instant that window opens so the two can be divided.
+      function windowNote(data) {
+        const tz = data.tz_name
+          ? data.tz_name
+          : 'UTC' + (data.tz_offset_hours >= 0 ? '+' : '') + (data.tz_offset_hours || 0);
+        return metaNote(
+          'החלון: ' + data.since + ' עד ' + data.until + ' לפי שעון חשבון המודעות (' + tz + ').'
+        );
+      }
+
+      function renderMeta(data) {
         const box = qs('metaBox');
         box.textContent = '';
 
@@ -715,36 +843,36 @@
         }
         if (!data.ok) {
           box.appendChild(metaNote('מטא החזירה: ' + (data.error || 'שגיאה'), 'err'));
-          // Several accounts behind one token: name them, so the owner pastes an
-          // id she can see rather than one she has to go and find.
-          if (Array.isArray(data.accounts)) {
-            for (const a of data.accounts) {
-              box.appendChild(metaNote(a.name + ' — ' + a.id));
-            }
-          }
+          // Several accounts behind one token: name them, AND let her pick one —
+          // naming them without a control is a dead end.
+          box.appendChild(accountPicker(data.account_setting || '', data.accounts || null));
           return;
         }
         if (!data.rows.length) {
           box.appendChild(metaNote('אין מודעות שרצו בטווח הזה.'));
+          box.appendChild(windowNote(data));
+          box.appendChild(accountPicker(data.account_setting || '', null));
           return;
         }
 
-        // The one line that answers "did the advertising pay for itself" — OUR
-        // revenue over META's spend. Deliberately mixed: each side contributes
-        // the number only it can know, and neither platform grades its own
-        // homework.
+        // The line that answers "did the advertising pay for itself" — OUR
+        // revenue over META's spend. Both halves must describe the SAME traffic:
+        // the server sends back only the revenue our own ledger attributed to
+        // Meta, because all site revenue over Meta spend is not a return on ad
+        // spend, it is a bigger number that looks like one.
         const t = data.totals;
-        const real = t.spend > 0 ? Math.round((ourRevenue / t.spend) * 100) / 100 : null;
+        const ours = data.ours || { revenue: 0, orders: 0, revenue_all: 0 };
+        const roas = data.roas == null ? null : Number(data.roas);
         const tiles = document.createElement('div');
         tiles.className = 'tiles';
         const items = [
-          ['הוצאה על פרסום', nis(t.spend)],
-          ['קליקים', String(t.clicks)],
-          ['הזמנות לפי מטא', String(t.meta_orders)],
+          ['הוצאה על פרסום', nis(t.spend), 'לפי מטא'],
+          ['קליקים', String(t.clicks), 'לפי מטא'],
+          ['הזמנות מפרסום', String(ours.orders), 'הספירה שלנו'],
           [
             'החזר על כל שקל פרסום',
-            real == null ? '—' : real.toFixed(2) + '₪',
-            'לפי ההכנסה שלנו חלקי ההוצאה של מטא',
+            roas == null ? '—' : roas.toFixed(2) + '₪',
+            'ההכנסה שלנו מפרסום במטא חלקי ההוצאה במטא',
           ],
         ];
         for (const [label, value, sub] of items) {
@@ -762,6 +890,30 @@
         }
         box.appendChild(tiles);
 
+        box.appendChild(
+          metaNote(
+            'ההחזר מחושב מ-' +
+              nis(ours.revenue) +
+              ' — החלק מההכנסה שלנו (' +
+              nis(ours.revenue_all) +
+              ' בסך הכל בטווח הזה) שיוחס לפרסום במטא. הכנסה ממודעה שלא זוהתה כמטא לא נספרת כאן, ולכן זו רצפה.'
+          )
+        );
+        if (t.spend > 0 && ours.orders === 0) {
+          box.appendChild(
+            metaNote(
+              'לא יוחסה אף הזמנה לפרסום במטא בטווח הזה — יכול להיות שבאמת לא היו, ויכול להיות שהקליקים מגיעים בלי שום סימון. הטבלה של מטא למטה מראה מה היא סופרת.',
+              'err'
+            )
+          );
+        }
+        box.appendChild(windowNote(data));
+        if (data.truncated) {
+          box.appendChild(
+            metaNote('יש יותר מודעות ממה שנמשך בבת אחת — המספרים למעלה הם רצפה, לא הסך הכל.', 'err')
+          );
+        }
+
         const scroller = document.createElement('div');
         scroller.className = 'scroller';
         const table = document.createElement('table');
@@ -776,7 +928,7 @@
           'קליקים',
           'הזמנות (מטא)',
           'הכנסה (מטא)',
-          'ROAS',
+          'ROAS (מטא)',
         ]) {
           const th = document.createElement('th');
           th.textContent = label;
@@ -810,9 +962,10 @@
         box.appendChild(scroller);
         box.appendChild(
           metaNote(
-            'מספרי ההזמנות של מטא הם ההערכה שלה. הטבלה שמתחת היא הספירה שלנו — הפער בין השתיים הוא מידע, לא תקלה.'
+            'העמודות המסומנות "מטא" הן הספירה שלה, וההזמנות בטבלה שמתחת הן שלנו — הפער בין השתיים הוא מידע, לא תקלה.'
           )
         );
+        box.appendChild(accountPicker(data.account_setting || '', null));
       }
 
       function fail(message) {
@@ -822,26 +975,40 @@
         qs('main').appendChild(p);
       }
 
+      // The range buttons can be clicked faster than a request comes back, and
+      // the two windows do not come back in the order they were asked for — a
+      // cached 30-day answer can land after a fresh 7-day one and paint spend for
+      // a window the owner is not looking at. Every load stamps a generation, and
+      // an answer from an older one is dropped rather than rendered.
+      let reportSeq = 0;
+
       async function loadReport() {
+        const seq = ++reportSeq;
         try {
           const data = await api('/api/admin/ads?days=' + days);
+          if (seq !== reportSeq) return;
           renderTiles(data.totals);
           renderRows(data.rows);
           // Meta's half is loaded after ours and never blocks it: it is a call
           // to somebody else's server, and a slow or refused one must not keep
           // our own numbers off the screen.
-          loadMeta(data.totals.revenue);
+          loadMeta(seq);
         } catch (e) {
-          fail(e.message);
+          if (seq === reportSeq) fail(e.message);
         }
       }
 
-      async function loadMeta(ourRevenue) {
+      async function loadMeta(seq) {
+        // Called on its own after a save, too: it then starts its own generation.
+        const gen = seq == null ? ++reportSeq : seq;
         qs('metaBox').textContent = '';
         qs('metaBox').appendChild(metaNote('טוען מנתוני מטא…'));
         try {
-          renderMeta(await api('/api/admin/ads/meta?days=' + days), ourRevenue);
+          const data = await api('/api/admin/ads/meta?days=' + days);
+          if (gen !== reportSeq) return;
+          renderMeta(data);
         } catch (e) {
+          if (gen !== reportSeq) return;
           qs('metaBox').textContent = '';
           qs('metaBox').appendChild(metaNote('טעינת נתוני מטא נכשלה: ' + e.message, 'err'));
         }

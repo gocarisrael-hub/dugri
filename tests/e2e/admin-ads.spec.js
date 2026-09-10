@@ -191,41 +191,52 @@ test.describe('the ad report', () => {
     await expect(note).toContainText('ads_read');
   });
 
+  // One Meta answer, shaped the way the server sends it. `ours` is OUR revenue,
+  // already narrowed to the traffic Meta produced — the tile divides by it.
+  const metaAnswer = (over = {}) => ({
+    ok: true,
+    armed: true,
+    account: '99887766',
+    account_setting: '99887766',
+    days: 30,
+    since: '2026-08-12',
+    until: '2026-09-10',
+    tz_name: 'Asia/Jerusalem',
+    tz_offset_hours: 3,
+    truncated: false,
+    rows: [
+      {
+        campaign: 'Rovakot September',
+        adset: 'Women 25-34',
+        ad: 'Reel 03',
+        spend: 400,
+        impressions: 18422,
+        clicks: 331,
+        meta_orders: 3,
+        meta_revenue: 717,
+        roas: 1.79,
+      },
+    ],
+    totals: { spend: 400, impressions: 18422, clicks: 331, meta_orders: 3, meta_revenue: 717 },
+    ours: { revenue: 800, orders: 4, rows: 1, revenue_all: 800, orders_all: 4 },
+    roas: 2,
+    ...over,
+  });
+
+  const serveMeta = (page, answer) =>
+    page.route('**/api/admin/ads/meta**', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(typeof answer === 'function' ? answer(route.request()) : answer),
+      })
+    );
+
   test('Meta’s spend sits above our own count, and the two are labelled apart', async ({
     page,
   }) => {
     // Meta's API is somebody else's server; the E2E fixture stands in for it.
-    await page.route('**/api/admin/ads/meta**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ok: true,
-          armed: true,
-          account: '99887766',
-          rows: [
-            {
-              campaign: 'Rovakot September',
-              adset: 'Women 25-34',
-              ad: 'Reel 03',
-              spend: 400,
-              impressions: 18422,
-              clicks: 331,
-              meta_orders: 3,
-              meta_revenue: 717,
-              roas: 1.79,
-            },
-          ],
-          totals: {
-            spend: 400,
-            impressions: 18422,
-            clicks: 331,
-            meta_orders: 3,
-            meta_revenue: 717,
-          },
-        }),
-      })
-    );
+    await serveMeta(page, metaAnswer());
     await page.goto(`/admin-ads.html?key=${KEY}`);
     const table = page.getByTestId('meta-table');
     await expect(table).toBeVisible();
@@ -234,29 +245,160 @@ test.describe('the ad report', () => {
     // Spend — the number no first-party ledger can ever see.
     await expect(table.locator('tbody tr').first()).toContainText('400');
     // And Meta's orders are named as Meta's, never merged into ours.
-    await expect(page.locator('#metaBox')).toContainText('הזמנות לפי מטא');
+    await expect(table.locator('thead')).toContainText('הזמנות (מטא)');
     await expect(page.locator('#metaBox')).toContainText('הפער בין השתיים');
+    // The window is stated, because it is calendar days in the AD ACCOUNT's
+    // timezone and not the rolling one our own table answers for.
+    await expect(page.locator('#metaBox')).toContainText('2026-08-12');
+    await expect(page.locator('#metaBox')).toContainText('Asia/Jerusalem');
   });
 
-  test('several ad accounts are listed rather than one being guessed at', async ({ page }) => {
-    await page.route('**/api/admin/ads/meta**', (route) =>
-      route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          ok: false,
-          armed: true,
-          error: 'more than one ad account — choose which one to report on',
-          accounts: [
-            { id: '111', name: 'Dugri' },
-            { id: '222', name: 'Star Experiences' },
-          ],
-        }),
+  // THE number the owner sets budgets from. Dividing ALL site revenue by Meta's
+  // spend prints a figure that reads as ROAS and is not one — here ₪10,000 of
+  // takings, ₪2,000 of it from Meta, against ₪1,000 of spend: 2.00, never 10.00.
+  test('the ROAS tile divides Meta’s revenue by Meta’s spend, not the whole shop’s', async ({
+    page,
+  }) => {
+    await serveMeta(
+      page,
+      metaAnswer({
+        totals: {
+          spend: 1000,
+          impressions: 40000,
+          clicks: 900,
+          meta_orders: 9,
+          meta_revenue: 3000,
+        },
+        ours: { revenue: 2000, orders: 2, rows: 2, revenue_all: 10000, orders_all: 12 },
+        roas: 2,
       })
     );
     await page.goto(`/admin-ads.html?key=${KEY}`);
+    const tiles = page.locator('#metaBox .tiles');
+    await expect(tiles).toContainText('2.00₪');
+    await expect(tiles).not.toContainText('10.00₪');
+    // And it says which revenue it divided, so the figure can be checked.
+    await expect(page.locator('#metaBox')).toContainText('שיוחס לפרסום במטא');
+  });
+
+  // A window switched faster than the answers come back. A cached 30-day reply
+  // landing after a fresh 7-day one would paint spend for a window she is not
+  // looking at — and nothing on screen would say so.
+  test('a slow answer for the old range never overwrites the new one', async ({ page }) => {
+    await page.route('**/api/admin/ads/meta**', async (route) => {
+      const days = new URL(route.request().url()).searchParams.get('days');
+      if (days !== '7') await new Promise((r) => setTimeout(r, 2500));
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(
+          metaAnswer(
+            days === '7'
+              ? {
+                  days: 7,
+                  totals: {
+                    spend: 111,
+                    impressions: 1,
+                    clicks: 1,
+                    meta_orders: 0,
+                    meta_revenue: 0,
+                  },
+                }
+              : {
+                  totals: {
+                    spend: 999,
+                    impressions: 1,
+                    clicks: 1,
+                    meta_orders: 0,
+                    meta_revenue: 0,
+                  },
+                }
+          )
+        ),
+      });
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByRole('button', { name: '7 ימים' }).click();
+    const tiles = page.locator('#metaBox .tiles');
+    await expect(tiles).toContainText('111');
+    // Now let the 30-day answer land. It must be dropped, not drawn.
+    await page.waitForTimeout(3000);
+    await expect(tiles).toContainText('111');
+    await expect(tiles).not.toContainText('999');
+  });
+
+  test('several ad accounts are listed rather than one being guessed at', async ({ page }) => {
+    await serveMeta(page, {
+      ok: false,
+      armed: true,
+      account_setting: '',
+      error: 'more than one ad account — choose which one to report on',
+      accounts: [
+        { id: '111', name: 'Dugri' },
+        { id: '222', name: 'Star Experiences' },
+      ],
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(page.locator('#metaBox')).toContainText('Dugri — 111');
     await expect(page.locator('#metaBox')).toContainText('Star Experiences — 222');
+  });
+
+  // Listing the accounts and offering no way to pick one is a dead end — and it
+  // is the exact case the listing was built for.
+  test('one of several accounts can be chosen, and the choice is saved', async ({ page }) => {
+    await serveMeta(page, {
+      ok: false,
+      armed: true,
+      account_setting: '',
+      error: 'more than one ad account — choose which one to report on',
+      accounts: [
+        { id: '11122233', name: 'Dugri' },
+        { id: '44455566', name: 'Star Experiences' },
+      ],
+    });
+    // The save is intercepted rather than really written: this suite shares one
+    // settings store with every other spec.
+    let saved = null;
+    await page.route('**/api/admin/settings**', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      saved = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ effective: saved.value }),
+      });
+    });
+
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.locator('[data-account="44455566"]').click();
+    await expect(page.getByTestId('meta-account-status')).toContainText('נשמר');
+    expect(saved).toEqual({
+      section: 'analytics',
+      key: 'meta_ad_account_id',
+      value: '44455566',
+    });
+  });
+
+  test('the account can also be typed in and cleared back to auto-discovery', async ({ page }) => {
+    await serveMeta(page, metaAnswer());
+    const sent = [];
+    await page.route('**/api/admin/settings**', async (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      sent.push(JSON.parse(route.request().postData() || '{}').value);
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ effective: '' }),
+      });
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    // The field shows what is in force now, so it can be changed rather than
+    // guessed at.
+    await expect(page.getByTestId('meta-account-id')).toHaveValue('99887766');
+    await page.getByTestId('meta-account-id').fill('');
+    await page.getByTestId('save-meta-account').click();
+    await expect(page.getByTestId('meta-account-status')).toContainText('גילוי אוטומטי');
+    expect(sent).toEqual(['']);
   });
 
   // Meta's server being slow or refusing must never keep OUR numbers off the

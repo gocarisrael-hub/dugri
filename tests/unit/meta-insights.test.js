@@ -16,7 +16,19 @@ const insights = require(path.join(__dirname, '..', '..', 'server', 'meta-insigh
 const TOKEN = 'EAA-test-token';
 const NOW = Date.parse('2026-09-10T09:00:00Z');
 
+const ok = (answer) => ({
+  ok: !answer.error,
+  status: answer.error ? 400 : 200,
+  json: async () => answer,
+});
+
 // A fetch stub that answers by URL fragment, and records what was asked for.
+//
+// The ad ACCOUNT lookup is answered by default: every insights call now makes one
+// first, because the account's timezone is what decides which days `time_range`
+// means. A test that cares about the timezone passes its own route for it.
+const ACCOUNT_LOOKUP = /act_([^/?]+)\?fields=account_id/;
+
 function graphStub(routes) {
   const calls = [];
   const impl = vi.fn(async (url) => {
@@ -24,8 +36,18 @@ function graphStub(routes) {
     for (const [fragment, answer] of Object.entries(routes)) {
       if (String(url).includes(fragment)) {
         if (answer instanceof Error) throw answer;
-        return { ok: !answer.error, status: answer.error ? 400 : 200, json: async () => answer };
+        return ok(answer);
       }
+    }
+    const account = ACCOUNT_LOOKUP.exec(String(url));
+    if (account) {
+      return ok({
+        account_id: account[1],
+        name: 'Dugri',
+        currency: 'ILS',
+        timezone_name: 'Etc/GMT',
+        timezone_offset_hours_utc: 0,
+      });
     }
     throw new Error('unexpected url ' + url);
   });
@@ -46,6 +68,8 @@ const AD_ROW = {
   ],
   action_values: [{ action_type: 'offsite_conversion.fb_pixel_purchase', value: '717' }],
 };
+
+const insightsCalls = (impl) => impl.calls.filter((u) => u.includes('/insights')).length;
 
 beforeEach(() => insights._clearCache());
 
@@ -127,7 +151,7 @@ describe('fetching', () => {
     expect(impl.calls.some((u) => u.includes('/insights'))).toBe(false);
   });
 
-  it('asks for the window it was given, ending today', async () => {
+  it('asks for the window it was given, ending today in the account’s timezone', async () => {
     const impl = graphStub({ insights: { data: [] } });
     await insights.fetchInsights({
       token: TOKEN,
@@ -136,7 +160,8 @@ describe('fetching', () => {
       fetchImpl: impl,
       now: NOW,
     });
-    const url = decodeURIComponent(impl.calls[0]);
+    // Call one asks which timezone the account keeps; call two asks what it spent.
+    const url = decodeURIComponent(impl.calls.find((u) => u.includes('/insights')));
     expect(url).toContain('act_555/insights');
     expect(url).toContain('level=ad');
     expect(url).toContain('{"since":"2026-09-04","until":"2026-09-10"}');
@@ -186,14 +211,14 @@ describe('the cache', () => {
     const second = await insights.cachedInsights(opts);
     expect(first.cached).toBeUndefined();
     expect(second.cached).toBe(true);
-    expect(impl).toHaveBeenCalledTimes(1);
+    expect(insightsCalls(impl)).toBe(1);
   });
 
   it('keeps the windows apart', async () => {
     const impl = graphStub({ insights: { data: [AD_ROW] } });
     await insights.cachedInsights({ token: TOKEN, accountId: '1', days: 7, fetchImpl: impl });
     await insights.cachedInsights({ token: TOKEN, accountId: '1', days: 30, fetchImpl: impl });
-    expect(impl).toHaveBeenCalledTimes(2);
+    expect(insightsCalls(impl)).toBe(2);
   });
 
   // A cached failure would go on saying "bad token" for five minutes after she
@@ -203,6 +228,222 @@ describe('the cache', () => {
     const opts = { token: TOKEN, accountId: '1', fetchImpl: impl };
     await insights.cachedInsights(opts);
     await insights.cachedInsights(opts);
-    expect(impl).toHaveBeenCalledTimes(2);
+    expect(insightsCalls(impl)).toBe(2);
+  });
+});
+
+// --- the window ---------------------------------------------------------------
+// Meta reads `time_range` as whole CALENDAR DAYS in the AD ACCOUNT's timezone
+// (documented on the Insights API; the account carries the offset as
+// AdAccount.timezone_offset_hours_utc). Taking the date off a UTC clock is
+// therefore wrong at the edges — and wrong in a way that is invisible, because
+// the wrong window still returns numbers.
+describe('the window Meta is asked for', () => {
+  it('counts the days in the ad account’s timezone, not the server’s', () => {
+    // 00:30 on the 10th in Israel (UTC+3) is still the 9th in UTC. Asked in UTC,
+    // `until` would be the 9th — excluding the day the owner is looking at.
+    const w = insights.accountWindow({
+      days: 7,
+      now: Date.parse('2026-09-09T21:30:00Z'),
+      offsetHours: 3,
+    });
+    expect(w.until).toBe('2026-09-10');
+    expect(w.since).toBe('2026-09-04');
+  });
+
+  it('reports the real instant the window opens, so our ledger can be cut there', () => {
+    const w = insights.accountWindow({
+      days: 7,
+      now: Date.parse('2026-09-10T09:00:00Z'),
+      offsetHours: 3,
+    });
+    // Midnight on the 4th in Tel Aviv is 21:00 on the 3rd in UTC. Our own report
+    // is a rolling now-minus-N-days cutoff, so without this number the two halves
+    // of the ROAS line describe windows up to a day apart.
+    expect(new Date(w.since_ms).toISOString()).toBe('2026-09-03T21:00:00.000Z');
+    expect(w.span).toBe(7);
+  });
+
+  it('handles a negative offset the same way', () => {
+    const w = insights.accountWindow({
+      days: 1,
+      now: Date.parse('2026-09-10T02:00:00Z'),
+      offsetHours: -8,
+    });
+    // 02:00 UTC is still the 9th in California.
+    expect(w.since).toBe('2026-09-09');
+    expect(w.until).toBe('2026-09-09');
+  });
+
+  it('asks Meta which timezone the account keeps before asking what it spent', async () => {
+    const impl = graphStub({
+      'act_777?fields=account_id': {
+        account_id: '777',
+        name: 'Dugri',
+        timezone_name: 'Asia/Jerusalem',
+        timezone_offset_hours_utc: 3,
+      },
+      insights: { data: [] },
+    });
+    const r = await insights.fetchInsights({
+      token: TOKEN,
+      accountId: 'act_777',
+      days: 7,
+      fetchImpl: impl,
+      now: Date.parse('2026-09-09T21:30:00Z'),
+    });
+    expect(r.tz_offset_hours).toBe(3);
+    expect(r.tz_name).toBe('Asia/Jerusalem');
+    // The last day of the window is the account's today, not UTC's yesterday.
+    expect(r.until).toBe('2026-09-10');
+    expect(decodeURIComponent(impl.calls[1])).toContain(
+      '{"since":"2026-09-04","until":"2026-09-10"}'
+    );
+  });
+
+  it('passes Meta’s refusal through when the account itself cannot be read', async () => {
+    const impl = graphStub({
+      'act_777?fields=account_id': { error: { message: '(#200) Requires ads_read permission' } },
+    });
+    const r = await insights.fetchInsights({ token: TOKEN, accountId: '777', fetchImpl: impl });
+    expect(r).toMatchObject({
+      ok: false,
+      armed: true,
+      error: '(#200) Requires ads_read permission',
+    });
+  });
+});
+
+// --- paging -------------------------------------------------------------------
+// Meta returns at most `limit` rows and a `paging.next` when there are more.
+// Stopping at the first page loses ads AND under-reports the spend they add up
+// to — which inflates every ROAS figure computed from that total.
+describe('paging', () => {
+  // A stub that hands back a scripted sequence of pages and records the cursors
+  // it was asked with.
+  function pager(pages) {
+    let i = 0;
+    const calls = [];
+    const impl = vi.fn(async (url) => {
+      calls.push(String(url));
+      // The account lookup is not part of the scripted list — it is asked once,
+      // before the walk, for the timezone.
+      const account = ACCOUNT_LOOKUP.exec(String(url));
+      if (account) return ok({ account_id: account[1], timezone_offset_hours_utc: 0 });
+      const page = pages[Math.min(i, pages.length - 1)];
+      i += 1;
+      return ok(page);
+    });
+    impl.calls = calls;
+    return impl;
+  }
+
+  it('follows the cursor to the end instead of stopping at the first page', async () => {
+    const impl = pager([
+      {
+        data: [{ ...AD_ROW, ad_name: 'page one', spend: '100' }],
+        paging: {
+          cursors: { after: 'CURSOR2' },
+          next: 'https://graph.facebook.com/x?after=CURSOR2',
+        },
+      },
+      { data: [{ ...AD_ROW, ad_name: 'page two', spend: '25' }], paging: { cursors: {} } },
+    ]);
+    const r = await insights.fetchInsights({
+      token: TOKEN,
+      accountId: '99887766',
+      fetchImpl: impl,
+    });
+    expect(r.rows.map((x) => x.ad)).toEqual(['page one', 'page two']);
+    // The spend total is the whole account's, not the first page's.
+    expect(r.totals.spend).toBe(125);
+    expect(r.truncated).toBe(false);
+    expect(impl.calls[impl.calls.length - 1]).toContain('after=CURSOR2');
+  });
+
+  // Meta's own instruction: stop when `next` disappears, not when a page comes
+  // back empty — "a page may be empty but contain a next paging link".
+  it('does not stop on an empty page that still carries a next link', async () => {
+    const impl = pager([
+      { data: [], paging: { cursors: { after: 'C2' }, next: 'https://graph.facebook.com/x' } },
+      { data: [{ ...AD_ROW, ad_name: 'late', spend: '9' }] },
+    ]);
+    const r = await insights.fetchInsights({
+      token: TOKEN,
+      accountId: '99887766',
+      fetchImpl: impl,
+    });
+    expect(r.rows.map((x) => x.ad)).toEqual(['late']);
+  });
+
+  it('says so rather than lying when the page cap stops the walk', async () => {
+    const impl = pager([
+      {
+        data: [{ ad_name: 'a', spend: '1' }],
+        paging: { cursors: { after: 'C' }, next: 'https://graph.facebook.com/x' },
+      },
+    ]);
+    const r = await insights.graphList('act_1/insights?level=ad', {
+      token: TOKEN,
+      fetchImpl: impl,
+      maxPages: 2,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.data).toHaveLength(2);
+    expect(r.truncated).toBe(true);
+  });
+
+  it('lists every ad account, not just the first page of them', async () => {
+    const impl = pager([
+      {
+        data: [{ account_id: '111', name: 'Dugri' }],
+        paging: { cursors: { after: 'C2' }, next: 'https://graph.facebook.com/x' },
+      },
+      { data: [{ account_id: '222', name: 'Star Experiences' }] },
+    ]);
+    const r = await insights.listAdAccounts({ token: TOKEN, fetchImpl: impl });
+    expect(r.accounts.map((a) => a.id)).toEqual(['111', '222']);
+  });
+});
+
+// --- our half of the blended line ---------------------------------------------
+// ALL site revenue over META spend is not a return on ad spend. ₪10,000 of
+// revenue with ₪2,000 of it from Meta, against ₪1,000 of spend, reads 10.00
+// where the truth is 2.00 — on the page ad budgets get set from.
+describe('matching our revenue to Meta’s spend', () => {
+  const isPaid = (r) => /^(paid|cpc|ppc|cpm|ads?)/.test(r.medium || '');
+
+  it('counts only the paid rows our ledger attributed to Meta', () => {
+    const rows = [
+      { source: 'instagram', medium: 'paid', revenue: 1500, orders: 5 },
+      { source: 'meta', medium: 'paid', revenue: 500, orders: 2 },
+      // Google is paid, but not with Meta's money.
+      { source: 'google', medium: 'cpc', revenue: 4000, orders: 9 },
+      // Instagram, but organic — an ad account is not what produced it.
+      { source: 'instagram', medium: 'social', revenue: 3000, orders: 7 },
+      { source: 'direct', medium: 'none', revenue: 1000, orders: 3 },
+    ];
+    expect(insights.metaAttributed(rows, isPaid)).toEqual({
+      revenue: 2000,
+      orders: 7,
+      matched: 2,
+    });
+  });
+
+  it('knows the platform names Meta traffic can arrive under', () => {
+    for (const s of ['meta', 'facebook', 'instagram', 'audience_network', 'messenger']) {
+      expect(insights.isMetaSource(s)).toBe(true);
+    }
+    for (const s of ['google', 'tiktok', 'direct', '', null]) {
+      expect(insights.isMetaSource(s)).toBe(false);
+    }
+  });
+
+  it('is empty, not noisy, when there is nothing to match', () => {
+    expect(insights.metaAttributed(undefined, isPaid)).toEqual({
+      revenue: 0,
+      orders: 0,
+      matched: 0,
+    });
   });
 });

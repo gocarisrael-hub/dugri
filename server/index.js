@@ -7021,15 +7021,61 @@ app.get('/api/admin/meta-capi/status', (req, res) => {
 // which needs ads_read on the account as well; a token without it comes back
 // with Meta's own message rather than a bare failure, because "(#200) Requires
 // ads_read permission" tells the owner exactly which token to make.
+//
+// Which ad account to report on. Normally NEITHER of these is set: with one ad
+// account behind the token there is nothing to choose and it is discovered. The
+// saved admin setting wins over the environment, because it is the one the owner
+// can change without a redeploy; META_AD_ACCOUNT_ID exists so that an account
+// pinned on Railway alongside the token actually takes effect (it was documented
+// as a variable before anything read it).
+function metaAdAccountId() {
+  const saved = String(settings.get('analytics', 'meta_ad_account_id') || '').trim();
+  if (saved) return saved;
+  return String(process.env.META_AD_ACCOUNT_ID || '')
+    .trim()
+    .replace(/^act_/, '');
+}
+
 app.get('/api/admin/ads/meta', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const days = Math.min(Math.max(1, Number(req.query.days) || 30), 400);
+  const accountId = metaAdAccountId();
   const result = await metaInsights.cachedInsights({
     token: process.env.META_CAPI_TOKEN || '',
-    accountId: settings.get('analytics', 'meta_ad_account_id'),
+    accountId,
     days,
   });
-  res.json(result);
+  // A shallow copy: `result` may be the object sitting in the module's cache, and
+  // the per-request numbers below must not be written into it.
+  const out = { ...result, account_setting: accountId };
+  if (result.ok) {
+    // OUR half of the blended line, cut at the SAME INSTANT Meta's window opens.
+    // Meta counts whole calendar days in the ad account's timezone; report() is a
+    // rolling now-minus-N-days cutoff. Left alone, ours runs ~9-24h longer than
+    // Meta's and the division is of unlike windows. report()'s cutoff is
+    // now - days*24h, so handing it a `now` of since_ms + the span puts the cut
+    // exactly on Meta's opening instant; both sides then end at the present
+    // moment, which is as far as either has data.
+    const ours = attribution.report({
+      days: result.days,
+      now: result.since_ms + result.days * 24 * 60 * 60 * 1000,
+    });
+    // META's revenue over META's spend — not the whole site's. isPaid is handed
+    // over rather than re-implemented so "cost money" keeps one definition.
+    const mine = metaInsights.metaAttributed(ours.rows, attribution.isPaid);
+    out.ours = {
+      revenue: mine.revenue,
+      orders: mine.orders,
+      rows: mine.matched,
+      // Every source, for context only: the gap between the two is what says
+      // whether the attributed figure is a floor or the whole story.
+      revenue_all: ours.totals.revenue,
+      orders_all: ours.totals.orders,
+    };
+    out.roas =
+      result.totals.spend > 0 ? Math.round((mine.revenue / result.totals.spend) * 100) / 100 : null;
+  }
+  res.json(out);
 });
 
 app.get('/api/admin/ads', (req, res) => {

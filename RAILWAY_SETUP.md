@@ -381,10 +381,18 @@ well. It changes nothing about spend or ROAS, and nothing breaks without it: an
 untagged Instagram click is still counted, just under a nameless `meta / paid`
 row.
 
-**`META_AD_ACCOUNT_ID`** is not needed when the token can see exactly one ad
-account — it is discovered. With several, the page lists them by name and id and
-the chosen one is saved from the admin (`analytics.meta_ad_account_id`), rather
-than one being guessed at and its spend labelled as all of it.
+- **`META_AD_ACCOUNT_ID`** — _optional._ **Not needed when the token can see
+  exactly one ad account**: that one is discovered. With several, `/admin-ads.html`
+  lists them by name and id with a button to pick one, and refuses to guess in the
+  meantime — one account's spend labelled as all of it is a number that looks
+  right and isn't. The pick is saved in the admin store
+  (`analytics.meta_ad_account_id`) and **wins over this variable**, which is here
+  so an account can be pinned on Railway next to the token without opening the
+  admin at all. Digits only, with or without the `act_` prefix.
+
+The spend window is **whole days in the ad account's own timezone** — that is how
+Meta reads `time_range`, so the report asks for the account's timezone and lines
+our own revenue up with it before dividing one by the other.
 
 On **staging**, leave `META_CAPI_TOKEN` unset — otherwise test orders land in the
 real ad account and teach Meta's optimiser nonsense.
