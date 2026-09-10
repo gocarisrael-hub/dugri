@@ -4871,12 +4871,23 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       charged_total: 0,
       coupon: couponCode,
       discount_pct: couponCode ? discountPct : null,
+      // No PeleCard handshake on this path, so the buyer's details and the Meta
+      // claim ride in on markPaid's own write — one write, not three.
+      metaCtx: adCtx,
+      metaClaim: Boolean(adCtx),
     });
     if (couponCode) db.incrementCouponUses(couponCode);
     // A free order is a conversion too, and this is the request the buyer made
     // themselves — so Meta is told here and now, with their own browser's
     // details, rather than waiting for a confirmation page that may never load.
-    sendPurchaseToMeta(req.params.id, adCtx);
+    // Guarded: this handler is `async`, and Express 4 does not route a rejected
+    // one to error middleware — an unanswered request and a dead process is not
+    // a price a measurement side-effect may charge.
+    try {
+      if (adCtx) sendPurchaseToMeta(req.params.id, adCtx, { preclaimed: true });
+    } catch (e) {
+      console.error('[meta-capi] ' + req.params.id + ': ' + ((e && e.message) || e));
+    }
     // A free (100%-coupon) order is now paid — fire the same payment receipts as
     // the PeleCard callback, showing the real charged amount (0, which the emails
     // render as "free — 100% coupon" rather than a bare price).
@@ -5056,6 +5067,10 @@ app.post('/api/payment/callback', async (req, res) => {
     !c.order.paid &&
     pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
   ) {
+    // metaClaim: the Meta report is claimed inside THIS write. The alternative
+    // was a second synchronous whole-store write on the hot path of a charge
+    // that has just cleared, for a measurement side-effect.
+    const metaArmed = metaCapiArmed();
     db.markPaid(c.id, {
       method: 'pelecard',
       transactionId: tx.transactionId,
@@ -5064,6 +5079,7 @@ app.post('/api/payment/callback', async (req, res) => {
       charged_total: session.charged_total,
       coupon: session.coupon,
       discount_pct: session.discount_pct,
+      metaClaim: metaArmed,
     });
     // Count the coupon use once, on the real unpaid->paid transition.
     if (session.coupon) db.incrementCouponUses(session.coupon);
@@ -5077,7 +5093,14 @@ app.post('/api/payment/callback', async (req, res) => {
     // browser can suppress it: a closed tab, a blocked pixel and an in-app
     // browser that drops third-party scripts all still produce this call. The
     // buyer's own details ride along from the pay/init handshake (meta_ctx).
-    sendPurchaseToMeta(c.id);
+    // Guarded: an `async` handler in Express 4 does not route a rejection to
+    // error middleware, and a payment callback must answer PeleCard whatever an
+    // ad platform is doing.
+    try {
+      if (metaArmed) sendPurchaseToMeta(c.id, null, { preclaimed: true });
+    } catch (e) {
+      console.error('[meta-capi] ' + c.id + ': ' + ((e && e.message) || e));
+    }
   }
   res.json({ ok: true });
 });
@@ -6769,25 +6792,39 @@ function metaCapiArmed() {
 function metaAdContext(req, body = {}) {
   if (!metaCapiArmed()) return null;
   const cookies = metaCapi.fbCookies(req.headers && req.headers.cookie);
-  const ctx = {
-    ip: String(req.ip || '').slice(0, 45),
+  return {
+    ip: clientIpForMeta(req),
     ua: String(req.get('user-agent') || '').slice(0, 500),
     // Meta's cookies as the browser holds them. The _fbc one carries Meta's OWN
     // click timestamp, which is why it is always preferred over one we rebuild.
     fbc: String(cookies.fbc || '').slice(0, 255),
     fbp: String(cookies.fbp || '').slice(0, 255),
-    // The ad that brought them, replayed by site/js/attribution.js out of the
-    // buyer's localStorage. Only used to rebuild an _fbc we never received.
-    landing: String(body.landing || '').slice(0, 2000),
-    // Required for a website event. The page that started the payment, not the
-    // confirmation page — the callback has no idea one was ever reached.
-    source_url: String(body.source_url || req.get('referer') || '').slice(0, 500),
-    // When WE saw this landing URL. Not the click (the touch the browser replays
-    // carries no timestamp of its own), but the start of a checkout is far closer
-    // to it than the payment is, and it is the earliest instant we can prove.
+    // THE CLICK ID ONLY — never the URL it came in. The landing URL a browser
+    // replays is whatever page it first arrived on, and on this site that is
+    // very often collect.html?c=…&k=<owner_token>: the buyer's own credential,
+    // which reads and WRITES her order. It is not stored and it is not sent.
+    fbclid: metaCapi.fbclidFrom(body.landing),
+    // Required for a website event, and stripped of its query for the same
+    // reason: the page that starts a payment here carries that token, and a
+    // browser's default Referrer-Policy hands us the whole thing.
+    source_url: metaCapi.pageUrl(body.source_url || req.get('referer') || ''),
+    // When WE saw this click. Not the click itself (the touch the browser
+    // replays carries no timestamp of its own), but the start of a checkout is
+    // far closer to it than the payment is, and it is the earliest instant we
+    // can prove.
     seen_at: Date.now(),
   };
-  return ctx;
+}
+
+// The buyer's address as Meta should see it. On a direct connection (a local
+// run, a health check) req.ip is ::ffff:127.0.0.1 or ::1, which is not an
+// address of anybody's — sending it would be worse than sending nothing, since
+// Meta would try to match on it.
+function clientIpForMeta(req) {
+  const ip = String(req.ip || '').slice(0, 45);
+  const bare = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  if (!bare || bare === '::1' || bare === '127.0.0.1' || bare.startsWith('127.')) return '';
+  return bare;
 }
 
 /**
@@ -6804,20 +6841,22 @@ function metaAdContext(req, body = {}) {
  * platform that cannot be reached must never affect an order that already
  * happened.
  */
-function sendPurchaseToMeta(collectionId, ctx = null) {
+function sendPurchaseToMeta(collectionId, ctx = null, { preclaimed = false } = {}) {
   const pixelId = settings.get('analytics', 'meta_pixel_id');
   const token = process.env.META_CAPI_TOKEN || '';
   if (!metaCapi.isArmed({ pixelId, token })) return;
   const c = db.getCollection(collectionId);
   if (!c || !c.order || !c.order.paid) return;
-  // Once per paid order, whichever path gets here first.
-  if (!db.claimMetaReport(collectionId)) return;
+  // Once per paid order, whichever path gets here first. `preclaimed` is the
+  // payment paths, where markPaid took the claim inside the write it was doing
+  // anyway rather than adding a second one to the hot path of a charge.
+  if (!preclaimed && !db.claimMetaReport(collectionId)) return;
   const orderNo = db.orderRef(c);
   // The amount is read from the order store, never from a caller.
   const value = c.order.charged_total != null ? c.order.charged_total : c.order.total;
   // What we captured at pay/init, refreshed by anything the caller can add.
-  // Only a REAL value overrides: the confirmation page knows the landing URL but
-  // not the cookies, the callback knows the cookies but not the landing, and an
+  // Only a REAL value overrides: the confirmation page knows the click id but
+  // not the cookies, the callback knows the cookies but not the click id, and an
   // empty string from either must not erase what the other one had.
   const a = { ...((c.order.pelecard && c.order.pelecard.meta_ctx) || {}) };
   for (const [k, v] of Object.entries(ctx || {})) if (v) a[k] = v;
@@ -6829,7 +6868,7 @@ function sendPurchaseToMeta(collectionId, ctx = null) {
   const event = metaCapi.purchaseEvent({
     orderNo,
     value,
-    landing: a.landing || '',
+    fbclid: a.fbclid || '',
     sourceUrl: a.source_url || paymentBaseUrl(),
     fbp: a.fbp || '',
     fbc: a.fbc || '',
@@ -6844,17 +6883,57 @@ function sendPurchaseToMeta(collectionId, ctx = null) {
   metaCapi
     .send({ pixelId, token, testCode: process.env.META_CAPI_TEST_CODE || '', event })
     .then((r) => {
-      if (r.ok || r.skipped) return;
+      if (r.skipped) return;
+      if (r.ok) return db.finishMetaReport(collectionId, { ok: true });
       console.error('[meta-capi] ' + orderNo + ': ' + r.error);
-      // Meta was NOT told, so the claim was not earned: hand it back, and the
-      // confirmation page's fallback gets to try the same sale again.
-      db.releaseMetaReport(collectionId);
+      // A REFUSAL AND A FAILURE ARE DIFFERENT THINGS. A timeout, a dead network
+      // or a 5xx is worth trying again. A 4xx is Meta telling us the request
+      // itself is wrong — a revoked token, a pixel that no longer exists — and
+      // retrying it on every confirmation-page load until someone notices just
+      // burns a whole-store write per reload for an answer that cannot change.
+      db.finishMetaReport(collectionId, { permanent: isPermanentMetaError(r), error: r.error });
     })
     .catch((e) => {
       console.error('[meta-capi] ' + orderNo + ': ' + ((e && e.message) || e));
-      db.releaseMetaReport(collectionId);
+      db.finishMetaReport(collectionId, { error: String((e && e.message) || e) });
     });
 }
+
+// Will trying this again ever produce a different answer? Only a 4xx says no —
+// and not 429, which says "not so fast", nor 408, which says "too slow".
+function isPermanentMetaError(r) {
+  const s = Number(r && r.status);
+  return s >= 400 && s < 500 && s !== 429 && s !== 408;
+}
+
+// Reports that were claimed and never finished: the process died between taking
+// the claim and hearing back from Meta — a deploy inside the six-second timeout
+// is all it takes. Without this the order would sit there marked as claimed
+// forever, and for the buyer this feature exists for (the one who closed the tab
+// and never loads a confirmation page) NOTHING else would ever come back for it.
+//
+// Delayed and unref'd so it never delays a boot or holds the process open.
+function sweepUnfinishedMetaReports() {
+  if (!metaCapiArmed()) return 0;
+  const ids = db.staleMetaReports();
+  for (const id of ids) {
+    try {
+      sendPurchaseToMeta(id);
+    } catch (e) {
+      console.error('[meta-capi] sweep ' + id + ': ' + ((e && e.message) || e));
+    }
+  }
+  if (ids.length)
+    console.log('[meta-capi] sweep: retrying ' + ids.length + ' unfinished report(s)');
+  return ids.length;
+}
+if (process.env.NODE_ENV !== 'test') {
+  setTimeout(sweepUnfinishedMetaReports, Number(process.env.META_CAPI_SWEEP_MS || 20000)).unref();
+}
+// The seam the tests drive it through, since the boot timer is deliberately not
+// armed under NODE_ENV=test — a suite that booted the app should not start
+// firing at an ad platform.
+app.locals.metaCapiSweep = sweepUnfinishedMetaReports;
 
 app.post('/api/track', (req, res) => {
   if (!trackRate.ok(clientKey(req))) return res.status(429).json({ error: 'too many attempts' });
@@ -6900,11 +6979,14 @@ app.post('/api/track', (req, res) => {
   if (kind === 'purchase' && order) {
     const cookies = metaCapi.fbCookies(req.headers && req.headers.cookie);
     sendPurchaseToMeta(order.id, {
-      landing,
-      source_url: String(body.source_url || '').slice(0, 500),
+      // The click id on its own and the page URL without its query — the same
+      // rule as the capture at pay/init, for the same reason: both of these
+      // arrive here carrying the buyer's owner token.
+      fbclid: metaCapi.fbclidFrom(landing),
+      source_url: metaCapi.pageUrl(body.source_url || ''),
       fbp: String(body.fbp || cookies.fbp || '').slice(0, 255),
       fbc: String(cookies.fbc || '').slice(0, 255),
-      ip: String(req.ip || '').slice(0, 45),
+      ip: clientIpForMeta(req),
       ua: String(req.get('user-agent') || '').slice(0, 500),
     });
   }

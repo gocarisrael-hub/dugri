@@ -3185,9 +3185,11 @@
         batchNiqqudMessage,
       } from './js/niqqud.js';
       import { track } from './js/analytics.js';
-      // Read-only: which ad this browser arrived on. Handed to pay/init so the
-      // server can tell Meta which click the sale belongs to — the sale is
-      // reported from the payment callback now, where no browser exists.
+      // Which ad this browser arrived on, handed to pay/init so the server can
+      // tell Meta which click the sale belongs to — the sale is reported from
+      // the payment callback now, where no browser exists. NOT a pure read: with
+      // no touch stored yet it records this arrival as the touch (see
+      // js/attribution.js), which is the same thing every page load already does.
       import { currentTouch } from './js/attribution.js';
       import {
         fetchPricing,
@@ -6936,7 +6938,12 @@
           } catch (e) {
             /* no stored touch — the server falls back to the referrer */
           }
-          payload.source_url = String(location.href).slice(0, 500);
+          // Page, WITHOUT the query — this page's URL carries ?c=&k=, and k is
+          // the owner token: the credential that reads and writes this order.
+          // It must never reach Meta, where it would sit in Events Manager for
+          // anyone on the ad account. The server strips it again on arrival; a
+          // secret this cheap to drop gets dropped at both ends.
+          payload.source_url = location.origin + location.pathname;
           try {
             const res = await api('/pay/init', {
               method: 'POST',

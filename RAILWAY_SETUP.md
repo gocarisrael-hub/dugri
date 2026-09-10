@@ -331,12 +331,21 @@ the one switch that is a real decision rather than a setting:
 The report leaves at the **moment the card clears**, from PeleCard's callback —
 not from the confirmation page. A buyer who closes the tab the second the payment
 goes through has still bought the deck, and that is the same buyer whose pixel
-was blocked, so waiting for their browser would lose the sale on both halves.
-Meta needs a few things about that browser which the callback cannot see (it is a
-request from PeleCard's server), so while the API is armed the pending payment
-handshake keeps the buyer's IP, their browser's user-agent string, Meta's own
-`_fbc`/`_fbp` cookies and the ad they landed on. With no token set, none of it is
-stored at all.
+was blocked, so waiting for their browser would lose the sale on both halves. If
+a send dies mid-flight (a deploy inside the six-second timeout), the next boot
+sweeps it up and tries again; a refusal Meta will give every time — a revoked
+token, a deleted pixel — is recorded and not retried.
+
+**What is kept about the buyer, and for how long.** Meta needs a few things about
+the browser that the callback cannot see (it is a request from PeleCard's
+server), so while the API is armed the pending payment handshake holds the
+buyer's IP, their user-agent string, Meta's `_fbc`/`_fbp` cookies and the click
+id from the ad. That is the whole list, and it lives only until the report is
+done: the moment Meta accepts the sale (or finally refuses it) the lot is
+deleted. It is never returned by the admin orders API, and with no
+`META_CAPI_TOKEN` set none of it is ever written. The buyer's own order link
+carries a token that opens her order — that token is stripped from every URL
+before anything is stored or sent, so it cannot reach Events Manager.
 
 On **staging**, leave `META_CAPI_TOKEN` unset — otherwise test orders land in the
 real ad account and teach Meta's optimiser nonsense.

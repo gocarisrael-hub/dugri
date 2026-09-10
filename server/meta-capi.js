@@ -45,10 +45,15 @@ function hashed(value) {
 /**
  * A phone number reduced to the bare international digits Meta matches on.
  *
- * This mirrors ilPhoneToWaId() in server/index.js, which is the form the shop
- * already normalises a buyer's number into for WhatsApp — the same four cases,
- * in the same order, because two different answers to "what is this person's
- * number?" is exactly how a hash silently stops matching anything:
+ * The rules are taken from ilPhoneToWaId() in server/index.js — the form the
+ * shop already normalises a buyer's number into for WhatsApp — because two
+ * different answers to "what is this person's number?" is exactly how a hash
+ * silently stops matching anything. It is NOT identical, and deliberately:
+ * ilPhoneToWaId ends by demanding /^9725\d{8}$/, since a WhatsApp id that is not
+ * an Israeli mobile is of no use to it and an empty string is the honest answer.
+ * Meta matches phone numbers from anywhere, so a '+1' number is kept as the '+1'
+ * number it is rather than thrown away or handed an Israeli country code.
+ * The shared rules:
  *   • '00972…' is an international dialling prefix, stripped FIRST so it is not
  *     mistaken for a local leading 0 and doubled into '9720972…';
  *   • '+…' is already international and is left alone (a redundant 0 after a
@@ -101,6 +106,50 @@ function fbcFrom(landing, at = Date.now()) {
   return `fb.1.${at}.${fbclid}`;
 }
 
+/**
+ * The fbclid out of a URL, and NOTHING else from that URL.
+ *
+ * WHY THIS EXISTS RATHER THAN KEEPING THE URL. The landing URL a browser
+ * replays is whatever page it first arrived on, and on this site that is very
+ * often `collect.html?c=<id>&k=<owner_token>` — the buyer's own CREDENTIAL,
+ * which opens her order for reading and for writing. It must not be stored
+ * beside the order and it must certainly not be sent to an advertising
+ * platform, where it would sit in Events Manager for anyone on the ad account
+ * to read. Only Meta's own click id is worth keeping, so only Meta's own click
+ * id is kept. Returns '' when there is none.
+ */
+function fbclidFrom(url) {
+  try {
+    return (new URL(String(url)).searchParams.get('fbclid') || '').slice(0, 400);
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * A page URL reduced to origin + path — no query, no fragment.
+ *
+ * `event_source_url` is required for a website event, and the page that starts
+ * a payment on this site carries the owner token in its query string. Stripping
+ * happens HERE, on the server, on every route in: a client that helpfully sends
+ * its own `source_url`, and a browser whose default Referrer-Policy hands us the
+ * full referring URL, are the same leak by two doors. Returns '' for anything
+ * that is not an absolute http(s) URL.
+ */
+function pageUrl(raw) {
+  try {
+    const u = new URL(String(raw));
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+    u.search = '';
+    u.hash = '';
+    u.username = '';
+    u.password = '';
+    return u.toString().slice(0, 500);
+  } catch {
+    return '';
+  }
+}
+
 // Meta's own _fbc / _fbp, read from the request the BUYER's browser made — they
 // are first-party cookies on our own domain, so the server can pick them up
 // without the page having to hand them over. This is what lets the sale be
@@ -147,6 +196,9 @@ function purchaseEvent({
   value,
   currency = 'ILS',
   landing = '',
+  // Meta's click id on its own, already separated from the URL it arrived in.
+  // Preferred over `landing`, which the routes no longer keep (see fbclidFrom).
+  fbclid = '',
   sourceUrl = '',
   fbp = '',
   fbc = '',
@@ -162,7 +214,8 @@ function purchaseEvent({
   clickAt = 0,
 } = {}) {
   const user_data = {};
-  const click = fbc || fbcFrom(landing, clickAt || at);
+  const id = fbclid || fbclidFrom(landing);
+  const click = fbc || (id ? `fb.1.${clickAt || at}.${id}` : null);
   if (click) user_data.fbc = click;
   if (fbp) user_data.fbp = String(fbp);
   // Our own id for this sale, hashed like every other identifier so the store's
@@ -243,6 +296,8 @@ module.exports = {
   normalisedPhone,
   hashedPhone,
   fbcFrom,
+  fbclidFrom,
+  pageUrl,
   fbCookies,
   purchaseEvent,
   send,

@@ -301,6 +301,34 @@ function deliveryFee() {
   return 0;
 }
 
+// An in-flight Meta report older than this died with the process that started
+// it. Comfortably longer than META_CAPI_TIMEOUT_MS (6s) plus a slow boot.
+const META_REPORT_STALE_MS = Number(process.env.META_REPORT_STALE_MS || 5 * 60 * 1000);
+
+// May this order's Meta report be (re)claimed? Not once it has finally succeeded
+// or finally failed, and not while a send started moments ago is still running.
+function claimable(report, now = Date.now()) {
+  if (!report) return true;
+  if (report.ok || report.permanent) return false;
+  if (!report.at) return true;
+  const at = Date.parse(report.at);
+  return !Number.isFinite(at) || now - at >= META_REPORT_STALE_MS;
+}
+
+// The buyer's device details, gone. Kept only for the length of one report.
+function dropMetaCtx(c) {
+  if (c && c.order && c.order.pelecard) delete c.order.pelecard.meta_ctx;
+}
+
+// The same details kept OUT of an outbound copy, without touching the stored
+// one — the store still needs them until the report is done.
+function withoutMetaCtx(order) {
+  if (!order.pelecard || !order.pelecard.meta_ctx) return order;
+  const { meta_ctx, ...pelecard } = order.pelecard;
+  void meta_ctx;
+  return { ...order, pelecard };
+}
+
 // Add one PeleCard init handshake to a session holder and hand the holder back.
 //
 // Factored out because there are two holders now: the order itself, and the
@@ -993,6 +1021,11 @@ const db = {
       .sort((a, b) => b.created_at.localeCompare(a.created_at))
       .map((c) => ({
         ...c,
+        // The spread carries the WHOLE order, and the pending payment handshake
+        // holds the buyer's IP and user-agent while a Meta report is owed. Those
+        // are for one outbound event and nothing else — not for a row in the
+        // orders table, and not for anything reading this API.
+        order: c.order ? withoutMetaCtx(c.order) : c.order,
         status: effectiveStatus(c),
         word_count: _db.words.filter((w) => w.collection_id === c.id).length,
       }));
@@ -2280,6 +2313,20 @@ const db = {
         };
       }
     }
+    // The Meta report rides on THIS save rather than paying for its own. The
+    // payment callback writes the whole store here already, and a measurement
+    // side-effect must not add a second synchronous whole-file write to the hot
+    // path of a charge that has just gone through.
+    //   metaCtx   — the buyer's device details, for a path (the free-coupon one)
+    //               that never opened a PeleCard handshake to hold them.
+    //   metaClaim — claim the report now, so the caller can send without writing.
+    if (meta.metaCtx) {
+      c.order.pelecard = c.order.pelecard || { sessions: [] };
+      c.order.pelecard.meta_ctx = meta.metaCtx;
+    }
+    if (meta.metaClaim && claimable(c.order.meta_report)) {
+      c.order.meta_report = { at: nowIso() };
+    }
     // Mark the matched pay session resolved so it's no longer "in flight".
     if (meta.token && c.order.pelecard && Array.isArray(c.order.pelecard.sessions)) {
       const s = c.order.pelecard.sessions.find((x) => x.token === meta.token);
@@ -2298,37 +2345,68 @@ const db = {
     return true;
   },
 
-  // Claim the right to report this sale to Meta's Conversions API — ONCE.
+  // --- the Meta Conversions API report, as a state rather than a flag --------
   //
-  // The report now leaves from the payment callback, which is the only place
-  // that does not depend on the buyer's browser still being open. But the
-  // confirmation page still POSTs /api/track when it does load, and that path
-  // reports too (it is the fallback for an order paid by a route the callback
-  // never saw). Both would otherwise send the same sale.
+  // A stamp that says "claimed" is not the same as a report that happened, and
+  // treating them as one loses sales silently: the claim is written before the
+  // request leaves, so a deploy inside the six-second timeout would leave an
+  // order marked reported that Meta never heard about, with nothing to retry it.
   //
-  // Meta deduplicates on event_id and would keep one anyway; this makes it not
-  // arise. The stamp is on the ORDER, so it survives a restart between the two —
-  // an in-memory guard would not, and a deploy mid-checkout is not rare.
-  // Returns true to exactly one caller per paid order.
-  claimMetaReport(id) {
+  // So `order.meta_report` carries what actually happened:
+  //   { at }                     a send is in flight (or died in flight)
+  //   { at, ok: true }           Meta accepted it. Final.
+  //   { at, permanent, error }   Meta refused in a way retrying cannot fix
+  //                              (a bad token, a revoked pixel). Final.
+  //   { error }                  the last attempt failed transiently — no `at`,
+  //                              so the next caller may claim it again.
+  // An in-flight claim older than META_REPORT_STALE_MS is treated as died in
+  // flight, which is what makes the boot sweep (server/index.js) able to pick it
+  // up without a second bookkeeping field.
+  claimMetaReport(id, { save = true } = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order || !c.order.paid) return false;
-    if (c.order.meta_reported_at) return false;
-    c.order.meta_reported_at = nowIso();
+    if (!claimable(c.order.meta_report)) return false;
+    c.order.meta_report = { at: nowIso() };
+    if (save) saveDb();
+    return true;
+  },
+
+  // How the attempt ended. ONE write, and it does two jobs: it records the
+  // outcome, and on any final outcome it drops the buyer's device details, which
+  // exist only to make this one report and have no business outliving it.
+  finishMetaReport(id, { ok = false, permanent = false, error = '' } = {}) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return false;
+    const at = (c.order.meta_report && c.order.meta_report.at) || nowIso();
+    if (ok) c.order.meta_report = { at, ok: true };
+    else if (permanent) c.order.meta_report = { at, permanent: true, error: String(error || '') };
+    // Transient: no `at`, so it is claimable again — by the confirmation page's
+    // fallback, or by the sweep at the next boot. The device details STAY, since
+    // that retry has no other way to get them.
+    else c.order.meta_report = { error: String(error || '') };
+    if (ok || permanent) dropMetaCtx(c);
     saveDb();
     return true;
   },
 
-  // Hand the claim back when Meta could not be told after all — a timeout, a
-  // refusal, a network that was not there. Without this the stamp would say the
-  // sale was reported when it was not, and the confirmation page's fallback
-  // would decline to try again. Returns false for an order nobody claimed.
-  releaseMetaReport(id) {
-    const c = this.getCollection(id);
-    if (!c || !c.order || !c.order.meta_reported_at) return false;
-    delete c.order.meta_reported_at;
-    saveDb();
-    return true;
+  // Paid orders whose report was claimed and never finished — a send that died
+  // in flight. Newest first, capped, and only ones recent enough to still be
+  // worth reporting: an event Meta would reject as too old helps nobody.
+  staleMetaReports({ limit = 50, maxAgeMs = 7 * 24 * 60 * 60 * 1000, now = Date.now() } = {}) {
+    return _db.collections
+      .filter((c) => {
+        if (!c.order || !c.order.paid) return false;
+        const r = c.order.meta_report;
+        // Never claimed at all is NOT stale: it is an order from before the API
+        // was armed, and sweeping those would report the whole back catalogue.
+        if (!r || r.ok || r.permanent) return false;
+        if (r.at && now - Date.parse(r.at) < META_REPORT_STALE_MS) return false;
+        const paidAt = Date.parse(c.order.paid_at || c.created_at || '');
+        return Number.isFinite(paidAt) && now - paidAt <= maxAgeMs;
+      })
+      .sort((a, b) => String(b.order.paid_at || '').localeCompare(String(a.order.paid_at || '')))
+      .slice(0, limit)
+      .map((c) => c.id);
   },
 
   // Record the PDF-production state for a collection. Shape:

@@ -194,6 +194,39 @@ describe('the purchase event', () => {
     expect(capi.fbCookies('_fbc=fb.1.9.a%2Bb').fbc).toBe('fb.1.9.a+b');
   });
 
+  // THE OWNER TOKEN. collect.html is opened as ?c=<id>&k=<owner_token>, and that
+  // token both reads and WRITES the order. Every URL this module is handed can
+  // be that one, so every URL this module is handed loses its query string.
+  it('reduces a page url to origin and path, dropping the query that holds the token', () => {
+    expect(capi.pageUrl('https://dugri-israel.co.il/collect.html?c=abc&k=secret-token#frag')).toBe(
+      'https://dugri-israel.co.il/collect.html'
+    );
+    expect(capi.pageUrl('https://dugri-israel.co.il/')).toBe('https://dugri-israel.co.il/');
+    // Anything that is not an absolute http(s) url is not a page url.
+    expect(capi.pageUrl('javascript:alert(1)')).toBe('');
+    expect(capi.pageUrl('/collect.html?k=secret')).toBe('');
+    expect(capi.pageUrl('')).toBe('');
+  });
+
+  it('takes the click id out of a landing url and leaves the rest behind', () => {
+    const tokenised = 'https://dugri-israel.co.il/collect.html?c=abc&k=secret&fbclid=IwAR_9';
+    expect(capi.fbclidFrom(tokenised)).toBe('IwAR_9');
+    expect(capi.fbclidFrom('https://dugri-israel.co.il/?utm_source=newsletter')).toBe('');
+    expect(capi.fbclidFrom('not a url')).toBe('');
+  });
+
+  it('never carries a landing url into the payload — only the click id from it', () => {
+    const e = capi.purchaseEvent({
+      orderNo: 'DG-1',
+      value: 199,
+      landing: 'https://dugri-israel.co.il/collect.html?c=abc&k=secret-token&fbclid=IwAR_9',
+      at: 1_700_000_000_000,
+    });
+    expect(e.user_data.fbc).toBe('fb.1.1700000000000.IwAR_9');
+    expect(JSON.stringify(e)).not.toContain('secret-token');
+    expect(JSON.stringify(e)).not.toContain('k=');
+  });
+
   it('drops an empty contact rather than hashing the empty string', () => {
     const e = capi.purchaseEvent({
       orderNo: 'DG-1',
