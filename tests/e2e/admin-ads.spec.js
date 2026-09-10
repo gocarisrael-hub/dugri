@@ -15,15 +15,26 @@ const unique = (prefix) => `${prefix}_${Date.now().toString(36)}${Math.floor(Mat
 // The report row for one campaign, whatever else is in the table.
 const rowFor = (page, campaign) => page.locator(`#rows tr:has(td:text-is("${campaign}"))`);
 
-// Go to a page AND wait for its measurement beacon. The waiter has to be armed
-// before the navigation: the beacon fires during load, so a wait registered
-// afterwards is a wait for an event that has already happened.
+// Go to a page AND wait for its measurement beacon to be ANSWERED. The waiter has
+// to be armed before the navigation: the beacon fires during load, so a wait
+// registered afterwards is a wait for an event that has already happened.
+//
+// It waits for the RESPONSE, not the request. Every test below arrives somewhere
+// and then immediately opens the report expecting to find the visit in it — and
+// the request having left the browser says nothing about the server having
+// recorded it. Under a loaded parallel run that gap is real, and it shows up as a
+// row that is simply missing.
 async function arriveAt(page, url) {
-  const [request] = await Promise.all([
-    page.waitForRequest((r) => r.url().includes('/api/track') && r.method() === 'POST'),
+  const [response] = await Promise.all([
+    page.waitForResponse((r) => r.url().includes('/api/track') && r.request().method() === 'POST'),
     page.goto(url),
   ]);
-  return request;
+  // The beacon being ANSWERED is not the same as it being accepted: /api/track is
+  // rate-limited per client, and in E2E every worker is the same client. A 429
+  // here would otherwise surface further down as a report row that is missing for
+  // no stated reason.
+  expect(response.status(), 'the /api/track beacon was refused').toBeLessThan(400);
+  return response.request();
 }
 
 test.describe('the ad report', () => {

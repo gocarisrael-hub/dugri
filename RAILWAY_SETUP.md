@@ -373,8 +373,10 @@ division the page is built around:
 | orders + revenue | **only us** — from the order store       |
 | purchases per ad | both, and the two are shown side by side |
 
-The blended figure — **our** revenue over **Meta's** spend — is the one line
-where neither platform is grading its own homework.
+The blended figure — **our** revenue from Meta traffic over **Meta's** spend — is
+the one line where neither platform is grading its own homework. Both halves have
+to describe the same traffic: all site revenue over Meta spend is a bigger number
+that merely looks like a return on ad spend.
 
 The optional per-ad string on that page adds campaign names to _our_ table as
 well. It changes nothing about spend or ROAS, and nothing breaks without it: an

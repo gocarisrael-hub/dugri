@@ -7016,12 +7016,6 @@ app.get('/api/admin/meta-capi/status', (req, res) => {
   });
 });
 
-// Admin: Meta's own per-ad numbers — spend above all, since that is the half of
-// ROAS no first-party ledger can ever see. Same token as the Conversions API,
-// which needs ads_read on the account as well; a token without it comes back
-// with Meta's own message rather than a bare failure, because "(#200) Requires
-// ads_read permission" tells the owner exactly which token to make.
-//
 // Which ad account to report on. Normally NEITHER of these is set: with one ad
 // account behind the token there is nothing to choose and it is discovered. The
 // saved admin setting wins over the environment, because it is the one the owner
@@ -7036,6 +7030,11 @@ function metaAdAccountId() {
     .replace(/^act_/, '');
 }
 
+// Admin: Meta's own per-ad numbers — spend above all, since that is the half of
+// ROAS no first-party ledger can ever see. Same token as the Conversions API,
+// which needs ads_read on the account as well; a token without it comes back
+// with Meta's own message rather than a bare failure, because "(#200) Requires
+// ads_read permission" tells the owner exactly which token to make.
 app.get('/api/admin/ads/meta', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const days = Math.min(Math.max(1, Number(req.query.days) || 30), 400);
