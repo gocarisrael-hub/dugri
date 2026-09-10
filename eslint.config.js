@@ -39,6 +39,8 @@ const browserGlobals = {
   FileReader: 'readonly',
   // The pawn-photo background cut decodes the buyer's file to a canvas.
   createImageBitmap: 'readonly',
+  // js/attribution.js mints the visitor id with crypto.randomUUID().
+  crypto: 'readonly',
   // vitest/jsdom unit tests run with Node's `global`/`process`/`Buffer` too.
   global: 'writable',
   process: 'readonly',

@@ -465,6 +465,14 @@
           } catch (e) {
             /* storage blocked — a possible duplicate beats a lost sale */
           }
+          // Our own ledger's half: the sale, credited to the campaign this
+          // browser arrived on. Deliberately sends only the ORDER's identity —
+          // the server re-reads the amount from the order store, because a value
+          // a page hands us is a value anyone can hand us. Guarded again on the
+          // server (once per order number), so blocked storage cannot double it.
+          if (typeof window.dugriTrack === 'function') {
+            window.dugriTrack('purchase', { collection: ref.c, k: ref.k });
+          }
           // Meta's half of the same sale. It is what lets a boosted post report
           // orders rather than clicks, and what Meta optimises delivery against.
           if (typeof fbq === 'function') {
