@@ -278,8 +278,25 @@ async function send({ pixelId, token, testCode, event, fetchImpl = globalThis.fe
       // Meta's own message, kept: "Invalid parameter" and "Unsupported post
       // request" mean completely different fixes, and the status alone says
       // neither.
-      const detail = payload && payload.error ? payload.error.message : '';
-      return { ok: false, status: res.status, error: detail || 'http ' + res.status };
+      //
+      // THE CODE IS THE PART THAT MATTERS, and the caller cannot have it unless
+      // it is passed on. Meta answers a 4xx for things that are emphatically not
+      // final — throttling (4/17/32/613 and the 80000-series) and an expired or
+      // wrong access token (190) — and documents no mapping from those to a
+      // particular status, so the status alone would write off exactly the
+      // failures most likely to happen. Meta's own error reference says which
+      // field to use: "Error handling should be done using only the Error
+      // Codes."
+      const err = (payload && payload.error) || {};
+      const detail = err.message || '';
+      return {
+        ok: false,
+        status: res.status,
+        code: Number(err.code) || 0,
+        subcode: Number(err.error_subcode) || 0,
+        type: String(err.type || ''),
+        error: detail || 'http ' + res.status,
+      };
     }
     return { ok: true, status: res.status, received: payload && payload.events_received };
   } catch (e) {

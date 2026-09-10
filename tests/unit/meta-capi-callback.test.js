@@ -40,6 +40,7 @@ let sent; // everything Meta would have received
 let nextInit;
 let nextGetTx;
 let graphFails; // http status Meta should answer with (0 = accept)
+let graphError; // the error object inside that answer (code/type/message)
 let graphThrows; // make the request to Meta reject outright (dns, socket)
 
 function jsonRes(obj) {
@@ -79,7 +80,10 @@ beforeAll(async () => {
         return {
           ok: false,
           status: graphFails,
-          json: async () => ({ error: { message: 'Invalid parameter' } }),
+          // The BODY is what says which failure this is. Meta answers a 4xx for
+          // an expired token and for throttling alike, so a test that only sets
+          // a status cannot tell the two apart — and neither could the code.
+          json: async () => ({ error: { message: 'Invalid parameter', ...graphError } }),
         };
       }
       return jsonRes({ events_received: 1 });
@@ -108,6 +112,7 @@ beforeEach(() => {
   nextInit = { URL: 'https://gateway21.pelecard.biz/PaymentGW?tx=1', Error: { ErrCode: 0 } };
   nextGetTx = null;
   graphFails = 0;
+  graphError = {};
   graphThrows = false;
 });
 
@@ -127,7 +132,14 @@ const settle = () => vi.waitFor(() => expect(sent.length).toBeGreaterThan(0), { 
  * and PeleCard would: pay/init from the BUYER's request (cookies, user agent,
  * the ad they landed on), then the callback from PELECARD's server.
  */
-async function startPayment({ cookie = '', landing = AD, sourceUrl = PAY_PAGE, referer, ip } = {}) {
+async function startPayment({
+  cookie = '',
+  landing = AD,
+  sourceUrl = PAY_PAGE,
+  referer,
+  ip,
+  cfIp,
+} = {}) {
   const c = db.createCollection('שירה', { email: 'shira@example.com', phone: '052-244-1334' });
   await post(
     '/api/collections/' + c.id + '/pay/init',
@@ -142,6 +154,7 @@ async function startPayment({ cookie = '', landing = AD, sourceUrl = PAY_PAGE, r
       ...(cookie ? { Cookie: cookie } : {}),
       ...(referer ? { Referer: referer } : {}),
       ...(ip ? { 'X-Forwarded-For': ip } : {}),
+      ...(cfIp ? { 'CF-Connecting-IP': cfIp } : {}),
     }
   );
   return c;
@@ -189,10 +202,47 @@ describe('the sale is reported without the buyer’s browser', () => {
     expect(event.user_data.client_ip_address).toBeUndefined();
   });
 
-  it('sends the buyer’s real address when there is one, in its bare form', async () => {
-    await completePayment(await startPayment({ ip: '203.0.113.7' }));
+  // THE ADDRESS WE HAND AN AD PLATFORM MUST NOT BE ONE THE CALLER CHOSE.
+  //
+  // `trust proxy` is on, so req.ip is the leftmost X-Forwarded-For entry, and
+  // Cloudflare APPENDS to that header rather than replacing it — so whatever a
+  // client writes there arrives ahead of the address Cloudflare actually saw. A
+  // buyer (or a bot) could pick the IP attached to their own purchase.
+  it('sends the address Cloudflare saw, in its bare form', async () => {
+    await completePayment(await startPayment({ cfIp: '203.0.113.7' }));
     await settle();
     expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
+  });
+
+  it('refuses an address the client wrote into X-Forwarded-For', async () => {
+    // Exactly the request a spoofer makes: a forwarded-for of their choosing and
+    // no CF-Connecting-IP, because that one is Cloudflare's to set.
+    await completePayment(await startPayment({ ip: '198.51.100.9' }));
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
+    expect(JSON.stringify(sent[0].body)).not.toContain('198.51.100.9');
+  });
+
+  it('believes Cloudflare over the client when both are present', async () => {
+    await completePayment(await startPayment({ ip: '198.51.100.9', cfIp: '203.0.113.7' }));
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
+  });
+
+  // An office NAT, a VPN concentrator, a container network. Matching on one of
+  // these makes every buyer behind it look like the same person — the same
+  // reason loopback is dropped, and just as much nobody's address.
+  it('drops a private address rather than matching everyone behind it', async () => {
+    for (const priv of ['10.0.0.4', '192.168.1.20', '172.20.5.5', '127.0.0.1', '::1']) {
+      sent = [];
+      // A public address in the header the CLIENT controls, so a fallback to it
+      // would be visible — nothing may be sent, not the private one and not the
+      // one the caller would like us to believe.
+      await completePayment(await startPayment({ cfIp: priv, ip: '203.0.113.7' }));
+      await settle();
+      expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
+      expect(JSON.stringify(sent[0].body)).not.toContain('203.0.113.7');
+    }
   });
 
   it('never leaves user_data empty — Meta rejects the whole event without it', async () => {
@@ -386,6 +436,20 @@ describe('a buyer’s device details are kept for one report and no longer', () 
     const row = body.collections.find((x) => x.id === c.id);
     expect(row.order.pelecard.meta_ctx).toBeUndefined();
     expect(JSON.stringify(body)).not.toContain(UA);
+
+    // AND THEY DO NOT STAY. This checkout is never going to be paid — the buyer
+    // opened the card form and walked away, which is what most people who open
+    // one do. No payment means no report, and the report finishing used to be
+    // the only thing that deleted these, so they would have sat here for good:
+    // in an order the admin API deliberately will not show her, so she could
+    // not have found them to clear them either.
+    db.getCollection(c.id).order.pelecard.meta_ctx.seen_at = Date.now() - 25 * 60 * 60 * 1000;
+    expect(app.locals.metaCtxSweep()).toBeGreaterThanOrEqual(1);
+    expect(db.getCollection(c.id).order.pelecard.meta_ctx).toBeUndefined();
+    expect(JSON.stringify(db.getCollection(c.id).order)).not.toContain(UA);
+    // The payment handshake itself survives — a late callback verifies its
+    // amount against those sessions.
+    expect(db.getCollection(c.id).order.pelecard.sessions).toHaveLength(1);
   });
 
   it('keeps nothing at all when the Conversions API is not armed', async () => {
@@ -470,5 +534,124 @@ describe('a report that died in flight is picked up again', () => {
     stored.order.meta_report = { at: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
     stored.order.paid_at = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     expect(db.staleMetaReports()).not.toContain(c.id);
+  });
+});
+
+// A REFUSAL AND A "NOT NOW" ARRIVE LOOKING THE SAME. Meta's Graph API answers a
+// plain 400 both for a request it will never accept and for the two things most
+// likely to actually go wrong here — throttling, and a token that is expired or
+// scoped wrong. Only the error CODE separates them, which is why the code is
+// what the classification reads. (Meta's own error reference: "Error handling
+// should be done using only the Error Codes.")
+describe('a 400 is not automatically final', () => {
+  const failWith = async (error) => {
+    graphFails = 400;
+    graphError = error;
+    const c = await payByCard();
+    await settle();
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report).toBeTruthy());
+    graphFails = 0;
+    graphError = {};
+    return c;
+  };
+
+  // THE MOST LIKELY MISTAKE THE FIRST TIME THE API IS ARMED: a token that has
+  // expired, or was minted without the right scope. Writing that off as final
+  // would lose every sale made before it is noticed — the sweep excludes a
+  // permanent mark and /api/track refuses to re-claim it.
+  it('keeps retrying an expired access token (code 190)', async () => {
+    const c = await failWith({
+      message: 'Error validating access token: Session has expired',
+      type: 'OAuthException',
+      code: 190,
+    });
+    const report = db.getCollection(c.id).order.meta_report;
+    expect(report.permanent).toBeUndefined();
+    expect(report.at).toBeUndefined();
+    // Which is what lets a fixed token recover the sale.
+    const before = sent.length;
+    await post('/api/track', { kind: 'purchase', landing: AD, collection: c.id, k: c.owner_token });
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before), { timeout: 2000 });
+    expect(db.getCollection(c.id).order.meta_report.ok).toBe(true);
+  });
+
+  // A throttle is identified by its CODE, not by a 429: 4 is app-level, 17
+  // user-level and 32 page-level (Meta's Graph API rate-limiting docs), 613 the
+  // ad-account limit, and 80000–80014 the business-use-case series.
+  it('keeps retrying a throttle that arrives as a 400 with a rate-limit code', async () => {
+    for (const code of [4, 17, 32, 613, 80004]) {
+      const c = await failWith({ message: '(#' + code + ') rate limit', code });
+      expect(db.getCollection(c.id).order.meta_report.permanent).toBeUndefined();
+      expect(db.staleMetaReports()).toContain(c.id);
+    }
+  });
+
+  // And the case the classification exists for is still classified: a payload
+  // Meta will reject identically every time. Retrying it once per confirmation
+  // reload, forever, buys nothing and costs a whole-store write each time.
+  it('still writes off a request that is simply wrong (code 100)', async () => {
+    const c = await failWith({
+      message: 'Invalid parameter',
+      type: 'GraphMethodException',
+      code: 100,
+    });
+    expect(db.getCollection(c.id).order.meta_report.permanent).toBe(true);
+  });
+});
+
+// "The token was wrong and I fixed it." Without a door out of a permanent mark
+// there is no way back from that: claimMetaReport refuses, the boot sweep
+// excludes it, and nothing else clears it — the sales are lost short of editing
+// the store by hand.
+describe('the owner can hand a written-off sale back', () => {
+  const retry = (body = {}) => post('/api/admin/meta-capi/retry?key=' + ADMIN_KEY, body);
+
+  it('clears the mark and re-sends the sale', async () => {
+    graphFails = 400;
+    graphError = { message: 'Invalid parameter', code: 100 };
+    const c = await payByCard();
+    await settle();
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.permanent).toBe(true));
+    graphFails = 0;
+    graphError = {};
+
+    const before = sent.length;
+    const r = await retry({ collection: c.id });
+    expect(r.status).toBe(200);
+    expect(r.body.ids).toEqual([c.id]);
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before), { timeout: 2000 });
+    await vi.waitFor(() => expect(db.getCollection(c.id).order.meta_report.ok).toBe(true));
+    expect(sent.some((x) => x.body.data[0].event_id === db.orderRef(db.getCollection(c.id)))).toBe(
+      true
+    );
+  });
+
+  it('is closed without the admin key', async () => {
+    expect((await post('/api/admin/meta-capi/retry', {})).status).toBe(403);
+  });
+});
+
+// WHEN THE SALE HAPPENED, NOT WHEN WE GOT ROUND TO TELLING META. Meta rejects a
+// Purchase whose event_time is more than seven days old and processes none of
+// the request — so a report resurrected days later that stamps itself with the
+// send would both misdate the sale and make the seven-day sweep window
+// meaningless, since the event would always look brand new.
+describe('a swept report is dated at the sale', () => {
+  it('sends the payment instant, not the moment of the retry', async () => {
+    const c = await payByCard();
+    await settle();
+    const stored = db.getCollection(c.id);
+    const paidAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+    stored.order.paid_at = paidAt;
+    stored.order.meta_report = { at: new Date(Date.now() - 60 * 60 * 1000).toISOString() };
+
+    const before = sent.length;
+    expect(app.locals.metaCapiSweep()).toBeGreaterThanOrEqual(1);
+    await vi.waitFor(() => expect(sent.length).toBeGreaterThan(before));
+    const ref = db.orderRef(stored);
+    const event = sent.slice(before).find((x) => x.body.data[0].event_id === ref).body.data[0];
+    expect(event.event_time).toBe(Math.floor(Date.parse(paidAt) / 1000));
+    // Not the send. Three days apart is well outside any rounding.
+    expect(event.event_time).toBeLessThan(Math.floor(Date.now() / 1000) - 2 * 24 * 60 * 60);
   });
 });

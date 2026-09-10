@@ -305,6 +305,22 @@ function deliveryFee() {
 // it. Comfortably longer than META_CAPI_TIMEOUT_MS (6s) plus a slow boot.
 const META_REPORT_STALE_MS = Number(process.env.META_REPORT_STALE_MS || 5 * 60 * 1000);
 
+// How long a report is still worth sending at all. Meta rejects a Purchase whose
+// event_time is more than seven days old, so past this the retry will never go
+// out — and the buyer's device details, which exist for nothing else, stop
+// having any purpose. ONE constant for both the retry window and the retention
+// window, so they cannot drift apart and strand data with nothing left to use it.
+const META_REPORT_MAX_AGE_MS = Number(
+  process.env.META_REPORT_MAX_AGE_MS || 7 * 24 * 60 * 60 * 1000
+);
+
+// And for a checkout that was NEVER PAID: no report is ever owed for it, so the
+// details are dead the moment the buyer walks away from the card form. This is
+// the common case, not the edge one — most people who open a payment modal do
+// not finish — and without a life of its own every one of them would leave an IP
+// and a user-agent in the store forever.
+const META_CTX_UNPAID_TTL_MS = Number(process.env.META_CTX_UNPAID_TTL_MS || 24 * 60 * 60 * 1000);
+
 // May this order's Meta report be (re)claimed? Not once it has finally succeeded
 // or finally failed, and not while a send started moments ago is still running.
 function claimable(report, now = Date.now()) {
@@ -315,7 +331,9 @@ function claimable(report, now = Date.now()) {
   return !Number.isFinite(at) || now - at >= META_REPORT_STALE_MS;
 }
 
-// The buyer's device details, gone. Kept only for the length of one report.
+// The buyer's device details, gone. Called when a report ENDS — and, because
+// plenty of checkouts never produce a report at all, also by sweepMetaCtx below,
+// which is what actually bounds how long these can exist.
 function dropMetaCtx(c) {
   if (c && c.order && c.order.pelecard) delete c.order.pelecard.meta_ctx;
 }
@@ -628,6 +646,33 @@ function backfillOrderNumbers() {
 
 backfillOrderNumbers();
 
+// One-time migration for orders stamped by the FIRST cut of the Meta report,
+// which recorded only `meta_reported_at`: a flag that says "a send was claimed",
+// with no way to say whether Meta ever answered.
+//
+// The current code reads such an order as never-claimed (claimable(undefined) is
+// true), so one reload of that buyer's confirmation page would send Meta a sale
+// it already has — deduped inside Meta's 48-hour event_id window, double-counted
+// outside it. The old stamp only ever existed on a successful send, so it is
+// carried across as a finished, successful report and never sent again.
+//
+// A no-op (and no write) on a store that never saw that build, which is every
+// store we run. Cheap insurance, not a live bug.
+function migrateMetaReports() {
+  let n = 0;
+  for (const c of _db.collections) {
+    const o = c && c.order;
+    if (!o || !o.meta_reported_at || o.meta_report) continue;
+    o.meta_report = { at: o.meta_reported_at, ok: true };
+    delete o.meta_reported_at;
+    n += 1;
+  }
+  if (n) saveDb();
+  return n;
+}
+
+migrateMetaReports();
+
 // The reference a human quotes back at us. Prefers the short order number and
 // falls back to the raw id, so a row that somehow missed the backfill still
 // yields SOMETHING printable rather than an empty receipt line.
@@ -885,6 +930,9 @@ const db = {
   effectiveStatus,
   // Exposed for the preview route (parity with stored orders) + unit tests.
   sanitizeCustomTitle,
+  // Ran once at boot above; exposed so a test can prove what it does to a row
+  // written by the old build.
+  migrateMetaReports,
 
   createCollection(honoreeName, contact = {}) {
     const c = {
@@ -2371,6 +2419,77 @@ const db = {
     return true;
   },
 
+  // Claim a whole BATCH under one write. The boot sweep can have fifty orders to
+  // pick up, and claiming them one at a time is fifty whole-store writes back to
+  // back — hundreds of milliseconds each at real order counts — twenty seconds
+  // after boot, on a box that is already serving. Returns the ids actually
+  // claimed, which is what the caller may then send.
+  claimMetaReports(ids = []) {
+    const claimed = [];
+    for (const id of ids) if (this.claimMetaReport(id, { save: false })) claimed.push(id);
+    if (claimed.length) saveDb();
+    return claimed;
+  },
+
+  // Hand a FINAL failure back for another try.
+  //
+  // "The token was wrong and I fixed it" is a real recovery path, and without
+  // this there is no way back from it: a permanent mark stops claimMetaReport,
+  // is excluded from staleMetaReports, and nothing else clears it — the sales
+  // taken in that window would be lost short of hand-editing the store.
+  //
+  // The cleared shape is exactly what a TRANSIENT failure leaves behind (an
+  // error, no `at`, no verdict), so every existing reader picks it up with no
+  // special case of its own. The device details are already gone by then, so a
+  // recovered report carries the order number and the money but not the match
+  // keys — the sale counts, the attribution is weaker. Pass an `id` for one
+  // order, or nothing for every one of them.
+  clearPermanentMetaReports({ id = '', limit = 500 } = {}) {
+    const cleared = [];
+    for (const c of _db.collections) {
+      if (id && c.id !== id) continue;
+      const r = c.order && c.order.meta_report;
+      if (!r || !r.permanent) continue;
+      c.order.meta_report = { error: 'cleared: ' + String(r.error || 'permanent') };
+      cleared.push(c.id);
+      if (cleared.length >= limit) break;
+    }
+    if (cleared.length) saveDb();
+    return cleared;
+  },
+
+  // THE BUYER'S DEVICE DETAILS HAVE A LIFE OF THEIR OWN.
+  //
+  // finishMetaReport deletes them when a report ENDS, and for a long time that
+  // was described as the whole story. It is not, because two very ordinary
+  // orders never reach it:
+  //   • the abandoned checkout — a buyer opens the card form and walks away, so
+  //     no payment, no report, no deletion, ever. On any normal abandon rate
+  //     these are MOST of the stored rows;
+  //   • the report that failed transiently and then aged out of the seven-day
+  //     sweep window — kept on purpose for a retry that will now never come.
+  // Collections themselves are never purged (expiry only changes their status),
+  // so "forever" means forever. This is the sweep that ends both cases.
+  //
+  // One write for the whole pass, and none at all when there is nothing to drop.
+  sweepMetaCtx({ now = Date.now() } = {}) {
+    let dropped = 0;
+    for (const c of _db.collections) {
+      const ctx = c.order && c.order.pelecard && c.order.pelecard.meta_ctx;
+      if (!ctx) continue;
+      // When we captured them. A row with no usable stamp is treated as already
+      // expired: the failure mode of a missing timestamp must be deleting the
+      // data, never keeping it indefinitely.
+      const seen = Number(ctx.seen_at);
+      const age = Number.isFinite(seen) && seen > 0 ? now - seen : Infinity;
+      if (age < (c.order.paid ? META_REPORT_MAX_AGE_MS : META_CTX_UNPAID_TTL_MS)) continue;
+      dropMetaCtx(c);
+      dropped += 1;
+    }
+    if (dropped) saveDb();
+    return dropped;
+  },
+
   // How the attempt ended. ONE write, and it does two jobs: it records the
   // outcome, and on any final outcome it drops the buyer's device details, which
   // exist only to make this one report and have no business outliving it.
@@ -2382,7 +2501,8 @@ const db = {
     else if (permanent) c.order.meta_report = { at, permanent: true, error: String(error || '') };
     // Transient: no `at`, so it is claimable again — by the confirmation page's
     // fallback, or by the sweep at the next boot. The device details STAY, since
-    // that retry has no other way to get them.
+    // that retry has no other way to get them — but only until sweepMetaCtx ages
+    // them out with the retry window itself.
     else c.order.meta_report = { error: String(error || '') };
     if (ok || permanent) dropMetaCtx(c);
     saveDb();
@@ -2392,7 +2512,7 @@ const db = {
   // Paid orders whose report was claimed and never finished — a send that died
   // in flight. Newest first, capped, and only ones recent enough to still be
   // worth reporting: an event Meta would reject as too old helps nobody.
-  staleMetaReports({ limit = 50, maxAgeMs = 7 * 24 * 60 * 60 * 1000, now = Date.now() } = {}) {
+  staleMetaReports({ limit = 50, maxAgeMs = META_REPORT_MAX_AGE_MS, now = Date.now() } = {}) {
     return _db.collections
       .filter((c) => {
         if (!c.order || !c.order.paid) return false;

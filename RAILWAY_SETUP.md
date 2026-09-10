@@ -340,19 +340,50 @@ not from the confirmation page. A buyer who closes the tab the second the paymen
 goes through has still bought the deck, and that is the same buyer whose pixel
 was blocked, so waiting for their browser would lose the sale on both halves. If
 a send dies mid-flight (a deploy inside the six-second timeout), the next boot
-sweeps it up and tries again; a refusal Meta will give every time — a revoked
-token, a deleted pixel — is recorded and not retried.
+sweeps it up and tries again, for up to seven days after the sale — the window
+Meta will still accept an event in.
+
+(Seven days is Meta's own limit, not ours: an event whose `event_time` is more
+than seven days old makes Meta reject the whole request. The event is stamped
+with when the card cleared, so a swept retry still reports the right instant.)
+
+**A failure Meta will give every time** — a deleted pixel, a malformed event — is
+recorded and not retried. That is decided on Meta's own **error code**, not on
+the HTTP status, because the status does not separate the two: throttling (codes
+4, 17, 32, 613 and the 80000-series) and a token that is expired, revoked or
+scoped wrong (code 190, an `OAuthException`) all arrive as ordinary `4xx`s and
+all get another try later. If something is nevertheless written off wrongly, the
+sales are not lost — `POST /api/admin/meta-capi/retry?key=<ADMIN_KEY>` (optional
+body `{"collection":"<id>"}`) clears the mark and re-runs the sweep.
 
 **What is kept about the buyer, and for how long.** Meta needs a few things about
 the browser that the callback cannot see (it is a request from PeleCard's
 server), so while the API is armed the pending payment handshake holds the
 buyer's IP, their user-agent string, Meta's `_fbc`/`_fbp` cookies and the click
-id from the ad. That is the whole list, and it lives only until the report is
-done: the moment Meta accepts the sale (or finally refuses it) the lot is
-deleted. It is never returned by the admin orders API, and with no
-`META_CAPI_TOKEN` set none of it is ever written. The buyer's own order link
-carries a token that opens her order — that token is stripped from every URL
-before anything is stored or sent, so it cannot reach Events Manager.
+id from the ad. That is the whole list, it is never returned by the admin orders
+API, and with no `META_CAPI_TOKEN` set none of it is ever written.
+
+It is deleted the moment Meta accepts the sale (or finally refuses it) — and,
+because plenty of checkouts never get that far, it also expires on its own:
+
+- a checkout that was **never paid** (the buyer opened the card form and walked
+  away) drops it after **24 hours**;
+- a paid order still owed a report drops it **seven days** after capture, which
+  is when the retry window closes and the details stop having any use.
+
+A sweep runs shortly after boot and every six hours after that, armed or not, so
+details captured while the API was on still age out once it is off. (Override
+with `META_CTX_UNPAID_TTL_MS`, `META_REPORT_MAX_AGE_MS`, `META_CTX_SWEEP_EVERY_MS`
+— none of which you should need.)
+
+The buyer's own order link carries a token that opens her order — that token is
+stripped from every URL before anything is stored or sent, so it cannot reach
+Events Manager. The IP is taken from Cloudflare's `CF-Connecting-IP` — the one
+address in the request a caller cannot choose for themselves, since `trust proxy`
+makes `X-Forwarded-For` anyone's to write — and if that header is missing behind
+a proxy, no IP is sent at all. A private or loopback address is dropped too:
+matching on one would make every buyer behind the same office NAT look like the
+same person.
 
 ### What the token buys, beyond reporting sales
 

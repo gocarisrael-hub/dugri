@@ -6818,15 +6818,65 @@ function metaAdContext(req, body = {}) {
   };
 }
 
-// The buyer's address as Meta should see it. On a direct connection (a local
-// run, a health check) req.ip is ::ffff:127.0.0.1 or ::1, which is not an
-// address of anybody's — sending it would be worse than sending nothing, since
-// Meta would try to match on it.
+// An address that is nobody's on the public internet: loopback, the private
+// ranges, link-local, and IPv6's unique-local block. Sending one to Meta is
+// worse than sending nothing, since Meta would try to MATCH on it — every buyer
+// behind the same office NAT looking like the same person, and 127.0.0.1 (a
+// local run, a health check) looking like everybody.
+function isNonPublicIp(ip) {
+  if (!ip) return true;
+  const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    if (a === 10 || a === 127 || a === 0) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 169 && b === 254) return true; // link-local / cloud metadata
+    if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT
+    return false;
+  }
+  if (!ip.includes(':')) return true; // not an address at all
+  const v6 = ip.toLowerCase();
+  if (v6 === '::1' || v6 === '::') return true;
+  if (/^f[cd]/.test(v6)) return true; // fc00::/7 unique-local
+  if (/^fe[89ab]/.test(v6)) return true; // fe80::/10 link-local
+  return /^[0-9a-f:.]+$/.test(v6) ? false : true;
+}
+
+// The buyer's address as Meta should see it.
+//
+// req.ip is the LEFTMOST X-Forwarded-For entry, because app.set('trust proxy',
+// true) tells Express every hop in that header is trustworthy — and Cloudflare
+// APPENDS to X-Forwarded-For rather than replacing it, so anything a client puts
+// there arrives ahead of the address Cloudflare actually saw. A client could
+// therefore CHOOSE the address we hand to an ad platform as the buyer's, and
+// have every one of its sales attributed to somebody else's neighbourhood.
+//
+// So this field does not use req.ip when a client could have written it:
+//   • CF-Connecting-IP is preferred, and is the one address here a client
+//     cannot choose — Cloudflare sets it itself and overwrites whatever arrived
+//     under that name. In front of this site that header is always present;
+//   • with no Cloudflare header AND no X-Forwarded-For, req.ip is the socket
+//     peer, which nobody but the peer can decide. That is the local run;
+//   • an X-Forwarded-For with no CF-Connecting-IP means SOMETHING proxied this
+//     and we cannot tell a proxy's word from a client's. Send nothing. Meta
+//     always has external_id to match on, so the sale still counts.
+//
+// Narrowing `trust proxy` from `true` to a hop count is the complete fix and is
+// not this function's to make: it also governs the rate limiters and the
+// abuse-facing client key, and getting the count wrong there breaks those.
 function clientIpForMeta(req) {
-  const ip = String(req.ip || '').slice(0, 45);
-  const bare = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
-  if (!bare || bare === '::1' || bare === '127.0.0.1' || bare.startsWith('127.')) return '';
-  return bare;
+  const usable = (raw) => {
+    const ip = String(raw || '')
+      .trim()
+      .slice(0, 45);
+    const bare = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+    return isNonPublicIp(bare) ? '' : bare;
+  };
+  const cf = usable(req.get('cf-connecting-ip'));
+  if (cf) return cf;
+  if (req.get('x-forwarded-for')) return '';
+  return usable(req.ip);
 }
 
 /**
@@ -6880,6 +6930,13 @@ function sendPurchaseToMeta(collectionId, ctx = null, { preclaimed = false } = {
     // whose browser gave Meta nothing — the buyer this whole feature is for.
     externalId: orderNo,
     clickAt: Number(a.seen_at) || 0,
+    // WHEN THE SALE HAPPENED, not when we got round to telling Meta. A report
+    // resurrected by the boot sweep can leave days after the payment, and
+    // stamping it with the send would present a six-day-old sale as happening at
+    // boot — which is also what makes the seven-day age limit in
+    // db.staleMetaReports able to do its job: Meta rejects an event whose
+    // event_time is outside its window, and event_time is this.
+    at: Date.parse(c.order.paid_at) || Date.now(),
     contact,
   });
   metaCapi
@@ -6887,7 +6944,9 @@ function sendPurchaseToMeta(collectionId, ctx = null, { preclaimed = false } = {
     .then((r) => {
       if (r.skipped) return;
       if (r.ok) return db.finishMetaReport(collectionId, { ok: true });
-      console.error('[meta-capi] ' + orderNo + ': ' + r.error);
+      console.error(
+        '[meta-capi] ' + orderNo + ': ' + r.error + (r.code ? ' (code ' + r.code + ')' : '')
+      );
       // A REFUSAL AND A FAILURE ARE DIFFERENT THINGS. A timeout, a dead network
       // or a 5xx is worth trying again. A 4xx is Meta telling us the request
       // itself is wrong — a revoked token, a pixel that no longer exists — and
@@ -6901,11 +6960,42 @@ function sendPurchaseToMeta(collectionId, ctx = null, { preclaimed = false } = {
     });
 }
 
-// Will trying this again ever produce a different answer? Only a 4xx says no —
-// and not 429, which says "not so fast", nor 408, which says "too slow".
+// Meta's error codes for failures that a later attempt CAN come out of.
+//
+// THE CLASSIFICATION IS MADE ON THE CODE, NOT ON THE HTTP STATUS. Meta's own
+// error reference is explicit about what to branch on — "Error handling should
+// be done using only the Error Codes" — and the Conversions API documents only
+// that an invalid payload comes back as "4xx HTTP", with no promise about WHICH
+// 4xx, so the status cannot separate a refusal from a "not right now". The two
+// things most likely to actually go wrong here are both in that ambiguous zone:
+//   • throttling. Meta's rate limits are identified by code, not by 429:
+//     4 (app level), 17 (user level) and 32 (page level) per the Graph API
+//     rate-limiting docs, 613 the ad-account limit, and 80000–80014 the
+//     business-use-case series (80004 is the ads one);
+//   • an access token that is expired, revoked or scoped wrong — 190, an
+//     OAuthException. That is the single most likely mistake the first time the
+//     owner arms the API, and writing it off as permanent would lose every sale
+//     made in that window even after she fixes the token.
+//   • 1, 2, 341 and 368 are Meta's own documented "temporary, wait and retry".
+// 429 and 408 stay transient too: nothing says Meta never sends them, and if it
+// does they mean exactly what they say.
+const META_TRANSIENT_CODES = new Set([1, 2, 4, 17, 32, 190, 341, 368, 613]);
+
+// Will trying this again ever produce a different answer? Anything that is not a
+// 4xx — a timeout, a dead socket, a 5xx — is theirs and worth retrying, and so
+// is a 4xx whose code says "later" rather than "no".
 function isPermanentMetaError(r) {
   const s = Number(r && r.status);
-  return s >= 400 && s < 500 && s !== 429 && s !== 408;
+  if (!(s >= 400 && s < 500)) return false;
+  if (s === 429 || s === 408) return false;
+  const code = Number(r && r.code);
+  if (META_TRANSIENT_CODES.has(code)) return false;
+  // Business-use-case rate limits: one code per API surface, 80000–80014.
+  if (code >= 80000 && code <= 80014) return false;
+  // Any auth failure at all is a credential that can be replaced, whatever code
+  // Meta files it under.
+  if (String((r && r.type) || '') === 'OAuthException') return false;
+  return true;
 }
 
 // Reports that were claimed and never finished: the process died between taking
@@ -6917,10 +7007,14 @@ function isPermanentMetaError(r) {
 // Delayed and unref'd so it never delays a boot or holds the process open.
 function sweepUnfinishedMetaReports() {
   if (!metaCapiArmed()) return 0;
-  const ids = db.staleMetaReports();
+  // THE WHOLE BATCH IS CLAIMED UNDER ONE WRITE. Letting sendPurchaseToMeta take
+  // its own claim per order would be up to fifty whole-store writes back to
+  // back — hundreds of milliseconds each at real order counts — twenty seconds
+  // after boot, on a box that is already answering requests.
+  const ids = db.claimMetaReports(db.staleMetaReports());
   for (const id of ids) {
     try {
-      sendPurchaseToMeta(id);
+      sendPurchaseToMeta(id, null, { preclaimed: true });
     } catch (e) {
       console.error('[meta-capi] sweep ' + id + ': ' + ((e && e.message) || e));
     }
@@ -6929,13 +7023,30 @@ function sweepUnfinishedMetaReports() {
     console.log('[meta-capi] sweep: retrying ' + ids.length + ' unfinished report(s)');
   return ids.length;
 }
+
+// The buyer's device details, aged out. See db.sweepMetaCtx for why they need a
+// life independent of the report: the abandoned checkout that never produces one
+// at all, and the failed report that has aged past the retry window, are both
+// invisible to finishMetaReport and would otherwise be kept forever.
+//
+// Runs whether or not the API is armed — details captured while it WAS armed
+// must still age out after the token is taken away — and repeats, because a box
+// that stays up for weeks would otherwise sweep once and then never again.
+function sweepMetaCtx() {
+  const n = db.sweepMetaCtx();
+  if (n) console.log('[meta-capi] dropped stored device details for ' + n + ' order(s)');
+  return n;
+}
 if (process.env.NODE_ENV !== 'test') {
   setTimeout(sweepUnfinishedMetaReports, Number(process.env.META_CAPI_SWEEP_MS || 20000)).unref();
+  setTimeout(sweepMetaCtx, Number(process.env.META_CTX_SWEEP_MS || 30000)).unref();
+  setInterval(sweepMetaCtx, Number(process.env.META_CTX_SWEEP_EVERY_MS || 6 * 3600 * 1000)).unref();
 }
 // The seam the tests drive it through, since the boot timer is deliberately not
 // armed under NODE_ENV=test — a suite that booted the app should not start
 // firing at an ad platform.
 app.locals.metaCapiSweep = sweepUnfinishedMetaReports;
+app.locals.metaCtxSweep = sweepMetaCtx;
 
 app.post('/api/track', (req, res) => {
   if (!trackRate.ok(clientKey(req))) return res.status(429).json({ error: 'too many attempts' });
@@ -7104,6 +7215,25 @@ app.get('/api/admin/ads/meta', async (req, res) => {
       result.totals.spend > 0 ? Math.round((mine.revenue / result.totals.spend) * 100) / 100 : null;
   }
   res.json(out);
+});
+
+// Admin: hand the sales written off as "Meta will refuse this every time" back
+// for another try.
+//
+// The recovery path this exists for is the obvious one: the API is armed for the
+// first time with a token that is expired or scoped wrong, every sale in that
+// window is marked final, and fixing the token recovers nothing on its own —
+// claimMetaReport refuses, the boot sweep excludes them, and there is no other
+// door. (Error 190 is no longer classified as permanent, so that particular
+// mistake should not reach here any more; this is the escape hatch for the ones
+// that still do.) Clearing the mark makes them claimable again and runs the
+// sweep, which re-sends anything paid inside Meta's seven-day window. The device
+// details were dropped when the failure was recorded, so a recovered report
+// carries the order number and the money but weaker match keys.
+app.post('/api/admin/meta-capi/retry', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const cleared = db.clearPermanentMetaReports({ id: String((req.body || {}).collection || '') });
+  res.json({ cleared: cleared.length, ids: cleared, swept: sweepUnfinishedMetaReports() });
 });
 
 app.get('/api/admin/ads', (req, res) => {
