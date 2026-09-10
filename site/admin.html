@@ -420,6 +420,28 @@
       .sticker-btn[hidden] {
         display: none;
       }
+      /* The batch press. Deliberately NOT the same green as the stickers: that
+         one downloads a PDF and can be pressed all day, this one emails and
+         texts real customers and cannot be taken back. */
+      .batch-btn {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        color: #fff;
+        background: #b12a4b;
+        border: 1px solid #b12a4b;
+        border-radius: 6px;
+        padding: 6px 12px;
+        white-space: nowrap;
+      }
+      .batch-btn:hover {
+        background: #96203e;
+        border-color: #96203e;
+      }
+      .batch-btn[hidden] {
+        display: none;
+      }
       .sticker-note {
         font-size: 12px;
         color: #8a5a2b;
@@ -850,6 +872,21 @@
                real charge. So it says which orders it is leaving out, where the
                owner is already looking. -->
           <span class="sticker-note" id="stickerNote" hidden></span>
+          <!-- THE WHOLE בדפוס PILE, IN ONE PRESS. A run comes back from Galor
+               and every box in it becomes ready in the same minute; pressing
+               eleven rows one at a time is eleven chances to miss one, and a
+               missed row is a customer who never hears her game is waiting.
+               Carries its count for the same reason the stickers do, and is
+               hidden at zero. It asks first — this one texts real people. -->
+          <button
+            type="button"
+            class="batch-btn"
+            id="batchReadyBtn"
+            data-testid="batch-ready"
+            hidden
+          >
+            ✅ הכל מוכן (<span id="batchReadyCount">0</span>)
+          </button>
           <label class="sortwrap"
             >מיון:
             <select id="sort">
@@ -3387,6 +3424,7 @@
         renderStats(allCols);
         renderTabs();
         renderStickerBtn();
+        renderBatchReadyBtn();
         renderColFilterBar();
         const rows = rowsFor(null);
         // What the pair actually narrowed to. Without it a combination with no
@@ -3457,6 +3495,88 @@
         const rec = c.order && c.order.hfd;
         return !!(rec && rec.shipment_number && !rec.cancelled_at);
       }
+      // The בדפוס pile, counted the same way the server counts it: paid, not
+      // cancelled, gone to print, not yet ready. Computed here from rows already
+      // in hand so the button needs no extra request on every repaint — the
+      // SERVER re-derives the same set when the press actually happens, so a
+      // stale tab can never mark something the store would refuse.
+      function batchReadyPile() {
+        return allCols.filter((c) => {
+          const o = c.order;
+          if (!o || c.cancelled || !o.paid) return false;
+          return !!o.sent_to_print_at && !o.ready_at;
+        });
+      }
+
+      function renderBatchReadyBtn() {
+        const btn = document.getElementById('batchReadyBtn');
+        if (!btn) return;
+        // Bound once. renderAll runs on every repaint, and a handler added each
+        // time would fire the confirm as many times as the table had been drawn.
+        if (!btn.dataset.bound) {
+          btn.dataset.bound = '1';
+          btn.addEventListener('click', batchReadyPress);
+        }
+        const pile = batchReadyPile();
+        document.getElementById('batchReadyCount').textContent = pile.length;
+        // Hidden at zero, like the stickers: a button whose only answer is
+        // "there was nothing to press" wasted the press.
+        btn.hidden = pile.length === 0;
+      }
+
+      // Ask, then press. This one emails and texts real customers and cannot be
+      // undone, so the dialog says exactly what is about to happen — how many,
+      // of which kind, whether a text goes out at all, and WHICH orders will get
+      // no text because we hold no mobile for them. Naming those beats counting
+      // them: three order numbers tell her which three to phone.
+      async function batchReadyPress() {
+        const btn = document.getElementById('batchReadyBtn');
+        const preview = await adminActionResult('GET', '/api/admin/orders/ready-batch');
+        if (!preview.ok || !preview.data) {
+          alert('לא הצלחתי לבדוק מה מוכן לסימון. נסו שוב.');
+          return;
+        }
+        const p = preview.data;
+        if (!p.count) {
+          alert('אין כרגע הזמנות בדפוס לסימון.');
+          load();
+          return;
+        }
+        const lines = [
+          'לסמן ' + p.count + ' הזמנות כמוכנות?',
+          '',
+          p.pickup + ' באיסוף עצמי · ' + p.delivery + ' במשלוח',
+          '',
+          p.sms_enabled
+            ? 'כל אחת תקבל מייל ו-SMS שהמשחק מוכן.'
+            : 'כל אחת תקבל מייל. SMS כבוי כרגע — לא יישלחו הודעות.',
+        ];
+        if (p.no_phone.length) {
+          lines.push('', 'בלי מספר טלפון (יקבלו מייל בלבד): ' + p.no_phone.join(', '));
+        }
+        lines.push('', 'אי אפשר לבטל את המיילים שיישלחו.');
+        if (!confirm(lines.join('\n'))) return;
+
+        btn.disabled = true;
+        const r = await adminActionResult('POST', '/api/admin/orders/ready-batch');
+        btn.disabled = false;
+        if (!r.ok || !r.data) {
+          alert('הסימון נכשל. אף הזמנה לא סומנה — אפשר לנסות שוב.');
+          return;
+        }
+        // Say what actually happened rather than what was asked for: an order
+        // that refused (cancelled a second ago in another tab) is named, not
+        // quietly dropped from the total.
+        const d = r.data;
+        let msg = 'סומנו ' + d.marked + ' הזמנות כמוכנות';
+        if (p.sms_enabled) msg += ' · ' + d.sms_queued + ' הודעות SMS בדרך';
+        if (d.failed && d.failed.length) {
+          msg += '\n\nלא סומנו: ' + d.failed.map((f) => f.order_no).join(', ');
+        }
+        alert(msg);
+        load();
+      }
+
       function renderStickerBtn() {
         const btn = document.getElementById('stickerBtn');
         if (!btn) return;
