@@ -17,11 +17,18 @@ const ID = '1234567890123456';
 // The one project allowed to touch the shared store.
 const OWNS_STORE = 'Desktop Chrome';
 
-async function clearPixel(request) {
-  const r = await request.delete(
-    `/api/admin/settings?section=analytics&settingKey=meta_pixel_id&key=${KEY}`
-  );
-  expect(r.ok()).toBeTruthy();
+// Both analytics settings back to shipped defaults. The CONTACT switch is
+// cleared here too, not just the pixel: .e2e-data survives between local runs,
+// and a run that died between checking that box and unchecking it left the
+// switch on — after which every later run failed on "it starts off", for a
+// reason that has nothing to do with the code.
+async function clearAnalytics(request) {
+  for (const settingKey of ['meta_pixel_id', 'meta_capi_contact']) {
+    const r = await request.delete(
+      `/api/admin/settings?section=analytics&settingKey=${settingKey}&key=${KEY}`
+    );
+    expect(r.ok()).toBeTruthy();
+  }
 }
 
 test.describe('meta pixel, end to end', () => {
@@ -34,7 +41,7 @@ test.describe('meta pixel, end to end', () => {
       testInfo.project.name !== OWNS_STORE,
       'writes the shared settings store; run once to avoid cross-worker races'
     );
-    await clearPixel(request);
+    await clearAnalytics(request);
   });
   // afterEach STILL RUNS for a test skipped from beforeEach, so it has to make
   // the same check itself. Without it the other project's worker fires DELETEs
@@ -42,7 +49,7 @@ test.describe('meta pixel, end to end', () => {
   // a save and the assertion that reads it back, which reads as a load-flake.
   test.afterEach(async ({ request }, testInfo) => {
     if (testInfo.project.name !== OWNS_STORE) return;
-    await clearPixel(request);
+    await clearAnalytics(request);
   });
 
   test('without a key the page reveals nothing and calls no admin API', async ({ page }) => {
