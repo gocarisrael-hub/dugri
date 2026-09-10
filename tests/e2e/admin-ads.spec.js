@@ -309,6 +309,50 @@ test.describe('the ad report', () => {
     await expect(page.locator('#metaBox')).toContainText('שיוחס לפרסום במטא');
   });
 
+  // A short ad list makes SPEND a floor — and the return over it a CEILING, since
+  // the divisor is the number that came up short: three pages of ads at ₪1,000
+  // each, stopped after the first, prints 2.00 where the truth is 0.67. The note
+  // used to say the numbers above were a floor, full stop, which is exactly
+  // backwards for the one figure she reads.
+  test('a short ad list is called a floor for spend and a ceiling for the return', async ({
+    page,
+  }) => {
+    await serveMeta(
+      page,
+      metaAnswer({
+        truncated: true,
+        totals: { spend: 1000, impressions: 1, clicks: 900, meta_orders: 0, meta_revenue: 0 },
+        ours: {
+          revenue: 2000,
+          orders: 4,
+          rows: 1,
+          tagged: { revenue: 2000, orders: 4, rows: 1 },
+          untagged: { revenue: 0, orders: 0, rows: 0 },
+          revenue_all: 2000,
+          orders_all: 4,
+        },
+        roas: 2,
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const box = page.locator('#metaBox');
+    await expect(box).toContainText('לא נמשכו כל המודעות');
+    // Both halves of the truth, in the right direction.
+    await expect(box).toContainText('ההוצאה והקליקים למעלה הם רצפה');
+    await expect(box).toContainText('תקרה');
+    await expect(box).toContainText('ההחזר האמיתי נמוך יותר');
+    // And never the old blanket claim.
+    await expect(box).not.toContainText('המספרים למעלה הם רצפה');
+  });
+
+  // The untouched case must not carry the warning.
+  test('a complete ad list says nothing about being short', async ({ page }) => {
+    await serveMeta(page, metaAnswer());
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('meta-table')).toBeVisible();
+    await expect(page.locator('#metaBox')).not.toContainText('לא נמשכו כל המודעות');
+  });
+
   // The caveat used to call the figure a floor. It is not one: Facebook and
   // Instagram put a click id on EVERY outbound link, an organic post's included,
   // and a bare click id reads as paid — so organic sales push the ratio UP. The
@@ -345,10 +389,53 @@ test.describe('the ad report', () => {
     // …and the over-count is named, with its cause.
     await expect(box).toContainText('הערכה');
     await expect(box).toContainText('פוסט אורגני');
-    // The split, in money: ₪400 certainly an ad, ₪600 possibly organic.
+    // The under-count is the one we do NOT recognise the source of. An untagged
+    // ad click IS counted, via the click id, and saying otherwise reads as "my
+    // real return is higher than this" — the exact direction of error this note
+    // exists to close.
+    await expect(box).toContainText('סומנה במקור שאנחנו לא מזהים');
+    await expect(box).not.toContainText('הגיעה בלי סימון שאנחנו מזהים');
+    // The split, in money: ₪400 on an ad's own link, ₪600 possibly organic.
     await expect(box).toContainText('400 ₪');
     await expect(box).toContainText('600 ₪');
     await expect(box).toContainText('מזהה קליק בלבד');
+    // "Almost always", not "certainly": the ad's own link travels once a buyer
+    // pastes it into a group chat, and every click from there carries the
+    // campaign with it.
+    await expect(box).toContainText('כמעט תמיד פרסום');
+    await expect(box).not.toContainText('בוודאות פרסום');
+    // And an untagged half larger than the tagged one is the ORDINARY state for
+    // an owner who never pastes the optional tagging string, so it is printed
+    // plainly. A warning that is always on is one she stops reading.
+    await expect(box.locator('p.hint.err:has-text("מזהה קליק בלבד")')).toHaveCount(0);
+    // The two printed halves add up to the printed total.
+    await expect(box).toContainText('1,000 ₪');
+  });
+
+  // Nothing attributed at all: "of that: ₪0 … and ₪0" under a note that already
+  // said nothing was attributed is noise, not information.
+  test('with nothing attributed the split is left out, not printed as zeroes', async ({ page }) => {
+    await serveMeta(
+      page,
+      metaAnswer({
+        totals: { spend: 900, impressions: 100, clicks: 40, meta_orders: 0, meta_revenue: 0 },
+        ours: {
+          revenue: 0,
+          orders: 0,
+          rows: 0,
+          tagged: { revenue: 0, orders: 0, rows: 0 },
+          untagged: { revenue: 0, orders: 0, rows: 0 },
+          revenue_all: 4000,
+          orders_all: 9,
+        },
+        roas: 0,
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const box = page.locator('#metaBox');
+    await expect(box).not.toContainText('מתוך זה:');
+    // The note that DOES belong there is still shown.
+    await expect(box).toContainText('לא יוחסה אף הזמנה');
   });
 
   // A window switched faster than the answers come back. A cached 30-day reply

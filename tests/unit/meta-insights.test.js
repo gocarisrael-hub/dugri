@@ -471,6 +471,50 @@ describe('paging', () => {
     expect(impl.mock.calls.some(([u]) => String(u).includes('/insights'))).toBe(false);
   });
 
+  // "This token can see no ad account" sends her to Business Settings to fix a
+  // permission. "The list could not be read" is a different problem with a
+  // different answer, and an empty first page is not evidence of the first.
+  it('does not report an unreadable list as an empty one', async () => {
+    const impl = vi.fn(async (url) => {
+      if (String(url).includes('me/adaccounts')) {
+        return ok({ data: [], paging: { next: 'https://graph.facebook.com/next-page' } });
+      }
+      throw new Error('unexpected url ' + url);
+    });
+    const r = await insights.fetchInsights({ token: TOKEN, fetchImpl: impl });
+    expect(r.ok).toBe(false);
+    expect(r.truncated).toBe(true);
+    expect(r.error).toContain('whole ad-account list');
+    expect(r.error).not.toContain('can see no ad account');
+  });
+
+  // …and a list that really is empty still says so.
+  it('still says so when the token genuinely sees nothing', async () => {
+    const impl = graphStub({ 'me/adaccounts': { data: [] } });
+    const r = await insights.fetchInsights({ token: TOKEN, fetchImpl: impl });
+    expect(r).toMatchObject({ ok: false, error: 'this token can see no ad account' });
+  });
+
+  // Our own diagnosis, so the page can stop putting it in Meta's mouth.
+  it('marks its own refusals as ours rather than Meta’s', async () => {
+    const impl = graphStub({
+      'me/adaccounts': {
+        data: [
+          { account_id: '111', name: 'Dugri' },
+          { account_id: '222', name: 'Star' },
+        ],
+      },
+    });
+    const r = await insights.fetchInsights({ token: TOKEN, fetchImpl: impl });
+    expect(r.error_source).toBe('us');
+    // Meta's own message keeps no such mark — it really is Meta's.
+    const refused = graphStub({
+      'me/adaccounts': { error: { message: '(#200) Requires ads_read permission' } },
+    });
+    const r2 = await insights.fetchInsights({ token: TOKEN, fetchImpl: refused });
+    expect(r2.error_source).toBeUndefined();
+  });
+
   it('lists every ad account, not just the first page of them', async () => {
     const impl = pager([
       {

@@ -828,7 +828,17 @@
         // off here rather than coming back as an English regex in a Hebrew page.
         const value = String(id || '')
           .trim()
-          .replace(/^act_/i, '');
+          .replace(/^(act_)+/i, '');
+        // Refused HERE, in words, when it obviously cannot be an account id. The
+        // settings registry's own refusal is the literal regex, which arrives in
+        // the middle of a Hebrew page as `value must match /^\d{5,24}$/`.
+        if (value && !/^\d{5,24}$/.test(value)) {
+          sayAccount(
+            'מספר חשבון מודעות הוא ספרות בלבד (בין 5 ל-24). אפשר להדביק גם עם act_ בהתחלה.',
+            'err'
+          );
+          return;
+        }
         sayAccount('שומר…');
         try {
           await api('/api/admin/settings', {
@@ -874,7 +884,17 @@
           return;
         }
         if (!data.ok) {
-          box.appendChild(metaNote('מטא החזירה: ' + (data.error || 'שגיאה'), 'err'));
+          // Only quote Meta for what Meta actually said. "more than one ad
+          // account — choose which one" is OUR sentence, and attributing it to
+          // Meta sends her looking for a setting in Ads Manager that isn't there.
+          box.appendChild(
+            metaNote(
+              (data.error_source === 'us'
+                ? 'לא הצלחנו לקבוע על איזה חשבון לדווח: '
+                : 'מטא החזירה: ') + (data.error || 'שגיאה'),
+              'err'
+            )
+          );
           // Several accounts behind one token: name them, AND let her pick one —
           // naming them without a control is a dead end.
           box.appendChild(accountPicker(data));
@@ -897,14 +917,14 @@
         // Facebook and Instagram stamp a click id on every outbound link, an
         // organic post's included, so some organic sales are counted here; and an
         // ad tagged with a source we don't recognise is missed. What CAN be
-        // separated is the part that arrived on a deliberately tagged link —
-        // organic sharing never carries a campaign name — so that split is shown
-        // as the measure of how far the ratio can be trusted.
+        // separated is the part that arrived on an ad's own link, which is a
+        // strong signal and not a proof — that address travels once a buyer
+        // pastes it into a group chat — so the split is shown as a measure of how
+        // far the ratio can be leaned on, not as a guarantee.
         const t = data.totals;
         const zero = { revenue: 0, orders: 0, rows: 0 };
         const ours = data.ours || { revenue: 0, orders: 0, revenue_all: 0 };
         const tagged = ours.tagged || zero;
-        const untagged = ours.untagged || zero;
         const roas = data.roas == null ? null : Number(data.roas);
         const tiles = document.createElement('div');
         tiles.className = 'tiles';
@@ -933,6 +953,20 @@
         }
         box.appendChild(tiles);
 
+        // Directly under the tiles, because it is about the tile above it. The
+        // list being short makes SPEND a floor — and therefore the return over it
+        // a CEILING, since the divisor is the number that came up short. The
+        // earlier wording called everything above a floor, which was exactly
+        // backwards for the one figure she reads.
+        if (data.truncated) {
+          box.appendChild(
+            metaNote(
+              'לא נמשכו כל המודעות בטווח הזה: ההוצאה והקליקים למעלה הם רצפה — ולכן ההחזר שמעליהם הוא תקרה, לא רצפה. ההוצאה האמיתית גבוהה יותר וההחזר האמיתי נמוך יותר.',
+              'err'
+            )
+          );
+        }
+
         box.appendChild(
           metaNote(
             'ההחזר מחושב מ-' +
@@ -949,21 +983,33 @@
         // that flatters the ads.
         box.appendChild(
           metaNote(
-            'זו הערכה, ולא בהכרח בכיוון אחד: מודעה שהגיעה בלי סימון שאנחנו מזהים חסרה מהחישוב ומורידה אותו, ולעומת זאת פייסבוק ואינסטגרם מוסיפות מזהה קליק גם לקישור בפוסט אורגני — ומכירות מפוסט כזה נספרות כאן ומעלות אותו.'
+            'זו הערכה, והיא יכולה לסטות לשני הכיוונים: מודעה שסומנה במקור שאנחנו לא מזהים חסרה מהחישוב ומורידה אותו, ולעומת זאת פייסבוק ואינסטגרם מוסיפות מזהה קליק גם לקישור בפוסט אורגני — ומכירות מפוסט כזה נספרות כאן ומעלות אותו. (קליק ממודעה בלי סימון כן נספר, לפי מזהה הקליק.)'
           )
         );
-        // The split that says how much of it is certain: a campaign or an ad name
-        // only ever comes from a link built for an ad.
-        box.appendChild(
-          metaNote(
-            'מתוך זה: ' +
-              nis(tagged.revenue) +
-              ' הגיעו מקישור מסומן (קמפיין או מודעה בשם) — זה בוודאות פרסום; ' +
-              nis(untagged.revenue) +
-              ' הגיעו עם מזהה קליק בלבד, וזה יכול להיות פרסום או אורגני. ככל שהחלק המסומן גדול יותר, ההחזר למעלה מדויק יותר.',
-            untagged.revenue > tagged.revenue ? 'err' : ''
-          )
-        );
+        // The split that says how much of it can be leaned on. Nothing but a link
+        // built for an ad carries a campaign name — but that link travels, so
+        // this is "almost always", not "certainly".
+        //
+        // Printed plainly, with no warning colour. An owner who never pastes the
+        // optional tagging string — which this page itself describes as a normal
+        // way to run — would see a red line on every visit for ever, and a warning
+        // that is always on is a warning she stops reading. It is also a
+        // continuum: ₪501 against ₪499 is not a different situation from ₪499
+        // against ₪501, and only a threshold would say it was.
+        //
+        // The untagged half is printed as the REMAINDER, so the two rounded halves
+        // always add up to the rounded total on the line above them.
+        if (ours.revenue > 0) {
+          box.appendChild(
+            metaNote(
+              'מתוך זה: ' +
+                nis(tagged.revenue) +
+                ' הגיעו מקישור של מודעה (עם שם קמפיין או שם מודעה) — כמעט תמיד פרסום, אם כי מישהי יכולה גם להעתיק קישור כזה לקבוצה; ' +
+                nis(ours.revenue - tagged.revenue) +
+                ' הגיעו עם מזהה קליק בלבד, וזה יכול להיות פרסום או אורגני. ככל שהחלק הראשון גדול יותר, ההחזר למעלה מדויק יותר.'
+            )
+          );
+        }
         if (t.spend > 0 && ours.orders === 0) {
           box.appendChild(
             metaNote(
@@ -973,11 +1019,6 @@
           );
         }
         box.appendChild(windowNote(data));
-        if (data.truncated) {
-          box.appendChild(
-            metaNote('יש יותר מודעות ממה שנמשך בבת אחת — המספרים למעלה הם רצפה, לא הסך הכל.', 'err')
-          );
-        }
 
         const scroller = document.createElement('div');
         scroller.className = 'scroller';

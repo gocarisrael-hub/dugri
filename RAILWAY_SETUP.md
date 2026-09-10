@@ -386,12 +386,21 @@ evidence most real ad clicks carry — so sales from an organic post are counted
 against ad spend as well. Excluding click-id-only visits would fix the over-count
 and empty the figure, since Meta offers no way to tag ads once.
 
-What can be separated honestly is **tagged from untagged**: a visit carrying a
-campaign or an ad name came from a link built for an ad, and organic sharing never
-carries one. The page shows that split under the ratio — the larger the tagged
-half, the more the ratio can be leaned on. The cheapest way to grow it is to use a
-**separate, tagged link for the organic posts and the bio**, so organic traffic
-identifies itself instead of hiding inside the ad bucket.
+What can be separated is **tagged from untagged**: a visit carrying a campaign or
+an ad name arrived on a link built for an ad, and nothing else puts one there. It
+is a strong signal, not a proof — that address travels. A buyer who arrived on the
+ad can copy it out of the in-app browser into the bachelorette group, and every
+click from that group carries the same campaign; a bookmark does the same. So
+word-of-mouth spread from an ad counts as tagged, which for a product distributed
+by group shares is ordinary rather than exceptional. The page shows the split under
+the ratio — the larger the tagged half, the more the ratio can be leaned on. The
+cheapest way to grow it is to use a **separate, tagged link for the organic posts
+and the bio**, so organic traffic identifies itself instead of hiding inside the ad
+bucket.
+
+If the spend table says it could not read all the ads in the window, the spend and
+click totals are a **floor** — and the ratio above them is therefore a **ceiling**,
+because the number that came up short is the one being divided by.
 
 The optional per-ad string on that page adds campaign names to _our_ table as
 well. It changes nothing about spend or ROAS, and nothing breaks without it: an

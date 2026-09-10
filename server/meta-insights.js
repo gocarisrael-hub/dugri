@@ -106,9 +106,15 @@ function nextCursor(payload) {
  * A whole Graph list, followed to the end of its cursor.
  *
  * Returns { ok, data: [...all rows], truncated } — `truncated` true when the walk
- * stopped before Meta ran out of rows, so a caller can say that its totals are a
- * floor rather than the answer. Every early stop here under-counts, never over-
- * counts, because "floor" is the only claim the caller can then honestly make.
+ * stopped before Meta ran out of rows. Every early stop here UNDER-counts the
+ * list, never over-counts it.
+ *
+ * WHICH MAKES ANY RATIO AGAINST IT A CEILING, and a caller reporting one has to
+ * say so. Under-counted spend is a floor for spend and a ceiling for revenue over
+ * spend: three pages of ads at ₪1,000 each, stopped after the first, prints ₪1,000
+ * of spend against revenue that Meta's paging never touched, so a true 0.67 shows
+ * as 2.00. "The numbers above are a floor" is therefore the wrong label for the
+ * one number the owner actually reads.
  */
 async function graphList(pathAndQuery, { token, fetchImpl, maxPages = MAX_PAGES } = {}) {
   const rows = [];
@@ -276,21 +282,30 @@ async function fetchInsights({ token, accountId, days = 30, fetchImpl, now = Dat
   if (!wanted) {
     const found = await listAdAccounts({ token, fetchImpl });
     if (!found.ok) return { ok: false, armed: true, error: found.error };
-    if (found.accounts.length === 0) {
-      return { ok: false, armed: true, error: 'this token can see no ad account' };
-    }
     // `truncated` counts as "more than one", because it means the list is SHORT:
     // a second account may exist that this walk never saw, and taking the first
     // of a list we know is incomplete is exactly the guess this refuses to make.
-    if (found.accounts.length > 1 || found.truncated) {
+    // Checked BEFORE the empty case, because a list that could not be read is not
+    // the same answer as a token that can see nothing — and telling her the
+    // second when the first is true sends her to fix the wrong thing.
+    if (found.truncated || found.accounts.length > 1) {
       return {
         ok: false,
         armed: true,
         accounts: found.accounts,
         truncated: !!found.truncated,
+        error_source: 'us',
         error: found.truncated
           ? 'could not read the whole ad-account list — say which account to report on'
           : 'more than one ad account — choose which one to report on',
+      };
+    }
+    if (found.accounts.length === 0) {
+      return {
+        ok: false,
+        armed: true,
+        error_source: 'us',
+        error: 'this token can see no ad account',
       };
     }
     account = found.accounts[0];
@@ -346,7 +361,9 @@ async function fetchInsights({ token, accountId, days = 30, fetchImpl, now = Dat
     // caller divides OUR revenue by THIS spend, and needs to cut our ledger here
     // for that division to be of like by like.
     since_ms: win.since_ms,
-    // True when the page cap stopped the walk early: the totals are then a floor.
+    // True when the walk stopped before Meta ran out of rows. Spend and clicks
+    // are then a FLOOR — and any return-on-spend computed from them a CEILING,
+    // because the divisor is the short number. See graphList().
     truncated: !!r.truncated,
     rows,
     totals,
@@ -376,11 +393,21 @@ async function fetchInsights({ token, accountId, days = 30, fetchImpl, now = Dat
 //   (see RAILWAY_SETUP.md), so most genuine ad clicks arrive carrying nothing
 //   else.
 //
-// What can be separated honestly is TAGGED from UNTAGGED. A touch carrying a
-// campaign or an ad name came from a link somebody deliberately tagged, which
-// organic sharing does not do; a touch with a Meta source and no names at all
-// arrived on a click id alone, and could be either. Both are returned, so the
-// page can show how much of the figure is the certain half.
+// What can be separated is TAGGED from UNTAGGED, and it is a STRONG SIGNAL rather
+// than a proof. A touch carrying a campaign or an ad name came from a link built
+// for an ad — but that link travels: the buyer who arrived on it can copy the
+// address out of the in-app browser into the bachelorette group, and every click
+// from that group then parses to the same campaign (safeUrl in
+// site/js/attribution.js deliberately KEEPS the utm parameters, and parseTouch
+// gives them top precedence). A bookmark works the same way. So word of mouth
+// spread from an ad lands in the tagged half, which for a product distributed by
+// group shares is the ordinary case, not a corner. It runs the other way too: a
+// real ad whose {{campaign.name}} arrived unsubstituted has the placeholder
+// blanked by MACRO_RE and lands in `untagged`.
+//
+// Both halves are returned, so the page can say how much of the figure came in on
+// an ad's own link — near-certainly advertising — and how much on a click id
+// alone, which could be either.
 //
 // The source names are the ones attribution.js can produce for a Meta click:
 // 'meta' is an fbclid arriving with no utm parameters at all, and the rest are
@@ -402,9 +429,10 @@ function isMetaSource(source) {
   );
 }
 
-// A row somebody tagged on purpose: it carries a campaign or an ad name, which
-// only a link built for an ad ever does. Sharing a post organically copies the
-// bare URL, so an organic click can never land in here.
+// A row that arrived on an ad's own link: it carries a campaign or an ad name,
+// which nothing but a link built for an ad puts there. NOT a proof that the click
+// itself was bought — the same address, pasted onward into a group chat or kept as
+// a bookmark, brings its campaign with it. See the note above.
 function isTaggedRow(row) {
   return Boolean((row && row.campaign) || (row && row.content));
 }
@@ -413,10 +441,10 @@ function isTaggedRow(row) {
  * OUR revenue and orders from META traffic, over attribution.report() rows.
  *
  * Returns { revenue, orders, matched, tagged, untagged } — `tagged` is the part
- * that came in on a deliberately tagged link and `untagged` the part that arrived
- * on a click id alone, which organic Facebook and Instagram traffic also carries.
- * They sum to the total. See the note above: the total is an estimate, and the
- * split is what says how far it can be trusted.
+ * that came in on an ad's own link and `untagged` the part that arrived on a click
+ * id alone, which organic Facebook and Instagram traffic also carries. They sum to
+ * the total. See the note above: the total is an estimate, the split says how far
+ * it can be trusted, and the split is itself a signal rather than a proof.
  *
  * `isPaid` is REQUIRED, and is passed in rather than re-implemented so that "this
  * row cost money" has exactly one definition (attribution.isPaid). Defaulting it

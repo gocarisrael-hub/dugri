@@ -7027,14 +7027,16 @@ app.get('/api/admin/meta-capi/status', (req, res) => {
 // admin field does not mean "discover it again" when the environment still names
 // an account, and a page that said so would be telling the owner something she
 // can see with her own eyes is untrue.
-const metaAdAccountSaved = () =>
-  String(settings.get('analytics', 'meta_ad_account_id') || '')
+// `act_` comes off case-insensitively and however many times it was pasted:
+// Ads Manager shows `act_99887766`, and both a copied prefix and a shouted one
+// would otherwise build `act_act_99887766` / `act_ACT_99887766` into the Graph
+// path, which fails as a bad account rather than as a bad paste.
+const stripAct = (v) =>
+  String(v || '')
     .trim()
-    .replace(/^act_/, '');
-const metaAdAccountEnv = () =>
-  String(process.env.META_AD_ACCOUNT_ID || '')
-    .trim()
-    .replace(/^act_/, '');
+    .replace(/^(act_)+/i, '');
+const metaAdAccountSaved = () => stripAct(settings.get('analytics', 'meta_ad_account_id'));
+const metaAdAccountEnv = () => stripAct(process.env.META_AD_ACCOUNT_ID);
 function metaAdAccountId() {
   return metaAdAccountSaved() || metaAdAccountEnv();
 }
@@ -7086,7 +7088,9 @@ app.get('/api/admin/ads/meta', async (req, res) => {
       revenue: mine.revenue,
       orders: mine.orders,
       rows: mine.matched,
-      // Certainly an ad: the link carried a campaign or an ad name.
+      // Arrived on an ad's own link — it carried a campaign or an ad name. Near
+      // certain, not certain: that address travels the moment somebody pastes it
+      // on into a group chat, and brings its campaign with it.
       tagged: mine.tagged,
       // A Meta click id and nothing else. Facebook and Instagram put one on every
       // outbound link, so an organic post's clicks are in here too.
