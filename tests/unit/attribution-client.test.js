@@ -237,4 +237,50 @@ describe('a second campaign in the same session', () => {
     expect(mod.trackVisit()).toBe(false);
     expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/track')).toHaveLength(1);
   });
+
+  // A page rewrites its own address constantly, and none of it is an arrival.
+  // options.html rebuilds location.href and appends its wizard state on every
+  // step, an in-page link adds a #fragment, and parameters do not always come
+  // back in the order they were sent. A mark that is the href counts a visit for
+  // each of those; the mark is the campaign, so none of them count.
+  it('is not fooled by the page rewriting its own URL', async () => {
+    const ad = '?utm_source=instagram&utm_medium=paid&utm_campaign=rovakot&fbclid=abc';
+    setUrl('http://localhost/' + ad);
+    const mod = await load();
+    expect(mod.trackVisit()).toBe(true);
+
+    for (const href of [
+      'http://localhost/' + ad + '#faq', // an in-page anchor
+      'http://localhost/options.html' + ad + '&plan=&design=&color=&step=4', // the wizard
+      'http://localhost/?fbclid=abc&utm_campaign=rovakot&utm_medium=paid&utm_source=instagram',
+    ]) {
+      setUrl(href);
+      expect(mod.trackVisit()).toBe(false);
+    }
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/track')).toHaveLength(1);
+  });
+
+  // The one case that DOES count again, on purpose: Meta issues a fresh fbclid
+  // per click, so the same ad clicked a second time is a second click — which is
+  // what Ads Manager will be showing on the other screen.
+  it('counts a genuine second click on the same ad', async () => {
+    setUrl('http://localhost/?utm_source=instagram&utm_campaign=rovakot&fbclid=click1');
+    const mod = await load();
+    expect(mod.trackVisit()).toBe(true);
+    setUrl('http://localhost/?utm_source=instagram&utm_campaign=rovakot&fbclid=click2');
+    expect(mod.trackVisit()).toBe(true);
+  });
+});
+
+describe('campaignKey', () => {
+  it('is the campaign parameters and nothing else about the address', async () => {
+    const { campaignKey } = await load();
+    const key = campaignKey('https://dugri-israel.co.il/?utm_source=ig&utm_campaign=rovakot');
+    expect(key).toBe(
+      campaignKey('https://dugri-israel.co.il/options.html?utm_campaign=rovakot&utm_source=ig#x')
+    );
+    expect(key).not.toBe(campaignKey('https://dugri-israel.co.il/?utm_source=ig&utm_campaign=x'));
+    expect(campaignKey('https://dugri-israel.co.il/?step=4')).toBe('');
+    expect(campaignKey('nonsense')).toBe('');
+  });
 });

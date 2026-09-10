@@ -91,15 +91,37 @@ export function visitorId() {
   return id;
 }
 
-/** Does this URL carry campaign parameters? Pure — exported for the tests. */
-export function isTagged(url) {
+/**
+ * The campaign parameters of a URL, in a fixed order, as one string — '' when
+ * there are none. This is the IDENTITY of an arrival: two URLs with the same
+ * campaign parameters are the same arrival however else they differ, which is
+ * what makes it usable as a session mark. Everything the page does to its own
+ * URL afterwards — a #fragment from an in-page link, the wizard's replaceState
+ * appending &step=4&plan=… , parameters landing in a different order — changes
+ * the href and not this.
+ *
+ * A re-click of the same ad DOES produce a new key, because Meta issues a fresh
+ * fbclid per click. That is not a false positive: it is a second click, and
+ * Ads Manager counts it as one too.
+ */
+export function campaignKey(url) {
   let params;
   try {
     params = new URL(String(url)).searchParams;
   } catch {
-    return false;
+    return '';
   }
-  return TAGS.some((t) => params.get(t));
+  const parts = [];
+  for (const t of TAGS) {
+    const v = params.get(t);
+    if (v) parts.push(t + '=' + v);
+  }
+  return parts.join('&');
+}
+
+/** Does this URL carry campaign parameters? Pure — exported for the tests. */
+export function isTagged(url) {
+  return campaignKey(url) !== '';
 }
 
 /**
@@ -166,17 +188,21 @@ export function sendEvent(kind, extra = {}) {
  * had. Both halves of that are wrong, and the report exists to be compared
  * against Ads Manager, which counts that second click.
  *
- * The session mark is therefore the tagged URL that was counted, not a flag: the
- * same tagged page reloaded matches it and counts once, a different campaign
- * link does not and counts again. An untagged page never re-fires, whatever the
- * mark says.
+ * The session mark is therefore the CAMPAIGN of the arrival that was counted,
+ * not the href it came on and not a bare flag. It has to be the campaign: the
+ * wizard rewrites its own URL as the buyer moves through it (&step=4&plan=…, on
+ * top of the ad's parameters), an in-page link adds a #fragment, and a href-
+ * shaped mark would call each of those a new arrival and count a visit for it.
+ * The same campaign, however the page has rewritten the address bar since, is
+ * one visit; a different campaign link is a second one; an untagged page never
+ * re-fires whatever the mark says.
  */
 export function trackVisit() {
   const here = typeof location !== 'undefined' ? String(location.href) : '';
-  const tagged = isTagged(here);
-  const mark = tagged ? here.slice(0, 2000) : '1';
+  const key = campaignKey(here);
+  const mark = key ? key.slice(0, 2000) : '1';
   const counted = read('sessionStorage', SESSION_KEY);
-  if (counted && (!tagged || counted === mark)) return false;
+  if (counted && (!key || counted === mark)) return false;
   write('sessionStorage', SESSION_KEY, mark);
   sendEvent('visit');
   return true;
