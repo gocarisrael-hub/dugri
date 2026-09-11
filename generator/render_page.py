@@ -290,11 +290,12 @@ class Face:
     def runs(self, text):
         """``[(font, substring)]`` in logical order, covering ``text`` exactly.
 
-        Split against the LINE's own base direction, not the card's. A neutral at
-        the edge of a line takes the base direction (Unicode N1/N2), so under the
-        card's Hebrew base the break hyphen at the end of "TELEV-" became its own
-        right-to-left run and was placed at the LEFT of the English word it
-        belongs to. The line knows which way it reads; ask it.
+        Split against the base direction the LINE actually reads in — see
+        ``_line_base_rtl``. A neutral at the edge of a run takes that base
+        (Unicode N1/N2), so it decides which side of the line the space between
+        an English word and a Hebrew one is painted on, and whether the break
+        hyphen at the end of "TELEV-" hangs off the right of the word it
+        belongs to or jumps to its left.
         """
         return [(f, t) for f, t, _lat in self.runs_by_script(text)]
 
@@ -312,11 +313,7 @@ class Face:
         """
         if self.alt is None:
             return [(self.primary, text, False)]
-        base = self.rtl
-        if _line_is_latin(text):
-            base = False
-        elif _line_is_rtl(text):
-            base = True
+        base = _line_base_rtl(text, self.rtl)
         return [(self.alt if lat else self.primary, t, lat)
                 for lat, t in script_runs(text, base_rtl=base)]
 
@@ -572,7 +569,9 @@ _RTL_EMBED, _RTL_POP = "‫", "‬"
 # the hyphen should be on the right".
 #
 # Chosen per LINE rather than per card, because one card can hold both: a Hebrew
-# entry and an English one, each wanting its own base.
+# entry and an English one, each wanting its own base. A line that holds both
+# scripts AT ONCE is the case neither of those covers, and it takes the card's
+# own base — see ``_line_base_rtl``.
 _LTR_EMBED = "‪"
 
 
@@ -601,9 +600,97 @@ def _line_is_latin(text):
     return False
 
 
-def _embed(text):
-    """``text`` wrapped in the base direction its own letters call for."""
-    opener = _LTR_EMBED if _line_is_latin(text) else _RTL_EMBED
+def _has_strong(text, klasses):
+    """Whether ``text`` has a strong character of any of these bidi classes."""
+    import unicodedata
+
+    return any(unicodedata.bidirectional(ch) in klasses for ch in text)
+
+
+def _line_base_rtl(text, base=True):
+    """The base direction ONE line of customer text is set in.
+
+    A line written in a SINGLE script answers for itself, whatever the card is:
+    Hebrew reads right to left, English left to right. That is what puts the
+    break hyphen of "TELEV-" on the right of the word it belongs to instead of
+    letting an English line inherit a Hebrew base.
+
+    A line that MIXES the two scripts cannot answer for itself — and the answer
+    is the CARD'S base, not the script of whichever word the buyer happened to
+    type first. "celebration של מדונה" is a Hebrew entry with an English word
+    in it, and on a Hebrew card it reads from the right: celebration, של,
+    מדונה.
+    Deciding by the first strong character instead made the whole line LTR and
+    broke it two ways at once, because ONLY THE SPLIT listened to that base
+    while the renderer went on placing runs right to left (``word_lines``):
+
+    * the space between "celebration" and "של" resolved to the LTR base, joined
+      the English run as a TRAILING space, and was then painted at the far
+      right of the line — so the two words printed welded together,
+      "שלcelebration",
+      with the missing space sitting in the right margin. Order 626 shipped
+      like that.
+    * a card with no second face took the other branch (``_embed`` over the
+      whole line), where Chrome honoured the LTR base and moved "celebration"
+      to the LEFT end — so the two branches printed the same entry in two
+      different word orders.
+
+    Both are now the one thing a browser prints for an RTL paragraph, which is
+    what the comparison against Chrome in the tests pins them to.
+
+    A line with no strong character at all (bare digits) has nothing to read;
+    it keeps the card's base too.
+    """
+    rtl = _has_strong(text, ("R", "AL"))
+    latin = _has_strong(text, ("L",))
+    if rtl and latin:
+        return base
+    if rtl:
+        return True
+    if latin:
+        return False
+    return base
+
+
+def _hanging_tail(text):
+    """One run split into what it PAINTS and the whitespace it only RESERVES.
+
+    Every run of a mixed line is emitted as its own ``<text>`` — its own
+    one-line paragraph, whose base direction is the SVG default (left to right)
+    whatever embedding the characters inside it carry. Unicode's rule L1 resets
+    whitespace at the END of a line to that paragraph base, so a Hebrew run
+    ending in a space does NOT reorder that space to its left where the reading
+    puts it: Chrome hangs it off the run's right-hand edge. On an element
+    anchored by its end that pushes every glyph a space-width LEFT, into the run
+    painted beside it.
+
+    "מסיבת BBQ" is that shape, and it is the commoner one for this product: the
+    card's base is Hebrew, so the space between the two words resolves to it and
+    joins the HEBREW run as a TRAILING space (``script_runs``). The card printed
+    "BBQמסיבת" welded together, with the space it should have been separated by
+    sitting out in the right margin — order 626's symptom, mirrored.
+
+    The run keeps the tail's ADVANCE: it is the gap between the two words, the
+    fit reserved it, and the pen still walks it. It just does not paint it —
+    a space has no ink, so nothing is lost, and a shorter body under an end
+    anchor leaves that gap on the run's LEFT, which is exactly where the reading
+    puts a trailing neutral of a right-to-left run.
+
+    "Whitespace" here is the set rule L1 names — bidi classes WS, S and B —
+    rather than everything Python calls a space: U+00A0 is a common separator,
+    L1 leaves it alone, and so do we.
+    """
+    import unicodedata
+
+    i = len(text)
+    while i and unicodedata.bidirectional(text[i - 1]) in ("WS", "S", "B"):
+        i -= 1
+    return text[:i], text[i:]
+
+
+def _embed(text, base_rtl=True):
+    """``text`` wrapped in the base direction it is to be read in."""
+    opener = _RTL_EMBED if _line_base_rtl(text, base_rtl) else _LTR_EMBED
     return f"{opener}{escape(text)}{_RTL_POP}"
 
 
@@ -692,12 +779,27 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
                 f'<text x="{word_x:.2f}" y="{y:.2f}" '
                 f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
                 f'{fat}text-anchor="end" xml:space="preserve">'
-                f'{_embed(line)}</text>'
+                f'{_embed(line, face.rtl)}</text>'
             )
             continue
         # A line in two faces cannot be one <text>: Chrome ignores
         # direction="rtl" for RUN ordering (the reason the marker above is
         # already three elements), so the runs are ordered and placed here.
+        #
+        # RIGHT TO LEFT, unconditionally, and that is not an assumption about
+        # the text: a line only splits at all where its scripts change, so a
+        # line with more than one run is by definition MIXED, and a mixed line
+        # takes the CARD's base (``_line_base_rtl``) — which for a numbered
+        # word line is the Hebrew right-to-left one. The split and the
+        # placement have to answer to the same base, or the neutral between two
+        # runs is resolved onto the side the renderer then paints away from.
+        # That is exactly how the space in "celebration של מדונה" ended up in
+        # the right margin.
+        #
+        # The space BETWEEN two runs is a gap, not ink: whichever run it was
+        # resolved onto reserves its advance and paints nothing there, because a
+        # run ending in whitespace has that whitespace hung off its right edge
+        # by Chrome instead of reordered (see ``_hanging_tail``).
         #
         # Anchored by each run's END, walking VISUAL order left to right, so the
         # anchoring model that is already proven under Chrome is untouched:
@@ -718,7 +820,12 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
         pen = word_x - total
         for (f, txt, latin), w in reversed(list(zip(runs, widths))):
             pen += w
-            body = escape(txt) if latin else _embed(txt)
+            # A LATIN run is emitted as written: under the card's
+            # right-to-left base a neutral following Latin resolves to that base
+            # and joins the HEBREW run, so a Latin run here cannot end in a
+            # space. The Hebrew run can, and must not paint it.
+            body = (escape(txt) if latin
+                    else _embed(_hanging_tail(txt)[0], face.rtl))
             fam = "HebWordAlt" if latin else "HebWord"
             rsize = size * face.scale(latin)
             out.append(
@@ -3291,13 +3398,17 @@ def _title_runs(face, line):
 
     A single-face line returns the bare escaped string it always did.
     """
-    runs = face.runs(line)
-    if len(runs) == 1 and runs[0][0] is not face.alt:
+    runs = face.runs_by_script(line)
+    # By the SCRIPT, not by which object the split handed back: a design naming
+    # one file in both title slots has ``f is face.alt`` true of its HEBREW runs
+    # as well, which wrapped a Hebrew-only title in a ``TitleFontAlt`` tspan it
+    # never needed (see ``Face.runs_by_script``).
+    if len(runs) == 1 and not runs[0][2]:
         return escape(line)
     return "".join(
         f'<tspan font-family="TitleFontAlt">{escape(t)}</tspan>'
-        if f is face.alt else escape(t)
-        for f, t in runs)
+        if lat else escape(t)
+        for _f, t, lat in runs)
 
 
 # Synthetic-bold stroke width as a fraction of the glyph size. Sized to read as
@@ -3556,19 +3667,26 @@ def _line_skyline(f, ref, line, rtl):
 
     ONE FACE returns the single call it always made, on the same cached raster.
     """
-    runs = f.runs(line) if isinstance(f, Face) else [(f, line)]
+    runs = (f.runs_by_script(line) if isinstance(f, Face)
+            else [(f, line, False)])
     if len(runs) == 1:
         return _ink_skyline(runs[0][0].path, ref, visual_order(line, rtl))
-    alt = f.alt
     # Left to right: the renderer paints the runs in visual order, which for an
     # RTL line is the logical order reversed.
     ordered = list(reversed(runs)) if rtl else list(runs)
     pen, parts = 0.0, []
-    for font, txt in ordered:
+    for font, txt, latin in ordered:
         # A Latin run is emitted with no RTL embedding and sets left to right,
         # so it is measured as written; a Hebrew run is put into paint order by
         # hand, because Pillow will not do it (see ``visual_order``).
-        drawn = txt if font is alt else visual_order(txt, rtl)
+        #
+        # ASKED OF THE SCRIPT, NEVER OF THE FONT OBJECT — ``font is f.alt`` is
+        # the identity test ``Face.runs_by_script`` forbids, and six of the ten
+        # shipped designs name the same file in both word slots, where it is
+        # true of a HEBREW run too. Every run then skipped ``visual_order`` and
+        # the per-column profile was read off a mirrored silhouette, so the row
+        # pitch was measured against a picture the card does not print.
+        drawn = txt if latin else visual_order(txt, rtl)
         xl, below, above = _ink_skyline(font.path, ref, drawn)
         parts.append((pen + xl, below, above))
         pen += font.getlength(txt)
