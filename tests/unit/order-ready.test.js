@@ -3,7 +3,7 @@
 // the order to ready, emails the customer, and feeds the "הודפסו" tally on the
 // dashboard. Pressing it again takes it back (and the owner asked that marking it
 // ready a second time DOES re-send the mail).
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -17,6 +17,8 @@ const realFetch = globalThis.fetch;
 
 let db;
 let notify;
+let settings;
+let sms;
 let app;
 let server;
 let base;
@@ -25,13 +27,14 @@ beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-ready-'));
   process.env.ADMIN_KEY = 'test-admin-key';
   process.env.PUBLIC_BASE_URL = 'https://test.dugri.example';
-  for (const f of ['db.js', 'settings.js', 'notify.js', 'index.js']) {
+  for (const f of ['db.js', 'settings.js', 'sms.js', 'notify.js', 'index.js']) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
-  const settings = require(path.join(serverDir, 'settings.js'));
+  settings = require(path.join(serverDir, 'settings.js'));
   for (const v of ['pdf', 'pickup', 'delivery', 'custom'])
     settings.set('pricing', v + '_enabled', true);
   db = require(path.join(serverDir, 'db.js'));
+  sms = require(path.join(serverDir, 'sms.js'));
   notify = require(path.join(serverDir, 'notify.js'));
   app = require(path.join(serverDir, 'index.js'));
   await new Promise((resolve) => {
@@ -339,5 +342,95 @@ describe('POST /api/admin/collections/:id/ready', () => {
     } finally {
       delete notify.sendOrderReady;
     }
+  });
+});
+
+// The other half of the cap in server/sms.js. When the phone takes a message
+// three times without reporting, or the SIM refuses it, the message is failed
+// with a reason and never handed out again — which is right, and which leaves a
+// customer who was never told her game is ready.
+//
+// The owner has one button for that: מוכן, on a row that already says מוכן. It
+// has to work as-is. The alternative she would otherwise need — un-mark, then
+// mark again — is undiscoverable, and it reverses the shelf and re-mails on the
+// way through.
+describe('the recovery press: מוכן on a row that is already ready', () => {
+  // A real order with a real mobile on it, standing at בדפוס.
+  function readyWithPhone(name = 'רות') {
+    const c = db.createCollection(name, { email: 'buyer@example.com', phone: '0521234567' });
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    db.setOrderSentToPrint(c.id, true);
+    return c;
+  }
+  const press = (c, body) => post('/api/admin/collections/' + c.id + '/ready' + KEY, body || {});
+  const textsFor = (c) => sms.list().filter((m) => m.collection_id === c.id);
+
+  beforeEach(() => {
+    settings.set('sms', 'enabled', true);
+    settings.reset('sms', 'order_ready');
+    sms._reset();
+  });
+
+  it('sends nothing new while the first text is still waiting for the phone', async () => {
+    const c = readyWithPhone();
+    await press(c);
+    expect(textsFor(c)).toHaveLength(1);
+    // A slipped double-tap. The customer is already owed this text once.
+    await press(c);
+    expect(textsFor(c)).toHaveLength(1);
+  });
+
+  it('sends nothing new once the first text has gone out', async () => {
+    const c = readyWithPhone();
+    await press(c);
+    sms.ack(textsFor(c)[0].id, { ok: true });
+    await press(c);
+    expect(textsFor(c)).toHaveLength(1);
+  });
+
+  // THE POINT OF THE BUTTON. Without this the failed text is the end of the
+  // story: enqueue answers null to the second press because the order is still
+  // marked ready, so `changed` is false and nothing is even attempted.
+  it('queues a fresh text after the first one failed — no undo needed', async () => {
+    const c = readyWithPhone();
+    await press(c);
+    const first = textsFor(c)[0];
+    sms.ack(first.id, { ok: false, error: 'אין יתרה' });
+
+    const r = await press(c);
+    expect(r.status).toBe(200);
+    const all = textsFor(c);
+    expect(all).toHaveLength(2);
+    expect(all.filter((m) => m.state === 'pending')).toHaveLength(1);
+    // …and the failure stays on the record, as the reason she can read.
+    expect(all.find((m) => m.id === first.id).state).toBe('failed');
+  });
+
+  // The mail has no per-message state to consult, so a stray tap must not mail a
+  // customer twice. Only the text is retried here; the mail still re-sends on a
+  // real undo-and-press, as it always has.
+  it('does not re-email on the recovery press', async () => {
+    const spy = vi.fn(async () => true);
+    notify.sendOrderReady = spy;
+    try {
+      const c = readyWithPhone();
+      await press(c);
+      expect(spy).toHaveBeenCalledTimes(1);
+      sms.ack(textsFor(c)[0].id, { ok: false, error: 'אין יתרה' });
+      await press(c);
+      expect(textsFor(c)).toHaveLength(2);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      delete notify.sendOrderReady;
+    }
+  });
+
+  it('queues nothing at all when SMS is switched off', async () => {
+    const c = readyWithPhone();
+    await press(c);
+    sms.ack(textsFor(c)[0].id, { ok: false, error: 'אין יתרה' });
+    settings.set('sms', 'enabled', false);
+    await press(c);
+    expect(textsFor(c)).toHaveLength(1);
   });
 });

@@ -35,6 +35,15 @@ const FILE = path.join(DATA_DIR, 'sms-outbox.json');
 const DEFAULT_TTL_MS = 12 * 3600 * 1000;
 // How long a polled message stays "taken" before it returns to the queue.
 const LEASE_MS = 5 * 60 * 1000;
+// How many times one message may be handed to the phone without a report back.
+// The lease returns an unreported message to the queue on the principle that a
+// duplicate beats a silence — which holds for ONE duplicate. A phone that sends
+// and then fails to report (a broken report step, not a flaky network) texted
+// the same customer again every five minutes until the 12-hour expiry: the
+// owner's own test was picked up six times in half an hour. Past this many, the
+// message is failed with a reason she can read, and pressing "ready" again queues
+// it afresh once the phone is fixed (a failed message never blocks a new one).
+const MAX_ATTEMPTS = 3;
 // The queue is a store on a volume, not a mail server: bound it so a phone that
 // never comes back cannot grow the file without limit. Oldest DONE messages go
 // first; pending ones are never evicted by this.
@@ -83,6 +92,16 @@ function ilMobile(phone) {
   return /^05\d{8}$/.test(s) ? s : '';
 }
 
+// A message that is still owed to a customer — the dedupe rule, and nothing
+// else. `failed` and `expired` are the two ends that mean she was NEVER told: the
+// cap gave up, or the phone never came for it inside the 12-hour window. Either
+// way a fresh press of "מוכן" has to be able to queue it again, so neither one
+// blocks a replacement. Every other state — pending, taken, sent — does block,
+// because there the message is on its way or has already arrived.
+function blocksReplacement(m) {
+  return m.state !== 'failed' && m.state !== 'expired';
+}
+
 // Queue one message. Returns the record, or null when there is nothing to send
 // (no usable number, empty text) or when this (order, event) is already queued or
 // done — the dedupe that keeps a double-press from double-texting a customer.
@@ -93,8 +112,16 @@ function enqueue({ to, text, event, collection_id, ttlMs, now } = {}) {
     .slice(0, MAX_TEXT);
   if (!phone || !body) return null;
   const at = Number.isFinite(now) ? now : Date.now();
+  // RECONCILE FIRST, or the cap locks the customer out of ever hearing from us.
+  // A phone that stops polling leaves the message sitting in `taken` — nothing
+  // flips it to `failed` until something READS the queue, and the admin page is
+  // not something the owner has open at 2am. The dedupe below would then see a
+  // live `taken` message, answer null, and the press that was supposed to be the
+  // recovery would do nothing at all. Reconciling here makes this write see the
+  // same current view every reader gets.
+  reconcile(at);
   const dedupe = collection_id && event ? String(collection_id) + ':' + String(event) : '';
-  if (dedupe && _store.messages.some((m) => m.dedupe_key === dedupe && m.state !== 'failed')) {
+  if (dedupe && _store.messages.some((m) => m.dedupe_key === dedupe && blocksReplacement(m))) {
     return null;
   }
   const msg = {
@@ -134,6 +161,13 @@ function reconcile(now) {
       }
     }
     if (m.state === 'taken' && Date.parse(m.taken_at || 0) + LEASE_MS <= at) {
+      if ((m.attempts || 0) >= MAX_ATTEMPTS) {
+        m.state = 'failed';
+        m.error = 'הטלפון לקח את ההודעה ' + m.attempts + ' פעמים ולא דיווח שנשלחה — לא נשלחת שוב';
+        m.taken_at = null;
+        changed = true;
+        continue;
+      }
       // The phone took it and never came back — it may or may not have sent. Back
       // to the queue: a duplicate SMS beats a customer who was never told.
       m.state = 'pending';
@@ -175,7 +209,15 @@ function claim({ limit = 10, now } = {}) {
     m.state = 'taken';
     m.taken_at = new Date(at).toISOString();
     m.attempts += 1;
-    out.push({ id: m.id, to: m.to, text: m.text });
+    // The one-use key to this message's report address. Minted on the way out
+    // rather than at enqueue so that messages already sitting in the file from
+    // an earlier deploy get one the first time they are handed out. It stands in
+    // for the SHARED gateway key in `ack_url`: that link travels through the
+    // phone, the router, Cloudflare and Automate's own flow log, and a shared
+    // secret written into all of those is a secret in a lot of places it was
+    // never meant to be. This one unlocks exactly one message's "that went out".
+    if (!m.ack_token) m.ack_token = crypto.randomUUID();
+    out.push({ id: m.id, to: m.to, text: m.text, ack_token: m.ack_token });
   }
   if (out.length) save();
   return out;
@@ -188,6 +230,16 @@ function ack(id, { ok = true, error, now } = {}) {
   const at = Number.isFinite(now) ? now : Date.now();
   const m = _store.messages.find((x) => x.id === id);
   if (!m) return null;
+  // A report that arrives after we have already stopped waiting changes NOTHING.
+  // `failed` and `expired` are decisions with a reason attached — the cap gave
+  // up after three unreported pickups, or the 12-hour window closed — and the
+  // reason is the only thing that tells the owner her phone is broken. A late
+  // report flipping that to a green "נשלחה" with a blank error would erase the
+  // one piece of evidence she has. `sent` is already the answer, so there is
+  // nothing to write there either; in particular a stray ok:false must not turn
+  // a message the SIM accepted into a failure. The caller still gets the record
+  // and answers 200, so the phone stops asking.
+  if (m.state !== 'pending' && m.state !== 'taken') return m;
   if (ok) {
     m.state = 'sent';
     m.sent_at = new Date(at).toISOString();
@@ -198,6 +250,19 @@ function ack(id, { ok = true, error, now } = {}) {
   }
   save();
   return m;
+}
+
+// Does this token open this message's report? Timing-safe, and false for
+// anything it cannot match — an unknown id, a message minted before tokens
+// existed, an empty token. It authorises ONE thing: reporting on this one
+// message. It is not a key to the outbox, to another message, or to the admin.
+function checkAckToken(id, token) {
+  const given = String(token == null ? '' : token);
+  if (!given) return false;
+  const m = _store.messages.find((x) => x.id === id);
+  const want = m && m.ack_token ? String(m.ack_token) : '';
+  if (!want || given.length !== want.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
 }
 
 // Newest first, for the admin. `pending` counts what is still owed a customer.
@@ -242,12 +307,14 @@ module.exports = {
   enqueue,
   claim,
   ack,
+  checkAckToken,
   list,
   counts,
   reconcile,
   markPolled,
   lastPollAt,
   LEASE_MS,
+  MAX_ATTEMPTS,
   DEFAULT_TTL_MS,
   MAX_TEXT,
   _reset,
