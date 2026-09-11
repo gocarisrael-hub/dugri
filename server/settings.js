@@ -648,6 +648,12 @@ const REGISTRY = {
     order_ready: {
       kind: 'text',
       tokens: ['honoree', 'link'],
+      // Longer than the 120 a 'text' key allows by default: that ceiling was
+      // written for one-line storefront strings, and a real pickup message with a
+      // link outgrows it — the owner's first wording was refused on save. Still
+      // ONE line (the kind rejects newlines), and 300 leaves room for {honoree}
+      // and {link} to expand inside sms.js's own 480 cap on what is sent.
+      max: 300,
       default: 'היי! המשחק של {honoree} מוכן 🎉 כל הפרטים כאן: {link}',
     },
   },

@@ -529,6 +529,46 @@
           <p class="section-title">מיילים</p>
           <div id="emailCards"></div>
         </div>
+        <!-- SMS, sent from the owner's own phone. Its two settings existed on the
+             server with no screen to change them, while the setup guide told her
+             to switch it on HERE — so she went looking for a switch that did not
+             exist. The status line is the part that matters most: SMS switched on
+             with a phone that never checks in looks exactly like SMS working,
+             until a customer says she never got the text. -->
+        <div class="section-group" id="smsGroup">
+          <p class="section-title">SMS</p>
+          <p class="card-when">
+            הודעה שיוצאת מהטלפון שלך ללקוח/ה כשמסמנים הזמנה כמוכנה (או בלחיצה על "הכל מוכן"). שורה
+            אחת, עד 300 תווים.
+          </p>
+          <div id="smsStatus" class="wa-status" role="status" data-testid="sms-status" hidden></div>
+          <div class="card" id="card-sms" data-testid="sms-card">
+            <div class="card-head">
+              <h3 class="card-title">ההזמנה מוכנה</h3>
+              <span class="card-id">sms.order_ready</span>
+            </div>
+            <label class="toggle"
+              ><input type="checkbox" id="smsEnabled" data-testid="sms-enabled" /> מופעל</label
+            >
+            <label class="fld" for="smsText">טקסט ההודעה</label>
+            <textarea id="smsText" maxlength="300" data-testid="sms-text"></textarea>
+            <p class="meta" id="smsCount" data-testid="sms-count"></p>
+            <div id="smsTokens"></div>
+            <div class="actions">
+              <button id="saveSms" class="primary" type="button" data-testid="sms-save">
+                שמירה
+              </button>
+              <button id="resetSms" class="danger" type="button">אפס לברירת מחדל</button>
+              <span
+                id="smsSaveStatus"
+                class="meta status"
+                role="status"
+                aria-live="polite"
+                data-testid="sms-save-status"
+              ></span>
+            </div>
+          </div>
+        </div>
         <!-- Who has stopped their mail. It belongs on THIS page: it is the only
              thing that overrides every switch above it, so the owner reading the
              email settings has to be able to see who those settings no longer
@@ -1059,6 +1099,147 @@
         renderWaSafety();
         renderReminders();
         renderUnsub();
+        renderSms();
+      }
+
+      // --- SMS (sent from the owner's own phone) --------------------------------
+      // Two ordinary settings keys — sms.enabled and sms.order_ready — plus a live
+      // status read from /api/admin/sms, the only place that knows whether the
+      // phone is actually collecting.
+      const SMS_MAX = 300;
+      // Hebrew SMS travel as UCS-2: 70 characters in a single message, 67 per part
+      // once it splits. An emoji outside the basic plane costs two.
+      function smsParts(text) {
+        let units = 0;
+        for (const ch of String(text || '')) units += ch.codePointAt(0) > 0xffff ? 2 : 1;
+        if (!units) return 0;
+        return units <= 70 ? 1 : Math.ceil(units / 67);
+      }
+      function renderSmsCount() {
+        const t = qs('smsText').value;
+        const parts = smsParts(t);
+        qs('smsCount').textContent =
+          t.length + ' / ' + SMS_MAX + ' תווים · ' + (parts <= 1 ? 'הודעה אחת' : parts + ' חלקים');
+      }
+      function renderSms() {
+        const eff = (state && state.effective && state.effective.sms) || {};
+        const reg = (state && state.registry && state.registry.sms) || {};
+        const box = qs('smsEnabled');
+        box.checked = !!eff.enabled;
+        qs('card-sms').classList.toggle('off', !box.checked);
+        qs('smsText').value = eff.order_ready || '';
+        qs('smsTokens').innerHTML = tokensHint((reg.order_ready && reg.order_ready.tokens) || []);
+        renderSmsCount();
+      }
+      function agoHe(iso) {
+        const ms = Date.now() - Date.parse(iso);
+        if (!Number.isFinite(ms)) return '';
+        const min = Math.round(ms / 60000);
+        if (min < 1) return 'ממש עכשיו';
+        if (min < 60) return 'לפני ' + min + ' דקות';
+        const h = Math.round(min / 60);
+        if (h < 48) return 'לפני ' + h + ' שעות';
+        return 'לפני ' + Math.round(h / 24) + ' ימים';
+      }
+      async function loadSmsStatus() {
+        const el = qs('smsStatus');
+        let s;
+        try {
+          s = await api('GET', '/api/admin/sms');
+        } catch {
+          el.hidden = true;
+          return;
+        }
+        const c = s.counts || {};
+        let cls;
+        let head;
+        let detail;
+        if (!s.gateway_configured) {
+          cls = 'off';
+          head = 'הטלפון לא מחובר';
+          detail = 'חסר SMS_GATEWAY_KEY ב-Railway — השרת מסרב לטלפון, ושום הודעה לא יוצאת.';
+        } else if (!s.last_poll_at) {
+          cls = 'warn';
+          head = 'הטלפון עוד לא בדק';
+          detail =
+            'האפליקציה בטלפון לא שאלה מאז שהשרת עלה. אם הזרימה ב-Automate רצה, זה משתנה תוך כמה דקות.';
+        } else {
+          // The flow asks every few minutes; a quarter of an hour of silence is a
+          // phone that is off, asleep, or has lost the flow.
+          const stale = Date.now() - Date.parse(s.last_poll_at) > 15 * 60000;
+          cls = stale ? 'warn' : 'ok';
+          head = stale ? 'הטלפון לא בדק מזמן' : 'הטלפון מחובר ✓';
+          detail = 'בדק לאחרונה ' + agoHe(s.last_poll_at) + '.';
+        }
+        if (!s.enabled) detail += ' ה-SMS כבוי כרגע — שום הודעה לא נכנסת לתור.';
+        const queue =
+          'בתור: ' +
+          (c.pending || 0) +
+          ' ממתינות · ' +
+          (c.taken || 0) +
+          ' נלקחו · ' +
+          (c.sent || 0) +
+          ' נשלחו · ' +
+          (c.failed || 0) +
+          ' נכשלו';
+        el.className = 'wa-status ' + cls;
+        el.innerHTML =
+          '<div class="wa-state">' +
+          esc(head) +
+          '</div><div class="wa-detail">' +
+          esc(detail) +
+          '</div><div class="wa-detail" data-testid="sms-queue">' +
+          esc(queue) +
+          '</div>';
+        el.hidden = false;
+      }
+      function setSmsStatus(text, cls) {
+        const st = qs('smsSaveStatus');
+        st.textContent = text;
+        st.className = 'meta status' + (cls ? ' ' + cls : '');
+      }
+      async function saveSms() {
+        // The stored text is one line, so what she typed is saved as she sees it.
+        const text = qs('smsText')
+          .value.replace(/[\r\n]+/g, ' ')
+          .trim();
+        if (!text) return setSmsStatus('הטקסט ריק — אי אפשר לשמור הודעה ריקה', 'err');
+        setSmsStatus('שומר…');
+        try {
+          const a = await api('POST', '/api/admin/settings', {
+            section: 'sms',
+            key: 'order_ready',
+            value: text,
+          });
+          const b = await api('POST', '/api/admin/settings', {
+            section: 'sms',
+            key: 'enabled',
+            value: qs('smsEnabled').checked,
+          });
+          state.effective.sms = Object.assign({}, state.effective.sms, {
+            order_ready: a.effective,
+            enabled: b.effective,
+          });
+          renderSms();
+          setSmsStatus('נשמר ✓', 'ok');
+          loadSmsStatus();
+        } catch (e) {
+          setSmsStatus('שמירה נכשלה: ' + e.message, 'err');
+        }
+      }
+      async function resetSms() {
+        if (!confirm('להחזיר את טקסט ה-SMS לברירת המחדל?')) return;
+        try {
+          const { effective } = await api(
+            'DELETE',
+            '/api/admin/settings?section=sms&settingKey=order_ready'
+          );
+          state.effective.sms = Object.assign({}, state.effective.sms, { order_ready: effective });
+          renderSms();
+          setSmsStatus('אופס ✓', 'ok');
+        } catch (e) {
+          setSmsStatus('איפוס נכשל: ' + e.message, 'err');
+        }
       }
 
       // --- Ban-safety panel ------------------------------------------------------
@@ -1495,6 +1676,21 @@
       // delete + the per-card enable toggle live inside each reminder card.
       qs('addReminder').addEventListener('click', addReminder);
       qs('saveWaSafety').addEventListener('click', saveWaSafety);
+      qs('saveSms').addEventListener('click', saveSms);
+      qs('resetSms').addEventListener('click', resetSms);
+      qs('smsEnabled').addEventListener('change', (e) =>
+        qs('card-sms').classList.toggle('off', !e.target.checked)
+      );
+      // One line, at most SMS_MAX: a line break becomes a space as she types, so
+      // the box never shows a message that will be sent differently. Capped here
+      // as well as by maxlength, which a paste can get round.
+      qs('smsText').addEventListener('input', () => {
+        const t = qs('smsText');
+        let v = t.value.replace(/[\r\n]+/g, ' ');
+        if (v.length > SMS_MAX) v = v.slice(0, SMS_MAX);
+        if (v !== t.value) t.value = v;
+        renderSmsCount();
+      });
       // Highlight the picked mode immediately, before the save round-trip.
       qs('waSafety').addEventListener('change', (e) => {
         if (e.target.name !== 'waGroupMode') return;
@@ -1615,6 +1811,7 @@
           render();
           renderWaStatus();
           loadUnsub();
+          loadSmsStatus();
         } catch (e) {
           qs('loadErr').textContent = 'טעינה נכשלה: ' + e.message + ' (מפתח שגוי?)';
           qs('loadErr').hidden = false;
