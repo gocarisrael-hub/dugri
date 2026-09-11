@@ -558,7 +558,9 @@
               <button id="saveSms" class="primary" type="button" data-testid="sms-save">
                 שמירה
               </button>
-              <button id="resetSms" class="danger" type="button">אפס לברירת מחדל</button>
+              <button id="resetSms" class="danger" type="button" data-testid="sms-reset">
+                אפס לברירת מחדל
+              </button>
               <span
                 id="smsSaveStatus"
                 class="meta status"
@@ -1115,39 +1117,79 @@
         if (!units) return 0;
         return units <= 70 ? 1 : Math.ceil(units / 67);
       }
+      // COUNT THE MESSAGE, NOT THE TEMPLATE. `{link}` is six characters in this
+      // box and about 117 on the wire — the site address plus /collect.html and
+      // two uuids — and `{honoree}` is nine here and up to eighty (the store's
+      // cap). The shipped default measures 53 characters as typed, which reads as
+      // one part; what is actually queued is around 159, which is three. Counting
+      // the template told the owner to leave Automate's Multipart limit at its
+      // default of 1, and the customer got a third of a message with the link cut
+      // off — the exact failure this line exists to prevent.
+      //
+      // The arithmetic mirrors sms.expandedLength on the server (server/sms.js),
+      // which is what refuses a template that cannot fit once it is filled in.
+      const SMS_HONOREE_MAX = 80;
+      const SMS_LINK_LEN =
+        location.origin.length + '/collect.html?c='.length + 36 + '&k='.length + 36;
+      function smsExpand(template) {
+        return String(template || '')
+          .replace(/\{honoree\}/g, 'x'.repeat(SMS_HONOREE_MAX))
+          .replace(/\{link\}/g, 'x'.repeat(SMS_LINK_LEN));
+      }
       function renderSmsCount() {
         const t = qs('smsText').value;
-        const parts = smsParts(t);
+        const sent = smsExpand(t);
+        const parts = smsParts(sent);
+        const grew = sent.length !== t.length;
         qs('smsCount').textContent =
           t.length +
           ' / ' +
           SMS_MAX +
-          ' תווים · ' +
+          ' תווים' +
+          // Say WHY the two numbers differ, or the longer one looks like a bug.
+          (grew ? ' · בשליחה, עם השם והקישור: עד ' + sent.length + ' תווים' : '') +
+          ' · ' +
           (parts <= 1 ? 'הודעה אחת' : parts + ' חלקים') +
           // The phone sends only as many parts as Automate's "Multipart limit"
           // allows (default 1) and cuts the rest without a word — exactly how the
           // owner's first test arrived half-written. Name the number to set.
           (parts > 1 ? ' — ב-Automate, Multipart limit צריך להיות לפחות ' + parts : '');
       }
-      function renderSms() {
-        const eff = (state && state.effective && state.effective.sms) || {};
+      // The text, its tokens and its counter — everything the טקסט half of the
+      // card shows. Split out from renderSms because "reset the wording" must not
+      // touch the switch: resetSms only asks for the default TEXT back, and
+      // repainting the whole card would put the switch back to the saved value
+      // and silently undo a מופעל the owner had just ticked. She would leave the
+      // page believing SMS was on.
+      function renderSmsText(value) {
         const reg = (state && state.registry && state.registry.sms) || {};
-        const box = qs('smsEnabled');
-        box.checked = !!eff.enabled;
-        qs('card-sms').classList.toggle('off', !box.checked);
-        qs('smsText').value = eff.order_ready || '';
+        qs('smsText').value = value || '';
         qs('smsTokens').innerHTML = tokensHint((reg.order_ready && reg.order_ready.tokens) || []);
         renderSmsCount();
       }
+      function renderSms() {
+        const eff = (state && state.effective && state.effective.sms) || {};
+        const box = qs('smsEnabled');
+        box.checked = !!eff.enabled;
+        qs('card-sms').classList.toggle('off', !box.checked);
+        renderSmsText(eff.order_ready);
+      }
+      // Hebrew counts one and two with their own words — "לפני 1 דקות" is not
+      // something anyone writes, and this line is read a minute after every poll.
       function agoHe(iso) {
         const ms = Date.now() - Date.parse(iso);
         if (!Number.isFinite(ms)) return '';
         const min = Math.round(ms / 60000);
         if (min < 1) return 'ממש עכשיו';
-        if (min < 60) return 'לפני ' + min + ' דקות';
+        if (min < 60) return 'לפני ' + heCount(min, 'דקה', 'שתי דקות', 'דקות');
         const h = Math.round(min / 60);
-        if (h < 48) return 'לפני ' + h + ' שעות';
-        return 'לפני ' + Math.round(h / 24) + ' ימים';
+        if (h < 48) return 'לפני ' + heCount(h, 'שעה', 'שעתיים', 'שעות');
+        return 'לפני ' + heCount(Math.round(h / 24), 'יום', 'יומיים', 'ימים');
+      }
+      function heCount(n, one, two, many) {
+        if (n === 1) return one;
+        if (n === 2) return two;
+        return n + ' ' + many;
       }
       async function loadSmsStatus() {
         const el = qs('smsStatus');
@@ -1180,6 +1222,11 @@
           detail = 'בדק לאחרונה ' + agoHe(s.last_poll_at) + '.';
         }
         if (!s.enabled) detail += ' ה-SMS כבוי כרגע — שום הודעה לא נכנסת לתור.';
+        // EXPIRED IS ON THIS LINE. A message the phone never collected inside its
+        // 12-hour window reconciles to `expired`, not `failed` — so a night of
+        // "המשחק מוכן" that nobody ever received rendered here byte for byte like
+        // a healthy idle queue. On a panel whose whole job is to make a silent
+        // SMS failure visible, it is the number most worth showing.
         const queue =
           'בתור: ' +
           (c.pending || 0) +
@@ -1189,7 +1236,9 @@
           (c.sent || 0) +
           ' נשלחו · ' +
           (c.failed || 0) +
-          ' נכשלו';
+          ' נכשלו · ' +
+          (c.expired || 0) +
+          ' פגו';
         el.className = 'wa-status ' + cls;
         el.innerHTML =
           '<div class="wa-state">' +
@@ -1241,7 +1290,11 @@
             '/api/admin/settings?section=sms&settingKey=order_ready'
           );
           state.effective.sms = Object.assign({}, state.effective.sms, { order_ready: effective });
-          renderSms();
+          // The TEXT only. The switch is a separate key that this did not touch,
+          // and it may be standing at a position the owner has ticked but not yet
+          // saved — repainting it from the saved value would flip it back under
+          // her while the screen said "אופס ✓".
+          renderSmsText(effective);
           setSmsStatus('אופס ✓', 'ok');
         } catch (e) {
           setSmsStatus('איפוס נכשל: ' + e.message, 'err');

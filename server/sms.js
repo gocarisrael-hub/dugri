@@ -48,11 +48,47 @@ const MAX_ATTEMPTS = 3;
 // never comes back cannot grow the file without limit. Oldest DONE messages go
 // first; pending ones are never evicted by this.
 const MAX_KEPT = 500;
-// SMS is charged and read by a person, so what is sent stays bounded. Sized for
-// the longest message the admin allows (700 characters) with {honoree} and
-// {link} expanded — the owner deliberately sends a long pickup message split into
-// parts — while still stopping a runaway template.
-const MAX_TEXT = 900;
+// SMS is charged and read by a person, so what is sent stays bounded — but the
+// bound is on the MESSAGE, not on the template the owner types, and the two are
+// far apart. `{link}` is six characters in the editor and about 117 on the wire;
+// `{honoree}` is nine and up to eighty. Whatever this number is, the slice below
+// cuts from the END, and the end is exactly where the link lives — a message
+// trimmed here reaches the customer with the address she needs cut in half.
+//
+// So it is sized so nothing the admin will accept can reach it: the editor caps
+// the template at 700, and `expandedLength` below measures the worst case the
+// tokens can add, which settings.js refuses to store above this. The slice stays
+// as a last bound on a caller that does not go through the admin, and it says so
+// in the log rather than quietly dropping the tail.
+const MAX_TEXT = 1000;
+
+// What the tokens cost once server/index.js fills the template in.
+//   {honoree} — the store caps honoree_name at 80 (server/db.js).
+//   {link}    — PUBLIC_BASE_URL + '/collect.html?c=' + a uuid + '&k=' + a uuid.
+const HONOREE_MAX = 80;
+const LINK_PATH_CHARS = '/collect.html?c='.length + 36 + '&k='.length + 36;
+// The address to assume when there is no configured one to measure. The live
+// apex is 26 characters and a Railway staging host about 50; budgeting 64 means
+// a template accepted on one box cannot be truncated on another.
+const BASE_URL_BUDGET = 64;
+
+// How long this template becomes at ITS WORST — the longest honoree the store
+// will hold, and the real link — which is the length that has to fit MAX_TEXT.
+// Measured rather than built, so a long template is not copied to count it.
+function expandedLength(template, baseUrl) {
+  const base = String(baseUrl == null ? process.env.PUBLIC_BASE_URL || '' : baseUrl).replace(
+    /\/+$/,
+    ''
+  );
+  const link = Math.max(base.length, BASE_URL_BUDGET) + LINK_PATH_CHARS;
+  let n = 0;
+  for (const part of String(template == null ? '' : template).split(/(\{honoree\}|\{link\})/)) {
+    if (part === '{honoree}') n += HONOREE_MAX;
+    else if (part === '{link}') n += link;
+    else n += part.length;
+  }
+  return n;
+}
 
 let _store = load();
 
@@ -109,9 +145,15 @@ function blocksReplacement(m) {
 // done — the dedupe that keeps a double-press from double-texting a customer.
 function enqueue({ to, text, event, collection_id, ttlMs, now } = {}) {
   const phone = ilMobile(to);
-  const body = String(text == null ? '' : text)
-    .trim()
-    .slice(0, MAX_TEXT);
+  const whole = String(text == null ? '' : text).trim();
+  const body = whole.slice(0, MAX_TEXT);
+  // Unreachable through the admin — settings.js refuses a template that can
+  // expand past this — so if it ever fires, something queued a message from
+  // somewhere else. Said out loud, because the part that goes missing is the
+  // tail, and the tail is the link.
+  if (whole.length > MAX_TEXT) {
+    console.warn('[sms] text cut from ' + whole.length + ' to ' + MAX_TEXT + ' characters');
+  }
   if (!phone || !body) return null;
   const at = Number.isFinite(now) ? now : Date.now();
   // RECONCILE FIRST, or the cap locks the customer out of ever hearing from us.
@@ -319,5 +361,9 @@ module.exports = {
   MAX_ATTEMPTS,
   DEFAULT_TTL_MS,
   MAX_TEXT,
+  HONOREE_MAX,
+  LINK_PATH_CHARS,
+  BASE_URL_BUDGET,
+  expandedLength,
   _reset,
 };

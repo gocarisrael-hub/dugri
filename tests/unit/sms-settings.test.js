@@ -83,6 +83,66 @@ describe('what is sent', () => {
   });
 });
 
+// 700 characters of template is not 700 characters of SMS. `{link}` is six here
+// and about 117 on the wire; `{honoree}` is nine and up to eighty (the store's
+// cap, server/db.js). sms.enqueue cuts what is over its own limit from the END —
+// and the end is where the link lives, so a message trimmed there reaches the
+// customer with the address she needs cut in half, and nothing says so.
+describe('the length that actually has to fit', () => {
+  const BASE = 'https://dugri-israel.co.il';
+
+  it('measures the tokens at what they will really cost, not at their name', () => {
+    const tpl = 'היי {honoree} {link}';
+    expect(sms.expandedLength(tpl, BASE)).toBeGreaterThan(tpl.length + 150);
+    // …and a template with no tokens is exactly itself.
+    expect(sms.expandedLength('שלום', BASE)).toBe(4);
+  });
+
+  it('charges every occurrence, not just the first', () => {
+    const one = sms.expandedLength('{honoree}', BASE);
+    expect(sms.expandedLength('{honoree}{honoree}', BASE)).toBe(one * 2);
+  });
+
+  // The check exists so this can never happen. Without it a template that is
+  // legal at 700 characters queues a message longer than sms.MAX_TEXT and loses
+  // its tail in silence.
+  it('refuses a template that cannot fit once it is filled in', () => {
+    const tpl = '{honoree}'.repeat(3) + 'א'.repeat(700 - 27 - 6) + '{link}';
+    expect(tpl.length).toBe(700); // legal by the plain character count…
+    expect(settings.validateValue('sms', 'order_ready', tpl)).toMatch(
+      new RegExp(String(sms.MAX_TEXT))
+    );
+  });
+
+  it('lets the shipped default and her real pickup message through', () => {
+    expect(settings.validateValue('sms', 'order_ready', PICKUP)).toBeNull();
+    const def = settings.get('sms', 'order_ready');
+    expect(settings.validateValue('sms', 'order_ready', def)).toBeNull();
+  });
+
+  // The pairing that makes the rule true rather than merely plausible: anything
+  // the admin accepts must survive enqueue whole.
+  it('leaves nothing the admin accepts to be cut by the sender', () => {
+    const worst = '{honoree}'.repeat(2) + 'א'.repeat(700 - 18 - 6) + '{link}';
+    expect(settings.validateValue('sms', 'order_ready', worst)).toBeNull();
+    const filled = settings.interpolate(worst, {
+      honoree: 'א'.repeat(80),
+      link: BASE + '/collect.html?c=' + 'x'.repeat(36) + '&k=' + 'x'.repeat(36),
+    });
+    const m = sms.enqueue({ to: '0521234567', text: filled, event: 'manual' });
+    expect(m.text).toBe(filled);
+  });
+
+  it('still refuses a value over the plain 700, before any expansion', () => {
+    expect(settings.validateValue('sms', 'order_ready', 'א'.repeat(701))).toMatch(/700/);
+  });
+
+  // Not every text key is a template that gets sent somewhere with a hard limit.
+  it('leaves the rule on every other text key alone', () => {
+    expect(settings.validateValue('pricing', 'sale_label', 'מבצע {honoree}')).toBeNull();
+  });
+});
+
 describe('sms.enabled', () => {
   it('is a real boolean, never a truthy string', () => {
     expect(settings.validateValue('sms', 'enabled', true)).toBeNull();
