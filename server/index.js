@@ -7519,7 +7519,18 @@ app.post('/api/admin/meta-capi/retry', (req, res) => {
 app.get('/api/admin/ads', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const days = Math.min(Math.max(1, Number(req.query.days) || 30), 400);
-  res.json(attribution.report({ days }));
+  res.json({
+    ...attribution.report({ days }),
+    // THE PUBLIC ADDRESS OF THE SITE, for the link builder on this page.
+    //
+    // It cannot use the address the admin is open at: the owner reaches the
+    // admin through the Railway hostname as often as through the real domain,
+    // and a link built there carried *.up.railway.app into her Instagram bio.
+    // That link works, which is the worst part of it — nothing would have said
+    // it was wrong. The server is the only party that knows which name the
+    // public site answers to.
+    base_url: paymentBaseUrl(),
+  });
 });
 app.get('/api/admin/ads/live', (req, res) => {
   if (!requireAdmin(req, res)) return;

@@ -172,6 +172,27 @@ test.describe('the ad report', () => {
     await expect(page.locator('#rows tr:has(td:text-is("{{campaign.name}}"))')).toHaveCount(0);
   });
 
+  // THE BIO LINK BUG. The builder used the address the admin page was open at,
+  // so a link built from the Railway hostname went into the owner's Instagram
+  // bio pointing at *.up.railway.app. It worked, which is why nothing caught it.
+  test('the built link uses the site’s real domain, not whatever host the admin is open at', async ({
+    page,
+  }) => {
+    await page.route('**/api/admin/ads?*', async (route) => {
+      const resp = await route.fetch();
+      const body = await resp.json();
+      body.base_url = 'https://dugri-israel.co.il';
+      await route.fulfill({ response: resp, json: body });
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.locator('#bCampaign').fill('bio');
+
+    const link = await page.getByTestId('ad-link').inputValue();
+    expect(link.startsWith('https://dugri-israel.co.il/')).toBe(true);
+    expect(link).not.toContain('localhost');
+    expect(link).toContain('utm_medium=bio');
+  });
+
   test('the manual builder still writes a link for the bio and the stories', async ({ page }) => {
     await page.goto(`/admin-ads.html?key=${KEY}`);
     const campaign = unique('bio');

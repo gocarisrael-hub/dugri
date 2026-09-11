@@ -680,9 +680,18 @@
           .replace(/[^a-z0-9_\-\u0590-\u05ff]+/g, '_')
           .replace(/^_+|_+$/g, '');
 
+      // The site's real public address, handed over by the server with the report.
+      // It cannot be taken from the address this page is open at: the owner
+      // reaches the admin through the Railway hostname as often as through the
+      // real domain, and a link built there put *.up.railway.app into her
+      // Instagram bio. That link WORKS, which is the worst part — nothing would
+      // ever have said it was wrong. Falls back to this page's origin only when
+      // the server has no PUBLIC_BASE_URL to give.
+      let publicBase = '';
+
       function buildLink() {
         const dest = qs('bDest').value;
-        const url = new URL(dest, location.origin);
+        const url = new URL(dest, publicBase || location.origin);
         url.searchParams.set('utm_source', qs('bSource').value);
         url.searchParams.set('utm_medium', qs('bMedium').value);
         const campaign = slug(qs('bCampaign').value);
@@ -1093,6 +1102,10 @@
         try {
           const data = await api('/api/admin/ads?days=' + days);
           if (seq !== reportSeq) return;
+          if (data.base_url && data.base_url !== publicBase) {
+            publicBase = data.base_url;
+            buildLink(); // rebuild what is already on screen against the real domain
+          }
           renderTiles(data.totals);
           renderRows(data.rows);
           // Meta's half is loaded after ours and never blocks it: it is a call
