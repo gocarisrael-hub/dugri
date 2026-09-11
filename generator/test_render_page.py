@@ -3594,14 +3594,17 @@ def test_a_hebrew_first_entry_reserves_the_space_but_does_not_paint_it():
     lat = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
     out = _wl(lines=["מסיבת BBQ"], alt_font_path=lat)
     assert _word_runs(out) == ["BBQ", "‫מסיבת‬"], "no space rides off the end"
-    # ...and the advance it would have had is still reserved: the Hebrew run is
-    # still anchored at the line's right edge, and the gap it leaves on its left
-    # is exactly one space of the Hebrew face.
+    # ...and the advance it would have had is still RESERVED. Two readings say
+    # so: the Hebrew run is still anchored where a single-script line is
+    # anchored — the line has not been dragged off its own right edge — and the
+    # gap it now leaves on its left is exactly one space of the Hebrew face.
+    def word_xs(svg):
+        return [float(m) for m in re.findall(
+            r'<text x="([-\d.]+)"[^>]*font-family="HebWord(?:Alt)?"', svg)][2:]
+
+    lat_x, heb_x = word_xs(out)
+    assert [heb_x] == word_xs(_wl(lines=["מסיבה"])), "off its own right edge"
     f, ref = _faces()
-    xs = [float(m) for m in re.findall(
-        r'<text x="([-\d.]+)"[^>]*font-family="HebWord(?:Alt)?"', out)][2:]
-    lat_x, heb_x = xs
-    assert heb_x == float(f"{200.0 - rp._marker_geometry(f, ref, 1, 12.0 * rp._MARKER_SCALE)[3] - 12.0 * rp._WORD_GAP:.2f}")
     gap = heb_x - f.getlength("מסיבת") / ref * 12.0 - lat_x
     assert abs(gap - f.getlength(" ") / ref * 12.0) < 0.01, gap
 
