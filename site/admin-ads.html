@@ -414,30 +414,11 @@
           זה קליק מאינסטגרם עדיין נספר (לפי <code>fbclid</code>), אבל בלי שם קמפיין.
         </p>
 
-        <h2>שמות קמפיינים בטבלה שלנו (לא חובה)</h2>
-        <div class="builder">
-          <p class="hint" style="margin-top: 0">
-            הטבלה של מטא למעלה כבר מראה כל מודעה בשם שלה, בלי לעשות כלום. השורה הזאת נחוצה רק אם
-            רוצים שגם <strong>הספירה שלנו</strong> תדע לפי איזו מודעה הגיעה כל הזמנה. מדביקים אותה
-            בשדה <code>URL parameters</code> של מודעה (תחת Tracking), והיא נגררת אוטומטית לכל מודעה
-            שמשכפלים ממנה. למטא אין דרך להחיל אותה על כל החשבון בבת אחת — לכן זה לא חובה, וכלום לא
-            נשבר בלעדיה.
-          </p>
-          <div class="out">
-            <input id="bAuto" type="text" readonly data-testid="auto-params" />
-            <button type="button" class="on" id="bAutoCopy" data-testid="copy-auto-params">
-              העתקה
-            </button>
-          </div>
-          <p class="hint" id="bAutoStatus">
-            בלי זה: קליק מאינסטגרם עדיין נספר אצלנו, פשוט בשורה אחת בשם meta / paid.
-          </p>
-        </div>
-
         <h2>קישור ידני — לביו, לסטורי, למשפיענית</h2>
         <div class="builder">
           <p class="hint" style="margin-top: 0">
-            רק למקומות שאין בהם מודעה שתמלא את השמות לבד. כאן כן צריך לתת שם.
+            בונה קישור שמגיע עם שם לטבלה שלמעלה. שום מקום לא ממלא את השם לבד — גם לא מודעה — אז כל
+            קישור שרוצים לזהות בשמו, בונים כאן.
           </p>
           <div class="fields">
             <label
@@ -665,19 +646,6 @@
       // names in it and one without.
       const B = ['bDest', 'bCampaign', 'bSource', 'bMedium'];
 
-      // THE ONE STRING. Meta substitutes each {{…}} as it delivers the ad, so a
-      // campaign names itself and nothing has to be typed per ad — which is the
-      // difference between a report with campaign names in it and one that is
-      // right in principle and empty in practice.
-      //
-      // {{site_source_name}} answers 'ig' or 'fb', spelled out again on our side
-      // so one platform stays one row. utm_medium is the only fixed value: Meta
-      // has no macro for "this cost money", and everything carrying these
-      // parameters is a paid placement by definition.
-      const AUTO_PARAMS =
-        'utm_source={{site_source_name}}&utm_medium=paid' +
-        '&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}';
-
       // The ad platform strips nothing, so the value has to be link-safe before
       // it ever reaches a URL: spaces and punctuation become underscores.
       const slug = (v) =>
@@ -812,6 +780,44 @@
           live.textContent = text;
           live.className = 'hint' + (cls ? ' ' + cls : '');
         }
+      }
+
+      // The account field is shown only where it can do something — which, on a
+      // WORKING report, is almost nowhere: with one ad account behind the token
+      // (the owner's case) it is discovered, and a field asking which one is a
+      // question with one answer.
+      //
+      // A BROKEN report is the opposite, and this is the one page in the product
+      // that writes analytics.meta_ad_account_id. A bad META_AD_ACCOUNT_ID in the
+      // server's environment, or a token that can read a named account but cannot
+      // list me/adaccounts, both come back as a plain refusal — no `accounts` to
+      // pick from and no saved override to correct — and a saved setting is the
+      // only thing that outranks the environment variable. Hide the field there
+      // and the report cannot be repaired at all without a redeploy. So every
+      // refusal keeps it, the permissions ones included: a field she doesn't need
+      // on a screen that is already telling her something is wrong is a smaller
+      // harm than a dead end.
+      //
+      // On a successful report, two things still earn it a place:
+      // - the server listing accounts to choose between. It sends `accounts`
+      //   ONLY when it refuses to guess: several of them, or a list too long to
+      //   read whole (which it treats as several, and so does this);
+      // - an override already saved, which has to stay in view to be cleared —
+      //   a wrong one is exactly what makes Meta refuse.
+      // Plus the render a save caused: clearing an override makes the field
+      // irrelevant, and without this its "saved" message would vanish along with
+      // it; the next reload puts it away.
+      function accountRelevant(data) {
+        return (
+          data.ok === false ||
+          Array.isArray(data.accounts) ||
+          !!data.account_setting ||
+          accountSaved !== null
+        );
+      }
+
+      function offerAccount(box, data) {
+        if (accountRelevant(data)) box.appendChild(accountPicker(data));
       }
 
       // The ad account this report is pinned to. Without a control the multi-
@@ -965,15 +971,18 @@
               'err'
             )
           );
-          // Several accounts behind one token: name them, AND let her pick one —
-          // naming them without a control is a dead end.
-          box.appendChild(accountPicker(data));
+          // Every refusal keeps the field. Several accounts behind one token:
+          // name them, AND let her pick one — naming them without a control is a
+          // dead end. And any other refusal may BE the account: a bad
+          // META_AD_ACCOUNT_ID, or a token that cannot list the accounts to
+          // choose from. Saving here is the only way to outrank either.
+          offerAccount(box, data);
           return;
         }
         if (!data.rows.length) {
           box.appendChild(metaNote('אין מודעות שרצו בטווח הזה.'));
           box.appendChild(windowNote(data));
-          box.appendChild(accountPicker({ ...data, accounts: null }));
+          offerAccount(box, { ...data, accounts: null });
           return;
         }
 
@@ -1060,9 +1069,9 @@
         // built for an ad carries a campaign name — but that link travels, so
         // this is "almost always", not "certainly".
         //
-        // Printed plainly, with no warning colour. An owner who never pastes the
-        // optional tagging string — which this page itself describes as a normal
-        // way to run — would see a red line on every visit for ever, and a warning
+        // Printed plainly, with no warning colour. An owner who never tags her
+        // ads — the normal way to run, since Meta's table above names every ad
+        // by itself — would see a red line on every visit for ever, and a warning
         // that is always on is a warning she stops reading. It is also a
         // continuum: ₪501 against ₪499 is not a different situation from ₪499
         // against ₪501, and only a threshold would say it was.
@@ -1141,7 +1150,7 @@
             'העמודות המסומנות "מטא" הן הספירה שלה, וההזמנות בטבלה שמתחת הן שלנו — הפער בין השתיים הוא מידע, לא תקלה.'
           )
         );
-        box.appendChild(accountPicker({ ...data, accounts: null }));
+        offerAccount(box, { ...data, accounts: null });
       }
 
       function fail(message) {
@@ -1190,7 +1199,22 @@
         } catch (e) {
           if (gen !== reportSeq) return;
           qs('metaBox').textContent = '';
+          // The save itself landed — only the reload that was going to confirm it
+          // didn't. Said here, or the confirmation goes down with the render that
+          // was carrying it and the owner re-saves a setting she already has.
+          // Nothing is claimed about WHAT it resolves to: that answer was in the
+          // reply that never came.
+          if (accountSaved !== null) {
+            qs('metaBox').appendChild(metaNote('ההגדרה נשמרה ✓', 'ok'));
+          }
           qs('metaBox').appendChild(metaNote('טעינת נתוני מטא נכשלה: ' + e.message, 'err'));
+        } finally {
+          // accountSaved is a ONE-SHOT belonging to the next render, and the
+          // picker that consumes it is no longer built on every render. Retire it
+          // here, where every path ends, or a failed reload leaves it set and the
+          // next successful render both shows a field it means to hide and stamps
+          // it with a "נשמר ✓" from a save the owner has long forgotten.
+          if (gen === reportSeq) accountSaved = null;
         }
       }
 
@@ -1211,10 +1235,6 @@
           return;
         }
         qs('main').hidden = false;
-        qs('bAuto').value = AUTO_PARAMS;
-        qs('bAutoCopy').addEventListener('click', () =>
-          copyFrom('bAuto', 'bAutoStatus', 'הועתק ✓ להדביק בשדה URL parameters של המודעה במטא.')
-        );
         for (const id of B) qs(id).addEventListener('input', buildLink);
         qs('bCopy').addEventListener('click', () =>
           copyFrom('bOut', 'bStatus', 'הועתק ✓ אפשר להדביק במקום כתובת האתר.')
