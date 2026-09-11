@@ -5942,23 +5942,51 @@ function requireSmsGateway(req, res) {
 
 // What to send now. Leased, so a second poll does not hand out the same message
 // twice; see server/sms.js for why a lease rather than a delete.
+//
+// Each message carries its own `ack_url`: the complete address to call once it is
+// sent. The phone used to BUILD that address — string concatenation inside an
+// Automate formula — and one slip there reported every message to an address
+// that matched nothing. The phone saw a successful request (an HTTP block does
+// not fail on a 404), the message stayed leased, and the customer was texted
+// again when the lease ran out. A ready-made link needs no formula at all.
 app.get('/api/sms/outbox', (req, res) => {
   if (!requireSmsGateway(req, res)) return;
   sms.markPolled();
   const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
-  res.json({ messages: sms.claim({ limit }) });
+  const base = paymentBaseUrl() || req.protocol + '://' + req.get('host');
+  const key = encodeURIComponent(process.env.SMS_GATEWAY_KEY || '');
+  res.json({
+    messages: sms.claim({ limit }).map((m) => ({
+      ...m,
+      ack_url: base + '/api/sms/outbox/' + encodeURIComponent(m.id) + '/ack?key=' + key,
+    })),
+  });
 });
 
 // The phone's report on one message. `ok:false` carries the SIM's reason, which
 // is what makes a failure legible on the admin screen instead of a silence.
-app.post('/api/sms/outbox/:id/ack', (req, res) => {
+//
+// Accepted as GET as well as POST. An automation app's HTTP block sends GET
+// unless told otherwise, and this is an idempotent "that one went out" behind the
+// gateway key — refusing it over the method would re-send a customer's SMS
+// because of a setting nobody can see. A GET carries a failure as
+// ?ok=false&error=…, having no body.
+function smsAck(req, res) {
   if (!requireSmsGateway(req, res)) return;
   sms.markPolled();
-  const body = req.body || {};
-  const m = sms.ack(req.params.id, { ok: body.ok !== false, error: body.error });
-  if (!m) return res.status(404).json({ error: 'not found' });
+  const body = req.method === 'GET' ? req.query : req.body || {};
+  const ok = !(body.ok === false || body.ok === 'false' || body.ok === '0');
+  const m = sms.ack(req.params.id, { ok, error: body.error });
+  if (!m) {
+    // Logged, because this is the one failure the phone cannot see: its request
+    // succeeded, the message stays leased, and it goes out again later.
+    console.warn('[sms] report for an unknown message id: ' + String(req.params.id).slice(0, 60));
+    return res.status(404).json({ error: 'not found' });
+  }
   res.json({ ok: true, state: m.state });
-});
+}
+app.post('/api/sms/outbox/:id/ack', smsAck);
+app.get('/api/sms/outbox/:id/ack', smsAck);
 
 // Admin: the queue, and when the phone last asked for work. That second number is
 // the one that matters — pending messages plus a poll from two days ago is a

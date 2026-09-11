@@ -143,3 +143,53 @@ describe('is the phone alive', () => {
     expect(sms.lastPollAt()).toBe(new Date(NOW).toISOString());
   });
 });
+
+describe('a phone that sends but never reports', () => {
+  // The lease re-sends an unreported message on the principle that a duplicate
+  // beats a silence — true for one duplicate. The owner's own test was picked up
+  // six times in half an hour by a phone whose report step was broken; for a
+  // customer that is a text every five minutes until the 12-hour expiry.
+  it(`stops handing it out after ${3} pickups without a report, and says why`, () => {
+    const m = sms.enqueue({
+      to: '0521234567',
+      text: 'המשחק מוכן',
+      event: 'order_ready',
+      collection_id: 'c-cap',
+      now: NOW,
+    });
+    let t = NOW;
+    for (let i = 0; i < sms.MAX_ATTEMPTS; i++) {
+      expect(sms.claim({ now: t }).map((x) => x.id)).toEqual([m.id]);
+      t += sms.LEASE_MS + 1000; // never reported; the lease runs out
+    }
+    expect(sms.claim({ now: t })).toEqual([]);
+    const after = sms.list({ now: t }).find((x) => x.id === m.id);
+    expect(after.state).toBe('failed');
+    expect(after.error).toContain(String(sms.MAX_ATTEMPTS));
+  });
+
+  it('still re-sends below the cap — one lost report is exactly what the lease is for', () => {
+    const m = sms.enqueue({ to: '0521234567', text: 'המשחק מוכן', now: NOW });
+    sms.claim({ now: NOW });
+    expect(sms.claim({ now: NOW + sms.LEASE_MS + 1000 }).map((x) => x.id)).toEqual([m.id]);
+  });
+
+  it('can be queued again by pressing ready once the phone is fixed', () => {
+    const args = {
+      to: '0521234567',
+      text: 'המשחק מוכן',
+      event: 'order_ready',
+      collection_id: 'c-retry',
+    };
+    sms.enqueue({ ...args, now: NOW });
+    let t = NOW;
+    for (let i = 0; i < sms.MAX_ATTEMPTS; i++) {
+      sms.claim({ now: t });
+      t += sms.LEASE_MS + 1000;
+    }
+    sms.list({ now: t }); // reconcile: capped → failed
+    const again = sms.enqueue({ ...args, now: t });
+    expect(again).not.toBeNull();
+    expect(again.state).toBe('pending');
+  });
+});

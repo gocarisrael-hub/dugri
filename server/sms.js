@@ -35,6 +35,15 @@ const FILE = path.join(DATA_DIR, 'sms-outbox.json');
 const DEFAULT_TTL_MS = 12 * 3600 * 1000;
 // How long a polled message stays "taken" before it returns to the queue.
 const LEASE_MS = 5 * 60 * 1000;
+// How many times one message may be handed to the phone without a report back.
+// The lease returns an unreported message to the queue on the principle that a
+// duplicate beats a silence — which holds for ONE duplicate. A phone that sends
+// and then fails to report (a broken report step, not a flaky network) texted
+// the same customer again every five minutes until the 12-hour expiry: the
+// owner's own test was picked up six times in half an hour. Past this many, the
+// message is failed with a reason she can read, and pressing "ready" again queues
+// it afresh once the phone is fixed (a failed message never blocks a new one).
+const MAX_ATTEMPTS = 3;
 // The queue is a store on a volume, not a mail server: bound it so a phone that
 // never comes back cannot grow the file without limit. Oldest DONE messages go
 // first; pending ones are never evicted by this.
@@ -134,6 +143,13 @@ function reconcile(now) {
       }
     }
     if (m.state === 'taken' && Date.parse(m.taken_at || 0) + LEASE_MS <= at) {
+      if ((m.attempts || 0) >= MAX_ATTEMPTS) {
+        m.state = 'failed';
+        m.error = 'הטלפון לקח את ההודעה ' + m.attempts + ' פעמים ולא דיווח שנשלחה — לא נשלחת שוב';
+        m.taken_at = null;
+        changed = true;
+        continue;
+      }
       // The phone took it and never came back — it may or may not have sent. Back
       // to the queue: a duplicate SMS beats a customer who was never told.
       m.state = 'pending';
@@ -248,6 +264,7 @@ module.exports = {
   markPolled,
   lastPollAt,
   LEASE_MS,
+  MAX_ATTEMPTS,
   DEFAULT_TTL_MS,
   MAX_TEXT,
   _reset,
