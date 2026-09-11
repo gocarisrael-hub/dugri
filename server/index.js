@@ -2492,6 +2492,26 @@ async function applyOrderReady(id, ready, changed) {
       console.warn('[stock] could not update:', (e && e.message) || e);
     }
   }
+  // PRESSING מוכן ON AN ALREADY-READY ORDER IS THE RECOVERY PRESS. When the SMS
+  // for this order failed — the phone took it three times and never reported, or
+  // the 12-hour window closed on it — the customer was never told, and the owner
+  // has exactly one button that says "tell her". It has to work without her
+  // first un-marking the order and marking it again, which is a trick nobody
+  // would guess and which briefly un-does the shelf as a side effect.
+  //
+  // What keeps this from being a double-text is that sms.enqueue ALREADY knows
+  // the answer: its dedupe holds while the message is pending, taken or sent,
+  // and lets a replacement through only for the two states that mean she never
+  // heard from us. So an accidental double-tap on a healthy order is still a
+  // silent no-op, exactly as before — the queue decides, not the button.
+  //
+  // The SMS only. The mail has no per-message state to ask, so re-sending it
+  // here would mail a customer again on every stray tap; that mail still goes on
+  // the real transition below, and on an undo-then-redo as it always has.
+  if (ready && !changed) {
+    done.sms = queueReadySms(db.getCollection(id));
+    return done;
+  }
   if (ready && changed) {
     const fresh = db.getCollection(id);
     // The SMS first: enqueue is a local write, so a mail server that is slow or
@@ -5949,17 +5969,45 @@ function requireSmsGateway(req, res) {
 // that matched nothing. The phone saw a successful request (an HTTP block does
 // not fail on a 404), the message stayed leased, and the customer was texted
 // again when the lease ran out. A ready-made link needs no formula at all.
+//
+// THE LINK CARRIES THE MESSAGE'S OWN TOKEN, not SMS_GATEWAY_KEY. A URL is the
+// least private thing in the system: it is written into Railway's access log,
+// Cloudflare's, and Automate's flow log on a phone that lives in a drawer. The
+// shared key opens the whole outbox — every customer's number and text — so it
+// does not belong in any of those. sms.claim mints a token per message that
+// unlocks exactly one "that went out" and nothing else.
+//
+// And the address it is built on is PUBLIC_BASE_URL or nothing — never the Host
+// header, for the same reason paymentBaseUrl refuses to (see its comment above).
+// A spoofed or internal Host would hand the phone an address that answers
+// nothing, every report would 404 in silence, and the message would go out again
+// — the exact bug this route exists to remove. With no base configured the field
+// is simply absent and the phone falls back to the documented POST with the
+// header, which needs no address from us.
+let _warnedNoSmsBase = false;
 app.get('/api/sms/outbox', (req, res) => {
   if (!requireSmsGateway(req, res)) return;
   sms.markPolled();
   const limit = Math.min(20, Math.max(1, Number(req.query.limit) || 10));
-  const base = paymentBaseUrl() || req.protocol + '://' + req.get('host');
-  const key = encodeURIComponent(process.env.SMS_GATEWAY_KEY || '');
+  const base = paymentBaseUrl();
+  if (!base && !_warnedNoSmsBase) {
+    _warnedNoSmsBase = true;
+    console.warn('[sms] PUBLIC_BASE_URL is not set — messages ship without ack_url');
+  }
   res.json({
-    messages: sms.claim({ limit }).map((m) => ({
-      ...m,
-      ack_url: base + '/api/sms/outbox/' + encodeURIComponent(m.id) + '/ack?key=' + key,
-    })),
+    messages: sms.claim({ limit }).map((m) => {
+      const { ack_token, ...rest } = m;
+      if (!base || !ack_token) return rest;
+      return {
+        ...rest,
+        ack_url:
+          base +
+          '/api/sms/outbox/' +
+          encodeURIComponent(m.id) +
+          '/ack?t=' +
+          encodeURIComponent(ack_token),
+      };
+    }),
   });
 });
 
@@ -5971,16 +6019,37 @@ app.get('/api/sms/outbox', (req, res) => {
 // gateway key — refusing it over the method would re-send a customer's SMS
 // because of a setting nobody can see. A GET carries a failure as
 // ?ok=false&error=…, having no body.
+//
+// TWO WAYS IN. The per-message token from `ack_url` (?t=…), which opens this one
+// message and nothing else; or the shared gateway key, which is how the phone was
+// first set up and stays supported. Either is enough — the token is the one to
+// prefer, because the link it sits in is logged in four places.
 function smsAck(req, res) {
-  if (!requireSmsGateway(req, res)) return;
-  sms.markPolled();
+  // Dormant when the gateway is not configured at all — a 404, so an unset
+  // deployment does not advertise the feature. Checked before the token so a
+  // stale token cannot reach a feature that is switched off.
+  if (!process.env.SMS_GATEWAY_KEY) {
+    return res.status(404).json({ error: 'sms gateway not configured' });
+  }
   const body = req.method === 'GET' ? req.query : req.body || {};
+  const token = req.query.t || body.t;
+  if (!sms.checkAckToken(req.params.id, token) && !requireSmsGateway(req, res)) return;
+  sms.markPolled();
   const ok = !(body.ok === false || body.ok === 'false' || body.ok === '0');
   const m = sms.ack(req.params.id, { ok, error: body.error });
   if (!m) {
     // Logged, because this is the one failure the phone cannot see: its request
     // succeeded, the message stays leased, and it goes out again later.
-    console.warn('[sms] report for an unknown message id: ' + String(req.params.id).slice(0, 60));
+    //
+    // SANITISED, because the id is whatever was in the path: a %0A decodes to a
+    // real newline, and a newline in a log line is a second log line. Someone
+    // who can reach this route could otherwise write a convincing "[sms] sent"
+    // into the record the owner reads when she is working out why a customer
+    // heard nothing. Printable ASCII only, and short.
+    const shown = String(req.params.id)
+      .replace(/[^\x20-\x7e]/g, '.')
+      .slice(0, 60);
+    console.warn('[sms] report for an unknown message id: ' + shown);
     return res.status(404).json({ error: 'not found' });
   }
   res.json({ ok: true, state: m.state });
