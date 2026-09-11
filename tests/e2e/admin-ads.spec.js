@@ -144,6 +144,11 @@ test.describe('the ad report', () => {
     await expect(page.getByTestId('auto-params')).toHaveCount(0);
     await expect(page.getByTestId('copy-auto-params')).toHaveCount(0);
     await expect(page.locator('#main')).not.toContainText('שמות קמפיינים בטבלה שלנו');
+    // And the manual builder's hint stops sending her away on the strength of a
+    // block that no longer exists. Nothing fills a name by itself now — an ad
+    // included — so the builder is for every named link, not the leftovers.
+    await expect(page.locator('#main')).not.toContainText('שאין בהם מודעה שתמלא את השמות לבד');
+    await expect(page.locator('#main')).toContainText('שום מקום לא ממלא את השם לבד');
 
     // Arrive the way a real click does — with Meta's substitutions already
     // made — and the campaign names itself in the table.
@@ -608,10 +613,11 @@ test.describe('the ad report', () => {
     await expect(page.getByTestId('meta-account')).toHaveCount(0);
   });
 
-  // Meta refusing the token — the state the owner is actually in — is fixed in
-  // the token's permissions, not by naming an account. Offering the field there
-  // sends her to the wrong place; the refusal itself must still be said.
-  test('Meta’s refusal is shown, without an account field that cannot fix it', async ({ page }) => {
+  // The refusal is quoted verbatim — and the field comes with it. A refusal may
+  // BE the account (a wrong META_AD_ACCOUNT_ID, or a token that cannot list the
+  // accounts to choose from), and this page is the only one that can outrank the
+  // environment variable. A field she doesn't need beats a report she cannot fix.
+  test('Meta’s refusal is shown, with the field that may be what fixes it', async ({ page }) => {
     await serveMeta(page, {
       ok: false,
       armed: true,
@@ -623,6 +629,82 @@ test.describe('the ad report', () => {
     const note = page.getByTestId('meta-note').first();
     await expect(note).toContainText('מטא החזירה: (#200) Missing Permissions');
     await expect(note).toHaveClass(/err/);
+    await expect(page.getByTestId('meta-account-id')).toBeVisible();
+  });
+
+  // The dead end this guards: a bad META_AD_ACCOUNT_ID in the server's
+  // environment. Meta refuses, nothing is offered to choose from, no override is
+  // saved — and a saved override is the ONLY thing that outranks the env var, so
+  // without the field the report waits for a redeploy.
+  test('a wrong account in the environment can be overridden from the page', async ({ page }) => {
+    let saved = null;
+    await page.route('**/api/admin/settings**', async (route) => {
+      const body = route.request().postData();
+      if (body) saved = JSON.parse(body);
+      await route.fulfill({ status: 200, body: JSON.stringify({ ok: true }) });
+    });
+    let answer = {
+      ok: false,
+      armed: true,
+      account_setting: '',
+      account_env: '99999999',
+      error: '(#100) Object with ID act_99999999 does not exist',
+    };
+    await serveMeta(page, () => answer);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.locator('#metaBox')).toContainText('act_99999999 does not exist');
+    // Empty, because nothing is saved yet — the number on screen is the server's.
+    await expect(page.getByTestId('meta-account-id')).toHaveValue('');
+    answer = metaAnswer({ account_setting: '12345678' });
+    await page.getByTestId('meta-account-id').fill('12345678');
+    await page.getByTestId('save-meta-account').click();
+    await expect(page.getByTestId('meta-account-status')).toContainText('12345678');
+    expect(saved).toMatchObject({
+      section: 'analytics',
+      key: 'meta_ad_account_id',
+      value: '12345678',
+    });
+  });
+
+  // The "saved" flag is a one-shot for the next render, and the picker that
+  // consumes it is no longer built on every render. If the reload a save triggers
+  // FAILS, nothing consumes it — and a later, healthy report would then show a
+  // field it means to hide, stamped with a "נשמר ✓" from a save long gone.
+  test('a save whose reload fails leaves no stale ✓ on the next report', async ({ page }) => {
+    await page.route('**/api/admin/settings**', (route) =>
+      route.fulfill({ status: 200, body: JSON.stringify({ ok: true }) })
+    );
+    let mode = 'saved';
+    await page.route('**/api/admin/ads/meta**', (route) => {
+      if (mode === 'boom') {
+        return route.fulfill({
+          status: 502,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'מטא לא זמינה' }),
+        });
+      }
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(metaAnswer({ account_setting: mode === 'saved' ? '99887766' : '' })),
+      });
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('meta-account-id')).toHaveValue('99887766');
+
+    // Clear the override; the reload that would confirm it dies.
+    mode = 'boom';
+    await page.getByTestId('meta-account-id').fill('');
+    await page.getByTestId('save-meta-account').click();
+    await expect(page.locator('#metaBox')).toContainText('טעינת נתוני מטא נכשלה');
+    // The save itself landed, and says so rather than vanishing with the render.
+    await expect(page.locator('#metaBox')).toContainText('ההגדרה נשמרה');
+
+    // A healthy report afterwards: one account, found by itself, nothing saved —
+    // so no field, and certainly no ✓ from the save before last.
+    mode = 'clean';
+    await page.getByRole('button', { name: '7 ימים' }).click();
+    await expect(page.getByTestId('meta-table')).toBeVisible();
     await expect(page.getByTestId('meta-account')).toHaveCount(0);
   });
 

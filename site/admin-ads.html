@@ -417,7 +417,8 @@
         <h2>קישור ידני — לביו, לסטורי, למשפיענית</h2>
         <div class="builder">
           <p class="hint" style="margin-top: 0">
-            רק למקומות שאין בהם מודעה שתמלא את השמות לבד. כאן כן צריך לתת שם.
+            בונה קישור שמגיע עם שם לטבלה שלמעלה. שום מקום לא ממלא את השם לבד — גם לא מודעה — אז כל
+            קישור שרוצים לזהות בשמו, בונים כאן.
           </p>
           <div class="fields">
             <label
@@ -781,23 +782,38 @@
         }
       }
 
-      // The account field is shown only where it can do something. With one ad
-      // account behind the token — the owner's case — it is discovered, and a
-      // field asking which one is a question with one answer. And a refusal from
-      // Meta ("(#200) Missing Permissions") is fixed in the token's permissions;
-      // offering the field there sends her looking in the wrong place.
+      // The account field is shown only where it can do something — which, on a
+      // WORKING report, is almost nowhere: with one ad account behind the token
+      // (the owner's case) it is discovered, and a field asking which one is a
+      // question with one answer.
       //
-      // Three things earn it a place:
+      // A BROKEN report is the opposite, and this is the one page in the product
+      // that writes analytics.meta_ad_account_id. A bad META_AD_ACCOUNT_ID in the
+      // server's environment, or a token that can read a named account but cannot
+      // list me/adaccounts, both come back as a plain refusal — no `accounts` to
+      // pick from and no saved override to correct — and a saved setting is the
+      // only thing that outranks the environment variable. Hide the field there
+      // and the report cannot be repaired at all without a redeploy. So every
+      // refusal keeps it, the permissions ones included: a field she doesn't need
+      // on a screen that is already telling her something is wrong is a smaller
+      // harm than a dead end.
+      //
+      // On a successful report, two things still earn it a place:
       // - the server listing accounts to choose between. It sends `accounts`
       //   ONLY when it refuses to guess: several of them, or a list too long to
       //   read whole (which it treats as several, and so does this);
       // - an override already saved, which has to stay in view to be cleared —
-      //   a wrong one is exactly what makes Meta refuse;
-      // - the render a save caused. Clearing an override makes the field
-      //   irrelevant, and without this its "saved" message would vanish along
-      //   with it; the next reload puts it away.
+      //   a wrong one is exactly what makes Meta refuse.
+      // Plus the render a save caused: clearing an override makes the field
+      // irrelevant, and without this its "saved" message would vanish along with
+      // it; the next reload puts it away.
       function accountRelevant(data) {
-        return Array.isArray(data.accounts) || !!data.account_setting || accountSaved !== null;
+        return (
+          data.ok === false ||
+          Array.isArray(data.accounts) ||
+          !!data.account_setting ||
+          accountSaved !== null
+        );
       }
 
       function offerAccount(box, data) {
@@ -955,10 +971,11 @@
               'err'
             )
           );
-          // Several accounts behind one token: name them, AND let her pick one —
-          // naming them without a control is a dead end. Any other refusal
-          // gets the field only if an override is saved (see accountRelevant):
-          // the message above is the part she needs, and it stays.
+          // Every refusal keeps the field. Several accounts behind one token:
+          // name them, AND let her pick one — naming them without a control is a
+          // dead end. And any other refusal may BE the account: a bad
+          // META_AD_ACCOUNT_ID, or a token that cannot list the accounts to
+          // choose from. Saving here is the only way to outrank either.
           offerAccount(box, data);
           return;
         }
@@ -1182,7 +1199,22 @@
         } catch (e) {
           if (gen !== reportSeq) return;
           qs('metaBox').textContent = '';
+          // The save itself landed — only the reload that was going to confirm it
+          // didn't. Said here, or the confirmation goes down with the render that
+          // was carrying it and the owner re-saves a setting she already has.
+          // Nothing is claimed about WHAT it resolves to: that answer was in the
+          // reply that never came.
+          if (accountSaved !== null) {
+            qs('metaBox').appendChild(metaNote('ההגדרה נשמרה ✓', 'ok'));
+          }
           qs('metaBox').appendChild(metaNote('טעינת נתוני מטא נכשלה: ' + e.message, 'err'));
+        } finally {
+          // accountSaved is a ONE-SHOT belonging to the next render, and the
+          // picker that consumes it is no longer built on every render. Retire it
+          // here, where every path ends, or a failed reload leaves it set and the
+          // next successful render both shows a field it means to hide and stamps
+          // it with a "נשמר ✓" from a save the owner has long forgotten.
+          if (gen === reportSeq) accountSaved = null;
         }
       }
 
