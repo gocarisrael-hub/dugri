@@ -805,12 +805,20 @@ function couponSpent(c) {
 // money, and a fixed fee on top of it would be the shop paying to give a game
 // away — times the copy count, which is how a generous gift becomes an invoice.
 // The sale is still reported, at zero, rather than hidden.
+//
+// FREE IS MEASURED IN GAME MONEY, not in what the card took. Since a coupon
+// discounts the game and never the postage, a 100% code on a DELIVERY order
+// still charges the fee — so charged_total is 39, not 0, and a "charged > 0"
+// test would read that parcel as a sale and invoice a fixed fee per copy on an
+// order whose every shekel belongs to the courier. The same base serves both
+// terms: zero game money earns nothing, and a percent is a cut of it.
 function commissionFor(order, { type, value }) {
   const charged = Number(order && order.charged_total);
-  if (!type || !Number.isFinite(charged) || charged <= 0) return 0;
-  if (type === 'fixed') return round2(value * sanitizeQuantity(order && order.quantity));
+  if (!type || !Number.isFinite(charged)) return 0;
   const fee = Number((order && order.delivery_fee) || 0);
-  const base = Math.max(0, charged - (Number.isFinite(fee) ? fee : 0));
+  const base = charged - (Number.isFinite(fee) ? fee : 0);
+  if (base <= 0) return 0;
+  if (type === 'fixed') return round2(value * sanitizeQuantity(order && order.quantity));
   return round2((base * value) / 100);
 }
 

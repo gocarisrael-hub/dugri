@@ -6306,6 +6306,37 @@
           if (price) setAmount(price, deliveryFee());
         }
 
+        // The shipping money inside the total for version `v` — the part a coupon
+        // never touches. For a LOCKED order (its stored total already includes the
+        // fee) that is the fee stored on the order; otherwise the live fee for the
+        // picked version. The single source for BOTH the discount arithmetic and
+        // the coupon message, so the number we exclude and the sentence saying we
+        // excluded it can never disagree.
+        function shippingIn(v) {
+          if (!lockVersion) return feeFor(v);
+          const stored = state && state.order ? state.order.delivery_fee : 0;
+          return Number.isInteger(stored) && stored > 0 ? stored : 0;
+        }
+
+        // The applied-coupon banner, re-rendered from renderTotal because the
+        // buyer can tick shipping AFTER entering the code.
+        //
+        // "(לא על המשלוח)" is only TRUE when there is postage in the total. On a
+        // PDF or pickup order — the majority path, and the only one where the
+        // total really does drop by the full percentage — it tells the buyer her
+        // discount is smaller than it is, about a fee she isn't paying.
+        function renderCouponMsg() {
+          if (!appliedCoupon) return;
+          const ship = payable ? shippingIn(selectedVersion()) : 0;
+          setCouponMsg(
+            'קופון הופעל: ' +
+              appliedCoupon.discount_pct +
+              '% הנחה' +
+              (ship ? ' על המשחק (לא על המשלוח)' : ''),
+            'ok'
+          );
+        }
+
         // Render the total for the selected version, applying the coupon discount
         // when one is active: the full price shows struck-through beside the
         // discounted one. The struck price carries DIGITS ONLY — the ₪ belongs to
@@ -6313,6 +6344,7 @@
         // side with the strike-through cutting through the second glyph.
         function renderTotal() {
           const v = selectedVersion();
+          renderCouponMsg();
           const was = $('#payWas');
           // When the checkout isn't payable — prices failed to load, orders are
           // closed, or pricing hasn't resolved yet — show NO number. Otherwise the
@@ -6339,12 +6371,9 @@
           if (appliedCoupon) {
             // A COUPON BUYS A GAME, NOT POSTAGE — the same rule the server charges
             // by (pay/init in server/index.js). The percentage comes off the game
-            // money only and the delivery fee is added back whole. For a LOCKED
-            // order the fee is the one stored on it (its total already includes
-            // it), otherwise the live fee for the picked version. If these two
-            // ever disagree, the buyer is shown one price and charged another.
-            const stored = state && state.order ? state.order.delivery_fee : 0;
-            const shipping = locked ? (Number.isInteger(stored) && stored > 0 ? stored : 0) : fee;
+            // money only and the delivery fee is added back whole. If the two ever
+            // disagree, the buyer is shown one price and charged another.
+            const shipping = shippingIn(v);
             const discounted =
               Math.round(Math.max(0, base - shipping) * (1 - appliedCoupon.discount_pct / 100)) +
               shipping;
@@ -6735,13 +6764,11 @@
               couponInput.disabled = true;
               couponApply.classList.add('hidden');
               couponRemove.classList.remove('hidden');
-              // Said up front, because on a delivery order the total does not drop
-              // by the full percentage — and a buyer who does the sum otherwise
-              // reads the coupon as broken.
-              setCouponMsg(
-                'קופון הופעל: ' + r.discount_pct + '% הנחה על המשחק (לא על המשלוח)',
-                'ok'
-              );
+              // The banner is written by renderTotal (via renderCouponMsg), not
+              // here: on a delivery order the total does not drop by the full
+              // percentage and the buyer must be told so up front — but she can
+              // also tick shipping AFTER applying the code, and a sentence written
+              // once at apply-time would then be stale either way round.
               renderTotal();
               track('coupon_applied', { discount_pct: r.discount_pct });
             } else {

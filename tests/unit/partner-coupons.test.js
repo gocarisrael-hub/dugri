@@ -146,6 +146,33 @@ describe('what a sale earns', () => {
     expect(rep.totals.earned).toBe(0);
   });
 
+  it('a 100% code on a DELIVERY order earns nothing — the fee is the courier’s', () => {
+    partner();
+    // A 100%-off code no longer makes a delivery order free: the game is free,
+    // the parcel is not, so the card takes the 39 ₪ fee alone. Every shekel of
+    // that charge belongs to the courier, so there is no game money to pay a
+    // commission out of — and a fixed fee here would be the shop paying 60 ₪
+    // to give two games away.
+    paidOrder('BLOG', { charged: 39, fee: 39, total: 437, quantity: 2 });
+    const rep = db.partnerReport(db.getCouponByCode('BLOG').id);
+    expect(rep.totals.sales).toBe(1);
+    expect(rep.totals.earned).toBe(0);
+  });
+
+  it('a 100% code on a delivery order earns nothing on a percent rate either', () => {
+    partner({ code: 'PCTFREE', commission_type: 'percent', commission_value: 20 });
+    paidOrder('PCTFREE', { charged: 39, fee: 39, total: 278 });
+    expect(db.partnerReport(db.getCouponByCode('PCTFREE').id).totals.earned).toBe(0);
+  });
+
+  it('a delivery order that is not free still pays the fixed fee per copy', () => {
+    partner();
+    // The guard is "no game money", not "this order had postage" — a real
+    // delivery sale must still earn.
+    paidOrder('BLOG', { charged: 242, fee: 39, total: 278, quantity: 2 });
+    expect(db.partnerReport(db.getCouponByCode('BLOG').id).totals.earned).toBe(60);
+  });
+
   it('reports what the customer saved, from the order’s own numbers', () => {
     partner();
     paidOrder('BLOG', { charged: 203, total: 239 });
