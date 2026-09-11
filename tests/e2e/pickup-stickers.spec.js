@@ -4,13 +4,14 @@ import { test, expect } from '@playwright/test';
 //
 // Every printed game the customer collects herself gets a label on its box, and
 // that sheet was being typed out by hand every night. The button is where the
-// night's work already is — with the order filters, above the table.
+// night's work already is — above the table, on the "הופקו — לשליחה לדפוס" chip,
+// which is the pile it labels.
 //
 // WHICH orders belong on it lives in tests/unit/pickup-stickers.test.js, against
 // the real store. The sheet's own shape lives in
 // generator/test_pickup_stickers.py, against the real renderer. What is under
-// test here is the BUTTON: whether it appears, what it counts, and where it
-// points.
+// test here is the BUTTON: whether it appears, on which section, what it counts,
+// and where it points.
 //
 // THE COUNT IS PINNED, NOT MEASURED. The e2e server is one process shared by
 // every spec file, and other files create paid, printed orders while this one
@@ -90,6 +91,20 @@ async function onlyMine(
   });
 }
 
+// The two filter rows. Chips carry their count in their label ("לידים (3)"), so
+// they are picked by data-filter rather than by text.
+const stageChip = (page, id) => page.locator(`#tabs-stage button[data-filter="${id}"]`);
+const payChip = (page, id) => page.locator(`#tabs button[data-filter="${id}"]`);
+
+// The button — and its note — live on the "הופקו — לשליחה לדפוס" chip and
+// nowhere else, because that stage IS the pile they print. Every test that reads
+// them opens that section first, the way the owner does.
+async function openOnToPrint(page) {
+  await page.goto(ADMIN);
+  await stageChip(page, 'to-print').click();
+  await expect(stageChip(page, 'to-print')).toHaveClass(/active/);
+}
+
 test('the button counts tonight’s stickers and points at the sheet', async ({ page }) => {
   const mine = [
     await pickupAwaitingPrint(page, 'שירה א'),
@@ -97,7 +112,7 @@ test('the button counts tonight’s stickers and points at the sheet', async ({ 
     await pickupAwaitingPrint(page, 'שירה ג'),
   ];
   await onlyMine(page, mine);
-  await page.goto(ADMIN);
+  await openOnToPrint(page);
 
   const btn = page.getByTestId('pickup-stickers');
   await expect(btn).toBeVisible();
@@ -107,6 +122,84 @@ test('the button counts tonight’s stickers and points at the sheet', async ({ 
   await expect(btn).toHaveAttribute('href', /\/api\/admin\/stickers\?key=dugri-admin/);
 });
 
+// The sheet labels ONE stage, so the button is drawn on that chip and no other.
+// On הכל, or on any other stage, the table is showing rows the sheet does not
+// print — and the button used to sit there anyway.
+test('the button is shown on the הופקו section and hidden on every other', async ({ page }) => {
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה יג'),
+    await pickupAwaitingPrint(page, 'שירה יד'),
+  ];
+  await onlyMine(page, mine);
+  await page.goto(ADMIN);
+  // Loaded, with a pile to print: the count is kept even while the button is
+  // not drawn, so waiting on it proves the orders have arrived.
+  await expect(page.locator('#stickerCount')).toHaveText('2');
+  const btn = page.getByTestId('pickup-stickers');
+
+  // The default view is every stage at once — not the button's section.
+  await expect(stageChip(page, 'all')).toHaveClass(/active/);
+  await expect(btn).toBeHidden();
+
+  for (const other of ['collecting', 'to-produce', 'printing', 'ready', 'cancelled']) {
+    await stageChip(page, other).click();
+    await expect(stageChip(page, other)).toHaveClass(/active/);
+    await expect(btn, `shown on the ${other} stage`).toBeHidden();
+  }
+
+  // Its own section: there at once, no reload needed…
+  await stageChip(page, 'to-print').click();
+  await expect(btn).toBeVisible();
+  await expect(page.locator('#stickerCount')).toHaveText('2');
+
+  // …and gone again the moment she moves off it.
+  await stageChip(page, 'all').click();
+  await expect(btn).toBeHidden();
+});
+
+// The two batch buttons, each on its own stage, with BOTH piles non-empty: one
+// order waiting to go to Galor, one already there. Each chip draws its own
+// button and never the other's.
+test('stickers and הכל מוכן each stay on their own section', async ({ page }) => {
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה טו'),
+    await pickupAwaitingPrint(page, 'שירה טז'),
+  ];
+  await onlyMine(page, mine, { atPrinter: [mine[1]] });
+  await openOnToPrint(page);
+
+  const stickers = page.getByTestId('pickup-stickers');
+  const ready = page.getByTestId('batch-ready');
+  await expect(stickers).toBeVisible();
+  await expect(page.locator('#stickerCount')).toHaveText('1');
+  await expect(ready).toBeHidden();
+
+  await stageChip(page, 'printing').click();
+  await expect(ready).toBeVisible();
+  await expect(page.locator('#batchReadyCount')).toHaveText('1');
+  await expect(stickers).toBeHidden();
+});
+
+// "הופקו" with לידים shows the unpaid produced orders, and the sheet is paid
+// orders only — so on that pair the button would print labels for rows the
+// table is not showing.
+test('on הופקו the payment row keeps it only while the pile is on screen', async ({ page }) => {
+  const mine = [await pickupAwaitingPrint(page, 'שירה יז')];
+  await onlyMine(page, mine);
+  await openOnToPrint(page);
+  const btn = page.getByTestId('pickup-stickers');
+  await expect(btn).toBeVisible();
+
+  await payChip(page, 'leads').click();
+  await expect(payChip(page, 'leads')).toHaveClass(/active/);
+  await expect(btn).toBeHidden();
+
+  await payChip(page, 'paid').click();
+  await expect(btn).toBeVisible();
+  await payChip(page, 'all').click();
+  await expect(btn).toBeVisible();
+});
+
 test('an order already marked ready is not on tonight’s sheet', async ({ page }) => {
   const mine = [
     await pickupAwaitingPrint(page, 'שירה ד'),
@@ -114,7 +207,7 @@ test('an order already marked ready is not on tonight’s sheet', async ({ page 
   ];
   // Ready means the box has been labelled and handed over.
   await onlyMine(page, mine, { ready: [mine[1]] });
-  await page.goto(ADMIN);
+  await openOnToPrint(page);
 
   await expect(page.getByTestId('pickup-stickers')).toBeVisible();
   await expect(page.locator('#stickerCount')).toHaveText('1');
@@ -129,7 +222,7 @@ test('an order already sent to the printer is not on tonight’s sheet', async (
     await pickupAwaitingPrint(page, 'שירה ט'),
   ];
   await onlyMine(page, mine, { atPrinter: [mine[1]] });
-  await page.goto(ADMIN);
+  await openOnToPrint(page);
 
   await expect(page.getByTestId('pickup-stickers')).toBeVisible();
   await expect(page.locator('#stickerCount')).toHaveText('1');
@@ -137,33 +230,39 @@ test('an order already sent to the printer is not on tonight’s sheet', async (
 
 test('with nothing to collect the button is not there at all', async ({ page }) => {
   // A quiet night. A button that answers "there was nothing to print" is a
-  // button that wasted a press.
+  // button that wasted a press — even on its own section.
   await onlyMine(page, []);
-  await page.goto(ADMIN);
+  await openOnToPrint(page);
   await expect(page.locator('#controls')).toBeVisible();
   await expect(page.getByTestId('pickup-stickers')).toBeHidden();
 });
 
-test('the count is not narrowed by the table’s filters', async ({ page }) => {
-  // The sheet is the whole night's work. A count that quietly shrank because a
-  // filter chip was left on is a customer whose box goes out unlabelled.
+test('a column filter narrows the table, not the sheet', async ({ page }) => {
+  // The sheet is the whole night's work. A count that quietly shrank — or a
+  // button that vanished — because a column filter was left on is a customer
+  // whose box goes out unlabelled. A column filter narrows the rows she is
+  // reading inside the section; it never narrows the batch.
+  //
+  // Wide, so the filter sits in the column heading (on a phone it moves to the
+  // strip above the table, which admin-column-filters.spec.js covers).
+  await page.setViewportSize({ width: 1440, height: 900 });
   const mine = [
     await pickupAwaitingPrint(page, 'שירה ו'),
     await pickupAwaitingPrint(page, 'שירה ז'),
   ];
-  await onlyMine(page, mine);
-  await page.goto(ADMIN);
+  await onlyMine(page, mine, { delivery: [mine[1]], booked: [mine[1]] });
+  await openOnToPrint(page);
   const count = page.locator('#stickerCount');
   await expect(count).toHaveText('2');
 
-  // "לידים" is every order that has NOT been paid for, which excludes every
-  // order that could be on the sheet — a sticker order is paid, printed and
-  // waiting. A count read off the table would drop to 0 here. The chip carries
-  // its own count in its label ("לידים (3)"), so it is picked by its
-  // data-filter rather than by its text.
-  const chip = page.locator('#tabs button[data-filter="leads"]');
-  await chip.click();
-  await expect(chip).toHaveClass(/active/);
+  // Only the courier boxes: the collected one drops out of the table.
+  await page.getByTestId('colfilter-version').click();
+  await page.locator('.colmenu input[data-value="delivery"]').check();
+  await expect(page.getByTestId('colfilter-chip-version')).toBeVisible();
+  await expect(page.locator('#content')).toContainText('שירה ז');
+  await expect(page.locator('#content')).not.toContainText('שירה ו');
+
+  await expect(page.getByTestId('pickup-stickers')).toBeVisible();
   await expect(count).toHaveText('2');
 });
 
@@ -183,7 +282,7 @@ test('a delivery order with a parcel booked is counted too', async ({ page }) =>
     await pickupAwaitingPrint(page, 'שירה יא'),
   ];
   await onlyMine(page, mine, { delivery: [mine[1]], booked: [mine[1]] });
-  await page.goto(ADMIN);
+  await openOnToPrint(page);
 
   await expect(page.locator('#stickerCount')).toHaveText('2');
   await expect(page.locator('#stickerNote')).toBeHidden();
@@ -198,10 +297,36 @@ test('a delivery order with no parcel is left out, and said so', async ({ page }
     await pickupAwaitingPrint(page, 'בלי משלוח'),
   ];
   await onlyMine(page, mine, { delivery: [mine[1]] });
-  await page.goto(ADMIN);
+  await openOnToPrint(page);
 
   await expect(page.locator('#stickerCount')).toHaveText('1');
   const note = page.locator('#stickerNote');
   await expect(note).toBeVisible();
   await expect(note).toContainText('בלי משלוח');
+});
+
+// The note is about the same pile, so it keeps the button's section: off it,
+// a line about unlabelled courier boxes sits over rows that have nothing to do
+// with them.
+test('the note about unbooked parcels is only on the הופקו section', async ({ page }) => {
+  const mine = [
+    await pickupAwaitingPrint(page, 'שירה יח'),
+    await pickupAwaitingPrint(page, 'עוד בלי משלוח'),
+  ];
+  await onlyMine(page, mine, { delivery: [mine[1]] });
+  await page.goto(ADMIN);
+  await expect(page.locator('#stickerCount')).toHaveText('1');
+  const note = page.locator('#stickerNote');
+
+  await expect(note).toBeHidden();
+  await stageChip(page, 'printing').click();
+  await expect(stageChip(page, 'printing')).toHaveClass(/active/);
+  await expect(note).toBeHidden();
+
+  await stageChip(page, 'to-print').click();
+  await expect(note).toBeVisible();
+  await expect(note).toContainText('עוד בלי משלוח');
+
+  await stageChip(page, 'all').click();
+  await expect(note).toBeHidden();
 });

@@ -860,10 +860,11 @@
           <!-- TONIGHT'S STICKERS, ALL OF THEM. Every produced box gets a label:
                ours for a box the customer collects, HFD's own courier sticker
                for one that ships. Both come down in ONE PDF, in table order, so
-               the labels are not collected from two places. It sits with the
-               filters because it is about the orders currently on screen, and it
-               carries its own COUNT so it is never a button you press to find
-               out there was nothing to press it for. Hidden entirely at zero. -->
+               the labels are not collected from two places. It is drawn only
+               while the table is on the "הופקו — לשליחה לדפוס" chip — that
+               stage IS the pile it prints — and it carries its own COUNT so it
+               is never a button you press to find out there was nothing to
+               press it for. Hidden entirely at zero. -->
           <a class="sticker-btn" id="stickerBtn" data-testid="pickup-stickers" href="#" hidden>
             🏷️ מדבקות (<span id="stickerCount">0</span>)
           </a>
@@ -876,8 +877,9 @@
                and every box in it becomes ready in the same minute; pressing
                eleven rows one at a time is eleven chances to miss one, and a
                missed row is a customer who never hears her game is waiting.
-               Carries its count for the same reason the stickers do, and is
-               hidden at zero. It asks first — this one texts real people. -->
+               Carries its count for the same reason the stickers do, is hidden
+               at zero, and is drawn only on the בדפוס chip — the stage it
+               empties. It asks first — this one texts real people. -->
           <button
             type="button"
             class="batch-btn"
@@ -3458,6 +3460,33 @@
         document.getElementById('colfilters').hidden = true;
       }
 
+      // WHICH SECTION A BATCH BUTTON BELONGS TO. Each of the two buttons in the
+      // toolbar empties ONE stage of the order: the stickers are the
+      // "הופקו — לשליחה לדפוס" pile, הכל מוכן is the בדפוס pile. Drawn beside
+      // the chips on every view, they read as acting on whatever the table
+      // shows, which they never did. So each is drawn only while the table is
+      // on its own stage.
+      //
+      // Its own stage, AND a payment pick that keeps every order it presses on.
+      // Both piles are paid orders by definition, so הכל and שולמו keep the
+      // button; לידים — which on that stage shows none of them — drops it,
+      // rather than leaving a button that acts entirely on rows off screen.
+      //
+      // The column filters are left out on purpose, as they are from the count
+      // (see stickerPile): a filter left on narrows the rows she is reading,
+      // never the batch the button presses on.
+      function onSection(stageId, pile) {
+        if (activeStage !== stageId) return false;
+        return pile.every(matcherFor(FILTERS, activeFilter));
+      }
+
+      // A stage's rule by id, with NO fallback. matcherFor falls back to הכל for
+      // an unknown id, which is right for a chip but would make a pile out of
+      // every paid order here; a renamed stage should break loudly instead.
+      function stageMatch(id) {
+        return STAGES.find((s) => s.id === id).match;
+      }
+
       // TONIGHT'S STICKERS. The same rule the server applies (see stickerBatch):
       // every PRODUCED order that has not been handed over — the boxes still to
       // be packed — whichever way the box reaches the customer. A collection box
@@ -3473,20 +3502,20 @@
       // see the server's stickerBatch, which must stay in step with this or the
       // button's number and its PDF disagree.
       //
-      // Deliberately NOT narrowed by the table's filters: this is the whole
-      // night's work, and a batch that quietly shrank because a filter chip was
-      // left on is a customer whose box goes out unlabelled.
+      // Read off the chip's OWN rule (stageMatch) rather than a second copy of
+      // it, so the pile is that stage's rows and nothing outside them — which
+      // is what lets the button live on that chip (see onSection). Of those,
+      // only the ones with a box: paid, and collected or couriered.
+      //
+      // The COUNT is deliberately NOT narrowed by the table's filters: this is
+      // the whole night's work, and a batch that quietly shrank because a
+      // column filter was left on is a customer whose box goes out unlabelled.
       function stickerPile() {
+        const toPrint = stageMatch('to-print');
         return allCols.filter((c) => {
-          const o = c.order;
-          if (!o || c.cancelled) return false;
-          if (!isPaid(c)) return false;
+          if (!toPrint(c) || !isPaid(c)) return false;
           // A digital order has no box to label.
-          if (o.version !== 'pickup' && o.version !== 'delivery') return false;
-          if (o.ready_at || o.sent_to_print_at) return false;
-          // The same set as the הופקו chip — tonight's batch, not every deck
-          // that happens to exist.
-          return isReleased(c);
+          return c.order.version === 'pickup' || c.order.version === 'delivery';
         });
       }
       // A delivery order whose parcel is booked with HFD — the only kind with a
@@ -3496,16 +3525,14 @@
         return !!(rec && rec.shipment_number && !rec.cancelled_at);
       }
       // The בדפוס pile, counted the same way the server counts it: paid, not
-      // cancelled, gone to print, not yet ready. Computed here from rows already
-      // in hand so the button needs no extra request on every repaint — the
-      // SERVER re-derives the same set when the press actually happens, so a
-      // stale tab can never mark something the store would refuse.
+      // cancelled, gone to print, not yet ready — the בדפוס chip's own rule,
+      // plus paid. Computed here from rows already in hand so the button needs
+      // no extra request on every repaint — the SERVER re-derives the same set
+      // when the press actually happens, so a stale tab can never mark
+      // something the store would refuse.
       function batchReadyPile() {
-        return allCols.filter((c) => {
-          const o = c.order;
-          if (!o || c.cancelled || !o.paid) return false;
-          return !!o.sent_to_print_at && !o.ready_at;
-        });
+        const printing = stageMatch('printing');
+        return allCols.filter((c) => printing(c) && isPaid(c));
       }
 
       function renderBatchReadyBtn() {
@@ -3520,8 +3547,9 @@
         const pile = batchReadyPile();
         document.getElementById('batchReadyCount').textContent = pile.length;
         // Hidden at zero, like the stickers: a button whose only answer is
-        // "there was nothing to press" wasted the press.
-        btn.hidden = pile.length === 0;
+        // "there was nothing to press" wasted the press. And hidden off the
+        // בדפוס chip, the stage it empties (see onSection).
+        btn.hidden = pile.length === 0 || !onSection('printing', pile);
       }
 
       // The pile broken down by what each order actually is. Four kinds travel
@@ -3631,8 +3659,10 @@
         const unbooked = pile.filter((c) => c.order.version === 'delivery' && !hasLiveShipment(c));
         document.getElementById('stickerCount').textContent = printable.length;
         // Hidden at zero: a button that answers "there was nothing to print" is
-        // a button that wasted a press.
-        btn.hidden = printable.length === 0;
+        // a button that wasted a press. And hidden off the הופקו chip, the
+        // stage it labels (see onSection) — the note below goes with it.
+        const here = onSection('to-print', pile);
+        btn.hidden = !here || printable.length === 0;
         btn.href = '/api/admin/stickers?key=' + encodeURIComponent(key);
 
         // Name the ones being left out, and say why in one line. The fix is one
@@ -3640,7 +3670,7 @@
         // than at us.
         const note = document.getElementById('stickerNote');
         if (!note) return;
-        note.hidden = unbooked.length === 0;
+        note.hidden = !here || unbooked.length === 0;
         note.textContent = unbooked.length
           ? unbooked.length +
             ' משלוחים בלי משלוח ב-HFD — בלי מדבקה (' +
