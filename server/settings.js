@@ -49,6 +49,11 @@ const { DEFAULT_PROMO, validatePromo } = require('./promo');
 // and owns the shape, the store owns persistence.
 const { DEFAULT_OPTIONS, validateOptions } = require('./wordlist-options');
 const { backupFile } = require('./store-backup');
+// Only for the SMS template's length rule: what a message may weigh once its
+// tokens are filled in, and the arithmetic that says how much they add. It lives
+// next to the outbox's own cap rather than here, because that cap is what the
+// rule is protecting.
+const sms = require('./sms');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'settings.json');
@@ -648,6 +653,21 @@ const REGISTRY = {
     order_ready: {
       kind: 'text',
       tokens: ['honoree', 'link'],
+      // The one 'text' key that may run long and span lines. Every other text key
+      // is a one-line storefront string, which is what the kind's 120 ceiling and
+      // no-newline rule were written for; an SMS is neither. The owner's pickup
+      // message is 15 lines and about 670 characters, and she chose to send it
+      // whole — split into parts by the phone (Automate's "Multipart limit").
+      // 700 leaves room for {honoree} and {link} to expand inside sms.js's cap.
+      max: 700,
+      multiline: true,
+      // …and `max` alone does not prove that. 700 characters of template is not
+      // 700 characters of SMS: {link} is six characters here and about 117 on the
+      // wire, {honoree} nine and up to eighty, and a template may use either more
+      // than once. sms.enqueue cuts what is over its cap from the END — where the
+      // link is — so the length that actually has to fit is the EXPANDED one, at
+      // its worst. Checked below, against the outbox's own number.
+      maxExpanded: sms.MAX_TEXT,
       default: 'היי! המשחק של {honoree} מוכן 🎉 כל הפרטים כאן: {link}',
     },
   },
@@ -976,9 +996,28 @@ function validateValue(section, key, value) {
     // string is DELIBERATELY legal: it is how the owner drops the banner without
     // turning the whole sale off.
     if (typeof value !== 'string') return 'value must be a string';
-    if (/[\r\n]/.test(value)) return 'value must be a single line';
+    // …unless the key says it may span lines (the SMS message, which carries
+    // them to the phone as they are).
+    if (!spec.multiline && /[\r\n]/.test(value)) return 'value must be a single line';
     const max = Number.isInteger(spec.max) ? spec.max : 120;
     if (value.length > max) return 'value must be at most ' + max + ' characters';
+    // For a key whose value is a template that gets sent somewhere with a hard
+    // limit (the SMS), the length that matters is what it becomes with every
+    // token at its longest — not what it looks like in the editor. Refusing it
+    // HERE is what keeps the sender from silently cutting the tail off a message
+    // the owner believed she had saved whole.
+    if (Number.isInteger(spec.maxExpanded)) {
+      const expanded = sms.expandedLength(value);
+      if (expanded > spec.maxExpanded) {
+        return (
+          'value must be at most ' +
+          spec.maxExpanded +
+          ' characters once {honoree} and {link} are filled in (this one reaches ' +
+          expanded +
+          ')'
+        );
+      }
+    }
     // An optional shape, for the keys whose value is an identifier rather than
     // prose (the Meta pixel id). Empty stays legal — that is how such a key is
     // switched off — so the pattern only judges a value that is actually there.
