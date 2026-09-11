@@ -56,7 +56,7 @@ test.describe('editing the SMS', () => {
     await expect(page.getByTestId('sms-card')).toBeVisible();
     await expect(page.getByTestId('sms-enabled')).not.toBeChecked();
     await expect(page.getByTestId('sms-text')).toHaveValue(/\{honoree\}/);
-    await expect(page.getByTestId('sms-count')).toContainText('/ 300');
+    await expect(page.getByTestId('sms-count')).toContainText('/ 700');
   });
 
   test('the switch and the text survive a save and a reload', async ({ page }) => {
@@ -72,17 +72,44 @@ test.describe('editing the SMS', () => {
     await expect(page.getByTestId('sms-text')).toHaveValue('ההזמנה של {honoree} מוכנה לאיסוף');
   });
 
-  // The store keeps ONE line. Showing a line break she typed, then sending the
-  // message without it, would be the box lying about the text.
-  test('a line break becomes a space as she types, and the length is capped', async ({ page }) => {
+  // Her pickup message is laid out in lines, and an SMS carries them as they are.
+  test('keeps her line breaks, and caps the length at 700', async ({ page }) => {
     await stubStatus(page, {});
     await page.goto(`/admin-texts.html?key=${KEY}`);
     const box = page.getByTestId('sms-text');
     await box.fill('שורה\nשנייה');
-    await expect(box).toHaveValue('שורה שנייה');
-    await box.fill('א'.repeat(400));
-    await expect(box).toHaveValue('א'.repeat(300));
-    await expect(page.getByTestId('sms-count')).toContainText('300 / 300');
+    await expect(box).toHaveValue('שורה\nשנייה');
+    await box.fill('א'.repeat(800));
+    await expect(box).toHaveValue('א'.repeat(700));
+    await expect(page.getByTestId('sms-count')).toContainText('700 / 700');
+  });
+
+  // The phone sends only as many parts as Automate's "Multipart limit" allows
+  // (default 1) and cuts the rest without a word — exactly how her first test
+  // arrived half-written. So the box names the number to set.
+  test('a long message says how many parts it is, and what to set on the phone', async ({
+    page,
+  }) => {
+    await stubStatus(page, {});
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    const box = page.getByTestId('sms-text');
+    const count = page.getByTestId('sms-count');
+    await box.fill('א'.repeat(200)); // 200 Hebrew characters: ceil(200 / 67) = 3 parts
+    await expect(count).toContainText('3 חלקים');
+    await expect(count).toContainText('Multipart limit צריך להיות לפחות 3');
+    await box.fill('קצר');
+    await expect(count).toContainText('הודעה אחת');
+    await expect(count).not.toContainText('Multipart limit');
+  });
+
+  test('a message in several lines survives a save and a reload', async ({ page }) => {
+    await stubStatus(page, {});
+    await page.goto(`/admin-texts.html?key=${KEY}`);
+    await page.getByTestId('sms-text').fill('היי!\nההזמנה מוכנה.\n\nתודה רבה!!');
+    await page.getByTestId('sms-save').click();
+    await expect(page.getByTestId('sms-save-status')).toHaveText('נשמר ✓');
+    await page.reload();
+    await expect(page.getByTestId('sms-text')).toHaveValue('היי!\nההזמנה מוכנה.\n\nתודה רבה!!');
   });
 
   test('an empty message is refused rather than saved', async ({ page }) => {

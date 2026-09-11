@@ -648,12 +648,14 @@ const REGISTRY = {
     order_ready: {
       kind: 'text',
       tokens: ['honoree', 'link'],
-      // Longer than the 120 a 'text' key allows by default: that ceiling was
-      // written for one-line storefront strings, and a real pickup message with a
-      // link outgrows it — the owner's first wording was refused on save. Still
-      // ONE line (the kind rejects newlines), and 300 leaves room for {honoree}
-      // and {link} to expand inside sms.js's own 480 cap on what is sent.
-      max: 300,
+      // The one 'text' key that may run long and span lines. Every other text key
+      // is a one-line storefront string, which is what the kind's 120 ceiling and
+      // no-newline rule were written for; an SMS is neither. The owner's pickup
+      // message is 15 lines and about 670 characters, and she chose to send it
+      // whole — split into parts by the phone (Automate's "Multipart limit").
+      // 700 leaves room for {honoree} and {link} to expand inside sms.js's cap.
+      max: 700,
+      multiline: true,
       default: 'היי! המשחק של {honoree} מוכן 🎉 כל הפרטים כאן: {link}',
     },
   },
@@ -982,7 +984,9 @@ function validateValue(section, key, value) {
     // string is DELIBERATELY legal: it is how the owner drops the banner without
     // turning the whole sale off.
     if (typeof value !== 'string') return 'value must be a string';
-    if (/[\r\n]/.test(value)) return 'value must be a single line';
+    // …unless the key says it may span lines (the SMS message, which carries
+    // them to the phone as they are).
+    if (!spec.multiline && /[\r\n]/.test(value)) return 'value must be a single line';
     const max = Number.isInteger(spec.max) ? spec.max : 120;
     if (value.length > max) return 'value must be at most ' + max + ' characters';
     // An optional shape, for the keys whose value is an identifier rather than

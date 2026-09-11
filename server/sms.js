@@ -48,9 +48,11 @@ const MAX_ATTEMPTS = 3;
 // never comes back cannot grow the file without limit. Oldest DONE messages go
 // first; pending ones are never evicted by this.
 const MAX_KEPT = 500;
-// SMS is charged and read by a person; a runaway template must not become a
-// multi-part novel.
-const MAX_TEXT = 480;
+// SMS is charged and read by a person, so what is sent stays bounded. Sized for
+// the longest message the admin allows (700 characters) with {honoree} and
+// {link} expanded — the owner deliberately sends a long pickup message split into
+// parts — while still stopping a runaway template.
+const MAX_TEXT = 900;
 
 let _store = load();
 
