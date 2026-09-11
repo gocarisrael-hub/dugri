@@ -6337,7 +6337,17 @@
           const fee = locked ? 0 : feeFor(v);
           const base = locked ? unit : unit * copies + fee;
           if (appliedCoupon) {
-            const discounted = Math.round(base * (1 - appliedCoupon.discount_pct / 100));
+            // A COUPON BUYS A GAME, NOT POSTAGE — the same rule the server charges
+            // by (pay/init in server/index.js). The percentage comes off the game
+            // money only and the delivery fee is added back whole. For a LOCKED
+            // order the fee is the one stored on it (its total already includes
+            // it), otherwise the live fee for the picked version. If these two
+            // ever disagree, the buyer is shown one price and charged another.
+            const stored = state && state.order ? state.order.delivery_fee : 0;
+            const shipping = locked ? (Number.isInteger(stored) && stored > 0 ? stored : 0) : fee;
+            const discounted =
+              Math.round(Math.max(0, base - shipping) * (1 - appliedCoupon.discount_pct / 100)) +
+              shipping;
             // Signed, like the price beside it — and through setAmount, so its ₪
             // is isolated with its own digits instead of drifting to the far side
             // of both numbers (see .amt in css/tokens.css).
@@ -6725,7 +6735,13 @@
               couponInput.disabled = true;
               couponApply.classList.add('hidden');
               couponRemove.classList.remove('hidden');
-              setCouponMsg('קופון הופעל: ' + r.discount_pct + '% הנחה', 'ok');
+              // Said up front, because on a delivery order the total does not drop
+              // by the full percentage — and a buyer who does the sum otherwise
+              // reads the coupon as broken.
+              setCouponMsg(
+                'קופון הופעל: ' + r.discount_pct + '% הנחה על המשחק (לא על המשלוח)',
+                'ok'
+              );
               renderTotal();
               track('coupon_applied', { discount_pct: r.discount_pct });
             } else {
