@@ -2382,3 +2382,78 @@ test('a dismissed close dialog leaves the collection open', async ({ page }) => 
   await expect(page.locator('#addCard')).toBeVisible();
   await expect(page.locator('#banner')).toBeHidden();
 });
+
+// A COUPON BUYS A GAME, NOT POSTAGE. The checkout must show exactly what the
+// server charges (pay/init): the percentage comes off the game money, and the
+// one-time delivery fee is added back whole. The two used to disagree with the
+// rule the commission already followed — both discounted the fee too.
+const SHIP_PRICING = {
+  store: { now: 199, was: 239 },
+  sale: { on: true, label: 'מחיר השקה', banner: 'מחיר השקה' },
+  delivery_fee: 39,
+  versions: {
+    pdf: { enabled: false, price: 79 },
+    pickup: { enabled: true, price: 199 },
+    delivery: { enabled: true, price: 199 },
+    custom: { enabled: false, price: 599 },
+  },
+};
+
+test('a coupon discounts the game, never the delivery fee', async ({ page }) => {
+  await stubPricing(page, SHIP_PRICING);
+  await seedCoupon(page, 'SHIP25', 25);
+  await createCollection(page, 'Shira');
+  await openPayPanel(page);
+  await page.locator('#shipToggle').check();
+  await expect(page.locator('#payTotal')).toHaveText('238');
+
+  await page.fill('#couponInput', 'SHIP25');
+  await page.click('#couponApplyBtn');
+  // Said up front: on a delivery order the total does not drop by the full
+  // percentage, and a buyer doing the sum would otherwise think it broke.
+  await expect(page.locator('#couponMsg')).toContainText('לא על המשלוח');
+  // 199 × 0.75 = 149.25 → 149, and the 39 fee untouched: 188. The old sum,
+  // round(238 × 0.75) = 179, took a quarter off the courier too.
+  await expect(page.locator('#payTotal')).toHaveText('188');
+  await expect(page.locator('#payWas')).toHaveText('238 ₪');
+
+  // Nothing to ship: the whole price is the game, discounted as before.
+  await page.locator('#shipToggle').uncheck();
+  await expect(page.locator('#payTotal')).toHaveText('149');
+  // …and the exclusion goes with it. 25% off 199 IS 149 — telling her the
+  // discount spares a delivery fee she is not paying makes a correct total read
+  // like a shortfall.
+  await expect(page.locator('#couponMsg')).toContainText('25% הנחה');
+  await expect(page.locator('#couponMsg')).not.toContainText('לא על המשלוח');
+});
+
+test('the shipping exclusion appears only once there is shipping to exclude', async ({ page }) => {
+  await stubPricing(page, SHIP_PRICING);
+  await seedCoupon(page, 'SHIP25', 25);
+  await createCollection(page, 'Shira');
+  await openPayPanel(page);
+  // Applied on a PICKUP order — the majority path — the banner promises the
+  // full percentage, because that is what it takes off.
+  await page.fill('#couponInput', 'SHIP25');
+  await page.click('#couponApplyBtn');
+  await expect(page.locator('#payTotal')).toHaveText('149');
+  await expect(page.locator('#couponMsg')).not.toContainText('לא על המשלוח');
+
+  // The buyer can tick shipping AFTER entering the code, so the sentence is
+  // re-rendered with the total rather than written once at apply-time.
+  await page.locator('#shipToggle').check();
+  await expect(page.locator('#payTotal')).toHaveText('188');
+  await expect(page.locator('#couponMsg')).toContainText('לא על המשלוח');
+});
+
+test('a 100% coupon on a delivery order still shows the delivery fee to pay', async ({ page }) => {
+  await stubPricing(page, SHIP_PRICING);
+  await seedCoupon(page, 'SHIP100', 100);
+  await createCollection(page, 'Shira');
+  await openPayPanel(page);
+  await page.locator('#shipToggle').check();
+  await page.fill('#couponInput', 'SHIP100');
+  await page.click('#couponApplyBtn');
+  // The game is free; the parcel is not — and the server charges exactly this.
+  await expect(page.locator('#payTotal')).toHaveText('39');
+});

@@ -5023,7 +5023,23 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     couponCode = v.coupon.code;
   }
   // charged_total is ALWAYS a real number — the full total when no coupon.
-  const charged = Math.round(order.total * (1 - discountPct / 100));
+  //
+  // A COUPON BUYS A GAME, NOT POSTAGE. The percentage comes off the game money
+  // only — unit price × copies — and the delivery fee is added back whole. It
+  // used to come off `order.total`, which already includes the fee, so a 50%
+  // code halved the courier's charge too and a 100% code shipped a parcel for
+  // nothing. commissionFor (server/db.js) has always stated this rule and
+  // computes its percent on the same base; the discount now agrees with it.
+  //
+  // A consequence worth naming: a 100% code on a DELIVERY order is no longer a
+  // free order. The game is free, the shipping is not, so it goes through the
+  // card for the fee alone — the free path below only sees a real zero.
+  // The checkout screen (site/collect.html renderTotal) mirrors this exactly;
+  // a change to either belongs in both.
+  const fee =
+    Number.isInteger(order.delivery_fee) && order.delivery_fee > 0 ? order.delivery_fee : 0;
+  const gameMoney = Math.max(0, order.total - fee);
+  const charged = Math.round(gameMoney * (1 - discountPct / 100)) + fee;
 
   // A base order total can never be 0 (version prices validate as >= 1 and the
   // charge falls back to a positive default), so charged<=0 is ONLY reachable via
