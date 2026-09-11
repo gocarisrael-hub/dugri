@@ -6777,9 +6777,51 @@
         const cardBtn = $('#cardPayBtn');
         const modal = $('#payModal');
         const frame = $('#payFrame');
+        // AND A ROUTE HOME THAT NEEDS NO MESSAGE AT ALL.
+        //
+        // The postMessage above is the fast path. This is the one that has to be
+        // true: the server knows the order is paid the moment PeleCard calls our
+        // callback, so once a payment window has been opened we simply watch the
+        // order until it flips, and then finish the checkout ourselves. It does
+        // not care whether the message arrived, whether the two addresses match,
+        // or whether the buyer closed the window in confusion first.
+        //
+        // Bounded: a card payment that has not landed within ten minutes is not
+        // going to, and a watcher that ran for ever would poll a phone in
+        // somebody's pocket all evening.
+        let payAwaiting = false;
+        let payWatchTimer = null;
+        function watchForPayment(tries = 0) {
+          if (!payAwaiting) return;
+          if (tries > 240) {
+            payAwaiting = false;
+            return;
+          }
+          payWatchTimer = setTimeout(() => {
+            refresh()
+              .catch(() => {})
+              .then(() => {
+                if (!payAwaiting) return;
+                if (isPaid()) {
+                  payAwaiting = false;
+                  closeModal();
+                  goPaySuccess();
+                  return;
+                }
+                watchForPayment(tries + 1);
+              });
+          }, 2500);
+        }
+
         function openPayFrame(url) {
           frame.src = url;
           modal.classList.remove('hidden');
+          // From here until the order is paid (or ten minutes pass), this page
+          // is responsible for noticing on its own.
+          if (!payAwaiting) {
+            payAwaiting = true;
+            watchForPayment();
+          }
         }
         // …and the same modal for the delivery upgrade, which is a separate
         // purchase but the same window. Its completion runs through the same
@@ -6807,6 +6849,11 @@
           const wasOpen = !modal.classList.contains('hidden');
           modal.classList.add('hidden');
           frame.src = 'about:blank';
+          // The watcher is deliberately NOT stopped here. A buyer who closed
+          // this window in confusion has very often already paid — that is the
+          // exact case this whole change exists for — so the page goes on
+          // watching and takes them to the confirmation page when the order
+          // flips. It stops itself then, or after ten minutes.
           // Only when a payment window was actually open — a paid-path close
           // (postMessage success) resolves its own session via the callback.
           if (wasOpen && !isPaid()) releasePaySession();
@@ -7007,10 +7054,24 @@
         });
 
         // pay-done.html (loaded inside the iframe) tells us how it went.
+        //
+        // IDENTIFIED BY WINDOW, NOT BY ORIGIN. The old check was
+        // `e.origin !== location.origin`, and PeleCard returns the frame to the
+        // address in PUBLIC_BASE_URL — which was the Railway hostname while
+        // buyers browsed the real domain. Every completed payment was therefore
+        // thrown away here, in silence: the buyer paid, the window sat on
+        // "returning you…", and they closed it by hand. 35 of 41 orders in one
+        // twelve-day stretch never reached the confirmation page, which is also
+        // where a sale is reported to Google and to Meta.
+        //
+        // `e.source` is the window object we ourselves put in the frame. No
+        // other page can present itself as that window, so this is a stronger
+        // check than the origin was — and it cannot be broken by a setting.
         window.addEventListener('message', (e) => {
-          if (e.origin !== location.origin) return;
+          if (!frame || e.source !== frame.contentWindow) return;
           const d = e.data || {};
           if (d.type !== 'dugri-pay') return;
+          payAwaiting = false;
           closeModal();
           if (d.ok) {
             track('card_pay_done');
