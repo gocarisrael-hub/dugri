@@ -3524,6 +3524,25 @@
         btn.hidden = pile.length === 0;
       }
 
+      // The pile broken down by what each order actually is. Four kinds travel
+      // this pipeline, not two: a digital sale filed under "self-pickup" tells
+      // her to expect a box at גלאור for someone who is waiting on a file.
+      // Zero-count kinds are left out rather than printed as "0 …".
+      const BATCH_READY_KIND_LABELS = {
+        pickup: 'באיסוף עצמי',
+        delivery: 'במשלוח',
+        pdf: 'דיגיטליות',
+        custom: 'מותאמות אישית',
+        other: 'אחר',
+      };
+      function batchReadyKindLine(p) {
+        const kinds = p.kinds || { pickup: p.pickup, delivery: p.delivery };
+        const parts = Object.keys(BATCH_READY_KIND_LABELS)
+          .filter((k) => Number(kinds[k]) > 0)
+          .map((k) => kinds[k] + ' ' + BATCH_READY_KIND_LABELS[k]);
+        return parts.join(' · ');
+      }
+
       // Ask, then press. This one emails and texts real customers and cannot be
       // undone, so the dialog says exactly what is about to happen — how many,
       // of which kind, whether a text goes out at all, and WHICH orders will get
@@ -3542,19 +3561,34 @@
           load();
           return;
         }
-        const lines = [
-          'לסמן ' + p.count + ' הזמנות כמוכנות?',
-          '',
-          p.pickup + ' באיסוף עצמי · ' + p.delivery + ' במשלוח',
-          '',
-          p.sms_enabled
-            ? 'כל אחת תקבל מייל ו-SMS שהמשחק מוכן.'
-            : 'כל אחת תקבל מייל. SMS כבוי כרגע — לא יישלחו הודעות.',
-        ];
-        if (p.no_phone.length) {
-          lines.push('', 'בלי מספר טלפון (יקבלו מייל בלבד): ' + p.no_phone.join(', '));
+        const lines = ['לסמן ' + p.count + ' הזמנות כמוכנות?', '', batchReadyKindLine(p), ''];
+        // WHAT WILL ACTUALLY BE SENT. Both switches are the owner's to flip, and
+        // a dialog that promises a mail the settings have turned off is worse
+        // than no dialog: she confirms an action she cannot undo on the strength
+        // of a sentence that was never true.
+        if (p.email_enabled && p.sms_enabled) {
+          lines.push('כל אחת תקבל מייל ו-SMS שהמשחק מוכן.');
+        } else if (p.email_enabled) {
+          lines.push('כל אחת תקבל מייל. SMS כבוי כרגע — לא יישלחו הודעות.');
+        } else if (p.sms_enabled) {
+          lines.push('המיילים כבויים כרגע — יישלח SMS בלבד.');
+        } else {
+          lines.push('שימו לב: לא יישלחו מיילים ולא הודעות SMS — ההזמנות רק יסומנו כמוכנות.');
         }
-        lines.push('', 'אי אפשר לבטל את המיילים שיישלחו.');
+        // Only worth naming while a text can actually go out: with SMS off
+        // nobody gets one, and the list would point at the wrong problem.
+        if (p.sms_enabled && p.no_phone.length) {
+          lines.push(
+            '',
+            'בלי מספר נייד תקין (' +
+              (p.email_enabled ? 'יקבלו מייל בלבד' : 'לא יקבלו כלום') +
+              '): ' +
+              p.no_phone.join(', ')
+          );
+        }
+        if (p.email_enabled || p.sms_enabled) {
+          lines.push('', 'אי אפשר לבטל את ההודעות שיישלחו.');
+        }
         if (!confirm(lines.join('\n'))) return;
 
         btn.disabled = true;
@@ -3569,7 +3603,19 @@
         // quietly dropped from the total.
         const d = r.data;
         let msg = 'סומנו ' + d.marked + ' הזמנות כמוכנות';
-        if (p.sms_enabled) msg += ' · ' + d.sms_queued + ' הודעות SMS בדרך';
+        // The mails that actually went, counted by the server after awaiting
+        // each send — not assumed from the number of rows it walked.
+        if (d.email_enabled) msg += ' · ' + (d.emailed || 0) + ' מיילים נשלחו';
+        if (d.sms_enabled) msg += ' · ' + d.sms_queued + ' הודעות SMS בדרך';
+        // The customers she now has to tell herself. Naming them is the whole
+        // point: an order marked ready whose mail bounced is a person waiting
+        // for news that nobody is going to send.
+        if (d.not_emailed && d.not_emailed.length) {
+          msg +=
+            '\n\nלא נשלח מייל (צריך לעדכן ידנית): ' +
+            d.not_emailed.join(', ') +
+            '\nההזמנות עצמן סומנו כמוכנות.';
+        }
         if (d.failed && d.failed.length) {
           msg += '\n\nלא סומנו: ' + d.failed.map((f) => f.order_no).join(', ');
         }

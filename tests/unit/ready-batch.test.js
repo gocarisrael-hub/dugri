@@ -6,7 +6,7 @@
 // button reaches an order it should not have. Every message it sends is an email
 // and a text to a real customer, and neither can be recalled — so most of what
 // follows is about who it must LEAVE ALONE.
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -23,19 +23,21 @@ let app;
 let db;
 let settings;
 let sms;
+let notify;
 let server;
 let base;
 
 beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-ready-batch-'));
   process.env.ADMIN_KEY = ADMIN_KEY;
-  for (const f of ['db.js', 'settings.js', 'sms.js', 'index.js']) {
+  for (const f of ['db.js', 'settings.js', 'sms.js', 'notify.js', 'index.js']) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
   settings = require(path.join(serverDir, 'settings.js'));
   for (const v of ['pdf', 'pickup', 'delivery']) settings.set('pricing', v + '_enabled', true);
   db = require(path.join(serverDir, 'db.js'));
   sms = require(path.join(serverDir, 'sms.js'));
+  notify = require(path.join(serverDir, 'notify.js'));
   app = require(path.join(serverDir, 'index.js'));
   await new Promise((resolve) => {
     server = app.listen(0, () => {
@@ -51,6 +53,10 @@ afterAll(() => {
 
 beforeEach(() => {
   settings.set('sms', 'enabled', true);
+  // Both switches back to their defaults — a test that turns the text template
+  // or the mail off must not decide what the next one is told.
+  settings.reset('sms', 'order_ready');
+  settings.reset('email', 'order_ready');
   // Start each test from an empty board AND an empty outbox: these assertions
   // are about WHICH orders were taken and WHO was texted, so a leftover from a
   // previous test would mask exactly the mistake they exist to catch.
@@ -137,10 +143,61 @@ describe('the preview, before anything is sent', () => {
     expect(body.no_phone).toEqual([db.orderRef(db.getCollection(silent.id))]);
   });
 
+  // The list is supposed to be "who you must phone by hand". A landline in the
+  // phone field is exactly such a person: sms.enqueue runs every number through
+  // ilMobile(), which drops anything that is not an Israeli mobile, so counting
+  // it as "will get a text" hides the one customer the list exists to surface.
+  it('counts a landline as no phone, because the gateway will not send to it', async () => {
+    const landline = makeOrder({ name: 'קווי', phone: '03-6123456' });
+    const { body } = await get('/api/admin/orders/ready-batch');
+    expect(body.orders.find((r) => r.id === landline.id).has_phone).toBe(false);
+    expect(body.no_phone).toEqual([db.orderRef(db.getCollection(landline.id))]);
+  });
+
+  // …and the press agrees with the preview: nothing is queued for that number.
+  it('queues no text for a landline, matching what the preview promised', async () => {
+    makeOrder({ name: 'קווי', phone: '03-6123456' });
+    const { body } = await post('/api/admin/orders/ready-batch');
+    expect(body.marked).toBe(1);
+    expect(body.sms_queued).toBe(0);
+    expect(pending()).toHaveLength(0);
+  });
+
+  // A digital sale travels this same pipeline (db.applyOrderStock says so), and
+  // calling it "self-pickup" tells the owner to expect a box at גלאור for
+  // somebody who is waiting on a file.
+  it('does not file a digital order under self-pickup', async () => {
+    const digital = makeOrder({ name: 'דיגיטלי', version: 'pdf' });
+    makeOrder({ name: 'איסוף', version: 'pickup' });
+    const { body } = await get('/api/admin/orders/ready-batch');
+    expect(body.count).toBe(2);
+    expect(body.pickup).toBe(1);
+    expect(body.kinds).toMatchObject({ pickup: 1, delivery: 0, pdf: 1, custom: 0 });
+    expect(body.orders.find((r) => r.id === digital.id).kind).toBe('pdf');
+  });
+
   it('says when SMS is switched off, so the dialog cannot promise a text', async () => {
     settings.set('sms', 'enabled', false);
     makeOrder({});
     expect((await get('/api/admin/orders/ready-batch')).body.sms_enabled).toBe(false);
+  });
+
+  // The switch is not the only way a text stops going out: queueReadySms drops
+  // an empty template too, silently. A dialog that promised one on the strength
+  // of the master switch alone would be lying about an action she cannot undo.
+  it('says no text is coming when the template has been emptied', async () => {
+    settings.set('sms', 'order_ready', '');
+    makeOrder({});
+    const { body } = await get('/api/admin/orders/ready-batch');
+    expect(body.sms_enabled).toBe(false);
+    expect((await post('/api/admin/orders/ready-batch')).body.sms_queued).toBe(0);
+  });
+
+  // Email is unconfigured in this environment, and the dialog must say so rather
+  // than assert "each one will get a mail".
+  it('does not promise a mail when email is not configured at all', async () => {
+    makeOrder({});
+    expect((await get('/api/admin/orders/ready-batch')).body.email_enabled).toBe(false);
   });
 
   it('is admin-only, and changes nothing by being asked', async () => {
@@ -224,5 +281,97 @@ describe('the press', () => {
     const { body } = await post('/api/admin/orders/ready-batch');
     expect(body.marked).toBe(1);
     expect(body.orders[0].id).toBe(fine.id);
+  });
+});
+
+// THE MAILS. The reason this button exists is that a missed row is a customer
+// who never hears her game is waiting — so a mail that did not go out must be
+// reported as one, not counted as a success because the loop reached it.
+describe('the mails it sends', () => {
+  let sent;
+  let inFlight;
+  let peakInFlight;
+  let original;
+
+  beforeEach(() => {
+    sent = [];
+    inFlight = 0;
+    peakInFlight = 0;
+    original = { send: notify.sendOrderReady, configured: notify.isConfigured };
+    // Email is unconfigured in tests, so both halves of the real gate are stood
+    // in for: armed, and a send that takes real time and can refuse.
+    notify.isConfigured = () => true;
+    notify.sendOrderReady = async (c) => {
+      // The real one refuses when the owner's switch is off; the stand-in has to
+      // as well, or a test could "send" a mail the settings had turned off.
+      if (!settings.emailEnabled('order_ready')) return false;
+      inFlight += 1;
+      peakInFlight = Math.max(peakInFlight, inFlight);
+      sent.push(c.id);
+      await new Promise((r) => setTimeout(r, 15));
+      inFlight -= 1;
+      if (String(c.honoree_name || '').startsWith('נכשל')) return false;
+      if (String(c.honoree_name || '').startsWith('קורס')) throw new Error('resend 429');
+      return true;
+    };
+  });
+
+  afterEach(() => {
+    notify.sendOrderReady = original.send;
+    notify.isConfigured = original.configured;
+  });
+
+  // Resend rate-limits at roughly two a second. Eleven mails fired at once is
+  // eleven chances to be refused, and the refusals would arrive after the owner
+  // had already been told everyone was notified.
+  it('sends one at a time, never a burst', async () => {
+    makeOrder({ name: 'א' });
+    makeOrder({ name: 'ב' });
+    makeOrder({ name: 'ג' });
+    const { body } = await post('/api/admin/orders/ready-batch');
+    expect(body.marked).toBe(3);
+    expect(sent).toHaveLength(3);
+    expect(peakInFlight).toBe(1);
+  });
+
+  // The whole report, honestly: how many mails actually went, and WHICH orders
+  // she now has to tell by hand.
+  it('counts the mails that went and names the ones that did not', async () => {
+    const ok = makeOrder({ name: 'הצליח' });
+    const bad = makeOrder({ name: 'נכשל' });
+    const { body } = await post('/api/admin/orders/ready-batch');
+    expect(body.marked).toBe(2);
+    expect(body.emailed).toBe(1);
+    expect(body.email_enabled).toBe(true);
+    expect(body.not_emailed).toEqual([db.orderRef(db.getCollection(bad.id))]);
+    expect(body.orders.find((r) => r.id === ok.id).emailed).toBe(true);
+    expect(body.orders.find((r) => r.id === bad.id).emailed).toBe(false);
+  });
+
+  // A rejected send is the ordinary case (a timeout, a 429, an unsubscribe). It
+  // must not take the rest of the run down with it, and the row it belongs to is
+  // still ready — the deck really is printed.
+  it('a thrown send costs only its own mail, not the rest of the batch', async () => {
+    const crashes = makeOrder({ name: 'קורס' });
+    makeOrder({ name: 'תקין' });
+    const { body } = await post('/api/admin/orders/ready-batch');
+    expect(body.marked).toBe(2);
+    expect(body.emailed).toBe(1);
+    expect(body.not_emailed).toEqual([db.orderRef(db.getCollection(crashes.id))]);
+    expect(db.getCollection(crashes.id).order.ready_at).toBeTruthy();
+  });
+
+  // The owner can switch the ready mail off. Then the dialog must not promise
+  // one — and nobody belongs on the "no mail went" list, because none was tried.
+  it('promises no mail, and names nobody, when the owner switched it off', async () => {
+    const tpl = settings.get('email', 'order_ready');
+    settings.set('email', 'order_ready', { ...tpl, enabled: false });
+    makeOrder({});
+    expect((await get('/api/admin/orders/ready-batch')).body.email_enabled).toBe(false);
+    const { body } = await post('/api/admin/orders/ready-batch');
+    expect(body.marked).toBe(1);
+    expect(body.email_enabled).toBe(false);
+    expect(body.emailed).toBe(0);
+    expect(body.not_emailed).toEqual([]);
   });
 });

@@ -44,14 +44,27 @@ async function stagePile(page, { pickup = 1, delivery = 1 } = {}) {
 
 // The server's own preview + press, stubbed so the dialog's wording and the
 // press are observable without texting anybody.
-async function stageBatchApi(page, { preview, pressed }) {
+async function stageBatchApi(page, { preview, pressed, pressResult }) {
   await page.route('**/api/admin/orders/ready-batch*', async (route) => {
     if (route.request().method() === 'POST') {
       pressed.count++;
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ok: true, marked: 2, sms_queued: 1, orders: [], failed: [] }),
+        body: JSON.stringify({
+          ok: true,
+          marked: 2,
+          sms_queued: 1,
+          // What the server reports after AWAITING each send: one mail landed,
+          // one did not, and the one that did not is named.
+          emailed: 1,
+          not_emailed: ['DG-9002'],
+          email_enabled: true,
+          sms_enabled: true,
+          orders: [],
+          failed: [],
+          ...(pressResult || {}),
+        }),
       });
     }
     return route.fulfill({
@@ -66,8 +79,10 @@ const PREVIEW = {
   count: 2,
   pickup: 1,
   delivery: 1,
+  kinds: { pickup: 1, delivery: 1, pdf: 0, custom: 0, other: 0 },
   no_phone: ['DG-9001'],
   sms_enabled: true,
+  email_enabled: true,
   orders: [],
 };
 
@@ -133,6 +148,10 @@ test.describe('marking the whole בדפוס pile ready', () => {
     // What actually happened, not what was asked for.
     await expect.poll(() => messages.join('|')).toContain('סומנו 2');
     expect(messages.join('|')).toContain('1 הודעות SMS');
+    // The mails that really went — and the customer whose mail did not, named,
+    // because she is the one who now has to be told by hand.
+    expect(messages.join('|')).toContain('1 מיילים נשלחו');
+    expect(messages.join('|')).toContain('DG-9002');
   });
 
   test('with SMS switched off the dialog promises a text to nobody', async ({ page }) => {
@@ -148,5 +167,73 @@ test.describe('marking the whole בדפוס pile ready', () => {
     });
     await page.getByTestId('batch-ready').click();
     await expect.poll(() => asked).toContain('SMS כבוי');
+  });
+
+  // The owner can switch the ready mail off, and then the dialog's old promise
+  // ("each one will get a mail") was simply false — confirmed on that basis,
+  // with nothing sent. What is switched off has to say so.
+  test('with the ready mail switched off the dialog does not promise one', async ({ page }) => {
+    const pressed = { count: 0 };
+    await stagePile(page);
+    await stageBatchApi(page, { preview: { ...PREVIEW, email_enabled: false }, pressed });
+    await page.goto(`/admin.html?key=${KEY}`);
+
+    let asked = '';
+    page.on('dialog', (d) => {
+      asked = d.message();
+      d.dismiss();
+    });
+    await page.getByTestId('batch-ready').click();
+    await expect.poll(() => asked).toContain('המיילים כבויים');
+    expect(asked).not.toContain('כל אחת תקבל מייל');
+  });
+
+  test('with both switched off it says plainly that nobody will hear anything', async ({
+    page,
+  }) => {
+    const pressed = { count: 0 };
+    await stagePile(page);
+    await stageBatchApi(page, {
+      preview: { ...PREVIEW, email_enabled: false, sms_enabled: false },
+      pressed,
+    });
+    await page.goto(`/admin.html?key=${KEY}`);
+
+    let asked = '';
+    page.on('dialog', (d) => {
+      asked = d.message();
+      d.dismiss();
+    });
+    await page.getByTestId('batch-ready').click();
+    await expect.poll(() => asked).toContain('לא יישלחו מיילים ולא הודעות SMS');
+    expect(asked).not.toContain('אי אפשר לבטל');
+  });
+
+  // A digital order in the pile is not a box at גלאור. Filing it under
+  // self-pickup tells her to expect one.
+  test('the dialog counts a digital order as digital, not as self-pickup', async ({ page }) => {
+    const pressed = { count: 0 };
+    await stagePile(page);
+    await stageBatchApi(page, {
+      preview: {
+        ...PREVIEW,
+        count: 2,
+        pickup: 1,
+        delivery: 0,
+        kinds: { pickup: 1, delivery: 0, pdf: 1, custom: 0, other: 0 },
+      },
+      pressed,
+    });
+    await page.goto(`/admin.html?key=${KEY}`);
+
+    let asked = '';
+    page.on('dialog', (d) => {
+      asked = d.message();
+      d.dismiss();
+    });
+    await page.getByTestId('batch-ready').click();
+    await expect.poll(() => asked).toContain('1 דיגיטליות');
+    expect(asked).toContain('1 באיסוף עצמי');
+    expect(asked).not.toContain('2 באיסוף עצמי');
   });
 });

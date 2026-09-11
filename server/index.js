@@ -2474,8 +2474,9 @@ app.put('/api/admin/stock', express.json({ limit: '8kb' }), (req, res) => {
 // one of them was edited.
 //
 // Returns what was actually done, so the batch can report itself honestly
-// instead of claiming a number it did not achieve.
-function applyOrderReady(id, ready, changed) {
+// instead of claiming a number it did not achieve — which is why the mail is
+// AWAITED here rather than fired and forgotten.
+async function applyOrderReady(id, ready, changed) {
   const done = { stock: false, emailed: false, sms: null };
   // The shelf. Marking an order ready is the moment the deck is packed, so this
   // is where a board, a box and a note physically leave — and un-marking a row
@@ -2493,16 +2494,50 @@ function applyOrderReady(id, ready, changed) {
   }
   if (ready && changed) {
     const fresh = db.getCollection(id);
-    if (typeof notify.sendOrderReady === 'function') {
-      notify.sendOrderReady(fresh, paymentBaseUrl()).catch(() => {});
-      done.emailed = true;
-    }
-    // …and the SMS, queued for the phone to collect. Same moment, same order,
-    // different medium — and enqueue is a local write, so a gateway that is
-    // asleep cannot slow this response down or fail the press.
+    // The SMS first: enqueue is a local write, so a mail server that is slow or
+    // unreachable cannot hold up the text the customer is owed.
     done.sms = queueReadySms(fresh);
+    // …then the mail, AWAITED, so `emailed` is what HAPPENED and not what was
+    // attempted. Resend rate-limits, times out and refuses unsubscribed
+    // addresses; a batch that fires eleven of these at once and assumes they
+    // all landed would tell the owner eleven customers were told while some of
+    // them heard nothing — the exact failure this button exists to prevent.
+    // sendOrderReady already swallows its own errors and answers false; the
+    // try/catch is for the caller that replaced it with something that throws.
+    if (typeof notify.sendOrderReady === 'function') {
+      try {
+        done.emailed = Boolean(await notify.sendOrderReady(fresh, paymentBaseUrl()));
+      } catch (e) {
+        console.warn('[notify] order-ready mail failed:', (e && e.message) || e);
+      }
+    }
   }
   return done;
+}
+
+// Will an order-ready MAIL actually go out? Both halves of the answer: the
+// owner's per-message switch (settings.emailEnabled) and whether email is
+// configured at all. The confirmation dialog promises mail on the strength of
+// this, so it must be the same question notify.sendOrderReady asks itself.
+function orderReadyEmailArmed() {
+  try {
+    return Boolean(notify.isConfigured() && settings.emailEnabled('order_ready'));
+  } catch {
+    return false;
+  }
+}
+
+// Will a TEXT actually go out? The master switch AND a template with something
+// in it — queueReadySms returns null on either, so a dialog that checked only
+// the switch would promise a text that an emptied template silently drops.
+function orderReadySmsArmed() {
+  try {
+    return Boolean(
+      settings.get('sms', 'enabled') && String(settings.get('sms', 'order_ready') || '').trim()
+    );
+  } catch {
+    return false;
+  }
 }
 
 app.post('/api/admin/collections/:id/ready', (req, res) => {
@@ -2516,7 +2551,12 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
       message: 'צריך קודם לסמן שההזמנה נשלחה לדפוס.',
     });
   }
-  applyOrderReady(req.params.id, ready, r.changed);
+  // Not awaited, deliberately: the stock move and the SMS are synchronous, and
+  // one row's answer must not wait on a mail server. The batch below DOES wait,
+  // because there the send result IS the report.
+  applyOrderReady(req.params.id, ready, r.changed).catch((e) => {
+    console.warn('[orders] ready follow-up failed:', (e && e.message) || e);
+  });
   res.json({
     ok: true,
     ready: !!r.order.ready_at,
@@ -2561,13 +2601,22 @@ function batchReadyCandidates() {
 // text real people; she is shown who, and — just as importantly — who will get
 // nothing because we hold no mobile for them.
 function batchReadyRow(c) {
-  const phone = String((c && c.owner_phone) || '').trim();
+  const version = String((c.order && c.order.version) || '');
   return {
     id: c.id,
     order_no: db.orderRef(c),
     honoree: c.honoree_name || '',
-    kind: c.order.version === 'delivery' ? 'delivery' : 'pickup',
-    has_phone: Boolean(phone),
+    // The order's REAL version, not "delivery or else pickup". A pdf and a
+    // custom order travel this same pipeline — db.applyOrderStock says so in
+    // as many words — and calling a digital sale self-pickup tells the owner
+    // she is sending two people to גלאור when one of them is waiting on a file.
+    kind: ['delivery', 'pickup', 'pdf', 'custom'].includes(version) ? version : 'other',
+    // The number as the GATEWAY will read it, not merely "something was typed
+    // in the phone field". sms.enqueue puts every number through ilMobile(),
+    // which soft-fails anything that is not an Israeli mobile — so a landline
+    // counted as "will get a text" would be left off the call-by-hand list,
+    // which is the one list this dialog exists to produce.
+    has_phone: Boolean(sms.ilMobile(c && c.owner_phone)),
   };
 }
 
@@ -2576,24 +2625,37 @@ function batchReadyRow(c) {
 app.get('/api/admin/orders/ready-batch', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const rows = batchReadyCandidates().map(batchReadyRow);
+  const kinds = { pickup: 0, delivery: 0, pdf: 0, custom: 0, other: 0 };
+  for (const r of rows) kinds[r.kind] += 1;
   res.json({
     orders: rows,
     count: rows.length,
-    pickup: rows.filter((r) => r.kind === 'pickup').length,
-    delivery: rows.filter((r) => r.kind === 'delivery').length,
+    pickup: kinds.pickup,
+    delivery: kinds.delivery,
+    // Every kind in the pile, so the dialog can say "2 self-pickup · 1 digital"
+    // rather than filing the file under the boxes.
+    kinds,
     // Named rather than counted: "3 without a phone" sends her hunting; three
     // order numbers tell her which three to call.
     no_phone: rows.filter((r) => !r.has_phone).map((r) => r.order_no),
-    // Whether an SMS would go out at all, so the dialog can say "email only"
-    // instead of promising a text the gateway is not set up to send.
-    sms_enabled: Boolean(settings.get('sms', 'enabled')),
+    // What will ACTUALLY be sent. The dialog is the last thing she reads before
+    // an action that cannot be taken back, so both answers come from the same
+    // gates the senders themselves use — a switched-off template must not be
+    // described as "everyone gets a mail".
+    sms_enabled: orderReadySmsArmed(),
+    email_enabled: orderReadyEmailArmed(),
   });
 });
 
-app.post('/api/admin/orders/ready-batch', (req, res) => {
+app.post('/api/admin/orders/ready-batch', async (req, res) => {
   if (!requireAdmin(req, res)) return;
   const done = [];
   const failed = [];
+  const emailArmed = orderReadyEmailArmed();
+  // ONE AT A TIME, and each send awaited — the pattern every other bulk sender
+  // here follows (the reminder scans). Eleven mails fired at once is eleven
+  // chances to trip Resend's rate limit, and a swallowed rejection would leave
+  // the owner reading "11 marked ready" while a customer sits waiting.
   for (const c of batchReadyCandidates()) {
     const row = batchReadyRow(c);
     // Each order is marked through the store's own gate, so the batch cannot do
@@ -2609,13 +2671,20 @@ app.post('/api/admin/orders/ready-batch', (req, res) => {
       failed.push({ ...row, error: (r && r.error) || 'unchanged' });
       continue;
     }
-    const applied = applyOrderReady(c.id, true, true);
-    done.push({ ...row, sms_queued: Boolean(applied.sms) });
+    const applied = await applyOrderReady(c.id, true, true);
+    done.push({ ...row, sms_queued: Boolean(applied.sms), emailed: Boolean(applied.emailed) });
   }
   res.json({
     ok: true,
     marked: done.length,
     sms_queued: done.filter((d) => d.sms_queued).length,
+    emailed: done.filter((d) => d.emailed).length,
+    // The orders that were marked ready and whose mail did NOT go — the ones
+    // she has to tell by hand. Empty when mail is switched off entirely: then
+    // nothing was attempted, and naming every row would be noise, not news.
+    not_emailed: emailArmed ? done.filter((d) => !d.emailed).map((d) => d.order_no) : [],
+    email_enabled: emailArmed,
+    sms_enabled: orderReadySmsArmed(),
     orders: done,
     failed,
     sent_to_print_count: db.countSentToPrintOrders(),
