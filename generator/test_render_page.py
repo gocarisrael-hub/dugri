@@ -3242,6 +3242,56 @@ def test_a_pure_latin_entry_is_one_latin_run():
     assert rp.script_runs("Tel Aviv") == [(True, "Tel Aviv")]
 
 
+# --- the base direction of a line that mixes the two scripts -----------------
+# Order 626 printed "celebration של מדונה" as "שלcelebration": the space
+# between the English word and the Hebrew one vanished. The base direction was
+# taken from the line's FIRST strong character, so a line opening in English
+# resolved its neutrals left-to-right and the space joined "celebration" as a
+# trailing one — while the renderer went on placing the runs right to left,
+# which put that space in the right margin with nothing beside it.
+
+
+def test_a_mixed_entry_reads_in_the_cards_direction_not_its_first_words():
+    """The reported card. A Hebrew entry with an English word in it."""
+    f, ref = _faces()
+    runs = rp.Face(f, f, ref).runs_by_script("celebration של מדונה")
+    assert [(t, lat) for _f, t, lat in runs] == [
+        ("celebration", True),
+        (" של מדונה", False),
+    ], "the space belongs BETWEEN the two words, not off the end of the line"
+
+
+def test_an_english_only_line_still_reads_left_to_right():
+    """The guarantee the first-strong-character rule was there for.
+
+    "TELEVISION" broken across two lines leaves a line "TELEV-", and its break
+    hyphen — a neutral at the end of a Latin run — must hang off the RIGHT of
+    the word it broke. Only a line that mixes scripts defers to the card.
+    """
+    assert rp._line_base_rtl("TELEV-", True) is False
+    assert rp._embed("TELEV-").startswith(rp._LTR_EMBED)
+    assert rp._embed("מסיבה").startswith(rp._RTL_EMBED)
+    assert rp._embed("40").startswith(rp._RTL_EMBED), "no letter: the card"
+
+
+def test_only_a_mixed_line_ever_splits_and_a_mixed_line_takes_the_cards_base():
+    """The invariant ``word_lines`` places its runs on.
+
+    That placement walks right to left unconditionally. It is allowed to,
+    because a line only splits where its SCRIPT changes: more than one run
+    means the line is mixed, and a mixed line takes the card's own base. If
+    those two ever part, the split resolves a neutral onto the side the
+    renderer paints away from — which is the bug above.
+    """
+    f, ref = _faces()
+    for card_rtl in (True, False):
+        face = rp.Face(f, f, ref, rtl=card_rtl)
+        for s in ("celebration של מדונה", "40 מתחת ל-BBQ", "HADAR ו-דני",
+                  "Tel Aviv", "מסיבה 40", "TELEV-", "1. עפיפון"):
+            if len(face.runs(s)) > 1:
+                assert rp._line_base_rtl(s, card_rtl) is card_rtl, s
+
+
 def test_segmentation_never_loses_or_reorders_a_character():
     for s in ("מסיבה", "40 מתחת ל-BBQ", "HADAR ו-דני", "Tel Aviv",
               "1. עפיפון", "רווקות לטל", "מכבי חיפה 2024"):
@@ -3331,19 +3381,13 @@ def test_a_mixed_line_really_is_measured_in_two_pieces():
     assert len(rp.Face(f, f, ref).runs("מסיבה 40")) == 1
 
 
-def test_hand_placed_script_runs_land_where_chrome_would_put_them():
-    """The mechanism the two-face feature stands on, proved against the engine.
+def _hand_placed_runs_match_chrome(LINE):
+    """The renderer's own placement of ``LINE``, against Chrome's bidi.
 
-    A mixed line cannot be one <text>: Chrome ignores ``direction="rtl"`` for RUN
-    ordering, which is why the "1." marker is already three separate elements.
-    So the renderer computes each run's position itself. If that arithmetic is
-    even slightly wrong the fit reserves a width the render does not paint, and
-    lines cross the trim.
-
-    Compared against the one thing that cannot be wrong: the SAME text as a
-    single element, ordered by Chrome's own bidi. Both must land in the same
-    place. Measured at 2x device scale, so a "1 pixel" difference is half a CSS
-    pixel.
+    The split is taken through a ``Face``, not ``script_runs`` directly,
+    because the base direction the Face resolves the line in is half of what
+    is under test: resolve a neutral against one base and paint the runs in the
+    other and the space between two scripts lands outside the line.
     """
     import base64
     import subprocess
@@ -3353,8 +3397,8 @@ def test_hand_placed_script_runs_land_where_chrome_would_put_them():
 
     heb = os.path.join(HERE, "word-fonts", "Cafe Regular.ttf")
     f, ref = rp._word_metrics(heb)
-    SIZE, X_RIGHT, Y, LINE = 60.0, 560.0, 90.0, "40 מתחת ל-BBQ"
-    runs = rp.script_runs(LINE)
+    SIZE, X_RIGHT, Y = 60.0, 560.0, 90.0
+    runs = [(lat, t) for _f, t, lat in rp.Face(f, f, ref).runs_by_script(LINE)]
     assert len(runs) == 2, "the case under test must actually be mixed"
     widths = [f.getlength(t) / ref * SIZE for _, t in runs]
 
@@ -3371,9 +3415,13 @@ def test_hand_placed_script_runs_land_where_chrome_would_put_them():
         x += w
         body = t if lat else "‫" + t + "‬"
         parts.append(f'<text x="{x:.2f}" y="{Y}" font-family="W" '
-                     f'font-size="{SIZE}" text-anchor="end">{body}</text>')
+                     f'font-size="{SIZE}" text-anchor="end" '
+                     f'xml:space="preserve">{body}</text>')
+    # xml:space="preserve", because that is what the renderer emits and it is
+    # the whole difference: without it Chrome drops a run's trailing space and
+    # the comparison cannot see a space that was resolved onto the wrong run.
     whole = (f'<text x="{X_RIGHT}" y="{Y}" font-family="W" font-size="{SIZE}" '
-             f'text-anchor="end">‫{LINE}‬</text>')
+             f'text-anchor="end" xml:space="preserve">‫{LINE}‬</text>')
 
     def ink(svg):
         with tempfile.TemporaryDirectory() as d:
@@ -3395,6 +3443,34 @@ def test_hand_placed_script_runs_land_where_chrome_would_put_them():
     assert abs(sx1 - wx1) <= 2, (sx1, wx1)
     assert abs(sy0 - wy0) <= 2 and abs(sy1 - wy1) <= 2
     assert abs(spx - wpx) / wpx < 0.01, (spx, wpx)
+
+
+def test_hand_placed_script_runs_land_where_chrome_would_put_them():
+    """The mechanism the two-face feature stands on, proved against the engine.
+
+    A mixed line cannot be one <text>: Chrome ignores ``direction="rtl"`` for RUN
+    ordering, which is why the "1." marker is already three separate elements.
+    So the renderer computes each run's position itself. If that arithmetic is
+    even slightly wrong the fit reserves a width the render does not paint, and
+    lines cross the trim.
+
+    Compared against the one thing that cannot be wrong: the SAME text as a
+    single element, ordered by Chrome's own bidi. Both must land in the same
+    place. Measured at 2x device scale, so a "1 pixel" difference is half a CSS
+    pixel.
+    """
+    _hand_placed_runs_match_chrome("40 מתחת ל-BBQ")
+
+
+def test_an_entry_that_opens_in_english_lands_where_chrome_puts_it_too():
+    """Order 626's line, against the same instrument.
+
+    It differs from the case above in one way only — the English comes FIRST —
+    and that was enough to move the space between the two words out of the line
+    entirely. Chrome, handed the whole string with an RTL base, is the picture
+    the card is supposed to print.
+    """
+    _hand_placed_runs_match_chrome("celebration של מדונה")
 
 
 # ---- emitting two faces on one line ----------------------------------------
@@ -3450,6 +3526,33 @@ def test_the_runs_of_a_mixed_line_span_the_same_width_as_one_face_would():
                                           single)][2:]
     assert ref_x, "the single-face line should have one word run"
     assert abs(max(xs) - ref_x[0]) < 0.01, (xs, ref_x)
+
+
+def test_an_entry_that_opens_in_english_keeps_the_space_between_the_scripts():
+    """Order 626, at the markup. The space rides the HEBREW run's leading edge.
+
+    Put it on the English run's trailing edge instead and the renderer — which
+    anchors every run by its end and walks right to left — paints it past the
+    right-hand end of the line, where nothing else is: the two words print
+    welded together and the line sits a space-width in from its own margin.
+    """
+    import re
+    lat = os.path.join(HERE, "word-fonts", "Fredoka-Medium.ttf")
+    out = _wl(lines=["celebration של מדונה"], alt_font_path=lat)
+    assert _word_runs(out) == ["‫ של מדונה‬", "celebration"]
+    xs = [float(m) for m in re.findall(
+        r'<text x="([-\d.]+)"[^>]*font-family="HebWord(?:Alt)?"', out)][2:]
+    heb_x, lat_x = xs
+    assert lat_x > heb_x, "the English word opens the line, so it is RIGHTMOST"
+
+
+def test_without_a_latin_face_that_entry_reads_the_same_way_round():
+    """The one-face branch took the OTHER wrong turn: Chrome honours the base
+    direction of a single <text>, so an LTR base moved "celebration" to the far
+    LEFT and the same entry printed in two different word orders depending on
+    whether the owner had uploaded a second font."""
+    assert _word_runs(_wl(lines=["celebration של מדונה"])) == [
+        "‫celebration של מדונה‬"]
 
 
 # ---- wiring the second face into the renderer ------------------------------
@@ -3750,11 +3853,14 @@ def test_a_title_line_in_two_faces_is_one_text_with_a_tspan():
     box = {"x0": 0, "y0": 0, "x1": 400, "y1": 120}
     mixed = rp.title_block(box, ["PARTY לשירה"], "#000", "#000", CAFE, 0, 0,
                            False, rtl=True, alt_font_path=LATIN)
-    # The space travels with the run whose side of the line it sits on: this line
-    # READS left to right (it opens with Latin), so its edge neutrals resolve to
-    # that base — the same rule that stopped a break hyphen jumping to the wrong
-    # end of an English word (see _line_is_latin).
-    assert '<tspan font-family="TitleFontAlt">PARTY </tspan>' in mixed, mixed
+    # The space travels with the run on the side of the line its BASE puts it:
+    # this line mixes the two scripts, so it reads in the direction the title
+    # itself was set in (``rtl=True`` here), and the space between the scripts
+    # falls to the Hebrew run — see ``_line_base_rtl``. Which tspan a space
+    # ends up in is invisible on a title, where Chrome does the ordering inside
+    # one <text>; it is the WORD lines, whose runs the renderer places itself,
+    # that the rule exists for.
+    assert '<tspan font-family="TitleFontAlt">PARTY</tspan>' in mixed, mixed
     # one <text> per line per paint layer, as before — the tspan adds no element
     assert mixed.count("<textPath") == mixed.count("</textPath")
 
