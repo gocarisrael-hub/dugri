@@ -90,4 +90,39 @@ describe('and a route home that needs no message at all', () => {
     expect(body).not.toContain('clearTimeout(payWatchTimer)');
     expect(body).not.toContain('payAwaiting = false');
   });
+
+  // …AND IT REPORTS THE SALE. This is now the primary way home for the buyers
+  // the change rescues, so a silent one would go on under-reporting the very
+  // funnel step the fix exists to repair. The behaviour is asserted in
+  // tests/e2e/pay-handoff.spec.js; this is the guard against it being dropped.
+  it('fires the same funnel event the message path fires', () => {
+    const fn = html.slice(html.indexOf('function watchForPayment'));
+    const body = fn.slice(0, fn.indexOf('function openPayFrame'));
+    expect(body).toContain("track('card_pay_done')");
+  });
+
+  // render() tears down a focused word editor, and the detach fires
+  // blur → commit with half-typed text. The five-second background poll has
+  // always skipped a refresh for that reason; this watcher outlives the modal by
+  // up to ten minutes, so it has to skip one too.
+  it('does not re-render on top of a word being edited', () => {
+    const fn = html.slice(html.indexOf('function watchForPayment'));
+    const body = fn.slice(0, fn.indexOf('function openPayFrame'));
+    expect(body).toContain('if (wordEditOpen)');
+  });
+
+  // THE DELIVERY UPGRADE OPENS THE SAME MODAL, on an order that is already paid
+  // (db.shippingUpgrade refuses with 'no paid order' otherwise). An unconditional
+  // watcher would see isPaid() on its first tick and blank the live gateway
+  // frame 2.5 seconds in, so the upgrade could never be bought.
+  it('arms the watcher only for the charge that is being waited on', () => {
+    const fn = html.slice(html.indexOf('function openPayFrame'));
+    const body = fn.slice(0, fn.indexOf('function releasePaySession'));
+    expect(body).toContain('watchForPaid');
+    expect(body).toContain('!isPaid()');
+    // The checkout asks for it; the shipping upgrade's openPayFrameRef call
+    // does not, and must not.
+    expect(html).toContain('openPayFrame(res.url, { watchForPaid: true })');
+    expect(html).toContain('openPayFrameRef(res.url)');
+  });
 });

@@ -45,6 +45,33 @@ async function cardPaymentAvailable(page, id) {
   });
 }
 
+// GA events are pushed to window.dataLayer, and the last thing the handoff does
+// is navigate to the confirmation page — which wipes it. Mirror every event name
+// into sessionStorage (same origin, survives the navigation) so the funnel step
+// can still be read once the buyer has landed.
+async function recordEvents(page) {
+  await page.addInitScript(() => {
+    const layer = (window.dataLayer = window.dataLayer || []);
+    const push = layer.push.bind(layer);
+    layer.push = (...args) => {
+      try {
+        const a = args[0];
+        if (a && a[0] === 'event') {
+          const seen = JSON.parse(sessionStorage.getItem('e2e:ga') || '[]');
+          seen.push(a[1]);
+          sessionStorage.setItem('e2e:ga', JSON.stringify(seen));
+        }
+      } catch {
+        /* private mode */
+      }
+      return push(...args);
+    };
+  });
+}
+
+const recordedEvents = (page) =>
+  page.evaluate(() => JSON.parse(sessionStorage.getItem('e2e:ga') || '[]'));
+
 async function openPayment(page, frameUrl) {
   await page.route('**/pay/init', (route) =>
     route.fulfill({
@@ -118,6 +145,7 @@ test.describe('the way out of a card payment', () => {
       await route.fulfill({ response: resp, json: body });
     });
 
+    await recordEvents(page);
     await page.goto(`/collect.html?c=${id}&k=${owner_token}`);
     // about:blank never says anything to anyone.
     await openPayment(page, 'about:blank');
@@ -125,6 +153,12 @@ test.describe('the way out of a card payment', () => {
 
     paid = true;
     await page.waitForURL(/pay-success\.html/, { timeout: 20000 });
+
+    // AND IT REPORTS THE SALE. This route home is the primary one for exactly
+    // the buyers this change rescues, so a silent one would go on
+    // under-reporting the funnel step the whole fix exists to repair — the
+    // postMessage path and the free-coupon path both fire it.
+    expect(await recordedEvents(page)).toContain('card_pay_done');
   });
 
   test('and it still finishes after the buyer closes the window by hand', async ({
@@ -149,5 +183,77 @@ test.describe('the way out of a card payment', () => {
     // They had already paid — the commonest shape of the original bug.
     paid = true;
     await page.waitForURL(/pay-success\.html/, { timeout: 20000 });
+  });
+
+  // THE SAME MODAL SELLS A SECOND THING, and it is sold on an order that is
+  // ALREADY PAID — db.shippingUpgrade refuses with 'no paid order' otherwise.
+  // A watcher armed here would therefore see isPaid() on its very first tick,
+  // blank the live PeleCard frame and march the buyer off to the confirmation
+  // page 2.5 seconds after the window opened, and the upgrade could never be
+  // bought at all.
+  test('the delivery upgrade keeps its payment window', async ({ page, request }) => {
+    const { id, owner_token } = await seedOrder(request, uniq('upgrade'));
+    await page.route(`**/api/collections/${id}?**`, async (route) => {
+      const resp = await route.fetch();
+      const body = await resp.json();
+      body.card_enabled = true;
+      body.paid = true; // the upgrade is only ever offered on a paid order
+      body.shipping_upgrade = { offered: true, reason: null, fee: 39, paid: false, address: null };
+      await route.fulfill({ response: resp, json: body });
+    });
+    // Inert on purpose: the real pay-done.html announces itself the moment it
+    // loads, which would be a race rather than a test.
+    await page.route('**/shipping/init**', (route) =>
+      route.fulfill({ json: { url: 'about:blank#dugri-upgrade', charged: 39 } })
+    );
+
+    await page.goto(`/collect.html?c=${id}&k=${owner_token}`);
+    await page.getByTestId('tab-finish').click();
+    await page.getByTestId('ship-add-summary').click();
+    await page.getByTestId('ship-street').fill('הרצל 12');
+    await page.getByTestId('ship-city').fill('תל אביב');
+    await page.getByTestId('ship-postal').fill('6100000');
+    await page.getByTestId('ship-add-btn').click();
+    await expect(page.locator('#payModal')).toBeVisible();
+
+    // Past the first tick, and the second. The window must still be the live
+    // gateway window, and the buyer must still be on their collection.
+    await page.waitForTimeout(6000);
+    await expect(page.locator('#payModal')).toBeVisible();
+    await expect(page.locator('#payFrame')).toHaveAttribute('src', 'about:blank#dugri-upgrade');
+    expect(page.url()).toContain('collect.html');
+  });
+
+  // The watcher goes on running for up to ten minutes after the modal closed,
+  // which is precisely when the owner is back on her words fixing one. render()
+  // detaches the focused editor, and a detach fires blur → commit: her
+  // half-typed text would be saved over the word. The five-second background
+  // poll has always stepped around this; so must the watcher.
+  test('a word being edited survives the watcher', async ({ page, request }) => {
+    const { id, owner_token } = await seedOrder(request, uniq('editing'));
+    await request.post(`/api/collections/${id}/words`, { data: { words: ['הדייט מטבריה'] } });
+    await cardPaymentAvailable(page, id);
+
+    await page.goto(`/collect.html?c=${id}&k=${owner_token}`);
+    // Arm the watcher the buyer's own way, then close the window by hand.
+    await openPayment(page, 'about:blank');
+    await expect(page.locator('#payModal')).toBeVisible();
+    await page.locator('#payModalClose').click();
+    await expect(page.locator('#payModal')).toBeHidden();
+
+    await page.getByTestId('tab-words').click();
+    await page.locator('.word', { hasText: 'הדייט מטבריה' }).getByTestId('word-text').click();
+    const editor = page.getByTestId('word-edit-input');
+    await expect(editor).toBeVisible();
+    await editor.fill('הדייט מטב'); // mid-correction, nothing committed
+
+    // Three watcher ticks.
+    await page.waitForTimeout(8000);
+    await expect(editor).toBeVisible();
+    await expect(editor).toHaveValue('הדייט מטב');
+
+    // And nothing was written behind her back.
+    const stored = await request.get(`/api/collections/${id}`).then((r) => r.json());
+    expect(stored.words.map((w) => w.text)).toEqual(['הדייט מטבריה']);
   });
 });

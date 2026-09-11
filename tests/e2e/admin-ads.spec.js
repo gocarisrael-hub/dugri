@@ -185,6 +185,10 @@ test.describe('the ad report', () => {
       await route.fulfill({ response: resp, json: body });
     });
     await page.goto(`/admin-ads.html?key=${KEY}`);
+    // The builder hands out nothing until the server has said what the site's
+    // address is, and the copy button going live is how it says so. Waiting on
+    // that is also what stops this test racing the report request.
+    await expect(page.getByTestId('copy-ad-link')).toBeEnabled();
     await page.locator('#bCampaign').fill('bio');
 
     const link = await page.getByTestId('ad-link').inputValue();
@@ -193,8 +197,57 @@ test.describe('the ad report', () => {
     expect(link).toContain('utm_medium=bio');
   });
 
+  // PUBLIC_BASE_URL is typed by hand into Railway and nothing validates it on the
+  // way in (paymentBaseUrl only trims trailing slashes), so a value with no
+  // scheme is a plausible thing to find there — and this page is the one asking
+  // the owner to go and change that variable. new URL() throws on it, and thrown
+  // inside loadReport's try it would be swallowed into "טעינה נכשלה" and take the
+  // WHOLE report down, tiles and rows and all, over a link builder.
+  test('a malformed PUBLIC_BASE_URL costs the link, not the report', async ({ page }) => {
+    const campaign = unique('malformed');
+    await arriveAt(
+      page,
+      `/index.html?utm_source=instagram&utm_medium=paid&utm_campaign=${campaign}`
+    );
+    await page.route('**/api/admin/ads?*', async (route) => {
+      const resp = await route.fetch();
+      const body = await resp.json();
+      body.base_url = 'dugri-israel.co.il'; // no scheme
+      await route.fulfill({ response: resp, json: body });
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+
+    // The report is the point of the page, and it is all still there.
+    await expect(rowFor(page, campaign)).toBeVisible();
+    await expect(page.locator('#tiles')).not.toBeEmpty();
+    await expect(page.locator('#main')).not.toContainText('טעינה נכשלה');
+
+    // The link is the part that cannot be built, and it says which setting is
+    // wrong rather than quietly handing back a link to the wrong host.
+    await expect(page.getByTestId('ad-link')).toHaveValue('');
+    await expect(page.getByTestId('copy-ad-link')).toBeDisabled();
+    await expect(page.locator('#bStatus')).toContainText('PUBLIC_BASE_URL');
+  });
+
+  // A transient failure used to leave the builder silently resolving against
+  // this page's own origin for the rest of the session — emitting
+  // *.up.railway.app links with nothing on screen saying so, which is the exact
+  // bug the base_url handover was added to stop.
+  test('a failed report leaves no wrong-host link to copy', async ({ page }) => {
+    await page.route('**/api/admin/ads?*', (route) =>
+      route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"boom"}' })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.locator('#main')).toContainText('טעינה נכשלה');
+
+    await page.locator('#bCampaign').fill('bio');
+    await expect(page.getByTestId('ad-link')).toHaveValue('');
+    await expect(page.getByTestId('copy-ad-link')).toBeDisabled();
+  });
+
   test('the manual builder still writes a link for the bio and the stories', async ({ page }) => {
     await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('copy-ad-link')).toBeEnabled();
     const campaign = unique('bio');
     await page.locator('#bCampaign').fill(campaign.toUpperCase() + ' סתיו');
     const link = await page.getByTestId('ad-link').inputValue();

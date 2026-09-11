@@ -6798,6 +6798,19 @@
             return;
           }
           payWatchTimer = setTimeout(() => {
+            // Not while a word is being edited. render() tears the focused
+            // editor down, and a detach fires blur → commit with half-typed
+            // text — the silent data loss the five-second background poll
+            // already steps around (see the init at the foot of this file).
+            // This watcher goes on running for up to ten minutes AFTER the
+            // modal closed, which is exactly when the owner has gone back to
+            // the words and started correcting one, so it has to step around it
+            // too. Nothing is lost by waiting: the next tick is 2.5s away and a
+            // paid order stays paid.
+            if (wordEditOpen) {
+              watchForPayment(tries + 1);
+              return;
+            }
             refresh()
               .catch(() => {})
               .then(() => {
@@ -6805,6 +6818,11 @@
                 if (isPaid()) {
                   payAwaiting = false;
                   closeModal();
+                  // The same funnel step the postMessage path reports. This is
+                  // now the PRIMARY way home for the buyers this change exists
+                  // to rescue, so omitting it here would go on under-reporting
+                  // the very metric the fix is for.
+                  track('card_pay_done');
                   goPaySuccess();
                   return;
                 }
@@ -6813,12 +6831,22 @@
           }, 2500);
         }
 
-        function openPayFrame(url) {
+        // ONLY THE CHECKOUT'S OWN CHARGE ARMS THE WATCHER — hence `watchForPaid`.
+        //
+        // The delivery upgrade opens this very same modal, and it is only ever
+        // offered on an order that is ALREADY paid (db.shippingUpgrade refuses
+        // with 'no paid order' otherwise). A watcher armed from there would see
+        // isPaid() on its first tick, blank the live PeleCard frame and send the
+        // buyer to the confirmation page two and a half seconds after the window
+        // opened — so the upgrade could never be bought at all. isPaid() is
+        // re-checked here as well: a caller that forgets the flag still cannot
+        // arm a watcher that has nothing left to wait for.
+        function openPayFrame(url, { watchForPaid = false } = {}) {
           frame.src = url;
           modal.classList.remove('hidden');
           // From here until the order is paid (or ten minutes pass), this page
           // is responsible for noticing on its own.
-          if (!payAwaiting) {
+          if (watchForPaid && !payAwaiting && !isPaid()) {
             payAwaiting = true;
             watchForPayment();
           }
@@ -7015,7 +7043,7 @@
             } catch (e) {
               /* private mode — the in-iframe path passes ?back= explicitly */
             }
-            openPayFrame(res.url);
+            openPayFrame(res.url, { watchForPaid: true });
           } catch (err) {
             if (err.status === 400 && appliedCoupon) {
               // A coupon was sent and re-validated server-side as no longer valid.
