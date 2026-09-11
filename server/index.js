@@ -2465,6 +2465,81 @@ app.put('/api/admin/stock', express.json({ limit: '8kb' }), (req, res) => {
   res.json(db.stockSnapshot(designs));
 });
 
+// EVERYTHING THAT HAPPENS WHEN AN ORDER BECOMES READY, in one place.
+//
+// Extracted because there are now two ways to press it — one row, or the whole
+// בדפוס pile at once — and a customer's experience must not depend on which
+// button the owner used. Anything added here (a third medium, a stock rule)
+// reaches both by construction; two copies would have drifted the first time
+// one of them was edited.
+//
+// Returns what was actually done, so the batch can report itself honestly
+// instead of claiming a number it did not achieve — which is why the mail is
+// AWAITED here rather than fired and forgotten.
+async function applyOrderReady(id, ready, changed) {
+  const done = { stock: false, emailed: false, sms: null };
+  // The shelf. Marking an order ready is the moment the deck is packed, so this
+  // is where a board, a box and a note physically leave — and un-marking a row
+  // pressed by mistake puts back exactly what that press took (db.applyOrderStock
+  // reverses its own record, never a recomputation). Only on a REAL transition,
+  // and never allowed to fail the press: this is the step that emails the
+  // customer, and a bookkeeping error must not stand in the way of it.
+  if (changed) {
+    try {
+      db.applyOrderStock(id, ready, stockDesigns());
+      done.stock = true;
+    } catch (e) {
+      console.warn('[stock] could not update:', (e && e.message) || e);
+    }
+  }
+  if (ready && changed) {
+    const fresh = db.getCollection(id);
+    // The SMS first: enqueue is a local write, so a mail server that is slow or
+    // unreachable cannot hold up the text the customer is owed.
+    done.sms = queueReadySms(fresh);
+    // …then the mail, AWAITED, so `emailed` is what HAPPENED and not what was
+    // attempted. Resend rate-limits, times out and refuses unsubscribed
+    // addresses; a batch that fires eleven of these at once and assumes they
+    // all landed would tell the owner eleven customers were told while some of
+    // them heard nothing — the exact failure this button exists to prevent.
+    // sendOrderReady already swallows its own errors and answers false; the
+    // try/catch is for the caller that replaced it with something that throws.
+    if (typeof notify.sendOrderReady === 'function') {
+      try {
+        done.emailed = Boolean(await notify.sendOrderReady(fresh, paymentBaseUrl()));
+      } catch (e) {
+        console.warn('[notify] order-ready mail failed:', (e && e.message) || e);
+      }
+    }
+  }
+  return done;
+}
+
+// Will an order-ready MAIL actually go out? Both halves of the answer: the
+// owner's per-message switch (settings.emailEnabled) and whether email is
+// configured at all. The confirmation dialog promises mail on the strength of
+// this, so it must be the same question notify.sendOrderReady asks itself.
+function orderReadyEmailArmed() {
+  try {
+    return Boolean(notify.isConfigured() && settings.emailEnabled('order_ready'));
+  } catch {
+    return false;
+  }
+}
+
+// Will a TEXT actually go out? The master switch AND a template with something
+// in it — queueReadySms returns null on either, so a dialog that checked only
+// the switch would promise a text that an emptied template silently drops.
+function orderReadySmsArmed() {
+  try {
+    return Boolean(
+      settings.get('sms', 'enabled') && String(settings.get('sms', 'order_ready') || '').trim()
+    );
+  } catch {
+    return false;
+  }
+}
+
 app.post('/api/admin/collections/:id/ready', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const ready = !(req.body && req.body.undo);
@@ -2476,29 +2551,12 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
       message: 'צריך קודם לסמן שההזמנה נשלחה לדפוס.',
     });
   }
-  // The shelf. Marking an order ready is the moment the deck is packed, so this
-  // is where a board, a box and a note physically leave — and un-marking a row
-  // pressed by mistake puts back exactly what that press took (db.applyOrderStock
-  // reverses its own record, never a recomputation). Only on a REAL transition,
-  // and never allowed to fail the press: this is the step that emails the
-  // customer, and a bookkeeping error must not stand in the way of it.
-  if (r.changed) {
-    try {
-      db.applyOrderStock(req.params.id, ready, stockDesigns());
-    } catch (e) {
-      console.warn('[stock] could not update:', (e && e.message) || e);
-    }
-  }
-  if (ready && r.changed) {
-    const fresh = db.getCollection(req.params.id);
-    if (typeof notify.sendOrderReady === 'function') {
-      notify.sendOrderReady(fresh, paymentBaseUrl()).catch(() => {});
-    }
-    // …and the SMS, queued for the phone to collect. Same moment, same order,
-    // different medium — and enqueue is a local write, so a gateway that is
-    // asleep cannot slow this response down or fail the press.
-    queueReadySms(fresh);
-  }
+  // Not awaited, deliberately: the stock move and the SMS are synchronous, and
+  // one row's answer must not wait on a mail server. The batch below DOES wait,
+  // because there the send result IS the report.
+  applyOrderReady(req.params.id, ready, r.changed).catch((e) => {
+    console.warn('[orders] ready follow-up failed:', (e && e.message) || e);
+  });
   res.json({
     ok: true,
     ready: !!r.order.ready_at,
@@ -2506,6 +2564,129 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
     // Both tallies, recomputed from the orders so the buttons and the numbers
     // can never drift apart — this flip moves the order out of "at Galor" as
     // well as into "printed".
+    sent_to_print_count: db.countSentToPrintOrders(),
+    ready_count: db.countReadyOrders(),
+  });
+});
+
+// --- the whole בדפוס pile, in one press ---------------------------------------
+//
+// The batch the owner actually works in: a run comes back from Galor and every
+// box in it becomes ready within the same minute. Pressing eleven rows one at a
+// time is eleven chances to miss one — and a missed row is a customer who never
+// hears that her game is waiting.
+//
+// WHAT IT TAKES: exactly what the בדפוס chip shows — paid, not cancelled, sent
+// to print, not yet ready. Both kinds, deliberately: a delivery order becomes
+// ready at the same moment as a pickup one, and leaving it behind would only
+// mean pressing it by hand afterwards. Each one goes through the SAME step a
+// single row does (applyOrderReady), so the email, the SMS and the stock all
+// behave exactly as they do today.
+//
+// WHAT IT DOES NOT DO: book a courier. That is a real van and a real charge, and
+// it stays a button pressed per order — the same rule the sticker sheet follows.
+function batchReadyCandidates() {
+  return db
+    .listAllCollections()
+    .filter((c) => {
+      const o = c.order;
+      if (!o || c.cancelled) return false;
+      if (!o.paid) return false;
+      return !!o.sent_to_print_at && !o.ready_at;
+    })
+    .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')));
+}
+
+// One candidate, described for the confirmation dialog. The owner is about to
+// text real people; she is shown who, and — just as importantly — who will get
+// nothing because we hold no mobile for them.
+function batchReadyRow(c) {
+  const version = String((c.order && c.order.version) || '');
+  return {
+    id: c.id,
+    order_no: db.orderRef(c),
+    honoree: c.honoree_name || '',
+    // The order's REAL version, not "delivery or else pickup". A pdf and a
+    // custom order travel this same pipeline — db.applyOrderStock says so in
+    // as many words — and calling a digital sale self-pickup tells the owner
+    // she is sending two people to גלאור when one of them is waiting on a file.
+    kind: ['delivery', 'pickup', 'pdf', 'custom'].includes(version) ? version : 'other',
+    // The number as the GATEWAY will read it, not merely "something was typed
+    // in the phone field". sms.enqueue puts every number through ilMobile(),
+    // which soft-fails anything that is not an Israeli mobile — so a landline
+    // counted as "will get a text" would be left off the call-by-hand list,
+    // which is the one list this dialog exists to produce.
+    has_phone: Boolean(sms.ilMobile(c && c.owner_phone)),
+  };
+}
+
+// The preview. Read-only and separate from the press on purpose: a button that
+// blasts messages on its first click is a button that gets clicked by accident.
+app.get('/api/admin/orders/ready-batch', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const rows = batchReadyCandidates().map(batchReadyRow);
+  const kinds = { pickup: 0, delivery: 0, pdf: 0, custom: 0, other: 0 };
+  for (const r of rows) kinds[r.kind] += 1;
+  res.json({
+    orders: rows,
+    count: rows.length,
+    pickup: kinds.pickup,
+    delivery: kinds.delivery,
+    // Every kind in the pile, so the dialog can say "2 self-pickup · 1 digital"
+    // rather than filing the file under the boxes.
+    kinds,
+    // Named rather than counted: "3 without a phone" sends her hunting; three
+    // order numbers tell her which three to call.
+    no_phone: rows.filter((r) => !r.has_phone).map((r) => r.order_no),
+    // What will ACTUALLY be sent. The dialog is the last thing she reads before
+    // an action that cannot be taken back, so both answers come from the same
+    // gates the senders themselves use — a switched-off template must not be
+    // described as "everyone gets a mail".
+    sms_enabled: orderReadySmsArmed(),
+    email_enabled: orderReadyEmailArmed(),
+  });
+});
+
+app.post('/api/admin/orders/ready-batch', async (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const done = [];
+  const failed = [];
+  const emailArmed = orderReadyEmailArmed();
+  // ONE AT A TIME, and each send awaited — the pattern every other bulk sender
+  // here follows (the reminder scans). Eleven mails fired at once is eleven
+  // chances to trip Resend's rate limit, and a swallowed rejection would leave
+  // the owner reading "11 marked ready" while a customer sits waiting.
+  for (const c of batchReadyCandidates()) {
+    const row = batchReadyRow(c);
+    // Each order is marked through the store's own gate, so the batch cannot do
+    // anything a single press could not — and one order that refuses (a race
+    // with another tab, a row cancelled a second ago) never stops the rest.
+    let r = null;
+    try {
+      r = db.setOrderReady(c.id, true);
+    } catch (e) {
+      r = { error: String((e && e.message) || e) };
+    }
+    if (!r || r.error || !r.changed) {
+      failed.push({ ...row, error: (r && r.error) || 'unchanged' });
+      continue;
+    }
+    const applied = await applyOrderReady(c.id, true, true);
+    done.push({ ...row, sms_queued: Boolean(applied.sms), emailed: Boolean(applied.emailed) });
+  }
+  res.json({
+    ok: true,
+    marked: done.length,
+    sms_queued: done.filter((d) => d.sms_queued).length,
+    emailed: done.filter((d) => d.emailed).length,
+    // The orders that were marked ready and whose mail did NOT go — the ones
+    // she has to tell by hand. Empty when mail is switched off entirely: then
+    // nothing was attempted, and naming every row would be noise, not news.
+    not_emailed: emailArmed ? done.filter((d) => !d.emailed).map((d) => d.order_no) : [],
+    email_enabled: emailArmed,
+    sms_enabled: orderReadySmsArmed(),
+    orders: done,
+    failed,
     sent_to_print_count: db.countSentToPrintOrders(),
     ready_count: db.countReadyOrders(),
   });
