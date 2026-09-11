@@ -124,6 +124,13 @@
         font-size: 14px;
         font-weight: 600;
       }
+      /* Nothing to copy yet: the site's public address has not arrived, or could
+         not be read. Saying so with the cursor and the ink stops the button
+         reading as broken. */
+      button[disabled] {
+        cursor: not-allowed;
+        opacity: 0.45;
+      }
       button.on {
         background: var(--pink);
         border-color: var(--pink);
@@ -680,14 +687,77 @@
           .replace(/[^a-z0-9_\-\u0590-\u05ff]+/g, '_')
           .replace(/^_+|_+$/g, '');
 
+      // The site's real public address, handed over by the server with the report.
+      // It cannot be taken from the address this page is open at: the owner
+      // reaches the admin through the Railway hostname as often as through the
+      // real domain, and a link built there put *.up.railway.app into her
+      // Instagram bio. That link WORKS, which is the worst part — nothing would
+      // ever have said it was wrong. Falls back to this page's origin only when
+      // the server answers that it has no PUBLIC_BASE_URL to give.
+      //
+      // Empty until the server has answered. A link built before then would be
+      // the wrong-host link this builder was fixed to stop handing out, and it
+      // would look completely ordinary — so until the address arrives there is
+      // no link and the copy button is dead. `baseNote` says which of the three
+      // silences it is: still loading, the report failed, or the server's
+      // PUBLIC_BASE_URL is not a usable address.
+      const BASE_HINT = 'מדביקים את הקישור הזה במקום כתובת האתר הרגילה.';
+      let publicBase = '';
+      let baseNote = 'רגע, טוענים את כתובת האתר…';
+
       function buildLink() {
+        const out = qs('bOut');
+        const copy = qs('bCopy');
+        qs('bStatus').textContent = publicBase ? BASE_HINT : baseNote;
+        copy.disabled = !publicBase;
+        if (!publicBase) {
+          out.value = '';
+          return;
+        }
         const dest = qs('bDest').value;
-        const url = new URL(dest, location.origin);
+        const url = new URL(dest, publicBase);
         url.searchParams.set('utm_source', qs('bSource').value);
         url.searchParams.set('utm_medium', qs('bMedium').value);
         const campaign = slug(qs('bCampaign').value);
         if (campaign) url.searchParams.set('utm_campaign', campaign);
-        qs('bOut').value = url.toString();
+        out.value = url.toString();
+      }
+
+      // PUBLIC_BASE_URL is typed by hand into Railway and is not validated on the
+      // way in — paymentBaseUrl() only trims trailing slashes — so a value like
+      // `dugri-israel.co.il`, with no scheme, is a perfectly plausible thing to
+      // find here. new URL() throws on it, and thrown from inside loadReport's
+      // try that would take the WHOLE report down, tiles and rows and all, over
+      // a link builder. Say what is wrong with it instead, and name the setting.
+      function adoptBase(base) {
+        if (!base) {
+          // The server has none configured and says so. A working link to the
+          // wrong host still beats no link — but only because we were TOLD.
+          publicBase = location.origin;
+        } else {
+          let ok = false;
+          try {
+            ok = /^https?:$/.test(new URL(base).protocol);
+          } catch (e) {
+            ok = false;
+          }
+          publicBase = ok ? base : '';
+          if (!ok) baseNote = 'כתובת האתר שבהגדרות השרת (PUBLIC_BASE_URL) אינה תקינה.';
+        }
+        buildLink();
+      }
+
+      // The report failed. The builder is left with nothing rather than falling
+      // back to this page's own origin, which would quietly go back to emitting
+      // *.up.railway.app links — the exact failure it was fixed to stop.
+      //
+      // An address that HAS already arrived is kept: a later range refresh
+      // failing does not un-know what the site is called, and blanking a good
+      // link she may be halfway through copying would help nobody.
+      function baseUnavailable() {
+        if (publicBase) return;
+        baseNote = 'לא הצלחנו לקרוא את כתובת האתר מהשרת. רעננו את הדף.';
+        buildLink();
       }
 
       async function copyFrom(fieldId, statusId, done) {
@@ -1093,6 +1163,7 @@
         try {
           const data = await api('/api/admin/ads?days=' + days);
           if (seq !== reportSeq) return;
+          adoptBase(data.base_url); // rebuild what is on screen against the real domain
           renderTiles(data.totals);
           renderRows(data.rows);
           // Meta's half is loaded after ours and never blocks it: it is a call
@@ -1100,7 +1171,10 @@
           // our own numbers off the screen.
           loadMeta(seq);
         } catch (e) {
-          if (seq === reportSeq) fail(e.message);
+          if (seq === reportSeq) {
+            baseUnavailable();
+            fail(e.message);
+          }
         }
       }
 

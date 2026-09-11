@@ -83,7 +83,20 @@
         var inFrame = false;
         try {
           inFrame = !!window.parent && window.parent !== window;
-          if (inFrame) window.parent.postMessage({ type: 'dugri-pay', ok: ok }, location.origin);
+          // TARGETED AT '*', DELIBERATELY. PeleCard returns here at the address
+          // in PUBLIC_BASE_URL, which is not necessarily the address the buyer
+          // is browsing — and when the two differ, naming our OWN origin as the
+          // target means the browser silently refuses to deliver. That failure
+          // has no error and no symptom on this side: the buyer pays, this page
+          // says "returning you…", and the checkout behind it never hears.
+          //
+          // '*' is safe for THIS message and only this one: it carries a type
+          // and a boolean, no order id, no token, no amount. A page that
+          // embedded us would learn that a payment inside its own frame
+          // finished, which it already knows. The receiving side does the real
+          // check — it verifies the message came from the window it opened
+          // (e.source), which no third party can forge.
+          if (inFrame) window.parent.postMessage({ type: 'dugri-pay', ok: ok }, '*');
         } catch (e) {
           /* no-op */
         }
