@@ -4,8 +4,9 @@ import { test, expect } from '@playwright/test';
 //
 // The server half is covered by tests/unit/ready-batch.test.js against real paid
 // orders. What can only be checked here is the part she actually touches: that
-// the button appears with the right count, that the dialog tells her the truth
-// about what is about to happen, and that nothing is sent when she says no.
+// the button appears with the right count, on the right section, that the dialog
+// tells her the truth about what is about to happen, and that nothing is sent
+// when she says no.
 //
 // Orders are injected on their way to the page rather than created paid: the
 // E2E server runs without card credentials on purpose, so no order can become
@@ -86,29 +87,94 @@ const PREVIEW = {
   orders: [],
 };
 
+// The two filter rows. Chips carry their count in their label ("בדפוס (2)"), so
+// they are picked by data-filter rather than by text.
+const stageChip = (page, id) => page.locator(`#tabs-stage button[data-filter="${id}"]`);
+const payChip = (page, id) => page.locator(`#tabs button[data-filter="${id}"]`);
+
+// הכל מוכן lives on the בדפוס chip and nowhere else: it empties that stage, so it
+// is drawn only while the table shows it. Every test that presses it opens that
+// section first, the way the owner does.
+async function openOnPrinting(page) {
+  await page.goto(`/admin.html?key=${KEY}`);
+  await stageChip(page, 'printing').click();
+  await expect(stageChip(page, 'printing')).toHaveClass(/active/);
+}
+
 test.describe('marking the whole בדפוס pile ready', () => {
   test('the button carries its count and is hidden when there is nothing to press', async ({
     page,
   }) => {
     await stagePile(page, { pickup: 1, delivery: 1 });
-    await page.goto(`/admin.html?key=${KEY}`);
+    await openOnPrinting(page);
     const btn = page.getByTestId('batch-ready');
     await expect(btn).toBeVisible();
     await expect(btn).toContainText('2');
 
-    // Nothing in בדפוס: no button at all, rather than one whose only answer is
-    // "there was nothing to press".
+    // Nothing in בדפוס: no button at all, even on its own section, rather than
+    // one whose only answer is "there was nothing to press".
     await page.unroute('**/api/admin/collections*');
     await stagePile(page, { pickup: 0, delivery: 0 });
     await page.reload();
+    await stageChip(page, 'printing').click();
+    await expect(stageChip(page, 'printing')).toHaveClass(/active/);
     await expect(page.getByTestId('batch-ready')).toBeHidden();
+  });
+
+  // The button empties the בדפוס stage, so it is drawn on that chip and no
+  // other. On הכל, or on any other stage, the table is showing rows the button
+  // does not press on — and it used to sit there anyway.
+  test('the button is shown on the בדפוס section and hidden on every other', async ({ page }) => {
+    await stagePile(page);
+    await page.goto(`/admin.html?key=${KEY}`);
+    // Loaded, with a pile to press on: the chip counts it.
+    await expect(stageChip(page, 'printing')).toContainText('(2)');
+    const btn = page.getByTestId('batch-ready');
+
+    // The default view is every stage at once — not the button's section.
+    await expect(stageChip(page, 'all')).toHaveClass(/active/);
+    await expect(btn).toBeHidden();
+
+    for (const other of ['collecting', 'to-produce', 'to-print', 'ready', 'cancelled']) {
+      await stageChip(page, other).click();
+      await expect(stageChip(page, other)).toHaveClass(/active/);
+      await expect(btn, `shown on the ${other} stage`).toBeHidden();
+    }
+
+    // Its own section: there at once, with the count, no reload needed.
+    await stageChip(page, 'printing').click();
+    await expect(btn).toBeVisible();
+    await expect(page.locator('#batchReadyCount')).toHaveText('2');
+
+    // …and gone again the moment she moves off it.
+    await stageChip(page, 'all').click();
+    await expect(btn).toBeHidden();
+  });
+
+  // בדפוס with לידים shows the unpaid orders at the printer, and the pile is
+  // paid orders only — so on that pair the button would act entirely on rows
+  // the table is not showing.
+  test('on בדפוס the payment row keeps it only while the pile is on screen', async ({ page }) => {
+    await stagePile(page);
+    await openOnPrinting(page);
+    const btn = page.getByTestId('batch-ready');
+    await expect(btn).toBeVisible();
+
+    await payChip(page, 'leads').click();
+    await expect(payChip(page, 'leads')).toHaveClass(/active/);
+    await expect(btn).toBeHidden();
+
+    await payChip(page, 'paid').click();
+    await expect(btn).toBeVisible();
+    await payChip(page, 'all').click();
+    await expect(btn).toBeVisible();
   });
 
   test('the dialog says how many, of which kind, and who will get no text', async ({ page }) => {
     const pressed = { count: 0 };
     await stagePile(page);
     await stageBatchApi(page, { preview: PREVIEW, pressed });
-    await page.goto(`/admin.html?key=${KEY}`);
+    await openOnPrinting(page);
 
     let asked = '';
     page.on('dialog', (d) => {
@@ -134,7 +200,7 @@ test.describe('marking the whole בדפוס pile ready', () => {
     const pressed = { count: 0 };
     await stagePile(page);
     await stageBatchApi(page, { preview: PREVIEW, pressed });
-    await page.goto(`/admin.html?key=${KEY}`);
+    await openOnPrinting(page);
 
     const messages = [];
     page.on('dialog', (d) => {
@@ -158,7 +224,7 @@ test.describe('marking the whole בדפוס pile ready', () => {
     const pressed = { count: 0 };
     await stagePile(page);
     await stageBatchApi(page, { preview: { ...PREVIEW, sms_enabled: false }, pressed });
-    await page.goto(`/admin.html?key=${KEY}`);
+    await openOnPrinting(page);
 
     let asked = '';
     page.on('dialog', (d) => {
@@ -176,7 +242,7 @@ test.describe('marking the whole בדפוס pile ready', () => {
     const pressed = { count: 0 };
     await stagePile(page);
     await stageBatchApi(page, { preview: { ...PREVIEW, email_enabled: false }, pressed });
-    await page.goto(`/admin.html?key=${KEY}`);
+    await openOnPrinting(page);
 
     let asked = '';
     page.on('dialog', (d) => {
@@ -197,7 +263,7 @@ test.describe('marking the whole בדפוס pile ready', () => {
       preview: { ...PREVIEW, email_enabled: false, sms_enabled: false },
       pressed,
     });
-    await page.goto(`/admin.html?key=${KEY}`);
+    await openOnPrinting(page);
 
     let asked = '';
     page.on('dialog', (d) => {
@@ -224,7 +290,7 @@ test.describe('marking the whole בדפוס pile ready', () => {
       },
       pressed,
     });
-    await page.goto(`/admin.html?key=${KEY}`);
+    await openOnPrinting(page);
 
     let asked = '';
     page.on('dialog', (d) => {
