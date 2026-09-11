@@ -414,26 +414,6 @@
           זה קליק מאינסטגרם עדיין נספר (לפי <code>fbclid</code>), אבל בלי שם קמפיין.
         </p>
 
-        <h2>שמות קמפיינים בטבלה שלנו (לא חובה)</h2>
-        <div class="builder">
-          <p class="hint" style="margin-top: 0">
-            הטבלה של מטא למעלה כבר מראה כל מודעה בשם שלה, בלי לעשות כלום. השורה הזאת נחוצה רק אם
-            רוצים שגם <strong>הספירה שלנו</strong> תדע לפי איזו מודעה הגיעה כל הזמנה. מדביקים אותה
-            בשדה <code>URL parameters</code> של מודעה (תחת Tracking), והיא נגררת אוטומטית לכל מודעה
-            שמשכפלים ממנה. למטא אין דרך להחיל אותה על כל החשבון בבת אחת — לכן זה לא חובה, וכלום לא
-            נשבר בלעדיה.
-          </p>
-          <div class="out">
-            <input id="bAuto" type="text" readonly data-testid="auto-params" />
-            <button type="button" class="on" id="bAutoCopy" data-testid="copy-auto-params">
-              העתקה
-            </button>
-          </div>
-          <p class="hint" id="bAutoStatus">
-            בלי זה: קליק מאינסטגרם עדיין נספר אצלנו, פשוט בשורה אחת בשם meta / paid.
-          </p>
-        </div>
-
         <h2>קישור ידני — לביו, לסטורי, למשפיענית</h2>
         <div class="builder">
           <p class="hint" style="margin-top: 0">
@@ -665,19 +645,6 @@
       // names in it and one without.
       const B = ['bDest', 'bCampaign', 'bSource', 'bMedium'];
 
-      // THE ONE STRING. Meta substitutes each {{…}} as it delivers the ad, so a
-      // campaign names itself and nothing has to be typed per ad — which is the
-      // difference between a report with campaign names in it and one that is
-      // right in principle and empty in practice.
-      //
-      // {{site_source_name}} answers 'ig' or 'fb', spelled out again on our side
-      // so one platform stays one row. utm_medium is the only fixed value: Meta
-      // has no macro for "this cost money", and everything carrying these
-      // parameters is a paid placement by definition.
-      const AUTO_PARAMS =
-        'utm_source={{site_source_name}}&utm_medium=paid' +
-        '&utm_campaign={{campaign.name}}&utm_content={{ad.name}}&utm_term={{adset.name}}';
-
       // The ad platform strips nothing, so the value has to be link-safe before
       // it ever reaches a URL: spaces and punctuation become underscores.
       const slug = (v) =>
@@ -812,6 +779,29 @@
           live.textContent = text;
           live.className = 'hint' + (cls ? ' ' + cls : '');
         }
+      }
+
+      // The account field is shown only where it can do something. With one ad
+      // account behind the token — the owner's case — it is discovered, and a
+      // field asking which one is a question with one answer. And a refusal from
+      // Meta ("(#200) Missing Permissions") is fixed in the token's permissions;
+      // offering the field there sends her looking in the wrong place.
+      //
+      // Three things earn it a place:
+      // - the server listing accounts to choose between. It sends `accounts`
+      //   ONLY when it refuses to guess: several of them, or a list too long to
+      //   read whole (which it treats as several, and so does this);
+      // - an override already saved, which has to stay in view to be cleared —
+      //   a wrong one is exactly what makes Meta refuse;
+      // - the render a save caused. Clearing an override makes the field
+      //   irrelevant, and without this its "saved" message would vanish along
+      //   with it; the next reload puts it away.
+      function accountRelevant(data) {
+        return Array.isArray(data.accounts) || !!data.account_setting || accountSaved !== null;
+      }
+
+      function offerAccount(box, data) {
+        if (accountRelevant(data)) box.appendChild(accountPicker(data));
       }
 
       // The ad account this report is pinned to. Without a control the multi-
@@ -966,14 +956,16 @@
             )
           );
           // Several accounts behind one token: name them, AND let her pick one —
-          // naming them without a control is a dead end.
-          box.appendChild(accountPicker(data));
+          // naming them without a control is a dead end. Any other refusal
+          // gets the field only if an override is saved (see accountRelevant):
+          // the message above is the part she needs, and it stays.
+          offerAccount(box, data);
           return;
         }
         if (!data.rows.length) {
           box.appendChild(metaNote('אין מודעות שרצו בטווח הזה.'));
           box.appendChild(windowNote(data));
-          box.appendChild(accountPicker({ ...data, accounts: null }));
+          offerAccount(box, { ...data, accounts: null });
           return;
         }
 
@@ -1060,9 +1052,9 @@
         // built for an ad carries a campaign name — but that link travels, so
         // this is "almost always", not "certainly".
         //
-        // Printed plainly, with no warning colour. An owner who never pastes the
-        // optional tagging string — which this page itself describes as a normal
-        // way to run — would see a red line on every visit for ever, and a warning
+        // Printed plainly, with no warning colour. An owner who never tags her
+        // ads — the normal way to run, since Meta's table above names every ad
+        // by itself — would see a red line on every visit for ever, and a warning
         // that is always on is a warning she stops reading. It is also a
         // continuum: ₪501 against ₪499 is not a different situation from ₪499
         // against ₪501, and only a threshold would say it was.
@@ -1141,7 +1133,7 @@
             'העמודות המסומנות "מטא" הן הספירה שלה, וההזמנות בטבלה שמתחת הן שלנו — הפער בין השתיים הוא מידע, לא תקלה.'
           )
         );
-        box.appendChild(accountPicker({ ...data, accounts: null }));
+        offerAccount(box, { ...data, accounts: null });
       }
 
       function fail(message) {
@@ -1211,10 +1203,6 @@
           return;
         }
         qs('main').hidden = false;
-        qs('bAuto').value = AUTO_PARAMS;
-        qs('bAutoCopy').addEventListener('click', () =>
-          copyFrom('bAuto', 'bAutoStatus', 'הועתק ✓ להדביק בשדה URL parameters של המודעה במטא.')
-        );
         for (const id of B) qs(id).addEventListener('input', buildLink);
         qs('bCopy').addEventListener('click', () =>
           copyFrom('bOut', 'bStatus', 'הועתק ✓ אפשר להדביק במקום כתובת האתר.')
