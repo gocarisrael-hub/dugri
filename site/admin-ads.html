@@ -747,11 +747,15 @@
         buildLink();
       }
 
-      // The report failed. publicBase stays empty on purpose: reverting to this
-      // page's own origin would quietly go back to emitting *.up.railway.app
-      // links, which is the exact failure the builder was fixed to stop.
+      // The report failed. The builder is left with nothing rather than falling
+      // back to this page's own origin, which would quietly go back to emitting
+      // *.up.railway.app links — the exact failure it was fixed to stop.
+      //
+      // An address that HAS already arrived is kept: a later range refresh
+      // failing does not un-know what the site is called, and blanking a good
+      // link she may be halfway through copying would help nobody.
       function baseUnavailable() {
-        publicBase = '';
+        if (publicBase) return;
         baseNote = 'לא הצלחנו לקרוא את כתובת האתר מהשרת. רעננו את הדף.';
         buildLink();
       }
