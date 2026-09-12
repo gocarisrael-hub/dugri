@@ -6,6 +6,7 @@ Run: python3 generator/test_pack.py   (or via pytest)
 import csv
 import os
 import random
+import re
 import tempfile
 
 import pack
@@ -71,8 +72,10 @@ def test_standard_deck_is_103_word_cards_plus_the_photo_card():
     rows = _rows(out)
     assert len(rows) == cards, "one CSV row per printed card"
     assert sum(1 for r in rows if r["kind"] == "word") == pack.WORD_CARDS
-    # every word card is full — a standard deck has no blank slot anywhere
-    for r in rows[:-1]:
+    # every word card is full — a standard deck has no blank slot anywhere.
+    # Selected by KIND, not by position: the photo card has moved to the front
+    # of the deck and carries four blanks wherever it sits.
+    for r in (x for x in rows if x["kind"] == "word"):
         assert all(r[f"w{k}"] for k in range(1, 5)), f"blank slot in {r}"
 
 
@@ -90,18 +93,46 @@ def test_front_styles_are_spread_evenly_round_robin():
     assert sorted(counts.values(), reverse=True) == [13] * 7 + [12]
 
 
-def test_last_row_is_the_photo_card_and_carries_no_words():
+def test_first_row_is_the_photo_card_and_carries_no_words():
     out = _csv()
     pack.pack(_words(FULL), out)
-    last = _rows(out)[-1]
-    assert last["kind"] == "photo"
-    assert all(not last[f"w{k}"] for k in range(1, 5)), "photo card holds no words"
+    rows = _rows(out)
+    first = rows[0]
+    assert first["kind"] == "photo"
+    assert all(not first[f"w{k}"] for k in range(1, 5)), "photo card holds no words"
+    assert all(r["kind"] == "word" for r in rows[1:]), "and nothing else is one"
     # ...and the loader hands the renderer front=None, so it never indexes into
     # the theme's fronts list looking for a style the photo card doesn't have.
-    card = pack.load_cards(out)[-1]
+    card = pack.load_cards(out)[0]
     assert card["kind"] == "photo"
     assert card["front"] is None
     assert card["words"] == [""] * pack.PER_CARD
+
+
+def test_the_word_cards_keep_their_even_front_spread_behind_it():
+    # The photo card sits in front of the deal now. It carries no front of its
+    # own, and it must not push the word cards' cycling along by one.
+    out = _csv()
+    pack.pack(_words(FULL), out)
+    fronts = [int(r["front"]) for r in _rows(out) if r["kind"] == "word"]
+    assert fronts[:9] == [0, 1, 2, 3, 4, 5, 6, 7, 0], fronts[:9]
+    counts = sorted((fronts.count(i) for i in range(pack.FRONTS)), reverse=True)
+    assert counts == [13] * 7 + [12], counts
+
+
+def test_a_csv_with_no_front_column_still_spreads_evenly():
+    # The degraded path: a hand-edited CSV whose `front` cannot be parsed falls
+    # back to the card's position. Counted over WORD cards — over ROWS, the photo
+    # card in front would start the spread at 1 and leave one style unused.
+    out = _csv()
+    pack.pack(_words(FULL), out)
+    text = open(out, encoding="utf-8-sig").read()
+    rewritten = out + ".nofront"
+    with open(rewritten, "w", encoding="utf-8-sig") as f:
+        f.write(re.sub(r"^word,\d+,", "word,,", text, flags=re.M))
+    cards = pack.load_cards(rewritten)
+    assert cards[0]["kind"] == "photo"
+    assert [c["front"] for c in cards[1:9]] == [0, 1, 2, 3, 4, 5, 6, 7]
 
 
 def test_short_list_yields_fewer_cards_not_a_tail_of_blank_ones():

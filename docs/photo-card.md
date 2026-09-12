@@ -1,9 +1,12 @@
 # The photo card
 
-The deck's 104th front is the **photo card** — one portrait card carrying the buyer's four
+The deck's **first** front is the **photo card** — one portrait card carrying the buyer's four
 pawn photos (the images collected by the wizard's optional photo step and stored on the
 collection as `pawn_images`, max 4). This document is the contract between the card artwork
 (Agent B) and the generator that fills it (Agent C).
+
+It leads the deck (pages 1-2) rather than closing it: it is the card the deck is about, and
+the one sheet the print shop handles differently. See `docs/deck-rendering.md`.
 
 ## For Agent C — the cutout contract in one place
 
@@ -103,6 +106,13 @@ generator never branches on which template it loaded.
    alone — never a broken image. Filling only some slots is fine.
 8. **There are no slot numbers.** The photo is the identity; the numbered chips are gone. Do not
    reintroduce per-slot labelling.
+9. **The band under the pawns is the generator's.** The order title is set there — every other
+   card in the deck carries it, so this one does too (`card_frame.title_band` measures it,
+   `render_page.photo_card_title_markup` draws it, in the theme's own `title_style`). The band is
+   what is left between the lowest thing the artwork draws and the inside of the card frame, so
+   **artwork drawn below the pawn grid takes that room away** and the card then prints with no
+   title at all rather than with one stamped over the art. Above the grid stays the artwork's —
+   that is where the card's own copy lives.
 
 | what                  | value                                                     |
 | --------------------- | --------------------------------------------------------- |

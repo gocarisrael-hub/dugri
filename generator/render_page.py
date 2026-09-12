@@ -5114,7 +5114,49 @@ def fill_photo_slots(svg_text, photo_paths):
     return _PHOTO_SLOT.sub(fill, svg_text)
 
 
-def photo_card_svg(theme, photos, paper=None, frame=_MEASURE):
+def photo_card_title_markup(theme, svg_text, title_lines):
+    """The order title, set in the band under the pawns — or ``""``.
+
+    The pawn card ships in the buyer's deck and every other card in it carries
+    her title; this is that title, in the SAME face, fill and outline the fronts
+    set it in (``cfg["title_style"]``, which is also what decides the paper this
+    card is repainted onto), so the card reads as one of the deck rather than as
+    an insert.
+
+    Drawn through ``_title_overlay`` — the same fitter the word cards and the
+    backs go through — so the ceiling, the two-face fallback, the RTL decision
+    and the arch behave here exactly as they do everywhere else. The one thing
+    that differs is WHERE, and that is measured per card
+    (``card_frame.title_band``).
+
+    ``""`` whenever the card has no room to be honest about: an unmeasurable
+    frame, no slots, a band too short, or no title to set. The pawn card then
+    prints exactly as it printed before it carried one.
+    """
+    if not title_lines:
+        return ""
+    # Local, like every other card_frame use here: card_frame imports this module
+    # to compose the pawn card, so a top-level import each way is a cycle.
+    import card_frame
+
+    band = card_frame.title_band(svg_text)
+    if not band:
+        return ""
+    cfg = config.theme(theme)
+    config.ensure_calibrated(cfg)
+    try:
+        vb = deck_html.view_box(svg_text)
+    except Exception:
+        return ""
+    # The card's own viewBox is the cell every title box is expressed against.
+    # There is no nudge to apply (that is a per-front calibration and this card
+    # is not one of the fronts), so this is only what the fitter measures by.
+    cell = [vb[0], vb[1], vb[0] + vb[2], vb[1] + vb[3]]
+    return _title_overlay([band], title_lines, cfg,
+                          title_font_for(theme, title_lines, cfg), cell)
+
+
+def photo_card_svg(theme, photos, paper=None, frame=_MEASURE, title_lines=None):
     """The theme's pawn card, printed on ``paper`` and filled with ``photos``.
 
     The ONE place a pawn card is composed, so the deck and the single-card
@@ -5128,6 +5170,10 @@ def photo_card_svg(theme, photos, paper=None, frame=_MEASURE):
     ``build.deck_document`` is contractually Chrome-free: it assembles deck
     STRUCTURE, and structure does not depend on colour. ``None`` prints the card
     exactly as shipped, which is also what an unmeasurable front yields.
+
+    ``title_lines`` is the order's title. Given, it is set in the band under the
+    pawns (``photo_card_title_markup``) so this card carries the honoree's name
+    like every other card in the deck; omitted, the card prints as it always did.
 
     ``frame`` is the SHAPE it prints in — the deck's own frame box, corner radius
     and border stroke (``card_frame``), so the pawn card is the same size and
@@ -5143,7 +5189,13 @@ def photo_card_svg(theme, photos, paper=None, frame=_MEASURE):
     if frame is _MEASURE:
         frame = card_frame.front_frame(theme)
     svg = card_frame.reframe(card_paper.repaper(svg, paper), frame)
-    return fill_photo_slots(svg, photos or [])
+    # AFTER the reframe: the band is measured against the frame the card will
+    # actually print in, and reframing is what moves it.
+    title = photo_card_title_markup(theme, svg, title_lines)
+    svg = fill_photo_slots(svg, photos or [])
+    if title:
+        svg = svg.replace("</svg>", title + "</svg>")
+    return svg
 
 
 def _index_from_card_path(path):
@@ -5175,14 +5227,21 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
     except Exception:
         card_vb = None
     if kind == "photo":
-        # The photo card carries no text — every piece of its static copy is
-        # already baked to vector paths — so it needs no @font-face injection at
-        # all. Its slots are filled in the artwork itself, not overlaid, and its
-        # paper follows the theme's front card, so it is composed by the shared
-        # helper rather than from the ``clean_svg`` handed in here. This path
-        # renders through Chrome anyway, so measuring the paper here costs it
-        # nothing it was not already paying.
-        return photo_card_svg(theme, photos, paper=card_paper.front_paper(theme))
+        # The photo card's static copy is baked to vector paths, but the ORDER
+        # TITLE is live text like every other card's, so this path does need the
+        # title faces — and only those: there are no words on this card. Its
+        # slots are filled in the artwork itself, not overlaid, and its paper
+        # follows the theme's front card, so it is composed by the shared helper
+        # rather than from the ``clean_svg`` handed in here. This path renders
+        # through Chrome anyway, so measuring the paper here costs it nothing it
+        # was not already paying.
+        card = photo_card_svg(theme, photos, paper=card_paper.front_paper(theme),
+                              title_lines=title_lines)
+        if not title_lines:
+            return card
+        faces = ("<style>" + GEOMETRIC_TEXT_STYLE
+                 + title_faces(theme, cfg, lines=title_lines) + "</style>")
+        return card.replace("</svg>", faces + "</svg>")
     style = ("<style>" + GEOMETRIC_TEXT_STYLE
              + word_faces(theme, word_font) + title_faces(theme, cfg, lines=title_lines)
              + "</style>")

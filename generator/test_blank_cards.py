@@ -53,8 +53,8 @@ def test_a_short_list_still_packs_a_full_deck():
         cards = pack.load_cards(path)
         word_cards = [c for c in cards if c["kind"] == "word"]
         assert len(word_cards) == pack.WORD_CARDS, len(word_cards)
-        assert len(cards) == pack.WORD_CARDS + 1, "the photo card is still last"
-        assert cards[-1]["kind"] == "photo"
+        assert len(cards) == pack.WORD_CARDS + 1, "the photo card still leads"
+        assert cards[0]["kind"] == "photo"
 
 
 def test_the_padding_cards_carry_no_words_and_her_words_are_all_there():

@@ -397,6 +397,85 @@ def content_box(svg_text):
             max(b[2] for b in boxes), max(b[3] for b in boxes)]
 
 
+# THE ORDER TITLE'S BAND ON A PAWN CARD.
+#
+# Every other card in the deck carries the honoree's title; the pawn card did
+# not, and the owner asked for it. There is exactly one place on the card it can
+# go without being drawn over something: the strip of paper BELOW the pawn grid.
+# Above the grid is where the card's own copy lives ("החיילים שלכם" and the
+# cut-along-the-lines line), and the four slots between them are byte-identical
+# on every template (docs/photo-card.md) — the top band is spoken for, the bottom
+# band is not.
+#
+# MEASURED, NOT ASSUMED, for the same reason the frame is: a template may draw
+# something down there, and a title stamped over a template's own artwork is a
+# worse card than one without a title. :func:`content_box` already answers "what
+# does this card draw"; the band is what is left between that and the frame.
+
+# Air between the band and what it sits between, as a share of the card's height.
+TITLE_BAND_GAP = 0.018
+# Below this, there is no band worth setting a title in and the card keeps the
+# one it has always had. ~5% of a 312-unit card is 15.6 units — about half the
+# height of a word card's own title box.
+TITLE_BAND_MIN_H = 0.05
+
+
+def slots_box(svg_text):
+    """``[x0, y0, x1, y1]`` of the four pawn slots, or None.
+
+    The grid itself, WITHOUT the halo: this answers "how wide is the block of
+    pawns", which is the width the title under them should be set to, not how far
+    their stickers reach.
+    """
+    boxes = []
+    for m in _SLOT_EL.finditer(svg_text or ""):
+        el = m.group(0)
+        try:
+            x, y = float(_ATTR_OF(el, "x")), float(_ATTR_OF(el, "y"))
+            w, h = float(_ATTR_OF(el, "width")), float(_ATTR_OF(el, "height"))
+        except (TypeError, ValueError):
+            continue
+        boxes.append([x, y, x + w, y + h])
+    if not boxes:
+        return None
+    return [min(b[0] for b in boxes), min(b[1] for b in boxes),
+            max(b[2] for b in boxes), max(b[3] for b in boxes)]
+
+
+def title_band(svg_text):
+    """Where the order title goes on a pawn card: ``{x0, y0, x1, y1}`` or None.
+
+    The strip between the lowest thing the card draws and the inside of its
+    frame, as wide as the pawn grid so the title reads as a caption under it
+    rather than as a line floating in the margin.
+
+    ``None`` — no frame to measure, no slots to sit under, or not enough room —
+    means "leave this card exactly as it was", which is what every pawn card
+    printed before the title existed. A missing title is a card that looks like
+    last month's; a title drawn through the artwork is a card nobody can sell.
+    """
+    frame = own_frame(svg_text)
+    slots = slots_box(svg_text)
+    content = content_box(svg_text)
+    if not frame or not slots:
+        return None
+    # Inside the frame's stroke: the rule is drawn ON the border's centreline, so
+    # half of it is paper the title must stay out of.
+    half = (frame.get("stroke_width") or 0) / 2.0
+    bottom = frame["y"] + frame["h"] - half
+    # Whatever the card draws lowest — normally the pawn grid itself, but a
+    # template with copy or an ornament under it moves this down and the band
+    # shrinks to nothing rather than printing over it.
+    lowest = max(slots[3], content[3] if content else slots[3])
+    gap = TITLE_BAND_GAP * frame["h"]
+    y0, y1 = lowest + gap, bottom - gap
+    if y1 - y0 < TITLE_BAND_MIN_H * frame["h"]:
+        _warn("no room under the pawns for the order title (%.1f units) — the "
+              "pawn card prints without one" % max(0.0, y1 - y0))
+        return None
+    return {"x0": slots[0], "y0": y0, "x1": slots[2], "y1": y1}
+
+
 def _same(a, b):
     return (a is not None and b is not None
             and all(abs(a[k] - b[k]) <= FRAME_TOL

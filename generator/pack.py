@@ -17,9 +17,10 @@ CSV columns: ``kind,front,w1,w2,w3,w4``
   front  0-based index into the theme's ``fronts`` list; empty on the photo card
   w1..w4 the card's words (blank-padded on the final word card)
 
-DECK SIZE. A standard deck is ``WORD_CARDS`` (103) word cards + 1 photo card =
+DECK SIZE. A standard deck is 1 photo card + ``WORD_CARDS`` (103) word cards =
 104 cards = 208 printed pages, which is what ``topup.TARGET`` (412 = 103 x 4)
-feeds it. Two deliberate departures:
+feeds it. The photo card is card ONE; the word cards follow it. Two deliberate
+departures:
 
 - FEWER words than that (the filler pools ran dry) yields FEWER cards rather
   than a tail of blank ones — only the last card is blank-padded.
@@ -94,7 +95,7 @@ import sys
 
 # Words per printed card.
 PER_CARD = 4
-# Word cards in a standard deck; + the photo card = 104 cards = 208 pages.
+# Word cards in a standard deck; + the photo card in front = 104 cards = 208 pages.
 WORD_CARDS = 103
 
 # How many front styles a v2 template ships (2.svg..9.svg).
@@ -447,8 +448,8 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     has to become blank cards rather than a deck that stops early, which is the
     ordinary behaviour above (see DECK SIZE). The blanks are pure padding — they
     carry no words, they keep the round-robin front cycling, and the photo card
-    still comes last. Omitted (the normal order), nothing is padded and the deck
-    is exactly as long as its words make it.
+    still leads the deck. Omitted (the normal order), nothing is padded and the
+    deck is exactly as long as its words make it.
     """
     # `exact` keeps repeats; every other order drops them. See the note above
     # ORDERS: when the ARRANGEMENT is the caller's, a repeat is part of what she
@@ -490,10 +491,16 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(FIELDS)
-        for i, row in enumerate(rows):
-            wr.writerow(["word", i % fronts] + row)
+        # THE PAWN CARD GOES FIRST. It is the card the deck is ABOUT — her four
+        # people, cut out as stickers — and it used to be card 104, so whoever
+        # opened the PDF met 207 pages of word cards before reaching it and the
+        # print shop found it at the very bottom of the stack. Nothing else about
+        # the deck changes: a word card still carries the front style this loop
+        # deals it, in the order the deal produced.
         if photo_card:
             wr.writerow(["photo", ""] + [""] * PER_CARD)
+        for i, row in enumerate(rows):
+            wr.writerow(["word", i % fronts] + row)
     return len(uniq), len(rows) + (1 if photo_card else 0)
 
 
@@ -506,8 +513,9 @@ def load_cards(path):
     CSV still renders an even spread instead of dying.
     """
     out = []
+    seen_words = 0
     with open(path, encoding="utf-8-sig", newline="") as f:
-        for i, r in enumerate(csv.DictReader(f)):
+        for r in csv.DictReader(f):
             kind = (r.get("kind") or "word").strip()
             words = [(r.get(f"w{k}") or "") for k in range(1, PER_CARD + 1)]
             if kind == "photo":
@@ -516,7 +524,11 @@ def load_cards(path):
             try:
                 front = int(str(r.get("front", "")).strip())
             except (TypeError, ValueError):
-                front = i
+                # Counted over WORD cards, not rows: the photo card sits in front
+                # of them now, so a row index would start this spread at 1 and
+                # hand the deck seven styles where it asked for eight.
+                front = seen_words
+            seen_words += 1
             out.append({"kind": "word", "front": front, "words": words})
     return out
 
