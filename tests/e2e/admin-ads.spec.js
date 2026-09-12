@@ -38,6 +38,126 @@ async function arriveAt(page, url) {
 }
 
 test.describe('the ad report', () => {
+  // The founders open the site through the Railway hostname on purpose, so their
+  // browsing is separable from real traffic. The report leaves it out — and says
+  // so, with the number: a page that quietly drops visits is one she cannot check
+  // against anything. Stubbed, because the E2E server has no PUBLIC_BASE_URL and
+  // so has no public address for a landing URL to differ from.
+  // One stub for the whole report, so each test below states only the internal
+  // count it is about.
+  const stubReport = (page, internal) =>
+    page.route('**/api/admin/ads?*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          days: 30,
+          rows: [],
+          totals: { visits: 3, checkouts: 1, orders: 1, revenue: 139, paid_orders: 0 },
+          internal,
+          base_url: 'https://dugri-israel.co.il',
+        }),
+      })
+    );
+
+  test('says how much of the traffic was our own', async ({ page }) => {
+    await stubReport(page, {
+      visits: 19,
+      checkouts: 3,
+      orders: 1,
+      revenue: 139,
+      hosts: ['*.up.railway.app'],
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const note = page.getByTestId('ads-internal');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('19 ביקורים');
+    // The checkouts were computed and never printed: the tile was three short
+    // with nothing on the page to say so.
+    await expect(note).toContainText('3 מעברים לתשלום');
+    // A purchase only reaches the ledger once the order is PAID, so the shekels
+    // it set aside have to be on the page too — written the way every other sum on
+    // this page is, sign after the number.
+    await expect(note).toContainText('139 ₪');
+    await expect(note).toContainText('up.railway.app');
+  });
+
+  // The rule is the server's, and so are the addresses. The note used to hardcode
+  // "railway.app" and the two of us, so a change to the rule — or a stale
+  // PUBLIC_BASE_URL — would have left the page confidently blaming the wrong cause.
+  test('names the addresses the server actually set aside', async ({ page }) => {
+    await stubReport(page, {
+      visits: 4,
+      checkouts: 0,
+      orders: 0,
+      revenue: 0,
+      hosts: ['old.dugri.co.il'],
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const note = page.getByTestId('ads-internal');
+    await expect(note).toContainText('old.dugri.co.il');
+    await expect(note).not.toContainText('railway');
+    await expect(note).not.toContainText('אלמה');
+  });
+
+  test('speaks up for checkouts even when no visit was set aside', async ({ page }) => {
+    await stubReport(page, {
+      visits: 0,
+      checkouts: 3,
+      orders: 0,
+      revenue: 0,
+      hosts: ['*.up.railway.app'],
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('ads-internal')).toContainText('3 מעברים לתשלום');
+  });
+
+  test('says nothing about internal traffic when there was none', async ({ page }) => {
+    await stubReport(page, { visits: 0, checkouts: 0, orders: 0, revenue: 0, hosts: [] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('ads-internal')).toBeHidden();
+  });
+
+  // In the feed an internal event has to be tellable from a customer's at a
+  // glance. Its own row class and its own badge — not a prefix inside .who, which
+  // is clipped with an ellipsis and would lose the marker to a long campaign name.
+  test('marks an internal event in the live feed, visibly', async ({ page }) => {
+    const campaign = unique('feedinternal');
+    await page.route('**/api/admin/ads/live*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          events: [
+            { t: new Date().toISOString(), k: 'visit', s: 'instagram', m: 'social', c: campaign },
+            {
+              t: new Date().toISOString(),
+              k: 'visit',
+              s: 'instagram',
+              m: 'social',
+              c: campaign + '_mine',
+              i: 1,
+            },
+          ],
+        }),
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const mine = page.locator(`#feed .ev:has-text("${campaign}_mine")`);
+    await expect(mine).toHaveClass(/internal/);
+    await expect(mine.locator('.tag')).toHaveText('פנימי');
+    // and the customer's row beside it is untouched
+    const theirs = page.locator(`#feed .ev:has-text("${campaign}")`).first();
+    await expect(theirs).not.toHaveClass(/internal/);
+    // The class has to PAINT something. It was being set with no rule behind it,
+    // which left the two rows identical to look at.
+    const [a, b] = await Promise.all([
+      mine.evaluate((el) => getComputedStyle(el).backgroundColor),
+      theirs.evaluate((el) => getComputedStyle(el).backgroundColor),
+    ]);
+    expect(a, 'an internal row looks the same as a customer’s').not.toBe(b);
+  });
+
   test('without a key the page reveals nothing and calls no admin API', async ({ page }) => {
     let hitAdmin = false;
     page.on('request', (req) => {
