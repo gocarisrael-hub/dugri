@@ -599,9 +599,11 @@
         // is named here, in shekels, so a genuine sale that came in on the old
         // address can be told apart from a test of our own and added back by hand.
         if (orders) {
+          // nis(), like every other sum on this page: the sign goes after the
+          // number and the thousands separator is he-IL's.
           text +=
-            ' הסכום (₪' +
-            revenue +
+            ' הסכום (' +
+            nis(revenue) +
             ') לא נכלל בהכנסות שלמעלה — ' +
             (orders === 1
               ? 'כדאי לוודא שזו הזמנה שלנו ולא של לקוחה.'

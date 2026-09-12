@@ -76,8 +76,9 @@ test.describe('the ad report', () => {
     // with nothing on the page to say so.
     await expect(note).toContainText('3 מעברים לתשלום');
     // A purchase only reaches the ledger once the order is PAID, so the shekels
-    // it set aside have to be on the page too.
-    await expect(note).toContainText('139');
+    // it set aside have to be on the page too — written the way every other sum on
+    // this page is, sign after the number.
+    await expect(note).toContainText('139 ₪');
     await expect(note).toContainText('up.railway.app');
   });
 

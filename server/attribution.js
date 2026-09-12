@@ -113,10 +113,10 @@ function publicHost() {
   return hostOf(process.env.PUBLIC_BASE_URL || '');
 }
 
-// Hosts named as ours by hand, for the ones no rule can guess: an old address
-// kept alive, a bare IP, a preview domain. Comma-separated hostnames.
-function configuredInternalHosts() {
-  return String(process.env.ATTRIBUTION_INTERNAL_HOSTS || '')
+// A comma-separated list of hostnames from the environment, normalised the same
+// way a landing URL's host is.
+function hostList(raw) {
+  return String(raw || '')
     .split(',')
     .map((h) =>
       h
@@ -125,6 +125,12 @@ function configuredInternalHosts() {
         .toLowerCase()
     )
     .filter(Boolean);
+}
+
+// Hosts named as ours by hand, for the ones no rule can guess: an old address
+// kept alive, a bare IP, a preview domain.
+function configuredInternalHosts() {
+  return hostList(process.env.ATTRIBUTION_INTERNAL_HOSTS);
 }
 
 // Railway's generated hostname always ends in up.railway.app, and once a service
@@ -138,9 +144,20 @@ function generatedRuleActive() {
   return !!pub && !GENERATED_HOST_RE.test(pub);
 }
 
+// The OPT-OUT, and the lever the owner has if the generated-host rule ever owns an
+// address her customers are actually using. It is what the *.up.railway.app link
+// that once sat in the Instagram bio needs: naming that host here hands its
+// traffic and its paid orders straight back to the report, without her having to
+// make PUBLIC_BASE_URL a railway name to do it. Checked FIRST — a host named as a
+// customer's is a customer's, whatever any other rule would have said.
+function configuredCustomerHosts() {
+  return hostList(process.env.ATTRIBUTION_CUSTOMER_HOSTS);
+}
+
 function isInternalHost(host) {
   const pub = publicHost();
   if (!pub || !host || host === pub) return false;
+  if (configuredCustomerHosts().includes(host)) return false;
   if (configuredInternalHosts().includes(host)) return true;
   return generatedRuleActive() && GENERATED_HOST_RE.test(host);
 }
@@ -148,7 +165,7 @@ function isInternalHost(host) {
 /** The addresses counted as ours, for the page to name in its own words. */
 function internalHosts() {
   if (!publicHost()) return [];
-  const names = configuredInternalHosts().filter((h) => h !== publicHost());
+  const names = configuredInternalHosts().filter((h) => isInternalHost(h));
   if (generatedRuleActive()) names.push(GENERATED_HOST_LABEL);
   return names;
 }
@@ -158,9 +175,11 @@ function isInternalLanding(landing) {
 }
 
 // Since this change EVERY event carries the answer: i === 1 internal, i === 0
-// judged at the door and not. Six bytes an event buys the one thing report() can
-// never work out later — which address the visit landed on — and, just as
-// important, it fences the guesswork below off from events that were judged.
+// judged at the door and not. Eight bytes an event (`,"i":0`) buys the one thing
+// report() can never work out later — which address the visit landed on — and,
+// just as important, it fences the guesswork below off from events that were
+// judged. A full event is then 118 bytes, still inside the ~120 the cap above is
+// reasoned from.
 function judged(e) {
   return e.i === 1 || e.i === 0;
 }
@@ -170,23 +189,34 @@ function judged(e) {
 //
 //  1. a SOURCE that is one of our own addresses — an internal page-to-page move,
 //     whose referrer parsed to that hostname;
-//  2. a VISITOR ID that has since been seen at the internal door. A visitor id is
-//     one browser, so a browser that lands on the founders' address is the
-//     founders' browser, and its older rows are theirs too.
+//  2. a VISITOR ID that has been seen at the internal door. A visitor id lives in
+//     localStorage, which is per ORIGIN, so an id this rule can reach is an id
+//     minted on the internal address itself — the same browsing that produced the
+//     rows it is being used to explain. (It cannot reach the same person's
+//     browsing of the public domain, which mints a different id there.)
 //
 // (2) is what actually reaches the row the owner could not explain — "instagram /
 // social / link_in_bio, 19 visits" — because the browser REPLAYS its stored touch
 // on every later event (site/js/attribution.js), so a founder re-opening the
 // Railway address kept sending the campaign source and nothing in the row says
-// where it was opened. Those rows clean up the first time each of those browsers
-// is seen at the internal door after this deploy, not at the deploy itself.
+// where it was opened.
 //
-// Neither guess is ever applied to an event that was judged at the door: a
+// BOTH GUESSES STOP AT TRAFFIC. Neither one may ever move a PURCHASE, because a
+// purchase is a paid order and a guess is not evidence enough to take real money
+// out of the report: a returning buyer who once followed a link off somebody
+// else's Railway page would have had the sale reclassified under them, and the
+// sweep would have reached the whole of that browser's history the moment this
+// deployed. The row this exists for reads "19 visits, 3 checkouts, 0 ORDERS", so
+// it collapses exactly as intended and this rule is arithmetically incapable of
+// losing a sale. A purchase is internal only when the door said so.
+//
+// And neither guess is ever applied to an event that was judged at the door: a
 // genuine referral from somebody ELSE's Railway-hosted page is a customer, and
 // must stay one for good.
 function isInternalEvent(e, internalVisitors) {
   if (e.i === 1) return true;
   if (judged(e)) return false;
+  if (e.k !== 'visit' && e.k !== 'checkout') return false;
   if (isInternalHost(String(e.s || '').toLowerCase())) return true;
   const who = String(e.v || '');
   return who !== '' && !!internalVisitors && internalVisitors.has(who);
@@ -194,13 +224,26 @@ function isInternalEvent(e, internalVisitors) {
 
 // The browsers known to be ours, over the WHOLE ledger rather than the reporting
 // window: a browser identified as the owner's three months ago is still hers.
+//
+// Seeded from TRAFFIC only, never from a purchase, for the same reason the rule
+// above stops at traffic: an unjudged purchase is not allowed to nominate the
+// browser that made it, or one paid order on an address of ours would pull the
+// rest of that browser's history along behind it.
 function internalVisitorIds() {
   const out = new Set();
   for (const e of _events) {
     if (!e || typeof e !== 'object') continue;
     const who = String(e.v || '');
     if (!who) continue;
-    if (e.i === 1 || (!judged(e) && isInternalHost(String(e.s || '').toLowerCase()))) out.add(who);
+    if (e.i === 1) {
+      out.add(who);
+    } else if (
+      !judged(e) &&
+      (e.k === 'visit' || e.k === 'checkout') &&
+      isInternalHost(String(e.s || '').toLowerCase())
+    ) {
+      out.add(who);
+    }
   }
   return out;
 }
@@ -668,10 +711,23 @@ function report({ days = 30, now = Date.now() } = {}) {
   return { days: Number(days) || 30, rows: out, totals, internal };
 }
 
-/** The most recent events, newest first — the "what is happening now" feed. */
+/**
+ * The most recent events, newest first — the "what is happening now" feed.
+ *
+ * The internal mark is RESOLVED on the way out, not just read off the record. A
+ * row written before this shipped carries no mark, and the page badges on the
+ * mark alone — so an event the report has set aside as ours would have appeared
+ * in the feed looking exactly like a customer arriving, right underneath a note
+ * asking her to go and check that very row. Marked on a copy: the ledger keeps
+ * what the door actually said.
+ */
 function recent(limit = 50) {
   const n = Math.min(Math.max(1, Number(limit) || 50), 500);
-  return _events.slice(-n).reverse();
+  const ours = internalVisitorIds();
+  return _events
+    .slice(-n)
+    .reverse()
+    .map((e) => (e.i === 1 || !isInternalEvent(e, ours) ? e : { ...e, i: 1 }));
 }
 
 /** Test seam: replace the whole ledger. */

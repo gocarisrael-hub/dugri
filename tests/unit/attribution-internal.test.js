@@ -23,9 +23,10 @@ const ORIGINAL = {
   dir: process.env.DATA_DIR,
   base: process.env.PUBLIC_BASE_URL,
   hosts: process.env.ATTRIBUTION_INTERNAL_HOSTS,
+  customers: process.env.ATTRIBUTION_CUSTOMER_HOSTS,
 };
 
-async function store({ base = PUBLIC, hosts } = {}) {
+async function store({ base = PUBLIC, hosts, customers } = {}) {
   const dir = path.join(
     os.tmpdir(),
     `dugri-internal-${process.pid}-${Math.random().toString(36).slice(2)}`
@@ -38,6 +39,8 @@ async function store({ base = PUBLIC, hosts } = {}) {
   else delete process.env.PUBLIC_BASE_URL;
   if (hosts === undefined) delete process.env.ATTRIBUTION_INTERNAL_HOSTS;
   else process.env.ATTRIBUTION_INTERNAL_HOSTS = hosts;
+  if (customers === undefined) delete process.env.ATTRIBUTION_CUSTOMER_HOSTS;
+  else process.env.ATTRIBUTION_CUSTOMER_HOSTS = customers;
   return (await import('../../server/attribution.js')).default;
 }
 
@@ -52,6 +55,8 @@ afterEach(() => {
   else process.env.PUBLIC_BASE_URL = ORIGINAL.base;
   if (ORIGINAL.hosts === undefined) delete process.env.ATTRIBUTION_INTERNAL_HOSTS;
   else process.env.ATTRIBUTION_INTERNAL_HOSTS = ORIGINAL.hosts;
+  if (ORIGINAL.customers === undefined) delete process.env.ATTRIBUTION_CUSTOMER_HOSTS;
+  else process.env.ATTRIBUTION_CUSTOMER_HOSTS = ORIGINAL.customers;
   for (const d of dirs) fs.rmSync(d, { recursive: true, force: true });
   dirs.length = 0;
 });
@@ -340,6 +345,7 @@ describe('the row she could not explain', () => {
     c: '',
     ct: 'link_in_bio',
   });
+  const legacyBuy = (v, val) => ({ ...legacy(v, 'purchase'), o: 'dg-' + v + val, val });
 
   it('collapses into internal once that browser is seen at the internal door', async () => {
     const a = await store();
@@ -354,6 +360,51 @@ describe('the row she could not explain', () => {
     expect(r.internal).toMatchObject({ visits: 1, checkouts: 1 });
   });
 
+  // THE GUESS STOPS AT TRAFFIC. Both halves of it, measured: a purchase is a paid
+  // order, and a guess about which browser made it is not evidence enough to take
+  // real money out of the report.
+  it('never drags a paid order out with the browser that made it', async () => {
+    const a = await store();
+    a._setEvents([legacy('cust'), legacy('cust', 'checkout'), legacyBuy('cust', 139)]);
+    // The buyer comes back, once, on the address that used to be in the bio.
+    a.record({ kind: 'visit', landing: RAILWAY + '/', visitor: 'cust' });
+    const r = a.report({ days: 30 });
+    expect(r.totals).toMatchObject({ orders: 1, revenue: 139 });
+    expect(r.internal).toMatchObject({ orders: 0, revenue: 0 });
+    expect(r.rows.map((x) => [x.source, x.orders, x.revenue])).toEqual([['instagram', 1, 139]]);
+  });
+
+  it('does not let one old referral off a railway page cost an ad its sale', async () => {
+    const a = await store();
+    // No return visit at all: rule 1 marks the referral, rule 2 would have swept
+    // the rest of that browser's history the moment this deployed.
+    a._setEvents([
+      {
+        t: new Date().toISOString(),
+        k: 'visit',
+        v: 'cust',
+        s: 'someone-else.up.railway.app',
+        m: 'referral',
+        c: '',
+        ct: '',
+      },
+      {
+        t: new Date().toISOString(),
+        k: 'purchase',
+        v: 'cust',
+        s: 'instagram',
+        m: 'paid',
+        c: 'summer',
+        ct: 'ad1',
+        o: 'dg-9201',
+        val: 249,
+      },
+    ]);
+    const r = a.report({ days: 30 });
+    expect(r.totals).toMatchObject({ orders: 1, revenue: 249, paid_orders: 1 });
+    expect(r.internal).toMatchObject({ visits: 1, orders: 0, revenue: 0 });
+  });
+
   it('leaves a customer’s older rows alone, whoever else was on that address', async () => {
     const a = await store();
     a._setEvents([legacy('buyer')]);
@@ -362,5 +413,69 @@ describe('the row she could not explain', () => {
     const r = a.report({ days: 30 });
     expect(r.totals.visits).toBe(1);
     expect(r.internal.visits).toBe(1);
+  });
+});
+
+describe('the feed and the note must not disagree', () => {
+  // The note asks her to go and check the rows it set aside. An event reclassified
+  // by the visitor-id rule carries no mark of its own, so the feed would have shown
+  // the one row she was told to verify looking exactly like a customer's.
+  it('marks an event the report has set aside, even with nothing on the record', async () => {
+    const a = await store();
+    a._setEvents([
+      {
+        t: new Date().toISOString(),
+        k: 'visit',
+        v: 'owner',
+        s: 'instagram',
+        m: 'social',
+        c: '',
+        ct: 'link_in_bio',
+      },
+    ]);
+    expect(a.recent(10)[0].i).toBeUndefined(); // nothing to go on yet
+    a.record({ kind: 'visit', landing: RAILWAY + '/', visitor: 'owner' });
+    expect(a.report({ days: 30 }).internal.visits).toBe(1);
+    for (const ev of a.recent(10)) expect(ev.i).toBe(1);
+    // and the ledger still says only what the door said
+    expect(a.report({ days: 30 }).internal.visits).toBe(1);
+  });
+
+  it('leaves a customer’s event unmarked', async () => {
+    const a = await store();
+    a.record({ kind: 'visit', landing: PUBLIC + '/', visitor: 'buyer' });
+    expect(a.recent(10)[0].i).toBe(0);
+  });
+});
+
+describe('the lever when one of our addresses turns out to be a customer’s', () => {
+  // The *.up.railway.app link that once sat in the Instagram bio is the case: the
+  // default rule owns that host, and naming it here hands its traffic AND its paid
+  // orders back to the report — without having to make PUBLIC_BASE_URL a railway
+  // name to do it.
+  it('hands a host named as a customer’s back to the report', async () => {
+    const a = await store({ customers: 'dugri-production.up.railway.app' });
+    expect(a.isInternalLanding(RAILWAY + '/')).toBe(false);
+    a.record({ kind: 'visit', landing: bioLink(RAILWAY), visitor: 'buyer' });
+    a.record({
+      kind: 'purchase',
+      landing: RAILWAY + '/pay-success.html',
+      visitor: 'buyer',
+      order_no: 'dg-9301',
+      value: 139,
+    });
+    const r = a.report({ days: 30 });
+    expect(r.totals).toMatchObject({ visits: 1, orders: 1, revenue: 139 });
+    expect(r.internal).toMatchObject({ visits: 0, orders: 0, revenue: 0 });
+  });
+
+  it('wins over a host named as ours, and never makes the public domain internal', async () => {
+    const a = await store({
+      hosts: 'old.dugri.co.il, dugri-israel.co.il',
+      customers: 'old.dugri.co.il',
+    });
+    expect(a.isInternalLanding('https://old.dugri.co.il/')).toBe(false);
+    expect(a.isInternalLanding(PUBLIC + '/')).toBe(false);
+    expect(a.internalHosts()).toEqual(['*.up.railway.app']);
   });
 });
