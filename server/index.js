@@ -6060,6 +6060,28 @@ app.get('/api/sms/outbox/:id/ack', smsAck);
 // Admin: the queue, and when the phone last asked for work. That second number is
 // the one that matters — pending messages plus a poll from two days ago is a
 // phone that is off, not a server that is broken.
+// The whole batch at once, from ONE fixed address.
+//
+// The per-message report needs the phone to build an address out of the message
+// it is holding, and that step is where this broke twice on the owner's own
+// phone: a formula that resolved to nothing, then the same field left as plain
+// text. Both are silent from here — the message stays leased, the lease runs out,
+// and the customer is texted again.
+//
+// This address is a constant. It is pasted once into the flow, after the send
+// block, and says: everything you are holding went out. Still the phone's own
+// report rather than a guess on our side — a send that throws stops the flow
+// before this line is reached. GET as well as POST, because "GET" is what an
+// automation app sends when nobody picks a method.
+function smsAckTaken(req, res) {
+  if (!requireSmsGateway(req, res)) return;
+  sms.markPolled();
+  const sent = sms.ackTaken();
+  res.json({ ok: true, sent: sent.length });
+}
+app.post('/api/sms/outbox/ack-taken', smsAckTaken);
+app.get('/api/sms/outbox/ack-taken', smsAckTaken);
+
 app.get('/api/admin/sms', (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.json({

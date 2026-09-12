@@ -242,3 +242,36 @@ describe('a late report over the wire', () => {
     expect(after.error).toBe(before);
   });
 });
+
+// The same report, for a phone whose flow cannot build a per-message address.
+// One constant URL, pasted after the send block.
+describe('the batch report', () => {
+  it('marks everything the phone is holding as sent, on a plain GET', async () => {
+    const m = queue();
+    await poll();
+    const r = await fetch(base + '/api/sms/outbox/ack-taken?key=' + GW);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, sent: 1 });
+    expect(stateOf(m.id)).toBe('sent');
+  });
+
+  it('is taken as a POST as well', async () => {
+    const m = queue();
+    await poll();
+    const r = await fetch(base + '/api/sms/outbox/ack-taken?key=' + GW, { method: 'POST' });
+    expect(r.status).toBe(200);
+    expect(stateOf(m.id)).toBe('sent');
+  });
+
+  it('answers plainly when the phone is holding nothing', async () => {
+    const r = await fetch(base + '/api/sms/outbox/ack-taken?key=' + GW);
+    expect(await r.json()).toMatchObject({ ok: true, sent: 0 });
+  });
+
+  it('refuses a wrong key, leaving the message leased', async () => {
+    const m = queue();
+    await poll();
+    expect((await fetch(base + '/api/sms/outbox/ack-taken?key=nope')).status).toBe(403);
+    expect(stateOf(m.id)).toBe('taken');
+  });
+});
