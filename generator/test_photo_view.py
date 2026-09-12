@@ -175,3 +175,107 @@ def test_a_short_views_list_is_fine():
         out = build.resolve_photos("bachelorette", [a],
                                    workdir=os.path.join(tmp, "w"), views=[])
         assert 0.2 < _white_share(out[0]) < 0.35
+
+
+# --- the CLI seam -----------------------------------------------------------
+#
+# Every test above hands `views` to `resolve_photos` already paired. Getting them
+# paired is a different job, done by argparse, and it is where this feature was
+# broken on live orders: both CLIs declared `--photo` and `--photo-frame` as
+# independent `append` lists, the server emits a frame only for a photo the buyer
+# actually moved, and argparse handed back a COMPACTED frame list. The frames
+# then slid left onto the wrong faces and the tail printed with the automatic
+# framing the buyer had overridden. Both halves were tested and neither test
+# could see it: `tests/unit/pawn-view-routes.test.js` asserts the argv the server
+# writes, this file asserted the transform, and nobody parsed the one with the
+# other.
+
+
+def _parse(argv):
+    """``argv`` through the very declaration both CLIs use."""
+    import argparse
+    ap = argparse.ArgumentParser()
+    build.add_photo_args(ap, "a pawn photo")
+    return ap.parse_args(argv)
+
+
+def _server_argv(pairs):
+    """The argv `orderArgs` builds for ``[(photo, frame_or_None), ...]``.
+
+    Mirrors server/index.js: every photo gets a `--photo`, and only a photo the
+    buyer MOVED gets a `--photo-frame` after it.
+    """
+    argv = []
+    for photo, frame in pairs:
+        argv += ["--photo", photo]
+        if frame:
+            argv.append("--photo-frame=" + frame)
+    return argv
+
+
+def test_a_frame_belongs_to_the_photo_in_front_of_it():
+    args = _parse(_server_argv([("p1", None), ("p2", "1.5,0,0"),
+                                ("p3", None), ("p4", None)]))
+    assert build.photos(args) == ["p1", "p2", "p3", "p4"]
+    # THE BUG, in one assertion: this used to come back [(1.5, 0, 0)] — one entry
+    # long — so p1 printed wearing p2's framing and p2 printed automatically.
+    assert build.photo_views(args) == [None, (1.5, 0.0, 0.0), None, None]
+
+
+def test_every_photo_gets_an_entry_even_when_nobody_framed_anything():
+    args = _parse(_server_argv([("p1", None), ("p2", None)]))
+    assert build.photo_views(args) == [None, None]
+
+
+def test_frames_on_every_slot_stay_on_their_own_slot():
+    args = _parse(_server_argv([("p1", "0.8,0,0"), ("p2", "1.2,0.1,0"),
+                                ("p3", "2,0,-0.2"), ("p4", "1.5,0,0")]))
+    assert build.photo_views(args) == [(0.8, 0.0, 0.0), (1.2, 0.1, 0.0),
+                                       (2.0, 0.0, -0.2), (1.5, 0.0, 0.0)]
+
+
+def test_a_frame_that_asks_for_the_default_still_holds_its_slot():
+    # "1,0,0" parses to None (it IS the automatic framing), but it must not
+    # collapse the list and shift everything after it.
+    args = _parse(_server_argv([("p1", "1,0,0"), ("p2", "1.5,0,0")]))
+    assert build.photo_views(args) == [None, (1.5, 0.0, 0.0)]
+
+
+def test_a_frame_with_no_photo_in_front_of_it_is_refused():
+    # Hand-typed argv only — the server never writes this. Refusing beats
+    # silently framing somebody else's photo with it.
+    with pytest.raises(SystemExit):
+        _parse(["--photo-frame=1.5,0,0"])
+    with pytest.raises(SystemExit):
+        _parse(["--photo", "p1", "--photo-frame=1.5,0,0", "--photo-frame=2,0,0"])
+
+
+def test_nothing_at_all_is_two_empty_lists():
+    args = _parse([])
+    assert build.photos(args) == []
+    assert build.photo_views(args) == []
+
+
+def test_one_parser_can_parse_twice():
+    # The actions append, and argparse hands an action its default OBJECT: a
+    # mutable default would make the second order in a process inherit the
+    # first one's photos.
+    import argparse
+    ap = argparse.ArgumentParser()
+    build.add_photo_args(ap, "a pawn photo")
+    first = ap.parse_args(["--photo", "p1", "--photo-frame=1.5,0,0"])
+    second = ap.parse_args(["--photo", "q1"])
+    assert build.photos(first) == ["p1"]
+    assert build.photos(second) == ["q1"]
+    assert build.photo_views(second) == [None]
+
+
+def test_both_clis_share_the_one_declaration():
+    # The two used to declare these flags themselves, in words that agreed and
+    # code that did not. A copy re-appearing here is the drift this whole
+    # section exists to stop.
+    here = os.path.dirname(os.path.abspath(build.__file__))
+    for name in ("order_to_pdf.py", "preview.py"):
+        src = open(os.path.join(here, name), encoding="utf-8").read()
+        assert "add_photo_args" in src, name + " no longer shares the declaration"
+        assert 'add_argument("--photo' not in src, name + " declares its own --photo"
