@@ -520,6 +520,28 @@ const previewCache = makePreviewCache({
   max: Number(process.env.PREVIEW_CACHE_MAX || 40),
   ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 5 * 60 * 1000),
 });
+// THE PAWN CARD GETS ITS OWN, and does not share the one above.
+//
+// It used to. The two are both previews and bounding them once was the tidier
+// story — until the pawn card started carrying the ORDER TITLE, which put the
+// title in its key and made the cached card PER ORDER instead of per (design,
+// disc count). Before that, every buyer on a design shared at most five entries
+// between them; now each order claims its own five, and five orders being edited
+// at once would evict a 40-slot cache that the public name-preview is also
+// filling. Everything a buyer dragging her pawns does — every change to how many
+// discs she covers — would go back to being a fresh Chrome render, on a path that
+// is already unhappy at two concurrent ones.
+//
+// So: its own bound, sized for what it now holds (five disc counts x a dozen
+// orders in flight), and no cross-eviction in either direction — a flood of pawn
+// cards cannot cost the storefront its previews, and a rush of previews cannot
+// cost a buyer the card she is dragging photos onto. Each entry here is ONE card
+// PNG, where a preview entry is three (card + board + back), so this is a smaller
+// footprint per slot than the number suggests.
+const pawnCardCache = makePreviewCache({
+  max: Number(process.env.PAWN_CARD_CACHE_MAX || 60),
+  ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 5 * 60 * 1000),
+});
 
 // The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
 // [] when missing/unparseable so a bad file never crashes a preview request.
@@ -657,7 +679,76 @@ function runPreview({
 // what her photos will look like is to render the real thing; the generator
 // composes it through the same helper the deck does. Nothing else is rendered:
 // no front, no back, no board.
-function runPawnCard({ theme, photos, photoFrames, empty = false, drawn = 0 }) {
+// THE PAWN CARD PREVIEW'S ARGV, built the way orderArgs builds the deck's.
+//
+// Pure and exported for the same reason orderArgs is: this is the second place
+// that emits `--photo` / `--photo-frame`, the two lists have to stay paired
+// (#595 — a frame that lands on the wrong face prints the wrong face), and the
+// only way to assert a spawn's arguments without spawning is to build them
+// somewhere a test can call.
+//
+// The card this renders IS the card the deck prints, so everything the deck's
+// photo card depends on is passed here too — the photos, their frames, and now
+// the ORDER TITLE, which the pawn card carries under the pawns like every other
+// card carries it.
+function pawnCardArgs({
+  theme,
+  outDir,
+  photos,
+  photoFrames,
+  empty = false,
+  drawn = 0,
+  name = '',
+  extraFields,
+  customTitle,
+  gender,
+}) {
+  // The name is no longer a placeholder: the pawn card sets a title now, so the
+  // title arguments are resolved here exactly as the deck resolves them. A
+  // caller that passes none gets the card as it printed before the title
+  // existed, which is what an un-named collection should show.
+  const args = [PREVIEW_SCRIPT, theme, name || '', outDir, '--pawn-card'];
+  for (const [k, v] of Object.entries(extraFields || {})) {
+    args.push('--field', `${k}=${v}`);
+  }
+  // `=`-joined for the same reason orderArgs joins it: a title starting with
+  // '-' must never be read by argparse as an option.
+  if (customTitle) args.push('--title=' + customTitle);
+  if (gender === 'male' || gender === 'female') args.push('--gender', gender);
+  // EMPTY: the card as the design ships it, WITHOUT her photos, plus where the
+  // discs are. The browser lays her photos onto it — which is what lets the
+  // card move under her finger instead of a second behind it.
+  //
+  // `drawn` is how many discs it will cover, and the render fills the REST with
+  // the shipped Dugri pawns, exactly as the printed card tops itself up. Leaving
+  // them bare showed her an empty circle where a pawn prints, under a caption
+  // promising this is exactly what will be printed. It is one more cache
+  // dimension, and a small one: 0..4 per theme, and a card that changes only
+  // when the number of photos does.
+  if (empty) args.push('--no-photos', '--drawn', String(drawn));
+  // Photos and their frames, paired exactly as the deck run pairs them — this
+  // preview only earns its place by being the same picture the printer makes,
+  // and a preview that ignored her framing would be the one thing worse than
+  // no preview: believed.
+  const frames = photoFrames || [];
+  (photos || []).forEach((file, i) => {
+    args.push('--photo', file);
+    if (frames[i]) args.push('--photo-frame=' + frames[i]);
+  });
+  return args;
+}
+
+function runPawnCard({
+  theme,
+  photos,
+  photoFrames,
+  empty = false,
+  drawn = 0,
+  name = '',
+  extraFields,
+  customTitle,
+  gender,
+}) {
   return new Promise((resolve, reject) => {
     let outDir;
     try {
@@ -672,28 +763,17 @@ function runPawnCard({ theme, photos, photoFrames, empty = false, drawn = 0 }) {
         /* best-effort cleanup */
       }
     };
-    // The name argument is required by the CLI and unused by this mode: the
-    // photo card carries no title.
-    const args = [PREVIEW_SCRIPT, theme, '-', outDir, '--pawn-card'];
-    // EMPTY: the card as the design ships it, WITHOUT her photos, plus where the
-    // discs are. The browser lays her photos onto it — which is what lets the
-    // card move under her finger instead of a second behind it.
-    //
-    // `drawn` is how many discs it will cover, and the render fills the REST with
-    // the shipped Dugri pawns, exactly as the printed card tops itself up. Leaving
-    // them bare showed her an empty circle where a pawn prints, under a caption
-    // promising this is exactly what will be printed. It is one more cache
-    // dimension, and a small one: 0..4 per theme, and a card that changes only
-    // when the number of photos does.
-    if (empty) args.push('--no-photos', '--drawn', String(drawn));
-    // Photos and their frames, paired exactly as the deck run pairs them — this
-    // preview only earns its place by being the same picture the printer makes,
-    // and a preview that ignored her framing would be the one thing worse than
-    // no preview: believed.
-    const frames = photoFrames || [];
-    (photos || []).forEach((file, i) => {
-      args.push('--photo', file);
-      if (frames[i]) args.push('--photo-frame=' + frames[i]);
+    const args = pawnCardArgs({
+      theme,
+      outDir,
+      photos,
+      photoFrames,
+      empty,
+      drawn,
+      name,
+      extraFields,
+      customTitle,
+      gender,
     });
     const child = spawnGenerator(args);
     let stdout = '';
@@ -3261,11 +3341,12 @@ app.post(
 //
 // OWNER ONLY (owner_token), because the photos are.
 //
-// Cached on (theme + the exact photo files + the frames she set), so returning
-// to the tab is free and yet a photo added, removed or MOVED is a different key
-// and re-renders at once — no staleness to reason about. Shares the preview LRU:
-// this is a preview, and the two together should be bounded once rather than
-// twice.
+// Cached on (theme + the exact photo files + the frames she set + the title), so
+// returning to the tab is free and yet a photo added, removed or MOVED — or the
+// honoree renamed — is a different key and re-renders at once: no staleness to
+// reason about. In its OWN bounded cache rather than the preview LRU, because the
+// title made these entries per-order and they would otherwise evict the public
+// name-preview (see pawnCardCache).
 app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
@@ -3284,19 +3365,39 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const drawn = live ? Math.max(0, Math.min(4, Number(req.query.n) || 0)) : 0;
   const photos = live ? [] : pawnPhotoFiles(c);
   const photoFrames = live ? [] : pawnPhotoFrames(c);
+  // THE ORDER TITLE, which this card carries now — read from the STORED
+  // collection exactly as the produce route reads it, so the card she looks at
+  // and the card the printer cuts resolve the same {AGE}/{feminine} title.
+  const title = {
+    name: c.honoree_name || '',
+    extraFields: validate.effectiveExtraFields(c),
+    customTitle: c.custom_title || null,
+    gender: c.gender || null,
+  };
+  // …and it is part of BOTH keys. The live base card is no longer independent of
+  // the order: renaming the honoree changes the picture the page draws her pawns
+  // onto, and a key that ignored the title would keep serving the old name.
+  const titleKey = [
+    title.name,
+    JSON.stringify(title.extraFields || {}),
+    title.customTitle || '',
+    title.gender || '',
+  ].join('\u0000');
   const cacheKey = live
-    ? 'pawn-base:' + theme + ':' + drawn
+    ? 'pawn-base:' + theme + ':' + drawn + ':' + titleKey
     : 'pawn-card:' +
       theme +
       ':' +
       photos.join('|') +
       ':' +
-      photoFrames.map((f) => f || '').join('|');
-  const cached = previewCache.get(cacheKey);
+      photoFrames.map((f) => f || '').join('|') +
+      ':' +
+      titleKey;
+  const cached = pawnCardCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
-    const out = await runPawnCard({ theme, photos, photoFrames, empty: live, drawn });
-    previewCache.set(cacheKey, out);
+    const out = await runPawnCard({ theme, photos, photoFrames, empty: live, drawn, ...title });
+    pawnCardCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
     // A render that fails must not read as "you have no photos": the page keeps
@@ -8493,3 +8594,8 @@ module.exports.stickerEntries = stickerEntries;
 module.exports.pawnPhotoFiles = pawnPhotoFiles;
 module.exports.pawnPhotoFrames = pawnPhotoFrames;
 module.exports.orderArgs = orderArgs;
+module.exports.pawnCardArgs = pawnCardArgs;
+// The two render caches, exported so a test can pin that they are SEPARATE — the
+// property the pawn card's per-order keys depend on (see pawnCardCache).
+module.exports.previewCache = previewCache;
+module.exports.pawnCardCache = pawnCardCache;

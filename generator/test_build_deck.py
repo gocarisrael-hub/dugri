@@ -7,7 +7,7 @@ The contract these pin (docs/deck-rendering.md):
     prints duplex;
   * the eight front styles are cycled evenly and each page uses the style
     pack.py assigned it;
-  * card 104 is the photo card, and it is the LAST card;
+  * the photo card is card ONE — it leads the deck, and there is exactly one;
   * the board is a SEPARATE file, not the deck's last page;
   * a v1 (8-up) theme is refused by the v2 path rather than half-rendered.
 
@@ -159,6 +159,16 @@ def test_a_standard_order_is_104_cards_and_208_pages():
         assert doc.page_count == 208, f"expected 208 pages, got {doc.page_count}"
 
 
+def _front_overlay(pages):
+    """The first WORD card's overlay.
+
+    A helper and not `pages[1][1]`, which is what every caller used to say: the
+    photo card leads the deck now and carries no text, so position 1 is the one
+    page in the file that answers this question wrongly.
+    """
+    return next(ov for k, ov in pages if k.startswith("front"))
+
+
 def test_pages_alternate_back_then_front_for_duplex_printing():
     with Store() as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
@@ -171,12 +181,43 @@ def test_pages_alternate_back_then_front_for_duplex_printing():
             "no back may appear in a front slot"
 
 
-def test_the_photo_card_is_the_last_card():
+def test_the_photo_card_is_the_first_card():
+    # The card the deck is ABOUT — her four people — opens it, on pages 1-2.
+    # It was card 104 for a year: 207 pages in, and the bottom of the printed
+    # stack. Its BACK is page 1, and it is the theme's own back carrying the
+    # order title, exactly like every other card's (see the test below).
     with Store() as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
         keys = [k for k, _ in _pages(doc)]
-        assert keys[-1] == "photo"
+        assert keys[1] == "photo", keys[:4]
         assert keys.count("photo") == 1, "exactly one photo card per deck"
+        assert not any(k == "photo" for k in keys[2:]), "and it is not repeated"
+
+
+def test_the_photo_cards_back_carries_the_title_like_every_other_back():
+    # It is page ONE of the PDF now, so a bare back is the first thing anyone
+    # sees. The photo card has no paired back of its own and takes the first,
+    # which is the only one on a shared-back deck.
+    with Store() as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        pages = _pages(doc)
+        assert pages[0][0] == "back1"
+        assert "שירה" in (pages[0][1] or ""), "the pawn card's back lost its title"
+        # …and it is the SAME overlay the word cards' backs get, not a copy that
+        # could drift from them.
+        assert pages[0][1] == pages[2][1]
+
+
+def test_the_photo_cards_own_artwork_carries_the_order_title():
+    # Under the pawns, not as a page overlay: the band it sits in is measured off
+    # THIS card's artwork (card_frame.title_band) and the page has never seen it.
+    # The faces it needs are the title faces the document already carries for
+    # every other card, which is why nothing extra is registered for it.
+    with Store() as tmp:
+        doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
+        assert "שירה" in doc._designs["photo"], "the pawn card lost its title"
+        # ...and it is still the one design, not one per page.
+        assert [k for k, _ in _pages(doc)].count("photo") == 1
 
 
 def test_the_eight_front_styles_are_spread_evenly():
@@ -232,8 +273,8 @@ def test_the_back_is_applied_to_every_card_of_a_one_front_deck():
         assert keys[0::2] == ["back1"] * 104, "every odd page must be the back"
         assert not any(k.startswith("back") for k in keys[1::2]), \
             "no back may appear in a front slot"
-        # ...and the photo card is still the last card, as on any other deck.
-        assert keys[-1] == "photo"
+        # ...and the photo card still leads, as on any other deck.
+        assert keys[1] == "photo"
 
 
 def test_a_one_front_deck_registers_one_design_not_nine_copies():
@@ -251,7 +292,7 @@ def test_a_one_front_deck_registers_one_design_not_nine_copies():
 def test_words_and_title_still_land_on_a_one_front_card():
     with Store(fronts=ONE) as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
-        first_front = _pages(doc)[1][1]
+        first_front = _front_overlay(_pages(doc))
         assert first_front.count("<text") >= 4, "each card needs its 4 word lines"
 
 
@@ -260,9 +301,10 @@ def test_word_cards_carry_their_words_and_the_photo_card_carries_none():
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
         pages = _pages(doc)
         # A word card's overlay has four numbered lines; the photo card has no text.
-        first_front = pages[1][1]
+        first_front = _front_overlay(pages)
         assert first_front.count("<text") >= 4, "each card needs its 4 word lines"
-        assert "<text" not in pages[-1][1], "the photo card carries no text"
+        photo = next(ov for k, ov in pages if k == "photo")
+        assert "<text" not in (photo or ""), "the photo card carries no text"
 
 
 def test_a_short_word_list_yields_a_shorter_deck_not_blank_cards():
@@ -1186,7 +1228,7 @@ def test_a_paired_deck_is_still_104_cards_back_then_front():
         assert doc.page_count == 208
         assert all(k.startswith("back") for k in keys[0::2])
         assert not any(k.startswith("back") for k in keys[1::2])
-        assert keys[-1] == "photo"
+        assert keys[1] == "photo"
 
 
 def test_one_front_with_its_own_back_pairs_them():

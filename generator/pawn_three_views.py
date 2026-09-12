@@ -166,12 +166,21 @@ def print_card(theme, photo, view, out_dir):
     return {"png": r["pawns"], "slots": r["slots"]}
 
 
-def base_card(theme, drawn, out_dir):
-    """The card WITHOUT the buyer's photos — exactly what ``?live=1`` returns.
+def base_card(theme, drawn, out_dir, title_lines=None):
+    """The card WITHOUT the buyer's photos — what ``?live=1`` returns for ``title_lines``.
 
     The first ``drawn`` slots are left bare and the rest carry the shipped Dugri
     pawns, which is what the printed card does with a short list. Mirrors
-    preview.py's ``--pawn-card --no-photos`` branch.
+    preview.py's ``--pawn-card --no-photos`` branch, ``title_lines`` included: the
+    card carries the ORDER TITLE in the band under the pawns, so a caller that
+    wants the picture the collection page actually composites onto has to say
+    which title.
+
+    ``None`` (what ``compare`` asks for) renders the UNTITLED card, and that is
+    deliberate rather than an oversight: the title sits in the band BELOW the pawn
+    grid, no slot measurement reads it, and ``print_card`` next to it is untitled
+    too — so the harness's panes stay comparable instead of differing by a line of
+    type in a place nothing here measures.
     """
     _import_generator()
     import build as buildmod
@@ -181,8 +190,8 @@ def base_card(theme, drawn, out_dir):
     photos = [None] * drawn + buildmod.fallback_photos(theme, drawn)
     out = os.path.join(out_dir, "base.png")
     os.makedirs(out_dir, exist_ok=True)
-    rp.render_single_card(theme, config.photo_card_path(theme), [], [],
-                          out, kind="photo", photos=photos)
+    rp.render_single_card(theme, config.photo_card_path(theme), [],
+                          title_lines or [], out, kind="photo", photos=photos)
     preview._downscale(out, preview.CARD_MAX_W)
     return out
 

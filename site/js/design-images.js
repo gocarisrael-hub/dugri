@@ -20,7 +20,7 @@ export const UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png
 const FETCH_TIMEOUT_MS = 3000;
 
 // Base (shipped-render) slots in their default display order. `photo` is the
-// deck's PHOTO CARD (the 104th front, which carries the buyer's four pawn photos
+// deck's PHOTO CARD (the card that OPENS the deck, carrying the buyer's four pawn photos
 // — the storefront render always uses the GENERIC Dugri fallback art). It sits
 // with the other card renders, ahead of the board.
 const DEFAULT_ORDER = ['store', 'front', 'back', 'photo', 'board'];

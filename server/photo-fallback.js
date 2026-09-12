@@ -1,6 +1,6 @@
 // photo-fallback.js — OWNER OVERRIDES for the photo card's four fallback pawns.
 //
-// The deck's 104th card is the PHOTO CARD: the customer's four pawn photos. An
+// The deck's FIRST card is the PHOTO CARD: the customer's four pawn photos. An
 // order that supplies none is filled with generic Dugri pawns shipped at
 // resources/canva/templates/_shared/photo-fallback/{1..4}.svg. Those are baked
 // into the repo, so changing one used to mean a PR and a deploy.

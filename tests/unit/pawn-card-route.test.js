@@ -91,3 +91,140 @@ describe('GET /api/collections/:id/pawn-card', () => {
     expect(String(r.body.error)).not.toMatch(/photo(s)? (not|missing)/i);
   });
 });
+
+// WHERE THE RENDERED CARDS ARE KEPT.
+//
+// The pawn card carries the ORDER TITLE now, so the title is part of its cache key
+// — which makes a cached card per-ORDER instead of per (design, disc count). It
+// used to share the public name-preview's 40-slot LRU, where each buyer editing her
+// pawns claims five entries (one per disc count she covers) and five buyers at once
+// would evict the storefront's previews out from under it, and each other. Every
+// eviction here is a fresh headless Chrome on a path already measured as unhappy at
+// two concurrent renders.
+//
+// So the two are bounded separately. This pins that they really are separate
+// objects, in both directions — the property the per-order keys now depend on.
+describe('the pawn card render cache', () => {
+  it('is not the name-preview cache', () => {
+    expect(app.pawnCardCache).toBeTruthy();
+    expect(app.previewCache).toBeTruthy();
+    expect(app.pawnCardCache).not.toBe(app.previewCache);
+  });
+
+  it('a flood of pawn cards cannot evict a name preview', () => {
+    const previewKey = app.previewCache.key({ theme: 'grapefruit', name: 'שירה' });
+    app.previewCache.set(previewKey, { card: 'the storefront preview' });
+    // Well past either bound: five disc counts x forty orders.
+    for (let order = 0; order < 40; order++) {
+      for (let n = 0; n <= 4; n++) {
+        app.pawnCardCache.set('pawn-base:grapefruit:' + n + ':order' + order, { card: 'x' });
+      }
+    }
+    expect(app.previewCache.get(previewKey)).toEqual({ card: 'the storefront preview' });
+  });
+
+  it('and a flood of name previews cannot evict the card a buyer is dragging onto', () => {
+    const mine = 'pawn-base:grapefruit:2:her-order';
+    app.pawnCardCache.set(mine, { card: 'her base card' });
+    for (let i = 0; i < 200; i++) {
+      app.previewCache.set(app.previewCache.key({ theme: 'grapefruit', name: 'name' + i }), {
+        card: 'x',
+      });
+    }
+    expect(app.pawnCardCache.get(mine)).toEqual({ card: 'her base card' });
+  });
+
+  it('holds every disc count of several orders at once, which is what it is for', () => {
+    // Five entries per order (n = 0..4). The bound has to clear a handful of
+    // orders being edited at the same time, or a buyer changing how many discs she
+    // covers re-renders every time.
+    const ORDERS = 8;
+    for (let order = 0; order < ORDERS; order++) {
+      for (let n = 0; n <= 4; n++) {
+        app.pawnCardCache.set('pawn-base:grapefruit:' + n + ':o' + order, { card: 'o' + order });
+      }
+    }
+    for (let order = 0; order < ORDERS; order++) {
+      expect(app.pawnCardCache.get('pawn-base:grapefruit:0:o' + order)).toEqual({
+        card: 'o' + order,
+      });
+    }
+  });
+});
+
+// THE ARGV THE PREVIEW IS SPAWNED WITH.
+//
+// The card this route renders IS the card the deck prints, so anything the deck
+// puts on it has to reach the preview too — the photos, their frames, and the
+// ORDER TITLE, which the pawn card carries under the pawns now. A preview that
+// resolved the title differently would put a different name on the card than the
+// printer does, under a caption promising they are the same.
+//
+// Asserted on the pure builder rather than through a spawn: the generator is
+// deliberately unrunnable in this file, and an argv is exactly the kind of thing
+// that drifts silently (#595).
+describe('pawnCardArgs', () => {
+  const BASE = { theme: 'grapefruit', outDir: '/tmp/out' };
+
+  it('opens with the theme, the honoree and the out dir, in --pawn-card mode', () => {
+    const args = app.pawnCardArgs({ ...BASE, name: 'שירה' });
+    expect(args.slice(1, 5)).toEqual(['grapefruit', 'שירה', '/tmp/out', '--pawn-card']);
+  });
+
+  it('resolves the title exactly as the deck does', () => {
+    const args = app.pawnCardArgs({
+      ...BASE,
+      name: 'שירה',
+      extraFields: { AGE: '30' },
+      customTitle: 'רווקות',
+      gender: 'female',
+    });
+    expect(args).toContain('--field');
+    expect(args).toContain('AGE=30');
+    // `=`-joined, so a title starting with '-' is never read as an option.
+    expect(args).toContain('--title=רווקות');
+    expect(args.join(' ')).toContain('--gender female');
+  });
+
+  it('a title starting with a dash is still one token', () => {
+    const args = app.pawnCardArgs({ ...BASE, customTitle: '-40' });
+    expect(args).toContain('--title=-40');
+  });
+
+  it('passes no title arguments for a collection that has none', () => {
+    const args = app.pawnCardArgs(BASE);
+    expect(args.slice(1, 5)).toEqual(['grapefruit', '', '/tmp/out', '--pawn-card']);
+    expect(args.some((a) => String(a).startsWith('--title'))).toBe(false);
+    expect(args).not.toContain('--gender');
+    expect(args).not.toContain('--field');
+  });
+
+  it('pairs every frame with its own photo, never with the next one', () => {
+    const args = app.pawnCardArgs({
+      ...BASE,
+      photos: ['/tmp/a.png', '/tmp/b.png', '/tmp/c.png'],
+      photoFrames: [null, '1.5,-0.25,0.1', null],
+    });
+    const pairs = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--photo') pairs.push([args[++i], null]);
+      else if (String(args[i]).startsWith('--photo-frame=')) {
+        expect(pairs.length).toBeGreaterThan(0);
+        expect(pairs[pairs.length - 1][1]).toBe(null);
+        pairs[pairs.length - 1][1] = String(args[i]).slice('--photo-frame='.length);
+      }
+    }
+    expect(pairs).toEqual([
+      ['/tmp/a.png', null],
+      ['/tmp/b.png', '1.5,-0.25,0.1'],
+      ['/tmp/c.png', null],
+    ]);
+  });
+
+  it('the live base card asks for no photos and says how many discs the page covers', () => {
+    const args = app.pawnCardArgs({ ...BASE, empty: true, drawn: 2 });
+    expect(args).toContain('--no-photos');
+    expect(args.join(' ')).toContain('--drawn 2');
+    expect(args).not.toContain('--photo');
+  });
+});

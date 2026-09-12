@@ -30,10 +30,12 @@ beforeAll(() => {
   db = require(path.join(serverDir, 'db.js'));
 });
 
-// The exact shape generator/word_demand.small_cards prints.
+// The exact shape generator/word_demand.deck_small_cards prints. `index` is the
+// card's position in the DECK — the pawn card is card 1, so 2 is the first word
+// card of an ordinary deck.
 const REPORT = [
-  { index: 1, size: 15.56, word: 'קונסטרוקטיביזם', ratio: 0.496 },
-  { index: 42, size: 21.92, word: 'גיאוגרפיה', ratio: 0.699 },
+  { index: 2, size: 15.56, word: 'קונסטרוקטיביזם', ratio: 0.496 },
+  { index: 43, size: 21.92, word: 'גיאוגרפיה', ratio: 0.699 },
 ];
 
 // The parse the server does over the generator's stdout, kept here in the shape
@@ -111,7 +113,7 @@ describe('the note says where to look', () => {
   it('turns a card number into the page its front prints on', () => {
     expect(pageOf(1)).toBe(2);
     expect(pageOf(3)).toBe(6);
-    expect(pageOf(103)).toBe(206); // the last word card of a full deck
+    expect(pageOf(104)).toBe(208); // the last word card of a full deck
   });
 
   it('matches the deck the generator actually writes', () => {
@@ -120,5 +122,26 @@ describe('the note says where to look', () => {
     const cards = 104;
     expect(cards * 2).toBe(208);
     expect(pageOf(cards)).toBe(208);
+  });
+
+  // THE NUMBER IS THE DECK'S, NOT THE WORD CARDS'.
+  //
+  // The pawn card OPENS the deck (generator/pack.pack), so the word cards are
+  // deck cards 2..104 and the generator reports a small card by its deck position
+  // (word_demand.deck_small_cards). This end has to read it the same way: while
+  // the report numbered word cards, `index * 2` sent her one card early — to the
+  // previous card's front, which has nothing wrong with it.
+  const deckNumberOfWordCard = (n) => n + 1; // 1 pawn card in front of them
+  it('reads the index as a deck card number, so the page lands on the right front', () => {
+    // The first WORD card of the deck is deck card 2, on pages 3-4: its back is
+    // page 3 and its front page 4.
+    expect(pageOf(deckNumberOfWordCard(1))).toBe(4);
+    // The owner's own example: the 37th word card is deck card 38 on page 76 —
+    // not 37 on page 74, which is the card before it.
+    expect(pageOf(deckNumberOfWordCard(37))).toBe(76);
+    // And the pawn card itself, deck card 1, prints on page 2.
+    expect(pageOf(1)).toBe(2);
+    // The last word card of a full deck is the last page of it.
+    expect(pageOf(deckNumberOfWordCard(103))).toBe(208);
   });
 });

@@ -197,7 +197,7 @@ describe('galleryFor — resolved per-surface gallery', () => {
   });
 });
 
-// The PHOTO CARD slide — the deck's 104th front, shown on the storefront with the
+// The PHOTO CARD slide — the deck's photo card, shown on the storefront with the
 // generic Dugri fallback art. Only a PORTRAIT card-structure design renders one,
 // and only once that art ships, so the slot behaves exactly like the board: present
 // when the design ships the render (thumbs.photo) or the owner uploaded one, absent

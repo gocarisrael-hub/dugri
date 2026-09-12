@@ -34,7 +34,7 @@ import re
 import config
 
 # A full v2 deck is 103 word cards x 4 words (pack.WORD_CARDS x pack.PER_CARD);
-# the 104th card is the photo card and carries no words.
+# the photo card, which opens the deck, carries no words.
 TARGET = 412
 WORDLISTS_DIR = os.path.join(config.REPO, "content", "wordlists")
 # The owner's persistent store; "" when DATA_DIR is unset (local dev / tests).

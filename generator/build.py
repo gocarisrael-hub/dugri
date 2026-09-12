@@ -435,10 +435,14 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
         doc.add_page(f"back{back}", back_ov[back])         # duplex: back, then front
         if front is None:
             # The photo card's slots live in the artwork and are filled in place
-            # (docs/photo-card.md), so the FILLED card is the design — there is
-            # no text overlay to lay on top of it, and it needs no font.
+            # (docs/photo-card.md), so the FILLED card is the design — the order
+            # title goes in with it rather than as a page overlay, because the
+            # band it is set in is measured off THIS card's own artwork and the
+            # page has never seen that. The faces it needs are the title faces
+            # the document's stylesheet already carries for every other card.
             doc.add_design("photo", rp.photo_card_svg(theme, photo_paths,
-                                                      paper=paper))
+                                                      paper=paper,
+                                                      title_lines=title_lines))
             doc.add_page("photo")
         else:
             doc.add_page(f"front{front}",

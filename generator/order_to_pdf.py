@@ -166,9 +166,13 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         # The cards that will print noticeably smaller than the rest, with the
         # entry responsible for each. Printed on its own line for the server to
         # pick up, the same way the board path is.
-        small = word_demand.small_cards(
-            [c["words"] for c in pack.load_cards(csv_path) if c["kind"] == "word"], sizes
-        )
+        #
+        # Over the WHOLE deck, so the number in the report is the number she
+        # counts to in the PDF: the pawn card opens the deck now, so a report
+        # numbered over the word cards alone would name the card before the small
+        # one (word card N is deck card N+1, and the admin note turns the number
+        # into a page as index * 2). See word_demand.deck_small_cards.
+        small = word_demand.deck_small_cards(pack.load_cards(csv_path), sizes)
         if small:
             print("smallcards " + json.dumps(small, ensure_ascii=False))
 

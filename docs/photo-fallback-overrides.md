@@ -4,7 +4,7 @@ Contract between the admin (Agent B) and the generator (Agent C).
 
 ## What this is
 
-The deck's 104th card is the **photo card**: the customer's four pawn photos. An
+The deck's FIRST card is the **photo card**: the customer's four pawn photos. An
 order that supplies none is filled with generic Dugri pawns shipped at
 `resources/canva/templates/_shared/photo-fallback/{1..4}.svg`.
 

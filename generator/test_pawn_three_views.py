@@ -118,6 +118,44 @@ def _check(view):
 # --- pure: the numbers the three renderings share ---------------------------
 
 
+def test_the_base_card_can_carry_the_title_the_live_card_carries():
+    """``base_card`` claims to be what ``?live=1`` returns, so it has to be able to be.
+
+    The pawn card carries the ORDER TITLE now (in the band under the pawns), and
+    the live route renders it — so a harness whose base pane hard-coded no title
+    was measuring against a card the page never composites onto, while its
+    docstring said otherwise. The default stays untitled, which is what ``compare``
+    wants: the band is below every slot, nothing here measures it, and the printed
+    pane beside it is untitled too.
+    """
+    import tempfile
+    h._import_generator()
+    import preview
+    import render_page as rp
+
+    seen = []
+
+    def fake_render(theme, clean_svg, words, title_lines, out_png, **kw):
+        seen.append({"words": words, "title": title_lines, "kind": kw.get("kind")})
+        open(out_png, "wb").close()
+        return out_png
+
+    real_render, real_downscale = rp.render_single_card, preview._downscale
+    rp.render_single_card = fake_render
+    preview._downscale = lambda *a, **k: None
+    try:
+        out = tempfile.mkdtemp(prefix="dugri-base-card-")
+        h.base_card(THEME, 1, out, title_lines=["שירה כהן"])
+        h.base_card(THEME, 1, out)
+    finally:
+        rp.render_single_card, preview._downscale = real_render, real_downscale
+
+    assert [s["title"] for s in seen] == [["שירה כהן"], []]
+    # Still the pawn card, and still no words on it.
+    assert [s["kind"] for s in seen] == ["photo", "photo"]
+    assert [s["words"] for s in seen] == [[], []]
+
+
 def test_the_ring_is_the_slot_s_own_circle():
     # The dashed cut-line on the card is <circle r="33"> against a 66-unit slot —
     # the slot's inscribed circle. Anything else and the browser draws a circle

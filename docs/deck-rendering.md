@@ -93,15 +93,24 @@ would mean printing one of the two at the wrong size.
 104 cards, in fixed order, every card preceded by the back so the file prints
 duplex: `[back, card1, back, card2, ..., back, card104]`.
 
-- Cards 1..103 are word cards, 4 words each (412 words). The front style cycles
-  `fronts[i % len(fronts)]`, giving 13/13/13/13/13/13/13/12 across eight styles.
-  The count comes from the theme, not a hardcoded 8.
-- Card 104 is the photo card (`docs/photo-card.md`).
+- Card 1 is the photo card (`docs/photo-card.md`) — the pawns, on pages 1-2.
+  It leads the deck because it is the card the deck is ABOUT, and because it is
+  the one sheet the print shop handles differently (it is cut into four discs).
+  It used to be card 104, at the bottom of the stack and 207 pages into the PDF.
+- Cards 2..104 are word cards, 4 words each (412 words). The front style cycles
+  `fronts[i % len(fronts)]` over the WORD cards, giving 13/13/13/13/13/13/13/12
+  across eight styles. The count comes from the theme, not a hardcoded 8.
+
+Anything that NUMBERS a card for the owner counts in this order, photo card
+included — the small-card report (`word_demand.deck_small_cards`, printed as the
+`smallcards` line) and the admin note that turns its index into a page as
+`index * 2`. Numbered over the word cards alone the two ends disagree by one, and
+she scrolls to the front of the card _before_ the small one.
 
 Two deliberate departures from a fixed 104:
 
 - FEWER words than a full deck yields FEWER cards rather than a tail of blank
-  ones — only the last card is blank-padded.
+  ones — only the last word card is blank-padded.
 - MORE words yields MORE cards. Every personal word is always kept (the product
   promises no upper limit), so an oversized list grows the deck past 103 instead
   of silently dropping the overflow. Front cycling stays even at any size.

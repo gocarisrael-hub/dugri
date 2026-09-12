@@ -77,7 +77,21 @@ def pawn_slots(theme):
     return out
 
 
-def pawn_card(theme, photos, workdir=None, views=None):
+def _title_lines_for(args):
+    """The order title for a ``--pawn-card`` run, from the CLI's title arguments.
+
+    The same call ``preview`` makes for a front (``config.title_lines``), pulled
+    out so the pawn card and the card next to it in the same preview cannot end
+    up with two different titles. An empty answer is the honest one for a caller
+    that passed no name: the card then prints as it did before it had a title.
+    """
+    cfg = config.theme(args.theme)
+    config.ensure_calibrated(cfg)
+    return config.title_lines(cfg, args.name, _parse_fields(args.field),
+                              custom_title=args.title, gender=args.gender)
+
+
+def pawn_card(theme, photos, workdir=None, views=None, title_lines=None):
     """The buyer's OWN photo card, composed exactly as the deck prints it.
 
     The pawn card is a card like any other — it ships inside the deck, on the
@@ -98,6 +112,11 @@ def pawn_card(theme, photos, workdir=None, views=None):
     once she can move her photos: a preview that ignored her framing would be
     worse than none, because she would believe it.
 
+    ``title_lines`` is the order's title, which this card carries under the pawns
+    like every other card in the deck carries it. Same reasoning as ``views``:
+    the page it is shown on says "this is exactly how the card will be printed",
+    so anything the print puts on the card belongs here too.
+
     Returns ``{"pawns": png_path}``. One Chrome page for the card, plus whatever
     measuring its paper costs — no board, no back, no words.
     """
@@ -111,7 +130,7 @@ def pawn_card(theme, photos, workdir=None, views=None):
         paths = buildmod.resolve_photos(theme, photos, workdir=workdir,
                                         views=views)
         png = rp.render_single_card(
-            theme, config.photo_card_path(theme), [], [],
+            theme, config.photo_card_path(theme), [], title_lines or [],
             os.path.join(workdir, "pawns.png"), kind="photo", photos=paths)
         _downscale(png, CARD_MAX_W)
         # The disc geometry rides along: it costs a regex over a file already
@@ -575,20 +594,25 @@ def main():
         photos = [None] * drawn + buildmod.fallback_photos(args.theme, drawn)
         out = os.path.join(args.out_dir, "pawns-empty.png")
         os.makedirs(args.out_dir, exist_ok=True)
-        rp.render_single_card(args.theme, config.photo_card_path(args.theme), [], [],
-                              out, kind="photo", photos=photos)
+        # The title is part of the BASE card, not of the photos the caller draws
+        # on top — so the picture she drags her pawns around on carries it, and
+        # the one cache key this render has covers it (server/index.js).
+        rp.render_single_card(args.theme, config.photo_card_path(args.theme), [],
+                              _title_lines_for(args), out, kind="photo",
+                              photos=photos)
         _downscale(out, CARD_MAX_W)
         print(json.dumps({"pawns": out, "slots": pawn_slots(args.theme)}))
         return
 
     if args.pawn_card:
-        # The photo card alone. It carries no title and no words, so none of the
-        # title arguments apply to it — passing them would only invite the
-        # question of why they change nothing.
+        # The photo card alone. It carries no WORDS, but it does carry the order
+        # TITLE now — under the pawns, like every other card in the deck — so the
+        # title arguments apply to it exactly as they do to a front.
         views = buildmod.photo_views(args)
         print(json.dumps(pawn_card(args.theme, buildmod.photos(args),
                                    workdir=args.out_dir,
-                                   views=views)))
+                                   views=views,
+                                   title_lines=_title_lines_for(args))))
         return
 
     imgs = preview(

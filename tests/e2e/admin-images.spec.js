@@ -453,6 +453,13 @@ test.describe('admin gallery page', () => {
       'src',
       /photo-fallback\/default\/1/
     );
+    // …and the panel says WHERE in the deck this card is, correctly: the pawn card
+    // OPENS the deck (generator/pack.pack). It said "the last card in the deck" for
+    // as long as it was card 104, and an owner who believes that looks for these
+    // four pawns 207 pages into the PDF.
+    const lede = page.locator('#pawns .pawns-lede');
+    await expect(lede).toContainText('הקלף הראשון בחפיסה');
+    await expect(lede).not.toContainText('האחרון');
   });
 
   test('an overridden slot is marked custom and can be reset', async ({ page }) => {
