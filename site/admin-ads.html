@@ -381,6 +381,7 @@
       <div id="main" hidden>
         <div class="ranges" id="ranges"></div>
         <div class="tiles" id="tiles"></div>
+        <p class="hint" id="internalNote" data-testid="ads-internal" hidden></p>
 
         <h2>מה מטא מדווחת — ומה זה עלה</h2>
         <p class="hint" style="margin: 0 0 4px">
@@ -533,6 +534,28 @@
         }
       }
 
+      // Traffic that landed on the founders' address (the Railway hostname) is kept
+      // out of every tile and every row above. Said out loud, with the number: a
+      // report that quietly drops visits is one she cannot check against anything.
+      function renderInternal(n) {
+        const el = qs('internalNote');
+        const visits = (n && n.visits) || 0;
+        const orders = (n && n.orders) || 0;
+        if (!visits && !orders) {
+          el.hidden = true;
+          el.textContent = '';
+          return;
+        }
+        const parts = [];
+        if (visits) parts.push(visits + ' ביקורים');
+        if (orders) parts.push(orders + ' הזמנות');
+        el.textContent =
+          'לא נספרו ' +
+          parts.join(' ו-') +
+          ' שנכנסו דרך כתובת הבית (railway.app) — הכניסות שלך ושל אלמה. לקוחות מגיעים רק דרך הדומיין.';
+        el.hidden = false;
+      }
+
       function renderTiles(t) {
         const box = qs('tiles');
         box.textContent = '';
@@ -612,7 +635,7 @@
         }
         for (const e of events) {
           const row = document.createElement('div');
-          row.className = 'ev' + (e.k === 'purchase' ? ' buy' : '');
+          row.className = 'ev' + (e.k === 'purchase' ? ' buy' : '') + (e.i ? ' internal' : '');
           const when = document.createElement('span');
           when.className = 'when';
           when.textContent = new Date(e.t).toLocaleTimeString('he-IL', {
@@ -624,7 +647,11 @@
           what.textContent = KIND_LABEL[e.k] || e.k;
           const who = document.createElement('span');
           who.className = 'who';
-          who.textContent = [e.s, e.m, e.c, e.ct].filter(Boolean).join(' · ');
+          // An internal event is SHOWN — the feed is how she checks that her own
+          // visit registered at all — but named, so it is never mistaken for a
+          // customer arriving.
+          who.textContent =
+            (e.i ? 'פנימי · ' : '') + [e.s, e.m, e.c, e.ct].filter(Boolean).join(' · ');
           row.appendChild(when);
           row.appendChild(what);
           row.appendChild(who);
@@ -1174,6 +1201,7 @@
           if (seq !== reportSeq) return;
           adoptBase(data.base_url); // rebuild what is on screen against the real domain
           renderTiles(data.totals);
+          renderInternal(data.internal);
           renderRows(data.rows);
           // Meta's half is loaded after ours and never blocks it: it is a call
           // to somebody else's server, and a slow or refused one must not keep

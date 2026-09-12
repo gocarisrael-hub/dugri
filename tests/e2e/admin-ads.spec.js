@@ -38,6 +38,50 @@ async function arriveAt(page, url) {
 }
 
 test.describe('the ad report', () => {
+  // The founders open the site through the Railway hostname on purpose, so their
+  // browsing is separable from real traffic. The report leaves it out — and says
+  // so, with the number: a page that quietly drops visits is one she cannot check
+  // against anything. Stubbed, because the E2E server has no PUBLIC_BASE_URL and
+  // so has no public address for a landing URL to differ from.
+  test('says how much of the traffic was the founders’ own', async ({ page }) => {
+    await page.route('**/api/admin/ads?*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          days: 30,
+          rows: [],
+          totals: { visits: 3, checkouts: 1, orders: 1, revenue: 139, paid_orders: 0 },
+          internal: { visits: 19, checkouts: 3, orders: 1 },
+          base_url: 'https://dugri-israel.co.il',
+        }),
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const note = page.getByTestId('ads-internal');
+    await expect(note).toBeVisible();
+    await expect(note).toContainText('19 ביקורים');
+    await expect(note).toContainText('railway.app');
+  });
+
+  test('says nothing about internal traffic when there was none', async ({ page }) => {
+    await page.route('**/api/admin/ads?*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          days: 30,
+          rows: [],
+          totals: { visits: 3, checkouts: 1, orders: 1, revenue: 139, paid_orders: 0 },
+          internal: { visits: 0, checkouts: 0, orders: 0 },
+          base_url: 'https://dugri-israel.co.il',
+        }),
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('ads-internal')).toBeHidden();
+  });
+
   test('without a key the page reveals nothing and calls no admin API', async ({ page }) => {
     let hitAdmin = false;
     page.on('request', (req) => {

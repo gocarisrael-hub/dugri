@@ -75,6 +75,51 @@ const CLICK_IDS = [
 // what it is: no answer. Both the raw and URL-encoded forms.
 const MACRO_RE = /^(\{\{.*\}\}|%7b%7b.*%7d%7d)$/i;
 
+// THE FOUNDERS' DOOR. The site answers to more than one address: customers are
+// given dugri-israel.co.il (PUBLIC_BASE_URL), while the owner and her partner
+// open the Railway hostname on purpose, so that their own browsing and their own
+// test orders are separable from real traffic. So a visit that landed on any
+// address OTHER than the public one is internal — still recorded, still in the
+// live feed, and left out of every number the report adds up.
+//
+// With no PUBLIC_BASE_URL configured (local development, the test server) there
+// is no public address to differ from, and nothing is internal. That is the safe
+// default in both directions: a missing variable must never make real traffic
+// disappear from the report.
+function publicHost() {
+  try {
+    return new URL(String(process.env.PUBLIC_BASE_URL || '')).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+}
+
+function isInternalLanding(landing) {
+  const pub = publicHost();
+  if (!pub) return false;
+  let host = '';
+  try {
+    host = new URL(String(landing)).hostname.replace(/^www\./, '');
+  } catch {
+    return false; // no address to judge; treat as a customer
+  }
+  return host !== '' && host.toLowerCase() !== pub.toLowerCase();
+}
+
+// The same judgement for an event ALREADY IN THE LEDGER, which has no landing URL
+// stored — only the touch parsed out of it. Two marks give it away: the flag
+// written by record() since this change, and, for everything recorded before it,
+// a source that is the Railway hostname itself (what the referrer of an internal
+// page-to-page move parses to).
+function isInternalEvent(e) {
+  if (e.i === 1) return true;
+  // Guarded by the public host, because STAGING's own public address is a
+  // railway.app name: there, that host is the site, and its traffic is the only
+  // traffic there is.
+  const source = String(e.s || '').toLowerCase();
+  return /(^|\.)railway\.app$/.test(source) && source !== publicHost().toLowerCase();
+}
+
 // One field of a touch: trimmed, lowercased, control characters removed, capped.
 // Everything here ends up as a row label in the admin table and as a group key,
 // so it is normalised once, at the door.
@@ -399,6 +444,10 @@ function record({ kind, landing, referrer, visitor, order_no, value, at } = {}) 
     ct: touch.content,
     tm: touch.term,
   };
+  // Marked at the door, not at report time: the landing URL is not kept (it can
+  // carry an order's owner token — see safeUrl in site/js/attribution.js), so
+  // this is the only moment at which the address is still known.
+  if (isInternalLanding(landing)) ev.i = 1;
   if (order) ev.o = order;
   if (Number.isFinite(value)) ev.val = Math.round(Number(value) * 100) / 100;
   _events.push(ev);
@@ -433,6 +482,11 @@ function report({ days = 30, now = Date.now() } = {}) {
   const cutoff = now - Math.max(1, Number(days) || 30) * 24 * 60 * 60 * 1000;
   const rows = new Map();
   const totals = { visits: 0, checkouts: 0, orders: 0, revenue: 0, paid_orders: 0 };
+  // What the founders' own address contributed, counted separately so the page
+  // can say how much was set aside rather than leaving her to wonder where four
+  // visits went.
+  const internal = { visits: 0, checkouts: 0, orders: 0 };
+  const seenInternal = { visit: new Set(), checkout: new Set() };
   const seen = new Map(); // row key -> { visit: Set, checkout: Set } of visitor ids
   const seenAll = { visit: new Set(), checkout: new Set() }; // the same, site-wide
 
@@ -449,6 +503,17 @@ function report({ days = 30, now = Date.now() } = {}) {
   for (const e of _events) {
     const t = Date.parse(e.t);
     if (!Number.isFinite(t) || t < cutoff) continue;
+    if (isInternalEvent(e)) {
+      if (e.k === 'purchase') internal.orders += 1;
+      else {
+        const who = e.v || 't:' + e.t;
+        if (!seenInternal[e.k].has(who)) {
+          seenInternal[e.k].add(who);
+          internal[e.k === 'visit' ? 'visits' : 'checkouts'] += 1;
+        }
+      }
+      continue;
+    }
     const key = rowKey(e);
     let row = rows.get(key);
     if (!row) {
@@ -499,7 +564,7 @@ function report({ days = 30, now = Date.now() } = {}) {
   // Money first, then traffic — the owner opens this page to see what paid.
   out.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders || b.visits - a.visits);
   totals.revenue = Math.round(totals.revenue * 100) / 100;
-  return { days: Number(days) || 30, rows: out, totals };
+  return { days: Number(days) || 30, rows: out, totals, internal };
 }
 
 /** The most recent events, newest first — the "what is happening now" feed. */
@@ -519,6 +584,7 @@ load();
 
 module.exports = {
   parseTouch,
+  isInternalLanding,
   isPaid,
   record,
   report,
