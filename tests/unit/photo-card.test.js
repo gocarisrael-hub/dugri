@@ -1,6 +1,6 @@
 // @vitest-environment node
 //
-// Guards the PHOTO CARD contract — the 104th front of the deck, which carries
+// Guards the PHOTO CARD contract — the card that opens the deck, which carries
 // the buyer's four pawn photos (server/db.js `pawn_images`).
 //
 // The generator does exactly one thing to these files: set `href` on the four

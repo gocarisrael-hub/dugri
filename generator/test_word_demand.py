@@ -5,6 +5,7 @@ THE OWNER'S QUESTION: "maybe it's better to divide the words in a card in a way
 that maximizes the biggest font size?" — and the measurement is what settles it,
 in a direction that is not the intuitive one. See pack.deal_measured.
 """
+import json
 import random
 import statistics
 
@@ -140,6 +141,57 @@ def test_a_uniformly_tiny_deck_is_still_reported():
     rows = [["a"], ["b"], ["c"], ["d"]]
     sizes = {"a": 7.0, "b": 7.4, "c": 7.2, "d": 7.1}
     assert len(wd.small_cards(rows, sizes)) == 4
+
+
+# --- and the number in the report is the number in the PDF -------------------
+
+def test_the_report_numbers_cards_the_way_the_DECK_numbers_them():
+    """The pawn card opens the deck, so word card N is DECK card N+1.
+
+    The report is what the owner scrolls by — the admin note turns its index into
+    a page as ``index * 2`` — so a report numbered over the word cards alone sends
+    her to the card BEFORE the small one, where she finds nothing wrong and stops
+    believing the report.
+    """
+    rows = [["a"], ["b"], ["c"], ["d"], ["e"], ["f"], ["g"]]
+    sizes = {"a": 6.24, "b": 13.65, "c": 15.13,
+             "d": 20.2, "e": 20.2, "f": 20.2, "g": 20.2}
+    deck = [{"kind": "photo", "front": None, "words": [""] * 4}]
+    deck += [{"kind": "word", "front": i, "words": r} for i, r in enumerate(rows)]
+    # Word card 1 is the small one, and it is deck card 2 — page 4, not page 2.
+    assert [d["index"] for d in wd.deck_small_cards(deck, sizes)] == [2]
+    # The ratio/size/word are untouched: only WHERE to look changed.
+    plain = wd.small_cards(rows, sizes)
+    assert plain[0]["index"] == 1
+    named = wd.deck_small_cards(deck, sizes)[0]
+    assert (named["word"], named["size"], named["ratio"]) == (
+        plain[0]["word"], plain[0]["size"], plain[0]["ratio"])
+
+
+def test_the_numbering_follows_a_real_deck_the_packer_wrote(tmp_path):
+    """Read off ``pack.load_cards``, not off an assumed offset.
+
+    A whole real deck, with the small card planted in a known place: whatever
+    position the packer gives the pawn card, the report names the card the owner
+    would actually count to.
+    """
+    words = ["קונסטרוקטיביזםאימפרסיוניזם"] + [f"מילה{i}" for i in range(80)]
+    sizes = _sizes(words)
+    out = str(tmp_path / "order.csv")
+    pack.pack(words, out, sizes=wd.letter_weights(words))
+    cards = pack.load_cards(out)
+    found = wd.deck_small_cards(cards, sizes)
+    assert found, "the deliberately awful entry should surface"
+    hit = found[0]
+    named = cards[hit["index"] - 1]
+    # The named card really is the card that holds the awful entry.
+    assert named["kind"] == "word"
+    assert hit["word"] in named["words"]
+    # ...and the number is the DECK's, one more than the word-card number the
+    # report used to carry.
+    word_cards = [c for c in cards if c["kind"] == "word"]
+    assert hit["index"] == word_cards.index(named) + 2
+    assert cards[0]["kind"] == "photo"
 
 
 def test_an_even_deck_reports_nothing():
@@ -389,3 +441,63 @@ def test_a_deck_is_still_reproducible_from_its_seed():
     c = pack.deal(words, 20, random.Random(8), sizes=sizes)
     assert a == b
     assert a != c
+
+
+def test_the_PRINTED_report_line_carries_the_deck_number(tmp_path, monkeypatch, capsys):
+    """The line the server actually parses, from ``order_to_pdf``'s own stdout.
+
+    The two tests above pin the numbering; this one pins the WIRING, which is what
+    was wrong. ``order_to_pdf`` fed the report the word cards alone, and nothing in
+    the suite read the line it printed — so the index it carried could go back to
+    being the word-card number without a single test noticing.
+
+    Everything past the report is stubbed out: rendering a real deck takes minutes
+    and the report is printed before the first page is drawn.
+    """
+    import build as buildmod
+    import order_to_pdf
+
+    class _Stop(Exception):
+        pass
+
+    def stop(*a, **kw):
+        raise _Stop()
+
+    awful = "קונסטרוקטיביזםאימפרסיוניזם"
+    words = [awful] + [f"מילה{i}" for i in range(60)]
+    real_pack = pack.pack
+    written = {}
+
+    def fixed_pack(_words, out_csv, **kw):
+        # A REAL deck CSV — the pawn card wherever pack.pack puts it — over a word
+        # list short enough to reason about. Kept as TEXT: order_to_pdf builds in a
+        # temp dir it deletes on the way out, so the file is gone by the assertions.
+        out = real_pack(words, out_csv, sizes=wd.letter_weights(words))
+        written["csv"] = open(out_csv, encoding="utf-8-sig").read()
+        return out
+
+    monkeypatch.setattr(pack, "pack", fixed_pack)
+    monkeypatch.setattr(buildmod, "build_deck", stop)
+    monkeypatch.setattr(buildmod, "build_pdf", stop)
+    try:
+        order_to_pdf.order_to_pdf(THEME, "שירה", {}, words,
+                                  out_pdf=str(tmp_path / "deck.pdf"))
+    except _Stop:
+        pass
+
+    lines = [ln for ln in capsys.readouterr().out.splitlines()
+             if ln.startswith("smallcards ")]
+    assert lines, "the report line has to be printed for the server to read it"
+    report = json.loads(lines[0][len("smallcards "):])
+    hit = next(d for d in report if d["word"] == awful)
+
+    kept = tmp_path / "order.csv"
+    kept.write_text(written["csv"], encoding="utf-8-sig")
+    deck = pack.load_cards(str(kept))
+    # The card the number names is the card holding the awful entry — and it is a
+    # WORD card, so the pawn card in front of it has been counted.
+    named = deck[hit["index"] - 1]
+    assert named["kind"] == "word"
+    assert awful in named["words"]
+    assert deck[0]["kind"] == "photo"
+    assert hit["index"] >= 2

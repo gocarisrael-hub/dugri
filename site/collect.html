@@ -4234,11 +4234,32 @@
       // that shows it — it is a browser run on the server, and most owners come
       // to this page to add words.
       let pawnCardLoaded = false;
+      let pawnCardWatched = false;
       function loadPawnCard() {
         if (pawnCardLoaded) return;
         pawnCardLoaded = true;
-        watchPawnCardSize();
+        // Once per page, not once per render: a second ResizeObserver on the same
+        // image would refit the slots twice for every resize.
+        if (!pawnCardWatched) {
+          pawnCardWatched = true;
+          watchPawnCardSize();
+        }
         renderPawnCard();
+      }
+
+      // FORGET THE DRAWN CARD, so the tab draws it again.
+      //
+      // The pawn card carries the ORDER TITLE now, and its caption promises "זו
+      // התוצאה הסופית - בדיוק ככה הקלף יודפס". Change the title and the card on
+      // screen is a card that will never be printed — and `pawnCardLoaded` means
+      // re-entering the tab would keep showing it for the rest of the session.
+      //
+      // Forgotten rather than re-rendered on the spot: the title lives on the
+      // DESIGN tab, so nobody is looking at the pawn card when this is called,
+      // and a render for a tab that is off screen is a Chrome run on the server
+      // for nobody — which is the whole reason the flag exists.
+      function forgetPawnCard() {
+        pawnCardLoaded = false;
       }
 
       // What the DESIGN tab needs, fetched once and only when she first asks for
@@ -4436,6 +4457,10 @@
           // than leaving it contradicting her for however long the poll takes.
           renderHeading();
           renderPreview();
+          // ...and so does the pawn card, in the band under the pawns. Drop the
+          // one on screen so the photos tab renders the new title next time she
+          // opens it, instead of promising her a card with the old name on it.
+          forgetPawnCard();
         } catch (e) {
           // The server's own Hebrew message when it has one (the emoji refusal
           // names the problem far better than a generic failure would), and her

@@ -57,7 +57,7 @@ class _store:
 
 def test_target_is_a_full_deck_of_word_cards():
     # TARGET is not a free-standing number: it is exactly the deck pack.py builds,
-    # 103 word cards x 4 words (the 104th card is the photo card and holds none).
+    # 103 word cards x 4 words (the photo card opens the deck and holds none).
     # Pinned against pack's own constants so moving either one without the other
     # fails here instead of quietly shipping a deck with a half-empty last card.
     assert topup.TARGET == 412

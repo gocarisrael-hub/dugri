@@ -520,6 +520,28 @@ const previewCache = makePreviewCache({
   max: Number(process.env.PREVIEW_CACHE_MAX || 40),
   ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 5 * 60 * 1000),
 });
+// THE PAWN CARD GETS ITS OWN, and does not share the one above.
+//
+// It used to. The two are both previews and bounding them once was the tidier
+// story — until the pawn card started carrying the ORDER TITLE, which put the
+// title in its key and made the cached card PER ORDER instead of per (design,
+// disc count). Before that, every buyer on a design shared at most five entries
+// between them; now each order claims its own five, and five orders being edited
+// at once would evict a 40-slot cache that the public name-preview is also
+// filling. Everything a buyer dragging her pawns does — every change to how many
+// discs she covers — would go back to being a fresh Chrome render, on a path that
+// is already unhappy at two concurrent ones.
+//
+// So: its own bound, sized for what it now holds (five disc counts x a dozen
+// orders in flight), and no cross-eviction in either direction — a flood of pawn
+// cards cannot cost the storefront its previews, and a rush of previews cannot
+// cost a buyer the card she is dragging photos onto. Each entry here is ONE card
+// PNG, where a preview entry is three (card + board + back), so this is a smaller
+// footprint per slot than the number suggests.
+const pawnCardCache = makePreviewCache({
+  max: Number(process.env.PAWN_CARD_CACHE_MAX || 60),
+  ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 5 * 60 * 1000),
+});
 
 // The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
 // [] when missing/unparseable so a bad file never crashes a preview request.
@@ -3319,11 +3341,12 @@ app.post(
 //
 // OWNER ONLY (owner_token), because the photos are.
 //
-// Cached on (theme + the exact photo files + the frames she set), so returning
-// to the tab is free and yet a photo added, removed or MOVED is a different key
-// and re-renders at once — no staleness to reason about. Shares the preview LRU:
-// this is a preview, and the two together should be bounded once rather than
-// twice.
+// Cached on (theme + the exact photo files + the frames she set + the title), so
+// returning to the tab is free and yet a photo added, removed or MOVED — or the
+// honoree renamed — is a different key and re-renders at once: no staleness to
+// reason about. In its OWN bounded cache rather than the preview LRU, because the
+// title made these entries per-order and they would otherwise evict the public
+// name-preview (see pawnCardCache).
 app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const c = db.getCollection(req.params.id);
   if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
@@ -3370,11 +3393,11 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
       photoFrames.map((f) => f || '').join('|') +
       ':' +
       titleKey;
-  const cached = previewCache.get(cacheKey);
+  const cached = pawnCardCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
     const out = await runPawnCard({ theme, photos, photoFrames, empty: live, drawn, ...title });
-    previewCache.set(cacheKey, out);
+    pawnCardCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
     // A render that fails must not read as "you have no photos": the page keeps
@@ -8572,3 +8595,7 @@ module.exports.pawnPhotoFiles = pawnPhotoFiles;
 module.exports.pawnPhotoFrames = pawnPhotoFrames;
 module.exports.orderArgs = orderArgs;
 module.exports.pawnCardArgs = pawnCardArgs;
+// The two render caches, exported so a test can pin that they are SEPARATE — the
+// property the pawn card's per-order keys depend on (see pawnCardCache).
+module.exports.previewCache = previewCache;
+module.exports.pawnCardCache = pawnCardCache;

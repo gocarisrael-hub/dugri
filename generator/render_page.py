@@ -5182,6 +5182,27 @@ def photo_card_svg(theme, photos, paper=None, frame=_MEASURE, title_lines=None):
     needs no browser: there is nothing for ``deck_document`` to hand down and one
     fewer place for the deck and the preview to drift. Pass an explicit value (or
     ``None``) to override.
+
+    Thin over :func:`photo_card_parts`, which also answers whether the title was
+    actually DRAWN — ask there when that matters.
+    """
+    return photo_card_parts(theme, photos, paper=paper, frame=frame,
+                            title_lines=title_lines)[0]
+
+
+def photo_card_parts(theme, photos, paper=None, frame=_MEASURE, title_lines=None):
+    """``(svg, title_markup)`` — the pawn card, and the title it ACTUALLY got.
+
+    :func:`photo_card_svg` is this function's first half and the only thing nearly
+    every caller wants. The second half exists because ``title_lines`` being given
+    is not the same thing as a title being DRAWN: the band is measured per card, so
+    an unmeasurable frame, a template that draws something down there, or a band
+    too short for type all yield ``""`` and print the card exactly as it always
+    printed (see :func:`photo_card_title_markup`).
+
+    A caller that has to know the difference — the standalone preview SVG, which
+    embeds the title's own base64 font faces — asks here rather than guessing from
+    the argument, so a card with no text on it carries no fonts for it either.
     """
     import card_assets
     import card_frame
@@ -5195,7 +5216,7 @@ def photo_card_svg(theme, photos, paper=None, frame=_MEASURE, title_lines=None):
     svg = fill_photo_slots(svg, photos or [])
     if title:
         svg = svg.replace("</svg>", title + "</svg>")
-    return svg
+    return svg, title
 
 
 def _index_from_card_path(path):
@@ -5235,9 +5256,14 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
         # rather than from the ``clean_svg`` handed in here. This path renders
         # through Chrome anyway, so measuring the paper here costs it nothing it
         # was not already paying.
-        card = photo_card_svg(theme, photos, paper=card_paper.front_paper(theme),
-                              title_lines=title_lines)
-        if not title_lines:
+        card, title = photo_card_parts(theme, photos,
+                                       paper=card_paper.front_paper(theme),
+                                       title_lines=title_lines)
+        # Gated on the MARKUP, not on the argument. A title was asked for is not a
+        # title was drawn — a card whose band is unmeasurable or too short prints
+        # without one — and embedding base64 title faces in an SVG that has no
+        # <text> in it is weight on every preview of that template for nothing.
+        if not title:
             return card
         faces = ("<style>" + GEOMETRIC_TEXT_STYLE
                  + title_faces(theme, cfg, lines=title_lines) + "</style>")

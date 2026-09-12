@@ -3137,6 +3137,13 @@
             // card N's front is page 2N, and that is the page she scrolls to in
             // the PDF to look at it. The card number is there too, because that
             // is what the CSV and any conversation about the deck call it.
+            //
+            // `index` is the card's position in the DECK, pawn card included —
+            // the pawn card opens it, so the word cards are 2..104 and the
+            // generator numbers them that way (word_demand.deck_small_cards).
+            // The two ends have to agree: numbered over word cards alone, this
+            // arithmetic sent her one card early, to a front with nothing wrong
+            // with it.
             const where = small
               .slice(0, 3)
               .map((c) => 'קלף ' + c.index + ' (עמ׳ ' + c.index * 2 + ') "' + c.word + '"')

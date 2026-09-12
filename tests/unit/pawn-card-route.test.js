@@ -92,6 +92,66 @@ describe('GET /api/collections/:id/pawn-card', () => {
   });
 });
 
+// WHERE THE RENDERED CARDS ARE KEPT.
+//
+// The pawn card carries the ORDER TITLE now, so the title is part of its cache key
+// — which makes a cached card per-ORDER instead of per (design, disc count). It
+// used to share the public name-preview's 40-slot LRU, where each buyer editing her
+// pawns claims five entries (one per disc count she covers) and five buyers at once
+// would evict the storefront's previews out from under it, and each other. Every
+// eviction here is a fresh headless Chrome on a path already measured as unhappy at
+// two concurrent renders.
+//
+// So the two are bounded separately. This pins that they really are separate
+// objects, in both directions — the property the per-order keys now depend on.
+describe('the pawn card render cache', () => {
+  it('is not the name-preview cache', () => {
+    expect(app.pawnCardCache).toBeTruthy();
+    expect(app.previewCache).toBeTruthy();
+    expect(app.pawnCardCache).not.toBe(app.previewCache);
+  });
+
+  it('a flood of pawn cards cannot evict a name preview', () => {
+    const previewKey = app.previewCache.key({ theme: 'grapefruit', name: 'שירה' });
+    app.previewCache.set(previewKey, { card: 'the storefront preview' });
+    // Well past either bound: five disc counts x forty orders.
+    for (let order = 0; order < 40; order++) {
+      for (let n = 0; n <= 4; n++) {
+        app.pawnCardCache.set('pawn-base:grapefruit:' + n + ':order' + order, { card: 'x' });
+      }
+    }
+    expect(app.previewCache.get(previewKey)).toEqual({ card: 'the storefront preview' });
+  });
+
+  it('and a flood of name previews cannot evict the card a buyer is dragging onto', () => {
+    const mine = 'pawn-base:grapefruit:2:her-order';
+    app.pawnCardCache.set(mine, { card: 'her base card' });
+    for (let i = 0; i < 200; i++) {
+      app.previewCache.set(app.previewCache.key({ theme: 'grapefruit', name: 'name' + i }), {
+        card: 'x',
+      });
+    }
+    expect(app.pawnCardCache.get(mine)).toEqual({ card: 'her base card' });
+  });
+
+  it('holds every disc count of several orders at once, which is what it is for', () => {
+    // Five entries per order (n = 0..4). The bound has to clear a handful of
+    // orders being edited at the same time, or a buyer changing how many discs she
+    // covers re-renders every time.
+    const ORDERS = 8;
+    for (let order = 0; order < ORDERS; order++) {
+      for (let n = 0; n <= 4; n++) {
+        app.pawnCardCache.set('pawn-base:grapefruit:' + n + ':o' + order, { card: 'o' + order });
+      }
+    }
+    for (let order = 0; order < ORDERS; order++) {
+      expect(app.pawnCardCache.get('pawn-base:grapefruit:0:o' + order)).toEqual({
+        card: 'o' + order,
+      });
+    }
+  });
+});
+
 // THE ARGV THE PREVIEW IS SPAWNED WITH.
 //
 // The card this route renders IS the card the deck prints, so anything the deck

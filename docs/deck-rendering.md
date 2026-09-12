@@ -101,6 +101,12 @@ duplex: `[back, card1, back, card2, ..., back, card104]`.
   `fronts[i % len(fronts)]` over the WORD cards, giving 13/13/13/13/13/13/13/12
   across eight styles. The count comes from the theme, not a hardcoded 8.
 
+Anything that NUMBERS a card for the owner counts in this order, photo card
+included — the small-card report (`word_demand.deck_small_cards`, printed as the
+`smallcards` line) and the admin note that turns its index into a page as
+`index * 2`. Numbered over the word cards alone the two ends disagree by one, and
+she scrolls to the front of the card _before_ the small one.
+
 Two deliberate departures from a fixed 104:
 
 - FEWER words than a full deck yields FEWER cards rather than a tail of blank

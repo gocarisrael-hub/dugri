@@ -122,8 +122,10 @@ def test_the_word_cards_keep_their_even_front_spread_behind_it():
 
 def test_a_csv_with_no_front_column_still_spreads_evenly():
     # The degraded path: a hand-edited CSV whose `front` cannot be parsed falls
-    # back to the card's position. Counted over WORD cards — over ROWS, the photo
-    # card in front would start the spread at 1 and leave one style unused.
+    # back to the card's position. Counted over WORD cards, not over ROWS: the
+    # photo card in front would start the spread at 1 and rotate every card off
+    # the style `pack` deals it — still all eight styles, still evenly, but one
+    # step out of phase with the deck this fallback stands in for.
     out = _csv()
     pack.pack(_words(FULL), out)
     text = open(out, encoding="utf-8-sig").read()
@@ -133,6 +135,12 @@ def test_a_csv_with_no_front_column_still_spreads_evenly():
     cards = pack.load_cards(rewritten)
     assert cards[0]["kind"] == "photo"
     assert [c["front"] for c in cards[1:9]] == [0, 1, 2, 3, 4, 5, 6, 7]
+    # The whole point, stated as the equality it is: reduced the way `build` reduces
+    # it (`fronts[front % len(fronts)]`), the fallback reproduces the spread `pack`
+    # wrote, card for card — not a rotation of it.
+    dealt = [int(r["front"]) for r in _rows(out) if r["kind"] == "word"]
+    fell_back = [c["front"] % pack.FRONTS for c in cards if c["kind"] == "word"]
+    assert fell_back == dealt
 
 
 def test_short_list_yields_fewer_cards_not_a_tail_of_blank_ones():

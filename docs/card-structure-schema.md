@@ -12,7 +12,8 @@ shared `backs.svg`, a `board.svg` page). We move to **portrait single cards**:
 
 - Card-deck PDF = `(back, front) × 104` = **208 pages**, back first in each pair.
 - **103 word cards**, 4 words each (~412 words), cycling 8 front styles evenly.
-- **1 photo card** (the 104th front) carrying the customer's 4 pawn-photos.
+- **1 photo card**, carrying the customer's 4 pawn-photos. It is card **1** — it
+  opens the deck (`generator/pack.pack`); the word cards are 2..104.
 - **Board is a separate output file**, delivered alongside the deck — never inside
   the 208 pages.
 
@@ -199,7 +200,8 @@ front = cards["fronts"][n % len(cards["fronts"])]
 ```
 
 103 over 8 gives 13/13/13/13/13/13/13/12 — even to within one card, as specified.
-Card 104 is the photo card and takes no front from this cycle.
+Card 1 is the photo card and takes no front from this cycle; `n` above counts WORD
+cards, so the photo card sitting in front of them does not shift the spread.
 
 ### One design for the whole deck (`fronts: [2]`)
 

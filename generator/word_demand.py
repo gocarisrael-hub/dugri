@@ -177,6 +177,38 @@ def small_cards(rows, sizes, ratio=0.55, floor=_SMALL_FLOOR):
     return out
 
 
+def deck_small_cards(rows_or_cards, sizes, **kw):
+    """:func:`small_cards` over a WHOLE DECK, numbered the way the deck is.
+
+    ``rows_or_cards`` is ``pack.load_cards``' output — every card of the deck,
+    word cards and pawn card alike, in printing order.
+
+    WHY THIS EXISTS AND ``small_cards`` IS NOT ENOUGH. ``small_cards`` measures
+    word cards, so it is handed the word cards only, and it numbers what it is
+    handed from 1. That WAS the deck's numbering, because the pawn card came last.
+    It no longer is: the pawn card opens the deck (``pack.pack``), so word card N
+    is deck card N+1 — and the number in this report is what the owner counts to
+    in the PDF, with the admin note turning it into a page (``index * 2``). Off by
+    one, she scrolls to the card BEFORE the small one, sees nothing wrong with it,
+    and stops trusting the report.
+
+    So the deck decides the numbering, not the slice: each reported ``index`` is
+    the card's 1-based position in ``rows_or_cards``. Nothing else changes — the
+    median, the ratio and the floor are all still measured over the word cards
+    alone, which are the only cards that carry type.
+    """
+    rows, numbers = [], []
+    for i, card in enumerate(rows_or_cards):
+        if (card or {}).get("kind") != "word":
+            continue
+        rows.append(card.get("words") or [])
+        numbers.append(i + 1)
+    found = small_cards(rows, sizes, **kw)
+    for d in found:
+        d["index"] = numbers[d["index"] - 1]
+    return found
+
+
 # HOW MANY LETTERS, spaces counted. The deal's difficulty order, and deliberately
 # not the measurement above.
 #

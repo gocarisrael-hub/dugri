@@ -24,6 +24,7 @@ import os
 import re
 
 import card_frame
+import card_paper
 import config
 import render_page as rp
 
@@ -149,3 +150,43 @@ def test_the_single_card_preview_with_no_title_injects_nothing():
                                    [], [], kind="photo", photos=[])
     assert "@font-face" not in svg
     assert "<text" not in svg
+
+
+def test_a_card_with_no_room_for_a_title_carries_no_title_FONTS_either():
+    """A title ASKED FOR is not a title DRAWN, and the fonts follow the drawing.
+
+    A template whose band is unmeasurable or too short prints without a title
+    (``photo_card_title_markup`` answers ``""``) — and the standalone preview used
+    to embed the base64 title faces anyway, because it decided from the ARGUMENT.
+    That is hundreds of kilobytes of font in an SVG with no ``<text>`` in it, on
+    every preview of that template.
+    """
+    real = card_frame.title_band
+    card_frame.title_band = lambda svg_text: None   # no room, whatever the artwork
+    try:
+        svg = rp.build_single_card_svg("grapefruit", config.photo_card_path("grapefruit"),
+                                       [], [TITLE], kind="photo", photos=[])
+    finally:
+        card_frame.title_band = real
+    assert "<text" not in svg, "a card with no band must print no title"
+    assert "@font-face" not in svg, "…and carry no fonts for the title it has not got"
+    # The card itself is untouched — this is the card that always printed.
+    assert svg == rp.photo_card_svg("grapefruit", [],
+                                    paper=card_paper.front_paper("grapefruit"))
+
+
+def test_photo_card_parts_reports_whether_the_title_was_drawn():
+    # The one thing photo_card_svg cannot tell its caller, which is why the pair
+    # exists. Given room, markup; given none, "" — and the svg still comes back.
+    svg, title = rp.photo_card_parts("grapefruit", [], paper=None, frame=None,
+                                     title_lines=[TITLE])
+    assert title and title in svg
+    real = card_frame.title_band
+    card_frame.title_band = lambda svg_text: None
+    try:
+        svg, title = rp.photo_card_parts("grapefruit", [], paper=None, frame=None,
+                                         title_lines=[TITLE])
+    finally:
+        card_frame.title_band = real
+    assert title == ""
+    assert svg == rp.photo_card_svg("grapefruit", [], paper=None, frame=None)

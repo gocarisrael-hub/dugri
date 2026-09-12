@@ -524,9 +524,13 @@ def load_cards(path):
             try:
                 front = int(str(r.get("front", "")).strip())
             except (TypeError, ValueError):
-                # Counted over WORD cards, not rows: the photo card sits in front
-                # of them now, so a row index would start this spread at 1 and
-                # hand the deck seven styles where it asked for eight.
+                # Counted over WORD cards, not rows: the photo card sits in
+                # front of them now, so a row index would start this spread at 1
+                # and rotate every card off the style `pack` deals it — the same
+                # eight styles, in the same cycle (`build` reduces this modulo the
+                # theme's front count), one step out of phase with the deck this
+                # fallback stands in for. Counting word cards reproduces `pack`'s
+                # own `i % fronts` exactly.
                 front = seen_words
             seen_words += 1
             out.append({"kind": "word", "front": front, "words": words})
