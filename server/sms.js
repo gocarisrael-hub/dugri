@@ -44,6 +44,7 @@ const LEASE_MS = 5 * 60 * 1000;
 // message is failed with a reason she can read, and pressing "ready" again queues
 // it afresh once the phone is fixed (a failed message never blocks a new one).
 const MAX_ATTEMPTS = 3;
+
 // The queue is a store on a volume, not a mail server: bound it so a phone that
 // never comes back cannot grow the file without limit. Oldest DONE messages go
 // first; pending ones are never evicted by this.
@@ -296,6 +297,38 @@ function ack(id, { ok = true, error, now } = {}) {
   return m;
 }
 
+// Report the WHOLE batch the phone is holding: everything still leased to it went
+// out. Answers the same question as ack() does per message, and exists because of
+// how the report is actually built on the phone.
+//
+// The per-message address has to be assembled there — a formula reading a field
+// out of the message the loop is on — and that one field is where this kept
+// breaking: an address built by hand that resolved to nothing, then the same
+// field left as plain text because the formula toggle was off. Both failures are
+// invisible from here and cost the customer a duplicate every five minutes.
+//
+// This one is a FIXED address. Nothing to assemble, nothing to evaluate, nothing
+// per message. It is still the phone reporting, not us guessing: the block runs
+// after the send block, and a send that throws stops the flow before it.
+//
+// Messages whose lease already ran out are NOT included — reconcile has put them
+// back in the queue, where a phone that was killed mid-batch is meant to leave
+// them. The rule this module is built on stands: a duplicate beats a silence.
+function ackTaken({ now } = {}) {
+  const at = Number.isFinite(now) ? now : Date.now();
+  reconcile(at);
+  const done = [];
+  for (const m of _store.messages) {
+    if (m.state !== 'taken') continue;
+    m.state = 'sent';
+    m.sent_at = new Date(at).toISOString();
+    m.error = null;
+    done.push(m);
+  }
+  if (done.length) save();
+  return done;
+}
+
 // Does this token open this message's report? Timing-safe, and false for
 // anything it cannot match — an unknown id, a message minted before tokens
 // existed, an empty token. It authorises ONE thing: reporting on this one
@@ -355,6 +388,7 @@ module.exports = {
   list,
   counts,
   reconcile,
+  ackTaken,
   markPolled,
   lastPollAt,
   LEASE_MS,
