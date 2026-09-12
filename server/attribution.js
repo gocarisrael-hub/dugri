@@ -77,47 +77,132 @@ const MACRO_RE = /^(\{\{.*\}\}|%7b%7b.*%7d%7d)$/i;
 
 // THE FOUNDERS' DOOR. The site answers to more than one address: customers are
 // given dugri-israel.co.il (PUBLIC_BASE_URL), while the owner and her partner
-// open the Railway hostname on purpose, so that their own browsing and their own
-// test orders are separable from real traffic. So a visit that landed on any
-// address OTHER than the public one is internal — still recorded, still in the
-// live feed, and left out of every number the report adds up.
+// open Railway's own generated hostname on purpose, so that their own browsing
+// and their own test orders are separable from real traffic. A visit that landed
+// on one of OUR OWN non-public addresses is internal — still recorded, still in
+// the live feed, and held out of the rows and tiles into a separate `internal`
+// count the page prints.
+//
+// WHY A NAMED SET OF HOSTS AND NOT "ANY ADDRESS BUT THE PUBLIC ONE". Because
+// every purchase in this ledger is a PAID order (see /api/track: an unpaid or
+// unprovable one records nothing), so anything this rule calls internal is real
+// money held out of the report. "Not PUBLIC_BASE_URL" put every address in the
+// world on that side of the line, which made two things possible that must not
+// be: a buyer still using the *.up.railway.app link that once sat in the
+// Instagram bio would have had their paid order dropped, and a PUBLIC_BASE_URL
+// that was stale or mistyped would have silenced the entire report — the
+// variable's only previous job was building links. Naming the hosts keeps the
+// blast radius at addresses we actually own.
 //
 // With no PUBLIC_BASE_URL configured (local development, the test server) there
-// is no public address to differ from, and nothing is internal. That is the safe
-// default in both directions: a missing variable must never make real traffic
-// disappear from the report.
-function publicHost() {
+// is no public address to differ from, and nothing is internal at all. That is
+// the safe default in both directions: a missing variable must never make real
+// traffic disappear from the report.
+const GENERATED_HOST_RE = /(^|\.)up\.railway\.app$/;
+const GENERATED_HOST_LABEL = '*.up.railway.app';
+
+function hostOf(url) {
   try {
-    return new URL(String(process.env.PUBLIC_BASE_URL || '')).hostname.replace(/^www\./, '');
+    return new URL(String(url)).hostname.replace(/^www\./, '').toLowerCase();
   } catch {
-    return '';
+    return ''; // nothing to judge
   }
+}
+
+function publicHost() {
+  return hostOf(process.env.PUBLIC_BASE_URL || '');
+}
+
+// Hosts named as ours by hand, for the ones no rule can guess: an old address
+// kept alive, a bare IP, a preview domain. Comma-separated hostnames.
+function configuredInternalHosts() {
+  return String(process.env.ATTRIBUTION_INTERNAL_HOSTS || '')
+    .split(',')
+    .map((h) =>
+      h
+        .trim()
+        .replace(/^www\./, '')
+        .toLowerCase()
+    )
+    .filter(Boolean);
+}
+
+// Railway's generated hostname always ends in up.railway.app, and once a service
+// answers to a custom domain — ours does; RAILWAY_PUBLIC_DOMAIN in production
+// reads dugri-israel.co.il — nothing customer-facing points at the generated name
+// any more. So it is treated as ours by default, with one exception: on STAGING
+// the generated name IS the public address, and there it is the site rather than
+// a back door, so the rule switches itself off.
+function generatedRuleActive() {
+  const pub = publicHost();
+  return !!pub && !GENERATED_HOST_RE.test(pub);
+}
+
+function isInternalHost(host) {
+  const pub = publicHost();
+  if (!pub || !host || host === pub) return false;
+  if (configuredInternalHosts().includes(host)) return true;
+  return generatedRuleActive() && GENERATED_HOST_RE.test(host);
+}
+
+/** The addresses counted as ours, for the page to name in its own words. */
+function internalHosts() {
+  if (!publicHost()) return [];
+  const names = configuredInternalHosts().filter((h) => h !== publicHost());
+  if (generatedRuleActive()) names.push(GENERATED_HOST_LABEL);
+  return names;
 }
 
 function isInternalLanding(landing) {
-  const pub = publicHost();
-  if (!pub) return false;
-  let host = '';
-  try {
-    host = new URL(String(landing)).hostname.replace(/^www\./, '');
-  } catch {
-    return false; // no address to judge; treat as a customer
-  }
-  return host !== '' && host.toLowerCase() !== pub.toLowerCase();
+  return isInternalHost(hostOf(landing));
 }
 
-// The same judgement for an event ALREADY IN THE LEDGER, which has no landing URL
-// stored — only the touch parsed out of it. Two marks give it away: the flag
-// written by record() since this change, and, for everything recorded before it,
-// a source that is the Railway hostname itself (what the referrer of an internal
-// page-to-page move parses to).
-function isInternalEvent(e) {
+// Since this change EVERY event carries the answer: i === 1 internal, i === 0
+// judged at the door and not. Six bytes an event buys the one thing report() can
+// never work out later — which address the visit landed on — and, just as
+// important, it fences the guesswork below off from events that were judged.
+function judged(e) {
+  return e.i === 1 || e.i === 0;
+}
+
+// What was ALREADY IN THE LEDGER when this shipped carries no mark and no landing
+// URL, so those rows can only be guessed at, from two marks:
+//
+//  1. a SOURCE that is one of our own addresses — an internal page-to-page move,
+//     whose referrer parsed to that hostname;
+//  2. a VISITOR ID that has since been seen at the internal door. A visitor id is
+//     one browser, so a browser that lands on the founders' address is the
+//     founders' browser, and its older rows are theirs too.
+//
+// (2) is what actually reaches the row the owner could not explain — "instagram /
+// social / link_in_bio, 19 visits" — because the browser REPLAYS its stored touch
+// on every later event (site/js/attribution.js), so a founder re-opening the
+// Railway address kept sending the campaign source and nothing in the row says
+// where it was opened. Those rows clean up the first time each of those browsers
+// is seen at the internal door after this deploy, not at the deploy itself.
+//
+// Neither guess is ever applied to an event that was judged at the door: a
+// genuine referral from somebody ELSE's Railway-hosted page is a customer, and
+// must stay one for good.
+function isInternalEvent(e, internalVisitors) {
   if (e.i === 1) return true;
-  // Guarded by the public host, because STAGING's own public address is a
-  // railway.app name: there, that host is the site, and its traffic is the only
-  // traffic there is.
-  const source = String(e.s || '').toLowerCase();
-  return /(^|\.)railway\.app$/.test(source) && source !== publicHost().toLowerCase();
+  if (judged(e)) return false;
+  if (isInternalHost(String(e.s || '').toLowerCase())) return true;
+  const who = String(e.v || '');
+  return who !== '' && !!internalVisitors && internalVisitors.has(who);
+}
+
+// The browsers known to be ours, over the WHOLE ledger rather than the reporting
+// window: a browser identified as the owner's three months ago is still hers.
+function internalVisitorIds() {
+  const out = new Set();
+  for (const e of _events) {
+    if (!e || typeof e !== 'object') continue;
+    const who = String(e.v || '');
+    if (!who) continue;
+    if (e.i === 1 || (!judged(e) && isInternalHost(String(e.s || '').toLowerCase()))) out.add(who);
+  }
+  return out;
 }
 
 // One field of a touch: trimmed, lowercased, control characters removed, capped.
@@ -446,8 +531,10 @@ function record({ kind, landing, referrer, visitor, order_no, value, at } = {}) 
   };
   // Marked at the door, not at report time: the landing URL is not kept (it can
   // carry an order's owner token — see safeUrl in site/js/attribution.js), so
-  // this is the only moment at which the address is still known.
-  if (isInternalLanding(landing)) ev.i = 1;
+  // this is the only moment at which the address is still known. Written either
+  // way, 1 or 0, so that the answer is on the record and the guesswork that fills
+  // in for the rows written before this change can never be applied to it.
+  ev.i = isInternalLanding(landing) ? 1 : 0;
   if (order) ev.o = order;
   if (Number.isFinite(value)) ev.val = Math.round(Number(value) * 100) / 100;
   _events.push(ev);
@@ -482,11 +569,15 @@ function report({ days = 30, now = Date.now() } = {}) {
   const cutoff = now - Math.max(1, Number(days) || 30) * 24 * 60 * 60 * 1000;
   const rows = new Map();
   const totals = { visits: 0, checkouts: 0, orders: 0, revenue: 0, paid_orders: 0 };
-  // What the founders' own address contributed, counted separately so the page
-  // can say how much was set aside rather than leaving her to wonder where four
-  // visits went.
-  const internal = { visits: 0, checkouts: 0, orders: 0 };
+  // What our own addresses contributed, counted separately so the page can say
+  // how much was set aside rather than leaving her to wonder where four visits
+  // went. REVENUE IS IN HERE, and it is the whole reason this object exists: a
+  // purchase only reaches the ledger once the order is paid, so an internal
+  // purchase is real money, and money that leaves the report without a number
+  // beside it is money nobody can tell from a test order.
+  const internal = { visits: 0, checkouts: 0, orders: 0, revenue: 0, hosts: internalHosts() };
   const seenInternal = { visit: new Set(), checkout: new Set() };
+  const ourBrowsers = internalVisitorIds();
   const seen = new Map(); // row key -> { visit: Set, checkout: Set } of visitor ids
   const seenAll = { visit: new Set(), checkout: new Set() }; // the same, site-wide
 
@@ -503,14 +594,23 @@ function report({ days = 30, now = Date.now() } = {}) {
   for (const e of _events) {
     const t = Date.parse(e.t);
     if (!Number.isFinite(t) || t < cutoff) continue;
-    if (isInternalEvent(e)) {
-      if (e.k === 'purchase') internal.orders += 1;
-      else {
-        const who = e.v || 't:' + e.t;
-        if (!seenInternal[e.k].has(who)) {
-          seenInternal[e.k].add(who);
-          internal[e.k === 'visit' ? 'visits' : 'checkouts'] += 1;
+    if (isInternalEvent(e, ourBrowsers)) {
+      // Branched on the kind by name, never indexed by it. `e.k` is a string off
+      // a JSON file that load() does not validate, and seenInternal[e.k] answers
+      // for 'constructor' and 'toString' with something that has no .has — one
+      // malformed row would have taken both admin ad endpoints down with a
+      // TypeError, on data the customer path beside it survives.
+      const who = whoOf(e);
+      if (e.k === 'visit' || e.k === 'checkout') {
+        const bucket = e.k === 'visit' ? seenInternal.visit : seenInternal.checkout;
+        if (!bucket.has(who)) {
+          bucket.add(who);
+          if (e.k === 'visit') internal.visits += 1;
+          else internal.checkouts += 1;
         }
+      } else if (e.k === 'purchase') {
+        internal.orders += 1;
+        if (Number.isFinite(e.val)) internal.revenue += e.val;
       }
       continue;
     }
@@ -564,6 +664,7 @@ function report({ days = 30, now = Date.now() } = {}) {
   // Money first, then traffic — the owner opens this page to see what paid.
   out.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders || b.visits - a.visits);
   totals.revenue = Math.round(totals.revenue * 100) / 100;
+  internal.revenue = Math.round(internal.revenue * 100) / 100;
   return { days: Number(days) || 30, rows: out, totals, internal };
 }
 
@@ -585,6 +686,7 @@ load();
 module.exports = {
   parseTouch,
   isInternalLanding,
+  internalHosts,
   isPaid,
   record,
   report,

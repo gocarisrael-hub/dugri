@@ -258,6 +258,23 @@
       .ev.buy .what {
         color: #2e7d4f;
       }
+      /* One of OUR OWN visits. It has to be visible from across the row: the feed
+         is scanned, not read, and an internal event that looks exactly like a
+         customer arriving is worse than one that is missing. The label is its own
+         element rather than a prefix inside .who, which is an LTR run clipped with
+         an ellipsis — a long campaign name would have eaten the only marker. */
+      .ev.internal {
+        background: #fbf7ef;
+      }
+      .ev .tag {
+        flex: 0 0 auto;
+        font-size: 11px;
+        font-weight: 700;
+        color: #8a6a2a;
+        border: 1px solid #e3d3ae;
+        border-radius: 3px;
+        padding: 0 5px;
+      }
       .live-head {
         display: flex;
         align-items: baseline;
@@ -534,25 +551,63 @@
         }
       }
 
-      // Traffic that landed on the founders' address (the Railway hostname) is kept
-      // out of every tile and every row above. Said out loud, with the number: a
-      // report that quietly drops visits is one she cannot check against anything.
+      // Traffic that landed on one of our OWN addresses rather than the public
+      // domain is kept out of every tile and every row above. Said out loud, with
+      // the numbers: a report that quietly drops visits is one she cannot check
+      // against anything.
+      //
+      // Every part of the sentence comes from the server. It used to name
+      // "railway.app" and the two of us, while the rule it was describing lives in
+      // server/attribution.js — so the moment that rule changed, or PUBLIC_BASE_URL
+      // went stale, the page would have gone on confidently blaming the wrong
+      // cause. `internal.hosts` is the rule's own answer to "which addresses".
       function renderInternal(n) {
         const el = qs('internalNote');
         const visits = (n && n.visits) || 0;
+        const checkouts = (n && n.checkouts) || 0;
         const orders = (n && n.orders) || 0;
-        if (!visits && !orders) {
+        const revenue = (n && n.revenue) || 0;
+        // CHECKOUTS COUNT. A note that hid itself on { visits: 0, checkouts: 3 }
+        // left the checkout tile three short with nothing on the page to say so —
+        // exactly the silence it exists to break.
+        if (!visits && !checkouts && !orders) {
           el.hidden = true;
           el.textContent = '';
           return;
         }
         const parts = [];
-        if (visits) parts.push(visits + ' ביקורים');
-        if (orders) parts.push(orders + ' הזמנות');
-        el.textContent =
-          'לא נספרו ' +
-          parts.join(' ו-') +
-          ' שנכנסו דרך כתובת הבית (railway.app) — הכניסות שלך ושל אלמה. לקוחות מגיעים רק דרך הדומיין.';
+        if (visits) parts.push(visits === 1 ? 'ביקור אחד' : visits + ' ביקורים');
+        if (checkouts)
+          parts.push(checkouts === 1 ? 'מעבר אחד לתשלום' : checkouts + ' מעברים לתשלום');
+        if (orders) parts.push(orders === 1 ? 'הזמנה אחת' : orders + ' הזמנות');
+        // "ו-3 הזמנות" but "והזמנה אחת": the hyphen after the conjunction belongs
+        // before a numeral, not before a word.
+        const last = parts[parts.length - 1];
+        const list =
+          parts.length > 1
+            ? parts.slice(0, -1).join(', ') + (/^[0-9]/.test(last) ? ' ו-' : ' ו') + last
+            : parts[0];
+        const hosts = (n && Array.isArray(n.hosts) ? n.hosts : []).filter(Boolean);
+        let text =
+          'לא נספרו כאן ' +
+          list +
+          ' שנכנסו לאתר דרך כתובת פנימית' +
+          (hosts.length ? ' (' + hosts.join(', ') + ')' : '') +
+          ' ולא דרך הדומיין שלקוחות מגיעים דרכו.';
+        // A PAID ORDER IS NEVER JUST DROPPED. Nothing reaches the ledger as a
+        // purchase until the order is paid, so an internal order is real money: it
+        // is named here, in shekels, so a genuine sale that came in on the old
+        // address can be told apart from a test of our own and added back by hand.
+        if (orders) {
+          text +=
+            ' הסכום (₪' +
+            revenue +
+            ') לא נכלל בהכנסות שלמעלה — ' +
+            (orders === 1
+              ? 'כדאי לוודא שזו הזמנה שלנו ולא של לקוחה.'
+              : 'כדאי לוודא שאלה הזמנות שלנו ולא של לקוחות.');
+        }
+        el.textContent = text;
         el.hidden = false;
       }
 
@@ -647,13 +702,18 @@
           what.textContent = KIND_LABEL[e.k] || e.k;
           const who = document.createElement('span');
           who.className = 'who';
-          // An internal event is SHOWN — the feed is how she checks that her own
-          // visit registered at all — but named, so it is never mistaken for a
-          // customer arriving.
-          who.textContent =
-            (e.i ? 'פנימי · ' : '') + [e.s, e.m, e.c, e.ct].filter(Boolean).join(' · ');
+          who.textContent = [e.s, e.m, e.c, e.ct].filter(Boolean).join(' · ');
           row.appendChild(when);
           row.appendChild(what);
+          // An internal event is SHOWN — the feed is how she checks that her own
+          // visit registered at all — but named in its own badge, so it is never
+          // mistaken for a customer arriving.
+          if (e.i) {
+            const tag = document.createElement('span');
+            tag.className = 'tag';
+            tag.textContent = 'פנימי';
+            row.appendChild(tag);
+          }
           row.appendChild(who);
           if (e.k === 'purchase' && e.val != null) {
             const v = document.createElement('span');
