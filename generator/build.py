@@ -11,6 +11,7 @@ colours, title lines and the board/back title slots all come from that config.
 NAME is the honoree; the title is built from the theme's title_lines template
 (e.g. trip comeback: OZ -> "OZ'S / WELCOME / PARTY").
 """
+import argparse
 import math
 import os
 import sys
@@ -868,6 +869,115 @@ def subject_window(box, disc_fill=None, alpha=None):
     top = (box[1] + box[3]) / 2.0 - side / 2.0
     return (int(round(left)), int(round(top)),
             int(round(left + side)), int(round(top + side)))
+
+
+# --- the CLI's photo arguments, in ONE place ---------------------------------
+#
+# `--photo-frame` is POSITIONAL against `--photo`, and for one release it only
+# looked like it was. Both CLIs declared the two as independent
+# ``action="append"`` lists and the server emits a frame ONLY for a photo the
+# buyer actually moved, so argparse handed back a COMPACTED frame list:
+#
+#     --photo p1 --photo p2 --photo-frame=1.5,0,0 --photo p3 --photo p4
+#     -> photo = [p1, p2, p3, p4]   photo_frame = ['1.5,0,0']
+#
+# and :func:`resolve_photos` pairs strictly by index, so p1 printed wearing p2's
+# framing and p2..p4 printed with the automatic framing the buyer had overridden.
+# Adjacency in the argv means nothing to argparse; the server was emitting the
+# flag right after its own `--photo` and the pairing was lost anyway. The owner
+# saw it on a real order: the collection page and the press PDF showed the same
+# four photos framed differently, and the page was the one telling the truth
+# (it composites the photos in the browser, keyed by path, so it cannot shift).
+#
+# So the two flags are declared here, once, for both entry points, and
+# `--photo-frame` ATTACHES to the `--photo` in front of it — padding the gaps
+# with None. The frame list that comes out is therefore always exactly as long
+# as the photo list, which is the contract resolve_photos was always reading it
+# under. A sparse argv survives, a hand-typed one is checked rather than
+# silently misread, and the two CLIs cannot drift apart again.
+
+
+def _bucket(namespace, dest):
+    """The list being built on ``namespace.<dest>``, created on first write.
+
+    Both flags default to the empty TUPLE, and that is load-bearing: ``argparse``
+    hands an action its default OBJECT, shared by every parse the process makes,
+    so an action that appends to a default LIST in place leaves the second
+    ``parse_args`` starting where the first one finished. ``_AppendAction``
+    copies for exactly that reason; an immutable default makes the copy
+    unmissable instead of merely remembered.
+    """
+    items = getattr(namespace, dest, None)
+    if not isinstance(items, list):
+        items = list(items or ())
+        setattr(namespace, dest, items)
+    return items
+
+
+class _PhotoAction(argparse.Action):
+    """``--photo PATH`` — opens a new slot, with no frame on it yet."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        photos = _bucket(namespace, self.dest)
+        # Close off the slot before this one: anything that did not get a frame
+        # of its own is framed automatically, and says so with a None.
+        frames = _bucket(namespace, "photo_frame")
+        while len(frames) < len(photos):
+            frames.append(None)
+        photos.append(values)
+
+
+class _PhotoFrameAction(argparse.Action):
+    """``--photo-frame ZOOM,DX,DY`` — belongs to the ``--photo`` before it."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        photos = getattr(namespace, "photo", None) or []
+        if not photos:
+            parser.error("--photo-frame must come after the --photo it frames")
+        frames = _bucket(namespace, self.dest)
+        while len(frames) < len(photos) - 1:
+            frames.append(None)
+        if len(frames) >= len(photos):
+            parser.error("two --photo-frame values for one --photo")
+        frames.append(values)
+
+
+def add_photo_args(ap, photo_help):
+    """Declare ``--photo`` / ``--photo-frame`` on ``ap``, correctly paired.
+
+    Both CLIs that draw the pawn card call this, so the pairing is written once.
+    ``photo_help`` differs between them (a deck takes photos for the card it
+    ships; the preview takes them for the card alone) and is the only difference
+    worth having.
+    """
+    ap.add_argument("--photo", action=_PhotoAction, default=(), metavar="PATH",
+                    help=photo_help)
+    ap.add_argument("--photo-frame", action=_PhotoFrameAction, default=(),
+                    metavar="ZOOM,DX,DY",
+                    help="how the buyer placed the PRECEDING --photo in its "
+                         "circle: zoom (0.5-2.5, >1 is closer) and the pan "
+                         "across the photo in units of the frame's own side. "
+                         "Repeatable, one at most per --photo; omit it (or pass "
+                         "1,0,0) to keep the automatic subject framing for that "
+                         "slot")
+
+
+def photos(args):
+    """The ``--photo`` paths as a plain list, in the order they were given."""
+    return list(getattr(args, "photo", None) or ())
+
+
+def photo_views(args):
+    """``args`` as the ``photo_views`` list :func:`resolve_photos` wants.
+
+    One entry per ``--photo``, in order, ``None`` where the buyer left the
+    automatic framing alone — including the trailing slots, which stop being
+    implicit here so nothing downstream has to reason about a short list.
+    """
+    given = photos(args)
+    frames = list(getattr(args, "photo_frame", None) or ())
+    frames += [None] * (len(given) - len(frames))
+    return [parse_photo_view(f) for f in frames[:len(given)]]
 
 
 def parse_photo_view(text):

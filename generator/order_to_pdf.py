@@ -280,22 +280,19 @@ def main():
                          "boundary --order=personal-first splits on. Pass it when "
                          "the word list is a frozen bank (hers + filler already "
                          "joined); omit it when the list IS her own words")
-    ap.add_argument("--photo", action="append", default=[], metavar="PATH",
-                    help="a customer pawn photo for the photo card (repeatable, up to 4)")
-    ap.add_argument("--photo-frame", action="append", default=[], metavar="ZOOM,DX,DY",
-                    help="how the buyer placed the Nth --photo in its circle: zoom "
-                         "(0.5-2.5, >1 is closer) and the pan across the photo in "
-                         "units of the frame's own side. Repeatable and POSITIONAL "
-                         "against --photo; omit it (or pass 1,0,0) to keep the "
-                         "automatic subject framing for that slot")
+    # Declared by build so the two CLIs that draw the pawn card cannot pair the
+    # photos with their frames differently — which is exactly what they did.
+    buildmod.add_photo_args(
+        ap, "a customer pawn photo for the photo card (repeatable, up to 4)")
     args = ap.parse_args()
 
     personal = open(args.words, encoding="utf-8-sig").read().splitlines()
     pdf, pages, board = order_to_pdf(
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
-        chasers=args.chasers, custom_title=args.title, photos=args.photo,
-        photo_views=[buildmod.parse_photo_view(f) for f in args.photo_frame],
+        chasers=args.chasers, custom_title=args.title,
+        photos=buildmod.photos(args),
+        photo_views=buildmod.photo_views(args),
         press_icc=args.press, press_bleed=args.bleed,
         press_cmyk=not args.press_passthrough, gender=args.gender,
         wordlist=args.wordlist, order=args.order,

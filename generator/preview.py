@@ -542,15 +542,13 @@ def main():
                          "the shipped Dugri pawns, exactly as the printed card "
                          "tops itself up. 0 (the default) is the card an order "
                          "with no photos at all prints")
-    ap.add_argument("--photo", action="append", default=[], metavar="FILE",
-                    help="one of the buyer's pawn photos, in order (repeatable, "
-                         "up to the four the card holds). Short lists are topped "
-                         "up from the shipped Dugri pawns, exactly as the deck "
-                         "does. Only read with --pawn-card")
-    ap.add_argument("--photo-frame", action="append", default=[], metavar="ZOOM,DX,DY",
-                    help="how the buyer placed the Nth --photo in its circle "
-                         "(zoom,dx,dy). Repeatable and POSITIONAL against --photo; "
-                         "omit it to keep the automatic subject framing")
+    # Same declaration the deck uses (build.add_photo_args): this preview only
+    # earns its place by being the picture the printer makes, which it stops
+    # being the moment the two parse their photo arguments differently.
+    buildmod.add_photo_args(
+        ap, "one of the buyer's pawn photos, in order (repeatable, up to the "
+            "four the card holds). Short lists are topped up from the shipped "
+            "Dugri pawns, exactly as the deck does. Only read with --pawn-card")
     ap.add_argument("--no-board", action="store_true",
                     help="skip the game board entirely (card + back only). The "
                          "board is the most expensive image in a preview, so a "
@@ -587,8 +585,9 @@ def main():
         # The photo card alone. It carries no title and no words, so none of the
         # title arguments apply to it — passing them would only invite the
         # question of why they change nothing.
-        views = [buildmod.parse_photo_view(f) for f in args.photo_frame]
-        print(json.dumps(pawn_card(args.theme, args.photo, workdir=args.out_dir,
+        views = buildmod.photo_views(args)
+        print(json.dumps(pawn_card(args.theme, buildmod.photos(args),
+                                   workdir=args.out_dir,
                                    views=views)))
         return
 

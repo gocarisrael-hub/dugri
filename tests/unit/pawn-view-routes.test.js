@@ -351,6 +351,39 @@ describe('what the generator is handed', () => {
     expect(args[args.indexOf('/tmp/a.png') + 1]).toBe('--photo');
   });
 
+  // WHAT THE PYTHON SIDE READS BACK. The argv above is only half the contract:
+  // `--photo-frame` is positional against `--photo`, and for one release both
+  // generator CLIs parsed the two as independent `append` lists, so a sparsely
+  // framed order came back with the frames COMPACTED — p1 printing in p2's
+  // framing and the rest printing automatically. The generator now pairs each
+  // frame with the `--photo` in front of it (build.add_photo_args, covered by
+  // generator/test_photo_view.py); this walks the argv the same way, so the
+  // shape this side emits stays the shape that side can pair.
+  it('lets every photo be paired with its own frame, walking the argv', () => {
+    const args = app.orderArgs({
+      theme: 'bachelorette',
+      name: 'Shira',
+      wordsFile: '/tmp/w.txt',
+      outPath: '/tmp/out.pdf',
+      photos: ['/tmp/a.png', '/tmp/b.png', '/tmp/c.png'],
+      photoFrames: [null, '1.5,-0.25,0.1', null],
+    });
+    const pairs = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--photo') pairs.push([args[++i], null]);
+      else if (String(args[i]).startsWith('--photo-frame=')) {
+        expect(pairs.length).toBeGreaterThan(0); // never before its own --photo
+        expect(pairs[pairs.length - 1][1]).toBe(null); // never two for one photo
+        pairs[pairs.length - 1][1] = String(args[i]).slice('--photo-frame='.length);
+      }
+    }
+    expect(pairs).toEqual([
+      ['/tmp/a.png', null],
+      ['/tmp/b.png', '1.5,-0.25,0.1'],
+      ['/tmp/c.png', null],
+    ]);
+  });
+
   it('an order with no frames at all is byte-for-byte what it was', () => {
     const BASE = {
       theme: 'bachelorette',
