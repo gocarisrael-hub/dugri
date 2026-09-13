@@ -231,6 +231,7 @@ function orderArgs({
   gender,
   photos,
   photoFrames,
+  photoCutouts,
   noTopup,
 }) {
   const args = [
@@ -286,10 +287,27 @@ function orderArgs({
   // that slot alone. Emitted immediately after its own --photo so the pairing is
   // readable in a log, and omitted entirely when she left the framing alone, so
   // an order that predates this produces byte-for-byte the argv it always did.
+  pushPhotoArgs(args, photos, photoFrames, photoCutouts);
+  return args;
+}
+
+// THE PHOTO ARGUMENTS, EMITTED ONCE. Every flag here is POSITIONAL against its
+// own `--photo` and the generator pairs them by walking the argv in order, so
+// they have to be written together — the deck and the pawn-card preview each
+// having their own copy of this loop is how a frame ended up on the wrong face
+// (#595). A photo carries at most three things: the file, the frame the buyer
+// set (omitted when she left it alone), and whether the file is her ORIGINAL
+// rather than a cutout (omitted for a cutout, the normal case). Both omissions
+// keep an older order's argv byte-for-byte what it always was.
+function pushPhotoArgs(args, photos, photoFrames, photoCutouts) {
   const frames = photoFrames || [];
+  const cuts = photoCutouts || [];
   (photos || []).forEach((photo, i) => {
     args.push('--photo', photo);
     if (frames[i]) args.push('--photo-frame=' + frames[i]);
+    // `cuts[i] === false` and not `!cuts[i]`: an ABSENT entry means "a cutout,
+    // as it always was", which is what every caller that predates this passes.
+    if (cuts[i] === false) args.push('--photo-original');
   });
   return args;
 }
@@ -341,8 +359,16 @@ function pawnPhotoEntries(collection) {
     if (!original) continue;
     const view = views[p] || null;
     const cutPath = Object.prototype.hasOwnProperty.call(cuts, p) ? cuts[p] : null;
-    const file = view && view.bg ? original : uploadFileFor(cutPath) || original;
-    out.push({ file, view });
+    const cutFile = view && view.bg ? null : uploadFileFor(cutPath);
+    const file = cutFile || original;
+    // WHICH of the two we picked, said out loud. The generator frames a cutout
+    // on its silhouette and an original on the plain square — the same fork her
+    // collection page takes when it draws the pawn (site/collect.html
+    // `measureFrame`) — so it has to know which file this is. It used to sniff
+    // the file's alpha instead, and an ORIGINAL that carries alpha (an already
+    // transparent PNG, kept by a buyer who ticked "keep my background") was
+    // framed one way on the page and another way by the printer.
+    out.push({ file, view, cut: !!cutFile });
   }
   return out.slice(0, 4);
 }
@@ -356,6 +382,12 @@ function pawnPhotoFiles(collection) {
 }
 function pawnPhotoFrames(collection) {
   return pawnPhotoEntries(collection).map((e) => photoFrameArg(e.view));
+}
+// …and whether each of those files is the CUTOUT. Same list, same order, same
+// reason they are derived together: a flag that slid onto the next photo would
+// frame the wrong face.
+function pawnPhotoCutouts(collection) {
+  return pawnPhotoEntries(collection).map((e) => e.cut);
 }
 
 // The generator's `--photo-frame` value for one photo, or null when the buyer
@@ -384,6 +416,7 @@ function runGenerator({
   customTitle,
   photos,
   photoFrames,
+  photoCutouts,
   gender,
   wordlist,
   cardOrder,
@@ -414,6 +447,7 @@ function runGenerator({
       gender,
       photos,
       photoFrames,
+      photoCutouts,
       noTopup,
     });
     const child = spawnGenerator(args);
@@ -696,6 +730,7 @@ function pawnCardArgs({
   outDir,
   photos,
   photoFrames,
+  photoCutouts,
   empty = false,
   drawn = 0,
   name = '',
@@ -726,15 +761,11 @@ function pawnCardArgs({
   // dimension, and a small one: 0..4 per theme, and a card that changes only
   // when the number of photos does.
   if (empty) args.push('--no-photos', '--drawn', String(drawn));
-  // Photos and their frames, paired exactly as the deck run pairs them — this
-  // preview only earns its place by being the same picture the printer makes,
-  // and a preview that ignored her framing would be the one thing worse than
-  // no preview: believed.
-  const frames = photoFrames || [];
-  (photos || []).forEach((file, i) => {
-    args.push('--photo', file);
-    if (frames[i]) args.push('--photo-frame=' + frames[i]);
-  });
+  // Photos, frames and cutout markers, emitted by the SAME helper the deck run
+  // uses — this preview only earns its place by being the same picture the
+  // printer makes, and a preview that framed differently would be the one thing
+  // worse than no preview: believed.
+  pushPhotoArgs(args, photos, photoFrames, photoCutouts);
   return args;
 }
 
@@ -742,6 +773,7 @@ function runPawnCard({
   theme,
   photos,
   photoFrames,
+  photoCutouts,
   empty = false,
   drawn = 0,
   name = '',
@@ -768,6 +800,7 @@ function runPawnCard({
       outDir,
       photos,
       photoFrames,
+      photoCutouts,
       empty,
       drawn,
       name,
@@ -1468,6 +1501,9 @@ async function produceDeck(c, b, opts = {}) {
     // …each with the frame the buyer set for it on her collection page, in the
     // same order (both come off pawnPhotoEntries).
     photoFrames: pawnPhotoFrames(c),
+    // …and which of those files are cutouts, because that is what the automatic
+    // framing keys off — on the page she approved it on, and now here.
+    photoCutouts: pawnPhotoCutouts(c),
     // From the STORED collection, never the request body. The wizard asks the
     // buyer for the honoree's gender once and it is validated to
     // 'male'/'female'/null at the door (db.createCollection), so the order
@@ -3365,6 +3401,7 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const drawn = live ? Math.max(0, Math.min(4, Number(req.query.n) || 0)) : 0;
   const photos = live ? [] : pawnPhotoFiles(c);
   const photoFrames = live ? [] : pawnPhotoFrames(c);
+  const photoCutouts = live ? [] : pawnPhotoCutouts(c);
   // THE ORDER TITLE, which this card carries now — read from the STORED
   // collection exactly as the produce route reads it, so the card she looks at
   // and the card the printer cuts resolve the same {AGE}/{feminine} title.
@@ -3392,11 +3429,21 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
       ':' +
       photoFrames.map((f) => f || '').join('|') +
       ':' +
+      photoCutouts.map((isCut) => (isCut ? 'c' : 'o')).join('') +
+      ':' +
       titleKey;
   const cached = pawnCardCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
-    const out = await runPawnCard({ theme, photos, photoFrames, empty: live, drawn, ...title });
+    const out = await runPawnCard({
+      theme,
+      photos,
+      photoFrames,
+      photoCutouts,
+      empty: live,
+      drawn,
+      ...title,
+    });
     pawnCardCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
@@ -8672,6 +8719,7 @@ module.exports.stickerBatch = stickerBatch;
 module.exports.stickerEntries = stickerEntries;
 module.exports.pawnPhotoFiles = pawnPhotoFiles;
 module.exports.pawnPhotoFrames = pawnPhotoFrames;
+module.exports.pawnPhotoCutouts = pawnPhotoCutouts;
 module.exports.orderArgs = orderArgs;
 module.exports.pawnCardArgs = pawnCardArgs;
 // The two render caches, exported so a test can pin that they are SEPARATE — the

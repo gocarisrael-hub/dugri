@@ -91,7 +91,8 @@ def _title_lines_for(args):
                               custom_title=args.title, gender=args.gender)
 
 
-def pawn_card(theme, photos, workdir=None, views=None, title_lines=None):
+def pawn_card(theme, photos, workdir=None, views=None, title_lines=None,
+              cutouts=None):
     """The buyer's OWN photo card, composed exactly as the deck prints it.
 
     The pawn card is a card like any other — it ships inside the deck, on the
@@ -112,6 +113,9 @@ def pawn_card(theme, photos, workdir=None, views=None, title_lines=None):
     once she can move her photos: a preview that ignored her framing would be
     worse than none, because she would believe it.
 
+    ``cutouts`` says which of them are cutouts and which are her own originals —
+    the automatic framing differs (``build.square_photo``) and so must this.
+
     ``title_lines`` is the order's title, which this card carries under the pawns
     like every other card in the deck carries it. Same reasoning as ``views``:
     the page it is shown on says "this is exactly how the card will be printed",
@@ -128,6 +132,7 @@ def pawn_card(theme, photos, workdir=None, views=None, title_lines=None):
     os.makedirs(workdir, exist_ok=True)
     try:
         paths = buildmod.resolve_photos(theme, photos, workdir=workdir,
+                                        cutouts=cutouts,
                                         views=views)
         png = rp.render_single_card(
             theme, config.photo_card_path(theme), [], title_lines or [],
@@ -609,9 +614,10 @@ def main():
         # TITLE now — under the pawns, like every other card in the deck — so the
         # title arguments apply to it exactly as they do to a front.
         views = buildmod.photo_views(args)
+        cuts = buildmod.photo_cutouts(args)
         print(json.dumps(pawn_card(args.theme, buildmod.photos(args),
                                    workdir=args.out_dir,
-                                   views=views,
+                                   views=views, cutouts=cuts,
                                    title_lines=_title_lines_for(args))))
         return
 
