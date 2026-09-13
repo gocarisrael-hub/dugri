@@ -624,6 +624,39 @@ describe('POST /api/collections/:id/pawns — the cap is the player count', () =
   });
 });
 
+// THE OWNER'S EDIT DIALOG MUST NOT DELETE HER PHOTOS.
+//
+// adminSetPawnImages is a NARROW-OR-REORDER setter — it can never attach a photo,
+// only keep fewer of the ones already there — and it truncated at a hard-coded 4.
+// So the first time the owner opened a twelve-photo order in admin and pressed
+// Save, eight of the buyer's faces left the order, silently, without anyone asking
+// for anything to be removed. Latent while nothing could hold more than four;
+// reachable the moment this PR lets sixteen exist.
+describe('db.adminSetPawnImages — the owner keeps what the deck can hold', () => {
+  const p = (n) => '/content-uploads/' + String(n).padStart(16, '0') + '.png';
+
+  it('keeps all twelve on a twelve-player deck', () => {
+    const c = db.createCollection('בדיקה', { players: 12 });
+    const all = Array.from({ length: 12 }, (_, i) => p(i));
+    db.addPawnImages(c.id, c.owner_token, all);
+    expect(db.adminSetPawnImages(c.id, all)).toEqual(all);
+  });
+
+  it('still narrows, which is what it is for', () => {
+    const c = db.createCollection('בדיקה', { players: 8 });
+    const all = Array.from({ length: 8 }, (_, i) => p(100 + i));
+    db.addPawnImages(c.id, c.owner_token, all);
+    const kept = [all[3], all[0]];
+    expect(db.adminSetPawnImages(c.id, kept)).toEqual(kept);
+  });
+
+  it('holds the standard deck to four', () => {
+    const c = db.createCollection('בדיקה', {});
+    const all = Array.from({ length: 6 }, (_, i) => p(200 + i));
+    expect(db.adminSetPawnImages(c.id, all)).toHaveLength(4);
+  });
+});
+
 // THE COUNT REACHES THE DECK, over HTTP, from the shape the wizard actually posts.
 //
 // Deleting `players: b.players` from POST /api/collections turns the whole feature
