@@ -244,10 +244,22 @@ function prune() {
 // What the phone should send now. Leases each one — a second poll (the app
 // restarting, two phones by mistake) will not hand out the same message again
 // until the lease expires.
+//
+// EVERY POLL IS A BATCH, AND THE BATCH HAS A NAME. One fresh token per call,
+// stamped on each message handed out and returned with them, is what lets the
+// batch report (ackTaken) settle THIS handful and nothing else. Without it
+// `taken` is a single global state with no record of who is holding what, and
+// "everything I am holding went out" means "everything anyone is holding" — a
+// second poll, a second phone, or the owner opening the report URL in a browser
+// to check it works would settle messages that were never sent. That is the one
+// outcome this module refuses: `sent` is terminal (ack() will not move it,
+// reconcile() will not re-queue it, and enqueue()'s dedupe will not replace it),
+// so a message wrongly marked sent is a customer who is never told, for good.
 function claim({ limit = 10, now } = {}) {
   const at = Number.isFinite(now) ? now : Date.now();
   reconcile(at);
   const out = [];
+  const batch = crypto.randomUUID();
   for (const m of _store.messages) {
     if (out.length >= limit) break;
     if (m.state !== 'pending') continue;
@@ -262,7 +274,11 @@ function claim({ limit = 10, now } = {}) {
     // secret written into all of those is a secret in a lot of places it was
     // never meant to be. This one unlocks exactly one message's "that went out".
     if (!m.ack_token) m.ack_token = crypto.randomUUID();
-    out.push({ id: m.id, to: m.to, text: m.text, ack_token: m.ack_token });
+    // Overwrites any earlier batch on purpose: a message re-leased after its
+    // lease ran out belongs to whoever is holding it NOW, and the old batch's
+    // report must not reach back and settle it.
+    m.batch = batch;
+    out.push({ id: m.id, to: m.to, text: m.text, ack_token: m.ack_token, batch });
   }
   if (out.length) save();
   return out;
@@ -297,9 +313,9 @@ function ack(id, { ok = true, error, now } = {}) {
   return m;
 }
 
-// Report the WHOLE batch the phone is holding: everything still leased to it went
-// out. Answers the same question as ack() does per message, and exists because of
-// how the report is actually built on the phone.
+// Report the batch the phone is holding: everything still leased UNDER THIS
+// TOKEN went out. Answers the same question as ack() does per message, and
+// exists because of how the report is actually built on the phone.
 //
 // The per-message address has to be assembled there — a formula reading a field
 // out of the message the loop is on — and that one field is where this kept
@@ -307,26 +323,60 @@ function ack(id, { ok = true, error, now } = {}) {
 // field left as plain text because the formula toggle was off. Both failures are
 // invisible from here and cost the customer a duplicate every five minutes.
 //
-// This one is a FIXED address. Nothing to assemble, nothing to evaluate, nothing
-// per message. It is still the phone reporting, not us guessing: the block runs
-// after the send block, and a send that throws stops the flow before it.
+// So the address is a constant with nothing per message in it. What it carries
+// is ONE value for the whole batch, handed out by claim() and posted straight
+// back — nothing to build, nothing to evaluate in a loop, and it can only ever
+// settle the batch it was handed with. A token for a batch we never issued, or
+// one whose messages have all moved on, settles nothing and says so; it is not
+// an error, because an automation flow that stops dead on an error is how the
+// phone stopped polling for a whole night.
 //
 // Messages whose lease already ran out are NOT included — reconcile has put them
 // back in the queue, where a phone that was killed mid-batch is meant to leave
 // them. The rule this module is built on stands: a duplicate beats a silence.
-function ackTaken({ now } = {}) {
+function ackTaken({ batch, now } = {}) {
   const at = Number.isFinite(now) ? now : Date.now();
   reconcile(at);
-  const done = [];
+  const given = String(batch == null ? '' : batch);
+  const sent = [];
+  let known = false;
+  if (!given) return { known, sent };
   for (const m of _store.messages) {
+    if (!sameToken(given, m.batch)) continue;
+    // Known means "we issued this token", whatever became of the messages since.
+    // It is what separates a replay — the same report arriving twice, a no-op —
+    // from a token that matches nothing, which is a flow reporting into the void
+    // and the owner needs to hear about it.
+    known = true;
     if (m.state !== 'taken') continue;
     m.state = 'sent';
     m.sent_at = new Date(at).toISOString();
     m.error = null;
-    done.push(m);
+    sent.push(m);
   }
-  if (done.length) save();
-  return done;
+  if (sent.length) save();
+  return { known, sent };
+}
+
+// Did we issue this batch token? Used by the route to let the token itself
+// authorise the report, so the shared gateway key — which opens the whole outbox,
+// every customer's number and text — never has to travel in a URL that Railway,
+// Cloudflare and Automate's flow log all write down.
+function checkBatchToken(batch) {
+  const given = String(batch == null ? '' : batch);
+  if (!given) return false;
+  return _store.messages.some((m) => sameToken(given, m.batch));
+}
+
+// Constant-time compare for the two secrets that travel through the phone: a
+// message's ack_token and a batch token. False for anything it cannot match —
+// an empty value, a missing one (a message minted before tokens existed), or a
+// different length, which timingSafeEqual throws on rather than answering.
+function sameToken(given, want) {
+  const a = String(given == null ? '' : given);
+  const b = String(want == null ? '' : want);
+  if (!a || !b || a.length !== b.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
 
 // Does this token open this message's report? Timing-safe, and false for
@@ -334,12 +384,8 @@ function ackTaken({ now } = {}) {
 // existed, an empty token. It authorises ONE thing: reporting on this one
 // message. It is not a key to the outbox, to another message, or to the admin.
 function checkAckToken(id, token) {
-  const given = String(token == null ? '' : token);
-  if (!given) return false;
   const m = _store.messages.find((x) => x.id === id);
-  const want = m && m.ack_token ? String(m.ack_token) : '';
-  if (!want || given.length !== want.length) return false;
-  return crypto.timingSafeEqual(Buffer.from(given), Buffer.from(want));
+  return sameToken(token, m && m.ack_token);
 }
 
 // Newest first, for the admin. `pending` counts what is still owed a customer.
@@ -385,6 +431,7 @@ module.exports = {
   claim,
   ack,
   checkAckToken,
+  checkBatchToken,
   list,
   counts,
   reconcile,
