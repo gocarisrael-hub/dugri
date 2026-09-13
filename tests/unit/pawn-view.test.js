@@ -5,6 +5,7 @@ import {
   clampView,
   isDefaultView,
   subjectFrame,
+  frameForPhoto,
   SUBJECT_Y,
   DISC_FILL,
   ZOOM_MIN,
@@ -388,5 +389,88 @@ describe('the automatic frame agrees with the generator, photo for photo', () =>
     const side = Math.min(w, h);
     const top = Math.max(0, Math.min(Math.round(SUBJECT_Y * h - side / 2), h - side));
     expect(plainFrame(w, h)).toEqual(frameFromCrop([0, top, side, top + side], w, h));
+  });
+});
+
+// WHICH PHOTOS GET MEASURED AT ALL.
+//
+// Everything above holds the two implementations together GIVEN a photo. This
+// holds the step before it: WHICH photos the browser bothers to measure. The
+// page used to decide that from the file's PATH — it measured the alpha only
+// when the file it was showing was the cutout rather than the original, and sent
+// everything else straight to plainFrame. The generator makes no such guess:
+// build.square_photo opens whatever file it is handed and asks its alpha.
+//
+// The two disagree the moment an ORIGINAL carries alpha, which is exactly what a
+// buyer who keeps her background on an already-transparent PNG produces. It
+// printed: a 1280x1280 transparent PNG of a dog, shown as the original, framed
+// by the browser on the whole square and by the printer on the subject — and
+// then multiplied by her zoom.
+describe('frameForPhoto measures every photo, whatever the file is called', () => {
+  const blobOf = () => ({ fake: 'blob' });
+  const deps = (measure, size) => ({
+    fetchBlob: async () => blobOf(),
+    measure,
+    naturalSize: async () => size || { w: 1280, h: 1280 },
+  });
+
+  it('takes the subject frame from a photo that has one', async () => {
+    // The dog: a transparent PNG served as the ORIGINAL (she kept her
+    // background). There is no argument to this function that could send it
+    // down the plain-square path, which is the whole of the fix.
+    const cutout = img(120, 120, (x, y) => (x >= 30 && x < 70 && y >= 20 && y < 100 ? 255 : 0));
+    const expected = subjectFrame(cutout);
+    expect(expected).not.toBeNull();
+    const got = await frameForPhoto(
+      '/content-uploads/dog.png',
+      deps(async () => expected)
+    );
+    expect(got).toEqual(expected);
+    // …and it is NOT the square the old path would have drawn.
+    expect(got.widthPct).not.toBeCloseTo(plainFrame(120, 120).widthPct, 6);
+  });
+
+  it('falls back to the plain square only when there is no silhouette to frame by', async () => {
+    // An ordinary opaque JPEG. subjectFrame's own null is the ONLY fork, in the
+    // same place subject_box returning None is on the generator side.
+    const got = await frameForPhoto(
+      '/content-uploads/a.jpg',
+      deps(async () => null, {
+        w: 900,
+        h: 1200,
+      })
+    );
+    expect(got).toEqual(plainFrame(900, 1200));
+  });
+
+  it('measures a Blob directly, for the wizard, without fetching anything', async () => {
+    const expected = plainFrame(10, 10);
+    let fetched = false;
+    const got = await frameForPhoto(
+      { size: 1 },
+      {
+        fetchBlob: async () => {
+          fetched = true;
+          return null;
+        },
+        measure: async () => expected,
+        naturalSize: async () => ({ w: 10, h: 10 }),
+      }
+    );
+    expect(got).toEqual(expected);
+    expect(fetched).toBe(false);
+  });
+
+  it('an unmeasurable, unsizeable photo is null, not a crash', async () => {
+    const got = await frameForPhoto('/content-uploads/gone.png', {
+      fetchBlob: async () => {
+        throw new Error('404');
+      },
+      measure: async () => null,
+      naturalSize: async () => {
+        throw new Error('decode failed');
+      },
+    });
+    expect(got).toBeNull();
   });
 });

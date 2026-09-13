@@ -437,6 +437,74 @@ export async function frameFromBlob(blob) {
   }
 }
 
+/**
+ * The frame for a photo about to be shown in a slot. MEASURED, never guessed.
+ *
+ * THE BUG THIS FUNCTION EXISTS TO END. The caller used to decide, before
+ * measuring anything, whether a photo was worth measuring: it passed an `alpha`
+ * flag that was true only when the file being shown was the CUTOUT rather than
+ * the original, and for everything else it went straight to `plainFrame`. That
+ * is a guess about a file's contents made from its PATH, and the generator makes
+ * no such guess — `build.square_photo` opens whatever file it is given and asks
+ * its alpha (`subject_box`), whatever the file is called.
+ *
+ * The two disagree the moment an ORIGINAL carries alpha, which is exactly what a
+ * buyer who ticks "keep my background" on an already-transparent PNG produces.
+ * The owner watched it print: her dog, a 1280x1280 transparent PNG shown as the
+ * original, framed by the browser on the whole square and by the printer on the
+ * subject — a window 1.25x tighter, and her zoom multiplied the gap on top.
+ *
+ * So there is no flag. Every photo is measured, and `subjectFrame`'s own null —
+ * nothing opaque, nothing transparent, a cut that collapsed — is the ONLY fork,
+ * in the same place `subject_box` returning None is on the generator side.
+ *
+ * `source` is the file that will PRINT — normally a URL, and a Blob is accepted
+ * for a caller holding one already. Which it is changes nothing about the answer.
+ *
+ * NOT what the WIZARD's photo step wants, and that is deliberate: there a photo
+ * with no measurable subject stays a plain thumbnail rather than falling back to
+ * the plain square, because a slot that dresses up as a pawn is a promise about
+ * where the subject sits and there is no subject to promise anything about. The
+ * collection page is past that point — the photo is on the order and IS going to
+ * print, so the only honest thing to show is the frame the printer will use,
+ * plain square and all.
+ *
+ * `deps` exists so this is testable without a network or a decoder; production
+ * passes nothing.
+ *
+ * Resolves to `null` when the photo cannot be measured OR sized at all, which
+ * the caller shows as the photo filling its circle — the same degradation as
+ * before, for the same reason: a preview is never worth failing an order over.
+ */
+export async function frameForPhoto(source, deps = {}) {
+  const fetchBlob = deps.fetchBlob || ((u) => fetch(u).then((r) => r.blob()));
+  const measure = deps.measure || frameFromBlob;
+  const sizeOf = deps.naturalSize || naturalSizeOf;
+  try {
+    const measured = await measure(typeof source === 'string' ? await fetchBlob(source) : source);
+    if (measured) return measured;
+    const size = await sizeOf(source);
+    return plainFrame(size.w, size.h);
+  } catch {
+    return null;
+  }
+}
+
+/** A photo's natural pixel size, by decoding it. Takes a URL or a Blob. */
+function naturalSizeOf(source) {
+  const url = typeof source === 'string' ? source : URL.createObjectURL(source);
+  return new Promise((resolve, reject) => {
+    // createElement rather than `new Image()`: the same element, and it keeps
+    // this module to the one DOM global the rest of it already uses.
+    const im = document.createElement('img');
+    im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+    im.onerror = () => reject(new Error('decode failed'));
+    im.src = url;
+  }).finally(() => {
+    if (url !== source) URL.revokeObjectURL(url);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // THE PAWN'S GEOMETRY, IN ONE PLACE
 //

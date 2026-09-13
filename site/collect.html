@@ -3202,8 +3202,7 @@
       // adjustment moves it. Static (a few hundred bytes) unlike the CUTTER,
       // which is 18MB of model and is only imported when a photo needs cutting.
       import {
-        frameFromBlob,
-        plainFrame,
+        frameForPhoto,
         applyView,
         clampView,
         VIEW_DEFAULT,
@@ -3415,39 +3414,16 @@
 
       // Where the subject sits, measured ONCE per image and cached: the answer
       // depends on the file alone, and measuring means decoding a photo and
-      // scanning it. A cutout is measured from its alpha (the printer's own
-      // rule); anything opaque falls back to the head-anchored square, which is
-      // the same degraded path build.square_photo takes for it.
+      // scanning it. EVERY photo is measured from its alpha — the printer's own
+      // rule — and the frame falls back to the head-anchored square only when
+      // there is no silhouette in the file, which is the same fork
+      // build.square_photo takes. The decision lives in pawn-frame.js
+      // (frameForPhoto); this is the cache around it, keyed on the file alone
+      // because the file is the whole of the answer.
       const pawnFrames = new Map();
-      function naturalSize(src) {
-        return new Promise((resolve, reject) => {
-          const im = new Image();
-          im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
-          im.onerror = () => reject(new Error('decode failed'));
-          im.src = src;
-        });
-      }
-      function measureFrame(src, alpha) {
-        const key = (alpha ? 'a:' : 'p:') + src;
-        if (!pawnFrames.has(key)) {
-          pawnFrames.set(
-            key,
-            (async () => {
-              try {
-                if (alpha) {
-                  const blob = await fetch(src).then((r) => r.blob());
-                  const f = await frameFromBlob(blob);
-                  if (f) return f;
-                }
-                const size = await naturalSize(src);
-                return plainFrame(size.w, size.h);
-              } catch (e) {
-                return null; // unmeasurable: the slot shows the photo as it is
-              }
-            })()
-          );
-        }
-        return pawnFrames.get(key);
+      function measureFrame(src) {
+        if (!pawnFrames.has(src)) pawnFrames.set(src, frameForPhoto(src));
+        return pawnFrames.get(src);
       }
 
       // THE WHITE STICKER EDGE, sized for the circle it goes around. The row's
@@ -3643,7 +3619,7 @@
         };
         const remeasure = async () => {
           const printSrc = pawnPrintSrcFor(src, view);
-          const measured = await measureFrame(printSrc, printSrc !== src);
+          const measured = await measureFrame(printSrc);
           // Another toggle may have landed while this was decoding.
           if (pawnPrintSrcFor(src, view) !== printSrc) return;
           frame = measured;
