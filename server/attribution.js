@@ -388,7 +388,70 @@ function load() {
     // to take the server down with it.
     _events = [];
   }
+  loadShown();
   prune();
+}
+
+// --- manual campaigns -----------------------------------------------------------
+//
+// A row with a campaign name came from a link somebody named by hand: the link
+// builder on the ads page, or a tag typed into an ad. The owner asked for those
+// rows to stay OFF the table unless she picks them. They multiply (a link per
+// story, per influencer), and a table full of one-visit test links buries the rows
+// that matter. Rows with no campaign name (google, Instagram's own bio link,
+// direct, a bare Meta click) always show.
+//
+// DISPLAY ONLY. The events stay in the ledger and in every total, because a
+// campaign that is not shown can hold paid orders, and the revenue tile has to
+// keep matching the bank. report() hands the picked set to the page, which
+// decides what to draw.
+//
+// Its own small file, written at once: it changes on a click, not on a page view,
+// so none of the ledger's write throttling is needed.
+const SHOWN_FILE = path.join(DATA_DIR, 'attribution-shown-campaigns.json');
+const MAX_SHOWN = 200;
+let _shown = new Set();
+
+function loadShown() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(SHOWN_FILE, 'utf8'));
+    _shown = new Set(Array.isArray(raw) ? raw.filter((c) => typeof c === 'string' && c) : []);
+  } catch {
+    _shown = new Set(); // no file yet: no manual campaign is shown
+  }
+}
+
+/** The manual campaigns the owner picked to show, sorted. */
+function shownCampaigns() {
+  return [..._shown].sort();
+}
+
+/**
+ * Show, or stop showing, one manual campaign. One name per call rather than the
+ * whole list, so two tabs ticking different campaigns cannot overwrite each
+ * other's choice. The name goes through the same normalising record() applies to
+ * a campaign, so "Bio_Insta" picks the row the table shows as bio_insta.
+ * Returns { ok: true, shown } or { error }; on an error nothing changes.
+ */
+function setCampaignShown(name, shown) {
+  const campaign = typeof name === 'string' ? field(name) : '';
+  if (!campaign) return { error: 'campaign is required' };
+  if (typeof shown !== 'boolean') return { error: 'shown must be true or false' };
+  const next = new Set(_shown);
+  if (shown) next.add(campaign);
+  else next.delete(campaign);
+  if (next.size > MAX_SHOWN) return { error: 'too many campaigns' };
+  if (next.size !== _shown.size) {
+    const tmp = SHOWN_FILE + '.tmp';
+    try {
+      fs.writeFileSync(tmp, JSON.stringify([...next]), 'utf8');
+      fs.renameSync(tmp, SHOWN_FILE);
+    } catch {
+      return { error: 'could not save' };
+    }
+    _shown = next;
+  }
+  return { ok: true, shown: shownCampaigns() };
 }
 
 /**
@@ -708,7 +771,15 @@ function report({ days = 30, now = Date.now() } = {}) {
   out.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders || b.visits - a.visits);
   totals.revenue = Math.round(totals.revenue * 100) / 100;
   internal.revenue = Math.round(internal.revenue * 100) / 100;
-  return { days: Number(days) || 30, rows: out, totals, internal };
+  // Every row is returned, picked or not: the totals above include them all, and
+  // the page needs the unpicked campaigns to list them in its picker.
+  return {
+    days: Number(days) || 30,
+    rows: out,
+    totals,
+    internal,
+    shown_campaigns: shownCampaigns(),
+  };
 }
 
 /**
@@ -747,6 +818,8 @@ module.exports = {
   record,
   report,
   recent,
+  shownCampaigns,
+  setCampaignShown,
   flush,
   load,
   _setEvents,

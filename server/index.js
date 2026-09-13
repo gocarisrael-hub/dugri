@@ -7876,6 +7876,18 @@ app.get('/api/admin/ads/live', (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.json({ events: attribution.recent(Number(req.query.limit) || 60) });
 });
+// Admin: show or stop showing one manual campaign (a row with a campaign name) on
+// the report table. Display only — every row still counts in the totals (see
+// attribution.setCampaignShown).
+app.post('/api/admin/ads/campaigns', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const body = req.body || {};
+  const out = attribution.setCampaignShown(body.campaign, body.shown);
+  if (out.error) {
+    return res.status(out.error === 'could not save' ? 500 : 400).json({ error: out.error });
+  }
+  res.json(out);
+});
 
 // Save the ledger when the process is asked to stop. Events are queued in memory
 // for up to a second and a half so that a burst of ad traffic is not a burst of

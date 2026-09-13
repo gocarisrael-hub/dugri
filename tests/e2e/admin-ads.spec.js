@@ -15,6 +15,26 @@ const unique = (prefix) => `${prefix}_${Date.now().toString(36)}${Math.floor(Mat
 // The report row for one campaign, whatever else is in the table.
 const rowFor = (page, campaign) => page.locator(`#rows tr:has(td:text-is("${campaign}"))`);
 
+// A row with a campaign name is a MANUAL campaign, and manual campaigns stay off
+// the report table until the owner picks them. A test that looks for its own
+// campaign's row picks it first, through the same route the picker uses, and
+// unpicks it afterwards so the shared E2E store never fills up with test names.
+const picked = [];
+async function showCampaign(page, campaign) {
+  const r = await page.request.post(`/api/admin/ads/campaigns?key=${KEY}`, {
+    data: { campaign, shown: true },
+  });
+  expect(r.ok(), 'picking the campaign was refused').toBe(true);
+  picked.push(campaign);
+}
+test.afterEach(async ({ request }) => {
+  while (picked.length) {
+    await request.post(`/api/admin/ads/campaigns?key=${KEY}`, {
+      data: { campaign: picked.pop(), shown: false },
+    });
+  }
+});
+
 // Go to a page AND wait for its measurement beacon to be ANSWERED. The waiter has
 // to be armed before the navigation: the beacon fires during load, so a wait
 // registered afterwards is a wait for an event that has already happened.
@@ -181,6 +201,7 @@ test.describe('the ad report', () => {
     expect(body.kind).toBe('visit');
     expect(body.landing).toContain(campaign);
 
+    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     const row = rowFor(page, campaign);
     await expect(row).toBeVisible();
@@ -220,6 +241,7 @@ test.describe('the ad report', () => {
     );
     for (const p of ['/products.html', '/how.html', '/index.html']) await page.goto(p);
 
+    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(rowFor(page, campaign).locator('td').nth(4)).toHaveText('1');
   });
@@ -277,6 +299,7 @@ test.describe('the ad report', () => {
       page,
       `/index.html?utm_source=ig&utm_medium=paid&utm_campaign=${campaign}&utm_content=Reel%2003`
     );
+    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     const row = rowFor(page, campaign);
     await expect(row.locator('td').nth(0)).toHaveText('instagram');
@@ -331,6 +354,7 @@ test.describe('the ad report', () => {
       page,
       `/index.html?utm_source=instagram&utm_medium=paid&utm_campaign=${campaign}`
     );
+    await showCampaign(page, campaign);
     await page.route('**/api/admin/ads?*', async (route) => {
       const resp = await route.fetch();
       const body = await resp.json();
@@ -379,6 +403,7 @@ test.describe('the ad report', () => {
     expect(link).toContain('utm_medium=bio');
 
     await arriveAt(page, new URL(link).pathname + new URL(link).search);
+    await showCampaign(page, campaign + '_סתיו');
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(
       rowFor(page, campaign + '_סתיו')
@@ -961,6 +986,7 @@ test.describe('the ad report', () => {
     await page.route('**/api/admin/ads/meta**', (route) => route.abort());
     const campaign = unique('resilient');
     await arriveAt(page, `/index.html?utm_source=ig&utm_medium=paid&utm_campaign=${campaign}`);
+    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(rowFor(page, campaign)).toBeVisible();
     await expect(page.locator('#metaBox')).toContainText('נכשל');
@@ -1021,5 +1047,137 @@ test.describe('the ad report', () => {
     await expect(page.locator('#main')).toBeVisible();
     await page.goto(`/dashboard.html?key=${KEY}`);
     expect(tracked).toBe(false);
+  });
+});
+
+// The owner asked for manual campaigns (rows with a campaign name: the link
+// builder, a hand-tagged ad) to stay off the table until she picks them, because
+// a link per story buries the rows that matter. Display only: the tiles keep
+// every row's money. Stubbed, so the rows are exactly these three.
+test.describe('the manual-campaigns picker', () => {
+  const ROWS = [
+    {
+      source: 'google',
+      medium: 'referral',
+      campaign: '',
+      content: '',
+      visits: 19,
+      checkouts: 6,
+      orders: 4,
+      revenue: 1012,
+      conversion: 21.1,
+    },
+    {
+      source: 'instagram',
+      medium: 'bio',
+      campaign: 'bio_insta',
+      content: '',
+      visits: 3,
+      checkouts: 1,
+      orders: 0,
+      revenue: 0,
+      conversion: 0,
+    },
+    {
+      source: 'instagram',
+      medium: 'story',
+      campaign: 'story_alma',
+      content: '',
+      visits: 5,
+      checkouts: 0,
+      orders: 1,
+      revenue: 255,
+      conversion: 20,
+    },
+  ];
+  const stubReport = (page, { rows = ROWS, shown = [] } = {}) =>
+    page.route('**/api/admin/ads?*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          days: 30,
+          rows,
+          totals: { visits: 27, checkouts: 7, orders: 5, revenue: 1267, paid_orders: 0 },
+          internal: { visits: 0, checkouts: 0, orders: 0, revenue: 0, hosts: [] },
+          shown_campaigns: shown,
+          base_url: 'https://dugri-israel.co.il',
+        }),
+      })
+    );
+
+  test('a manual campaign stays off the table until it is picked', async ({ page }) => {
+    await stubReport(page);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, 'google')).toBeVisible();
+    await expect(rowFor(page, 'bio_insta')).toHaveCount(0);
+    await expect(rowFor(page, 'story_alma')).toHaveCount(0);
+    await expect(page.getByTestId('campaign-picker')).toContainText('0 מתוך 2');
+    // Not shown is not uncounted: the revenue tile still has story_alma's sale.
+    await expect(page.locator('#tiles')).toContainText('1,267');
+  });
+
+  test('ticking a campaign shows its row and saves only that one', async ({ page }) => {
+    await stubReport(page);
+    let saved = null;
+    await page.route('**/api/admin/ads/campaigns**', (route) => {
+      saved = route.request().postDataJSON();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, shown: ['story_alma'] }),
+      });
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('campaign-picker').click();
+    await expect(page.getByTestId('campaign-panel')).toBeVisible();
+    await page.locator('input[data-campaign="story_alma"]').check();
+
+    await expect(rowFor(page, 'story_alma')).toBeVisible();
+    expect(saved).toEqual({ campaign: 'story_alma', shown: true });
+    await expect(rowFor(page, 'bio_insta')).toHaveCount(0);
+    await expect(page.getByTestId('campaign-picker')).toContainText('1 מתוך 2');
+  });
+
+  test('a picked campaign with nothing in this range can still be unticked', async ({ page }) => {
+    await stubReport(page, { shown: ['old_launch'] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('campaign-picker').click();
+    const box = page.locator('input[data-campaign="old_launch"]');
+    await expect(box).toBeChecked();
+    await expect(page.locator('#campaignList label:has-text("old_launch")')).toContainText(
+      'אין פעילות בטווח הזה'
+    );
+  });
+
+  test('a refused save puts the box back and says so', async ({ page }) => {
+    await stubReport(page);
+    await page.route('**/api/admin/ads/campaigns**', (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: '{"error":"could not save"}',
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('campaign-picker').click();
+    const box = page.locator('input[data-campaign="bio_insta"]');
+    await box.click();
+    await expect(page.getByTestId('campaign-status')).toContainText('לא נשמר');
+    await expect(box).not.toBeChecked();
+    await expect(rowFor(page, 'bio_insta')).toHaveCount(0);
+  });
+
+  test('a table of only unpicked campaigns says how to show them', async ({ page }) => {
+    await stubReport(page, { rows: [ROWS[1]] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.locator('#rows')).toContainText('קמפיינים ידניים');
+  });
+
+  test('with no manual campaigns there is no picker', async ({ page }) => {
+    await stubReport(page, { rows: [ROWS[0]] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, 'google')).toBeVisible();
+    await expect(page.getByTestId('campaign-picker')).toBeHidden();
   });
 });
