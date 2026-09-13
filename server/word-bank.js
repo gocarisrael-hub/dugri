@@ -1,6 +1,9 @@
 // word-bank.js — freezing the approved 412 words as a production input.
 //
-// WHY THIS EXISTS. The deck is 104 cards of 4 words: 412 (topup.TARGET, 103 x 4).
+// WHY THIS EXISTS. The deck is 104 cards, and the words fill whatever is left
+// after its pawn cards: 412 on the standard deck (103 word cards x 4) and four
+// fewer for every four players past the first four, which is db.deckWordsFor and
+// what `deckWords` below has to be told.
 // A buyer sends 70+ of her own and the rest is filled from a seed pool. Until
 // now that fill happened at PRINT time, inside order_to_pdf, into a temp file in
 // a scratch dir that is deleted with the run — so the 412 that got printed:
@@ -33,6 +36,11 @@
 // hand it 412 and it returns those 412, in order, untouched. So production simply
 // writes the frozen bank into the words file it already writes, and the deck is
 // the approved bank by construction.
+//
+// ...which is also why the SIZE has to be right here and cannot be fixed later.
+// topup only ever fills a shortfall — it never trims — so an oversized bank walks
+// straight through production untouched and comes out as extra cards. The bank is
+// the deck; there is no second chance to size it.
 //
 // WHEN IT IS DISCARDED. The owner's rule, asked and answered: "discarded and
 // re-frozen on the next close". Reopening a collection throws the bank away, so
@@ -75,11 +83,17 @@ function personalSpan(frozen, personal) {
   return n;
 }
 
-function record({ words, theme, pool, personalCount, noTopup }) {
+function record({ words, theme, pool, personalCount, noTopup, deckWords }) {
   return {
     created_at: new Date().toISOString(),
     theme,
     pool: pool || null,
+    // The deck this bank was SIZED FOR — db.deckWordsFor(collection), which is
+    // 412 at the default four players and four fewer for every four beyond it.
+    // Stored so the bank says what it is: a bank frozen for a 400-word deck and
+    // a bank frozen for a 412-word one are different production inputs, and the
+    // only way to tell them apart after the fact is to have written it down.
+    deck_words: Number.isInteger(deckWords) && deckWords > 0 ? deckWords : null,
     // Whether this bank was frozen for an order that asked for NO filler. Stored
     // so the same drift check that catches a changed pool catches a buyer who
     // changed her mind about being filled at all (see isStale).
@@ -98,7 +112,7 @@ function record({ words, theme, pool, personalCount, noTopup }) {
  * production behaves exactly as it did before this module existed, so the cost
  * of a failed freeze is the old behaviour, not a broken order.
  */
-function freeze({ personalWords, theme, pool, noTopup, python }) {
+function freeze({ personalWords, theme, pool, noTopup, python, deckWords }) {
   const words = (Array.isArray(personalWords) ? personalWords : [])
     .map((w) => String(w == null ? '' : w).trim())
     .filter(Boolean);
@@ -116,6 +130,19 @@ function freeze({ personalWords, theme, pool, noTopup, python }) {
     // what this module refuses to reimplement in JavaScript for the ordinary
     // case, and has no more business reimplementing here.
     if (noTopup) args.push('--target=0');
+    // HOW BIG THE DECK IS, said out loud. Without this the top-up ran to its own
+    // module default (topup.TARGET = 412, the STANDARD deck's number) whatever
+    // the collection asked for — so a 16-player order, whose deck holds 400 and
+    // whose buyer was capped at 400, froze 412: her 400 plus twelve shop filler
+    // words the cap had just told her she could not have. Production then dealt
+    // 412 words into ceil(412/4) = 103 word cards ON TOP OF her four pawn cards
+    // and printed 107 cards / 214 pages against a price, a box, a paper order and
+    // a print run all pinned to 104.
+    //
+    // topup only ever fills a SHORTFALL, so the wrong target could not be caught
+    // downstream: the oversized bank passed through order_to_pdf untouched. The
+    // number has to be right HERE, at the one moment the list is decided.
+    else if (Number.isInteger(deckWords) && deckWords > 0) args.push('--target=' + deckWords);
     const r = spawnSync(python || process.env.PYTHON_BIN || 'python3', args, {
       timeout: TIMEOUT_MS,
       encoding: 'utf8',
@@ -140,6 +167,7 @@ function freeze({ personalWords, theme, pool, noTopup, python }) {
       // come first and a pool word equal to one of hers is skipped as a
       // duplicate, so walking the prefix while it is still hers is exact.
       personalCount: personalSpan(frozen, words),
+      deckWords,
     });
   } catch {
     return null;

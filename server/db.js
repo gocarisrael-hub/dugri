@@ -515,9 +515,9 @@ function orderTotal(version, quantity, unitPrice) {
 }
 
 // --- free word quota ---------------------------------------------------------
-// THE DECK CAP. One full deck is 412 words — 103 word cards of four, which is
+// THE DECK CAP. A standard deck is 412 words — 103 word cards of four, which is
 // generator/topup.py's TARGET and what site/collect.html has always shown as
-// "מקסימום" on the counter. Until now that label was the only thing enforcing
+// "מקסימום" on the counter. Until the cap landed, that label was the only thing enforcing
 // it: the input stayed live past 412, the server had no ceiling at all, and five
 // orders reached production oversized (417, 423 …). The generator keeps every
 // personal word by design, so those printed as bigger decks — 212 pages instead
@@ -528,8 +528,66 @@ function orderTotal(version, quantity, unitPrice) {
 //
 // GRANDFATHERED, never trimmed: a collection already over the cap keeps every
 // word it has. The cap governs what may be ADDED, and silently deleting words a
-// customer wrote is a worse failure than a slightly larger deck.
-const DECK_WORDS = 412;
+// customer wrote is a worse failure than a slightly larger deck. Those orders are
+// the ONE case where the printed deck is not 104 cards, and they are all at the
+// default split — nothing else existed when they were placed. pack.pack still
+// grows the deck for them and refuses to grow it for anything else
+// (pack._refuse_oversize), so the exception stays where it was made.
+//
+// THE DECK IS ALWAYS 104 CARDS otherwise. What the buyer moves is the SPLIT
+// between pawn cards and word cards: four players fill one pawn card, and each
+// pawn card costs one word card, which is four words.
+//
+//     4 players   1 pawn card    103 word cards   412 words
+//     8 players   2 pawn cards   102 word cards   408 words
+//    12 players   3 pawn cards   101 word cards   404 words
+//    16 players   4 pawn cards   100 word cards   400 words
+//
+// Mirrors generator/pack.py (DECK_CARDS / word_cards / deck_words), which is
+// what actually lays the deck out. The two are a pair: change one and the
+// buyer's counter stops describing the deck she receives.
+const DECK_CARDS = 104;
+const PER_CARD = 4;
+const PLAYERS_MIN = 4;
+const PLAYERS_MAX = 16;
+
+// A stored player count, coerced. Absent, junk, NaN, Infinity — anything with no
+// number in it at all — is the DEFAULT, which is both the smallest legal value
+// and what every order placed before this existed means.
+//
+// A number BETWEEN the steps rounds UP, because a pawn card seats four and a
+// party of ten needs three of them: rounding to the nearest would seat 10 and 13
+// on twelve pawns but seat 14 on sixteen, which is neither consistent nor
+// anything a player can be told. Up is the only rule that always seats everyone
+// she named. It costs her the word cards those seats come out of — 10 players is
+// charged as 12 — so the route ANSWERS with the count it stored and the ceiling
+// that goes with it ({ players, deck_words }) rather than letting the page go on
+// showing the number she typed. The control only ever sends the four steps; this
+// is the contract for everything that is not that control.
+function sanitizePlayers(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return PLAYERS_MIN;
+  const stepped = Math.ceil(n / PER_CARD) * PER_CARD;
+  return Math.max(PLAYERS_MIN, Math.min(PLAYERS_MAX, stepped));
+}
+
+// How many players this collection's deck is laid out for.
+function playersFor(collection) {
+  return sanitizePlayers(collection && collection.players);
+}
+
+// …as pawn cards, which is the unit the generator takes (--pawn-cards).
+function pawnCardsFor(collection) {
+  return playersFor(collection) / PER_CARD;
+}
+
+// …and what is left for words. THE number the buyer's counter counts up to and
+// the ceiling addWords enforces.
+function deckWordsFor(collection) {
+  return (DECK_CARDS - pawnCardsFor(collection)) * PER_CARD;
+}
+
+const DECK_WORDS = (DECK_CARDS - PLAYERS_MIN / PER_CARD) * PER_CARD;
 
 // A collection may gather `pricing.free_word_limit` words before payment; past
 // that, adding is blocked until the order is paid. Both knobs are owner-editable
@@ -1050,6 +1108,10 @@ const db = {
       // These are always the ORIGINALS exactly as the buyer uploaded them — the
       // background-removed cutouts live beside them in pawn_cutouts, so a cut can
       // always be redone (or reverted) without asking the buyer for the photo again.
+      // How many PLAYERS this deck is laid out for — 4, 8, 12 or 16, one pawn
+      // card per four. The default is the standard deck, and it is what every
+      // order placed before the choice existed means (sanitizePlayers).
+      players: sanitizePlayers(contact.players),
       pawn_images: [],
       // Background-removed cutouts, keyed BY THE ORIGINAL'S PATH rather than by
       // slot index, so removing/reordering pawn_images (adminSetPawnImages) can
@@ -1240,7 +1302,9 @@ const db = {
     // one the moment the buyer pays, so holding past the cap would just defer the
     // overflow to the checkout. Already over the cap (an order collected before
     // this existed) yields 0 — nothing more goes in, nothing already there moves.
-    let deckRoom = Math.max(0, DECK_WORDS - existingWords.length - heldWords.length);
+    // …and the cap is THIS deck's, not the standard one: a buyer who asked for
+    // more players traded word cards away and her ceiling moved down with them.
+    let deckRoom = Math.max(0, deckWordsFor(c) - existingWords.length - heldWords.length);
     // Set BEFORE the words arrive (the admin picks the card order on the order,
     // then the list is sent), so it is read here rather than at production time.
     const authoredList = c.card_order === 'exact';
@@ -1514,7 +1578,11 @@ const db = {
   },
 
   // Append up to N pawn images (customer pieces) to a collection, owner-token gated.
-  // Caps the stored array at 4 total, and DE-DUPES incoming paths both against what's
+  // Caps the stored array at the collection's own slot count — four per pawn card,
+  // so four at the default and sixteen at sixteen players (playersFor). The HTTP
+  // writers cap at the same number, computed the same way, so the two cannot
+  // drift: a cap that only one of them holds is not a cap.
+  // DE-DUPES incoming paths both against what's
   // already stored and within the batch — the paths are content-addressed, so the
   // same photo picked into two slots yields the same /content-uploads/<hash> and must
   // not appear twice. Returns the updated array, or null on a bad/absent owner token
@@ -1532,7 +1600,9 @@ const db = {
       incoming.push(p);
     }
     if (!incoming.length) return c.pawn_images;
-    const room = Math.max(0, 4 - c.pawn_images.length);
+    // As many photos as she has players, not a fixed four: the deck carries one
+    // pawn card per four of them.
+    const room = Math.max(0, playersFor(c) - c.pawn_images.length);
     if (room > 0) {
       c.pawn_images.push(...incoming.slice(0, room));
       saveDb();
@@ -1696,6 +1766,65 @@ const db = {
     return c.pawn_view;
   },
 
+  // HOW MANY PLAYERS this deck is laid out for — 4, 8, 12 or 16.
+  //
+  // The deck stays 104 cards, so every four players she adds costs a word card:
+  // raising the count LOWERS the ceiling on her word list. That is the only way
+  // this can fail, and it fails LOUDLY rather than by trimming — the words are
+  // her guests', and deleting somebody's word to make room for a pawn is not a
+  // trade the store gets to make on her behalf. The refusal carries the numbers
+  // the page needs to say what to do about it.
+  //
+  // Lowering is never refused: fewer pawn cards means more word cards.
+  //
+  // PHOTOS ARE KEPT when the count drops. She may have uploaded eight and gone
+  // back to four; the deck prints the first four (pawnPhotoEntries), and the
+  // other four are still there if she changes her mind. Deleting a photo is
+  // something she asks for, not something a slider does to her.
+  //
+  // Returns { players, pawn_cards, deck_words, words } on success, null on a bad
+  // owner token or unknown collection, and { error: 'words', ... } when her list
+  // is already longer than the new deck would hold.
+  setPlayers(id, ownerToken, players) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    const next = sanitizePlayers(players);
+    const deckWords = (DECK_CARDS - next / PER_CARD) * PER_CARD;
+    // Held words count: one becomes a real word the moment she pays, so letting
+    // them past the new ceiling only defers the overflow to checkout.
+    const words = this.countWords(id);
+    const held = this.countHeldWords(id);
+    if (words + held > deckWords) {
+      return {
+        error: 'words',
+        players: next,
+        pawn_cards: next / PER_CARD,
+        deck_words: deckWords,
+        words,
+        held,
+        // What the page asks her to do, computed here so the message and the
+        // arithmetic cannot drift apart.
+        remove: words + held - deckWords,
+        current: playersFor(c),
+      };
+    }
+    c.players = next;
+    // DEFENCE IN DEPTH, not a live path: a frozen bank is sized against this very
+    // number (word-bank.freeze's deckWords), so a count that moved under one
+    // would leave production printing a deck built for the old split. The route
+    // already refuses once the collection is closed and reopening clears the bank
+    // outright, so there should never be one here — and "should never" is exactly
+    // the assumption that printed 107 cards.
+    if (c.word_bank) delete c.word_bank;
+    saveDb();
+    return {
+      players: next,
+      pawn_cards: next / PER_CARD,
+      deck_words: deckWords,
+      words,
+    };
+  },
+
   // Admin: soft-cancel a collection (reversible). With undo=true it restores
   // the collection. Returns false when the collection doesn't exist.
   cancelCollection(id, undo = false) {
@@ -1838,26 +1967,39 @@ const db = {
   // owner removes a photo the customer sent by mistake, or reorders them. Adding
   // photos goes through the upload route (addPawnImages); this only ever narrows
   // or reorders what is already stored, so entries are re-validated to our own
-  // /content-uploads paths, de-duped, and capped at 4. An empty array is valid
+  // /content-uploads paths, de-duped, and capped. An empty array is valid
   // (drops every photo). Returns the stored array, or null for a missing
   // collection. The FILES are intentionally left on disk: they are shared,
   // content-addressed uploads, so deleting one could pull the rug out from under
   // another collection (or the same photo re-sent later).
+  //
+  // THE CAP IS THE COLLECTION'S OWN, not four. This is a REPLACE, so a hardcoded
+  // four here did not merely refuse a fifth photo — it DELETED photos 5..16 of a
+  // 16-player order the moment the owner reordered the first four, silently, from
+  // a screen whose only stated job was reordering. Whatever ceiling the upload
+  // routes let past, this one has to be able to write back unchanged, or the
+  // admin screen becomes a way to lose a buyer's photos.
+  //
+  // It is also a CEILING and not a floor: a collection whose count has come back
+  // down keeps the photos above it (pawnPhotoEntries slices them off at print
+  // time, which is undoable) rather than having them narrowed away here, so this
+  // reads the LONGER of the two — the stored list and the current slot count.
   adminSetPawnImages(id, paths) {
     const c = this.getCollection(id);
     if (!c) return null;
+    const cap = Math.max(playersFor(c), Array.isArray(c.pawn_images) ? c.pawn_images.length : 0);
     const seen = new Set();
     const out = [];
     for (const raw of Array.isArray(paths) ? paths : []) {
       if (!pawnPathOk(raw) || seen.has(raw)) continue;
       seen.add(raw);
       out.push(raw);
-      if (out.length === 4) break;
+      if (out.length === cap) break;
     }
     c.pawn_images = out;
     // Drop cutout records for photos that are no longer attached, so the map can
-    // never outgrow the (max 4) list it annotates. Keyed by path, so the photos
-    // that SURVIVE a removal/reorder keep their own cutout — no re-cut needed.
+    // never outgrow the list it annotates. Keyed by path, so the photos that
+    // SURVIVE a removal/reorder keep their own cutout — no re-cut needed.
     c.pawn_cutouts = keepPawnKeys(c.pawn_cutouts, out);
     c.pawn_view = keepPawnKeys(c.pawn_view, out);
     saveDb();
@@ -3515,6 +3657,13 @@ module.exports.sanitizeQuantity = sanitizeQuantity;
 module.exports.orderTotal = orderTotal;
 module.exports.MAX_COPIES = MAX_COPIES;
 module.exports.DECK_WORDS = DECK_WORDS;
+module.exports.DECK_CARDS = DECK_CARDS;
+module.exports.PLAYERS_MIN = PLAYERS_MIN;
+module.exports.PLAYERS_MAX = PLAYERS_MAX;
+module.exports.sanitizePlayers = sanitizePlayers;
+module.exports.playersFor = playersFor;
+module.exports.pawnCardsFor = pawnCardsFor;
+module.exports.deckWordsFor = deckWordsFor;
 module.exports.CARD_ORDERS = CARD_ORDERS;
 // Pure free-quota projection (collection + word count -> {limit, applies, paid,
 // remaining, locked}), exposed for the API's public view and for unit tests.

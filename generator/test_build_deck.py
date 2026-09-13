@@ -189,9 +189,11 @@ def test_the_photo_card_is_the_first_card():
     with Store() as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
         keys = [k for k, _ in _pages(doc)]
-        assert keys[1] == "photo", keys[:4]
-        assert keys.count("photo") == 1, "exactly one photo card per deck"
-        assert not any(k == "photo" for k in keys[2:]), "and it is not repeated"
+        # "photo1" and not "photo": a deck may carry up to four pawn cards now
+        # (one per four players) and each is its own design, so they are numbered.
+        assert keys[1] == "photo1", keys[:4]
+        assert keys.count("photo1") == 1, "exactly one pawn card on a standard deck"
+        assert not any(k.startswith("photo") for k in keys[2:]), "and it is not repeated"
 
 
 def test_the_photo_cards_back_carries_the_title_like_every_other_back():
@@ -215,9 +217,9 @@ def test_the_photo_cards_own_artwork_carries_the_order_title():
     # every other card, which is why nothing extra is registered for it.
     with Store() as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
-        assert "שירה" in doc._designs["photo"], "the pawn card lost its title"
+        assert "שירה" in doc._designs["photo1"], "the pawn card lost its title"
         # ...and it is still the one design, not one per page.
-        assert [k for k, _ in _pages(doc)].count("photo") == 1
+        assert [k for k, _ in _pages(doc)].count("photo1") == 1
 
 
 def test_the_eight_front_styles_are_spread_evenly():
@@ -274,7 +276,7 @@ def test_the_back_is_applied_to_every_card_of_a_one_front_deck():
         assert not any(k.startswith("back") for k in keys[1::2]), \
             "no back may appear in a front slot"
         # ...and the photo card still leads, as on any other deck.
-        assert keys[1] == "photo"
+        assert keys[1] == "photo1"
 
 
 def test_a_one_front_deck_registers_one_design_not_nine_copies():
@@ -282,7 +284,7 @@ def test_a_one_front_deck_registers_one_design_not_nine_copies():
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
         # back + the single front + the photo card. Nine near-identical designs
         # would be nine copies of the same artwork in every render.
-        assert sorted(doc._designs) == ["back1", "front2", "photo"], sorted(doc._designs)
+        assert sorted(doc._designs) == ["back1", "front2", "photo1"], sorted(doc._designs)
         cfg = config.theme("demo")
         assert config.fronts(cfg) == [2]
         assert [os.path.basename(p) for p in config.front_paths("demo")] == ["2.svg"]
@@ -303,7 +305,7 @@ def test_word_cards_carry_their_words_and_the_photo_card_carries_none():
         # A word card's overlay has four numbered lines; the photo card has no text.
         first_front = _front_overlay(pages)
         assert first_front.count("<text") >= 4, "each card needs its 4 word lines"
-        photo = next(ov for k, ov in pages if k == "photo")
+        photo = next(ov for k, ov in pages if k.startswith("photo"))
         assert "<text" not in (photo or ""), "the photo card carries no text"
 
 
@@ -1204,7 +1206,7 @@ def test_each_front_prints_with_its_OWN_back():
         backs, fronts = keys[0::2], keys[1::2]
         assert len(backs) == len(fronts) == 104
         for back, front in zip(backs, fronts):
-            if front == "photo":      # the photo card takes the first back
+            if front.startswith("photo"):   # a pawn card takes the first back
                 assert back == "back10"
                 continue
             n = int(front.removeprefix("front"))
@@ -1217,7 +1219,7 @@ def test_a_paired_deck_registers_every_back_exactly_once():
         assert sorted(doc._designs) == sorted(
             [f"back{n}" for n in PAIRED_BACKS]
             + [f"front{n}" for n in PAIRED_FRONTS]
-            + ["photo"]
+            + ["photo1"]
         ), sorted(doc._designs)
 
 
@@ -1228,13 +1230,13 @@ def test_a_paired_deck_is_still_104_cards_back_then_front():
         assert doc.page_count == 208
         assert all(k.startswith("back") for k in keys[0::2])
         assert not any(k.startswith("back") for k in keys[1::2])
-        assert keys[1] == "photo"
+        assert keys[1] == "photo1"
 
 
 def test_one_front_with_its_own_back_pairs_them():
     with Store(fronts=(2,), backs=(10,)) as tmp:
         doc, _ = build.deck_document("demo", _csv(tmp), ["שירה"])
-        assert sorted(doc._designs) == ["back10", "front2", "photo"]
+        assert sorted(doc._designs) == ["back10", "front2", "photo1"]
         keys = [k for k, _ in _pages(doc)]
         assert keys[0::2] == ["back10"] * 104
 
@@ -1348,3 +1350,89 @@ def test_a_font_that_can_draw_the_title_is_not_refused():
         cfg = config.theme("demo")
         rp.assert_title_drawable(config.font_path("demo", cfg["title_font"]),
                                  config.title_lines(cfg, "שירה"), theme="demo")
+
+
+# --- more players: more pawn cards, fewer word cards ------------------------
+#
+# The deck is always 104 cards (pack.DECK_CARDS). Four players fill one pawn
+# card and each pawn card costs a word card. deck_document reads how many there
+# are off the CSV rather than being told, so the structure has one source.
+
+def _split_csv(tmp, pawn_cards):
+    """A deck CSV packed for this split, filled to its own capacity."""
+    import pack
+    path = os.path.join(tmp, "split%d.csv" % pawn_cards)
+    pack.pack(["מילה%d" % i for i in range(pack.deck_words(pawn_cards))], path,
+              pawn_cards=pawn_cards)
+    return path
+
+
+def test_a_bigger_party_is_the_same_208_pages():
+    import pack
+    with Store() as tmp:
+        for n in range(1, 5):
+            doc, _ = build.deck_document("demo", _split_csv(tmp, n), ["שירה"])
+            assert doc.page_count == pack.DECK_CARDS * 2, (n, doc.page_count)
+
+
+def test_every_pawn_card_leads_the_deck_and_is_its_own_design():
+    with Store() as tmp:
+        doc, _ = build.deck_document("demo", _split_csv(tmp, 3), ["שירה"])
+        keys = [k for k, _ in _pages(doc)]
+        # Pages are (back, front) pairs, so the three pawn cards are fronts 1..3.
+        assert keys[1::2][:3] == ["photo1", "photo2", "photo3"]
+        assert not any(k.startswith("photo") for k in keys[1::2][3:])
+        # Three designs, not one reused: each carries different faces.
+        assert sorted(k for k in doc._designs if k.startswith("photo")) == [
+            "photo1", "photo2", "photo3",
+        ]
+
+
+def test_each_pawn_card_gets_its_own_four_photos():
+    # Twelve slots, dealt four at a time in the order she uploaded them. The
+    # fixture's fallbacks are what fill them here; what matters is that no two
+    # cards are handed the same group.
+    with Store() as tmp:
+        doc, _ = build.deck_document("demo", _split_csv(tmp, 3), ["שירה"])
+        designs = [doc._designs["photo%d" % i] for i in (1, 2, 3)]
+        assert len(designs) == 3
+        # Every card still fills all four of its slots — a bare disc on the card
+        # would tell her an empty circle prints.
+        for d in designs:
+            assert d.count("photo-slot-") >= 4, "a pawn card printed short"
+
+
+def test_the_word_cards_shrink_by_exactly_one_per_pawn_card():
+    import pack
+    with Store() as tmp:
+        for n in range(1, 5):
+            doc, _ = build.deck_document("demo", _split_csv(tmp, n), ["שירה"])
+            keys = [k for k, _ in _pages(doc)]
+            words = [k for k in keys[1::2] if k.startswith("front")]
+            assert len(words) == pack.word_cards(n), (n, len(words))
+
+
+def test_the_shipped_pawns_cycle_only_past_the_standard_card():
+    # Finding: the cycling is a change to EXISTING orders, not just bigger ones.
+    # config.photo_fallback_paths drops a path whose file is missing, so a theme
+    # part-way through getting its four pawns would have gone from "two pawns and
+    # two empty discs" to "two pawns printed twice" at the DEFAULT split — a
+    # silent change to a deck that has nothing to do with the player count, from a
+    # change that is only about the player count. A half-shipped set is a template
+    # bug and it has to stay visible as one.
+    import config as cfg
+    import build as b
+    with Store():
+        real = cfg.photo_fallback_paths
+        cfg.photo_fallback_paths = lambda theme: ["/p/a.png", "/p/b.png"]
+        try:
+            # The standard card: two pawns, and the other two slots left to the
+            # renderer's empty disc, exactly as before.
+            assert b.fallback_photos("demo", 0, slots=4) == ["/p/a.png", "/p/b.png"]
+            assert b.fallback_photos("demo", 1, slots=4) == ["/p/a.png", "/p/b.png"]
+            assert b.fallback_photos("demo", 3, slots=4) == ["/p/a.png"]
+            # A bigger deck DOES cycle: sixteen bare dashed rings is a defect she
+            # paid for, and she is the one who asked for sixteen players.
+            assert b.fallback_photos("demo", 0, slots=8) == ["/p/a.png", "/p/b.png"] * 4
+        finally:
+            cfg.photo_fallback_paths = real

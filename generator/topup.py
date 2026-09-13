@@ -34,8 +34,21 @@ import re
 import config
 
 # A full v2 deck is 103 word cards x 4 words (pack.WORD_CARDS x pack.PER_CARD);
-# the photo card, which opens the deck, carries no words.
-TARGET = 412
+# the pawn card, which opens the deck, carries no words.
+#
+# That is the STANDARD deck — one pawn card. A buyer who asks for more players
+# trades word cards for pawn cards (pack.DECK_CARDS), so the number to top up to
+# is hers, not a constant: use target_for(pawn_cards). TARGET stays as the
+# default and as what every caller that has no opinion means.
+import pack as _pack
+
+TARGET = _pack.deck_words()
+
+
+def target_for(pawn_cards=1):
+    """How many words to top an order up to, given how many pawn cards it prints."""
+    return _pack.deck_words(pawn_cards)
+
 WORDLISTS_DIR = os.path.join(config.REPO, "content", "wordlists")
 # The owner's persistent store; "" when DATA_DIR is unset (local dev / tests).
 DATA_DIR = os.environ.get("DATA_DIR") or ""

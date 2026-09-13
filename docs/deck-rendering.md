@@ -97,9 +97,46 @@ duplex: `[back, card1, back, card2, ..., back, card104]`.
   It leads the deck because it is the card the deck is ABOUT, and because it is
   the one sheet the print shop handles differently (it is cut into four discs).
   It used to be card 104, at the bottom of the stack and 207 pages into the PDF.
-- Cards 2..104 are word cards, 4 words each (412 words). The front style cycles
+- The cards after them are word cards, 4 words each — 2..104 on the standard
+  deck (412 words), and `pawn_cards + 1`..104 on a bigger one. The front style cycles
   `fronts[i % len(fronts)]` over the WORD cards, giving 13/13/13/13/13/13/13/12
   across eight styles. The count comes from the theme, not a hardcoded 8.
+
+### How many pawn cards (per order)
+
+A pawn card holds four pawns, so a party bigger than four needs more than one.
+**The deck is always 104 cards**, so each extra pawn card comes out of the word
+cards — the buyer trades four words per four players:
+
+| players | pawn cards | word cards | words |
+| ------- | ---------- | ---------- | ----- |
+| 4       | 1          | 103        | 412   |
+| 8       | 2          | 102        | 408   |
+| 12      | 3          | 101        | 404   |
+| 16      | 4          | 100        | 400   |
+
+The count is chosen in the pawns step, stored on the collection as `players`
+(`db.sanitizePlayers`, 4-16 in steps of 4), and reaches the generator as
+`--pawn-cards N` — pawn cards, not players, because that is what the deck is
+laid out in. `pack.pack` writes N photo rows at the front and packs the words
+into `104 - N` cards — and REFUSES, rather than growing the deck, if it is handed
+more words than those cards hold (`pack._refuse_oversize`); `topup.target_for(N)`
+fills to that deck's own capacity, and `word-bank.freeze` passes the collection's
+own `db.deckWordsFor` so the frozen bank is sized for the deck it will be printed
+into, not for the standard one; `build.deck_document` counts the photo rows in
+the CSV rather than being told, so the structure has one source. Each pawn card is
+its own registered design (`photo1`..`photoN`) and takes four photos in upload
+order — the first card takes photos 1-4, the second 5-8, so photo 5 is the first
+slot of the second card.
+
+A v1 (8-up sheet) template has no photo card at all, so it IGNORES the count
+entirely: `order_to_pdf` normalises `pawn_cards` back to 1 for it, and its deck
+is the deck it always was.
+
+The buyer's word ceiling moves with it (`db.deckWordsFor`), which is the only
+way raising the count can fail: a list already longer than the smaller deck
+holds. That is refused with the numbers rather than trimmed — see
+`db.setPlayers`.
 
 Anything that NUMBERS a card for the owner counts in this order, photo card
 included — the small-card report (`word_demand.deck_small_cards`, printed as the

@@ -1,12 +1,26 @@
 # The photo card
 
-The deck's **first** front is the **photo card** — one portrait card carrying the buyer's four
-pawn photos (the images collected by the wizard's optional photo step and stored on the
-collection as `pawn_images`, max 4). This document is the contract between the card artwork
-(Agent B) and the generator that fills it (Agent C).
+The deck's **first** front is the **photo card** — one portrait card carrying four of the
+buyer's pawn photos (the images collected by the wizard's optional photo step and stored on the
+collection as `pawn_images`). A deck carries one per four players, so the stored list holds up
+to **four per pawn card** — four at the default and sixteen at sixteen players
+(`db.playersFor`, which is the cap both HTTP writers and the store enforce, and the cap the
+admin replace must be able to write back). This document is the contract between the card
+artwork (Agent B) and the generator that fills it (Agent C).
 
 It leads the deck (pages 1-2) rather than closing it: it is the card the deck is about, and
 the one sheet the print shop handles differently. See `docs/deck-rendering.md`.
+
+**A deck may carry up to four of them** — one per four players, chosen by the buyer, out of the
+word cards' share (`docs/deck-rendering.md`, "How many pawn cards"). They are identical cards
+with different faces: same artwork, same four slots, same back. `build.resolve_photos` returns
+`4 x cards` paths in one flat list and the deck deals them four at a time, so photo 5 is the
+first slot of the second card. Where her photos run out the shipped Dugri pawns fill in, and
+with more than four slots to fill they CYCLE — a repeated pawn is a poor game piece, but a bare
+dashed ring is a defect, and she is the one who asked for sixteen players and sent three faces.
+At the DEFAULT four slots they do not cycle: a theme whose shipped set is incomplete keeps
+printing the empty discs that make that visible, so a bigger-deck change cannot quietly alter
+an ordinary order (`build.fallback_photos`).
 
 ## For Agent C — the cutout contract in one place
 

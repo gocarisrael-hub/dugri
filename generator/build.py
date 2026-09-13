@@ -376,9 +376,22 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     back_ov = {i: rp.back_overlay(theme, recipe, title_lines, card_vb=vb,
                                   back_index=i)
                for i in dict.fromkeys(backs)}
+    # HOW MANY PAWN CARDS this deck prints — read off the CSV, not passed in, so
+    # the deck's structure has exactly one source (pack.pack wrote those rows) and
+    # the page count cannot disagree with the card list.
+    pawn_cards = sum(1 for c in cards if c["kind"] == "photo")
     photo_paths = resolve_photos(
         theme, photos, views=photo_views, cutouts=photo_cutouts,
+        slots=PHOTO_SLOTS * max(1, pawn_cards),
         workdir=os.path.join(workdir, "photos") if workdir else None)
+    # Which four go on which card: the first four on the first card, the next four
+    # on the second, and so on, in the order she uploaded them — so photo 5 is the
+    # FIRST slot of the second card (docs/photo-card.md). Said that way round on
+    # purpose: "the Nth card takes photos 4N..4N+3" is only true counting cards
+    # from zero, and every other sentence about this deck counts them from one.
+    photo_groups = [photo_paths[i * PHOTO_SLOTS:(i + 1) * PHOTO_SLOTS]
+                    for i in range(max(1, pawn_cards))]
+    drawn_pawn_cards = 0
     # ONE RHYTHM FOR THE DECK, AND THE DECK PICKS IT. The owner's rule is that
     # every gap between lines is the same, on every card — and the number that
     # rule was pinned to came from the origin design, whose entries were all one
@@ -407,9 +420,11 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
         # the back is chosen by the front, and the pages still have to come out in
         # duplex order (back, then front) or the deck prints mismatched.
         if card["kind"] == "photo":
-            # The photo card is not one of the eight styles, so it has no paired
+            # A photo card is not one of the eight styles, so it has no paired
             # back of its own — it takes the first, which is also the only one on
-            # a shared-back deck.
+            # a shared-back deck. Every pawn card takes the same back, so a deck
+            # with four of them opens with four identical backs, which is right:
+            # they are the same card played four times over.
             front = None
             back = backs[0]
         else:
@@ -423,10 +438,17 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
             # band it is set in is measured off THIS card's own artwork and the
             # page has never seen that. The faces it needs are the title faces
             # the document's stylesheet already carries for every other card.
-            doc.add_design("photo", rp.photo_card_svg(theme, photo_paths,
-                                                      paper=paper,
-                                                      title_lines=title_lines))
-            doc.add_page("photo")
+            #
+            # ONE DESIGN PER PAWN CARD, because each carries different faces —
+            # unlike the eight word-card fronts, which are shared by every page
+            # that uses them. Numbered so a deck with four of them registers four
+            # and no page can pick up its neighbour's people.
+            key = f"photo{drawn_pawn_cards + 1}"
+            doc.add_design(key, rp.photo_card_svg(
+                theme, photo_groups[min(drawn_pawn_cards, len(photo_groups) - 1)],
+                paper=paper, title_lines=title_lines))
+            doc.add_page(key)
+            drawn_pawn_cards += 1
         else:
             doc.add_page(f"front{front}",
                          rp.card_overlay(theme, recipe, card["words"], title_lines,
@@ -598,6 +620,11 @@ PHOTO_BLOB_MASK_PX = 200
 # 0.90 the ring lands inside the dashes: outlined disc first, cut-line just
 # outside it, which is also the right order for a real die-cut sticker.
 PHOTO_DISC_FILL = float(os.environ.get("DUGRI_PHOTO_DISC_FILL", "0.90"))
+
+# Pawns on ONE pawn card. The artwork has exactly four slots (docs/photo-card.md)
+# and a deck may now carry several of these cards — four players per card — so
+# the number of SLOTS is this times the number of cards, and this never moves.
+PHOTO_SLOTS = 4
 
 # How far the REACH measurement may miss by, as a share of the coarse mask's own
 # pixel. The reach is read off a downscaled mask (PHOTO_BLOB_MASK_PX), so a
@@ -1195,27 +1222,54 @@ def square_photo(path, workdir, index=0, view=None, cutout=True):
         return path
 
 
-def fallback_photos(theme, filled):
+def fallback_photos(theme, filled, slots=PHOTO_SLOTS):
     """The shipped Dugri pawns that fill the slots a buyer left empty.
 
-    ``filled`` is how many of the four slots her own photos already take, so the
+    ``filled`` is how many of the ``slots`` her own photos already take, so the
     answer is what goes in the rest — in the fallbacks' own order, which is what
     the deck prints. Pulled out of :func:`resolve_photos` so the LIVE pawn-card
     preview can render the same pawns into the same slots without going through
     the customer-photo path: the browser draws her photos onto that card itself,
     and a card rendered with four bare discs told her the empty ones print empty.
     They do not — an order with two photos prints two faces and two Dugri pawns.
+
+    THE SHIPPED SET RUNS OUT ON A BIGGER DECK, and there it CYCLES rather than
+    stopping. There are four generic pawns and a 16-player order has sixteen
+    slots, so a buyer who picks the big deck and uploads three photos needs
+    thirteen of them. Repeating a pawn is a poor game piece — two players holding
+    the same picture — but an EMPTY circle is worse: it prints as a bare dashed
+    ring, which is a defect on a card she paid for rather than a piece she has to
+    tell apart. She is also the one who asked for sixteen players and sent three
+    faces; the honest answer is to print sixteen pawns and let her see it in the
+    preview, which shows the same cycling.
+
+    ONLY ON A BIGGER DECK. Every shipped theme carries exactly four fallbacks, so
+    at the default four slots the cycle never turns — but
+    ``config.photo_fallback_paths`` DROPS a path whose file is missing, and a
+    theme mid-way through getting its set would then have printed its two pawns
+    twice on an ordinary order: a silent change to decks that have nothing to do
+    with the player count, from a change that is only about the player count. So
+    the default split keeps its old answer exactly — as many pawns as the theme
+    actually ships, and empty discs after them — and the cycling starts where the
+    slots outrun the standard card. A half-shipped set is a template bug and it
+    stays visible as one.
     """
-    out = []
-    for path in config.photo_fallback_paths(theme):
-        if filled + len(out) >= 4:
-            break
-        out.append(path)
-    return out
+    pool = list(config.photo_fallback_paths(theme))
+    if not pool:
+        return []
+    want = max(0, slots - filled)
+    if slots <= PHOTO_SLOTS:
+        return pool[:want]
+    return [pool[i % len(pool)] for i in range(want)]
 
 
-def resolve_photos(theme, photos, workdir=None, views=None, cutouts=None):
-    """The four photo-card images: the customer's, topped up from the fallbacks.
+def resolve_photos(theme, photos, workdir=None, views=None, cutouts=None,
+                   slots=PHOTO_SLOTS):
+    """The photo-card images: the customer's, topped up from the fallbacks.
+
+    ``slots`` is how many the deck needs — four per pawn card, so a 12-player
+    order asks for twelve and gets them in one flat list, which
+    :func:`deck_document` then deals four at a time onto its three cards.
 
     A customer who uploaded nothing gets the generic Dugri set; one who uploaded
     two gets those two plus two generics, so the card is never half-empty. Paths
@@ -1245,10 +1299,10 @@ def resolve_photos(theme, photos, workdir=None, views=None, cutouts=None):
         given = [square_photo(p, workdir, i, view=v, cutout=c)
                  for i, (p, v, c) in enumerate(pairs)]
     out = list(given)
-    if len(out) >= 4:
-        return out[:4]
-    out.extend(fallback_photos(theme, len(out)))
-    return out[:4]
+    if len(out) >= slots:
+        return out[:slots]
+    out.extend(fallback_photos(theme, len(out), slots=slots))
+    return out[:slots]
 
 
 def main():

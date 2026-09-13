@@ -7,8 +7,8 @@ alphabetical clumps), and deals the words so multi-word phrases land evenly:
 every card within one phrase of the deck average (see PHRASE MIX below). Each
 card is tagged with the front STYLE it renders on, round-robin across the
 theme's 8 fronts so the styles come out even (13/13/13/13/13/13/13/12 over a
-standard 103-card deck). The last row is the PHOTO card, which carries no
-words. Deterministic given a seed.
+standard 103-card deck). The FIRST rows are the PHOTO (pawn) cards — one per
+four players, which carry no words. Deterministic given a seed.
 
   python3 generator/pack.py words.txt order.csv
 
@@ -17,24 +17,35 @@ CSV columns: ``kind,front,w1,w2,w3,w4``
   front  0-based index into the theme's ``fronts`` list; empty on the photo card
   w1..w4 the card's words (blank-padded on the final word card)
 
-DECK SIZE. A standard deck is 1 photo card + ``WORD_CARDS`` (103) word cards =
-104 cards = 208 printed pages, which is what ``topup.TARGET`` (412 = 103 x 4)
-feeds it. The photo card is card ONE; the word cards follow it. Two deliberate
-departures:
+DECK SIZE. A standard deck is 1 photo card + ``word_cards()`` (103) word cards
+= ``DECK_CARDS`` (104) cards = 208 printed pages, which is what
+``topup.target_for()`` (412 = 103 x 4) feeds it. The photo cards lead; the word
+cards follow them. THE CALLER SIZES THE LIST — ``pack`` lays out whatever it is
+handed — and two deliberate departures follow from that:
 
 - FEWER words than that (the filler pools ran dry) yields FEWER cards rather
   than a tail of blank ones — only the last card is blank-padded.
-- MORE words than that yields MORE cards. Every personal word is always kept
-  (the product promises no upper limit), so an oversized list grows the deck
-  past 103 instead of silently dropping the overflow. The front cycling is
-  round-robin, so the styles stay even at any size.
+- MORE words than that yields MORE cards, but ONLY at the default one pawn
+  card. Every personal word is always kept (the product promised no upper limit
+  before the deck had a stored ceiling), so a grandfathered oversized list grows
+  the deck past 103 instead of silently dropping the overflow. The front cycling
+  is round-robin, so the styles stay even at any size.
+
+  PAST THE DEFAULT SPLIT THAT IS A BUG, NOT A DEPARTURE, and it raises. A buyer
+  who asked for more players was quoted a smaller word ceiling and the store
+  holds her to it (``db.deckWordsFor``), so a list that still overflows
+  ``word_cards(pawn_cards)`` means something upstream sized it against the wrong
+  deck — the freeze topping up to 412 for a 400-word order was exactly that, and
+  it printed 107 cards against a price, a box and a print run pinned to 104.
+  Growing the deck silently is the failure; ``ValueError`` with the numbers is
+  the fix. See ``_refuse_oversize``.
 
 ...and one departure from the FIRST of those, asked for by ``min_cards``: the
 'no top-up' order, where the buyer told us not to fill her deck with our words.
 There the shortfall is not a shorter deck but EMPTY cards — she is writing her
-own words on them at the table — so the deck keeps its 103 + 1 and the tail rows
-carry no words at all. They still print their 1. 2. 3. 4.; that half
-lives in the renderer (render_page._blank_lines).
+own words on them at the table — so the deck keeps its full ``word_cards`` +
+``pawn_cards`` and the tail rows carry no words at all. They still print their
+1. 2. 3. 4.; that half lives in the renderer (render_page._blank_lines).
 
 PHRASE MIX (why the deal is not a plain slice)
 ----------------------------------------------
@@ -93,10 +104,88 @@ import re
 import random
 import sys
 
-# Words per printed card.
+# Words per printed card — and pawns per PAWN card, which is the same four and
+# not a coincidence: the pawn card is a card like any other, holding four things.
 PER_CARD = 4
-# Word cards in a standard deck; + the photo card in front = 104 cards = 208 pages.
-WORD_CARDS = 103
+
+# THE DECK IS ALWAYS THIS MANY CARDS — with the one grandfathered exception in
+# DECK SIZE above, an over-cap list at the DEFAULT split, which predates the deck
+# having a stored ceiling at all. 104 cards = 208 printed pages, and that is the
+# product: the price, the box, the paper and the print run are all pinned to it.
+# What the buyer can move is the SPLIT — every four extra players is one more
+# pawn card, and one word card fewer:
+#
+#     4 players   1 pawn card    103 word cards    412 words
+#     8 players   2 pawn cards   102 word cards    408 words
+#    12 players   3 pawn cards   101 word cards    404 words
+#    16 players   4 pawn cards   100 word cards    400 words
+#
+# She is trading four words per four players — about 1% of the deck — which is
+# why this is a choice offered rather than an upgrade sold.
+DECK_CARDS = 104
+# How many pawn cards a deck may carry. One is the default and the floor (every
+# deck has pawns); four is the ceiling, which is 16 players.
+PAWN_CARDS_MIN = 1
+PAWN_CARDS_MAX = 4
+
+
+def word_cards(pawn_cards=PAWN_CARDS_MIN):
+    """Word cards in a deck carrying ``pawn_cards`` pawn cards."""
+    return DECK_CARDS - clamp_pawn_cards(pawn_cards)
+
+
+def deck_words(pawn_cards=PAWN_CARDS_MIN):
+    """How many words such a deck holds — what the buyer's counter counts up to."""
+    return word_cards(pawn_cards) * PER_CARD
+
+
+def clamp_pawn_cards(n):
+    """``n`` as a usable pawn-card count. Junk means the default, one card.
+
+    Bounds enforced HERE as well as at the door, because this is reached by a
+    CLI: a hand-typed --pawn-cards 40 must not produce a deck of 64 word cards.
+    """
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return PAWN_CARDS_MIN
+    return max(PAWN_CARDS_MIN, min(PAWN_CARDS_MAX, n))
+
+
+def _refuse_oversize(n_word_cards, pawn_cards):
+    """Make a deck that outgrew its own 104 cards IMPOSSIBLE, not merely unlikely.
+
+    The caller sizes the word list (topup.target_for); this is the check that the
+    list it handed over actually fits the deck it also asked for. It fires only
+    past the DEFAULT split, because the default is where the grandfathered
+    over-cap orders live (see DECK SIZE) and those must keep printing exactly as
+    they always have — byte for byte.
+
+    Past it there is no legitimate overflow. Every count above one pawn card was
+    quoted a smaller word ceiling, the store enforces that ceiling on every add
+    (``db.deckWordsFor``) and ``db.setPlayers`` refuses to RAISE the count over a
+    list that is already too long, so an overflow here is a sizing bug upstream.
+    That bug shipped once: the freeze topped every order up to 412 regardless of
+    its player count, so a 16-player deck came out 107 cards / 214 pages against
+    a price, a box, a paper order and a print run all pinned to 104 — and it came
+    out silently, because growing the deck is the documented behaviour at the
+    default. Refusing loudly, with the numbers, is what turns that from a deck
+    nobody notices into a run nobody starts.
+    """
+    limit = word_cards(pawn_cards)
+    if clamp_pawn_cards(pawn_cards) > PAWN_CARDS_MIN and n_word_cards > limit:
+        raise ValueError(
+            "deck overflow: %d word cards packed for a deck that holds %d "
+            "(%d pawn cards x 4 players, %d words). Size the word list with "
+            "topup.target_for(%d) before packing it."
+            % (n_word_cards, limit, clamp_pawn_cards(pawn_cards),
+               deck_words(pawn_cards), clamp_pawn_cards(pawn_cards))
+        )
+
+
+# Word cards in a STANDARD deck (one pawn card) — the default everywhere, and the
+# number every order printed before the split could move.
+WORD_CARDS = word_cards()
 
 # How many front styles a v2 template ships (2.svg..9.svg).
 FRONTS = 8
@@ -427,11 +516,23 @@ def deal_in_order(uniq, n_cards):
 
 
 def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
-         order=ORDER_RANDOM, personal_count=None, sizes=None, min_cards=None):
+         order=ORDER_RANDOM, personal_count=None, sizes=None, min_cards=None,
+         pawn_cards=PAWN_CARDS_MIN):
     """Write the deck CSV and return ``(unique_words, card_count)``.
 
-    ``card_count`` INCLUDES the photo card when one is emitted, so it is the
-    number of printed cards (and half the page count).
+    ``card_count`` INCLUDES the photo cards, so it is the number of printed cards
+    (and half the page count).
+
+    ``pawn_cards`` is how many of the deck's 104 cards are PAWN cards — one per
+    four players, chosen by the buyer. They lead the deck and they come out of
+    the word cards' share, so a deck with three of them holds 404 words instead
+    of 412 (see DECK SIZE). It changes nothing about the deal: the words are
+    packed into whatever cards are left.
+
+    Past the default one card that share is a HARD ceiling: a word list too long
+    for it raises ``ValueError`` rather than growing the deck to fit (see
+    ``_refuse_oversize``). At the default nothing changed — an over-cap list
+    still grows the deck, which is how every grandfathered order printed.
 
     ``order`` is the per-order card order (see ORDERS): the words are partitioned
     into groups and each group is dealt into its OWN cards, so a card only ever
@@ -488,20 +589,29 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     # decided over her real words, and these are the empty cards that follow.
     if min_cards:
         rows.extend([""] * PER_CARD for _ in range(max(0, int(min_cards) - len(rows))))
+    # Before a single byte is written: does what we just laid out fit the deck we
+    # were asked for? Nothing below can undo an oversized deck — the CSV is the
+    # structure, build.deck_document counts its rows, and the page count follows.
+    _refuse_oversize(len(rows), pawn_cards)
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(FIELDS)
-        # THE PAWN CARD GOES FIRST. It is the card the deck is ABOUT — her four
-        # people, cut out as stickers — and it used to be card 104, so whoever
-        # opened the PDF met 207 pages of word cards before reaching it and the
-        # print shop found it at the very bottom of the stack. Nothing else about
-        # the deck changes: a word card still carries the front style this loop
-        # deals it, in the order the deal produced.
+        # THE PAWN CARDS GO FIRST. They are what the deck is ABOUT — her people,
+        # cut out as stickers — and they used to be one card at position 104, so
+        # whoever opened the PDF met 207 pages of word cards before reaching it
+        # and the print shop found it at the very bottom of the stack. Nothing
+        # else about the deck changes: a word card still carries the front style
+        # this loop deals it, in the order the deal produced.
+        #
+        # One row per pawn card, so the deck's running order IS the CSV's and
+        # build.deck_document has nothing to work out: the Nth photo row is the
+        # Nth pawn card, and it takes photos 4N..4N+3.
         if photo_card:
-            wr.writerow(["photo", ""] + [""] * PER_CARD)
+            for _ in range(clamp_pawn_cards(pawn_cards)):
+                wr.writerow(["photo", ""] + [""] * PER_CARD)
         for i, row in enumerate(rows):
             wr.writerow(["word", i % fronts] + row)
-    return len(uniq), len(rows) + (1 if photo_card else 0)
+    return len(uniq), len(rows) + (clamp_pawn_cards(pawn_cards) if photo_card else 0)
 
 
 def load_cards(path):

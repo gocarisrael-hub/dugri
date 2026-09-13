@@ -346,7 +346,7 @@ def test_the_deck_prints_the_pawn_card_in_the_decks_own_shape(tmp_path):
     pack.pack(["מילה%d" % i for i in range(40)], csvp, photo_card=True)
     doc, _vb = build.deck_document("grapefruit", csvp, ["בדיקה"],
                                    workdir=str(tmp_path))
-    frame = card_frame.own_frame(doc._designs["photo"])
+    frame = card_frame.own_frame(doc._designs["photo1"])
     front = card_frame.front_frame("grapefruit")
     for key in ("x", "y", "w", "h", "r", "stroke_width"):
         assert abs(frame[key] - front[key]) <= card_frame.FRAME_TOL, key
