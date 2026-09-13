@@ -101,6 +101,33 @@ duplex: `[back, card1, back, card2, ..., back, card104]`.
   `fronts[i % len(fronts)]` over the WORD cards, giving 13/13/13/13/13/13/13/12
   across eight styles. The count comes from the theme, not a hardcoded 8.
 
+### How many pawn cards (per order)
+
+A pawn card holds four pawns, so a party bigger than four needs more than one.
+**The deck is always 104 cards**, so each extra pawn card comes out of the word
+cards — the buyer trades four words per four players:
+
+| players | pawn cards | word cards | words |
+| ------- | ---------- | ---------- | ----- |
+| 4       | 1          | 103        | 412   |
+| 8       | 2          | 102        | 408   |
+| 12      | 3          | 101        | 404   |
+| 16      | 4          | 100        | 400   |
+
+The count is chosen in the pawns step, stored on the collection as `players`
+(`db.sanitizePlayers`, 4-16 in steps of 4), and reaches the generator as
+`--pawn-cards N` — pawn cards, not players, because that is what the deck is
+laid out in. `pack.pack` writes N photo rows at the front and packs the words
+into `104 - N` cards; `topup.target_for(N)` fills to that deck's own capacity;
+`build.deck_document` counts the photo rows in the CSV rather than being told,
+so the structure has one source. Each pawn card is its own registered design
+(`photo1`..`photoN`) and takes photos `4N..4N+3` in upload order.
+
+The buyer's word ceiling moves with it (`db.deckWordsFor`), which is the only
+way raising the count can fail: a list already longer than the smaller deck
+holds. That is refused with the numbers rather than trimmed — see
+`db.setPlayers`.
+
 Anything that NUMBERS a card for the owner counts in this order, photo card
 included — the small-card report (`word_demand.deck_small_cards`, printed as the
 `smallcards` line) and the admin note that turns its index into a page as

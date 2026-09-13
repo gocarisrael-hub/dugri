@@ -93,10 +93,55 @@ import re
 import random
 import sys
 
-# Words per printed card.
+# Words per printed card — and pawns per PAWN card, which is the same four and
+# not a coincidence: the pawn card is a card like any other, holding four things.
 PER_CARD = 4
-# Word cards in a standard deck; + the photo card in front = 104 cards = 208 pages.
-WORD_CARDS = 103
+
+# THE DECK IS ALWAYS THIS MANY CARDS. 104 cards = 208 printed pages, and that is
+# the product: the price, the box, the paper and the print run are all pinned to
+# it. What the buyer can move is the SPLIT — every four extra players is one more
+# pawn card, and one word card fewer:
+#
+#     4 players   1 pawn card    103 word cards    412 words
+#     8 players   2 pawn cards   102 word cards    408 words
+#    12 players   3 pawn cards   101 word cards    404 words
+#    16 players   4 pawn cards   100 word cards    400 words
+#
+# She is trading four words per four players — about 1% of the deck — which is
+# why this is a choice offered rather than an upgrade sold.
+DECK_CARDS = 104
+# How many pawn cards a deck may carry. One is the default and the floor (every
+# deck has pawns); four is the ceiling, which is 16 players.
+PAWN_CARDS_MIN = 1
+PAWN_CARDS_MAX = 4
+
+
+def word_cards(pawn_cards=PAWN_CARDS_MIN):
+    """Word cards in a deck carrying ``pawn_cards`` pawn cards."""
+    return DECK_CARDS - clamp_pawn_cards(pawn_cards)
+
+
+def deck_words(pawn_cards=PAWN_CARDS_MIN):
+    """How many words such a deck holds — what the buyer's counter counts up to."""
+    return word_cards(pawn_cards) * PER_CARD
+
+
+def clamp_pawn_cards(n):
+    """``n`` as a usable pawn-card count. Junk means the default, one card.
+
+    Bounds enforced HERE as well as at the door, because this is reached by a
+    CLI: a hand-typed --pawn-cards 40 must not produce a deck of 64 word cards.
+    """
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return PAWN_CARDS_MIN
+    return max(PAWN_CARDS_MIN, min(PAWN_CARDS_MAX, n))
+
+
+# Word cards in a STANDARD deck (one pawn card) — the default everywhere, and the
+# number every order printed before the split could move.
+WORD_CARDS = word_cards()
 
 # How many front styles a v2 template ships (2.svg..9.svg).
 FRONTS = 8
@@ -427,11 +472,18 @@ def deal_in_order(uniq, n_cards):
 
 
 def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
-         order=ORDER_RANDOM, personal_count=None, sizes=None, min_cards=None):
+         order=ORDER_RANDOM, personal_count=None, sizes=None, min_cards=None,
+         pawn_cards=PAWN_CARDS_MIN):
     """Write the deck CSV and return ``(unique_words, card_count)``.
 
-    ``card_count`` INCLUDES the photo card when one is emitted, so it is the
-    number of printed cards (and half the page count).
+    ``card_count`` INCLUDES the photo cards, so it is the number of printed cards
+    (and half the page count).
+
+    ``pawn_cards`` is how many of the deck's 104 cards are PAWN cards — one per
+    four players, chosen by the buyer. They lead the deck and they come out of
+    the word cards' share, so a deck with three of them holds 404 words instead
+    of 412 (see DECK SIZE). It changes nothing about the deal: the words are
+    packed into whatever cards are left.
 
     ``order`` is the per-order card order (see ORDERS): the words are partitioned
     into groups and each group is dealt into its OWN cards, so a card only ever
@@ -491,17 +543,22 @@ def pack(words, out_csv, seed=42, fronts=FRONTS, photo_card=True,
     with open(out_csv, "w", encoding="utf-8-sig", newline="") as f:
         wr = csv.writer(f)
         wr.writerow(FIELDS)
-        # THE PAWN CARD GOES FIRST. It is the card the deck is ABOUT — her four
-        # people, cut out as stickers — and it used to be card 104, so whoever
-        # opened the PDF met 207 pages of word cards before reaching it and the
-        # print shop found it at the very bottom of the stack. Nothing else about
-        # the deck changes: a word card still carries the front style this loop
-        # deals it, in the order the deal produced.
+        # THE PAWN CARDS GO FIRST. They are what the deck is ABOUT — her people,
+        # cut out as stickers — and they used to be one card at position 104, so
+        # whoever opened the PDF met 207 pages of word cards before reaching it
+        # and the print shop found it at the very bottom of the stack. Nothing
+        # else about the deck changes: a word card still carries the front style
+        # this loop deals it, in the order the deal produced.
+        #
+        # One row per pawn card, so the deck's running order IS the CSV's and
+        # build.deck_document has nothing to work out: the Nth photo row is the
+        # Nth pawn card, and it takes photos 4N..4N+3.
         if photo_card:
-            wr.writerow(["photo", ""] + [""] * PER_CARD)
+            for _ in range(clamp_pawn_cards(pawn_cards)):
+                wr.writerow(["photo", ""] + [""] * PER_CARD)
         for i, row in enumerate(rows):
             wr.writerow(["word", i % fronts] + row)
-    return len(uniq), len(rows) + (1 if photo_card else 0)
+    return len(uniq), len(rows) + (clamp_pawn_cards(pawn_cards) if photo_card else 0)
 
 
 def load_cards(path):

@@ -529,7 +529,50 @@ function orderTotal(version, quantity, unitPrice) {
 // GRANDFATHERED, never trimmed: a collection already over the cap keeps every
 // word it has. The cap governs what may be ADDED, and silently deleting words a
 // customer wrote is a worse failure than a slightly larger deck.
-const DECK_WORDS = 412;
+// THE DECK IS ALWAYS 104 CARDS. What the buyer moves is the SPLIT between pawn
+// cards and word cards: four players fill one pawn card, and each pawn card
+// costs one word card, which is four words.
+//
+//     4 players   1 pawn card    103 word cards   412 words
+//     8 players   2 pawn cards   102 word cards   408 words
+//    12 players   3 pawn cards   101 word cards   404 words
+//    16 players   4 pawn cards   100 word cards   400 words
+//
+// Mirrors generator/pack.py (DECK_CARDS / word_cards / deck_words), which is
+// what actually lays the deck out. The two are a pair: change one and the
+// buyer's counter stops describing the deck she receives.
+const DECK_CARDS = 104;
+const PER_CARD = 4;
+const PLAYERS_MIN = 4;
+const PLAYERS_MAX = 16;
+
+// A stored player count, coerced. Anything unusable — absent, junk, a number
+// between the steps, out of range — is the DEFAULT, which is both the smallest
+// legal value and what every order placed before this existed means.
+function sanitizePlayers(value) {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return PLAYERS_MIN;
+  const stepped = Math.round(n / PER_CARD) * PER_CARD;
+  return Math.max(PLAYERS_MIN, Math.min(PLAYERS_MAX, stepped));
+}
+
+// How many players this collection's deck is laid out for.
+function playersFor(collection) {
+  return sanitizePlayers(collection && collection.players);
+}
+
+// …as pawn cards, which is the unit the generator takes (--pawn-cards).
+function pawnCardsFor(collection) {
+  return playersFor(collection) / PER_CARD;
+}
+
+// …and what is left for words. THE number the buyer's counter counts up to and
+// the ceiling addWords enforces.
+function deckWordsFor(collection) {
+  return (DECK_CARDS - pawnCardsFor(collection)) * PER_CARD;
+}
+
+const DECK_WORDS = (DECK_CARDS - PLAYERS_MIN / PER_CARD) * PER_CARD;
 
 // A collection may gather `pricing.free_word_limit` words before payment; past
 // that, adding is blocked until the order is paid. Both knobs are owner-editable
@@ -1050,6 +1093,10 @@ const db = {
       // These are always the ORIGINALS exactly as the buyer uploaded them — the
       // background-removed cutouts live beside them in pawn_cutouts, so a cut can
       // always be redone (or reverted) without asking the buyer for the photo again.
+      // How many PLAYERS this deck is laid out for — 4, 8, 12 or 16, one pawn
+      // card per four. The default is the standard deck, and it is what every
+      // order placed before the choice existed means (sanitizePlayers).
+      players: sanitizePlayers(contact.players),
       pawn_images: [],
       // Background-removed cutouts, keyed BY THE ORIGINAL'S PATH rather than by
       // slot index, so removing/reordering pawn_images (adminSetPawnImages) can
@@ -1240,7 +1287,9 @@ const db = {
     // one the moment the buyer pays, so holding past the cap would just defer the
     // overflow to the checkout. Already over the cap (an order collected before
     // this existed) yields 0 — nothing more goes in, nothing already there moves.
-    let deckRoom = Math.max(0, DECK_WORDS - existingWords.length - heldWords.length);
+    // …and the cap is THIS deck's, not the standard one: a buyer who asked for
+    // more players traded word cards away and her ceiling moved down with them.
+    let deckRoom = Math.max(0, deckWordsFor(c) - existingWords.length - heldWords.length);
     // Set BEFORE the words arrive (the admin picks the card order on the order,
     // then the list is sent), so it is read here rather than at production time.
     const authoredList = c.card_order === 'exact';
@@ -1532,7 +1581,9 @@ const db = {
       incoming.push(p);
     }
     if (!incoming.length) return c.pawn_images;
-    const room = Math.max(0, 4 - c.pawn_images.length);
+    // As many photos as she has players, not a fixed four: the deck carries one
+    // pawn card per four of them.
+    const room = Math.max(0, playersFor(c) - c.pawn_images.length);
     if (room > 0) {
       c.pawn_images.push(...incoming.slice(0, room));
       saveDb();
@@ -1682,6 +1733,58 @@ const db = {
   // apart. Reading code treats an absent key and a default value identically, so
   // nothing downstream has to care.
   //
+  // HOW MANY PLAYERS this deck is laid out for — 4, 8, 12 or 16.
+  //
+  // The deck stays 104 cards, so every four players she adds costs a word card:
+  // raising the count LOWERS the ceiling on her word list. That is the only way
+  // this can fail, and it fails LOUDLY rather than by trimming — the words are
+  // her guests', and deleting somebody's word to make room for a pawn is not a
+  // trade the store gets to make on her behalf. The refusal carries the numbers
+  // the page needs to say what to do about it.
+  //
+  // Lowering is never refused: fewer pawn cards means more word cards.
+  //
+  // PHOTOS ARE KEPT when the count drops. She may have uploaded eight and gone
+  // back to four; the deck prints the first four (pawnPhotoEntries), and the
+  // other four are still there if she changes her mind. Deleting a photo is
+  // something she asks for, not something a slider does to her.
+  //
+  // Returns { players, pawn_cards, deck_words, words } on success, null on a bad
+  // owner token or unknown collection, and { error: 'words', ... } when her list
+  // is already longer than the new deck would hold.
+  setPlayers(id, ownerToken, players) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    const next = sanitizePlayers(players);
+    const deckWords = (DECK_CARDS - next / PER_CARD) * PER_CARD;
+    // Held words count: one becomes a real word the moment she pays, so letting
+    // them past the new ceiling only defers the overflow to checkout.
+    const words = this.countWords(id);
+    const held = this.countHeldWords(id);
+    if (words + held > deckWords) {
+      return {
+        error: 'words',
+        players: next,
+        pawn_cards: next / PER_CARD,
+        deck_words: deckWords,
+        words,
+        held,
+        // What the page asks her to do, computed here so the message and the
+        // arithmetic cannot drift apart.
+        remove: words + held - deckWords,
+        current: playersFor(c),
+      };
+    }
+    c.players = next;
+    saveDb();
+    return {
+      players: next,
+      pawn_cards: next / PER_CARD,
+      deck_words: deckWords,
+      words,
+    };
+  },
+
   // Returns the whole view map, or null on a bad owner token / unknown
   // collection / a path we don't hold.
   setPawnView(id, ownerToken, origPath, view) {
@@ -3515,6 +3618,13 @@ module.exports.sanitizeQuantity = sanitizeQuantity;
 module.exports.orderTotal = orderTotal;
 module.exports.MAX_COPIES = MAX_COPIES;
 module.exports.DECK_WORDS = DECK_WORDS;
+module.exports.DECK_CARDS = DECK_CARDS;
+module.exports.PLAYERS_MIN = PLAYERS_MIN;
+module.exports.PLAYERS_MAX = PLAYERS_MAX;
+module.exports.sanitizePlayers = sanitizePlayers;
+module.exports.playersFor = playersFor;
+module.exports.pawnCardsFor = pawnCardsFor;
+module.exports.deckWordsFor = deckWordsFor;
 module.exports.CARD_ORDERS = CARD_ORDERS;
 // Pure free-quota projection (collection + word count -> {limit, applies, paid,
 // remaining, locked}), exposed for the API's public view and for unit tests.

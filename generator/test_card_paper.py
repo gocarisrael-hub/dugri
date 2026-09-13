@@ -340,7 +340,7 @@ def test_the_deck_prints_the_pawn_card_on_the_paper_it_is_given(tmp_path):
     pack.pack(["מילה%d" % i for i in range(40)], csvp, photo_card=True)
     doc, _vb = build.deck_document(
         "grapefruit", csvp, ["בדיקה"], workdir=str(tmp_path), paper="#ffc6d7")
-    photo = doc._designs["photo"]
+    photo = doc._designs["photo1"]
     assert 'fill="#ffc6d7"' in photo
     assert 'fill="#fffdf1"' not in photo
 

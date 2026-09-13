@@ -230,6 +230,7 @@ function orderArgs({
   photos,
   photoFrames,
   photoCutouts,
+  pawnCards,
   noTopup,
 }) {
   const args = [
@@ -274,14 +275,17 @@ function orderArgs({
   // Hebrew birthday title prints בת for a girl and בן for a boy from one
   // template. Only ever the two validated values.
   if (gender === 'male' || gender === 'female') args.push('--gender', gender);
-  // The customer's pawn photos for the deck's photo card (v2 templates). A v1
-  // theme ignores them, so passing them is always safe.
-  //
-  // Each photo may carry the frame the BUYER set on her collection page — how
-  // far in, and where — which overrides the generator's automatic framing for
-  // that slot alone. Emitted immediately after its own --photo so the pairing is
-  // readable in a log, and omitted entirely when she left the framing alone, so
-  // an order that predates this produces byte-for-byte the argv it always did.
+  // How many PAWN cards this deck carries — one per four players. It comes
+  // BEFORE the photos because it is what decides how many of them the deck has
+  // room for. Omitted at the default so an order placed before the choice
+  // existed produces byte-for-byte the argv it always did; the generator's own
+  // default is the same one card.
+  if (Number.isInteger(pawnCards) && pawnCards > 1) {
+    args.push('--pawn-cards', String(pawnCards));
+  }
+  // The customer's pawn photos for those cards (v2 templates). A v1 theme
+  // ignores them, so passing them is always safe. See pushPhotoArgs for how each
+  // one's frame and cutout marker ride along with it.
   pushPhotoArgs(args, photos, photoFrames, photoCutouts);
   return args;
 }
@@ -365,7 +369,10 @@ function pawnPhotoEntries(collection) {
     // framed one way on the page and another way by the printer.
     out.push({ file, view, cut: !!cutFile });
   }
-  return out.slice(0, 4);
+  // As many as the deck has slots — four per pawn card. Photos past that are
+  // KEPT on the collection (she may raise the count again) and simply not
+  // printed, which is why this slices rather than the store trimming.
+  return out.slice(0, db.playersFor(collection));
 }
 
 // The two halves of that answer, as PARALLEL arrays — the generator takes one
@@ -411,6 +418,7 @@ function runGenerator({
   photos,
   photoFrames,
   photoCutouts,
+  pawnCards,
   gender,
   wordlist,
   cardOrder,
@@ -441,6 +449,7 @@ function runGenerator({
       photos,
       photoFrames,
       photoCutouts,
+      pawnCards,
       noTopup,
     });
     const child = spawnGenerator(args);
@@ -915,6 +924,13 @@ function publicView(c, { owner = false } = {}) {
           pawn_cutouts:
             c.pawn_cutouts && typeof c.pawn_cutouts === 'object' ? { ...c.pawn_cutouts } : {},
           pawn_view: c.pawn_view && typeof c.pawn_view === 'object' ? { ...c.pawn_view } : {},
+          // How many players this deck is laid out for, and what that leaves for
+          // words. Both, rather than the count alone: the page shows the budget
+          // on every render and the arithmetic belongs on the side that lays the
+          // deck out, not in a copy of it in the browser.
+          players: db.playersFor(c),
+          pawn_cards: db.pawnCardsFor(c),
+          deck_words: db.deckWordsFor(c),
           // …and the title she chose, so the same sheet can show and change it.
           // null means she never set one and the theme's own title is printed.
           custom_title: c.custom_title || null,
@@ -1515,6 +1531,10 @@ async function produceDeck(c, b, opts = {}) {
     // …and which of those files are cutouts, because that is what the automatic
     // framing keys off — on the page she approved it on, and now here.
     photoCutouts: pawnPhotoCutouts(c),
+    // How many PAWN cards this deck prints — one per four players. The deck is
+    // always 104 cards, so this is also what decides how many word cards are
+    // left and how far the top-up fills.
+    pawnCards: db.pawnCardsFor(c),
     // From the STORED collection, never the request body. The wizard asks the
     // buyer for the honoree's gender once and it is validated to
     // 'male'/'female'/null at the door (db.createCollection), so the order
@@ -3324,6 +3344,32 @@ app.put('/api/collections/:id/pawn-view', express.json({ limit: '8kb' }), (req, 
   res.json({ ok: true, pawn_view: views });
 });
 
+// HOW MANY PLAYERS this deck is laid out for. Body: { players }.
+//
+// The deck is always 104 cards, so four more players is one more pawn card and
+// one word card fewer. RAISING the count therefore lowers the ceiling on her
+// word list, and that is the one way this can fail: her list may already be
+// longer than the smaller deck holds. It fails with the numbers rather than by
+// trimming — the words are her guests', and the page turns the refusal into
+// "delete N words to move to 12 players".
+//
+// Owner-token gated and refused once the collection is CLOSED, like the title
+// and the pawn views: the deck is in production by then and a silently-accepted
+// change would print nothing.
+app.put('/api/collections/:id/players', express.json({ limit: '4kb' }), (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  if (db.effectiveStatus(c) !== 'open') {
+    return res.status(409).json({ error: 'closed', message: 'האיסוף נסגר והמשחק בהפקה' });
+  }
+  const out = db.setPlayers(req.params.id, req.query.k, (req.body || {}).players);
+  if (out == null) return res.status(403).json({ error: 'forbidden' });
+  // 409, not 400: nothing about the request is malformed — the collection is in
+  // a state that refuses it, and the body says exactly what would clear that.
+  if (out.error === 'words') return res.status(409).json(out);
+  res.json({ ok: true, ...out });
+});
+
 // THE CUTOUT FOR A PHOTO WE ALREADY HOLD. Multipart: a `path` field naming the
 // original and a `cut` file carrying the transparent PNG the browser produced.
 //
@@ -4211,7 +4257,7 @@ app.post('/api/collections/:id/words', (req, res) => {
     // because the two mean opposite things to the buyer: one clears when she
     // pays, the other never does.
     full: r.full || 0,
-    deck_words: db.DECK_WORDS,
+    deck_words: db.deckWordsFor(c),
     // How many entries were refused for carrying an emoji. Like `too_long` this
     // is normally 0 — collect.html filters them out before submitting, so the
     // customer is told while the word is still in front of her — but a paste

@@ -441,3 +441,89 @@ if __name__ == "__main__":
         fn()
         print("ok", fn.__name__)
     print(f"\nall {len(fns)} tests passed")
+
+
+# --- the deck's split between pawn cards and word cards ---------------------
+#
+# The deck is ALWAYS 104 cards. Four players fill one pawn card and each pawn
+# card costs one word card, so the buyer trades four words per four players —
+# about 1% of the deck, which is why it is offered rather than sold.
+
+def test_the_deck_is_always_104_cards_however_it_is_split():
+    # A FULL list for that split — which is the point: the list she is allowed to
+    # collect shrinks with the deck (topup.target_for, db.deckWordsFor), so a deck
+    # filled to its own capacity is 104 cards at every split.
+    for pawn_cards in range(pack.PAWN_CARDS_MIN, pack.PAWN_CARDS_MAX + 1):
+        out = _csv()
+        n, cards = pack.pack(_words(pack.deck_words(pawn_cards)), out,
+                             pawn_cards=pawn_cards)
+        rows = _rows(out)
+        assert cards == pack.DECK_CARDS, (pawn_cards, cards)
+        assert len(rows) == pack.DECK_CARDS
+        assert sum(1 for r in rows if r["kind"] == "photo") == pawn_cards
+        assert sum(1 for r in rows if r["kind"] == "word") == pack.word_cards(pawn_cards)
+
+
+def test_every_pawn_card_costs_exactly_four_words():
+    assert pack.deck_words(1) == 412
+    assert pack.deck_words(2) == 408
+    assert pack.deck_words(3) == 404
+    assert pack.deck_words(4) == 400
+    # …and the standard deck is still what it always was.
+    assert pack.WORD_CARDS == 103
+    assert pack.deck_words() == 412
+
+
+def test_the_pawn_cards_lead_and_the_word_cards_follow():
+    out = _csv()
+    pack.pack(_words(pack.deck_words(3)), out, pawn_cards=3)
+    kinds = [r["kind"] for r in _rows(out)]
+    assert kinds[:3] == ["photo", "photo", "photo"]
+    assert set(kinds[3:]) == {"word"}
+
+
+def test_the_word_cards_keep_their_even_spread_behind_three_pawn_cards():
+    # The photo rows sit in front of the deal and must not push its cycling along.
+    out = _csv()
+    pack.pack(_words(pack.deck_words(3)), out, pawn_cards=3)
+    fronts = [int(r["front"]) for r in _rows(out) if r["kind"] == "word"]
+    assert fronts[:9] == [0, 1, 2, 3, 4, 5, 6, 7, 0], fronts[:9]
+    counts = sorted((fronts.count(i) for i in range(pack.FRONTS)), reverse=True)
+    # 101 word cards over 8 fronts: five get 13, three get 12.
+    assert sum(counts) == pack.word_cards(3)
+    assert max(counts) - min(counts) == 1
+
+
+def test_a_hand_typed_count_cannot_deform_the_deck():
+    # Reached by a CLI (--pawn-cards), so the bounds are enforced here too: a
+    # typo must not produce a deck of 64 word cards.
+    assert pack.clamp_pawn_cards(0) == pack.PAWN_CARDS_MIN
+    assert pack.clamp_pawn_cards(-3) == pack.PAWN_CARDS_MIN
+    assert pack.clamp_pawn_cards(40) == pack.PAWN_CARDS_MAX
+    assert pack.clamp_pawn_cards("nope") == pack.PAWN_CARDS_MIN
+    assert pack.clamp_pawn_cards(None) == pack.PAWN_CARDS_MIN
+    out = _csv()
+    pack.pack(_words(pack.deck_words(pack.PAWN_CARDS_MAX)), out, pawn_cards=99)
+    rows = _rows(out)
+    assert len(rows) == pack.DECK_CARDS
+    assert sum(1 for r in rows if r["kind"] == "photo") == pack.PAWN_CARDS_MAX
+
+
+def test_the_default_deck_is_byte_for_byte_what_it_was():
+    a = _csv()
+    b = _csv()
+    pack.pack(_words(FULL), a)
+    pack.pack(_words(FULL), b, pawn_cards=1)
+    assert open(a, encoding="utf-8-sig").read() == open(b, encoding="utf-8-sig").read()
+
+
+def test_an_oversized_list_still_grows_the_deck_at_any_split():
+    # The product promises no upper limit on her own words, and that outranks the
+    # 104: a list longer than this split holds prints MORE cards rather than
+    # losing words. The buyer never gets here through the site — the cap she
+    # collects under is this split's (db.deckWordsFor) — but the generator is
+    # also a CLI, and dropping a customer's word is never the right failure.
+    out = _csv()
+    _, cards = pack.pack(_words(pack.deck_words(3) + 40), out, pawn_cards=3)
+    assert cards > pack.DECK_CARDS
+    assert sum(1 for r in _rows(out) if r["kind"] == "photo") == 3

@@ -35,7 +35,8 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                  photo_cutouts=None,
                  press_icc=None,
                  press_bleed=None, press_cmyk=True, gender=None, wordlist=None,
-                 order=pack.ORDER_RANDOM, personal_count=None, no_topup=False):
+                 order=pack.ORDER_RANDOM, personal_count=None, no_topup=False,
+                 pawn_cards=pack.PAWN_CARDS_MIN):
     """Render an order and return ``(out_pdf, page_count, board_pdf)``.
 
     ``board_pdf`` is the separate board file a v2 (single-card) template
@@ -123,7 +124,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         # would have been, and no pool read at all. One implementation of the
         # dedup, which is the only part of the top-up a no-fill order still wants.
         words = topup(personal_words, theme_key, wordlist=wordlist,
-                      target=0 if no_topup else topupmod.TARGET,
+                      target=0 if no_topup else topupmod.target_for(pawn_cards),
                       keep_duplicates=(order == pack.ORDER_EXACT))
         # Where her own words end and the filler begins — the boundary the
         # 'personal-first' order splits on. It is a count because the deck is one
@@ -161,7 +162,10 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
             # cards rather than stopping where her words do (pack.min_cards).
             pack.pack(words, csv_path, fronts=len(config.fronts(cfg)),
                       order=order, personal_count=boundary, sizes=weights,
-                      min_cards=pack.WORD_CARDS if no_topup else None)
+                      pawn_cards=pawn_cards,
+                      # A no-fill deck is padded to the word cards THIS deck has,
+                      # which is fewer when she asked for more players.
+                      min_cards=pack.word_cards(pawn_cards) if no_topup else None)
         else:
             pack.pack(words, csv_path, order=order, personal_count=boundary,
                       sizes=weights)
@@ -261,6 +265,15 @@ def main():
                     help="bleed depth in mm for --press (default: the agreed 3)")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
+    ap.add_argument("--pawn-cards", type=int, default=pack.PAWN_CARDS_MIN,
+                    metavar="N",
+                    help="how many PAWN cards the deck carries — one per four "
+                         "players, %d to %d. The deck is always %d cards, so each "
+                         "one costs a word card: %d words at the default, %d at "
+                         "the largest. Omit it for the standard deck"
+                         % (pack.PAWN_CARDS_MIN, pack.PAWN_CARDS_MAX,
+                            pack.DECK_CARDS, pack.deck_words(),
+                            pack.deck_words(pack.PAWN_CARDS_MAX)))
     ap.add_argument("--no-topup", action="store_true",
                     help="do NOT fill the deck from a seed pool: print the "
                          "buyer's own words and leave the rest of the deck as "
@@ -302,6 +315,7 @@ def main():
         press_cmyk=not args.press_passthrough, gender=args.gender,
         wordlist=args.wordlist, order=args.order,
         personal_count=args.personal_count, no_topup=args.no_topup,
+        pawn_cards=args.pawn_cards,
     )
     print(f"\nwrote {pdf} ({pages} pages)")
     # Printed on its own line so the server can pick the board artifact out of

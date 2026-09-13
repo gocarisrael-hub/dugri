@@ -8,6 +8,14 @@ collection as `pawn_images`, max 4). This document is the contract between the c
 It leads the deck (pages 1-2) rather than closing it: it is the card the deck is about, and
 the one sheet the print shop handles differently. See `docs/deck-rendering.md`.
 
+**A deck may carry up to four of them** — one per four players, chosen by the buyer, out of the
+word cards' share (`docs/deck-rendering.md`, "How many pawn cards"). They are identical cards
+with different faces: same artwork, same four slots, same back. `build.resolve_photos` returns
+`4 x cards` paths in one flat list and the deck deals them four at a time, so photo 5 is the
+first slot of the second card. Where her photos run out the shipped Dugri pawns fill in, and
+with more than four slots to fill they CYCLE — a repeated pawn is a poor game piece, but a bare
+dashed ring is a defect, and she is the one who asked for sixteen players and sent three faces.
+
 ## For Agent C — the cutout contract in one place
 
 Read this section before changing anything on the generator side. **Where a rendered image
