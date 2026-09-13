@@ -1023,3 +1023,191 @@ test.describe('the ad report', () => {
     expect(tracked).toBe(false);
   });
 });
+
+// Hiding rows. Every row shows by default — a campaign she never touched can
+// never go missing from the page she sets ad spend from — and she hides the rows
+// she does not want to see again, one row at a time. A PAID row is never hidden.
+// Display only: the tiles keep every row's money. Stubbed, so the rows are
+// exactly these four.
+test.describe('hiding rows on the report', () => {
+  const GOOGLE = {
+    source: 'google',
+    medium: 'referral',
+    campaign: '',
+    content: '',
+    visits: 19,
+    checkouts: 6,
+    orders: 4,
+    revenue: 1012,
+    conversion: 21.1,
+  };
+  const STORY = {
+    source: 'instagram',
+    medium: 'story',
+    campaign: 'story_alma',
+    content: '',
+    visits: 5,
+    checkouts: 0,
+    orders: 1,
+    revenue: 255,
+    conversion: 20,
+  };
+  // No campaign name at all — the link builder leaves the name optional. This is
+  // the row the feature exists for, and a rule that read utm_campaign could not
+  // reach it.
+  const NAMELESS = {
+    source: 'instagram',
+    medium: 'bio',
+    campaign: '',
+    content: 'sep_story',
+    visits: 3,
+    checkouts: 1,
+    orders: 0,
+    revenue: 0,
+    conversion: 0,
+  };
+  // The row the owner sets ad spend from. It must survive anything the hider can
+  // be told to do.
+  const PAID = {
+    source: 'instagram',
+    medium: 'paid',
+    campaign: 'shm_rovakot',
+    content: '',
+    visits: 40,
+    checkouts: 14,
+    orders: 12,
+    revenue: 1668,
+    conversion: 30,
+  };
+  const ROWS = [GOOGLE, STORY, NAMELESS, PAID];
+  const keyOf = (r) => [r.source, r.medium, r.campaign, r.content].join('|');
+  const partsOf = (r) => [r.source, r.medium, r.campaign, r.content];
+
+  const stubReport = (page, { rows = ROWS, hidden = [] } = {}) =>
+    page.route('**/api/admin/ads?*', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          days: 30,
+          rows,
+          totals: { visits: 67, checkouts: 21, orders: 17, revenue: 2935, paid_orders: 12 },
+          internal: { visits: 0, checkouts: 0, orders: 0, revenue: 0, hosts: [] },
+          hidden_rows: hidden,
+          base_url: 'https://dugri-israel.co.il',
+        }),
+      })
+    );
+
+  test('every row shows until the owner hides it', async ({ page }) => {
+    await stubReport(page);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    for (const name of ['google', 'story_alma', 'sep_story', 'shm_rovakot']) {
+      await expect(rowFor(page, name)).toBeVisible();
+    }
+    await expect(page.getByTestId('row-hider')).toHaveText('הסתרת שורות');
+    // Nothing is missing from the table, so nothing has to be reconciled.
+    await expect(page.getByTestId('hidden-note')).toBeHidden();
+  });
+
+  test('a hidden row leaves the table, and the note says its money stayed', async ({ page }) => {
+    await stubReport(page, { hidden: [partsOf(STORY)] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, 'story_alma')).toHaveCount(0);
+    await expect(rowFor(page, 'google')).toBeVisible();
+    await expect(page.getByTestId('row-hider')).toContainText('1');
+    // The reconciliation sentence is on the heading line, not inside the panel,
+    // because the panel ships closed and the tile does not.
+    await expect(page.getByTestId('row-hide-panel')).toBeHidden();
+    await expect(page.getByTestId('hidden-note')).toBeVisible();
+    await expect(page.getByTestId('hidden-note')).toContainText('נספרות במספרים שלמעלה');
+    await expect(page.locator('#tiles')).toContainText('2,935');
+  });
+
+  test('ticking a row hides it and saves only that row', async ({ page }) => {
+    await stubReport(page);
+    let saved = null;
+    await page.route('**/api/admin/ads/hidden**', (route) => {
+      saved = route.request().postDataJSON();
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, hidden: [partsOf(STORY)] }),
+      });
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('row-hider').click();
+    await expect(page.getByTestId('row-hide-panel')).toBeVisible();
+    await page.locator(`input[data-row="${keyOf(STORY)}"]`).check();
+
+    await expect(rowFor(page, 'story_alma')).toHaveCount(0);
+    expect(saved).toEqual({ row: partsOf(STORY), hidden: true });
+    await expect(rowFor(page, 'google')).toBeVisible();
+    await expect(page.getByTestId('row-hider')).toContainText('1');
+  });
+
+  test('a row with no campaign name can be hidden too', async ({ page }) => {
+    await stubReport(page);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('row-hider').click();
+    await expect(page.locator(`input[data-row="${keyOf(NAMELESS)}"]`)).toHaveCount(1);
+  });
+
+  test('a paid row is not offered, and stays on the table even if it is hidden', async ({
+    page,
+  }) => {
+    await stubReport(page, { hidden: [partsOf(PAID)] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, 'shm_rovakot')).toBeVisible();
+    await expect(page.getByTestId('row-hider')).toHaveText('הסתרת שורות');
+    await page.getByTestId('row-hider').click();
+    await expect(page.locator(`input[data-row="${keyOf(PAID)}"]`)).toHaveCount(0);
+  });
+
+  test('a hidden row with nothing in this range can still be brought back', async ({ page }) => {
+    const old = ['instagram', 'story', 'old_launch', ''];
+    await stubReport(page, { hidden: [old] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('row-hider').click();
+    const box = page.locator(`input[data-row="${old.join('|')}"]`);
+    await expect(box).toBeChecked();
+    await expect(page.locator('#rowHideList label:has-text("old_launch")')).toContainText(
+      'אין פעילות בטווח הזה'
+    );
+  });
+
+  test('a refused save puts the box back and says so', async ({ page }) => {
+    await stubReport(page);
+    await page.route('**/api/admin/ads/hidden**', (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: 'application/json',
+        body: '{"error":"could not save"}',
+      })
+    );
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('row-hider').click();
+    const box = page.locator(`input[data-row="${keyOf(STORY)}"]`);
+    await box.click();
+    await expect(page.getByTestId('row-hide-status')).toContainText('לא נשמר');
+    await expect(box).not.toBeChecked();
+    await expect(rowFor(page, 'story_alma')).toBeVisible();
+  });
+
+  test('a table with every row hidden says where the money went', async ({ page }) => {
+    await stubReport(page, { rows: [STORY], hidden: [partsOf(STORY)] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.locator('#rows')).toContainText('נספרות במספרים שלמעלה');
+    await expect(page.locator('#rows')).toContainText('שורות מוסתרות');
+  });
+
+  test('with nothing that may be hidden there is no hider', async ({ page }) => {
+    await stubReport(page, { rows: [PAID] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, 'shm_rovakot')).toBeVisible();
+    // toBeHidden() alone is satisfied by an element that does not exist, which
+    // would pass with no hider in the page at all.
+    await expect(page.getByTestId('row-hider')).toHaveCount(1);
+    await expect(page.getByTestId('row-hider')).toBeHidden();
+  });
+});

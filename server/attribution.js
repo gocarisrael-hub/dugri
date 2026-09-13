@@ -388,7 +388,112 @@ function load() {
     // to take the server down with it.
     _events = [];
   }
+  loadHidden();
   prune();
+}
+
+// --- rows the owner hid ---------------------------------------------------------
+//
+// The table fills up with rows nobody needs to see again: a link built for one
+// story, a test link somebody clicked twice, a referral that sent two visitors.
+// The owner asked to be able to put those away.
+//
+// SHOW BY DEFAULT. Every row is on the table unless she hid that exact row. A
+// campaign she never touched can never go missing — clutter is an annoyance, a
+// winning campaign missing from the page she sets ad spend from is expensive.
+// Two rules hold it:
+//   - a row is hidden by its OWN key (source, medium, campaign, content) — the
+//     same key report() groups by — so hiding one story link never touches a
+//     sibling row, a campaign's other creatives, or a row that arrives later;
+//   - a row whose medium is paid is ALWAYS shown and cannot be hidden, whatever
+//     the file says. Ad money is what this page is read for.
+// Nothing is hidden by name, so a nameless row (the link builder leaves the name
+// field optional) and a row tagged only with utm_content can be put away too —
+// those are exactly the per-story links this exists for.
+//
+// DISPLAY ONLY. The events stay in the ledger and in every total, because a
+// hidden row can hold paid orders and the revenue tile has to keep matching the
+// bank. report() hands the hidden set to the page, which decides what to draw.
+//
+// Its own small file, written at once: it changes on a click, not on a page view,
+// so none of the ledger's write throttling is needed.
+const HIDDEN_FILE = path.join(DATA_DIR, 'attribution-hidden-rows.json');
+const MAX_HIDDEN = 200;
+let _hidden = new Map(); // 'source|medium|campaign|content' -> the four fields
+
+/**
+ * One row's identity, normalised exactly as record() normalises a touch, so a row
+ * named in a request — or typed into the file by hand — keys the row the table
+ * actually draws. Null when it is not four strings, when all four are empty, or
+ * when the medium is paid: a paid row is never hideable.
+ */
+function hiddenKeyOf(row) {
+  if (!Array.isArray(row) || row.length !== 4) return null;
+  if (row.some((v) => typeof v !== 'string')) return null;
+  const parts = row.map((v) => field(v));
+  if (!parts.some(Boolean)) return null;
+  if (isPaid({ medium: parts[1] })) return null;
+  return { key: parts.join('|'), parts };
+}
+
+function loadHidden() {
+  _hidden = new Map();
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(HIDDEN_FILE, 'utf8'));
+  } catch {
+    return; // no file yet: nothing is hidden
+  }
+  if (!Array.isArray(raw)) return;
+  // Normalised and capped on the way IN, not only on the way out. A file edited
+  // by hand can hold "Bio_Insta", which matches no row, hides nothing, and could
+  // not be removed by a click that normalises to bio_insta; and a file that grew
+  // past the cap elsewhere must not come back over it.
+  for (const row of raw) {
+    if (_hidden.size >= MAX_HIDDEN) break;
+    const k = hiddenKeyOf(row);
+    if (k) _hidden.set(k.key, k.parts);
+  }
+}
+
+/** The rows the owner hid, each as [source, medium, campaign, content], sorted. */
+function hiddenRows() {
+  return [..._hidden.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map((e) => e[1]);
+}
+
+/**
+ * Hide, or stop hiding, ONE row. One row per call rather than the whole list, so
+ * two tabs hiding different rows cannot overwrite each other's choice.
+ * Returns { ok: true, hidden } or { error }; on an error nothing changes.
+ */
+function setRowHidden(row, hidden) {
+  if (typeof hidden !== 'boolean') return { error: 'hidden must be true or false' };
+  if (!Array.isArray(row) || row.length !== 4 || row.some((v) => typeof v !== 'string')) {
+    return { error: 'row must be four fields' };
+  }
+  const parts = row.map((v) => field(v));
+  if (!parts.some(Boolean)) return { error: 'row must be four fields' };
+  if (isPaid({ medium: parts[1] })) return { error: 'a paid row is always shown' };
+  const key = parts.join('|');
+  if (_hidden.has(key) === hidden) return { ok: true, hidden: hiddenRows() };
+  const next = new Map(_hidden);
+  if (hidden) next.set(key, parts);
+  else next.delete(key);
+  if (next.size > MAX_HIDDEN) return { error: 'too many hidden rows' };
+  const tmp = HIDDEN_FILE + '.tmp';
+  try {
+    // The ledger creates nothing on its own and swallows its write failures, so
+    // on a fresh volume this can be the first file in DATA_DIR.
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify([...next.values()]), 'utf8');
+    fs.renameSync(tmp, HIDDEN_FILE);
+  } catch {
+    return { error: 'could not save' };
+  }
+  _hidden = next;
+  return { ok: true, hidden: hiddenRows() };
 }
 
 /**
@@ -708,7 +813,16 @@ function report({ days = 30, now = Date.now() } = {}) {
   out.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders || b.visits - a.visits);
   totals.revenue = Math.round(totals.revenue * 100) / 100;
   internal.revenue = Math.round(internal.revenue * 100) / 100;
-  return { days: Number(days) || 30, rows: out, totals, internal };
+  // Every row is returned, hidden or not: the totals above include them all, and
+  // the page needs the hidden rows to list them in the hider so they can come
+  // back.
+  return {
+    days: Number(days) || 30,
+    rows: out,
+    totals,
+    internal,
+    hidden_rows: hiddenRows(),
+  };
 }
 
 /**
@@ -747,6 +861,8 @@ module.exports = {
   record,
   report,
   recent,
+  hiddenRows,
+  setRowHidden,
   flush,
   load,
   _setEvents,

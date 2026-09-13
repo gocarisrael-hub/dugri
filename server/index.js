@@ -7876,6 +7876,18 @@ app.get('/api/admin/ads/live', (req, res) => {
   if (!requireAdmin(req, res)) return;
   res.json({ events: attribution.recent(Number(req.query.limit) || 60) });
 });
+// Admin: hide, or stop hiding, ONE row of the report table, named by its four
+// fields [source, medium, campaign, content]. Display only — a hidden row still
+// counts in every total — and a paid row is refused (see attribution.setRowHidden).
+app.post('/api/admin/ads/hidden', (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const body = req.body || {};
+  const out = attribution.setRowHidden(body.row, body.hidden);
+  if (out.error) {
+    return res.status(out.error === 'could not save' ? 500 : 400).json({ error: out.error });
+  }
+  res.json(out);
+});
 
 // Save the ledger when the process is asked to stop. Events are queued in memory
 // for up to a second and a half so that a burst of ad traffic is not a burst of
