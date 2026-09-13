@@ -3287,8 +3287,8 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
 
 // OWNER-SCOPED pawn-images upload: attach optional customer photos ("פיונים") to
 // a collection — one per player, so up to db.playersFor(c), which is 4 for the
-// standard deck and 16 for the largest. Owner-token gated via ?k= (a query param, so we can
-// authenticate BEFORE express.raw buffers the body — an unauthenticated client
+// standard deck and 16 for the largest. Owner-token gated via ?k= (a query param,
+// so we can authenticate BEFORE express.raw buffers the body — an unauthenticated client
 // can't force a large allocation). Multipart, same magic-byte typing + 4MB/image
 // cap as the content-photo route (content.saveImageBytes). Pictures are a
 // nice-to-have: a single bad/oversized image part is SKIPPED, not fatal, so a
@@ -3301,7 +3301,9 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
 // {id, owner_token} and could hammer this route): we compute how much ROOM is left
 // for this collection and only ever write that many files, so disk writes are
 // bounded by that cap and repeated over-cap posts write nothing. A SECOND, smaller
-// cap bounds one request (PAWN_BATCH_MAX), because the body is buffered whole. Any file we DID write but that ends up unrecorded (a content-hash
+// cap bounds one request (PAWN_BATCH_MAX), because the body is buffered whole.
+//
+// Any file we DID write but that ends up unrecorded (a content-hash
 // duplicate the DB de-dupes away) is reclaimed — but only when THIS request created
 // it and nothing else references it (content-addressed files are shared).
 app.post(

@@ -2917,9 +2917,15 @@
         </p>
         <!-- HOW MANY PLAYERS. Four fill one pawn card, and the deck is always 104
              cards — so every extra pawn card is a word card fewer. The buttons are
-             built in JS from one list of counts, and the two lines under them are
-             written from the same arithmetic, so the number she is shown and the
-             number the deck is laid out to cannot drift apart.
+             built in JS from one list of counts, and so is the budget line under
+             the grid, from the same arithmetic — so the number she is shown and
+             the number the deck is laid out to cannot drift apart.
+
+             EVERY number this step shows lives in that budget line, which JS owns
+             outright. The heading and the cut line beside it are [data-edit], and
+             js/editor.js writes the owner's wording into them once, on load; a
+             number rewritten into one of those on each button press threw her edit
+             away the first time a buyer tapped a count.
 
              Asked HERE, before the collection exists, so her word ceiling is right
              from the first word rather than moved under her later. -->
