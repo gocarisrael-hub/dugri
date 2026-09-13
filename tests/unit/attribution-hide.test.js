@@ -104,6 +104,17 @@ describe('picking manual campaigns in the ledger', () => {
     expect(again.shownCampaigns()).toEqual(['bio_insta']);
   });
 
+  // A fresh volume has no DATA_DIR yet, and the ledger never creates it (its own
+  // writes fail silently). The E2E server hit exactly this: every tick answered
+  // "could not save".
+  it('saves the pick when the data directory does not exist yet', async () => {
+    dir = path.join(dir, 'not-created-yet');
+    const a = await store();
+    expect(a.setCampaignShown('bio_insta', true)).toEqual({ ok: true, shown: ['bio_insta'] });
+    const again = await store();
+    expect(again.shownCampaigns()).toEqual(['bio_insta']);
+  });
+
   it('names the campaign however it was typed', async () => {
     const a = await store();
     seed(a);

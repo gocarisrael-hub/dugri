@@ -24,7 +24,7 @@ async function showCampaign(page, campaign) {
   const r = await page.request.post(`/api/admin/ads/campaigns?key=${KEY}`, {
     data: { campaign, shown: true },
   });
-  expect(r.ok(), 'picking the campaign was refused').toBe(true);
+  expect(r.ok(), `picking the campaign was refused: ${r.status()} ${await r.text()}`).toBe(true);
   picked.push(campaign);
 }
 test.afterEach(async ({ request }) => {

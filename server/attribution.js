@@ -444,6 +444,9 @@ function setCampaignShown(name, shown) {
   if (next.size !== _shown.size) {
     const tmp = SHOWN_FILE + '.tmp';
     try {
+      // The ledger creates nothing on its own and swallows its write failures, so
+      // on a fresh volume this can be the first file in DATA_DIR.
+      fs.mkdirSync(DATA_DIR, { recursive: true });
       fs.writeFileSync(tmp, JSON.stringify([...next]), 'utf8');
       fs.renameSync(tmp, SHOWN_FILE);
     } catch {
