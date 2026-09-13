@@ -550,6 +550,24 @@ describe('matching our revenue to Meta’s spend', () => {
     });
   });
 
+  // attribution.js now names an fbclid click out of Instagram 'instagram' rather
+  // than 'meta'. The ROAS line must credit it to Meta exactly as it did before.
+  it('credits an Instagram click id to Meta exactly as the bare Meta one', () => {
+    const landing = 'https://dugri-israel.co.il/?fbclid=IwAR1';
+    const ig = attribution.parseTouch({ landing, referrer: 'https://l.instagram.com/' });
+    const bare = attribution.parseTouch({ landing, referrer: '' });
+    expect(ig.source).toBe('instagram');
+    expect(bare.source).toBe('meta');
+    for (const t of [ig, bare]) {
+      expect(insights.metaAttributed([{ ...t, revenue: 300, orders: 1 }], isPaid)).toMatchObject({
+        revenue: 300,
+        orders: 1,
+        matched: 1,
+        untagged: { revenue: 300, orders: 1, rows: 1 },
+      });
+    }
+  });
+
   it('knows the platform names Meta traffic can arrive under', () => {
     for (const s of ['meta', 'facebook', 'instagram', 'audience_network', 'messenger']) {
       expect(insights.isMetaSource(s)).toBe(true);

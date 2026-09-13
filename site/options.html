@@ -3736,7 +3736,7 @@
       // site/js/emoji.js; server/validate.js is the authority behind it.
       import { hasEmoji, titleEmojiMessage } from './js/emoji.js';
       import { track } from './js/analytics.js';
-      import { sendEvent } from './js/attribution.js';
+      import { sendEvent, currentTouch } from './js/attribution.js';
       import { initCarousel } from './js/carousel.js';
       import { initPinchZoom } from './js/pinch-zoom.js';
       import {
@@ -6627,6 +6627,11 @@
               // both in her words; optional, never printed, shown to us in admin
               buyer_name: buyerName,
               event_type: eventType,
+              // How this browser arrived (sanitised by currentTouch — origin, path
+              // and campaign parameters only). Stored on the order so the sale is
+              // credited to the ad even when she pays from the email on another
+              // device.
+              arrival: currentTouch(location.href, document.referrer),
             }),
           });
           const data = await r.json();

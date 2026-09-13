@@ -1017,6 +1017,20 @@ function refuseEmojiTitle(res, { title, name } = {}) {
   return true;
 }
 
+// The wizard's report of HOW THIS BUYER ARRIVED: two raw strings, capped here and
+// parsed on our server into the touch to freeze on the order. Null for anything
+// that is not a plain object — a string, an array — and null too when the parse
+// found no evidence at all, because the arrival is first-write-wins and beats the
+// landing at purchase time, so an empty report must not be allowed to outrank the
+// real touch the paying browser still carries (see attribution.arrivalTouch).
+function arrivalFromBody(arrival) {
+  if (!arrival || typeof arrival !== 'object' || Array.isArray(arrival)) return null;
+  return attribution.arrivalTouch({
+    landing: String(arrival.landing || '').slice(0, 2000),
+    referrer: String(arrival.referrer || '').slice(0, 500),
+  });
+}
+
 // Create a collection -> returns the secret owner_token (only time it's sent).
 app.post('/api/collections', (req, res) => {
   const b = req.body || {};
@@ -1058,6 +1072,16 @@ app.post('/api/collections', (req, res) => {
     // printed on the cards.
     comment: b.comment,
     gender: b.gender,
+    // How this buyer arrived, kept on the order (Agent A — attribution). The sale
+    // is then credited to it even when she pays later from another device. RAW
+    // STRINGS in, parsed on our server: a caller can put utm_source in the landing
+    // it reports and see it read back — exactly as it can through /api/track, so
+    // this is no new opening — but it cannot hand over a ready-made { source: … }
+    // and skip the parse, and the URL itself is never stored (it can carry the
+    // order's owner token). Null when the parse found nothing; passed in here
+    // rather than written after, so the one saveDb createCollection already does
+    // carries it — saveDb serialises the whole store.
+    arrival: arrivalFromBody(b.arrival),
   });
   // A new lead just STARTED — fire the owner + buyer emails and open the WhatsApp
   // word-collection group now, so words start flowing before/without payment.
@@ -7679,6 +7703,10 @@ app.post('/api/track', (req, res) => {
     visitor: body.visitor,
     order_no: orderNo,
     value,
+    // How the order was PLACED, when the wizard recorded it. The confirmation page
+    // is often opened on another device, from one of our own emails, and that
+    // browser's touch would credit the sale to the inbox instead of the ad.
+    arrival: order ? order.arrival : undefined,
   });
   // Meta's copy of the same sale — the FALLBACK half. The report that matters
   // left from the payment itself (see sendPurchaseToMeta), because a buyer who

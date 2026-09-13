@@ -111,6 +111,21 @@ describe('the remembered touch', () => {
     const later = currentTouch('https://dugri-israel.co.il/options.html?step=2', '');
     expect(later.referrer).toBe('https://l.instagram.com/');
   });
+
+  // The visit beacon waits for the page to finish loading, which on a phone can
+  // take seconds. A visitor who tapped onward before then used to leave no memory
+  // of the story they came from at all.
+  it('remembers the arrival as soon as the module loads, before any beacon', async () => {
+    vi.useFakeTimers();
+    try {
+      setUrl('http://localhost/?utm_source=instagram&utm_campaign=story_alma');
+      await load();
+      expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/track')).toHaveLength(0);
+      expect(localStorage.getItem('dugri_attr')).toContain('utm_campaign=story_alma');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe('sending events', () => {
@@ -332,8 +347,16 @@ describe('a measurement never carries a credential', () => {
   // tokenised address as its referrer, so the referrer is the same leak.
   it('strips the referrer too', async () => {
     setUrl('http://localhost/');
-    const mod = await load();
     const referrer = 'http://localhost/collect.html' + TOKENS;
+    // The module now remembers the arrival the moment it loads, so the real
+    // referrer goes through that path first...
+    Object.defineProperty(document, 'referrer', { value: referrer, configurable: true });
+    const mod = await load();
+    expect(JSON.parse(localStorage.getItem('dugri_attr')).referrer).toBe(
+      'http://localhost/collect.html'
+    );
+    // ...and through a direct call on a browser with nothing stored.
+    localStorage.removeItem('dugri_attr');
     const touch = mod.currentTouch(location.href, referrer);
     expect(touch.referrer).toBe('http://localhost/collect.html');
     expect(seen()).not.toContain('3c9e77aa');

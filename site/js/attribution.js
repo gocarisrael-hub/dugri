@@ -7,12 +7,36 @@
 // the raw strings, which is what keeps a page from being able to declare its own
 // campaign.
 //
-// Attribution model: LAST NON-DIRECT TOUCH. The stored touch is replaced only
-// when the visitor arrives on a URL that carries campaign parameters, so a buyer
-// who clicks an ad, leaves, and comes back by typing the address still counts as
-// the ad's — but a second ad, clicked later, takes the credit from the first.
-// That is the same model Ads Manager uses, which is the point: the two numbers
-// have to be comparable to be worth checking against each other.
+// Attribution model — and it is TWO models, on purpose. A visit and a purchase
+// on the same row can come from different touches, so read this before comparing
+// a campaign's visits against its orders.
+//
+// A VISIT follows LAST NON-DIRECT TOUCH. The stored touch is replaced only when
+// the visitor arrives on a URL that carries campaign parameters, so a buyer who
+// clicks an ad, leaves, and comes back by typing the address still counts as the
+// ad's — but a second ad, clicked later, takes the visit from the first. That is
+// the same model Ads Manager uses, which is the point: the two numbers have to be
+// comparable to be worth checking against each other.
+//
+// A PURCHASE follows the touch FROZEN ON THE ORDER — parsed on our server when
+// the wizard created the collection (server/index.js → db.createCollection), and
+// first-write-wins from then on. It beats whatever this file happens to be
+// carrying when the purchase beacon fires, and it is frozen at the LEAD step,
+// before any payment. The case it exists for used to lose a sale outright: she
+// clicks the ad on her phone, orders, and pays two days later from the
+// confirmation email on her laptop, where this file has no memory at all — the
+// purchase read "google / referral" and the ad's row read zero orders.
+//
+// WHAT THE FREEZE COSTS, so nobody meets it as a surprise in the report: a second
+// ad clicked BETWEEN the order and the payment — a retargeting ad, which is
+// exactly the kind that gets clicked in that gap — takes the visit and can never
+// take the order. Its row reads "N visits, 0 orders, conversion 0%" while the
+// revenue sits on the row of whatever came before it. Retargeting ROAS is
+// therefore UNDERSTATED here, and that is the direction that gets a working ad
+// killed, so check a retargeting campaign against Ads Manager before judging it
+// on this page. The trade is deliberate: paying from another device is the
+// common case and it lost the sale completely, while a second ad between order
+// and payment is the rare one and only misplaces the credit.
 
 const VISITOR_KEY = 'dugri_vid';
 const TOUCH_KEY = 'dugri_attr';
@@ -277,6 +301,17 @@ export function sendEvent(kind, extra = {}) {
  * The same campaign, however the page has rewritten the address bar since, is
  * one visit; a different campaign link is a second one; an untagged page never
  * re-fires whatever the mark says.
+ *
+ * THE PURCHASE HALF NO LONGER OBEYS THIS RULE, and the asymmetry argued against
+ * above is now reintroduced in mirror image — see the model note at the top of
+ * this file. An order freezes its touch when it is created, so a campaign clicked
+ * after that takes the visit and cannot take the order: "N visits, 0 orders,
+ * conversion 0%" on the new campaign's row, the revenue on the older one's. Both
+ * halves of that are still wrong in the same way, and it is accepted anyway,
+ * because the alternative loses the cross-device sale entirely instead of
+ * misplacing it. What this rule still buys is the half it governs: the visit
+ * lands on the campaign that was actually clicked, rather than on the one the
+ * visitor happened to arrive under earlier in the session.
  */
 export function trackVisit() {
   const here = typeof location !== 'undefined' ? String(location.href) : '';
@@ -312,5 +347,17 @@ export function scheduleVisit() {
 }
 
 if (typeof document !== 'undefined' && typeof location !== 'undefined') {
+  // REMEMBER THE ARRIVAL NOW; ONLY THE BEACON WAITS. The stored touch used to be
+  // written inside sendEvent, which the visit beacon calls after `load` and an
+  // idle moment — seconds, on a phone opening a heavy page over mobile data. A
+  // visitor who tapped onward before then left no memory of the story or ad they
+  // came from, and the next page reported them as a referral from our own site.
+  // One localStorage write costs nothing against the page, and currentTouch is
+  // already guarded against storage that refuses or throws.
+  try {
+    currentTouch(location.href, document.referrer);
+  } catch {
+    /* measurement never costs the page anything */
+  }
   scheduleVisit();
 }
