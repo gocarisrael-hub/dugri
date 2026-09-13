@@ -260,7 +260,7 @@ def _crop_card(full_png, cell, viewbox, out_png):
 
 
 def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
-                         chasers=False, all_fronts=False, with_board=True):
+                         all_fronts=False, with_board=True):
     """The v2 preview: the front card(s), the back, and the board.
 
     A BUYER preview renders the theme's FIRST front only: the fronts differ by
@@ -314,11 +314,10 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
         _downscale(card_png, CARD_MAX_W)
     out["card"] = card_png
 
-    board_clean = config.board_clean_path(theme, chasers=chasers)
+    board_clean = config.clean_path(theme, "board")
     if with_board and os.path.exists(board_clean):
         board_png = buildmod.render_board(
-            theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
-            chasers=chasers)
+            theme, board_clean, title_lines, os.path.join(workdir, "board.png"))
         _downscale(board_png, BOARD_MAX_W)
         out["board"] = board_png
         # Same test build.render_board itself makes ("if not bd": no board slot
@@ -356,7 +355,7 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
 
 
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
-            chasers=False, custom_title=None, calibration=None, with_board=True,
+            custom_title=None, calibration=None, with_board=True,
             gender=None):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
@@ -376,8 +375,6 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
     extra_fields  dict feeding the title template (AGE/YEARS/NAME1/...)
     word_font     optional card word-font filename override (theme fonts/ or the
                   shared word-fonts/ pool)
-    chasers       when True, show the theme's chasers board variant if it ships one
-                  (clean/board-chasers.svg), else the normal board (additive)
     custom_title  optional free-form title (F7) overriding the theme-derived title
                   on the sample card + board; empty/absent keeps the theme default,
                   so the preview is WYSIWYG for what production renders
@@ -428,7 +425,7 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
             # public endpoint, and a stable image as they retype the name.
             return _prepend_note(
                 _preview_single_card(theme, cfg, title_lines, workdir,
-                                     word_font=word_font, chasers=chasers,
+                                     word_font=word_font,
                                      all_fronts=bool(calibration),
                                      with_board=with_board), gap_note)
 
@@ -445,7 +442,7 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if config.is_single_card_recipe(recipe):
             return _prepend_note(
                 _preview_single_card(theme, cfg, title_lines, workdir,
-                                     word_font=word_font, chasers=chasers,
+                                     word_font=word_font,
                                      all_fronts=bool(calibration),
                                      with_board=with_board), gap_note)
 
@@ -473,7 +470,6 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if with_board and os.path.exists(board_clean):
             board_png = buildmod.render_board(
                 theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
-                chasers=chasers,
             )
             _downscale(board_png, BOARD_MAX_W)
             out["board"] = board_png
@@ -538,8 +534,6 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--word-font", default=None)
     ap.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
-    ap.add_argument("--chasers", action="store_true",
-                    help="show the theme's chasers board variant when available")
     ap.add_argument("--title", default=None,
                     help="optional custom title overriding the theme-derived title")
     ap.add_argument("--gender", default=None, choices=["male", "female"],
@@ -623,7 +617,7 @@ def main():
 
     imgs = preview(
         args.theme, args.name, _parse_fields(args.field),
-        word_font=args.word_font, workdir=args.out_dir, chasers=args.chasers,
+        word_font=args.word_font, workdir=args.out_dir,
         custom_title=args.title, calibration=calibration,
         with_board=not args.no_board, gender=args.gender,
     )

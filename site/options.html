@@ -406,10 +406,8 @@
          colour-carousel preview, which makes the shared front/back/board tab
          buttons redundant there — but ONLY when the carousel is actually shown.
          goStep adds body.is-step-color exactly when currentStep === 2 AND
-         FEATURES.color_picking is on (the carousel is hidden when colour is off,
-         e.g. step 2 active for chasers alone — then the tabs must stay). Hidden
-         at every width. The tablist markup stays in the DOM, so every other step
-         keeps its tabs. NB: keyed on the literal data-step id 2 — renumbering the
+         FEATURES.color_picking is on. Hidden at every width. The tablist markup
+         stays in the DOM, so every other step keeps its tabs. NB: keyed on the literal data-step id 2 — renumbering the
          step means updating goStep's currentStep === 2 check too. */
       body.is-step-color .preview-card .tabs {
         display: none;
@@ -739,107 +737,6 @@
         line-height: 1.4;
         color: var(--muted);
         text-align: center;
-      }
-
-      /* ===== CHASERS ADD-ON (the only add-on) — no box: a clean icon + text
-         row that sits directly on the page, no border / background / shadow. */
-      .addon {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        background: transparent;
-        border: none;
-        border-radius: 0;
-        padding: 8px 2px;
-        cursor: pointer;
-      }
-      .addon-ico {
-        width: 30px;
-        height: 30px;
-        flex: 0 0 auto;
-        color: var(--ink);
-      }
-      /* photo icon (chasers add-on) fills the slot as a tidy rounded tile */
-      .addon-ico-img {
-        object-fit: contain;
-        border-radius: 6px;
-        display: block;
-      }
-      .addon-body {
-        flex: 1 1 auto;
-        min-width: 0;
-      }
-      .addon-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 16px;
-        color: var(--ink);
-      }
-      .addon-free {
-        font-family: var(--display);
-        font-weight: 800;
-        font-size: 11.5px;
-        color: #fff;
-        background: var(--ink);
-        padding: 3px 9px;
-        border-radius: var(--radius);
-      }
-      .addon-desc {
-        margin-top: 4px;
-        font-size: 13.5px;
-        line-height: 1.4;
-        color: var(--muted);
-      }
-      /* the switch itself - a styled checkbox */
-      .switch {
-        position: relative;
-        flex: 0 0 auto;
-        width: 52px;
-        height: 30px;
-      }
-      .switch input {
-        position: absolute;
-        opacity: 0;
-        width: 100%;
-        height: 100%;
-        margin: 0;
-        cursor: pointer;
-        z-index: 2;
-      }
-      .switch .track {
-        position: absolute;
-        inset: 0;
-        background: var(--line);
-        border-radius: 999px;
-        transition: background 0.2s ease;
-      }
-      .switch .track::before {
-        content: '';
-        position: absolute;
-        top: 3px;
-        inset-inline-start: 3px;
-        width: 24px;
-        height: 24px;
-        background: #fff;
-        border-radius: 50%;
-        box-shadow: var(--shadow-sm);
-        transition: transform 0.2s ease;
-      }
-      .switch input:checked + .track {
-        /* warm-sand accent (#b7a389) for the "on" state — hard-coded, since this
-           page's --accent is the live per-design colour set at runtime. */
-        background: #b7a389;
-      }
-      .switch input:checked + .track::before {
-        transform: translateX(-22px);
-      }
-      .switch input:focus-visible + .track {
-        outline: 3px solid var(--ink);
-        outline-offset: 2px;
       }
 
       /* ===== WIZARD CHROME ===== */
@@ -1823,23 +1720,8 @@
         .design .dname {
           font-size: 10px;
         }
-        /* compact the add-ons card so step 3 clears the fold */
-        .addon {
-          padding: 9px 12px;
-          gap: 10px;
-        }
-        .addon-ico {
-          width: 24px;
-          height: 24px;
-        }
-        .addon-desc {
-          font-size: 12px;
-          margin-top: 2px;
-        }
         .colors {
           row-gap: 24px;
-          /* tighter gap before the chasers add-on so the merged colour+extras
-             step still clears the sticky bar on a phone (was 18px) */
           padding-bottom: 8px;
         }
         .swatch {
@@ -1887,10 +1769,9 @@
           padding: 4px;
           overflow: visible;
         }
-        /* Cap the phone preview so the merged colour+extras step (swatches AND the
-           chasers add-on on one screen) still clears the sticky bar without the
-           page scrolling. The reserved active-panel box uses the same cap so it
-           can't reflow. (Was 48vh; trimmed to fit the taller merged step.) */
+        /* Cap the phone preview so the colour step still clears the sticky bar
+           without the page scrolling. The reserved active-panel box uses the same
+           cap so it can't reflow. */
         .preview-card:not(.is-collapsed) .preview-panel[data-active='true'],
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='front'] svg,
         .preview-card:not(.is-collapsed) .preview-panel[data-panel='back'] svg,
@@ -1901,8 +1782,8 @@
           /* On a narrow phone the landscape preview is WIDTH-driven (~249px tall),
              below any vh cap, and it flex-grows to absorb space freed in the step
              below — so a vh cap alone never binds. A px cap that DOES bind shrinks
-             the preview enough that the taller merged colour+extras step clears the
-             sticky bar without the page scrolling. */
+             the preview enough that the colour step clears the sticky bar without
+             the page scrolling. */
           max-height: min(45vh, 232px);
         }
       }
@@ -2273,10 +2154,8 @@
 
       <!-- STEP 2 — color + add-ons -->
       <section class="wiz-step" data-step="2" data-testid="step-2">
-        <h2 class="wiz-title" data-edit="options-step2-title">צבע ותוספות</h2>
-        <p class="wiz-sub" data-edit="options-step2-sub">
-          בחרו צבע ראשי - התצוגה מתעדכנת מיד. התוספת למטה לא חובה.
-        </p>
+        <h2 class="wiz-title" data-edit="options-step2-title">צבע</h2>
+        <p class="wiz-sub" data-edit="options-step2-sub">בחרו צבע ראשי - התצוגה מתעדכנת מיד.</p>
         <!-- Swipeable front / back / board preview of the CURRENT design in the
              CURRENT colour, on the shared carousel engine (js/carousel.js). Its
              slides are built from the same design.products + palette that drive
@@ -2299,32 +2178,6 @@
         <p class="raster-note" id="rasterNote" data-testid="raster-note" hidden>
           הרקע בעיצוב זה קבוע ולא משתנה עם הצבע
         </p>
-        <label class="addon" id="chasersCard" data-testid="chasers-card">
-          <img
-            class="addon-ico addon-ico-img"
-            src="assets/ico-chasers.png"
-            alt=""
-            aria-hidden="true"
-          />
-          <span class="addon-body">
-            <span class="addon-title">
-              <span data-edit="options-chasers-title">הוסיפו צ'ייסרים למשחק</span>
-              <span class="addon-free" data-edit="options-chasers-free">נכלל בחינם</span>
-            </span>
-            <span class="addon-desc" data-edit="options-chasers-desc">
-              מוסיפים ללוח תאים מיוחדים של משחק שתייה - מי שנוחת עליהם, מרים כוסית! 🍻
-            </span>
-          </span>
-          <span class="switch">
-            <input
-              type="checkbox"
-              id="chasersToggle"
-              data-testid="chasers-toggle"
-              aria-label="הוסיפו צ'ייסרים למשחק"
-            />
-            <span class="track" aria-hidden="true"></span>
-          </span>
-        </label>
       </section>
 
       <!-- STEP 3 — honoree name -->
@@ -3777,7 +3630,6 @@
       const FEATURES = await (async () => {
         const off = {
           color_picking: false,
-          chasers_choice: false,
           font_choice: false,
           name_preview: false,
         };
@@ -3789,7 +3641,6 @@
           const j = await r.json();
           return {
             color_picking: !!j.color_picking,
-            chasers_choice: !!j.chasers_choice,
             font_choice: !!j.font_choice,
             name_preview: !!j.name_preview,
           };
@@ -3885,7 +3736,6 @@
       let designIndex = 0;
       let colorIndex = -1; // -1 = the design's original colors (default)
       let activeTab = 'front';
-      let chasers = false; // optional drinking-game add-on (default OFF)
       let customTitle = ''; // optional free-form title override (F7); '' = theme default
       let buyerName = ''; // REQUIRED: who is ORDERING (never the honoree); '' = unanswered
       let eventType = ''; // optional: the event in her words; '' = unanswered
@@ -4686,7 +4536,6 @@
           colorId,
           colorName,
           mainHex,
-          chasers,
           customTitle,
           buyerName,
           eventType,
@@ -4704,56 +4553,33 @@
         url.searchParams.set('plan', s.plan);
         url.searchParams.set('design', s.designId);
         url.searchParams.set('color', s.colorId);
-        // only carry the chasers flag in the URL when it's on (&chasers=1)
-        if (s.chasers) url.searchParams.set('chasers', '1');
-        else url.searchParams.delete('chasers');
         url.searchParams.set('step', String(currentStep));
         history.replaceState(null, '', url);
         // refresh the collapsed-preview summary chip
         const chip = document.getElementById('continueSummary');
         if (chip) {
-          let txt = 'עיצוב ' + s.designName + ' · צבע ' + s.colorName;
-          if (s.chasers) txt += ' · 🥃';
-          chip.textContent = txt;
+          chip.textContent = 'עיצוב ' + s.designName + ' · צבע ' + s.colorName;
         }
       }
 
-      /* ---- chasers add-on toggle ---- */
-      const chasersToggle = document.getElementById('chasersToggle');
-      const chasersCard = document.getElementById('chasersCard');
-      function paintChasers() {
-        chasersToggle.checked = chasers;
-        chasersCard.classList.toggle('is-on', chasers);
-      }
-      chasersToggle.addEventListener('change', () => {
-        chasers = chasersToggle.checked;
-        chasersCard.classList.toggle('is-on', chasers);
-        track('toggle_chasers', { chasers });
-        persist();
-        // The board preview depends on the chasers flag — if the name step's live
-        // preview is already up, re-request it so the board reflects the toggle.
-        if (currentStep === 3) requestPreview({ immediate: true });
-      });
-
       /* ====================================================================
          WIZARD CONTROLLER — one step visible at a time, Back/Next + validation.
-         The design/color/preview/chasers machinery above is reused as-is; this
+         The design/color/preview machinery above is reused as-is; this
          only governs which step is shown and whether Next is enabled.
          ==================================================================== */
       const TOTAL_STEPS = 5;
       const stepSections = Array.from(document.querySelectorAll('.wiz-step'));
 
       // --- feature-gated step skipping -------------------------------------
-      // Step 2 (colour + chasers) is the ONLY step that can become empty: when
-      // BOTH the colour picker and the chasers add-on are gated off there is
-      // nothing to show, so it drops out of the flow entirely. Steps 1/3/4 always
-      // carry controls. We keep the data-step ids STABLE (never renumber) so every
+      // Step 2 (colour) is the ONLY step that can become empty: when the colour
+      // picker is gated off there is nothing left to show, so the step drops out
+      // of the flow entirely. Steps 1/3/4 always carry controls. We keep the data-step ids STABLE (never renumber) so every
       // `currentStep === 3/4` and `PREVIEW_STEP === 3` check stays valid; only the
       // sequence of ACTIVE steps changes. The optional pawn-photos step carries the
       // NEW stable id 5 but SITS between the name step (3) and the details step (4)
       // in the active order, so its display position is 4th while step 4 (details)
       // stays LAST — lastActive is still 4, and `currentStep === 4` checks are intact.
-      const STEP2_ACTIVE = FEATURES.color_picking || FEATURES.chasers_choice;
+      const STEP2_ACTIVE = FEATURES.color_picking;
       const activeSteps = STEP2_ACTIVE ? [1, 2, 3, 5, 4] : [1, 3, 5, 4];
       const lastActive = activeSteps[activeSteps.length - 1]; // always 4 (details)
       const stepPos = (n) => activeSteps.indexOf(n) + 1; // 1-based display position
@@ -5382,20 +5208,12 @@
         // Card and back only — the same view list the server render is asked
         // for, so the instant approximation never draws a slide the exact
         // render will not fill (a board that appears and then vanishes reads as
-        // a bug). The chasers add-on keeps its board, for the reason given at
-        // the `board:` field of the /api/preview request.
-        const rest = [
-          { view: 'back', path: d.products.back, crop: true },
-          // `skip` rather than omitting the entry: turning the chasers add-on
-          // back OFF has to take a board that is already drawn back off screen,
-          // and a view that is simply absent from this list is never touched.
-          { view: 'board', path: d.products.board, crop: false, skip: !chasers },
-        ];
+        // a bug). The board is not part of this step at all (see the `board:`
+        // field of the /api/preview request), so a board slide left over from an
+        // earlier draw is taken back off screen rather than left hanging.
+        hideInstantView('board');
+        const rest = [{ view: 'back', path: d.products.back, crop: true }];
         for (const s of rest) {
-          if (s.skip) {
-            hideInstantView(s.view);
-            continue;
-          }
           const res = await drawInstantView(seq, s.view, s);
           if (seq !== previewSeq) return 'stale';
           if (res === 'ok') showInstantView(s.view, seq);
@@ -5484,9 +5302,6 @@
               // now typed by the buyer — what she sees here is literally what she
               // wrote. Sent explicitly so the payload still says so out loud.
               gender: selectedGender(),
-              // The chasers add-on toggle (step 2) drives which board variant the
-              // server renders, so the name-step board preview matches the order.
-              chasers,
               // The name preview shows the CARD and its BACK only. Asking the
               // server not to RENDER the board (rather than hiding it here) is
               // the point: the board is a full landscape artboard and by far the
@@ -5494,12 +5309,7 @@
               // bytes, plus its own Chrome page on a container that is already
               // contended. Hiding it client-side would keep every bit of that
               // cost and deliver none of the benefit.
-              //
-              // The ONE exception is the chasers add-on. Its board variant is
-              // the only thing that add-on changes, and this preview is the only
-              // place a buyer sees what they are paying for — so when chasers is
-              // on, the board is the product and it stays.
-              board: chasers,
+              board: false,
               // Optional custom title (F7) — the server renders the EXACT title so
               // the buyer sees WYSIWYG before paying. Empty = the theme default.
               title: customTitle,
@@ -5880,7 +5690,7 @@
         };
         add('עיצוב', s.designName);
         // Drop rows for features that are gated off — the buyer never chose them,
-        // so showing "צבע: מקורי" / "צ׳ייסרים: לא" would be noise.
+        // so showing "צבע: מקורי" would be noise.
         if (FEATURES.color_picking) add('צבע', s.colorName, s.mainHex);
         const nm = honoreeNameValue();
         if (nm) add('שם', nm);
@@ -5889,22 +5699,20 @@
           if (key === 'NAME1' || key === 'NAME2') return; // already in the name
           if (extras[key]) add(labelForExtraField(key), extras[key]);
         });
-        if (FEATURES.chasers_choice) add('צ׳ייסרים', s.chasers ? 'כן' : 'לא');
         box.hidden = false;
       }
 
       // Hide the static containers of every gated-off feature. Called once at init
       // before the first goStep. The colour SWATCH list is handled separately by
       // updateColorControls() (it also hides for fixed designs); here we hide the
-      // colour-step preview carousel, the chasers add-on card, the word-font picker
-      // (nested in the name-preview panel) and the name-preview panel itself. Uses
+      // colour-step preview carousel, the word-font picker (nested in the
+      // name-preview panel) and the name-preview panel itself. Uses
       // inline display:none so a class-level display rule can't override it.
       function applyFeatureFlags() {
         const hide = (el) => {
           if (el) el.style.display = 'none';
         };
         if (!FEATURES.color_picking) hide(document.querySelector('.color-carousel'));
-        if (!FEATURES.chasers_choice) hide(document.getElementById('chasersCard'));
         if (!fontChoiceOn) hide(document.querySelector('.wiz-fontpicker'));
         if (!FEATURES.name_preview) {
           hide(document.getElementById('namePreview'));
@@ -6151,7 +5959,7 @@
 
       function goStep(n, opts = {}) {
         // Snap to the nearest ACTIVE step so a hidden step (2) is never landed on
-        // — e.g. a shared/restored ?step=2 with colour+chasers gated off jumps to 3.
+        // — e.g. a shared/restored ?step=2 with colour gated off jumps to 3.
         currentStep = normalizeStep(Math.min(TOTAL_STEPS, Math.max(1, n | 0)));
         stepSections.forEach((s) =>
           s.classList.toggle('is-active', Number(s.dataset.step) === currentStep)
@@ -6167,11 +5975,10 @@
         // design has any, so switching design between steps can't strand a row.
         paintDeckRow(collapsed);
         // the colour step carries its own swipe preview carousel — but ONLY when
-        // colour picking is on (with colour off + chasers on, step 2 is still
-        // active yet the carousel is hidden by applyFeatureFlags). Mark the body
-        // only when the carousel is actually shown, so the phone layout shrinks
-        // the shared preview and the face tabs hide ONLY when the carousel
-        // replaces them. When step 2 is active for chasers alone, the tabs stay.
+        // colour picking is on (the step is not reachable otherwise). Mark the
+        // body only when the carousel is actually shown, so the phone layout
+        // shrinks the shared preview and the face tabs hide ONLY when the
+        // carousel replaces them.
         const onColorCarouselStep = currentStep === 2 && FEATURES.color_picking;
         document.body.classList.toggle('is-step-color', onColorCarouselStep);
         if (onColorCarouselStep) ensureColorCarousel();
@@ -6619,7 +6426,6 @@
               extra_fields: collectedExtraFields(),
               // the card word-font the customer picked in the preview (or null)
               word_font: chosenWordFont,
-              chasers: s.chasers,
               // optional free-form custom title (F7); server sanitizes + treats
               // empty/whitespace as absent (the design's own title is used)
               custom_title: customTitle,
@@ -7061,19 +6867,6 @@
         } else {
           colorIndex = -1;
         }
-        // restore the chasers add-on from the URL (?chasers=1), falling back to
-        // the saved selection so the choice survives navigation either way. When
-        // the chasers choice is gated off, force it false and ignore ?chasers=1.
-        if (!FEATURES.chasers_choice) {
-          chasers = false;
-        } else if (params.has('chasers')) {
-          chasers = params.get('chasers') === '1';
-        } else {
-          try {
-            const saved = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
-            if (saved && typeof saved.chasers === 'boolean') chasers = saved.chasers;
-          } catch (e) {}
-        }
         // restore the optional custom title (F7) from the saved selection (it is
         // kept out of the URL — a free-form title can contain arbitrary text).
         try {
@@ -7105,7 +6898,6 @@
         updateOrigChip();
         updateColorControls();
         setActiveSwatch(colorIndex);
-        paintChasers();
         renderExtraFields(); // reflect the restored design's theme extra fields
       })();
 

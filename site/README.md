@@ -6,12 +6,12 @@ JSON-file store under `DATA_DIR`.
 
 ## The flow
 
-Landing (`index.html`) → **order wizard** (`options.html`, 5 steps: design → color →
-add-ons → celebrant name → contact) → creates a collection → **`collect.html`**
+Landing (`index.html`) → **order wizard** (`options.html`: design → color →
+celebrant name → photos → contact) → creates a collection → **`collect.html`**
 (collect 100+ words with friends, and pay any time). Payment is **credit card only**,
 via the **PeleCard** iframe in the pay panel (`pay-done.html` posts the result back;
 no Bit). `admin.html?key=…`
-lists every order (design/color/version/total/address/🥃-chasers) with a "סמן כשולם" button.
+lists every order (design/color/version/total/address) with a "סמן כשולם" button.
 
 ## Pages
 

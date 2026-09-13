@@ -1010,9 +1010,6 @@
               ><span>הערה של הלקוח/ה (לא מודפסת)</span
               ><textarea id="e-comment" rows="3" maxlength="500"></textarea>
             </label>
-            <label class="fld check"
-              ><input type="checkbox" id="e-chasers" /><span>צ׳ייסרים</span></label
-            >
             <!-- The buyer's own choice, editable here because she asks for it by
                  phone as often as through the page — and because after her
                  collection closes the owner is the only one who still can. -->
@@ -1779,7 +1776,6 @@
         el('e-event-type').value = c.event_type || '';
         el('e-title').value = c.custom_title || '';
         el('e-comment').value = c.comment || '';
-        el('e-chasers').checked = !!c.chasers;
         el('e-no-topup').checked = !!c.no_topup;
 
         await loadThemeList();
@@ -2188,7 +2184,6 @@
           extra_fields: readExtraInputs(),
           custom_title: el('e-title').value,
           comment: el('e-comment').value,
-          chasers: el('e-chasers').checked,
           // Ticked, the deck is printed from HER words alone and the rest of the
           // cards come out empty and numbered — the pool below is then never read.
           no_topup: el('e-no-topup').checked,

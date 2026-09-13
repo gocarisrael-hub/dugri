@@ -1044,9 +1044,6 @@ const db = {
       // Honoree gender for the site's gendered question phrasing. Only 'male' or
       // 'female' are accepted; anything else stores null.
       gender: contact.gender === 'male' || contact.gender === 'female' ? contact.gender : null,
-      // Optional drinking-game add-on ("צ'ייסרים") - free; the owner builds the
-      // board with special "drink" tiles when this is on.
-      chasers: !!contact.chasers,
       // Up to 4 optional customer photos ("פיונים") attached to the collection,
       // stored as public "/content-uploads/<hash>.<ext>" path strings. Appended
       // via addPawnImages (owner-token gated). Empty on a fresh collection.
@@ -1745,7 +1742,7 @@ const db = {
   },
 
   // Admin: EDIT the choices a customer made in the wizard — the honoree name(s),
-  // contact, design/colour/theme, theme extra fields, word font, gender, chasers
+  // contact, design/colour/theme, theme extra fields, word font, gender
   // and custom title. The owner takes these corrections over WhatsApp ("actually
   // it's their 40th, not 30th") and fixes the order in place before production.
   //
@@ -1780,7 +1777,6 @@ const db = {
     if (has('gender')) {
       c.gender = p.gender === 'male' || p.gender === 'female' ? p.gender : null;
     }
-    if (has('chasers')) c.chasers = !!p.chasers;
     // Which seed pool tops this order's deck up, overriding the theme's own.
     // Stored as a bare filename; '' clears it back to the theme default. The
     // CALLER validates the name against the pools that actually exist — this

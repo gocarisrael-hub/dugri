@@ -30,7 +30,7 @@ from topup import topup
 
 
 def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
-                 word_font=None, workdir=None, progress=False, chasers=False,
+                 word_font=None, workdir=None, progress=False,
                  custom_title=None, photos=None, photo_views=None,
                  photo_cutouts=None,
                  press_icc=None,
@@ -48,8 +48,6 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
     personal_words the customer's own words (all are always included)
     out_pdf       output path; a temp file is used when omitted
     word_font     optional card-font filename override (in the theme fonts dir)
-    chasers       when True, use the theme's chasers board variant if it ships one
-                  (clean/board-chasers.svg), else the normal board (additive)
     custom_title  optional free-form title (F7) that overrides the theme-derived
                   title on the cards + board; empty/absent keeps the theme default
     photos        absolute paths to the customer's pawn photos for the final
@@ -189,7 +187,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                 theme_key, csv_path, name, out_pdf,
                 extra_fields=extra_fields or {}, word_font=word_font,
                 workdir=os.path.join(workdir, "build"), progress=progress,
-                chasers=chasers, custom_title=custom_title, photos=photos,
+                custom_title=custom_title, photos=photos,
                 photo_views=photo_views, photo_cutouts=photo_cutouts,
                 press_icc=press_icc, press_bleed=press_bleed,
                 press_cmyk=press_cmyk, gender=gender,
@@ -197,7 +195,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
             )
 
         fronts = config.clean_path(theme_key, "fronts")
-        board = config.board_clean_path(theme_key, chasers=chasers)
+        board = config.clean_path(theme_key, "board")
         backs_path = config.clean_path(theme_key, "backs")
         backs = backs_path if os.path.exists(backs_path) else None
 
@@ -205,7 +203,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
             theme_key, fronts, board, csv_path, name, out_pdf,
             backs=backs, extra_fields=extra_fields or {}, word_font=word_font,
             workdir=os.path.join(workdir, "build"), progress=progress,
-            chasers=chasers, custom_title=custom_title, gender=gender,
+            custom_title=custom_title, gender=gender,
         )
         return pdf, pages, None
     except BaseException:
@@ -244,8 +242,6 @@ def main():
     ap.add_argument("out_pdf")
     ap.add_argument("--word-font", default=None)
     ap.add_argument("--field", action="append", default=[], metavar="KEY=VALUE")
-    ap.add_argument("--chasers", action="store_true",
-                    help="use the theme's chasers board variant when available")
     # The two press modes. Mutually exclusive because they are alternatives, not
     # a switch and its option — and because "--press <icc> --press-passthrough"
     # would read as "separate against this profile, but don't", which has no
@@ -298,7 +294,7 @@ def main():
     pdf, pages, board = order_to_pdf(
         args.theme, args.name, _parse_fields(args.field), personal,
         out_pdf=args.out_pdf, word_font=args.word_font, progress=True,
-        chasers=args.chasers, custom_title=args.title,
+        custom_title=args.title,
         photos=buildmod.photos(args),
         photo_views=buildmod.photo_views(args),
         photo_cutouts=buildmod.photo_cutouts(args),

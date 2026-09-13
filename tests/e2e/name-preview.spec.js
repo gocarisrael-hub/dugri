@@ -10,7 +10,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 // After entering the honoree name on the wizard's name step, the customer sees a
-// REAL rendered preview (card + board) and can pick the Hebrew word font, which
+// REAL rendered preview (card + back) and can pick the Hebrew word font, which
 // re-requests the preview. The actual render needs Chrome/Python, so here we
 // INTERCEPT /api/preview and return a fake payload — this exercises the client
 // wiring (fetch on name, image render, font picker, re-request on font switch)
@@ -31,11 +31,11 @@ const FONT_OPTIONS = [
 // Intercept /api/preview: record each request body, reply with the fake images +
 // options (echoing the requested word_font, like the real route does).
 //
-// The board is returned ONLY when the request asked for one, exactly as the real
-// route behaves — `board:false` makes the server skip that render entirely. A
-// mock that shipped a board regardless would let a regression through: every
-// board assertion here would keep passing while the live page showed nothing.
-function mockPreview(page) {
+// The board is returned only when the request asked for one — exactly as the real
+// route behaves, where `board:false` makes the server skip that render entirely.
+// The wizard now always asks with `board:false`, so a spec that needs to drive the
+// client's board slide opts in with `mockPreview(page, { board: true })`.
+function mockPreview(page, { board = false } = {}) {
   const reqs = [];
   return page
     .route('**/api/preview', async (route) => {
@@ -47,7 +47,7 @@ function mockPreview(page) {
         body: JSON.stringify({
           card: PNG,
           back: PNG,
-          ...(body.board ? { board: PNG } : {}),
+          ...(board || body.board ? { board: PNG } : {}),
           warning: null,
           word_font: body.word_font || null,
           word_font_options: FONT_OPTIONS,
@@ -58,17 +58,11 @@ function mockPreview(page) {
 }
 
 // design-0 = bachelorette -> theme "bachelorette" (no extra fields, english).
-// `chasers` turns the add-on on at step 2 — the one case where the name preview
-// still carries a board, because that board IS what the add-on sells.
-async function toNameStep(page, { chasers = false } = {}) {
+async function toNameStep(page) {
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
   await page.getByTestId('design-0').click();
-  await page.getByTestId('next-btn').click(); // -> step 2 (colour + add-ons)
-  if (chasers) {
-    await page.getByTestId('chasers-toggle').check();
-    await expect(page.getByTestId('chasers-toggle')).toBeChecked();
-  }
+  await page.getByTestId('next-btn').click(); // -> step 2 (colour)
   await page.getByTestId('next-btn').click(); // -> step 3 (name)
   await expect(page.getByTestId('step-3')).toBeVisible();
 }
@@ -316,10 +310,11 @@ test.describe('OPTION C — the board slide fills the full preview width', () =>
     // under reduced motion) so the board settles into its resting layout instantly
     // — we then measure the final geometry, never a mid-animation frame.
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await mockPreview(page);
-    // The board reaches this preview only via the chasers add-on now, so that is
-    // the state its layout has to be measured in.
-    await toNameStep(page, { chasers: true });
+    // The wizard asks for no board, so the slide is driven from the mock — the
+    // client renders whatever views the server returns, and this pins how the
+    // landscape one is laid out when it does.
+    await mockPreview(page, { board: true });
+    await toNameStep(page);
     await page.getByTestId('custom-title-input').fill('Shira');
     await expect(page.getByTestId('name-preview-card')).toBeVisible();
 
@@ -387,13 +382,12 @@ test.describe('OPTION C — the board slide fills the full preview width', () =>
   });
 });
 
-// The board was removed from this step at the owner's request — but the chasers
-// add-on's whole product IS a different board, and this preview is the only
-// place a buyer sees the thing they are paying extra for. So the exception has
-// to be pinned in both directions, or a later tidy-up quietly sells an add-on
-// with nothing to show for it.
-test.describe('the name preview carries a board only for the chasers add-on', () => {
-  test('with the add-on OFF the board is never requested and never shown', async ({ page }) => {
+// The board was removed from this step at the owner's request: it is a full
+// landscape artboard and by far the heaviest thing in the response, so the step
+// asks the server not to render it at all. Pinned here because "hide it on the
+// client" would keep every bit of that cost and deliver none of the benefit.
+test.describe('the name preview never carries a board', () => {
+  test('the board is never requested and never shown', async ({ page }) => {
     const reqs = await mockPreview(page);
     await toNameStep(page);
     await page.getByTestId('custom-title-input').fill('Shira');
@@ -404,17 +398,5 @@ test.describe('the name preview carries a board only for the chasers add-on', ()
     await expect(page.getByTestId('name-preview-board')).toBeHidden();
     // ...and the carousel offers no board slide to swipe to.
     await expect(page.getByTestId('name-preview-dot-board')).toHaveCount(0);
-  });
-
-  test('with the add-on ON the board is requested and shown', async ({ page }) => {
-    const reqs = await mockPreview(page);
-    await toNameStep(page, { chasers: true });
-    await page.getByTestId('custom-title-input').fill('Shira');
-    await expect(page.getByTestId('name-preview-card')).toBeVisible();
-
-    await expect.poll(() => reqs.length).toBeGreaterThanOrEqual(1);
-    expect(reqs[reqs.length - 1].board).toBe(true);
-    await expect(page.getByTestId('name-preview-board')).toHaveAttribute('src', /^data:image\/png/);
-    await expect(page.getByTestId('name-preview-dot-board')).toBeVisible();
   });
 });

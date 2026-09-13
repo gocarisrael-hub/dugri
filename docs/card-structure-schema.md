@@ -35,9 +35,8 @@ or on the volume under `$DATA_DIR/templates/<slug>/`):
 clean↔filled and locate the text slots.
 
 **The board is not in the numbered set.** Board artwork stays where it is today
-(`clean/board.svg`, plus the optional `clean/board-chasers.svg` variant). It is
-excluded from the 1–9 contract and from the deck, and is rendered to its own
-output file.
+(`clean/board.svg` — one board per template). It is excluded from the 1–9
+contract and from the deck, and is rendered to its own output file.
 
 Card geometry is `viewBox="0 0 223.92 312"` (portrait, ~0.718 aspect).
 
@@ -151,9 +150,9 @@ Worth knowing before you calibrate against it:
   hence `"back": null` in its themes.json entry.
 - The board carries **no honoree name either** — the owner has confirmed the
   final board is impersonal — so `"board": null` is correct and there is no board
-  name slot to calibrate. Grapefruit therefore ships `clean/board.svg` and
-  `clean/board-chasers.svg` but **no `filled/` boards**: `filled/` exists only to
-  diff against for text positions, and there is no board text to find.
+  name slot to calibrate. Grapefruit therefore ships `clean/board.svg` but **no
+  `filled/` board**: `filled/` exists only to diff against for text positions,
+  and there is no board text to find.
 - The cream panel the text sits in is at `[24.34, 22.44, 199.52, 290.0]` on
   fronts 1–8, but front 9's panel is DIFFERENT. That is the concrete reason
   title geometry is per-front rather than shared.

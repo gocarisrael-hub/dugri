@@ -83,11 +83,6 @@ function inStore(entry) {
 const VISIBILITIES = ['public', 'private'];
 // The three SVG roles every template ships, for both the clean + filled pages.
 const SVG_ROLES = ['fronts', 'backs', 'board'];
-// Optional extra CLEAN-only board variant for the chasers (drinking-game) add-on,
-// saved as clean/board-chasers.svg. Additive: a template without it is unchanged
-// and orders with chasers on fall back to the normal board.
-const CHASERS_BOARD_FIELD = 'clean_board_chasers';
-const CHASERS_BOARD_FILE = 'board-chasers.svg';
 // The font roles the onboarding form uploads. The two `_alt` ones are OPTIONAL
 // second faces (a Latin face for English words, a second title face for a title
 // in the other language); a template that ships neither is byte-for-byte what
@@ -102,8 +97,8 @@ const FONT_ROLES = ['title', 'word', 'title_alt', 'word_alt'];
 //     thin icon layer). The deck PDF is (back, front) x 104 = 208 pages.
 //
 // The BOARD is deliberately NOT part of the numbered 1-9 set in either layout:
-// it stays clean/board.svg (+ the optional clean/board-chasers.svg) and is a
-// SEPARATE output file, never a page of the deck.
+// it stays clean/board.svg and is a SEPARATE output file, never a page of the
+// deck.
 //
 // A theme entry with NO `card_structure` key is 'sheet', so every template that
 // existed before this change keeps its paths, its asset checklist and its saved
@@ -486,11 +481,10 @@ function loadThemesCached(themesPath) {
 }
 
 // The SVG file name a clean/filled map KEY writes to. Whitelisted, so an
-// attacker-supplied key can never become a path: the legacy sheet roles, a
-// numbered single card (1-9), or the optional chasers board variant.
+// attacker-supplied key can never become a path: the legacy sheet roles, or a
+// numbered single card (1-9).
 // Returns null for anything else, which the writer skips.
 function svgFileNameForKey(key) {
-  if (key === 'board_chasers') return CHASERS_BOARD_FILE;
   if (SVG_ROLES.includes(key)) return key + '.svg';
   if (/^[1-9]$/.test(String(key))) return String(key) + '.svg';
   return null;
@@ -500,9 +494,9 @@ function svgFileNameForKey(key) {
 // (DATA_DIR/templates/<slug>/) when it is active, else the image's
 // resources/canva/templates/<slug>/.
 //   clean/filled: role -> Buffer, where a role is a LEGACY sheet role
-//                 ({fronts,backs,board}), a NUMBERED single card ('1'..'9'), or
-//                 'board_chasers' (clean only). Both layouts write through the
-//                 same whitelist, so nothing about the sheet path changed.
+//                 ({fronts,backs,board}) or a NUMBERED single card ('1'..'9').
+//                 Both layouts write through the same whitelist, so nothing
+//                 about the sheet path changed.
 //   assets:       optional { <sha16>.<ext>: Buffer } shared images for the
 //                 'cards' layout, written verbatim into <slug>/assets/.
 //   fonts:        { title: {name, data}, word: {name, data} }
@@ -518,8 +512,7 @@ function writeTemplateFiles({ root, slug, clean, filled, fonts, assets }) {
   ]) {
     for (const key of Object.keys(map)) {
       const name = svgFileNameForKey(key);
-      // board_chasers is a CLEAN-only variant — a filled one has no meaning.
-      if (!name || !map[key] || (key === 'board_chasers' && layer !== 'clean')) continue;
+      if (!name || !map[key]) continue;
       fs.writeFileSync(path.join(dir, layer, name), map[key]);
     }
   }
@@ -1226,15 +1219,6 @@ function normalizeOnboarding({ root, fields, files, fileLists }) {
       filled[role] = ff.data;
     }
   }
-  // Optional: a chasers board variant (clean SVG only). Accepted when supplied and
-  // it looks like an SVG; absent is fine (feature is additive).
-  const cbc = files && files[CHASERS_BOARD_FIELD];
-  if (cbc && cbc.data && cbc.data.length) {
-    if (!looksLikeSvg(cbc.data)) {
-      return { error: 'chasers board does not look like an SVG' };
-    }
-    clean.board_chasers = cbc.data;
-  }
   const titleFontFile = files && files.title_font;
   const wordFontFile = files && files.word_font;
   if (!titleFontFile || !titleFontFile.data || !titleFontFile.data.length) {
@@ -1488,10 +1472,10 @@ function createTemplateShell({ root, fields }) {
 
 // -- Full template editing (status / rename / single-asset replace) ------------
 // These power the admin "template status" view: list each template's asset
-// checklist (present/missing, incl. the OPTIONAL chasers board), rename the
-// human display label WITHOUT touching the stable slug/key/dir, and replace any
-// single asset file in place (whitelisted role -> fixed path, so no traversal and
-// the other onboarded assets are never disturbed).
+// checklist (present/missing), rename the human display label WITHOUT touching
+// the stable slug/key/dir, and replace any single asset file in place
+// (whitelisted role -> fixed path, so no traversal and the other onboarded
+// assets are never disturbed).
 
 // Longest allowed display label (display_he). A generous cap that still rejects
 // pathological input.
@@ -1501,8 +1485,8 @@ const MAX_DISPLAY_NAME = 80;
 // Each role has a STABLE id used by the replace API (whitelisted — an unknown or
 // traversing role id is rejected), a fixed on-disk path relative to the template
 // dir, the file kind (svg|font) for validation, whether it is optional, and a
-// Hebrew label. The chasers board is the one OPTIONAL role, called out so the UI
-// can surface its present/missing state at a glance.
+// Hebrew label. Every SVG role here is REQUIRED — the only optional roles are
+// the two alternate font faces further down.
 const SVG_ASSET_ROLES = [
   {
     role: 'clean-fronts',
@@ -1519,13 +1503,6 @@ const SVG_ASSET_ROLES = [
     label: 'גב קלף (נקי)',
   },
   { role: 'clean-board', rel: 'clean/board.svg', kind: 'svg', optional: false, label: 'לוח (נקי)' },
-  {
-    role: 'clean-board-chasers',
-    rel: 'clean/' + CHASERS_BOARD_FILE,
-    kind: 'svg',
-    optional: true,
-    label: 'לוח צ׳ייסרים (נקי)',
-  },
   {
     role: 'filled-fronts',
     rel: 'filled/fronts.svg',
@@ -1568,9 +1545,7 @@ function cardSvgAssetRoles(fronts, backs) {
         label: cardSlotLabel(n) + ' · ' + n + '.svg ' + (layer === 'clean' ? '(נקי)' : '(ממולא)'),
       }))
     ),
-    ...SVG_ASSET_ROLES.filter(
-      (a) => a.role.endsWith('-board') || a.role.endsWith('-board-chasers')
-    ),
+    ...SVG_ASSET_ROLES.filter((a) => a.role.endsWith('-board')),
   ];
 }
 // The full nine-file table — the WHITELIST of role ids the replace API accepts,
@@ -2084,9 +2059,8 @@ function countCardAssets(dir) {
   }
 }
 
-// Compute one template's asset checklist: which files are present vs missing,
-// flagging the OPTIONAL chasers board separately. Returns a plain descriptor
-// (safe to serialize to the admin UI).
+// Compute one template's asset checklist: which files are present vs missing.
+// Returns a plain descriptor (safe to serialize to the admin UI).
 function computeTemplateStatus(root, key, entry) {
   const dir = resolveTemplateDir(root, entry, key);
   const roles = assetRolesFor(entry);
@@ -2114,7 +2088,6 @@ function computeTemplateStatus(root, key, entry) {
     };
   });
   const missingRequired = assets.filter((a) => !a.optional && !a.present).map((a) => a.role);
-  const chasers = assets.find((a) => a.role === 'clean-board-chasers');
   return {
     key,
     slug: (entry && entry.slug) || key,
@@ -2181,7 +2154,6 @@ function computeTemplateStatus(root, key, entry) {
     // Hebrew is not MISSING a file, it is a design decision that may or may not
     // matter for what it is sold for. Reported, not enforced.
     fontNotes: fontNotesFrom(assets),
-    chasersBoard: !!(chasers && chasers.present),
     complete: missingRequired.length === 0,
     missingRequired,
     // Overlay provenance, so the admin UI can tell a persisted owner template (or
@@ -3881,8 +3853,7 @@ function replaceAsset({
   // geometric check), we simply REQUIRE an explicit confirmation: block the swap
   // (409) and make the admin re-upload with `force` after verifying the proof. A
   // non-calibrated template has no geometry to protect, and a FIRST-TIME add (no
-  // current file at this role, e.g. a fresh chasers board) isn't replacing
-  // anything — both write freely.
+  // current file at this role) isn't replacing anything — both write freely.
   if (kind === 'svg' && entry.calibrated && !force && fs.existsSync(current)) {
     return {
       error:

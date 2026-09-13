@@ -92,7 +92,6 @@ describe('PATCH /api/admin/collections/:id — the customer’s choices', () => 
       theme: 'anniversary',
       extra_fields: { YEARS: '6', NAME1: 'דנה', NAME2: 'אופיר' },
       gender: 'female',
-      chasers: true,
       custom_title: 'שש שנים  ביחד',
     });
     expect(r.status).toBe(200);
@@ -105,7 +104,6 @@ describe('PATCH /api/admin/collections/:id — the customer’s choices', () => 
     expect(after.theme).toBe('anniversary');
     expect(after.extra_fields).toEqual({ YEARS: '6', NAME1: 'דנה', NAME2: 'אופיר' });
     expect(after.gender).toBe('female');
-    expect(after.chasers).toBe(true);
     // custom_title is sanitized exactly like the create path (inner runs collapse).
     expect(after.custom_title).toBe('שש שנים ביחד');
     // The response carries the updated row so the table can re-render.
@@ -118,7 +116,6 @@ describe('PATCH /api/admin/collections/:id — the customer’s choices', () => 
     db.adminUpdateCollection(c.id, {
       design: 'יפני',
       theme: 'japanese',
-      chasers: true,
     });
     const r = await patch(withKey('/api/admin/collections/' + c.id), { phone: '0500000000' });
     expect(r.status).toBe(200);
@@ -126,7 +123,6 @@ describe('PATCH /api/admin/collections/:id — the customer’s choices', () => 
     expect(after.owner_phone).toBe('0500000000');
     expect(after.design).toBe('יפני');
     expect(after.theme).toBe('japanese');
-    expect(after.chasers).toBe(true);
     expect(after.honoree_name).toBe('שירה');
   });
 

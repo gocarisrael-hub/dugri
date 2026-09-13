@@ -5,7 +5,7 @@ import { ALL_ON, stubFeatures } from './feature-flags.js';
 // (options.html) and the word-collection page (collect.html). It used to be a
 // 90x44 green pill anchored bottom-LEFT on collect and bottom-right on the
 // wizard, and it landed on things: the cookie notice's close ×, the design-code
-// box, the chasers card, half of the first gender option (tests/e2e/
+// box, half of the first gender option (tests/e2e/
 // wizard-noscroll.spec.js had that one written down as somebody else's bug).
 //
 // It is smaller now, and — where the page has a bar already fixed to the bottom

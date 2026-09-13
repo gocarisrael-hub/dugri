@@ -10,11 +10,10 @@ import fs from 'node:fs';
 // prints are the same deck, so they are asked for the same way.
 //
 // They were not. The press route built its own argv with four entries — theme,
-// name, words, title — and the customer's route built one with eleven. The six
+// name, words, title — and the customer's route built one with eleven. The five
 // it left out are not cosmetic: the buyer's own pawn photos, the {AGE} in her
-// title, the gender that decides בת or בן, the chasers board she paid for, the
-// seed pool that picks the filler WORDS, and the word font she chose. The owner
-// found it from the outside: "why when i create the pdf to בית דפוס it removes
+// title, the gender that decides בת or בן, the seed pool that picks the filler
+// WORDS, and the word font she chose. The owner found it from the outside: "why when i create the pdf to בית דפוס it removes
 // the pawns of the costumer? and also put the old version of the default pawns?"
 // — the pawns were missing because nothing told the press run about them, and the
 // generic set appeared in their place.
@@ -40,7 +39,6 @@ const ORDER = {
   wordsFile: '/tmp/words.txt',
   wordFont: 'Cafe Regular.ttf',
   extraFields: { AGE: '40' },
-  chasers: true,
   customTitle: 'Happy birthday',
   wordlist: 'generic-350.txt',
   gender: 'female',
@@ -53,7 +51,6 @@ describe('one order, two files, one argv', () => {
     expect(args).toContain('--word-font');
     expect(args).toContain('--field');
     expect(args).toContain('AGE=40');
-    expect(args).toContain('--chasers');
     expect(args).toContain('--title=Happy birthday');
     expect(args).toContain('--wordlist=generic-350.txt');
     expect(args).toContain('--gender');
@@ -85,14 +82,7 @@ describe('one order, two files, one argv', () => {
       outPath: '/tmp/o.pdf',
     });
     expect(bare).toHaveLength(5);
-    for (const flag of [
-      '--word-font',
-      '--field',
-      '--chasers',
-      '--wordlist',
-      '--gender',
-      '--photo',
-    ]) {
+    for (const flag of ['--word-font', '--field', '--wordlist', '--gender', '--photo']) {
       expect(bare.some((a) => a === flag || String(a).startsWith(flag + '='))).toBe(false);
     }
   });

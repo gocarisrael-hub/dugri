@@ -126,7 +126,6 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'options-photos-tip-shop',
       'options-photos-tip-fix',
       'options-step4-title',
-      'options-chasers-desc',
       'options-code-summary',
     ],
   };

@@ -33,7 +33,6 @@ function collection(i, name, order) {
     pawn_images: [],
     pawn_cutouts: {},
     extra_fields: {},
-    chasers: false,
     theme: 'trip comeback',
     order,
   };

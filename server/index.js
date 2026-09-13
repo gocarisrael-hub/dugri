@@ -202,17 +202,16 @@ function sendBoardFile(res, id) {
 // are the same deck, so they have to be ASKED for the same way — and they were
 // not. The press route passed the theme, the name, the words and the title, and
 // nothing else, so the file that got PRINTED silently differed from the file the
-// customer approved by six things at once:
+// customer approved by five things at once:
 //
 //   * --photo   — the buyer's own pawn photos never reached the printed card, so
 //                 the press sheet carried four generic pawns instead of her people;
 //   * --field   — {AGE}/{YEARS} unsubstituted in the title;
 //   * --gender  — {m:…|f:…} unresolved, so a girl's deck could print בן;
-//   * --chasers — the drinking-game board she paid for, missing;
 //   * --wordlist— a different seed pool, so DIFFERENT FILLER WORDS on the cards;
 //   * --word-font — the face she picked, ignored.
 //
-// Adding six pushes to the press route would fix today and guarantee the next
+// Adding five pushes to the press route would fix today and guarantee the next
 // divergence, because nothing would stop the two lists drifting again. So the
 // argv is built here, once, and each caller appends only what is genuinely its
 // own — the output path it writes to, and (for the press run) the press flags.
@@ -223,7 +222,6 @@ function orderArgs({
   outPath,
   wordFont,
   extraFields,
-  chasers,
   customTitle,
   wordlist,
   cardOrder,
@@ -245,9 +243,6 @@ function orderArgs({
   for (const [k, v] of Object.entries(extraFields || {})) {
     args.push('--field', `${k}=${v}`);
   }
-  // Chasers add-on: the generator swaps in the theme's chasers board variant
-  // when it ships one (else falls back to the normal board — additive).
-  if (chasers) args.push('--chasers');
   // Custom title (F7): override the theme-derived title on the cards + board.
   // --title=<value> (single token) so a title that starts with '-' (e.g. "-40",
   // "-רווקות") is never parsed by argparse as an option and crash the generator.
@@ -412,7 +407,6 @@ function runGenerator({
   outPdf,
   wordFont,
   extraFields,
-  chasers,
   customTitle,
   photos,
   photoFrames,
@@ -439,7 +433,6 @@ function runGenerator({
       outPath: outPdf,
       wordFont,
       extraFields,
-      chasers,
       customTitle,
       wordlist,
       cardOrder,
@@ -598,7 +591,6 @@ function runPreview({
   name,
   wordFont,
   extraFields,
-  chasers,
   customTitle,
   calibration,
   withBoard = true,
@@ -637,9 +629,6 @@ function runPreview({
     for (const [k, v] of Object.entries(extraFields || {})) {
       args.push('--field', `${k}=${v}`);
     }
-    // Chasers add-on: preview the theme's chasers board variant when it ships one
-    // (else the normal board — additive), matching what production will generate.
-    if (chasers) args.push('--chasers');
     // Skip the board RENDER (not just its delivery) when the caller will not
     // show it — see the withBoard note on the /api/preview route.
     if (!withBoard) args.push('--no-board');
@@ -1057,7 +1046,6 @@ app.post('/api/collections', (req, res) => {
     // Card word-font the customer picked in the preview (a filename in the
     // shared word-fonts/ pool); db.createCollection caps + defaults it.
     word_font: b.word_font,
-    chasers: b.chasers,
     // Optional free-form custom title (F7); db sanitizes/caps and treats
     // empty/whitespace as absent (the theme's own title is used).
     custom_title: b.custom_title,
@@ -1282,10 +1270,10 @@ app.post('/api/admin/collections/:id/custom', (req, res) => {
 // here rather than asking the customer to re-run the wizard.
 //
 // Body: any subset of the collection fields (honoree_name, email, phone, design,
-// color, theme, extra_fields, word_font, gender, chasers, custom_title,
-// buyer_name, event_type, comment, owner_note) plus an
-// optional `order: { version, address }` for the fulfilment choice. Absent keys
-// are left untouched.
+// color, theme, extra_fields, word_font, gender, custom_title, buyer_name,
+// event_type, comment, owner_note) plus an optional
+// `order: { version, address }` for the fulfilment choice. Absent keys are left
+// untouched.
 //
 // `owner_note` is the OWNER's own note, and the orders table PATCHes it on its
 // own from an inline box on the row. That works because absent keys really are
@@ -1519,7 +1507,6 @@ async function produceDeck(c, b, opts = {}) {
     outPdf,
     wordFont,
     extraFields,
-    chasers: !!c.chasers,
     customTitle: c.custom_title || null,
     photos: pawnPhotoFiles(c),
     // …each with the frame the buyer set for it on her collection page, in the
@@ -3951,9 +3938,6 @@ app.post('/api/preview', async (req, res) => {
     b.extra_fields && typeof b.extra_fields === 'object' && !Array.isArray(b.extra_fields)
       ? b.extra_fields
       : {};
-  // Chasers add-on toggle from the order flow — when on, preview the theme's
-  // chasers board variant (server falls back to the normal board if none).
-  const chasers = !!b.chasers;
   // The buyer's name preview shows the card and its back only, so it asks for
   // the board to be SKIPPED. That is a render the server then never performs:
   // the board is a full landscape artboard and by far the heaviest thing in
@@ -4028,7 +4012,6 @@ app.post('/api/preview', async (req, res) => {
     name,
     wordFont: rawWordFont,
     extraFields,
-    chasers,
     customTitle,
     // A gendered title renders DIFFERENT text per gender, so the same name must
     // not be served the other gender's cached card.
@@ -4075,7 +4058,6 @@ app.post('/api/preview', async (req, res) => {
       name,
       wordFont,
       extraFields,
-      chasers,
       customTitle,
       calibration,
       withBoard,
@@ -4163,7 +4145,6 @@ app.get('/api/collections/:id/summary', async (req, res) => {
           extra_fields: c.extra_fields || {},
           word_font: c.word_font || null,
           title: c.custom_title || null,
-          chasers: !!c.chasers,
           // The stored honoree gender, so the confirmation page's re-render
           // resolves a gendered title (בת/בן) the same way the wizard's preview
           // and the printed deck do.
@@ -5572,8 +5553,7 @@ app.post('/api/admin/templates/create', (req, res) => {
 
 // Admin: template STATUS view — READ-ONLY inventory of every registered template
 // and which of its assets exist vs are MISSING (front/back/board clean+filled,
-// the OPTIONAL chasers board, and both fonts). Powers the admin checklist so gaps
-// — especially a missing chasers board — are visible at a glance.
+// and both fonts). Powers the admin checklist so gaps are visible at a glance.
 app.get('/api/admin/templates', (req, res) => {
   if (!requireAdmin(req, res)) return;
   let list;

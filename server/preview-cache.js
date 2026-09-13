@@ -59,7 +59,6 @@ function previewCacheKey(parts = {}) {
     String(parts.name || ''),
     String(parts.wordFont || ''),
     ef,
-    !!parts.chasers,
     String(parts.customTitle || ''),
     // The honoree's gender. A title carrying a {feminine|masculine} marker
     // renders DIFFERENT TEXT per gender ("שירה בת 30" vs "דני בן 30"), so the

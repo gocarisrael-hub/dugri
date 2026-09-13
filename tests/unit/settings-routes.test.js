@@ -192,7 +192,6 @@ describe('GET /api/features (public feature flags)', () => {
     // projection is derived from the registry, so a flag added there appears
     // here automatically; that is the point, and this list moves with it.
     expect(Object.keys(body).sort()).toEqual([
-      'chasers_choice',
       'color_picking',
       'deck_proof',
       'font_choice',
@@ -204,11 +203,10 @@ describe('GET /api/features (public feature flags)', () => {
     expect(body).not.toHaveProperty('wa');
     expect(body).not.toHaveProperty('order_paid');
     expect(body).not.toHaveProperty('trigger.group_opened');
-    // The four wizard flags default OFF; deck_proof guards a feature that is
+    // The three wizard flags default OFF; deck_proof guards a feature that is
     // already live, so it defaults ON.
     expect(body).toEqual({
       color_picking: false,
-      chasers_choice: false,
       font_choice: false,
       name_preview: false,
       deck_proof: true,
@@ -226,7 +224,7 @@ describe('GET /api/features (public feature flags)', () => {
     const body = await res.json();
     expect(body.color_picking).toBe(true);
     // The others stay off.
-    expect(body.chasers_choice).toBe(false);
+    expect(body.font_choice).toBe(false);
     // Clean up so the store is left as we found it.
     await fetch(
       url('/api/admin/settings?key=' + ADMIN_KEY + '&section=features&settingKey=color_picking'),

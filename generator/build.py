@@ -50,26 +50,10 @@ def render_svg(svg_text, w, h, out_png):
     return out_png
 
 
-def render_board(theme, board_clean, title_lines, out_png, chasers=False):
+def render_board(theme, board_clean, title_lines, out_png):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     bd, ts = cfg.get("board"), cfg["title_style"]
-    # Chasers (drinking-game) add-on: prefer the theme's chasers board variant when
-    # it exists, else fall back to the clean board passed in (additive, never errors
-    # for a theme with no chasers board).
-    if chasers:
-        variant = config.board_clean_path(theme, chasers=True)
-        # For a TITLED board, the honoree name is positioned by fractions (bd["frac"])
-        # calibrated against the PLAIN board's viewBox. A chasers board whose viewBox
-        # differs would place the name off-position on the customer's print-ready PDF.
-        # So only adopt the variant when it's the plain board (no chasers file), the
-        # board carries no title, or its viewBox matches — else keep the plain board
-        # rather than risk a misprinted name.
-        plain = config.clean_path(theme, "board")
-        if not bd or variant == plain or svg_dims(variant)[2] == svg_dims(plain)[2]:
-            board_clean = variant
-        else:
-            board_clean = plain
     w, h, vb = svg_dims(board_clean)
     # Snap any mis-registered "sticker outline" red tile discs concentric to their
     # white tiles before rendering. Some Canva board exports offset (and double)
@@ -138,7 +122,7 @@ def render_backs(theme, backs_clean, title_lines, out_png):
 
 def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
               extra_fields=None, word_font=None, workdir="/tmp/gen/build",
-              progress=True, chasers=False, custom_title=None, gender=None):
+              progress=True, custom_title=None, gender=None):
     """Assemble the full order PDF and return (out_pdf, page_count).
 
     ``extra_fields`` feeds the theme's title template (e.g. AGE/YEARS/NAME1);
@@ -188,8 +172,7 @@ def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,
         if back_png:                       # duplex order: front then its back
             pages.append(back_png)
         log(f"front page {i+1}/{len(data)}")
-    board_png = render_board(theme, board, title_lines, os.path.join(workdir, "board.png"),
-                             chasers=chasers)
+    board_png = render_board(theme, board, title_lines, os.path.join(workdir, "board.png"))
     pages.append(board_png)
     log("board")
 
@@ -236,14 +219,14 @@ def board_pdf_path(out_pdf):
     return base + ".board.pdf"
 
 
-def build_board_pdf(theme, out_pdf, title_lines, workdir, chasers=False):
+def build_board_pdf(theme, out_pdf, title_lines, workdir):
     """Render the game board to its OWN one-page PDF.
 
     In v2 the board is no longer the deck's last page: it is a separate delivered
     artifact, printed at the board artwork's own size rather than the card's.
     """
     cfg = config.theme(theme)
-    board_clean = config.board_clean_path(theme, chasers=chasers)
+    board_clean = config.clean_path(theme, "board")
     raw = card_assets.read_svg(board_clean)
     if cfg.get("fix_ring_discs"):
         raw = svg_rings.align_ring_discs(raw)
@@ -458,7 +441,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 
 
 def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
-               workdir="/tmp/gen/deck", progress=True, chasers=False,
+               workdir="/tmp/gen/deck", progress=True,
                custom_title=None, photos=None, press_icc=None, press_bleed=None,
                press_cmyk=True, gender=None, photo_views=None, photo_cutouts=None,
                blank_markers=False):
@@ -495,7 +478,7 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     # shipped quietly without its board — and finding out up front costs a
     # stat() instead of a full deck render, and leaves no half-finished PDF
     # behind for someone to mistake for a complete one.
-    board_clean = config.board_clean_path(theme, chasers=chasers)
+    board_clean = config.clean_path(theme, "board")
     if not os.path.exists(board_clean):
         raise RuntimeError(
             f"theme {theme!r} has no board artwork — looked for {board_clean}. "
@@ -543,8 +526,7 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
                         cmyk=press_cmyk)
     if progress:
         print(f"deck: {doc.page_count} pages")
-    board = build_board_pdf(theme, board_pdf_path(out_pdf), title_lines, workdir,
-                            chasers=chasers)
+    board = build_board_pdf(theme, board_pdf_path(out_pdf), title_lines, workdir)
     if progress:
         print(f"board: {board}")
     return out_pdf, doc.page_count, board

@@ -297,12 +297,12 @@ test.describe('order wizard', () => {
   });
 
   // Buy-now deep-link (#8a): the product page links every design to
-  // options.html?design=<id>&step=2 — the merged colour + add-ons step.
-  test('?design=<id>&step=2 preselects the design and jumps to the colour + add-ons step', async ({
+  // options.html?design=<id>&step=2 — the colour step.
+  test('?design=<id>&step=2 preselects the design and jumps to the colour step', async ({
     page,
   }) => {
     await page.goto('/options.html?design=birthday&step=2');
-    // Landed straight on the colour + add-ons step (design-picking step skipped).
+    // Landed straight on the colour step (design-picking step skipped).
     await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('2');
     // The requested design is the selected one (birthday = design-2).
@@ -310,10 +310,8 @@ test.describe('order wizard', () => {
       'aria-pressed',
       'true'
     );
-    // A slider design keeps the colour picker on this step, and the merged step
-    // also shows the chasers add-on below it.
+    // A slider design keeps the colour picker on this step.
     await expect(page.getByTestId('color-list')).toBeVisible();
-    await expect(page.getByTestId('chasers-card')).toBeVisible();
   });
 
   test('step 1 back button returns to the store (products.html)', async ({ page }) => {
@@ -327,9 +325,7 @@ test.describe('order wizard', () => {
     await page.waitForURL(/products\.html/);
   });
 
-  test('a fixed-colour design deep-linked to step=2 hides the colour picker but still shows chasers', async ({
-    page,
-  }) => {
+  test('a fixed-colour design deep-linked to step=2 hides the colour picker', async ({ page }) => {
     await stubFixedDesign(page);
     await page.goto(`/options.html?design=${FIXED_ID}&step=2`);
     await expect(page.getByTestId('step-2')).toBeVisible();
@@ -338,11 +334,9 @@ test.describe('order wizard', () => {
       'aria-pressed',
       'true'
     );
-    // fixed-colour: the swatch picker is hidden and the fixed note shows…
+    // fixed-colour: the swatch picker is hidden and the fixed note shows.
     await expect(page.getByTestId('color-list')).toBeHidden();
     await expect(page.getByTestId('raster-note')).toBeVisible();
-    // …but the chasers add-on (merged into this step) is still offered.
-    await expect(page.getByTestId('chasers-card')).toBeVisible();
     // Stepping Back reaches the design step.
     await page.getByTestId('back-btn').click();
     await expect(page.getByTestId('step-1')).toBeVisible();
@@ -517,38 +511,6 @@ test.describe('order wizard', () => {
 
     await page.goForward();
     await expect(page.getByTestId('step-2')).toBeVisible();
-  });
-
-  test('chasers add-on toggles in step 2, persists to the URL and survives reload', async ({
-    page,
-  }) => {
-    await page.goto('/options.html');
-    await page.getByTestId('next-btn').click(); // -> 2 (colour + add-ons)
-
-    const toggle = page.getByTestId('chasers-toggle');
-    const card = page.getByTestId('chasers-card');
-    await expect(card).toBeVisible();
-    await expect(card).toContainText("הוסיפו צ'ייסרים למשחק");
-    await expect(card).toContainText('נכלל בחינם');
-
-    // default OFF
-    await expect(toggle).not.toBeChecked();
-    expect(page.url()).not.toContain('chasers=');
-
-    // turn it on -> &chasers=1 lands in the URL and the card highlights
-    await toggle.check();
-    await expect(toggle).toBeChecked();
-    await expect.poll(() => page.url()).toContain('chasers=1');
-    await expect(card).toHaveClass(/is-on/);
-
-    // survives a reload: restored to step 2 with the add-on on
-    await page.reload();
-    await expect(page.getByTestId('step-2')).toBeVisible();
-    await expect(page.getByTestId('chasers-toggle')).toBeChecked();
-
-    // turning it off removes the param again
-    await page.getByTestId('chasers-toggle').uncheck();
-    await expect.poll(() => page.url()).not.toContain('chasers=1');
   });
 
   test('a slider theme keeps the colour picker and shows no fixed-photo note', async ({ page }) => {

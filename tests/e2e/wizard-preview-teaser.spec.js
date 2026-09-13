@@ -100,7 +100,7 @@ test('name_preview gated OFF: no preview and no promise of one', async ({ page }
   await stubFeatures(page, ALL_OFF);
   await page.goto('/options.html?plan=base');
   await expect(page.getByTestId('step-1')).toBeVisible();
-  // colour + chasers are off too, so Next from step 1 skips the empty step 2.
+  // colour picking is off too, so Next from step 1 skips the empty step 2.
   await page.getByTestId('next-btn').click();
   await expect(page.getByTestId('step-3')).toBeVisible();
 

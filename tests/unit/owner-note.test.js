@@ -126,7 +126,7 @@ describe('PATCH /api/admin/collections/:id with only owner_note', () => {
       comment: 'צריך עד יום חמישי',
       custom_title: 'כותרת',
     });
-    db.adminUpdateCollection(c.id, { theme: 'bachelorette', chasers: true });
+    db.adminUpdateCollection(c.id, { theme: 'bachelorette' });
     const before = { ...db.getCollection(c.id) };
     await patch(c.id, { owner_note: 'שלחתי לגלאור' });
     const after = db.getCollection(c.id);
@@ -137,7 +137,6 @@ describe('PATCH /api/admin/collections/:id with only owner_note', () => {
       'comment',
       'custom_title',
       'theme',
-      'chasers',
       'status',
       'created_at',
     ]) {
