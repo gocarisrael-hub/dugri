@@ -206,7 +206,7 @@
       .paid td {
         background: #fffaf1;
       }
-      /* The report heading shares its line with the manual-campaigns picker. */
+      /* The report heading shares its line with the row hider and its note. */
       .table-head {
         display: flex;
         align-items: center;
@@ -217,6 +217,16 @@
       }
       .table-head h2 {
         margin: 0;
+      }
+      .head-controls {
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px 12px;
+      }
+      .head-controls .hint {
+        margin: 0;
+        max-width: 46ch;
       }
       .table-head button {
         padding: 5px 12px;
@@ -456,22 +466,26 @@
 
         <div class="table-head">
           <h2>הספירה שלנו — לפי מקור</h2>
-          <button
-            type="button"
-            id="campaignPick"
-            data-testid="campaign-picker"
-            aria-expanded="false"
-            aria-controls="campaignPanel"
-            hidden
-          ></button>
+          <div class="head-controls">
+            <p class="hint" id="hiddenNote" data-testid="hidden-note" hidden></p>
+            <button
+              type="button"
+              id="rowHide"
+              data-testid="row-hider"
+              aria-expanded="false"
+              aria-controls="rowHidePanel"
+              hidden
+            ></button>
+          </div>
         </div>
-        <div class="picker" id="campaignPanel" data-testid="campaign-panel" hidden>
+        <div class="picker" id="rowHidePanel" data-testid="row-hide-panel" hidden>
           <p class="hint" style="margin-top: 0">
-            קמפיין ידני = קישור עם שם, מבונה הקישורים או מתיוג ידני. הוא לא מוצג בטבלה עד שמסמנים
-            אותו כאן. ההזמנות וההכנסה שלו נספרות במספרים שלמעלה בכל מקרה.
+            כל השורות מוצגות. כאן מסמנים שורות רועשות — קישור לסטורי אחד, קישור בדיקה — כדי להוריד
+            אותן מהטבלה. ההזמנות וההכנסה שלהן ממשיכות להיספר במספרים שלמעלה. שורה בתשלום (מודעה)
+            מוצגת תמיד ולא מופיעה כאן.
           </p>
-          <div class="checks" id="campaignList"></div>
-          <p class="hint" id="campaignStatus" data-testid="campaign-status"></p>
+          <div class="checks" id="rowHideList"></div>
+          <p class="hint" id="rowHideStatus" data-testid="row-hide-status"></p>
         </div>
         <div class="scroller">
           <table>
@@ -494,14 +508,16 @@
         <p class="hint">
           שורה מודגשת = תנועה בתשלום (מודעה). כדי שקמפיין יופיע בשם שלו, מוסיפים לקישור במודעה
           <code>?utm_source=instagram&amp;utm_medium=paid&amp;utm_campaign=SHM_ROVAKOT</code> — בלי
-          זה קליק מאינסטגרם עדיין נספר (לפי <code>fbclid</code>), אבל בלי שם קמפיין.
+          זה קליק מאינסטגרם עדיין נספר (לפי <code>fbclid</code>), אבל בלי שם קמפיין. שורה בתשלום
+          מוצגת תמיד — אי אפשר להסתיר אותה בטעות.
         </p>
 
         <h2>קישור ידני — לביו, לסטורי, למשפיענית</h2>
         <div class="builder">
           <p class="hint" style="margin-top: 0">
             בונה קישור שמגיע עם שם לטבלה שלמעלה. שום מקום לא ממלא את השם לבד — גם לא מודעה — אז כל
-            קישור שרוצים לזהות בשמו, בונים כאן.
+            קישור שרוצים לזהות בשמו, בונים כאן. הקישור יופיע בטבלה מיד; אם הוא מיותר שם, מסתירים את
+            השורה בכפתור ״הסתרת שורות״ והכסף שלה עדיין נספר.
           </p>
           <div class="fields">
             <label
@@ -706,104 +722,117 @@
       // with isPaid() in server/attribution.js.
       const isPaidRow = (r) => /^(paid|cpc|ppc|cpm|ads?)/.test(r.medium || '');
 
-      // Manual campaigns: rows with a campaign name, kept off the table until the
-      // owner ticks them. Every row still arrives from the server — its money is in
-      // the tiles — and the picker lists the campaigns so they can be ticked.
+      // Hiding rows. Every row is drawn unless the owner hid THAT row, and a paid
+      // row is drawn even then — see the block comment in server/attribution.js.
+      // Every row still arrives from the server and its money is in the tiles; the
+      // hider only decides what the tbody draws.
       let lastRows = [];
-      let shownCampaigns = new Set();
+      let hiddenRows = new Map(); // key -> [source, medium, campaign, content]
 
-      function campaignNames(rows) {
-        const names = new Map();
+      const partsOf = (r) => [r.source || '', r.medium || '', r.campaign || '', r.content || ''];
+      const rowKey = (r) => partsOf(r).join('|');
+      const isHiddenRow = (r) => !isPaidRow(r) && hiddenRows.has(rowKey(r));
+
+      // What the hider offers: every row in this range that may be hidden, plus
+      // any row hidden in an earlier range, or there would be no way to bring one
+      // back without widening the range first. Keyed and counted per ROW — the
+      // same row the table draws and a tick acts on — so no count here can differ
+      // from the row beside it.
+      function hideableRows(rows) {
+        const out = new Map();
         for (const r of rows) {
-          if (!r.campaign) continue;
-          const s = names.get(r.campaign) || { visits: 0, orders: 0 };
-          s.visits += r.visits;
-          s.orders += r.orders;
-          names.set(r.campaign, s);
+          if (isPaidRow(r)) continue; // always shown; nothing to offer
+          out.set(rowKey(r), { parts: partsOf(r), visits: r.visits, orders: r.orders });
         }
-        // A ticked campaign with nothing in this range is still listed, or there
-        // would be no way to untick it without widening the range first.
-        for (const n of shownCampaigns) if (!names.has(n)) names.set(n, null);
-        return [...names].sort((a, b) => a[0].localeCompare(b[0]));
+        for (const [key, parts] of hiddenRows) {
+          // A paid row is never hidden and is never offered, even if an old or a
+          // hand-edited file names one — the server refuses to write one, and the
+          // page must not act on one either.
+          if (isPaidRow({ medium: parts[1] })) continue;
+          if (!out.has(key)) out.set(key, { parts, visits: null, orders: null });
+        }
+        return [...out].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
       }
 
-      function renderPicker(rows) {
-        const names = campaignNames(rows);
-        const btn = qs('campaignPick');
-        btn.hidden = names.length === 0;
-        if (!names.length) {
-          qs('campaignPanel').hidden = true;
+      function renderHider(rows, hiddenCount) {
+        const list = hideableRows(rows);
+        const btn = qs('rowHide');
+        btn.hidden = list.length === 0;
+        if (!list.length) {
+          qs('rowHidePanel').hidden = true;
           btn.setAttribute('aria-expanded', 'false');
         }
-        const picked = names.filter(([n]) => shownCampaigns.has(n)).length;
-        btn.textContent = 'קמפיינים ידניים · ' + picked + ' מתוך ' + names.length + ' מוצגים';
-        const list = qs('campaignList');
-        list.textContent = '';
-        for (const [name, s] of names) {
+        btn.textContent = hiddenCount ? 'שורות מוסתרות · ' + hiddenCount : 'הסתרת שורות';
+        // The one sentence that reconciles the table with the tiles, on the
+        // heading line rather than inside a panel that ships closed: when rows are
+        // missing from the table, their money is not.
+        const note = qs('hiddenNote');
+        note.hidden = !hiddenCount;
+        note.textContent = 'ההזמנות וההכנסה של שורה מוסתרת נספרות במספרים שלמעלה בכל מקרה.';
+        const box = qs('rowHideList');
+        box.textContent = '';
+        for (const [key, r] of list) {
           const label = document.createElement('label');
-          const box = document.createElement('input');
-          box.type = 'checkbox';
-          box.value = name;
-          box.checked = shownCampaigns.has(name);
-          box.setAttribute('data-campaign', name);
-          box.addEventListener('change', () => saveCampaign(box));
+          const check = document.createElement('input');
+          check.type = 'checkbox';
+          check.checked = hiddenRows.has(key);
+          check.setAttribute('data-row', key);
+          check.addEventListener('change', () => saveRow(check, r.parts));
           const text = document.createElement('span');
           text.className = 'ltr';
-          text.textContent = name;
+          text.textContent = r.parts.filter(Boolean).join(' / ');
           const meta = document.createElement('span');
           meta.className = 'meta';
-          meta.textContent = s
-            ? s.visits + ' מבקרים · ' + s.orders + ' הזמנות'
-            : 'אין פעילות בטווח הזה';
-          label.appendChild(box);
+          meta.textContent =
+            r.visits === null
+              ? 'אין פעילות בטווח הזה'
+              : r.visits + ' מבקרים · ' + r.orders + ' הזמנות';
+          label.appendChild(check);
           label.appendChild(text);
           label.appendChild(meta);
-          list.appendChild(label);
+          box.appendChild(label);
         }
       }
 
-      async function saveCampaign(box) {
-        const boxes = qs('campaignList').querySelectorAll('input');
+      async function saveRow(check, parts) {
+        const boxes = qs('rowHideList').querySelectorAll('input');
         for (const b of boxes) b.disabled = true;
-        const status = qs('campaignStatus');
+        const status = qs('rowHideStatus');
         status.className = 'hint';
         status.textContent = 'שומר…';
         try {
-          const out = await api('/api/admin/ads/campaigns', {
-            campaign: box.value,
-            shown: box.checked,
-          });
-          shownCampaigns = new Set(out.shown || []);
+          const out = await api('/api/admin/ads/hidden', { row: parts, hidden: check.checked });
+          hiddenRows = new Map((out.hidden || []).map((p) => [p.join('|'), p]));
           status.textContent = '';
           renderRows(lastRows);
         } catch (e) {
           // Nothing changed on the server, so the box goes back to what it was.
-          box.checked = !box.checked;
+          check.checked = !check.checked;
           for (const b of boxes) b.disabled = false;
           status.className = 'hint err';
           status.textContent = 'לא נשמר: ' + e.message;
         }
       }
 
-      qs('campaignPick').addEventListener('click', () => {
-        const panel = qs('campaignPanel');
+      qs('rowHide').addEventListener('click', () => {
+        const panel = qs('rowHidePanel');
         panel.hidden = !panel.hidden;
-        qs('campaignPick').setAttribute('aria-expanded', String(!panel.hidden));
+        qs('rowHide').setAttribute('aria-expanded', String(!panel.hidden));
       });
 
       function renderRows(rows) {
         lastRows = rows;
-        renderPicker(rows);
+        const shown = rows.filter((r) => !isHiddenRow(r));
+        renderHider(rows, rows.length - shown.length);
         const body = qs('rows');
         body.textContent = '';
-        const shown = rows.filter((r) => !r.campaign || shownCampaigns.has(r.campaign));
         if (!shown.length) {
           const tr = document.createElement('tr');
           const td = document.createElement('td');
           td.colSpan = 9;
           td.className = 'empty';
           td.textContent = rows.length
-            ? 'בטווח הזה יש רק קמפיינים ידניים שלא סומנו להצגה. מסמנים אותם בכפתור ״קמפיינים ידניים״.'
+            ? 'כל השורות בטווח הזה מוסתרות. ההזמנות וההכנסה שלהן נספרות במספרים שלמעלה; מחזירים אותן בכפתור ״שורות מוסתרות״.'
             : 'עוד אין נתונים לטווח הזה. ברגע שמישהו יגיע לאתר, הוא יופיע כאן.';
           tr.appendChild(td);
           body.appendChild(tr);
@@ -1419,7 +1448,7 @@
           adoptBase(data.base_url); // rebuild what is on screen against the real domain
           renderTiles(data.totals);
           renderInternal(data.internal);
-          shownCampaigns = new Set(data.shown_campaigns || []);
+          hiddenRows = new Map((data.hidden_rows || []).map((p) => [p.join('|'), p]));
           renderRows(data.rows);
           // Meta's half is loaded after ours and never blocks it: it is a call
           // to somebody else's server, and a slow or refused one must not keep

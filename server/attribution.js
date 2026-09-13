@@ -388,73 +388,112 @@ function load() {
     // to take the server down with it.
     _events = [];
   }
-  loadShown();
+  loadHidden();
   prune();
 }
 
-// --- manual campaigns -----------------------------------------------------------
+// --- rows the owner hid ---------------------------------------------------------
 //
-// A row with a campaign name came from a link somebody named by hand: the link
-// builder on the ads page, or a tag typed into an ad. The owner asked for those
-// rows to stay OFF the table unless she picks them. They multiply (a link per
-// story, per influencer), and a table full of one-visit test links buries the rows
-// that matter. Rows with no campaign name (google, Instagram's own bio link,
-// direct, a bare Meta click) always show.
+// The table fills up with rows nobody needs to see again: a link built for one
+// story, a test link somebody clicked twice, a referral that sent two visitors.
+// The owner asked to be able to put those away.
+//
+// SHOW BY DEFAULT. Every row is on the table unless she hid that exact row. A
+// campaign she never touched can never go missing — clutter is an annoyance, a
+// winning campaign missing from the page she sets ad spend from is expensive.
+// Two rules hold it:
+//   - a row is hidden by its OWN key (source, medium, campaign, content) — the
+//     same key report() groups by — so hiding one story link never touches a
+//     sibling row, a campaign's other creatives, or a row that arrives later;
+//   - a row whose medium is paid is ALWAYS shown and cannot be hidden, whatever
+//     the file says. Ad money is what this page is read for.
+// Nothing is hidden by name, so a nameless row (the link builder leaves the name
+// field optional) and a row tagged only with utm_content can be put away too —
+// those are exactly the per-story links this exists for.
 //
 // DISPLAY ONLY. The events stay in the ledger and in every total, because a
-// campaign that is not shown can hold paid orders, and the revenue tile has to
-// keep matching the bank. report() hands the picked set to the page, which
-// decides what to draw.
+// hidden row can hold paid orders and the revenue tile has to keep matching the
+// bank. report() hands the hidden set to the page, which decides what to draw.
 //
 // Its own small file, written at once: it changes on a click, not on a page view,
 // so none of the ledger's write throttling is needed.
-const SHOWN_FILE = path.join(DATA_DIR, 'attribution-shown-campaigns.json');
-const MAX_SHOWN = 200;
-let _shown = new Set();
+const HIDDEN_FILE = path.join(DATA_DIR, 'attribution-hidden-rows.json');
+const MAX_HIDDEN = 200;
+let _hidden = new Map(); // 'source|medium|campaign|content' -> the four fields
 
-function loadShown() {
+/**
+ * One row's identity, normalised exactly as record() normalises a touch, so a row
+ * named in a request — or typed into the file by hand — keys the row the table
+ * actually draws. Null when it is not four strings, when all four are empty, or
+ * when the medium is paid: a paid row is never hideable.
+ */
+function hiddenKeyOf(row) {
+  if (!Array.isArray(row) || row.length !== 4) return null;
+  if (row.some((v) => typeof v !== 'string')) return null;
+  const parts = row.map((v) => field(v));
+  if (!parts.some(Boolean)) return null;
+  if (isPaid({ medium: parts[1] })) return null;
+  return { key: parts.join('|'), parts };
+}
+
+function loadHidden() {
+  _hidden = new Map();
+  let raw;
   try {
-    const raw = JSON.parse(fs.readFileSync(SHOWN_FILE, 'utf8'));
-    _shown = new Set(Array.isArray(raw) ? raw.filter((c) => typeof c === 'string' && c) : []);
+    raw = JSON.parse(fs.readFileSync(HIDDEN_FILE, 'utf8'));
   } catch {
-    _shown = new Set(); // no file yet: no manual campaign is shown
+    return; // no file yet: nothing is hidden
+  }
+  if (!Array.isArray(raw)) return;
+  // Normalised and capped on the way IN, not only on the way out. A file edited
+  // by hand can hold "Bio_Insta", which matches no row, hides nothing, and could
+  // not be removed by a click that normalises to bio_insta; and a file that grew
+  // past the cap elsewhere must not come back over it.
+  for (const row of raw) {
+    if (_hidden.size >= MAX_HIDDEN) break;
+    const k = hiddenKeyOf(row);
+    if (k) _hidden.set(k.key, k.parts);
   }
 }
 
-/** The manual campaigns the owner picked to show, sorted. */
-function shownCampaigns() {
-  return [..._shown].sort();
+/** The rows the owner hid, each as [source, medium, campaign, content], sorted. */
+function hiddenRows() {
+  return [..._hidden.entries()]
+    .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+    .map((e) => e[1]);
 }
 
 /**
- * Show, or stop showing, one manual campaign. One name per call rather than the
- * whole list, so two tabs ticking different campaigns cannot overwrite each
- * other's choice. The name goes through the same normalising record() applies to
- * a campaign, so "Bio_Insta" picks the row the table shows as bio_insta.
- * Returns { ok: true, shown } or { error }; on an error nothing changes.
+ * Hide, or stop hiding, ONE row. One row per call rather than the whole list, so
+ * two tabs hiding different rows cannot overwrite each other's choice.
+ * Returns { ok: true, hidden } or { error }; on an error nothing changes.
  */
-function setCampaignShown(name, shown) {
-  const campaign = typeof name === 'string' ? field(name) : '';
-  if (!campaign) return { error: 'campaign is required' };
-  if (typeof shown !== 'boolean') return { error: 'shown must be true or false' };
-  const next = new Set(_shown);
-  if (shown) next.add(campaign);
-  else next.delete(campaign);
-  if (next.size > MAX_SHOWN) return { error: 'too many campaigns' };
-  if (next.size !== _shown.size) {
-    const tmp = SHOWN_FILE + '.tmp';
-    try {
-      // The ledger creates nothing on its own and swallows its write failures, so
-      // on a fresh volume this can be the first file in DATA_DIR.
-      fs.mkdirSync(DATA_DIR, { recursive: true });
-      fs.writeFileSync(tmp, JSON.stringify([...next]), 'utf8');
-      fs.renameSync(tmp, SHOWN_FILE);
-    } catch {
-      return { error: 'could not save' };
-    }
-    _shown = next;
+function setRowHidden(row, hidden) {
+  if (typeof hidden !== 'boolean') return { error: 'hidden must be true or false' };
+  if (!Array.isArray(row) || row.length !== 4 || row.some((v) => typeof v !== 'string')) {
+    return { error: 'row must be four fields' };
   }
-  return { ok: true, shown: shownCampaigns() };
+  const parts = row.map((v) => field(v));
+  if (!parts.some(Boolean)) return { error: 'row must be four fields' };
+  if (isPaid({ medium: parts[1] })) return { error: 'a paid row is always shown' };
+  const key = parts.join('|');
+  if (_hidden.has(key) === hidden) return { ok: true, hidden: hiddenRows() };
+  const next = new Map(_hidden);
+  if (hidden) next.set(key, parts);
+  else next.delete(key);
+  if (next.size > MAX_HIDDEN) return { error: 'too many hidden rows' };
+  const tmp = HIDDEN_FILE + '.tmp';
+  try {
+    // The ledger creates nothing on its own and swallows its write failures, so
+    // on a fresh volume this can be the first file in DATA_DIR.
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.writeFileSync(tmp, JSON.stringify([...next.values()]), 'utf8');
+    fs.renameSync(tmp, HIDDEN_FILE);
+  } catch {
+    return { error: 'could not save' };
+  }
+  _hidden = next;
+  return { ok: true, hidden: hiddenRows() };
 }
 
 /**
@@ -774,14 +813,15 @@ function report({ days = 30, now = Date.now() } = {}) {
   out.sort((a, b) => b.revenue - a.revenue || b.orders - a.orders || b.visits - a.visits);
   totals.revenue = Math.round(totals.revenue * 100) / 100;
   internal.revenue = Math.round(internal.revenue * 100) / 100;
-  // Every row is returned, picked or not: the totals above include them all, and
-  // the page needs the unpicked campaigns to list them in its picker.
+  // Every row is returned, hidden or not: the totals above include them all, and
+  // the page needs the hidden rows to list them in the hider so they can come
+  // back.
   return {
     days: Number(days) || 30,
     rows: out,
     totals,
     internal,
-    shown_campaigns: shownCampaigns(),
+    hidden_rows: hiddenRows(),
   };
 }
 
@@ -821,8 +861,8 @@ module.exports = {
   record,
   report,
   recent,
-  shownCampaigns,
-  setCampaignShown,
+  hiddenRows,
+  setRowHidden,
   flush,
   load,
   _setEvents,

@@ -15,26 +15,6 @@ const unique = (prefix) => `${prefix}_${Date.now().toString(36)}${Math.floor(Mat
 // The report row for one campaign, whatever else is in the table.
 const rowFor = (page, campaign) => page.locator(`#rows tr:has(td:text-is("${campaign}"))`);
 
-// A row with a campaign name is a MANUAL campaign, and manual campaigns stay off
-// the report table until the owner picks them. A test that looks for its own
-// campaign's row picks it first, through the same route the picker uses, and
-// unpicks it afterwards so the shared E2E store never fills up with test names.
-const picked = [];
-async function showCampaign(page, campaign) {
-  const r = await page.request.post(`/api/admin/ads/campaigns?key=${KEY}`, {
-    data: { campaign, shown: true },
-  });
-  expect(r.ok(), `picking the campaign was refused: ${r.status()} ${await r.text()}`).toBe(true);
-  picked.push(campaign);
-}
-test.afterEach(async ({ request }) => {
-  while (picked.length) {
-    await request.post(`/api/admin/ads/campaigns?key=${KEY}`, {
-      data: { campaign: picked.pop(), shown: false },
-    });
-  }
-});
-
 // Go to a page AND wait for its measurement beacon to be ANSWERED. The waiter has
 // to be armed before the navigation: the beacon fires during load, so a wait
 // registered afterwards is a wait for an event that has already happened.
@@ -201,7 +181,6 @@ test.describe('the ad report', () => {
     expect(body.kind).toBe('visit');
     expect(body.landing).toContain(campaign);
 
-    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     const row = rowFor(page, campaign);
     await expect(row).toBeVisible();
@@ -241,7 +220,6 @@ test.describe('the ad report', () => {
     );
     for (const p of ['/products.html', '/how.html', '/index.html']) await page.goto(p);
 
-    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(rowFor(page, campaign).locator('td').nth(4)).toHaveText('1');
   });
@@ -299,7 +277,6 @@ test.describe('the ad report', () => {
       page,
       `/index.html?utm_source=ig&utm_medium=paid&utm_campaign=${campaign}&utm_content=Reel%2003`
     );
-    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     const row = rowFor(page, campaign);
     await expect(row.locator('td').nth(0)).toHaveText('instagram');
@@ -354,7 +331,6 @@ test.describe('the ad report', () => {
       page,
       `/index.html?utm_source=instagram&utm_medium=paid&utm_campaign=${campaign}`
     );
-    await showCampaign(page, campaign);
     await page.route('**/api/admin/ads?*', async (route) => {
       const resp = await route.fetch();
       const body = await resp.json();
@@ -403,7 +379,6 @@ test.describe('the ad report', () => {
     expect(link).toContain('utm_medium=bio');
 
     await arriveAt(page, new URL(link).pathname + new URL(link).search);
-    await showCampaign(page, campaign + '_סתיו');
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(
       rowFor(page, campaign + '_סתיו')
@@ -986,7 +961,6 @@ test.describe('the ad report', () => {
     await page.route('**/api/admin/ads/meta**', (route) => route.abort());
     const campaign = unique('resilient');
     await arriveAt(page, `/index.html?utm_source=ig&utm_medium=paid&utm_campaign=${campaign}`);
-    await showCampaign(page, campaign);
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(rowFor(page, campaign)).toBeVisible();
     await expect(page.locator('#metaBox')).toContainText('נכשל');
@@ -1050,47 +1024,66 @@ test.describe('the ad report', () => {
   });
 });
 
-// The owner asked for manual campaigns (rows with a campaign name: the link
-// builder, a hand-tagged ad) to stay off the table until she picks them, because
-// a link per story buries the rows that matter. Display only: the tiles keep
-// every row's money. Stubbed, so the rows are exactly these three.
-test.describe('the manual-campaigns picker', () => {
-  const ROWS = [
-    {
-      source: 'google',
-      medium: 'referral',
-      campaign: '',
-      content: '',
-      visits: 19,
-      checkouts: 6,
-      orders: 4,
-      revenue: 1012,
-      conversion: 21.1,
-    },
-    {
-      source: 'instagram',
-      medium: 'bio',
-      campaign: 'bio_insta',
-      content: '',
-      visits: 3,
-      checkouts: 1,
-      orders: 0,
-      revenue: 0,
-      conversion: 0,
-    },
-    {
-      source: 'instagram',
-      medium: 'story',
-      campaign: 'story_alma',
-      content: '',
-      visits: 5,
-      checkouts: 0,
-      orders: 1,
-      revenue: 255,
-      conversion: 20,
-    },
-  ];
-  const stubReport = (page, { rows = ROWS, shown = [] } = {}) =>
+// Hiding rows. Every row shows by default — a campaign she never touched can
+// never go missing from the page she sets ad spend from — and she hides the rows
+// she does not want to see again, one row at a time. A PAID row is never hidden.
+// Display only: the tiles keep every row's money. Stubbed, so the rows are
+// exactly these four.
+test.describe('hiding rows on the report', () => {
+  const GOOGLE = {
+    source: 'google',
+    medium: 'referral',
+    campaign: '',
+    content: '',
+    visits: 19,
+    checkouts: 6,
+    orders: 4,
+    revenue: 1012,
+    conversion: 21.1,
+  };
+  const STORY = {
+    source: 'instagram',
+    medium: 'story',
+    campaign: 'story_alma',
+    content: '',
+    visits: 5,
+    checkouts: 0,
+    orders: 1,
+    revenue: 255,
+    conversion: 20,
+  };
+  // No campaign name at all — the link builder leaves the name optional. This is
+  // the row the feature exists for, and a rule that read utm_campaign could not
+  // reach it.
+  const NAMELESS = {
+    source: 'instagram',
+    medium: 'bio',
+    campaign: '',
+    content: 'sep_story',
+    visits: 3,
+    checkouts: 1,
+    orders: 0,
+    revenue: 0,
+    conversion: 0,
+  };
+  // The row the owner sets ad spend from. It must survive anything the hider can
+  // be told to do.
+  const PAID = {
+    source: 'instagram',
+    medium: 'paid',
+    campaign: 'shm_rovakot',
+    content: '',
+    visits: 40,
+    checkouts: 14,
+    orders: 12,
+    revenue: 1668,
+    conversion: 30,
+  };
+  const ROWS = [GOOGLE, STORY, NAMELESS, PAID];
+  const keyOf = (r) => [r.source, r.medium, r.campaign, r.content].join('|');
+  const partsOf = (r) => [r.source, r.medium, r.campaign, r.content];
+
+  const stubReport = (page, { rows = ROWS, hidden = [] } = {}) =>
     page.route('**/api/admin/ads?*', (route) =>
       route.fulfill({
         status: 200,
@@ -1098,61 +1091,94 @@ test.describe('the manual-campaigns picker', () => {
         body: JSON.stringify({
           days: 30,
           rows,
-          totals: { visits: 27, checkouts: 7, orders: 5, revenue: 1267, paid_orders: 0 },
+          totals: { visits: 67, checkouts: 21, orders: 17, revenue: 2935, paid_orders: 12 },
           internal: { visits: 0, checkouts: 0, orders: 0, revenue: 0, hosts: [] },
-          shown_campaigns: shown,
+          hidden_rows: hidden,
           base_url: 'https://dugri-israel.co.il',
         }),
       })
     );
 
-  test('a manual campaign stays off the table until it is picked', async ({ page }) => {
+  test('every row shows until the owner hides it', async ({ page }) => {
     await stubReport(page);
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    await expect(rowFor(page, 'google')).toBeVisible();
-    await expect(rowFor(page, 'bio_insta')).toHaveCount(0);
-    await expect(rowFor(page, 'story_alma')).toHaveCount(0);
-    await expect(page.getByTestId('campaign-picker')).toContainText('0 מתוך 2');
-    // Not shown is not uncounted: the revenue tile still has story_alma's sale.
-    await expect(page.locator('#tiles')).toContainText('1,267');
+    for (const name of ['google', 'story_alma', 'sep_story', 'shm_rovakot']) {
+      await expect(rowFor(page, name)).toBeVisible();
+    }
+    await expect(page.getByTestId('row-hider')).toHaveText('הסתרת שורות');
+    // Nothing is missing from the table, so nothing has to be reconciled.
+    await expect(page.getByTestId('hidden-note')).toBeHidden();
   });
 
-  test('ticking a campaign shows its row and saves only that one', async ({ page }) => {
+  test('a hidden row leaves the table, and the note says its money stayed', async ({ page }) => {
+    await stubReport(page, { hidden: [partsOf(STORY)] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, 'story_alma')).toHaveCount(0);
+    await expect(rowFor(page, 'google')).toBeVisible();
+    await expect(page.getByTestId('row-hider')).toContainText('1');
+    // The reconciliation sentence is on the heading line, not inside the panel,
+    // because the panel ships closed and the tile does not.
+    await expect(page.getByTestId('row-hide-panel')).toBeHidden();
+    await expect(page.getByTestId('hidden-note')).toBeVisible();
+    await expect(page.getByTestId('hidden-note')).toContainText('נספרות במספרים שלמעלה');
+    await expect(page.locator('#tiles')).toContainText('2,935');
+  });
+
+  test('ticking a row hides it and saves only that row', async ({ page }) => {
     await stubReport(page);
     let saved = null;
-    await page.route('**/api/admin/ads/campaigns**', (route) => {
+    await page.route('**/api/admin/ads/hidden**', (route) => {
       saved = route.request().postDataJSON();
       return route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ok: true, shown: ['story_alma'] }),
+        body: JSON.stringify({ ok: true, hidden: [partsOf(STORY)] }),
       });
     });
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    await page.getByTestId('campaign-picker').click();
-    await expect(page.getByTestId('campaign-panel')).toBeVisible();
-    await page.locator('input[data-campaign="story_alma"]').check();
+    await page.getByTestId('row-hider').click();
+    await expect(page.getByTestId('row-hide-panel')).toBeVisible();
+    await page.locator(`input[data-row="${keyOf(STORY)}"]`).check();
 
-    await expect(rowFor(page, 'story_alma')).toBeVisible();
-    expect(saved).toEqual({ campaign: 'story_alma', shown: true });
-    await expect(rowFor(page, 'bio_insta')).toHaveCount(0);
-    await expect(page.getByTestId('campaign-picker')).toContainText('1 מתוך 2');
+    await expect(rowFor(page, 'story_alma')).toHaveCount(0);
+    expect(saved).toEqual({ row: partsOf(STORY), hidden: true });
+    await expect(rowFor(page, 'google')).toBeVisible();
+    await expect(page.getByTestId('row-hider')).toContainText('1');
   });
 
-  test('a picked campaign with nothing in this range can still be unticked', async ({ page }) => {
-    await stubReport(page, { shown: ['old_launch'] });
+  test('a row with no campaign name can be hidden too', async ({ page }) => {
+    await stubReport(page);
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    await page.getByTestId('campaign-picker').click();
-    const box = page.locator('input[data-campaign="old_launch"]');
+    await page.getByTestId('row-hider').click();
+    await expect(page.locator(`input[data-row="${keyOf(NAMELESS)}"]`)).toHaveCount(1);
+  });
+
+  test('a paid row is not offered, and stays on the table even if it is hidden', async ({
+    page,
+  }) => {
+    await stubReport(page, { hidden: [partsOf(PAID)] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(rowFor(page, 'shm_rovakot')).toBeVisible();
+    await expect(page.getByTestId('row-hider')).toHaveText('הסתרת שורות');
+    await page.getByTestId('row-hider').click();
+    await expect(page.locator(`input[data-row="${keyOf(PAID)}"]`)).toHaveCount(0);
+  });
+
+  test('a hidden row with nothing in this range can still be brought back', async ({ page }) => {
+    const old = ['instagram', 'story', 'old_launch', ''];
+    await stubReport(page, { hidden: [old] });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await page.getByTestId('row-hider').click();
+    const box = page.locator(`input[data-row="${old.join('|')}"]`);
     await expect(box).toBeChecked();
-    await expect(page.locator('#campaignList label:has-text("old_launch")')).toContainText(
+    await expect(page.locator('#rowHideList label:has-text("old_launch")')).toContainText(
       'אין פעילות בטווח הזה'
     );
   });
 
   test('a refused save puts the box back and says so', async ({ page }) => {
     await stubReport(page);
-    await page.route('**/api/admin/ads/campaigns**', (route) =>
+    await page.route('**/api/admin/ads/hidden**', (route) =>
       route.fulfill({
         status: 500,
         contentType: 'application/json',
@@ -1160,24 +1186,28 @@ test.describe('the manual-campaigns picker', () => {
       })
     );
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    await page.getByTestId('campaign-picker').click();
-    const box = page.locator('input[data-campaign="bio_insta"]');
+    await page.getByTestId('row-hider').click();
+    const box = page.locator(`input[data-row="${keyOf(STORY)}"]`);
     await box.click();
-    await expect(page.getByTestId('campaign-status')).toContainText('לא נשמר');
+    await expect(page.getByTestId('row-hide-status')).toContainText('לא נשמר');
     await expect(box).not.toBeChecked();
-    await expect(rowFor(page, 'bio_insta')).toHaveCount(0);
+    await expect(rowFor(page, 'story_alma')).toBeVisible();
   });
 
-  test('a table of only unpicked campaigns says how to show them', async ({ page }) => {
-    await stubReport(page, { rows: [ROWS[1]] });
+  test('a table with every row hidden says where the money went', async ({ page }) => {
+    await stubReport(page, { rows: [STORY], hidden: [partsOf(STORY)] });
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    await expect(page.locator('#rows')).toContainText('קמפיינים ידניים');
+    await expect(page.locator('#rows')).toContainText('נספרות במספרים שלמעלה');
+    await expect(page.locator('#rows')).toContainText('שורות מוסתרות');
   });
 
-  test('with no manual campaigns there is no picker', async ({ page }) => {
-    await stubReport(page, { rows: [ROWS[0]] });
+  test('with nothing that may be hidden there is no hider', async ({ page }) => {
+    await stubReport(page, { rows: [PAID] });
     await page.goto(`/admin-ads.html?key=${KEY}`);
-    await expect(rowFor(page, 'google')).toBeVisible();
-    await expect(page.getByTestId('campaign-picker')).toBeHidden();
+    await expect(rowFor(page, 'shm_rovakot')).toBeVisible();
+    // toBeHidden() alone is satisfied by an element that does not exist, which
+    // would pass with no hider in the page at all.
+    await expect(page.getByTestId('row-hider')).toHaveCount(1);
+    await expect(page.getByTestId('row-hider')).toBeHidden();
   });
 });
