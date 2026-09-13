@@ -8,8 +8,8 @@
  * Two rules keep it out of the buyer's way:
  *
  * 1. PHYSICAL RIGHT, not the inline start. In this RTL layout the inline start
- *    is the right, but several controls (the chasers toggle, the consent
- *    banner's close ×) live at the physical LEFT — the left corner is taken.
+ *    is the right, but several controls (the consent banner's close ×) live at
+ *    the physical LEFT — the left corner is taken.
  * 2. Above whatever the page already fixes to the bottom. Each page sets
  *    --wa-help-bottom to its own clearance: the wizard's Back/Next bar, or just
  *    a margin on a page with no bar.
@@ -59,9 +59,9 @@
  * the end away from "הבא". Nothing can be covered, at any step and any scroll
  * position, because the bar is opaque and the page already reserves its height.
  * That is worth more than the corner: the wizard is where the buyer taps, and a
- * floating button there was landing on the design-code box, on the chasers card
- * and (as tests/e2e/wizard-noscroll.spec.js had already written down) on half of
- * the first gender option.
+ * floating button there was landing on the design-code box and (as
+ * tests/e2e/wizard-noscroll.spec.js had already written down) on half of the
+ * first gender option.
  */
 .wa-help--docked {
   position: static;

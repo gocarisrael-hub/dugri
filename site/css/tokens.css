@@ -5,9 +5,8 @@
  * The section wash (--section) and the blush surface tint (--blush-tint) are a WARM
  * SAND / GREIGE — a natural, light neutral (replacing the old very-light-pink), so the
  * alternating .alt sections read as soft warm surfaces. Pink now lives ONLY on the logo.
- * --accent is the warm-sand accent used where a soft brand accent is wanted (e.g. the
- * chasers toggle), replacing the previous black/pink. Ink, muted text and hairlines stay
- * neutral. Corners are sharp (radius 0) everywhere. Headings are thin Heebo Light.
+ * --accent is the warm-sand accent used where a soft brand accent is wanted,
+ * replacing the previous black/pink. Ink, muted text and hairlines stay neutral. Corners are sharp (radius 0) everywhere. Headings are thin Heebo Light.
  *
  * The old sage/blush token NAMES are kept (--sage, --blush, …) and simply remapped to
  * black/gray, so every page that references them turns monochrome without per-page edits.
@@ -35,7 +34,7 @@
   --blush-tint: #efe7d9;
 
   /* warm-sand brand accent — the natural, light accent that replaces pink/black where a
-     soft accent is wanted (e.g. the chasers yes/no toggle). Full-strength + deep + tint. */
+     soft accent is wanted. Full-strength + deep + tint. */
   --accent: #b7a389;
   --accent-deep: #9c8768;
   --accent-tint: #ece3d5;

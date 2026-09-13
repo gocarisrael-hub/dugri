@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
 // (throwaway), so overrides written here never touch real data.
 const KEY = 'dugri-admin';
 // The four wizard flags: features that never shipped, so all four default OFF.
-const FLAGS = ['color_picking', 'chasers_choice', 'font_choice', 'name_preview'];
+const FLAGS = ['color_picking', 'font_choice', 'name_preview'];
 // …and the one that guards something ALREADY LIVE (the buyer's proof screen), so
 // it defaults ON. Kept apart from FLAGS because every assertion about it is the
 // mirror image of theirs.

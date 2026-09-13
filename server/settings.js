@@ -530,12 +530,12 @@ const REGISTRY = {
   // Owner-controlled on/off switches for buyer-facing features, each a bare
   // boolean (kind: 'flag') the owner flips from the admin panel — no code deploy.
   //
-  // The first four are WIZARD features that aren't polished enough to ship, so
+  // The first three are WIZARD features that aren't polished enough to ship, so
   // they default OFF (the feature is hidden entirely). When one is off the wizard
-  // falls back to the built-in default (color "מקורי", chasers false, word_font
-  // null, no live name preview), so no server order-logic changes.
+  // falls back to the built-in default (color "מקורי", word_font null, no live
+  // name preview), so no server order-logic changes.
   //
-  // `deck_proof` is the odd one out and defaults ON, because unlike the four it
+  // `deck_proof` is the odd one out and defaults ON, because unlike the three it
   // is ALREADY SHIPPED: the buyer's proof screen (proof.html — every page of her
   // produced deck, read out of the PDF) has been live since it was built, so a
   // default of false would silently switch a working feature off the day this key
@@ -545,7 +545,6 @@ const REGISTRY = {
   // and the proof endpoints refuse anyone but the owner's own admin key.
   features: {
     color_picking: { kind: 'flag', tokens: [], default: false },
-    chasers_choice: { kind: 'flag', tokens: [], default: false },
     font_choice: { kind: 'flag', tokens: [], default: false },
     name_preview: { kind: 'flag', tokens: [], default: false },
     deck_proof: { kind: 'flag', tokens: [], default: true },

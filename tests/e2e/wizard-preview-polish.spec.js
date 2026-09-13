@@ -14,7 +14,6 @@ test.beforeEach(async ({ page }) => {
 //    pink now lives only on the logo)
 //  - colour swatches have NO resting frame/ring, but a clear sand selected ring
 //  - the live product preview "just sits there" with no dashed box/outline
-//  - the chasers add-on is a clean icon+text row with no box (border/bg/shadow)
 
 const SAND = 'rgb(183, 163, 137)'; // --accent #b7a389
 const PINK = 'rgb(232, 90, 151)'; // #e85a97 — must NOT appear (logo-only now)
@@ -79,26 +78,5 @@ test.describe('configurator preview polish', () => {
     // no visible frame: either no border or a zero-width one, and never dashed
     expect(border.style === 'none' || border.width === '0px').toBeTruthy();
     expect(border.style).not.toBe('dashed');
-  });
-
-  test('the chasers add-on is a clean row with no box (border/bg/shadow)', async ({ page }) => {
-    await page.goto('/options.html');
-    await page.getByTestId('next-btn').click(); // -> 2 (colour + add-ons)
-    const card = page.getByTestId('chasers-card');
-    await expect(card).toBeVisible();
-
-    const box = await card.evaluate((el) => {
-      const s = getComputedStyle(el);
-      return { border: s.borderTopWidth, bg: s.backgroundColor, shadow: s.boxShadow };
-    });
-    expect(box.border).toBe('0px');
-    // transparent background (no card fill)
-    expect(box.bg === 'rgba(0, 0, 0, 0)' || box.bg === 'transparent').toBeTruthy();
-    expect(box.shadow).toBe('none');
-
-    // the icon is the (boxless) photo, not an svg
-    const ico = page.locator('#chasersCard img.addon-ico');
-    await expect(ico).toHaveAttribute('src', 'assets/ico-chasers.png');
-    await expect(page.locator('#chasersCard svg.addon-ico')).toHaveCount(0);
   });
 });

@@ -26,7 +26,6 @@ function row(i, { name, design, version, paid = false, status = 'closed', ready 
     pawn_images: [],
     pawn_cutouts: {},
     extra_fields: {},
-    chasers: false,
     order: version
       ? {
           version,

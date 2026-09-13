@@ -132,25 +132,6 @@ describe('templates.js pure logic', () => {
     expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'fonts', 'Word.ttf'))).toBe(true);
     expect(out.fonts).toEqual({ title: 'Title.ttf', word: 'Word.ttf' });
-    // no chasers board was supplied -> the optional variant file is NOT created
-    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(false);
-  });
-
-  it('writeTemplateFiles lands the optional chasers board variant when supplied', () => {
-    const root = makeScaffold();
-    const out = templates.writeTemplateFiles({
-      root,
-      slug: 'demo-ch',
-      clean: { fronts: SVG('cf'), backs: SVG('cb'), board: SVG('cbo'), board_chasers: SVG('cch') },
-      filled: { fronts: SVG('ff'), backs: SVG('fb'), board: SVG('fbo') },
-      fonts: {
-        title: { name: 'Title.ttf', data: Buffer.from('T') },
-        word: { name: 'Word.ttf', data: Buffer.from('W') },
-      },
-    });
-    // the normal board is untouched and the chasers variant lands next to it
-    expect(fs.existsSync(path.join(out.dir, 'clean', 'board.svg'))).toBe(true);
-    expect(fs.existsSync(path.join(out.dir, 'clean', 'board-chasers.svg'))).toBe(true);
   });
 
   it('appendThemeEntry adds the entry, keeps existing ones, and refuses to overwrite a key', () => {
@@ -224,8 +205,6 @@ describe('templates.js pure logic', () => {
     expect(fs.existsSync(path.join(dir, 'clean', 'fronts.svg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'filled', 'board.svg'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'fonts', 'Title.ttf'))).toBe(true);
-    // no chasers board was uploaded -> the optional variant is absent (additive)
-    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(false);
   });
 
   // Auto-calibration on upload. generator/calibrate.py measures the title's slot
@@ -341,44 +320,6 @@ describe('templates.js pure logic', () => {
     });
   });
 
-  it('onboardTemplate accepts an OPTIONAL chasers board and lands clean/board-chasers.svg', () => {
-    const root = makeScaffold();
-    const files = {
-      ...validFiles(),
-      clean_board_chasers: { filename: 'bch.svg', data: SVG('bch') },
-    };
-    const r = templates.onboardTemplate({
-      root,
-      runRecipe: false,
-      fields: {
-        slug: 'party-ch',
-        display_he: 'צ׳ייסרים',
-        title_text: "{NAME}'S PARTY",
-        name_form: 'english-caps',
-      },
-      files,
-    });
-    expect(r.error).toBeUndefined();
-    const dir = path.join(root, 'resources', 'canva', 'templates', 'party-ch');
-    expect(fs.existsSync(path.join(dir, 'clean', 'board.svg'))).toBe(true);
-    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(true);
-  });
-
-  it('onboardTemplate rejects a chasers board that is not an SVG', () => {
-    const root = makeScaffold();
-    const files = {
-      ...validFiles(),
-      clean_board_chasers: { filename: 'bch.bin', data: Buffer.from('not-an-svg-at-all') },
-    };
-    const r = templates.onboardTemplate({
-      root,
-      runRecipe: false,
-      fields: { slug: 'party-badch', display_he: 'x', title_text: '{NAME}', name_form: 'english' },
-      files,
-    });
-    expect(r.error).toMatch(/chasers board does not look like an SVG/);
-  });
-
   it('onboardTemplate rejects an unsafe slug, a duplicate, and missing files', () => {
     const root = makeScaffold();
     expect(
@@ -471,7 +412,7 @@ describe('templates.js full editing (status / rename / replace)', () => {
     });
   }
 
-  it('computeTemplateStatus reports present/missing incl. the OPTIONAL chasers board', () => {
+  it('computeTemplateStatus reports which assets are present vs missing', () => {
     const root = makeScaffold();
     onboard(root, 'stat-x');
     const themes = templates.loadThemes(templates.themesPathFor(root));
@@ -481,11 +422,7 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(by['filled-board'].present).toBe(true);
     expect(by['title-font'].present).toBe(true);
     expect(by['word-font'].present).toBe(true);
-    // no chasers board was uploaded -> missing + optional + flagged off
-    expect(by['clean-board-chasers'].present).toBe(false);
-    expect(by['clean-board-chasers'].optional).toBe(true);
-    expect(st.chasersBoard).toBe(false);
-    // an OPTIONAL asset missing does not make the template incomplete
+    // every required asset landed, so the template reads complete
     expect(st.complete).toBe(true);
     // A fresh template has no auto-calibration hints.
     expect(st.confidence).toBeNull();
@@ -511,12 +448,12 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(st2.notes).toBeNull();
   });
 
-  it('listTemplateStatuses flips chasersBoard true when the variant exists', () => {
+  it('listTemplateStatuses reports each template with its asset checklist', () => {
     const root = makeScaffold();
-    onboard(root, 'stat-ch', { clean_board_chasers: { filename: 'b.svg', data: SVG('ch') } });
+    onboard(root, 'stat-ch');
     const st = templates.listTemplateStatuses(root).find((t) => t.key === 'stat-ch');
-    expect(st.chasersBoard).toBe(true);
-    expect(st.assets.find((a) => a.role === 'clean-board-chasers').present).toBe(true);
+    expect(st.complete).toBe(true);
+    expect(st.assets.find((a) => a.role === 'clean-board').present).toBe(true);
     // the seeded theme is also listed
     expect(templates.listTemplateStatuses(root).some((t) => t.key === 'seed-theme')).toBe(true);
   });
@@ -1317,23 +1254,6 @@ describe('templates.js full editing (status / rename / replace)', () => {
     expect(fs.readFileSync(path.join(dir, 'clean', 'backs.svg')).length).toBe(heavy.length);
   });
 
-  it('replaceAsset ADDS the optional chasers board where none existed', () => {
-    const root = makeScaffold();
-    onboard(root, 'rep-ch');
-    const dir = path.join(root, 'resources', 'canva', 'templates', 'rep-ch');
-    expect(fs.existsSync(path.join(dir, 'clean', 'board-chasers.svg'))).toBe(false);
-    const r = templates.replaceAsset({
-      root,
-      key: 'rep-ch',
-      role: 'clean-board-chasers',
-      file: { filename: 'c.svg', data: SVG('CHASERS') },
-    });
-    expect(r.error).toBeUndefined();
-    expect(fs.readFileSync(path.join(dir, 'clean', 'board-chasers.svg'), 'utf8')).toContain(
-      'CHASERS'
-    );
-  });
-
   it('replaceAsset accepts a font by sfnt magic and lands it under its own name', () => {
     // The file is validated by CONTENT (sfnt magic), not by extension. It is
     // written under the name it was uploaded with, and themes.json is updated to
@@ -1451,28 +1371,29 @@ describe('templates.js full editing (status / rename / replace)', () => {
     const themes = templates.loadThemes(themesPath);
     themes['cal-add'].calibrated = true;
     templates.writeThemesFile(themesPath, themes);
-    const chasers = path.join(
+    const board = path.join(
       root,
       'resources',
       'canva',
       'templates',
       'cal-add',
       'clean',
-      'board-chasers.svg'
+      'board.svg'
     );
-    expect(fs.existsSync(chasers)).toBe(false); // no current art at this role
+    fs.rmSync(board);
+    expect(fs.existsSync(board)).toBe(false); // no current art at this role
 
-    // First-time add of the optional chasers board is NOT replacing existing art,
-    // so it must write directly even though the template is calibrated — no 409.
+    // A FIRST-TIME add is NOT replacing existing art, so it must write directly
+    // even though the template is calibrated — no 409.
     const r = templates.replaceAsset({
       root,
       key: 'cal-add',
-      role: 'clean-board-chasers',
-      file: { filename: 'bc.svg', data: SVG('CHASERS-ADD') },
+      role: 'clean-board',
+      file: { filename: 'bc.svg', data: SVG('BOARD-ADD') },
     });
     expect(r.error).toBeUndefined();
     expect(r.calibrationWarning).toBeUndefined();
-    expect(fs.readFileSync(chasers, 'utf8')).toContain('CHASERS-ADD');
+    expect(fs.readFileSync(board, 'utf8')).toContain('BOARD-ADD');
   });
 
   it('replaceAsset on a NON-calibrated template replaces an SVG role freely (no force)', () => {
@@ -1715,7 +1636,7 @@ describe('POST /api/admin/templates', () => {
     expect(r.body.error).toMatch(/missing clean board/);
   });
 
-  it('GET /api/admin/templates lists statuses incl. chasers-board (403 without key)', async () => {
+  it('GET /api/admin/templates lists statuses with their assets (403 without key)', async () => {
     const no = await fetch(base + '/api/admin/templates');
     expect(no.status).toBe(403);
     const res = await fetch(base + '/api/admin/templates?key=' + ADMIN_KEY);
@@ -1723,10 +1644,9 @@ describe('POST /api/admin/templates', () => {
     const data = await res.json();
     const t = data.templates.find((x) => x.key === 'endpoint-demo');
     expect(t).toBeTruthy();
-    expect(t.chasersBoard).toBe(false);
-    const cb = t.assets.find((a) => a.role === 'clean-board-chasers');
-    expect(cb.present).toBe(false);
-    expect(cb.optional).toBe(true);
+    const cb = t.assets.find((a) => a.role === 'clean-board');
+    expect(cb.present).toBe(true);
+    expect(cb.optional).toBe(false);
   });
 
   it('POST rename updates the label (200), keeps slug stable, 403 no key, 400 empty', async () => {

@@ -98,7 +98,6 @@ async function stubOrders(page) {
           pawn_images: [],
           pawn_cutouts: {},
           extra_fields: {},
-          chasers: false,
           order: c.order,
         })),
       },

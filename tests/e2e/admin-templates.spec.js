@@ -26,7 +26,7 @@ test.describe('admin templates — status view (read-only)', () => {
       data: { display_he: 'x' },
     });
     expect(rn.status()).toBe(403);
-    const rp = await request.post('/api/admin/templates/bachelorette/assets/clean-board-chasers', {
+    const rp = await request.post('/api/admin/templates/bachelorette/assets/clean-board', {
       multipart: {
         file: { name: 'x.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg></svg>') },
       },
@@ -34,24 +34,21 @@ test.describe('admin templates — status view (read-only)', () => {
     expect(rp.status()).toBe(403);
   });
 
-  test('GET lists every template with an OPTIONAL chasers-board asset entry', async ({
-    request,
-  }) => {
+  test('GET lists every template with its board asset entry', async ({ request }) => {
     const r = await request.get(`/api/admin/templates?key=${KEY}`);
     expect(r.ok()).toBeTruthy();
     const { templates } = await r.json();
     expect(templates.length).toBeGreaterThanOrEqual(7);
-    // Every template exposes a chasers-board checklist row, always marked optional.
+    // Every template exposes a board checklist row, and the board is REQUIRED.
     for (const t of templates) {
-      const cb = t.assets.find((a) => a.role === 'clean-board-chasers');
+      const cb = t.assets.find((a) => a.role === 'clean-board');
       expect(cb).toBeTruthy();
-      expect(cb.optional).toBe(true);
+      expect(cb.optional).toBe(false);
     }
-    // anniversary (never mutated, copied into the fixture) ships without a chasers
-    // board and with its core assets present.
+    // anniversary (never mutated, copied into the fixture) ships with its core
+    // assets present.
     const anniv = templates.find((t) => t.key === 'anniversary');
     expect(anniv).toBeTruthy();
-    expect(anniv.chasersBoard).toBe(false);
     expect(anniv.assets.find((a) => a.role === 'clean-fronts').present).toBe(true);
     expect(anniv.assets.find((a) => a.role === 'title-font').present).toBe(true);
   });
@@ -69,8 +66,8 @@ test.describe('admin templates — status view (read-only)', () => {
     await expect(card).toBeVisible();
     // a present asset shows a ✓
     await expect(card.locator('.asset[data-role="clean-fronts"]')).toHaveClass(/on/);
-    // the chasers board row is present in the checklist, missing (✗), and optional
-    const ch = card.locator('.asset[data-role="clean-board-chasers"]');
+    // the optional second title face is in the checklist, missing (✗) and optional
+    const ch = card.locator('.asset[data-role="title-font-alt"]');
     await expect(ch).toHaveClass(/off/);
     await expect(ch).toHaveClass(/opt/);
     await expect(ch.locator('.mark')).toHaveText('✗');
@@ -408,32 +405,32 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     await expect(input).toHaveValue(''); // cleared → same file can be re-picked
   });
 
-  test('confirming a calibrated SVG replace adds the missing chasers board', async ({ page }) => {
+  test('confirming a calibrated SVG replace writes the new board', async ({ page }) => {
     // Accept the calibration confirm → the UI re-submits with force and the file
     // lands at the exact path the generator reads.
     page.on('dialog', (d) => d.accept());
     await page.goto(`/admin-templates.html?key=${KEY}`);
     const card = page.locator('.tpl-card[data-key="bachelorette"]');
     await expect(card).toBeVisible();
-    const ch = card.locator('.asset[data-role="clean-board-chasers"]');
-    await expect(ch).toHaveClass(/off/);
+    const ch = card.locator('.asset[data-role="clean-board"]');
+    await expect(ch).toHaveClass(/on/);
 
     await ch.locator('.repl-input').setInputFiles({
-      name: 'board-chasers.svg',
+      name: 'board.svg',
       mimeType: 'image/svg+xml',
-      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">e2e-chasers</svg>'),
+      buffer: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg">e2e-board</svg>'),
     });
 
-    const now = page.locator(
-      '.tpl-card[data-key="bachelorette"] .asset[data-role="clean-board-chasers"]'
-    );
+    const now = page.locator('.tpl-card[data-key="bachelorette"] .asset[data-role="clean-board"]');
     await expect(now).toHaveClass(/on/);
     await expect(now.locator('.mark')).toHaveText('✓');
     // Resolved AFTER the write: the replace is copy-on-write, so this shipped
     // template's dir has just moved into the persistent owner store.
-    expect(
-      fs.existsSync(path.join(templateDirFor('bachelorette'), 'clean', 'board-chasers.svg'))
-    ).toBe(true);
+    await expect(async () => {
+      expect(
+        fs.readFileSync(path.join(templateDirFor('bachelorette'), 'clean', 'board.svg'), 'utf8')
+      ).toContain('e2e-board');
+    }).toPass();
   });
 
   test('editing settings (visibility → private) persists and shows the private badge', async ({

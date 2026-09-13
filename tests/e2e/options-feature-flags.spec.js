@@ -1,11 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, ALL_OFF, stubFeatures } from './feature-flags.js';
 
-// The buyer wizard reads GET /api/features at load and HIDES four gated features
-// when their flag is off: colour picking, the chasers add-on, the word-font
-// picker and the live name preview. With colour + chasers both off, step 2
-// becomes empty and is skipped entirely (steps 1/3/4 always have controls, so
-// only step 2 can drop out). This spec drives each state directly by stubbing
+// The buyer wizard reads GET /api/features at load and HIDES three gated features
+// when their flag is off: colour picking, the word-font picker and the live name
+// preview. With colour off, step 2 becomes empty and is skipped entirely (steps
+// 1/3/4 always have controls, so only step 2 can drop out). This spec drives each state directly by stubbing
 // the endpoint per-page (no server seeding — see feature-flags.js).
 
 // A 1x1 transparent PNG for the (stubbed) name-preview render in the all-ON case.
@@ -44,7 +43,7 @@ function captureCollectionPost(page) {
     .then(() => captured);
 }
 
-// Shared assertions for the "all four hidden + step 2 skipped" state, reached
+// Shared assertions for the "all three hidden + step 2 skipped" state, reached
 // either by an explicit all-OFF stub or by a failed /api/features fetch.
 async function expectAllHiddenAndStep2Skipped(page) {
   await page.goto('/options.html?plan=base');
@@ -54,10 +53,9 @@ async function expectAllHiddenAndStep2Skipped(page) {
   await expect(page.getByTestId('step-total')).toHaveText('4');
   await expect(page.getByTestId('step-now')).toHaveText('1');
 
-  // the four gated regions are hidden.
+  // the three gated regions are hidden.
   await expect(page.getByTestId('color-carousel')).toBeHidden();
   await expect(page.getByTestId('color-list')).toBeHidden();
-  await expect(page.getByTestId('chasers-card')).toBeHidden();
   await expect(page.getByTestId('name-preview')).toBeHidden();
 
   // Next on step 1 skips the empty step 2 and lands on step 3 (name).
@@ -77,7 +75,7 @@ async function expectAllHiddenAndStep2Skipped(page) {
 }
 
 test.describe('buyer wizard feature flags', () => {
-  test('all OFF: four regions hidden, step 2 skipped, order uses the built-in defaults', async ({
+  test('all OFF: three regions hidden, step 2 skipped, order uses the built-in defaults', async ({
     page,
   }) => {
     await stubFeatures(page, ALL_OFF);
@@ -109,7 +107,6 @@ test.describe('buyer wizard feature flags', () => {
 
     // The order carries the built-in defaults for every hidden feature.
     expect(captured.body.color).toBe('מקורי');
-    expect(captured.body.chasers).toBe(false);
     expect(captured.body.word_font).toBeNull();
   });
 
@@ -147,7 +144,7 @@ test.describe('buyer wizard feature flags', () => {
     await expect(page.getByTestId('step-3')).toBeVisible();
   });
 
-  test('all ON: the four regions are visible and step 2 is present', async ({ page }) => {
+  test('all ON: the three regions are visible and step 2 is present', async ({ page }) => {
     await stubFeatures(page, ALL_ON);
     await mockPreview(page);
     await page.goto('/options.html?plan=base');
@@ -155,13 +152,12 @@ test.describe('buyer wizard feature flags', () => {
     // progress reads "מתוך 5" — step 2 is back in the flow (plus the pawn step).
     await expect(page.getByTestId('step-total')).toHaveText('5');
 
-    // Step 2 shows the colour picker + carousel + chasers add-on.
+    // Step 2 shows the colour picker + carousel.
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-2')).toBeVisible();
     await expect(page.getByTestId('step-now')).toHaveText('2');
     await expect(page.getByTestId('color-carousel')).toBeVisible();
     await expect(page.getByTestId('color-list')).toBeVisible();
-    await expect(page.getByTestId('chasers-card')).toBeVisible();
 
     // Step 3 shows the live name preview + the word-font picker.
     await page.getByTestId('next-btn').click();

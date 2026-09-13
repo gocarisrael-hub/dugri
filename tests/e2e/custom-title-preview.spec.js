@@ -14,7 +14,7 @@ test.beforeEach(async ({ page }) => {
 // the buyer sees the EXACT title (WYSIWYG) before paying. The real render needs
 // Chrome/Python, so we INTERCEPT /api/preview and echo back whether the request
 // carried a `title` — proving the client threads the field through and that it is
-// OPTIONAL (empty => no title in the body). Mirrors chasers-board-preview.spec.js.
+// OPTIONAL (empty => no title in the body).
 
 const CARD =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';

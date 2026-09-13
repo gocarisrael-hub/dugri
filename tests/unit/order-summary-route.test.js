@@ -45,7 +45,6 @@ function paidCollection() {
     color: 'ורוד',
     theme: 'birthday-girls',
     extra_fields: { AGE: '30' },
-    chasers: true,
     gender: 'female',
   });
   db.setOrder(c.id, c.owner_token, { version: 'pickup' });
@@ -89,7 +88,6 @@ describe('GET /api/collections/:id/summary', () => {
       extra_fields: { AGE: '30' },
       word_font: null,
       title: null,
-      chasers: true,
       // The honoree's gender is one of those inputs: a Hebrew title carrying a
       // {m:בן|f:בת} marker renders a different word per gender, so leaving it out
       // would show a card whose title differs from the one being printed.

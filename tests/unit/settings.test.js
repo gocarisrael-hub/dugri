@@ -351,7 +351,6 @@ describe('feature flags (kind: flag)', () => {
   it('get returns the boolean default (false) when there is no override', () => {
     const s = loadFresh();
     expect(s.get('features', 'color_picking')).toBe(false);
-    expect(s.get('features', 'chasers_choice')).toBe(false);
     expect(s.get('features', 'font_choice')).toBe(false);
     expect(s.get('features', 'name_preview')).toBe(false);
   });
@@ -400,13 +399,7 @@ describe('feature flags (kind: flag)', () => {
   it('all().registry.features advertises the flag kind for every key', () => {
     const s = loadFresh();
     const reg = s.all().registry.features;
-    for (const k of [
-      'color_picking',
-      'chasers_choice',
-      'font_choice',
-      'name_preview',
-      'deck_proof',
-    ]) {
+    for (const k of ['color_picking', 'font_choice', 'name_preview', 'deck_proof']) {
       expect(reg[k]).toEqual({ tokens: [], kind: 'flag' });
     }
   });

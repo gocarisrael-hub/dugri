@@ -15,7 +15,7 @@
 //                  to well past anything ordered
 //    word content  short Hebrew, wrapping phrases, unbreakable 80-char tokens,
 //                  Latin, Hebrew+Latin+digit mixes, punctuation, HTML-injection
-//    variants      chasers add-on, custom titles, theme extra fields, word-font
+//    variants      custom titles, theme extra fields, word-font
 //                  override, the separately-produced board, the press build
 //    load          N concurrent generations, and generation racing previews
 //                  (both spawn Chrome; one render was measured at ~113 PIDs
@@ -302,7 +302,6 @@ async function runCase(
     const patchBody = {
       honoree_name: nameFor(theme),
       extra_fields: extrasFor(theme),
-      chasers: false,
       custom_title: '',
       ...(patch || {}),
     };
@@ -451,11 +450,10 @@ async function suiteExtremes(themes, opts) {
 // The rest of the real production surface: the add-ons and overrides a live
 // order actually carries.
 async function suiteVariants(themes, opts) {
-  log('\n== suite: variants (chasers / titles / fonts) ==');
+  log('\n== suite: variants (titles / fonts) ==');
   const c = await collectionFor('realistic', Number(args['variant-count'] || 224), opts.seed);
   for (const theme of themes) {
     const k = theme.key.replace(/\s+/g, '_');
-    await runCase(`chasers-${k}`, { collection: c, theme, patch: { chasers: true } });
     // A title starting with '-' is the argparse trap the generator guards
     // against with --title=<value>; a 120-char multi-line title is the cap.
     await runCase(`title-dash-${k}`, { collection: c, theme, patch: { custom_title: '-40 מיכל' } });

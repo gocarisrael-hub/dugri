@@ -178,14 +178,12 @@ test.describe('order wizard fits a phone screen without scrolling', () => {
     ).toBe(true);
   });
 
-  test('step 2 (color + extras): the add-on (last control) clears the sticky bar', async ({
-    page,
-  }) => {
+  test('step 2 (color): the swatch list (last control) clears the sticky bar', async ({ page }) => {
     await page.goto('/options.html?step=2');
     await expect(page.getByTestId('step-2')).toBeVisible();
-    // The chasers add-on now sits BELOW the colour list on the merged step, so it
-    // is the last control — if it clears the bar, the swatches above it do too.
-    await assertStepFits(page, '[data-testid="chasers-card"]');
+    // The colour list is the last control on the step — if it clears the bar,
+    // everything above it does too.
+    await assertStepFits(page, '[data-testid="color-list"]');
   });
 
   test('step 3 (title): the last control clears the sticky bar', async ({ page }) => {

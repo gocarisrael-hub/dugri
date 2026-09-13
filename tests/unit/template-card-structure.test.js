@@ -380,7 +380,6 @@ describe('single-card layout — asset checklist + per-asset replace', () => {
     }
     expect(roles).toContain('clean-board');
     expect(roles).toContain('filled-board');
-    expect(roles).toContain('clean-board-chasers');
     expect(roles).not.toContain('clean-fronts');
     expect(roles).not.toContain('filled-backs');
     // The nine cards landed; the board did not (deck-first upload).

@@ -60,11 +60,10 @@ describe('previewCacheKey', () => {
   });
 
   it('changes when any render input changes', () => {
-    const base = { theme: 't', name: 'X', wordFont: 'F.ttf', chasers: false, customTitle: '' };
+    const base = { theme: 't', name: 'X', wordFont: 'F.ttf', customTitle: '' };
     const key = previewCacheKey(base);
     expect(previewCacheKey({ ...base, name: 'Y' })).not.toBe(key);
     expect(previewCacheKey({ ...base, wordFont: 'G.ttf' })).not.toBe(key);
-    expect(previewCacheKey({ ...base, chasers: true })).not.toBe(key);
     expect(previewCacheKey({ ...base, customTitle: 'hi' })).not.toBe(key);
   });
 
@@ -140,7 +139,6 @@ describe('preview cache key — template assets', () => {
       name: 'דנה',
       wordFont: null,
       extraFields: {},
-      chasers: false,
       customTitle: null,
       calibration: null,
     };
@@ -156,7 +154,6 @@ describe('preview cache key — template assets', () => {
       name: 'דנה',
       wordFont: null,
       extraFields: {},
-      chasers: false,
       customTitle: null,
       calibration: null,
       assets: 'mtime-a',
