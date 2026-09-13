@@ -89,6 +89,11 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
                   about the WORDS on them, not about how many she gets. v1 (sheet)
                   templates only skip the filler — the padding and the numbers on
                   an empty card are v2 work, and every live template is v2
+    pawn_cards    how many PAWN cards this deck carries — one per four players,
+                  1 to 4 (pack.PAWN_CARDS_MIN/MAX). The deck is always 104 cards,
+                  so each one comes out of the word cards' share and the top-up
+                  target moves with it (topup.target_for). IGNORED by a v1 (8-up
+                  sheet) template, which has no photo card to carry them
     order         how the words are laid onto cards (see pack.ORDERS), chosen per
                   order by the owner: 'random' blends everything, 'personal-first'
                   opens the deck with HER words, 'by-script' keeps Hebrew cards and
@@ -102,6 +107,19 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
     """
     cfg = config.theme(theme_key)
     config.ensure_calibrated(cfg)  # fail fast on an uncalibrated theme
+
+    # PAWN CARDS ARE A v2 IDEA, AND ONLY v2 IS TOLD ABOUT THEM. A v1 (8-up sheet)
+    # template has no photo card at all — its board is the last page of one
+    # combined PDF and `pack.pack` below is called without `pawn_cards` — so a
+    # count above the default would have shrunk its top-up target and bought it
+    # nothing: 7 of the 8 repo-shipped themes report is_single_card False, and a
+    # 16-player order on one of them lost twelve words and three cards for a pawn
+    # card that was never going to print. The server passes --pawn-cards from the
+    # collection regardless of which template the owner produces onto, so the
+    # template is the one that decides whether it means anything. Normalised HERE,
+    # once, so the target, the pack call and the photo slots cannot disagree.
+    single = config.is_single_card(cfg)
+    pawn_cards = pack.clamp_pawn_cards(pawn_cards) if single else pack.PAWN_CARDS_MIN
 
     # A private scratch dir for the intermediate CSV + per-page PNGs.
     own_workdir = workdir is None
@@ -157,7 +175,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         # reasoning is at letter_weights.
         sizes = word_demand.measure(words, theme_key, word_font=word_font)
         weights = word_demand.letter_weights(words)
-        if config.is_single_card(cfg):
+        if single:
             # A no-fill deck is padded back out to its full length with EMPTY
             # cards rather than stopping where her words do (pack.min_cards).
             pack.pack(words, csv_path, fronts=len(config.fronts(cfg)),
@@ -186,7 +204,7 @@ def order_to_pdf(theme_key, name, extra_fields, personal_words, out_pdf=None,
         #    208-page card deck and a separate board file; a v1 template still
         #    produces the one combined PDF with the board as its last page, so
         #    the un-migrated themes keep working. board is None for v1.
-        if config.is_single_card(cfg):
+        if single:
             return buildmod.build_deck(
                 theme_key, csv_path, name, out_pdf,
                 extra_fields=extra_fields or {}, word_font=word_font,

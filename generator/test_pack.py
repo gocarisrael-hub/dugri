@@ -9,6 +9,8 @@ import random
 import re
 import tempfile
 
+import pytest
+
 import pack
 
 # A standard deck's worth of words: 103 word cards x 4 (topup.TARGET feeds this).
@@ -517,13 +519,47 @@ def test_the_default_deck_is_byte_for_byte_what_it_was():
     assert open(a, encoding="utf-8-sig").read() == open(b, encoding="utf-8-sig").read()
 
 
-def test_an_oversized_list_still_grows_the_deck_at_any_split():
-    # The product promises no upper limit on her own words, and that outranks the
-    # 104: a list longer than this split holds prints MORE cards rather than
-    # losing words. The buyer never gets here through the site — the cap she
-    # collects under is this split's (db.deckWordsFor) — but the generator is
-    # also a CLI, and dropping a customer's word is never the right failure.
+def test_an_oversized_list_still_grows_the_deck_at_the_DEFAULT_split():
+    # Grandfathered, and only here. Before the deck had a stored ceiling at all a
+    # handful of orders reached production over 412 (417, 423 …) and printed as
+    # bigger decks, because the product promised no upper limit on her own words
+    # and dropping one is never the right failure. Those orders are at the default
+    # split — nothing else existed when they were placed — so the default keeps
+    # that answer, byte for byte.
     out = _csv()
-    _, cards = pack.pack(_words(pack.deck_words(3) + 40), out, pawn_cards=3)
+    _, cards = pack.pack(_words(pack.deck_words() + 40), out)
     assert cards > pack.DECK_CARDS
-    assert sum(1 for r in _rows(out) if r["kind"] == "photo") == 3
+    assert sum(1 for r in _rows(out) if r["kind"] == "photo") == pack.PAWN_CARDS_MIN
+
+
+def test_an_oversized_list_is_REFUSED_past_the_default_split():
+    # THIS IS THE ONE THAT PRINTED 107 CARDS. The freeze topped every order up to
+    # 412 whatever its player count, so a 16-player deck — quoted 400 words, and
+    # capped at 400 while she collected — arrived here with 412 and was dealt into
+    # ceil(412/4) = 103 word cards ON TOP OF its four pawn cards: 107 cards, 214
+    # pages, against a price, a box, a paper order and a print run all pinned to
+    # 104. It was silent, because growing the deck is the documented answer at the
+    # default.
+    #
+    # Past the default there is no legitimate overflow — every count above one
+    # pawn card was quoted a smaller ceiling and db.setPlayers refuses to raise
+    # the count over a list already too long — so an overflow is a sizing bug
+    # upstream and it fails loudly, with the numbers, before a byte is written.
+    for pawn_cards in (2, 3, 4):
+        out = _csv()
+        with pytest.raises(ValueError) as e:
+            pack.pack(_words(pack.deck_words()), out, pawn_cards=pawn_cards)
+        assert str(pack.word_cards(pawn_cards)) in str(e.value)
+        # Nothing was written: the refusal happens before the CSV is opened.
+        assert not os.path.exists(out) or not open(out, encoding="utf-8-sig").read()
+
+
+def test_a_deck_sized_for_its_own_split_is_exactly_104_cards():
+    # The other side of the refusal: size the list the way topup.target_for sizes
+    # it and every split lands on the same deck.
+    for pawn_cards in (1, 2, 3, 4):
+        out = _csv()
+        _, cards = pack.pack(_words(pack.deck_words(pawn_cards)), out,
+                             pawn_cards=pawn_cards)
+        assert cards == pack.DECK_CARDS
+        assert sum(1 for r in _rows(out) if r["kind"] == "photo") == pawn_cards

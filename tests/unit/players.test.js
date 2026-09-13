@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { Buffer } from 'node:buffer';
 
 // HOW MANY PLAYERS THE DECK IS LAID OUT FOR.
 //
@@ -107,9 +108,26 @@ describe('the deck split', () => {
   });
 
   it('coerces anything unusable to a legal count', () => {
-    const got = [0, 3, 5, 13, 99, -8, 'nope', null, undefined, NaN].map(db.sanitizePlayers);
-    expect(got).toEqual([4, 4, 4, 12, 16, 4, 4, 4, 4, 4]);
+    const got = [0, 3, 99, -8, 'nope', null, undefined, NaN, Infinity, -Infinity].map(
+      db.sanitizePlayers
+    );
+    expect(got).toEqual([4, 4, 16, 4, 4, 4, 4, 4, 4, 4]);
     for (const n of got) expect(n % 4).toBe(0);
+  });
+
+  it('rounds a count BETWEEN the steps UP, because a pawn card seats four', () => {
+    // Nearest was neither consistent nor explicable: it seated 10 and 13 players
+    // on twelve pawns but 14 on sixteen. Up is the only rule that always seats
+    // everyone she named — 10 players need three pawn cards, 13 need four.
+    expect([5, 9, 10, 13, 14].map(db.sanitizePlayers)).toEqual([8, 12, 12, 16, 16]);
+    // It costs her the word cards those seats come out of, so the ROUTE answers
+    // with the count it stored and the ceiling that goes with it rather than
+    // letting the page go on showing the number she typed.
+    for (const n of [5, 10, 13]) {
+      expect(db.deckWordsFor({ players: n })).toBe(
+        db.deckWordsFor({ players: db.sanitizePlayers(n) })
+      );
+    }
   });
 });
 
@@ -120,6 +138,17 @@ describe('PUT /api/collections/:id/players', () => {
     // An unknown id answers the same, so the route cannot be used to learn which
     // collection ids exist.
     expect((await setPlayers('no-such-collection', 'whatever', 8)).status).toBe(403);
+  });
+
+  it('answers with the count it STORED when she asked for one between the steps', async () => {
+    // She typed 10. Ten players need three pawn cards, so the stored count is 12
+    // and her ceiling is 404 — and the response says so, rather than leaving the
+    // page showing 10 over a ceiling it cannot explain.
+    const c = db.createCollection('בדיקה', {});
+    const r = await setPlayers(c.id, c.owner_token, 10);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ players: 12, pawn_cards: 3, deck_words: 404 });
+    expect(db.playersFor(db.getCollection(c.id))).toBe(12);
   });
 
   it('stores the count and answers with what it leaves for words', async () => {
@@ -179,6 +208,27 @@ describe('raising the count when the words are already in', () => {
     expect(r.body.remove).toBe(1);
   });
 
+  it('tells the PAGE the number, on both surfaces it counts from', async () => {
+    // The counter on site/collect.html still counts to a hardcoded 412; the half
+    // that fixes it is a separate change to that file. This pins the server side
+    // of the contract so the two meet: the ceiling arrives on the collection the
+    // page loads AND on every add it posts, from db.deckWordsFor either way.
+    const c = withWords(0, 'מונה');
+    await setPlayers(c.id, c.owner_token, 16);
+
+    const loaded = await fetch(
+      base + '/api/collections/' + c.id + '?k=' + encodeURIComponent(c.owner_token)
+    ).then((r) => r.json());
+    expect(loaded).toMatchObject({ players: 16, pawn_cards: 4, deck_words: 400 });
+
+    const added = await fetch(base + '/api/collections/' + c.id + '/words', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ words: ['מילה'], by: 'בדיקה' }),
+    }).then((r) => r.json());
+    expect(added.deck_words).toBe(400);
+  });
+
   it('never refuses LOWERING the count — fewer pawns is more room', async () => {
     const c = withWords(0, 'ריק');
     db.getCollection(c.id).free_limit_applies = false;
@@ -220,6 +270,51 @@ describe('the word ceiling follows the split', () => {
   });
 });
 
+// Minimal valid image bytes: extFromMagic needs >= 12 bytes and sniffs the magic
+// header, so header + padding is accepted exactly like a real file.
+function pngWith(tag) {
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    Buffer.from(String(tag).padEnd(8, '.')),
+  ]);
+}
+
+function buildMultipart(boundary, parts) {
+  const chunks = [];
+  for (const p of parts) {
+    chunks.push(Buffer.from('--' + boundary + '\r\n'));
+    chunks.push(
+      Buffer.from(
+        'Content-Disposition: form-data; name="' +
+          p.name +
+          '"; filename="' +
+          p.filename +
+          '"\r\nContent-Type: application/octet-stream\r\n\r\n'
+      )
+    );
+    chunks.push(p.data);
+    chunks.push(Buffer.from('\r\n'));
+  }
+  chunks.push(Buffer.from('--' + boundary + '--\r\n'));
+  return Buffer.concat(chunks);
+}
+
+function postPawns(id, k, files) {
+  const boundary = '----dugriPlayers' + Math.random().toString(16).slice(2);
+  return fetch(base + '/api/collections/' + id + '/pawns?k=' + encodeURIComponent(k), {
+    method: 'POST',
+    headers: { 'Content-Type': 'multipart/form-data; boundary=' + boundary },
+    body: buildMultipart(boundary, files),
+  }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+}
+
+const photos = (n, tag) =>
+  Array.from({ length: n }, (_, i) => ({
+    name: tag + i,
+    filename: tag + i + '.png',
+    data: pngWith(tag + i),
+  }));
+
 describe('the photo slots follow the split too', () => {
   it('accepts as many photos as she has players', () => {
     const c = db.createCollection('בדיקה', {});
@@ -235,6 +330,52 @@ describe('the photo slots follow the split too', () => {
     expect(db.getCollection(big.id).pawn_images).toHaveLength(10);
   });
 
+  it('lets a bigger party UPLOAD more than four — the route, not just the store', async () => {
+    // THE STORE CHANGE WAS UNREACHABLE. db.addPawnImages was sized by playersFor,
+    // but both HTTP writers still hard-capped at four: a 16-player buyer was 400'd
+    // at photo five and ended with four, and build.resolve_photos then filled her
+    // other twelve slots by cycling the four shipped Dugri pawns — so pawn cards
+    // 2, 3 and 4 printed the same four generic faces over again, on the deck she
+    // chose the big split for. A cap only one of two writers holds is not a cap.
+    const c = db.createCollection('בדיקה', { players: 16 });
+    const r = await postPawns(c.id, c.owner_token, photos(16, 'big'));
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).pawn_images).toHaveLength(16);
+
+    // ...and the ceiling is still a ceiling: a seventeenth is refused up front,
+    // before a single file is written.
+    const over = await postPawns(c.id, c.owner_token, photos(17, 'over'));
+    expect(over.status).toBe(400);
+    expect(over.body).toMatchObject({ max: 16 });
+    expect(db.getCollection(c.id).pawn_images).toHaveLength(16);
+  });
+
+  it('still refuses a fifth photo on a standard four-player deck', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const r = await postPawns(c.id, c.owner_token, photos(5, 'small'));
+    expect(r.status).toBe(400);
+    expect(r.body).toMatchObject({ max: 4 });
+    expect(db.getCollection(c.id).pawn_images || []).toHaveLength(0);
+  });
+
+  it('the ADMIN reorder does not delete the photos past four', async () => {
+    // adminSetPawnImages is a REPLACE, so a hardcoded four there did not refuse a
+    // fifth photo — it DELETED photos 5..16 the moment the owner reordered the
+    // first four, silently, from a screen whose only stated job was reordering.
+    // That is the same "photos already uploaded are KEPT" this change promises.
+    const c = db.createCollection('בדיקה', { players: 16 });
+    await postPawns(c.id, c.owner_token, photos(16, 'adm'));
+    const stored = db.getCollection(c.id).pawn_images.slice();
+    expect(stored).toHaveLength(16);
+
+    const reversed = stored.slice().reverse();
+    expect(db.adminSetPawnImages(c.id, reversed)).toEqual(reversed);
+    expect(db.getCollection(c.id).pawn_images).toEqual(reversed);
+
+    // Narrowing on purpose still works — that is what the screen is for.
+    expect(db.adminSetPawnImages(c.id, reversed.slice(0, 3))).toHaveLength(3);
+  });
+
   it('keeps photos she already sent when the count comes back down', async () => {
     const c = db.createCollection('בדיקה', { players: 8 });
     const paths = Array.from(
@@ -248,6 +389,58 @@ describe('the photo slots follow the split too', () => {
     // the rest back the moment she changes her mind. A slider does not delete a
     // customer's photographs.
     expect(db.getCollection(c.id).pawn_images).toHaveLength(8);
+  });
+});
+
+describe('closing a bigger order freezes the bigger deck', () => {
+  // THE PRODUCTION PATH, end to end on the Node side: the owner presses סיום,
+  // the freeze runs, and what it stores is what the printer prints. The generator
+  // half of the same chain is generator/test_order_to_pdf.py; between them they
+  // cover what nothing covered before — reverting generator/order_to_pdf.py in
+  // its entirety used to red no test at all.
+  const close = (id, token) =>
+    fetch(base + '/api/collections/' + id + '/close', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_token: token }),
+    }).then((r) => r.status);
+
+  it('freezes to db.deckWordsFor, not to the standard 412', async () => {
+    const c = withWords(120, 'פיון');
+    await setPlayers(c.id, c.owner_token, 16);
+    expect(db.deckWordsFor(db.getCollection(c.id))).toBe(400);
+
+    expect(await close(c.id, c.owner_token)).toBe(200);
+    const bank = db.getCollection(c.id).word_bank;
+    if (!bank) return; // no python on this box — freeze is best-effort by design
+    // 400, not 412. Twelve filler words fewer, which is the trade she made; her
+    // own 120 are all still there, in front, because the trade is never hers.
+    expect(bank.words).toHaveLength(400);
+    expect(bank.deck_words).toBe(400);
+    expect(bank.personal_count).toBe(120);
+  });
+
+  it('still freezes the standard 412 for a standard order', async () => {
+    const c = withWords(120, 'רגיל');
+    expect(await close(c.id, c.owner_token)).toBe(200);
+    const bank = db.getCollection(c.id).word_bank;
+    if (!bank) return;
+    expect(bank.words).toHaveLength(412);
+  });
+});
+
+describe('the number the waiting screen shows', () => {
+  it('counts the PAWN cards too', () => {
+    // It said ceil(words / 4) — 103 for the standard 104-card deck, which was
+    // already one short on main, and would have gone on saying 103 for the
+    // 107-card one. She is watching Chrome render every card in the deck, pawn
+    // cards included.
+    const c = withWords(412, 'ספירה');
+    expect(app.cardEstimate(db.getCollection(c.id))).toBe(104);
+
+    const big = withWords(400, 'גדול');
+    db.getCollection(big.id).players = 16;
+    expect(app.cardEstimate(db.getCollection(big.id))).toBe(104);
   });
 });
 

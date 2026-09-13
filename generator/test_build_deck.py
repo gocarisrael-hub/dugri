@@ -1410,3 +1410,29 @@ def test_the_word_cards_shrink_by_exactly_one_per_pawn_card():
             keys = [k for k, _ in _pages(doc)]
             words = [k for k in keys[1::2] if k.startswith("front")]
             assert len(words) == pack.word_cards(n), (n, len(words))
+
+
+def test_the_shipped_pawns_cycle_only_past_the_standard_card():
+    # Finding: the cycling is a change to EXISTING orders, not just bigger ones.
+    # config.photo_fallback_paths drops a path whose file is missing, so a theme
+    # part-way through getting its four pawns would have gone from "two pawns and
+    # two empty discs" to "two pawns printed twice" at the DEFAULT split — a
+    # silent change to a deck that has nothing to do with the player count, from a
+    # change that is only about the player count. A half-shipped set is a template
+    # bug and it has to stay visible as one.
+    import config as cfg
+    import build as b
+    with Store():
+        real = cfg.photo_fallback_paths
+        cfg.photo_fallback_paths = lambda theme: ["/p/a.png", "/p/b.png"]
+        try:
+            # The standard card: two pawns, and the other two slots left to the
+            # renderer's empty disc, exactly as before.
+            assert b.fallback_photos("demo", 0, slots=4) == ["/p/a.png", "/p/b.png"]
+            assert b.fallback_photos("demo", 1, slots=4) == ["/p/a.png", "/p/b.png"]
+            assert b.fallback_photos("demo", 3, slots=4) == ["/p/a.png"]
+            # A bigger deck DOES cycle: sixteen bare dashed rings is a defect she
+            # paid for, and she is the one who asked for sixteen players.
+            assert b.fallback_photos("demo", 0, slots=8) == ["/p/a.png", "/p/b.png"] * 4
+        finally:
+            cfg.photo_fallback_paths = real

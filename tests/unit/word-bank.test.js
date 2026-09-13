@@ -87,6 +87,63 @@ describe('freeze', () => {
     expect(Date.parse(bank.created_at)).not.toBeNaN();
   });
 
+  it('freezes THIS deck, not the standard one — the 107-card bug', () => {
+    // THE BUG. freeze() shelled out to topup.py with no --target, so it always
+    // filled to the module default (412, the STANDARD deck) whatever the buyer
+    // had chosen. A 16-player deck holds 400 and her collect page capped her at
+    // 400, so the bank came back 412: her 400 plus twelve shop filler words the
+    // cap had just told her she could not have.
+    //
+    // topup only ever fills a SHORTFALL — it never trims — so the oversized bank
+    // walked through order_to_pdf untouched and pack dealt 412 words into
+    // ceil(412/4) = 103 word cards ON TOP OF four pawn cards: 107 cards, 214
+    // pages, against a price, a box, a paper order and a print run all pinned to
+    // 104. The size has to be right HERE; there is no second chance.
+    //
+    // The real top-up, not a stub, for the same reason the test above uses it.
+    const personal = ['מסיבה', 'חברים', 'ריקודים'];
+    for (const [players, deckWords] of [
+      [4, 412],
+      [8, 408],
+      [12, 404],
+      [16, 400],
+    ]) {
+      const bank = wordBank.freeze({ personalWords: personal, theme: 'bachelorette', deckWords });
+      if (!bank) return; // no python on this box
+      expect(bank.words.length, players + ' players').toBe(deckWords);
+      // The bank SAYS what deck it was sized for, so the two can never be told
+      // apart only by counting.
+      expect(bank.deck_words).toBe(deckWords);
+      // The trade costs OUR words, never hers: her list survives in front, whole.
+      expect(bank.words.slice(0, personal.length)).toEqual(personal);
+      expect(bank.personal_count).toBe(personal.length);
+    }
+  });
+
+  it('falls back to the standard deck when nothing says otherwise', () => {
+    // Every caller that has no opinion — and every order frozen before the split
+    // existed — means the standard 412.
+    const bank = wordBank.freeze({ personalWords: ['מסיבה'], theme: 'bachelorette' });
+    if (!bank) return;
+    expect(bank.words.length).toBe(412);
+    expect(bank.deck_words).toBeNull();
+  });
+
+  it('a NO-FILL order is still filled to nothing, whatever its deck size', () => {
+    // --target=0 and --target=<deckWords> are the same flag, so they cannot both
+    // be sent. 'Do not fill my deck' outranks 'fill it to 400'.
+    const personal = ['מסיבה', 'חברים'];
+    const bank = wordBank.freeze({
+      personalWords: personal,
+      theme: 'bachelorette',
+      noTopup: true,
+      deckWords: 400,
+    });
+    if (!bank) return;
+    expect(bank.words).toEqual(personal);
+    expect(bank.no_topup).toBe(true);
+  });
+
   it('returns null rather than throwing when the top-up cannot run', () => {
     // A close must not fail because Python is missing: no bank simply means the
     // order prints the way it did before freezing existed.

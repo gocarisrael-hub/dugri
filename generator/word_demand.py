@@ -186,8 +186,9 @@ def deck_small_cards(rows_or_cards, sizes, **kw):
     WHY THIS EXISTS AND ``small_cards`` IS NOT ENOUGH. ``small_cards`` measures
     word cards, so it is handed the word cards only, and it numbers what it is
     handed from 1. That WAS the deck's numbering, because the pawn card came last.
-    It no longer is: the pawn card opens the deck (``pack.pack``), so word card N
-    is deck card N+1 — and the number in this report is what the owner counts to
+    It no longer is: the pawn cards OPEN the deck (``pack.pack``), so word card N
+    is deck card N + pawn_cards — N+1 on the standard deck and N+4 on a 16-player
+    one — and the number in this report is what the owner counts to
     in the PDF, with the admin note turning it into a page (``index * 2``). Off by
     one, she scrolls to the card BEFORE the small one, sees nothing wrong with it,
     and stops trusting the report.

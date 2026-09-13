@@ -515,9 +515,9 @@ function orderTotal(version, quantity, unitPrice) {
 }
 
 // --- free word quota ---------------------------------------------------------
-// THE DECK CAP. One full deck is 412 words — 103 word cards of four, which is
+// THE DECK CAP. A standard deck is 412 words — 103 word cards of four, which is
 // generator/topup.py's TARGET and what site/collect.html has always shown as
-// "מקסימום" on the counter. Until now that label was the only thing enforcing
+// "מקסימום" on the counter. Until the cap landed, that label was the only thing enforcing
 // it: the input stayed live past 412, the server had no ceiling at all, and five
 // orders reached production oversized (417, 423 …). The generator keeps every
 // personal word by design, so those printed as bigger decks — 212 pages instead
@@ -528,10 +528,15 @@ function orderTotal(version, quantity, unitPrice) {
 //
 // GRANDFATHERED, never trimmed: a collection already over the cap keeps every
 // word it has. The cap governs what may be ADDED, and silently deleting words a
-// customer wrote is a worse failure than a slightly larger deck.
-// THE DECK IS ALWAYS 104 CARDS. What the buyer moves is the SPLIT between pawn
-// cards and word cards: four players fill one pawn card, and each pawn card
-// costs one word card, which is four words.
+// customer wrote is a worse failure than a slightly larger deck. Those orders are
+// the ONE case where the printed deck is not 104 cards, and they are all at the
+// default split — nothing else existed when they were placed. pack.pack still
+// grows the deck for them and refuses to grow it for anything else
+// (pack._refuse_oversize), so the exception stays where it was made.
+//
+// THE DECK IS ALWAYS 104 CARDS otherwise. What the buyer moves is the SPLIT
+// between pawn cards and word cards: four players fill one pawn card, and each
+// pawn card costs one word card, which is four words.
 //
 //     4 players   1 pawn card    103 word cards   412 words
 //     8 players   2 pawn cards   102 word cards   408 words
@@ -546,13 +551,23 @@ const PER_CARD = 4;
 const PLAYERS_MIN = 4;
 const PLAYERS_MAX = 16;
 
-// A stored player count, coerced. Anything unusable — absent, junk, a number
-// between the steps, out of range — is the DEFAULT, which is both the smallest
-// legal value and what every order placed before this existed means.
+// A stored player count, coerced. Absent, junk, NaN, Infinity — anything with no
+// number in it at all — is the DEFAULT, which is both the smallest legal value
+// and what every order placed before this existed means.
+//
+// A number BETWEEN the steps rounds UP, because a pawn card seats four and a
+// party of ten needs three of them: rounding to the nearest would seat 10 and 13
+// on twelve pawns but seat 14 on sixteen, which is neither consistent nor
+// anything a player can be told. Up is the only rule that always seats everyone
+// she named. It costs her the word cards those seats come out of — 10 players is
+// charged as 12 — so the route ANSWERS with the count it stored and the ceiling
+// that goes with it ({ players, deck_words }) rather than letting the page go on
+// showing the number she typed. The control only ever sends the four steps; this
+// is the contract for everything that is not that control.
 function sanitizePlayers(value) {
-  const n = Math.round(Number(value));
+  const n = Number(value);
   if (!Number.isFinite(n)) return PLAYERS_MIN;
-  const stepped = Math.round(n / PER_CARD) * PER_CARD;
+  const stepped = Math.ceil(n / PER_CARD) * PER_CARD;
   return Math.max(PLAYERS_MIN, Math.min(PLAYERS_MAX, stepped));
 }
 
@@ -1563,7 +1578,11 @@ const db = {
   },
 
   // Append up to N pawn images (customer pieces) to a collection, owner-token gated.
-  // Caps the stored array at 4 total, and DE-DUPES incoming paths both against what's
+  // Caps the stored array at the collection's own slot count — four per pawn card,
+  // so four at the default and sixteen at sixteen players (playersFor). The HTTP
+  // writers cap at the same number, computed the same way, so the two cannot
+  // drift: a cap that only one of them holds is not a cap.
+  // DE-DUPES incoming paths both against what's
   // already stored and within the batch — the paths are content-addressed, so the
   // same photo picked into two slots yields the same /content-uploads/<hash> and must
   // not appear twice. Returns the updated array, or null on a bad/absent owner token
@@ -1733,6 +1752,20 @@ const db = {
   // apart. Reading code treats an absent key and a default value identically, so
   // nothing downstream has to care.
   //
+  // Returns the whole view map, or null on a bad owner token / unknown
+  // collection / a path we don't hold.
+  setPawnView(id, ownerToken, origPath, view) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return null;
+    if (!Array.isArray(c.pawn_images) || !c.pawn_images.includes(origPath)) return null;
+    if (!c.pawn_view || typeof c.pawn_view !== 'object' || Array.isArray(c.pawn_view)) {
+      c.pawn_view = {};
+    }
+    c.pawn_view[origPath] = clampPawnView(view);
+    saveDb();
+    return c.pawn_view;
+  },
+
   // HOW MANY PLAYERS this deck is laid out for — 4, 8, 12 or 16.
   //
   // The deck stays 104 cards, so every four players she adds costs a word card:
@@ -1776,6 +1809,13 @@ const db = {
       };
     }
     c.players = next;
+    // DEFENCE IN DEPTH, not a live path: a frozen bank is sized against this very
+    // number (word-bank.freeze's deckWords), so a count that moved under one
+    // would leave production printing a deck built for the old split. The route
+    // already refuses once the collection is closed and reopening clears the bank
+    // outright, so there should never be one here — and "should never" is exactly
+    // the assumption that printed 107 cards.
+    if (c.word_bank) delete c.word_bank;
     saveDb();
     return {
       players: next,
@@ -1783,20 +1823,6 @@ const db = {
       deck_words: deckWords,
       words,
     };
-  },
-
-  // Returns the whole view map, or null on a bad owner token / unknown
-  // collection / a path we don't hold.
-  setPawnView(id, ownerToken, origPath, view) {
-    const c = this.getCollection(id);
-    if (!c || c.owner_token !== ownerToken) return null;
-    if (!Array.isArray(c.pawn_images) || !c.pawn_images.includes(origPath)) return null;
-    if (!c.pawn_view || typeof c.pawn_view !== 'object' || Array.isArray(c.pawn_view)) {
-      c.pawn_view = {};
-    }
-    c.pawn_view[origPath] = clampPawnView(view);
-    saveDb();
-    return c.pawn_view;
   },
 
   // Admin: soft-cancel a collection (reversible). With undo=true it restores
@@ -1941,26 +1967,39 @@ const db = {
   // owner removes a photo the customer sent by mistake, or reorders them. Adding
   // photos goes through the upload route (addPawnImages); this only ever narrows
   // or reorders what is already stored, so entries are re-validated to our own
-  // /content-uploads paths, de-duped, and capped at 4. An empty array is valid
+  // /content-uploads paths, de-duped, and capped. An empty array is valid
   // (drops every photo). Returns the stored array, or null for a missing
   // collection. The FILES are intentionally left on disk: they are shared,
   // content-addressed uploads, so deleting one could pull the rug out from under
   // another collection (or the same photo re-sent later).
+  //
+  // THE CAP IS THE COLLECTION'S OWN, not four. This is a REPLACE, so a hardcoded
+  // four here did not merely refuse a fifth photo — it DELETED photos 5..16 of a
+  // 16-player order the moment the owner reordered the first four, silently, from
+  // a screen whose only stated job was reordering. Whatever ceiling the upload
+  // routes let past, this one has to be able to write back unchanged, or the
+  // admin screen becomes a way to lose a buyer's photos.
+  //
+  // It is also a CEILING and not a floor: a collection whose count has come back
+  // down keeps the photos above it (pawnPhotoEntries slices them off at print
+  // time, which is undoable) rather than having them narrowed away here, so this
+  // reads the LONGER of the two — the stored list and the current slot count.
   adminSetPawnImages(id, paths) {
     const c = this.getCollection(id);
     if (!c) return null;
+    const cap = Math.max(playersFor(c), Array.isArray(c.pawn_images) ? c.pawn_images.length : 0);
     const seen = new Set();
     const out = [];
     for (const raw of Array.isArray(paths) ? paths : []) {
       if (!pawnPathOk(raw) || seen.has(raw)) continue;
       seen.add(raw);
       out.push(raw);
-      if (out.length === 4) break;
+      if (out.length === cap) break;
     }
     c.pawn_images = out;
     // Drop cutout records for photos that are no longer attached, so the map can
-    // never outgrow the (max 4) list it annotates. Keyed by path, so the photos
-    // that SURVIVE a removal/reorder keep their own cutout — no re-cut needed.
+    // never outgrow the list it annotates. Keyed by path, so the photos that
+    // SURVIVE a removal/reorder keep their own cutout — no re-cut needed.
     c.pawn_cutouts = keepPawnKeys(c.pawn_cutouts, out);
     c.pawn_view = keepPawnKeys(c.pawn_view, out);
     saveDb();

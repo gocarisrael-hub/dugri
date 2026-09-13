@@ -384,8 +384,11 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
         theme, photos, views=photo_views, cutouts=photo_cutouts,
         slots=PHOTO_SLOTS * max(1, pawn_cards),
         workdir=os.path.join(workdir, "photos") if workdir else None)
-    # Which four go on which card: the first four on the first card, and so on,
-    # in the order she uploaded them.
+    # Which four go on which card: the first four on the first card, the next four
+    # on the second, and so on, in the order she uploaded them — so photo 5 is the
+    # FIRST slot of the second card (docs/photo-card.md). Said that way round on
+    # purpose: "the Nth card takes photos 4N..4N+3" is only true counting cards
+    # from zero, and every other sentence about this deck counts them from one.
     photo_groups = [photo_paths[i * PHOTO_SLOTS:(i + 1) * PHOTO_SLOTS]
                     for i in range(max(1, pawn_cards))]
     drawn_pawn_cards = 0
@@ -1230,20 +1233,34 @@ def fallback_photos(theme, filled, slots=PHOTO_SLOTS):
     and a card rendered with four bare discs told her the empty ones print empty.
     They do not — an order with two photos prints two faces and two Dugri pawns.
 
-    THE SHIPPED SET RUNS OUT, and it CYCLES rather than stopping. There are four
-    generic pawns and a 16-player order has sixteen slots, so a buyer who picks
-    the big deck and uploads three photos needs thirteen of them. Repeating a
-    pawn is a poor game piece — two players holding the same picture — but an
-    EMPTY circle is worse: it prints as a bare dashed ring, which is a defect on
-    a card she paid for rather than a piece she has to tell apart. She is also
-    the one who asked for sixteen players and sent three faces; the honest answer
-    is to print sixteen pawns and let her see it in the preview, which shows the
-    same cycling.
+    THE SHIPPED SET RUNS OUT ON A BIGGER DECK, and there it CYCLES rather than
+    stopping. There are four generic pawns and a 16-player order has sixteen
+    slots, so a buyer who picks the big deck and uploads three photos needs
+    thirteen of them. Repeating a pawn is a poor game piece — two players holding
+    the same picture — but an EMPTY circle is worse: it prints as a bare dashed
+    ring, which is a defect on a card she paid for rather than a piece she has to
+    tell apart. She is also the one who asked for sixteen players and sent three
+    faces; the honest answer is to print sixteen pawns and let her see it in the
+    preview, which shows the same cycling.
+
+    ONLY ON A BIGGER DECK. Every shipped theme carries exactly four fallbacks, so
+    at the default four slots the cycle never turns — but
+    ``config.photo_fallback_paths`` DROPS a path whose file is missing, and a
+    theme mid-way through getting its set would then have printed its two pawns
+    twice on an ordinary order: a silent change to decks that have nothing to do
+    with the player count, from a change that is only about the player count. So
+    the default split keeps its old answer exactly — as many pawns as the theme
+    actually ships, and empty discs after them — and the cycling starts where the
+    slots outrun the standard card. A half-shipped set is a template bug and it
+    stays visible as one.
     """
     pool = list(config.photo_fallback_paths(theme))
     if not pool:
         return []
-    return [pool[i % len(pool)] for i in range(max(0, slots - filled))]
+    want = max(0, slots - filled)
+    if slots <= PHOTO_SLOTS:
+        return pool[:want]
+    return [pool[i % len(pool)] for i in range(want)]
 
 
 def resolve_photos(theme, photos, workdir=None, views=None, cutouts=None,
