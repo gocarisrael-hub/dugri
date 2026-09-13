@@ -270,6 +270,19 @@ describe('the batch report', () => {
     expect(JSON.stringify(body)).not.toContain(GW);
   });
 
+  // Most polls have nothing to send, and the report block has no condition in
+  // front of it. An idle poll that answered with no address would point that
+  // block at nothing — and an Automate flow stops dead on that, which is how the
+  // gateway went quiet for a night in the first place.
+  it('answers an idle poll with an address too, and reporting it is a clean ok', async () => {
+    const { body } = await poll();
+    expect(body.messages).toEqual([]);
+    expect(body.batch).toBeTruthy();
+    const r = await fetch(local(body.ack_batch_url));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, sent: 0 });
+  });
+
   it('is omitted, like ack_url, when there is no public address to build on', async () => {
     const had = process.env.PUBLIC_BASE_URL;
     delete process.env.PUBLIC_BASE_URL;

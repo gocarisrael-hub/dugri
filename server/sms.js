@@ -241,6 +241,21 @@ function prune() {
   if (drop.size) _store.messages = _store.messages.filter((m) => !drop.has(m.id));
 }
 
+// The tokens this process has handed out, and how many messages went with each.
+// It is what lets a report be answered honestly when the messages themselves can
+// no longer answer for it: an empty poll (size 0 — nothing to settle, and that is
+// fine) versus a batch that DID hold messages which have since been re-leased to
+// a later poll (stale — its report must settle nothing, and must say so, because
+// those texts are going out again). Bounded, and in memory only: after a restart
+// the messages still answer for every batch that matters, since a batch that
+// matters is one that is still leased.
+const RECENT_BATCHES = 50;
+let _batches = [];
+function rememberBatch(token, size) {
+  _batches.push({ token, size });
+  if (_batches.length > RECENT_BATCHES) _batches.shift();
+}
+
 // What the phone should send now. Leases each one — a second poll (the app
 // restarting, two phones by mistake) will not hand out the same message again
 // until the lease expires.
@@ -258,10 +273,10 @@ function prune() {
 function claim({ limit = 10, now } = {}) {
   const at = Number.isFinite(now) ? now : Date.now();
   reconcile(at);
-  const out = [];
+  const messages = [];
   const batch = crypto.randomUUID();
   for (const m of _store.messages) {
-    if (out.length >= limit) break;
+    if (messages.length >= limit) break;
     if (m.state !== 'pending') continue;
     m.state = 'taken';
     m.taken_at = new Date(at).toISOString();
@@ -278,10 +293,16 @@ function claim({ limit = 10, now } = {}) {
     // lease ran out belongs to whoever is holding it NOW, and the old batch's
     // report must not reach back and settle it.
     m.batch = batch;
-    out.push({ id: m.id, to: m.to, text: m.text, ack_token: m.ack_token, batch });
+    messages.push({ id: m.id, to: m.to, text: m.text, ack_token: m.ack_token });
   }
-  if (out.length) save();
-  return out;
+  if (messages.length) save();
+  // A token every time, INCLUDING an empty poll. The phone reports from one
+  // block after the send block, with no condition in front of it — an empty poll
+  // that answered with no address would leave that block pointing at nothing,
+  // and an automation flow stops dead on that. An empty batch simply has nothing
+  // to settle and says so cheerfully.
+  rememberBatch(batch, messages.length);
+  return { batch, messages };
 }
 
 // The phone's report. `ok:false` marks it failed WITH the reason, which is what
@@ -339,15 +360,14 @@ function ackTaken({ batch, now } = {}) {
   reconcile(at);
   const given = String(batch == null ? '' : batch);
   const sent = [];
-  let known = false;
-  if (!given) return { known, sent };
+  if (!given) return { known: false, sent };
+  let carried = false;
   for (const m of _store.messages) {
     if (!sameToken(given, m.batch)) continue;
-    // Known means "we issued this token", whatever became of the messages since.
-    // It is what separates a replay — the same report arriving twice, a no-op —
-    // from a token that matches nothing, which is a flow reporting into the void
-    // and the owner needs to hear about it.
-    known = true;
+    // The messages still know this batch, so we can answer for it — whether or
+    // not any of them is still leased. Nothing left to settle is a REPLAY: the
+    // same report arriving twice, which is a no-op and not a complaint.
+    carried = true;
     if (m.state !== 'taken') continue;
     m.state = 'sent';
     m.sent_at = new Date(at).toISOString();
@@ -355,17 +375,13 @@ function ackTaken({ batch, now } = {}) {
     sent.push(m);
   }
   if (sent.length) save();
-  return { known, sent };
-}
-
-// Did we issue this batch token? Used by the route to let the token itself
-// authorise the report, so the shared gateway key — which opens the whole outbox,
-// every customer's number and text — never has to travel in a URL that Railway,
-// Cloudflare and Automate's flow log all write down.
-function checkBatchToken(batch) {
-  const given = String(batch == null ? '' : batch);
-  if (!given) return false;
-  return _store.messages.some((m) => sameToken(given, m.batch));
+  // Nothing carries it. An empty poll is still a batch we know — there was never
+  // anything in it. Anything else is a token that named messages once and no
+  // longer does: forged, or stale because the lease ran out and they were handed
+  // to a later poll. Either way this report settles nothing, and the caller is
+  // told so rather than being allowed to believe it landed.
+  const issued = carried ? null : _batches.find((b) => sameToken(given, b.token));
+  return { known: carried || Boolean(issued && issued.size === 0), sent };
 }
 
 // Constant-time compare for the two secrets that travel through the phone: a
@@ -421,6 +437,7 @@ function lastPollAt() {
 
 function _reset() {
   _store = { messages: [] };
+  _batches = [];
   _lastPollAt = null;
   save();
 }
@@ -431,7 +448,6 @@ module.exports = {
   claim,
   ack,
   checkAckToken,
-  checkBatchToken,
   list,
   counts,
   reconcile,

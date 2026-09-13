@@ -6095,15 +6095,18 @@ app.get('/api/sms/outbox', (req, res) => {
     _warnedNoSmsBase = true;
     console.warn('[sms] PUBLIC_BASE_URL is not set — messages ship without ack_url');
   }
-  const claimed = sms.claim({ limit });
-  // ONE value for the whole poll, alongside the messages rather than inside
-  // them: it names this batch, and it is the only thing the fixed batch-report
-  // address needs. `ack_batch_url` is that address with the value already in it,
-  // so a flow that can copy a field can report without building anything.
-  const batch = claimed.length ? claimed[0].batch : '';
+  // ONE value for the whole poll, alongside the messages rather than inside them:
+  // it names this batch, and it is the only thing the fixed batch-report address
+  // needs. `ack_batch_url` is that address with the value already in it, so a
+  // flow that can copy a field reports without building anything — and it is
+  // there on EVERY poll, including one with nothing to send, because the report
+  // block has no condition in front of it and an empty address would stop the
+  // flow on the quiet cycles, which are most of them.
+  const { batch, messages } = sms.claim({ limit });
   const out = {
-    messages: claimed.map((m) => {
-      const { ack_token, batch: _batch, ...rest } = m;
+    batch,
+    messages: messages.map((m) => {
+      const { ack_token, ...rest } = m;
       if (!base || !ack_token) return rest;
       return {
         ...rest,
@@ -6116,10 +6119,7 @@ app.get('/api/sms/outbox', (req, res) => {
       };
     }),
   };
-  if (batch) {
-    out.batch = batch;
-    if (base) out.ack_batch_url = base + '/api/sms/outbox/ack-taken?b=' + encodeURIComponent(batch);
-  }
+  if (base) out.ack_batch_url = base + '/api/sms/outbox/ack-taken?b=' + encodeURIComponent(batch);
   res.json(out);
 });
 

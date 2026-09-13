@@ -28,6 +28,10 @@ beforeAll(() => {
 afterAll(() => vi.restoreAllMocks());
 beforeEach(() => sms._reset());
 
+// A poll hands back the messages AND one token naming the batch; these tests are
+// about the messages, so they read them straight off.
+const claimed = (opts) => sms.claim(opts).messages;
+
 describe('the number it will dial', () => {
   it('normalises to the local form an Israeli SIM sends', () => {
     expect(sms.ilMobile('052-123-4567')).toBe('0521234567');
@@ -51,14 +55,14 @@ describe('queue → phone → report', () => {
     const m = sms.enqueue({ to: '0521234567', text: 'המשחק מוכן', event: 'order_ready', now: NOW });
     expect(m.state).toBe('pending');
 
-    const batch = sms.claim({ now: NOW });
+    const batch = claimed({ now: NOW });
     expect(batch).toMatchObject([{ id: m.id, to: '0521234567', text: 'המשחק מוכן' }]);
     // …plus the one-use key to this message's report address, so the link the
     // phone is handed never has to carry the shared gateway key.
     expect(batch[0].ack_token).toEqual(expect.any(String));
     expect(batch[0].ack_token.length).toBeGreaterThan(20);
     // Leased, not deleted: a second poll must not hand out the same text again.
-    expect(sms.claim({ now: NOW })).toEqual([]);
+    expect(claimed({ now: NOW })).toEqual([]);
 
     sms.ack(m.id, { ok: true, now: NOW });
     expect(sms.counts(NOW)).toMatchObject({ sent: 1, pending: 0 });
@@ -66,24 +70,24 @@ describe('queue → phone → report', () => {
 
   it('records the SIM’s own reason when the phone reports a failure', () => {
     const m = sms.enqueue({ to: '0521234567', text: 'שלום', now: NOW });
-    sms.claim({ now: NOW });
+    claimed({ now: NOW });
     sms.ack(m.id, { ok: false, error: 'no credit', now: NOW });
     const rec = sms.list({ now: NOW })[0];
     expect(rec.state).toBe('failed');
     expect(rec.error).toBe('no credit');
     // NOT retried: a refusal the SIM reported is not a transport hiccup, and
     // retrying it would just fail again on a loop.
-    expect(sms.claim({ now: NOW + HOUR })).toEqual([]);
+    expect(claimed({ now: NOW + HOUR })).toEqual([]);
   });
 
   it('returns a message whose phone never came back, so nothing is lost by one read', () => {
     const m = sms.enqueue({ to: '0521234567', text: 'שלום', now: NOW });
-    sms.claim({ now: NOW }); // the app takes it, then is killed mid-send
+    claimed({ now: NOW }); // the app takes it, then is killed mid-send
     // Within the lease it stays taken…
-    expect(sms.claim({ now: NOW + 60 * 1000 })).toEqual([]);
+    expect(claimed({ now: NOW + 60 * 1000 })).toEqual([]);
     // …and after it, it is owed again. A duplicate text beats a customer who was
     // never told.
-    const again = sms.claim({ now: NOW + sms.LEASE_MS + 1000 });
+    const again = claimed({ now: NOW + sms.LEASE_MS + 1000 });
     expect(again.map((x) => x.id)).toEqual([m.id]);
     expect(sms.list({ now: NOW + sms.LEASE_MS + 1000 })[0].attempts).toBe(2);
   });
@@ -93,7 +97,7 @@ describe('what a sleeping phone must not cause', () => {
   it('drops a message that waited too long instead of sending it stale', () => {
     const m = sms.enqueue({ to: '0521234567', text: 'המשחק מוכן', now: NOW });
     // Nobody polled for half a week.
-    expect(sms.claim({ now: NOW + sms.DEFAULT_TTL_MS + HOUR })).toEqual([]);
+    expect(claimed({ now: NOW + sms.DEFAULT_TTL_MS + HOUR })).toEqual([]);
     const rec = sms.list({ now: NOW + sms.DEFAULT_TTL_MS + HOUR }).find((x) => x.id === m.id);
     expect(rec.state).toBe('expired');
     // …and it says why, so the owner can send it herself if it still matters.
@@ -132,7 +136,7 @@ describe('what a sleeping phone must not cause', () => {
       event: 'order_ready',
       collection_id: 'c1',
     });
-    sms.claim({});
+    claimed({});
     sms.ack(m.id, { ok: false, error: 'no signal' });
     expect(
       sms.enqueue({ to: '0521234567', text: 'a', event: 'order_ready', collection_id: 'c1' })
@@ -163,10 +167,10 @@ describe('a phone that sends but never reports', () => {
     });
     let t = NOW;
     for (let i = 0; i < sms.MAX_ATTEMPTS; i++) {
-      expect(sms.claim({ now: t }).map((x) => x.id)).toEqual([m.id]);
+      expect(claimed({ now: t }).map((x) => x.id)).toEqual([m.id]);
       t += sms.LEASE_MS + 1000; // never reported; the lease runs out
     }
-    expect(sms.claim({ now: t })).toEqual([]);
+    expect(claimed({ now: t })).toEqual([]);
     const after = sms.list({ now: t }).find((x) => x.id === m.id);
     expect(after.state).toBe('failed');
     expect(after.error).toContain(String(sms.MAX_ATTEMPTS));
@@ -174,8 +178,8 @@ describe('a phone that sends but never reports', () => {
 
   it('still re-sends below the cap — one lost report is exactly what the lease is for', () => {
     const m = sms.enqueue({ to: '0521234567', text: 'המשחק מוכן', now: NOW });
-    sms.claim({ now: NOW });
-    expect(sms.claim({ now: NOW + sms.LEASE_MS + 1000 }).map((x) => x.id)).toEqual([m.id]);
+    claimed({ now: NOW });
+    expect(claimed({ now: NOW + sms.LEASE_MS + 1000 }).map((x) => x.id)).toEqual([m.id]);
   });
 
   // THE WHOLE POINT of the cap, and the part that is easy to get wrong: nothing
@@ -197,7 +201,7 @@ describe('a phone that sends but never reports', () => {
     sms.enqueue({ ...args, now: NOW });
     let t = NOW;
     for (let i = 0; i < sms.MAX_ATTEMPTS; i++) {
-      sms.claim({ now: t });
+      claimed({ now: t });
       t += sms.LEASE_MS + 1000;
     }
     const again = sms.enqueue({ ...args, now: t });
@@ -238,7 +242,7 @@ describe('a phone that sends but never reports', () => {
     };
     const m = sms.enqueue({ ...args, now: NOW });
     expect(sms.enqueue({ ...args, now: NOW })).toBeNull(); // pending
-    sms.claim({ now: NOW });
+    claimed({ now: NOW });
     expect(sms.enqueue({ ...args, now: NOW })).toBeNull(); // taken
     sms.ack(m.id, { ok: true, now: NOW });
     expect(sms.enqueue({ ...args, now: NOW })).toBeNull(); // sent
@@ -260,7 +264,7 @@ describe('a report that arrives too late', () => {
     });
     let t = NOW;
     for (let i = 0; i < sms.MAX_ATTEMPTS; i++) {
-      sms.claim({ now: t });
+      claimed({ now: t });
       t += sms.LEASE_MS + 1000;
     }
     sms.reconcile(t);
@@ -293,7 +297,7 @@ describe('a report that arrives too late', () => {
   // SIM already accepted.
   it('does not turn a sent message into a failure', () => {
     const m = sms.enqueue({ to: '0521234567', text: 'המשחק מוכן', now: NOW });
-    sms.claim({ now: NOW });
+    claimed({ now: NOW });
     sms.ack(m.id, { ok: true, now: NOW });
     sms.ack(m.id, { ok: false, error: 'no credit', now: NOW + 1000 });
     const after = sms.list({ now: NOW + 1000 }).find((x) => x.id === m.id);
@@ -305,7 +309,7 @@ describe('a report that arrives too late', () => {
 describe('the per-message report token', () => {
   const taken = () => {
     const m = sms.enqueue({ to: '0521234567', text: 'המשחק מוכן', now: NOW });
-    return { m, token: sms.claim({ now: NOW })[0].ack_token };
+    return { m, token: claimed({ now: NOW })[0].ack_token };
   };
 
   it('opens its own message', () => {
