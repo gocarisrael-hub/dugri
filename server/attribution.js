@@ -322,6 +322,12 @@ function referrerTouch(host) {
 // referrer it came through — so it gets a row of its own instead of being
 // credited to Gmail, Google or "direct". A friend who then orders a deck of her
 // own shows up here too, which is word of mouth and worth seeing as such.
+//
+// Both spellings of each page are listed because both are SERVED: the site runs
+// behind express.static({ extensions: ['html'] }) plus the HTML route above it,
+// so /collect answers exactly as /collect.html does. Every link we build carries
+// the .html — the extension-less pair is here for an address typed, shortened or
+// rewritten by hand, which would otherwise read as an acquisition.
 const OWN_LINK_PATHS = new Set(['/collect.html', '/collect', '/pay-success.html', '/pay-success']);
 
 function pathOf(url) {
@@ -717,9 +723,22 @@ function flush() {
  * NEVER the URL, which can carry the order's owner token. Parsed here, on our
  * server, from the raw strings the wizard sent — so a caller still cannot name
  * its own campaign any more than it can through /api/track.
+ *
+ * Null when the parse found no evidence at all (see below), meaning: keep nothing
+ * on this order.
  */
 function arrivalTouch({ landing = '', referrer = '' } = {}) {
-  return { ...parseTouch({ landing, referrer }), i: isInternalLanding(landing) ? 1 : 0 };
+  const touch = { ...parseTouch({ landing, referrer }), i: isInternalLanding(landing) ? 1 : 0 };
+  // NULL WHEN THERE IS NOTHING TO FREEZE. parseTouch always names something — it
+  // ends at 'direct'/'none' — so an empty arrival ({}, [], a landing that will not
+  // parse) comes back looking like an answer. Storing it would be worse than
+  // storing nothing: the arrival is first-write-wins and beats the landing at
+  // purchase time, so a bare 'direct' written at the lead step would outrank, for
+  // good, the real touch the paying browser still carries. A genuinely direct
+  // arrival loses nothing by this either — direct is the absence of evidence, and
+  // whatever the paying browser reports instead cannot be less informative.
+  if (touch.source === 'direct' && !touch.campaign) return null;
+  return touch;
 }
 
 // A touch read back off an order, normalised again on the way out: it comes from

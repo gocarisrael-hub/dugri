@@ -383,6 +383,16 @@ async function fetchInsights({ token, accountId, days = 30, fetchImpl, now = Dat
 //   TOO LOW — a real ad click that arrives under a source name not in the list
 //   below (a hand-tagged link with some other utm_source) is left out.
 //
+//   TOO LOW, a second way — a purchase is credited to the touch FROZEN on the
+//   order when the wizard created it, not to the last ad clicked before paying
+//   (the model note at the top of site/js/attribution.js spells this out). So an
+//   ad clicked BETWEEN the order and the payment — a retargeting ad, typically —
+//   never takes the sale: it goes to whatever touch came before, and when that
+//   was organic, a search or one of our own links, the revenue drops out of this
+//   figure altogether. Meta counts that click, so this is a case where their
+//   report is higher than ours by a whole order, and it is the retargeting
+//   campaigns that lose by it.
+//
 //   TOO HIGH — Facebook and Instagram append `fbclid` to EVERY outbound link
 //   click, an organic post's included, and attribution.js reads a bare fbclid as
 //   { source: 'meta', medium: 'paid' } because for most real ads that is the only

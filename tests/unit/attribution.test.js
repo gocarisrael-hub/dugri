@@ -186,6 +186,7 @@ describe('parseTouch — reading a landing URL', () => {
       'https://dugri-israel.co.il/collect.html',
       'https://dugri-israel.co.il/collect',
       'https://dugri-israel.co.il/pay-success.html',
+      'https://dugri-israel.co.il/pay-success',
     ]) {
       expect(a.parseTouch({ landing, referrer: 'https://mail.google.com/' })).toMatchObject({
         source: 'order_link',
@@ -527,6 +528,23 @@ describe('the link builder', () => {
   });
 });
 
+// The report's source column is written by the parser, not by the owner, and the
+// names it mints for untagged traffic are English words in a Hebrew table. One of
+// them (order_link) collects every sale placed before this measurement shipped, and
+// the table sorts by revenue — so it lands at the top on day one, and she has never
+// seen it. The page has to say what these mean.
+describe('the source legend', () => {
+  it('explains every source name the parser invents by itself', async () => {
+    const html = fs.readFileSync(path.join(SITE, 'admin-ads.html'), 'utf8');
+    for (const name of ['order_link', 'own_link', 'gmail', 'email', 'direct', 'none']) {
+      expect({ name, explained: html.includes('<code>' + name + '</code>') }).toEqual({
+        name,
+        explained: true,
+      });
+    }
+  });
+});
+
 // The queued write and the shutdown write are two paths to ONE file, and only
 // one of them can be awaited. If the publish step yields, the other can land
 // inside the gap: a sale written by the shutdown flush and then buried under the
@@ -629,5 +647,74 @@ describe('crediting a sale to how the order was placed', () => {
     const r = a.report({ days: 30 });
     expect(r.rows).toHaveLength(1);
     expect(r.rows[0]).toMatchObject({ source: 'order_link', orders: 4 });
+  });
+
+  // NOTHING TO FREEZE IS NOT A TOUCH. parseTouch always names something — it ends
+  // at direct/none — so an empty arrival would come back looking like an answer,
+  // and the arrival is first-write-wins and beats the landing at purchase time. A
+  // bare direct stored at the lead step would therefore outrank, permanently, the
+  // real touch the paying browser still carries.
+  it('has no touch to keep when the arrival carries no evidence', async () => {
+    const a = await store();
+    for (const arrival of [undefined, {}, [], { landing: '', referrer: '' }, { landing: 'nope' }]) {
+      expect(a.arrivalTouch(arrival)).toBeNull();
+    }
+    // Direct is only refused when it is EMPTY: a tagged campaign with no source
+    // named is still evidence, and an own-link arrival is a touch of its own.
+    expect(
+      a.arrivalTouch({ landing: 'https://dugri-israel.co.il/?utm_campaign=rovakot' })
+    ).toMatchObject({ source: 'direct', campaign: 'rovakot' });
+    expect(a.arrivalTouch({ landing: 'https://dugri-israel.co.il/collect.html' })).toMatchObject({
+      source: 'order_link',
+    });
+  });
+});
+
+// THE PRICE OF FREEZING THE TOUCH ON THE ORDER, pinned deliberately and in both
+// directions so it stays a decision rather than becoming a discovery.
+//
+// She clicks ad one, orders, then clicks a RETARGETING ad before paying. The
+// visit follows last-non-direct and lands on ad two; the purchase follows the
+// touch frozen at order creation and lands on ad one. So the retargeting ad — the
+// one Ads Manager credits — shows traffic and no sale, and its ROAS reads zero
+// here. That is understated in the direction that gets a working ad killed, and it
+// is accepted because the alternative (the live touch winning) loses the far more
+// common cross-device sale outright. See the model note in site/js/attribution.js.
+describe('an ad clicked between the order and the payment', () => {
+  const AD_ONE =
+    'https://dugri-israel.co.il/?utm_source=instagram&utm_medium=paid&utm_campaign=ad_one';
+  const AD_TWO =
+    'https://dugri-israel.co.il/?utm_source=instagram&utm_medium=paid&utm_campaign=ad_two';
+
+  it('takes the visit and never the order', async () => {
+    const a = await store();
+    a.record({ kind: 'visit', landing: AD_ONE, visitor: 'v1' });
+    const arrival = a.arrivalTouch({ landing: AD_ONE }); // frozen when she ordered
+    a.record({ kind: 'visit', landing: AD_TWO, visitor: 'v1' }); // the retargeting click
+    a.record({
+      kind: 'purchase',
+      landing: AD_TWO, // the browser paying is carrying ad two
+      order_no: 'DG-1',
+      value: 199,
+      arrival,
+    });
+
+    const byCampaign = Object.fromEntries(a.report({ days: 30 }).rows.map((r) => [r.campaign, r]));
+    // The ad that got the order keeps the money, though the last click was not it.
+    expect(byCampaign.ad_one).toMatchObject({ visits: 1, orders: 1, revenue: 199 });
+    // And the retargeting ad reads as traffic that never converted. Zero, not
+    // null: it HAS a visit to divide by, which is exactly what makes it look bad.
+    expect(byCampaign.ad_two).toMatchObject({ visits: 1, orders: 0, revenue: 0 });
+    expect(byCampaign.ad_two.conversion).toBe(0);
+  });
+
+  it('would have taken both if the live touch won, which is the trade', async () => {
+    const a = await store();
+    a.record({ kind: 'visit', landing: AD_TWO, visitor: 'v1' });
+    // The same purchase with NO frozen arrival — the pre-freeze behaviour.
+    a.record({ kind: 'purchase', landing: AD_TWO, order_no: 'DG-1', value: 199 });
+    const rows = a.report({ days: 30 }).rows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ campaign: 'ad_two', visits: 1, orders: 1, revenue: 199 });
   });
 });

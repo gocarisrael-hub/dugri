@@ -908,6 +908,29 @@ function sanitizeComment(input) {
   return Array.from(text).slice(0, COMMENT_MAX).join('');
 }
 
+// HOW THE BUYER ARRIVED, normalised for storage: the parsed attribution touch
+// (source, medium, campaign, content, term, and the internal mark), never the
+// landing URL — that can carry the owner token. The parsing itself happens in
+// server/attribution.js, on our server, from the raw strings the wizard reported;
+// this only caps the fields and returns null for anything without a source, so a
+// caller cannot store an empty answer that would then outrank a real one.
+// Shared by createCollection (the write on the order-placing path) and
+// setArrival (the after-the-fact write), so both store the same shape.
+function sanitizeArrival(touch) {
+  if (!touch || typeof touch !== 'object' || Array.isArray(touch)) return null;
+  const text = (v) => String(v == null ? '' : v).slice(0, 120);
+  const source = text(touch.source).trim();
+  if (!source) return null;
+  return {
+    source,
+    medium: text(touch.medium),
+    campaign: text(touch.campaign),
+    content: text(touch.content),
+    term: text(touch.term),
+    i: touch.i === 1 ? 1 : 0,
+  };
+}
+
 // A delivery shipping address. street + city + postal are REQUIRED (a parcel
 // can't ship without them) — returns null when any is missing, so the caller
 // rejects the order/edit. apartment + floor are optional. Every field is trimmed
@@ -1070,6 +1093,12 @@ const db = {
       // old — but declared here so every collection has the field and no reader
       // has to guess whether `undefined` means "no note" or "old record".
       owner_note: null,
+      // How this buyer ARRIVED (the parsed attribution touch; see sanitizeArrival).
+      // It comes in with the order because this is the only write on the path that
+      // places one, and saveDb is a whole-store serialise — a second call here
+      // would double the cost of every lead. null when the wizard reported nothing
+      // usable; setArrival can still fill it in later, once.
+      arrival: sanitizeArrival(contact.arrival),
       status: 'open',
       created_at: nowIso(),
       expires_at: new Date(Date.now() + YEAR_MS).toISOString(),
@@ -1890,27 +1919,18 @@ const db = {
     return c.order;
   },
 
-  // How the buyer ARRIVED: the parsed attribution touch (source, medium,
-  // campaign, content, term, and the internal mark), set ONCE when the wizard
-  // creates the collection. Never the landing URL — that can carry the owner
-  // token. /api/track credits the eventual purchase to this instead of to the
-  // browser that opens the confirmation page, which is often a different device
-  // reached from one of our own emails. First write wins: a later caller cannot
-  // re-attribute a sale that is already on the books.
+  // How the buyer ARRIVED, written AFTER creation. The order-placing path does not
+  // come through here — createCollection takes `arrival` in its options so the one
+  // save it already does carries it — so this is for a collection made without one.
+  // Never the landing URL: that can carry the owner token. /api/track credits the
+  // eventual purchase to this instead of to the browser that opens the confirmation
+  // page, which is often a different device reached from one of our own emails.
+  // First write wins: a later caller cannot re-attribute a sale already on the books.
   setArrival(id, touch) {
     const c = this.getCollection(id);
-    if (!c || c.arrival || !touch || typeof touch !== 'object') return false;
-    const text = (v) => String(v == null ? '' : v).slice(0, 120);
-    const source = text(touch.source).trim();
-    if (!source) return false;
-    c.arrival = {
-      source,
-      medium: text(touch.medium),
-      campaign: text(touch.campaign),
-      content: text(touch.content),
-      term: text(touch.term),
-      i: touch.i === 1 ? 1 : 0,
-    };
+    const arrival = sanitizeArrival(touch);
+    if (!c || c.arrival || !arrival) return false;
+    c.arrival = arrival;
     saveDb();
     return true;
   },

@@ -198,14 +198,58 @@ describe('POST /api/track — a purchase', () => {
     expect(db.getCollection(id).arrival.campaign).toBe('rovakot');
   });
 
-  it('ignores an arrival that is not an object', async () => {
-    const res = await fetch(base + '/api/collections', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ honoree_name: 'נועה', email: 'a@b.co', arrival: 'instagram' }),
+  // An arrival with nothing in it must leave the order UNATTRIBUTED, not carrying a
+  // bogus 'direct'. parseTouch always names something, the arrival is first-write-
+  // wins, and it outranks the landing at purchase time — so a direct written here
+  // would bury, permanently, the real touch the paying browser still has. `[]`
+  // matters on its own: typeof [] === 'object', so the route's guard lets it past.
+  it('stores nothing for an arrival that carries no evidence', async () => {
+    for (const arrival of ['instagram', [], {}, { landing: '', referrer: '' }, 7, null]) {
+      const res = await fetch(base + '/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ honoree_name: 'נועה', email: 'a@b.co', arrival }),
+      });
+      expect(res.status).toBe(201);
+      const stored = db.getCollection((await res.json()).id).arrival;
+      expect({ arrival, stored }).toEqual({ arrival, stored: null });
+    }
+  });
+
+  // saveDb serialises the WHOLE store and writes it — ~300ms at a thousand orders.
+  // The arrival rides along in createCollection's own save; a second write for it
+  // would double that cost on the request path of every lead.
+  it('writes the store once for a lead that reports an arrival', async () => {
+    const renames = [];
+    const realRename = fs.renameSync;
+    const spy = vi.spyOn(fs, 'renameSync').mockImplementation((from, to) => {
+      if (String(to).endsWith('dugri-data.json')) renames.push(String(to));
+      return realRename(from, to);
     });
-    expect(res.status).toBe(201);
-    expect(db.getCollection((await res.json()).id).arrival).toBeUndefined();
+    try {
+      const c = db.createCollection('מאיה', {
+        email: 'a@b.co',
+        arrival: attribution.arrivalTouch({ landing: AD }),
+      });
+      expect(renames).toHaveLength(1);
+      expect(db.getCollection(c.id).arrival).toMatchObject({
+        source: 'instagram',
+        campaign: 'rovakot',
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  // Both spellings of the order pages are SERVED (express.static extensions:['html']
+  // plus the HTML route ahead of it), which is why attribution.js lists both in
+  // OWN_LINK_PATHS. If one ever stopped resolving, the entry would become dead and
+  // the comment beside it wrong.
+  it('serves the order pages by their extension-less names too', async () => {
+    for (const p of ['/collect', '/collect.html', '/pay-success', '/pay-success.html']) {
+      const res = await fetch(base + p);
+      expect({ p, status: res.status }).toEqual({ p, status: 200 });
+    }
   });
 });
 
