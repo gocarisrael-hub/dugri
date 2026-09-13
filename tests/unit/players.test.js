@@ -308,6 +308,18 @@ function postPawns(id, k, files) {
   }).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
 }
 
+// Both clients chunk to PAWN_BATCH_MAX (4): the request body is buffered whole and
+// POST /api/collections is public, so ONE request stays pinned to what
+// PAWN_UPLOAD_LIMIT is sized for while the COLLECTION's total follows its player
+// count. Filling a sixteen-player deck is four requests, not one big one.
+async function postPawnsChunked(id, k, files, size = 4) {
+  const out = [];
+  for (let i = 0; i < files.length; i += size) {
+    out.push(await postPawns(id, k, files.slice(i, i + size)));
+  }
+  return out;
+}
+
 const photos = (n, tag) =>
   Array.from({ length: n }, (_, i) => ({
     name: tag + i,
@@ -338,24 +350,37 @@ describe('the photo slots follow the split too', () => {
     // 2, 3 and 4 printed the same four generic faces over again, on the deck she
     // chose the big split for. A cap only one of two writers holds is not a cap.
     const c = db.createCollection('בדיקה', { players: 16 });
-    const r = await postPawns(c.id, c.owner_token, photos(16, 'big'));
-    expect(r.status).toBe(200);
+    const rs = await postPawnsChunked(c.id, c.owner_token, photos(16, 'big'));
+    expect(rs.map((r) => r.status)).toEqual([200, 200, 200, 200]);
     expect(db.getCollection(c.id).pawn_images).toHaveLength(16);
 
-    // ...and the ceiling is still a ceiling: a seventeenth is refused up front,
-    // before a single file is written.
-    const over = await postPawns(c.id, c.owner_token, photos(17, 'over'));
-    expect(over.status).toBe(400);
-    expect(over.body).toMatchObject({ max: 16 });
+    // ...and the ceiling is still a ceiling. A seventeenth is not refused with a
+    // status — the batch is legal — it is simply not written, and the answer says
+    // which files were left out rather than pretending they landed.
+    const over = await postPawns(c.id, c.owner_token, photos(1, 'over'));
+    expect(over.status).toBe(200);
+    expect(over.body.skipped).toMatchObject([{ reason: 'no_room' }]);
     expect(db.getCollection(c.id).pawn_images).toHaveLength(16);
+
+    // And one request may not carry the whole deck, however much room it has:
+    // the body is buffered whole, so the BATCH is capped independently.
+    const fat = await postPawns(c.id, c.owner_token, photos(5, 'fat'));
+    expect(fat.status).toBe(400);
+    expect(fat.body.error).toMatch(/per upload/);
   });
 
   it('still refuses a fifth photo on a standard four-player deck', async () => {
     const c = db.createCollection('בדיקה', {});
-    const r = await postPawns(c.id, c.owner_token, photos(5, 'small'));
-    expect(r.status).toBe(400);
-    expect(r.body).toMatchObject({ max: 4 });
-    expect(db.getCollection(c.id).pawn_images || []).toHaveLength(0);
+    const first = await postPawns(c.id, c.owner_token, photos(4, 'small'));
+    expect(first.status).toBe(200);
+    expect(db.getCollection(c.id).pawn_images).toHaveLength(4);
+
+    // The fifth has nowhere to go on a four-player deck, and is reported as
+    // skipped rather than silently dropped.
+    const fifth = await postPawns(c.id, c.owner_token, photos(1, 'fifth'));
+    expect(fifth.status).toBe(200);
+    expect(fifth.body.skipped).toMatchObject([{ reason: 'no_room' }]);
+    expect(db.getCollection(c.id).pawn_images).toHaveLength(4);
   });
 
   it('the ADMIN reorder does not delete the photos past four', async () => {
@@ -364,7 +389,7 @@ describe('the photo slots follow the split too', () => {
     // first four, silently, from a screen whose only stated job was reordering.
     // That is the same "photos already uploaded are KEPT" this change promises.
     const c = db.createCollection('בדיקה', { players: 16 });
-    await postPawns(c.id, c.owner_token, photos(16, 'adm'));
+    await postPawnsChunked(c.id, c.owner_token, photos(16, 'adm'));
     const stored = db.getCollection(c.id).pawn_images.slice();
     expect(stored).toHaveLength(16);
 
