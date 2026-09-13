@@ -576,9 +576,16 @@ test.describe('the deck pictures never bury a control', () => {
   // label and its input are both on screen; on step 5 the photo slots and the hint
   // are. If the row ever grows enough to swallow them, shrink the row — the floor
   // is the owner's 60px picture, not this test.)
+  // `controls` is what counts as "the form" on that step — the thing whose
+  // presence tells the buyer there is more below the pictures. On step 5 that is
+  // now the player-count buttons as well as the slots: they are the step's first
+  // control, they sit above the grid because she has to choose before she knows
+  // how many slots to fill, and four tappable buttons are a stronger cue to keep
+  // reading than a photo slot is. The slots themselves are still reachable — the
+  // test above scrolls to the skip button and holds the bar assertion.
   for (const step of [
     { n: 4, id: 'step-4', controls: '.wiz-field' },
-    { n: 5, id: 'step-pawns', controls: '.pawn-slot, .pawn-hint' },
+    { n: 5, id: 'step-pawns', controls: '.pawn-count, .pawn-slot, .pawn-hint' },
   ]) {
     test(`step ${step.n} on a small phone shows part of the form at first paint`, async ({
       page,

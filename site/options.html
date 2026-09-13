@@ -2932,19 +2932,15 @@
 
              Asked HERE, before the collection exists, so her word ceiling is right
              from the first word rather than moved under her later. -->
-        <span class="pawn-count-label" data-edit="options-photos-count-label">כמה שחקנים?</span>
-        <div
-          class="pawn-count"
-          id="pawnCount"
-          data-testid="pawn-count"
-          role="group"
-          aria-label="מספר שחקנים"
-        ></div>
-        <!-- The ceiling, always on screen rather than a warning that appears when
-             she hits it: "up to 408 words" before she has written one. -->
-        <div class="pawn-budget" data-testid="pawn-budget">
-          <p class="pawn-budget-main" id="pawnBudgetMain"></p>
-          <p class="pawn-budget-note" id="pawnBudgetNote"></p>
+        <div class="pawn-count-row">
+          <span class="pawn-count-label" data-edit="options-photos-count-label">כמה שחקנים?</span>
+          <div
+            class="pawn-count"
+            id="pawnCount"
+            data-testid="pawn-count"
+            role="group"
+            aria-label="מספר שחקנים"
+          ></div>
         </div>
         <!-- Written by JS (how many cards she cuts depends on the count), so this
              carries no default text; the editor tag stays for the owner's wording
@@ -3053,6 +3049,18 @@
              caught here rather than on 104 printed cards. Tapping a filled slot
              re-opens its file picker (the input covers the whole slot), which is
              the per-slot re-upload — this line says so out loud. -->
+        <!-- THE CEILING, under the slots rather than above them. Always on
+             screen — not a warning that appears when she hits it — but BELOW the
+             grid, because this step is height-budgeted against the fixed
+             Back/Next bar and the slots have to be visible at scroll 0 on a
+             375x667 phone or there is no cue that anything follows the pictures
+             (tests/e2e/wizard-noscroll.spec.js). It also reads better here: she
+             picks the number, watches the slots appear, and then finds out what
+             it costs her in words. -->
+        <div class="pawn-budget" data-testid="pawn-budget">
+          <p class="pawn-budget-main" id="pawnBudgetMain"></p>
+          <p class="pawn-budget-note" id="pawnBudgetNote"></p>
+        </div>
         <p class="pawn-hint" data-testid="pawn-hint" data-edit="options-photos-hint">
           נסיר את הרקע אוטומטית על המכשיר שלכם. התצוגה בעיגול משוערת. לא אהבתם את התוצאה? לחצו על
           התמונה כדי להחליף אותה.
@@ -3145,21 +3153,31 @@
             margin: 6px 0 12px;
           }
           /* HOW MANY PLAYERS — four buttons, the count she picks in black. */
+          /* THE QUESTION SITS BESIDE ITS BUTTONS, not above them. This step is
+             height-budgeted against the fixed Back/Next bar — part of the form
+             has to be visible at scroll 0 on a 375x667 phone or the buyer has no
+             cue that there is anything below the pictures
+             (tests/e2e/wizard-noscroll.spec.js). A stacked label and a boxed
+             budget spent about 70px of that, and the slots went under the fold. */
+          .pawn-count-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+          }
           .pawn-count-label {
-            display: block;
             font-family: var(--display);
             font-size: 12px;
             font-weight: 400;
             letter-spacing: 0.14em;
             color: var(--muted);
-            text-align: center;
-            margin-bottom: 8px;
+            white-space: nowrap;
           }
           .pawn-count {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
-            gap: 8px;
-            margin-bottom: 12px;
+            gap: 6px;
+            flex: 1;
           }
           .pawn-count button {
             appearance: none;
@@ -3167,9 +3185,9 @@
             background: var(--surface);
             color: var(--ink);
             font: inherit;
-            font-size: 17px;
+            font-size: 16px;
             font-weight: 600;
-            padding: 11px 0;
+            padding: 8px 0;
             cursor: pointer;
           }
           .pawn-count button[aria-pressed='true'] {
@@ -3177,24 +3195,24 @@
             border-color: var(--ink);
             color: #fff;
           }
-          /* The ceiling, on screen from the start rather than a warning later. */
+          /* The ceiling, on screen from the start rather than a warning later —
+             two tight lines and no box, for the height reason above. */
           .pawn-budget {
-            border: 1px solid var(--line);
-            background: var(--surface);
-            padding: 10px 12px;
-            margin-bottom: 12px;
+            margin: 0 0 10px;
             text-align: center;
           }
           .pawn-budget-main {
             margin: 0;
-            font-size: 16px;
+            font-size: 15px;
+            line-height: 1.45;
           }
           .pawn-budget-main b {
             font-weight: 700;
           }
           .pawn-budget-note {
-            margin: 4px 0 0;
-            font-size: 14.5px;
+            margin: 2px 0 0;
+            font-size: 13.5px;
+            line-height: 1.45;
             color: var(--muted);
           }
           /* WHERE THE NEXT CARD STARTS. Four pawns to a card, and she cuts them
