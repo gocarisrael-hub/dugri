@@ -2911,19 +2911,10 @@
            uploaded AFTER the collection is created (POST /api/collections/:id/pawns),
            since the collection id + owner_token don't exist until then. -->
       <section class="wiz-step" data-step="5" data-testid="step-pawns">
-        <h2 class="wiz-title" data-edit="options-photos-title">העלו עד 4 תמונות (רשות)</h2>
+        <h2 class="wiz-title" data-edit="options-photos-title">העלו תמונות לחיילים (רשות)</h2>
         <p class="wiz-sub" data-edit="options-photos-sub">
           ככה החיילים (הפיונים) ייראו במשחק. תמונות פנים עובדות הכי טוב.
         </p>
-        <!-- What the buyer physically receives, and the one thing SHE has to do
-             with it: the four pawns print on a single card and she cuts them into
-             circles herself. Nobody cuts them for her — not us, not the print shop
-             — so this line has to say it plainly rather than leave her to discover
-             it with the parcel open.
-
-             Its own node (not <strong> inside the sub) because the inline editor
-             writes textContent — any markup the owner's first edit touches would
-             be wiped. Bold comes from CSS. -->
         <!-- HOW MANY PLAYERS. Four fill one pawn card, and the deck is always 104
              cards — so every extra pawn card is a word card fewer. The buttons are
              built in JS from one list of counts, and the two lines under them are
@@ -2942,12 +2933,6 @@
             aria-label="מספר שחקנים"
           ></div>
         </div>
-        <!-- Written by JS (how many cards she cuts depends on the count), so this
-             carries no default text; the editor tag stays for the owner's wording
-             of the part that does not change. -->
-        <p class="pawn-cut" data-testid="pawn-cut" data-edit="options-photos-cut">
-          החיילים מגיעים מודפסים על קלף אחד - פשוט גוזרים אותם בעיגול.
-        </p>
         <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
           <!-- Four slots in the markup; the rest are cloned from the first when she
                asks for more players, so there is ONE definition of what a slot is. -->
@@ -3061,6 +3046,31 @@
           <p class="pawn-budget-main" id="pawnBudgetMain"></p>
           <p class="pawn-budget-note" id="pawnBudgetNote"></p>
         </div>
+        <!-- MORE PHOTOS THAN PAWNS. She filled eight slots and then asked for a
+             four-player deck: the extra photos are still hers and still on screen
+             (the slots past her count stay visible, marked), but only the first
+             four are printed and only the first four are uploaded. Saying so is
+             the whole point — the version this replaces simply dropped them on
+             the way out, with four completed cutouts and no word about it. -->
+        <p class="pawn-over" id="pawnOver" data-testid="pawn-over" hidden></p>
+        <!-- What the buyer physically receives, and the one thing SHE has to do
+             with it: the pawns print on a card and she cuts them into circles
+             herself. Nobody cuts them for her — not us, not the print shop — so
+             this line says it plainly rather than leaving her to discover it with
+             the parcel open.
+
+             Its own node (not <strong> inside the sub) because the inline editor
+             writes textContent — any markup the owner's first edit touches would
+             be wiped. Bold comes from CSS. It carries NO count: how many cards she
+             cuts is in the budget line above, which JS owns, because JS rewriting
+             an owner-editable node is how her wording gets silently thrown away.
+
+             It sits BELOW the grid for height: this step is budgeted against the
+             fixed Back/Next bar, and above the grid this line alone pushed the
+             photo slots off a 375x667 phone (tests/e2e/wizard-noscroll.spec.js). -->
+        <p class="pawn-cut" data-testid="pawn-cut" data-edit="options-photos-cut">
+          החיילים מגיעים מודפסים - פשוט גוזרים אותם בעיגול.
+        </p>
         <p class="pawn-hint" data-testid="pawn-hint" data-edit="options-photos-hint">
           נסיר את הרקע אוטומטית על המכשיר שלכם. התצוגה בעיגול משוערת. לא אהבתם את התוצאה? לחצו על
           התמונה כדי להחליף אותה.
@@ -3185,9 +3195,12 @@
             background: var(--surface);
             color: var(--ink);
             font: inherit;
-            font-size: 16px;
+            font-size: 15px;
             font-weight: 600;
-            padding: 8px 0;
+            /* Every pixel here comes straight off the photo slots' share of the
+               first screen — see the height note above. 6px still clears a 34px
+               tap target on the 44px-wide button. */
+            padding: 6px 0;
             cursor: pointer;
           }
           .pawn-count button[aria-pressed='true'] {
@@ -3215,31 +3228,27 @@
             line-height: 1.45;
             color: var(--muted);
           }
-          /* WHERE THE NEXT CARD STARTS. Four pawns to a card, and she cuts them
-             card by card — so the grid says where each one begins rather than
-             leaving "four per card" as a sentence she has to trust. */
-          .pawn-card-break {
-            grid-column: 1 / -1;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            font-family: var(--display);
-            font-size: 11.5px;
-            letter-spacing: 0.14em;
-            color: var(--muted);
+          /* MORE PHOTOS THAN PAWNS — the slot is still on screen, and says so.
+             Hiding a filled slot is what let four finished cutouts leave with the
+             order and never be mentioned. */
+          .pawn-slot.is-over {
+            opacity: 0.5;
+            border-style: dashed;
           }
-          .pawn-card-break::before,
-          .pawn-card-break::after {
-            content: '';
-            flex: 1;
-            height: 1px;
-            background: var(--line);
+          .pawn-over {
+            margin: 0 0 10px;
+            font-size: 13.5px;
+            line-height: 1.45;
+            text-align: center;
+            color: var(--ink);
           }
-          /* A slot past her player count is HIDDEN, not removed — the photo in it
-             is still hers if she changes her mind. Spelled out because
-             `.pawn-slot { display: flex }` outranks the UA's own
-             `[hidden] { display: none }` on specificity, so without this the
-             attribute is set and the slot stays on screen. */
+          /* An EMPTY slot past her player count is hidden, not removed — the
+             arrays are sized for sixteen whatever she picks. Spelled out because
+             `.pawn-slot { display: flex }` beats the UA's own
+             `[hidden] { display: none }`: same specificity (0,1,0), and an author
+             rule wins a specificity tie against the user-agent origin whatever
+             order they are in. Without this the attribute is set and the slot
+             stays on screen. */
           .pawn-slot[hidden] {
             display: none;
           }
@@ -4664,6 +4673,11 @@
           customTitle,
           buyerName,
           eventType,
+          // How many players her deck is laid out for. Saved like every other
+          // choice on this page: nothing after the pawns step shows the count, so
+          // a reload on the contact step used to submit `players: 4` for a buyer
+          // who had picked sixteen, with no cue that it had changed.
+          pawnPlayers,
         };
       }
 
@@ -4678,6 +4692,11 @@
         url.searchParams.set('plan', s.plan);
         url.searchParams.set('design', s.designId);
         url.searchParams.set('color', s.colorId);
+        // …and the player count only when it is not the standard deck, so a
+        // shared link stays short and an untouched control leaves no trace.
+        if (s.pawnPlayers !== PLAYER_COUNTS[0])
+          url.searchParams.set('players', String(s.pawnPlayers));
+        else url.searchParams.delete('players');
         url.searchParams.set('step', String(currentStep));
         history.replaceState(null, '', url);
         // refresh the collapsed-preview summary chip
@@ -6309,11 +6328,61 @@
         failed: 'לא הוסר הרקע, עדיף תמונות פנים של בן אדם',
       };
 
-      // THE COUNT, AND EVERYTHING THAT FOLLOWS FROM IT. One function, because
-      // the title, the cut line, the budget and the number of visible slots are
-      // four statements of the same arithmetic and any of them being written
-      // somewhere else is how they come to disagree.
+      // THE PHOTOS SIT IN THE FIRST SLOTS, ALWAYS. The list the wizard uploads is
+      // `pawnFiles` in slot order, so a gap in the middle — or a photo left in
+      // slot 6 when she drops back to a four-player deck — is a photo the deck
+      // would never print and she would never be told about. (The version this
+      // replaces did exactly that: fill slots 5-8 of an eight-player deck, go back
+      // to four, and four finished cutouts left with the order unmentioned.)
+      //
+      // Squeezing them to the front, in the order she put them there, is what makes
+      // "the first N slots are the deck" true at every count. Returns whether
+      // anything actually moved.
+      function pawnCompact() {
+        const from = [];
+        pawnFiles.forEach((f, i) => {
+          if (f) from.push(i);
+        });
+        if (from.every((src, dest) => src === dest)) return false;
+        const moved = from.map((i) => ({
+          file: pawnFiles[i],
+          cut: pawnCutouts[i],
+          frame: pawnFrames[i],
+          state: pawnCutState[i],
+        }));
+        for (let i = 0; i < PAWN_MAX; i++) {
+          const m = moved[i] || null;
+          pawnFiles[i] = m ? m.file : null;
+          pawnCutouts[i] = m ? m.cut : null;
+          pawnFrames[i] = m ? m.frame : null;
+          pawnCutState[i] = m ? m.state : '';
+          // A cut still in flight for whatever USED to be in this slot would land
+          // on the photo that just moved in, so every slot's sequence moves on.
+          pawnCutSeq[i]++;
+          const input = pawnSlots[i] && pawnSlots[i].querySelector('.pawn-input');
+          if (input) input.value = '';
+          renderPawnSlot(i);
+        }
+        // …and a cut that was still running when its photo moved gets started
+        // again at the new slot, rather than leaving a sticker that never arrives.
+        pawnCutState.forEach((st, i) => {
+          if (st === 'working' && pawnFiles[i]) cutPawnSlot(i, pawnFiles[i]);
+        });
+        return true;
+      }
+
+      // THE COUNT, AND EVERYTHING THAT FOLLOWS FROM IT. One function, because the
+      // budget, the number of slots and the over-the-limit warning are three
+      // statements of the same arithmetic and any of them being written somewhere
+      // else is how they come to disagree.
+      //
+      // It writes only nodes JS OWNS. The heading and the cut line are
+      // [data-edit] — the owner's to reword from the live site — and the content
+      // editor applies her wording once, on load; rewriting them on every button
+      // click threw that away silently, so the count lives in the budget line
+      // instead, which has no editor tag and never did.
       const pawnCountEl = document.getElementById('pawnCount');
+      const pawnOverEl = document.getElementById('pawnOver');
       function renderPawnCount() {
         const plan = pawnPlan(pawnPlayers);
 
@@ -6327,7 +6396,12 @@
             b.setAttribute('data-testid', 'pawn-count-' + n);
             b.addEventListener('click', () => {
               pawnPlayers = n;
+              // Lowering the count must not strand a photo behind a hidden slot.
+              pawnCompact();
               renderPawnCount();
+              // …and the choice has to survive a reload like every other one on
+              // this page: she may never see it again before she pays.
+              persist();
             });
             pawnCountEl.appendChild(b);
           });
@@ -6338,23 +6412,13 @@
           });
         }
 
-        const title = document.querySelector('[data-edit="options-photos-title"]');
-        if (title) title.textContent = 'העלו עד ' + plan.players + ' תמונות (רשות)';
-
-        const cut = document.querySelector('[data-testid="pawn-cut"]');
-        if (cut) {
-          cut.textContent =
-            plan.cards === 1
-              ? 'החיילים מגיעים מודפסים על קלף אחד - פשוט גוזרים אותם בעיגול.'
-              : 'החיילים מגיעים מודפסים על ' + plan.cards + ' קלפים - פשוט גוזרים אותם בעיגול.';
-        }
-
         const main = document.getElementById('pawnBudgetMain');
         const note = document.getElementById('pawnBudgetNote');
         if (main) {
           main.innerHTML =
+            'עד ' +
             plan.players +
-            ' שחקנים · ' +
+            ' תמונות · ' +
             plan.cards +
             ' ' +
             (plan.cards === 1 ? 'קלף חיילים' : 'קלפי חיילים') +
@@ -6379,19 +6443,27 @@
                 ' מילים פחות';
         }
 
-        // The slots she can fill, and the line between one card and the next.
+        // The slots she can fill — plus any photo that no longer fits, which stays
+        // ON SCREEN and marked rather than hidden. An empty slot past the count is
+        // hidden; a full one is the thing she has to decide about.
+        const photos = pawnFiles.filter(Boolean).length;
+        const shown = Math.max(plan.players, photos);
         pawnSlots.forEach((el, i) => {
-          el.hidden = i >= plan.players;
+          el.hidden = i >= shown;
+          // Marked only while it is ON SCREEN: a hidden slot past the count is
+          // simply one of the sixteen the arrays always carry, and nothing about
+          // it is a decision she has to make.
+          el.classList.toggle('is-over', i >= plan.players && i < shown);
         });
-        pawnGridEl.querySelectorAll('.pawn-card-break').forEach((n) => n.remove());
-        if (plan.cards > 1) {
-          for (let card = 0; card < plan.cards; card++) {
-            const div = document.createElement('div');
-            div.className = 'pawn-card-break';
-            div.setAttribute('data-testid', 'pawn-card-break-' + (card + 1));
-            div.textContent = 'קלף חיילים ' + (card + 1);
-            pawnGridEl.insertBefore(div, pawnSlots[card * PER_CARD]);
-          }
+        const over = Math.max(0, photos - plan.players);
+        if (pawnOverEl) {
+          pawnOverEl.textContent = over
+            ? (over === 1 ? 'תמונה אחת לא תיכנס ' : over + ' תמונות לא ייכנסו ') +
+              'לחפיסה של ' +
+              plan.players +
+              ' שחקנים. הסירו אותן, או בחרו יותר שחקנים.'
+            : '';
+          pawnOverEl.hidden = !over;
         }
       }
 
@@ -6536,9 +6608,18 @@
             return;
           }
           hidePawnError();
+          // Whatever was in this slot is gone — its cutout and its measurement
+          // with it, so neither follows the new photo when the grid closes up.
           pawnFiles[idx] = file;
-          renderPawnSlot(idx);
-          cutPawnSlot(idx, file);
+          pawnCutouts[idx] = null;
+          pawnFrames[idx] = null;
+          pawnCutState[idx] = '';
+          // She may have tapped slot 4 with 1-3 still empty. The deck fills from
+          // the front, so the photo lands at the front; `at` is where it ended up.
+          const at = pawnCompact() ? pawnFiles.indexOf(file) : idx;
+          renderPawnSlot(at);
+          renderPawnCount();
+          cutPawnSlot(at, file);
         });
         // The × sits inside the slot's <label>, so stop the click from re-opening
         // the file picker; just clear the slot.
@@ -6552,6 +6633,9 @@
           pawnCutSeq[idx]++; // abandon an in-flight cut for the photo just dropped
           input.value = '';
           renderPawnSlot(idx);
+          // Removing the second of three must not leave a hole the upload skips.
+          pawnCompact();
+          renderPawnCount();
         });
       });
 
@@ -6603,16 +6687,23 @@
         return out;
       }
 
+      // ONE REQUEST CARRIES PAWN_BATCH PHOTOS, no matter how many she picked. The
+      // body is buffered whole on the server (server/index.js PAWN_BATCH_MAX /
+      // PAWN_UPLOAD_LIMIT, which is sized for exactly this many photos-plus-
+      // cutouts), so a sixteen-player deck is four requests rather than one 160MB
+      // one that the body parser would refuse with a 413 nobody looked at.
+      const PAWN_BATCH = 4;
+
       async function uploadPawns(id, ownerToken) {
         // Only the slots this deck HAS. She may have filled eight and then gone
         // back to four players; the deck prints four, so four is what is sent —
-        // and the server would only have stored four anyway, but it would have
-        // been whichever four arrived first rather than the ones she can see.
+        // and the step says so out loud (pawnOver) rather than letting the other
+        // four leave with the order unmentioned.
         const picked = pawnFiles
           .slice(0, pawnPlayers)
           .map((f, i) => ({ f, i }))
           .filter((x) => x.f);
-        if (!picked.length) return;
+        if (!picked.length) return { sent: 0, stored: 0 };
         await awaitPawnCuts();
         try {
           // Re-encode each photo to something the store will actually keep: a
@@ -6623,23 +6714,39 @@
           // Best-effort: a browser that cannot re-encode hands the original back,
           // which is exactly what was being sent before.
           const ready = await shrinkPawnFiles(picked.map((x) => x.f));
-          const fd = new FormData();
-          const failed = [];
-          picked.forEach(({ i }, n) => {
-            const f = ready[n];
-            const name = 'pawn' + n;
-            fd.append(name, f, f.name || name);
-            if (pawnCutouts[i]) fd.append('cut:' + name, pawnCutouts[i], name + '-cut.png');
-            else failed.push(name);
-          });
-          if (failed.length) fd.append('cutfail', failed.join(','));
-          await fetch('/api/collections/' + id + '/pawns?k=' + encodeURIComponent(ownerToken), {
-            method: 'POST',
-            body: fd,
-          });
+          let stored = 0;
+          for (let start = 0; start < picked.length; start += PAWN_BATCH) {
+            const batch = picked.slice(start, start + PAWN_BATCH);
+            const fd = new FormData();
+            const failed = [];
+            batch.forEach(({ i }, n) => {
+              const f = ready[start + n];
+              const name = 'pawn' + n;
+              fd.append(name, f, f.name || name);
+              if (pawnCutouts[i]) fd.append('cut:' + name, pawnCutouts[i], name + '-cut.png');
+              else failed.push(name);
+            });
+            if (failed.length) fd.append('cutfail', failed.join(','));
+            const r = await fetch(
+              '/api/collections/' + id + '/pawns?k=' + encodeURIComponent(ownerToken),
+              { method: 'POST', body: fd }
+            );
+            // THE ANSWER IS READ. It used to be thrown away: a 400 (or a 413, or a
+            // batch the route skipped) resolved the await just like a 200 and the
+            // page redirected as if every photo had landed, so a buyer who sat
+            // through six cutouts arrived at her collection page with none of them
+            // and nothing to read. A failed batch stops the loop — the ones after
+            // it would fail the same way — and what DID land is counted from the
+            // list the server answered with, which is the only honest number.
+            if (!r.ok) break;
+            const body = await r.json().catch(() => null);
+            stored = body && Array.isArray(body.pawn_images) ? body.pawn_images.length : stored;
+          }
+          return { sent: picked.length, stored };
         } catch (e) {
           // nice-to-have — never block the order on a failed photo upload
           console.warn('pawn upload failed', e);
+          return { sent: picked.length, stored: 0 };
         }
       }
 
@@ -6747,8 +6854,18 @@
           // Upload any optional pawn photos now that we have {id, owner_token}.
           // Fail-soft: a pawn-upload failure must NEVER block the order — the
           // pictures are a nice-to-have, so we log and continue to the redirect.
-          await uploadPawns(data.id, data.owner_token);
-          location.href = 'collect.html?c=' + data.id + '&k=' + data.owner_token;
+          const photos = await uploadPawns(data.id, data.owner_token);
+          // …and if fewer of them arrived than she picked, the collection page is
+          // told how many, so it can say so and offer her the re-upload. The order
+          // exists by now, so this can never be a reason to stop here — but it is
+          // never again a silent loss either.
+          const lost = Math.max(0, (photos.sent || 0) - (photos.stored || 0));
+          location.href =
+            'collect.html?c=' +
+            data.id +
+            '&k=' +
+            data.owner_token +
+            (lost ? '&photos_lost=' + lost : '');
         } catch (e) {
           createErr.textContent = 'משהו השתבש ביצירת הקישור. נסו שוב.';
           createErr.hidden = false;
@@ -7156,6 +7273,22 @@
         } else {
           colorIndex = -1;
         }
+        // How many players, from ?players= first (a reload / the Back button carry
+        // it there) and otherwise from the saved selection. Anything that is not
+        // one of the offered counts is the standard deck, which is what an order
+        // that never touched the control means — the same rule db.sanitizePlayers
+        // applies on the server.
+        const restorePlayers = (v) => {
+          const n = parseInt(v, 10);
+          if (PLAYER_COUNTS.includes(n)) pawnPlayers = n;
+        };
+        if (params.has('players')) restorePlayers(params.get('players'));
+        else {
+          try {
+            const saved = JSON.parse(localStorage.getItem('dugri_selection') || 'null');
+            if (saved) restorePlayers(saved.pawnPlayers);
+          } catch (e) {}
+        }
         // restore the optional custom title (F7) from the saved selection (it is
         // kept out of the URL — a free-form title can contain arbitrary text).
         try {
@@ -7210,9 +7343,10 @@
 
       selectTab('front');
       renderDesign();
-      // The pawns step at rest: four players, four slots, the standard deck's
-      // ceiling on screen. Drawn before the first paint so the step is never
-      // shown with a budget line that has not been written yet.
+      // The pawns step at rest — the restored count (four unless she said
+      // otherwise), its slots, and that deck's ceiling on screen. Drawn before the
+      // first paint so the step is never shown with a budget line that has not
+      // been written yet.
       renderPawnCount();
       goStep(initialStep, { fromPop: true });
     </script>

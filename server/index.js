@@ -127,20 +127,23 @@ const TEMPLATE_UPLOAD_LIMIT = process.env.TEMPLATE_UPLOAD_LIMIT || '100mb';
 // image itself at ~4MB (server/content.js IMAGE_CAP); this leaves headroom for the
 // multipart envelope so a valid image is never rejected at the body-parser layer.
 const CONTENT_IMAGE_UPLOAD_LIMIT = process.env.CONTENT_IMAGE_UPLOAD_LIMIT || '6mb';
-// Max multipart body for a pawn-images upload. The deck has four photo slots per
-// PAWN card and up to four pawn cards, so the batch is up to SIXTEEN customer
-// photos — not four. Each original is capped at ~4MB by the store
-// (server/content.js IMAGE_CAP) and each travels with its background-removed
-// cutout, a PNG of up to ~1024px that runs 1-3MB, so sixteen pairs is ~112MB
-// against the 40mb this used to allow: a 16-player buyer sending her party in one
-// go would have been cut off by the body parser and lost every photo in the
-// batch, as a bare 413 with nothing to read.
-//
-// The ceiling is the only thing that moves. The per-image cap is unchanged and
-// still enforced file by file by the store, and handlePawnUpload now refuses a
-// batch longer than the collection's own player count BEFORE writing anything —
-// so the size here bounds a legitimate 16-photo send, not an unbounded one.
-const PAWN_UPLOAD_LIMIT = process.env.PAWN_UPLOAD_LIMIT || '120mb';
+// Max multipart body for a pawn-images upload: PAWN_BATCH_MAX customer photos,
+// each capped at ~4MB by the store (server/content.js IMAGE_CAP), plus envelope
+// room — AND each photo travels with its background-removed cutout, a PNG of up
+// to ~1024px that runs 1-3MB. Four 4MB originals with their cutouts is over 20MB,
+// and the body parser rejecting the batch would lose the photos entirely, so the
+// ceiling doubles. Nothing here relaxes the per-image cap, which the store still
+// enforces file by file.
+const PAWN_UPLOAD_LIMIT = process.env.PAWN_UPLOAD_LIMIT || '40mb';
+// HOW MANY PHOTOS ONE REQUEST MAY CARRY — which is NOT how many a collection may
+// hold. A deck is laid out for 4 to 16 players (db.playersFor) and holds one photo
+// per player, but this body is buffered WHOLE in memory before anything looks at
+// it, and POST /api/collections is public — anyone can mint a valid owner token
+// and post. So the TOTAL follows the player count and the BATCH stays pinned to
+// what PAWN_UPLOAD_LIMIT was sized for; a sixteen-player deck is filled by four
+// requests, not by a 160MB one. Both clients (the wizard's uploadPawns, the
+// collection page's addPawns) chunk to this number.
+const PAWN_BATCH_MAX = 4;
 // Hard cap on a single generation run (Chrome renders one page at a time, so a
 // large deck is slow); the child's whole process group is SIGKILLed past this
 // and the request 504s.
@@ -3282,9 +3285,9 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
   res.json({ valid: true, discount_pct: r.coupon.discount_pct });
 });
 
-// OWNER-SCOPED pawn-images upload: attach the collection's optional customer
-// photos ("פיונים") — as many as its deck has slots, four per pawn card, so four
-// at the default four players and sixteen at sixteen. Owner-token gated via ?k= (a query param, so we can
+// OWNER-SCOPED pawn-images upload: attach optional customer photos ("פיונים") to
+// a collection — one per player, so up to db.playersFor(c), which is 4 for the
+// standard deck and 16 for the largest. Owner-token gated via ?k= (a query param, so we can
 // authenticate BEFORE express.raw buffers the body — an unauthenticated client
 // can't force a large allocation). Multipart, same magic-byte typing + 4MB/image
 // cap as the content-photo route (content.saveImageBytes). Pictures are a
@@ -3293,11 +3296,12 @@ app.post('/api/collections/:id/coupon/validate', (req, res) => {
 // reason}]`) rather than dropped in silence, so the page can tell the buyer which
 // photo did not make it instead of just showing her fewer than she picked.
 //
-// The cap is enforced at WRITE time (POST /api/collections is public, so anyone
-// gets a valid {id, owner_token} and could hammer this route): we compute how much
-// ROOM is left for this collection and only ever write that many files, so disk
-// writes are bounded by the collection's own slot count (db.playersFor) and
-// repeated over-cap posts write nothing. Any file we DID write but that ends up unrecorded (a content-hash
+// The per-collection cap — db.playersFor(c) photos, one per player — is enforced at
+// WRITE time (POST /api/collections is public, so anyone gets a valid
+// {id, owner_token} and could hammer this route): we compute how much ROOM is left
+// for this collection and only ever write that many files, so disk writes are
+// bounded by that cap and repeated over-cap posts write nothing. A SECOND, smaller
+// cap bounds one request (PAWN_BATCH_MAX), because the body is buffered whole. Any file we DID write but that ends up unrecorded (a content-hash
 // duplicate the DB de-dupes away) is reclaimed — but only when THIS request created
 // it and nothing else references it (content-addressed files are shared).
 app.post(
@@ -3726,23 +3730,25 @@ function handlePawnUpload(req, res, id, ownerToken) {
   const parts = Object.entries(files).filter(
     ([name, f]) => f && Buffer.isBuffer(f.data) && !name.startsWith(CUTOUT_PREFIX)
   );
-  // HOW MANY PHOTOS THIS DECK HAS ROOM FOR — four per pawn card, so four at the
-  // default and sixteen at 16 players. It was a hardcoded 4 in both of the checks
-  // below, which made db.addPawnImages' own players-sized room unreachable: a
-  // 16-player buyer was 400'd at photo 5 and ended with four, and
-  // build.resolve_photos filled the other twelve slots by cycling the shipped
-  // Dugri pawns — so pawn cards 2, 3 and 4 printed the same four generic faces
-  // over again on a deck she chose the big split for.
-  const c = db.getCollection(id);
-  const slots = db.playersFor(c);
   // Reject an over-large batch UP FRONT so a single request can never write dozens
-  // of files before the cap check.
-  if (parts.length > slots) {
-    return res.status(400).json({ error: 'too many images (max ' + slots + ')', max: slots });
+  // of files before the cap check. This is the BODY-SIZE cap, not the deck's: both
+  // clients chunk to PAWN_BATCH_MAX and fill a bigger deck with several requests,
+  // because PAWN_UPLOAD_LIMIT is sized for exactly this many photos-plus-cutouts.
+  if (parts.length > PAWN_BATCH_MAX) {
+    return res
+      .status(400)
+      .json({ error: 'too many images (max ' + PAWN_BATCH_MAX + ' per upload)' });
   }
-  // Only persist as many images as there is room for. A full collection writes
-  // nothing at all — the DoS fix.
-  const room = Math.max(0, slots - (Array.isArray(c.pawn_images) ? c.pawn_images.length : 0));
+  // Only persist as many images as there is room for. ROOM IS THE PLAYER COUNT,
+  // not a fixed four: a deck laid out for sixteen players holds sixteen photos,
+  // one per pawn (db.playersFor / db.addPawnImages, which caps the write the same
+  // way). Hard-coding 4 here silently threw away every photo past the fourth on a
+  // deck that had room for it. A full collection writes nothing at all — the DoS fix.
+  const c = db.getCollection(id);
+  const room = Math.max(
+    0,
+    db.playersFor(c) - (Array.isArray(c.pawn_images) ? c.pawn_images.length : 0)
+  );
   const written = []; // { name, path, created } for every file THIS request wrote
   // ...and every part we could NOT store, with the reason. Fail-soft is right —
   // one bad photo must not lose the good ones — but SILENT fail-soft is not: this
@@ -3761,9 +3767,10 @@ function handlePawnUpload(req, res, id, ownerToken) {
       });
     }
   }
-  // A part we never even looked at because the collection was already full. The
-  // client caps at the same number, so this is the second tab / the shared link
-  // racing — still hers to know about rather than a photo that quietly evaporated.
+  // A part we never even looked at because the collection was already full — she
+  // sent more photos than her deck has pawns, or a second tab / the shared link
+  // filled it first. Either way it is hers to know about rather than a photo that
+  // quietly evaporated, which is what `skipped` carries back.
   for (const [name, f] of parts.slice(room)) {
     skipped.push({ name, filename: shortName(f), reason: 'no_room' });
   }

@@ -95,31 +95,35 @@ describe('the wizard and the server agree about the deck', () => {
 });
 
 describe('the step is built for the biggest deck', () => {
-  it('sizes its slot arrays to the largest count, not to four', () => {
-    // The arrays hold every slot the biggest deck can take, so switching counts
-    // moves no state: a photo in slot 6 is still there after a trip down to 4
-    // and back up to 12.
-    expect(html).toMatch(/const PAWN_MAX = PLAYER_COUNTS\[PLAYER_COUNTS\.length - 1\]/);
-  });
-
-  it('ships four slots in the markup and clones the rest', () => {
-    // One definition of what a slot is. Four are written out (the default deck
-    // renders without JS having to build anything); the other twelve are copies.
+  // THE ONE THING SOURCE TEXT IS GOOD FOR. Everything else this file used to
+  // assert about site/options.html — `players: pawnPlayers,`, a `.slice(0,
+  // pawnPlayers)` spelled exactly that way, the string 'growPawnGrid' — was shape,
+  // not behaviour: a rename or a Prettier reflow reds it, and a behaviour change
+  // that keeps the text passes. Those moved to where they can actually fail for
+  // the right reason: the browser (tests/e2e/pawn-photos.spec.js drives the real
+  // control, the real upload and the real order) and the server
+  // (tests/unit/pawn-images.test.js drives the routes over HTTP).
+  //
+  // What stays here is the markup CONTRACT that no runtime test can see: the step
+  // ships the default deck's slots as real HTML, so a browser that never runs the
+  // clone loop still shows a usable step.
+  it('ships the standard deck as markup and grows the rest', () => {
     const slots = html.match(/<label class="pawn-slot"/g) || [];
     expect(slots).toHaveLength(db.PLAYERS_MIN);
-    expect(html).toContain('growPawnGrid');
   });
 
-  it('sends only the slots this deck has', () => {
-    // She may have filled eight and gone back to four. The deck prints four, so
-    // four is what is uploaded — and which four is hers to see, not whichever
-    // arrived first.
-    expect(html).toMatch(/pawnFiles\s*\n?\s*\.slice\(0, pawnPlayers\)/);
-  });
-
-  it('sends the count with the order, not after it', () => {
-    // So her word ceiling is right from the first word rather than moved under
-    // her once the list has started.
-    expect(html).toMatch(/players: pawnPlayers,/);
+  // …and that JS never writes the two nodes the OWNER owns. The content editor
+  // applies her wording once, on load; anything that rewrites a [data-edit] node
+  // afterwards throws it away, silently, which is exactly what tapping a count
+  // button used to do to both of these. The e2e proves the behaviour in a browser;
+  // this is the cheap tripwire on the way back in.
+  it('never writes the owner-editable copy from the count renderer', () => {
+    const fn = html.slice(
+      html.indexOf('function renderPawnCount()'),
+      html.indexOf('function renderPawnSlot(')
+    );
+    expect(fn.length).toBeGreaterThan(200);
+    expect(fn).not.toContain('options-photos-title');
+    expect(fn).not.toContain('pawn-cut');
   });
 });

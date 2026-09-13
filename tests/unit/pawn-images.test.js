@@ -532,3 +532,173 @@ describe('GET /api/collections/:id — custom_title visibility', () => {
     expect('custom_title' in guest).toBe(false);
   });
 });
+
+// ONE PHOTO PER PLAYER — the cap the route enforces is the DECK's, not a fixed
+// four.
+//
+// The store learned this first (db.addPawnImages → playersFor); the route did not,
+// and kept a hard-coded 4 in both places that matter: the up-front batch reject and
+// the `room` calculation. Nothing offered a choice of player count, so nothing
+// noticed. The moment the wizard did, a buyer who picked sixteen players and sent
+// six faces got `400 too many images (max 4)` — with pawn_images left EMPTY — and
+// the page redirected her to her collection as though it had worked.
+//
+// These drive the route over HTTP rather than asserting on source text, so the
+// hard-coded 4 coming back reds them whatever the code around it looks like.
+describe('POST /api/collections/:id/pawns — the cap is the player count', () => {
+  // Four at a time, which is what both browsers send: the body is buffered whole,
+  // so PAWN_BATCH_MAX bounds a request and the player count bounds the total.
+  async function uploadInBatches(c, tags) {
+    const results = [];
+    for (let i = 0; i < tags.length; i += 4) {
+      results.push(
+        await uploadPawns(
+          c.id,
+          c.owner_token,
+          tags
+            .slice(i, i + 4)
+            .map((t, n) => ({ name: 'pawn' + n, filename: t + '.png', data: pngWith(t) }))
+        )
+      );
+    }
+    return results;
+  }
+
+  it('stores SIXTEEN photos on a sixteen-player deck', async () => {
+    const c = db.createCollection('בדיקה', { players: 16 });
+    const tags = Array.from({ length: 16 }, (_, i) => 'big-deck-' + i);
+    const results = await uploadInBatches(c, tags);
+    expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200]);
+    // Nothing was skipped for want of room, and all sixteen are on the order.
+    expect(results.flatMap((r) => r.body.skipped)).toEqual([]);
+    expect(db.getCollection(c.id).pawn_images).toHaveLength(16);
+    expect(results[3].body.pawn_images).toHaveLength(16);
+  });
+
+  it('still stops at four on the standard deck, and SAYS which photos it dropped', async () => {
+    const c = db.createCollection('בדיקה', {});
+    const results = await uploadInBatches(
+      c,
+      Array.from({ length: 8 }, (_, i) => 'small-deck-' + i)
+    );
+    expect(db.getCollection(c.id).pawn_images).toHaveLength(4);
+    // The four that did not fit came back named, with the reason — never dropped
+    // in silence.
+    expect(results[1].body.skipped.map((s) => s.reason)).toEqual([
+      'no_room',
+      'no_room',
+      'no_room',
+      'no_room',
+    ]);
+  });
+
+  it('stops at TWELVE on a twelve-player deck — the cap follows the order, not a constant', async () => {
+    const c = db.createCollection('בדיקה', { players: 12 });
+    const results = await uploadInBatches(
+      c,
+      Array.from({ length: 16 }, (_, i) => 'mid-deck-' + i)
+    );
+    expect(db.getCollection(c.id).pawn_images).toHaveLength(12);
+    expect(results[3].body.skipped).toHaveLength(4);
+  });
+
+  it('refuses an over-large BATCH whatever the deck holds, and writes nothing', async () => {
+    // The body-size guard is separate from the deck's cap and stays put: a
+    // sixteen-player deck is filled by four requests, not by one 160MB body that
+    // the parser would 413 and the buyer would never hear about.
+    const c = db.createCollection('בדיקה', { players: 16 });
+    const before = fs.readdirSync(content._uploadDir).length;
+    const r = await uploadPawns(
+      c.id,
+      c.owner_token,
+      Array.from({ length: 5 }, (_, i) => ({
+        name: 'pawn' + i,
+        filename: 'batch' + i + '.png',
+        data: pngWith('batch-' + i),
+      }))
+    );
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/per upload/);
+    expect(db.getCollection(c.id).pawn_images).toEqual([]);
+    expect(fs.readdirSync(content._uploadDir).length).toBe(before);
+  });
+});
+
+// THE COUNT REACHES THE DECK, over HTTP, from the shape the wizard actually posts.
+//
+// Deleting `players: b.players` from POST /api/collections turns the whole feature
+// into a no-op — every buyer gets a four-player deck — and reds nothing in the
+// suite this arrived with. It reds these.
+describe('POST /api/collections — the player count travels with the order', () => {
+  async function create(body) {
+    const res = await fetch(base + '/api/collections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ honoree_name: 'בדיקה', email: 'p@example.com', ...body }),
+    });
+    return { status: res.status, body: await res.json().catch(() => ({})) };
+  }
+
+  it('lays the deck out for the number the wizard sent', async () => {
+    const r = await create({ players: 16 });
+    expect(r.status).toBe(201);
+    const c = db.getCollection(r.body.id);
+    expect(db.playersFor(c)).toBe(16);
+    expect(db.pawnCardsFor(c)).toBe(4);
+    // …and that is what the deck holds for words — the ceiling the collection
+    // page counts up to and db.addWords enforces.
+    expect(db.deckWordsFor(c)).toBe(400);
+    // The page reads it back off the collection, owner and contributor alike.
+    const seen = await fetch(base + '/api/collections/' + c.id).then((x) => x.json());
+    expect(seen.players).toBe(16);
+    expect(seen.pawn_cards).toBe(4);
+    expect(seen.deck_words).toBe(400);
+  });
+
+  it('is the standard deck when the count is absent — every order placed before this', async () => {
+    const r = await create({});
+    const c = db.getCollection(r.body.id);
+    expect(db.playersFor(c)).toBe(4);
+    expect(db.deckWordsFor(c)).toBe(412);
+  });
+
+  it('coerces anything out of range to a legal deck rather than refusing the order', async () => {
+    // The order matters more than the count: a junk value must never cost the
+    // buyer her checkout. Each of these is a deck that can actually be printed.
+    for (const [sent, expected] of [
+      [9999, 16],
+      [-4, 4],
+      [6, 8],
+      ['abc', 4],
+      [null, 4],
+      [0, 4],
+    ]) {
+      const r = await create({ players: sent });
+      expect(r.status, 'players=' + JSON.stringify(sent)).toBe(201);
+      const c = db.getCollection(r.body.id);
+      expect(db.playersFor(c), 'players=' + JSON.stringify(sent)).toBe(expected);
+      expect(db.pawnCardsFor(c) * 4).toBe(expected);
+    }
+  });
+
+  it('holds a 16-player order to the 400 words its deck has room for', async () => {
+    const r = await create({ players: 16 });
+    const c = db.getCollection(r.body.id);
+    // Paid, so the free-word quota is out of the way and the only ceiling left is
+    // the deck's own.
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    db.markPaid(c.id);
+    // The words the deck can print, and the first one past it.
+    db.addWords(
+      c.id,
+      Array.from({ length: 400 }, (_, i) => 'מילה' + i),
+      'בדיקה'
+    );
+    expect(db.countWords(c.id)).toBe(400);
+    db.addWords(c.id, ['אחת יותר מדי'], 'בדיקה');
+    expect(db.countWords(c.id)).toBe(400);
+    // The standard deck's ceiling is still 412 — this is per order, not global.
+    const std = db.getCollection((await create({})).body.id);
+    expect(db.deckWordsFor(std)).toBe(412);
+  });
+});
