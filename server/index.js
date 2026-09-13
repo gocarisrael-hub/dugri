@@ -6095,8 +6095,17 @@ app.get('/api/sms/outbox', (req, res) => {
     _warnedNoSmsBase = true;
     console.warn('[sms] PUBLIC_BASE_URL is not set — messages ship without ack_url');
   }
-  res.json({
-    messages: sms.claim({ limit }).map((m) => {
+  // ONE value for the whole poll, alongside the messages rather than inside them:
+  // it names this batch, and it is the only thing the fixed batch-report address
+  // needs. `ack_batch_url` is that address with the value already in it, so a
+  // flow that can copy a field reports without building anything — and it is
+  // there on EVERY poll, including one with nothing to send, because the report
+  // block has no condition in front of it and an empty address would stop the
+  // flow on the quiet cycles, which are most of them.
+  const { batch, messages } = sms.claim({ limit });
+  const out = {
+    batch,
+    messages: messages.map((m) => {
       const { ack_token, ...rest } = m;
       if (!base || !ack_token) return rest;
       return {
@@ -6109,7 +6118,9 @@ app.get('/api/sms/outbox', (req, res) => {
           encodeURIComponent(ack_token),
       };
     }),
-  });
+  };
+  if (base) out.ack_batch_url = base + '/api/sms/outbox/ack-taken?b=' + encodeURIComponent(batch);
+  res.json(out);
 });
 
 // The phone's report on one message. `ok:false` carries the SIM's reason, which
@@ -6157,6 +6168,74 @@ function smsAck(req, res) {
 }
 app.post('/api/sms/outbox/:id/ack', smsAck);
 app.get('/api/sms/outbox/:id/ack', smsAck);
+
+// The batch at once, from ONE fixed address.
+//
+// The per-message report needs the phone to build an address out of the message
+// it is holding, and that step is where this broke twice on the owner's own
+// phone: a formula that resolved to nothing, then the same field left as plain
+// text. Both are silent from here — the message stays leased, the lease runs out,
+// and the customer is texted again.
+//
+// This address is a constant. What it carries is the batch token from the poll
+// that handed the messages over — one value for the whole run, copied straight
+// across, nothing built and nothing evaluated per message — and it settles that
+// batch and nothing else. "Everything I am holding" with no name on it would
+// settle a second poll's messages, a second phone's, or a whole batch mid-flight
+// the moment the owner opened the URL in a browser to check she had pasted it
+// right; and `sent` is terminal, so those customers are never told at all.
+//
+// THE TOKEN IS THE KEY, and SMS_GATEWAY_KEY is not. A URL is written into
+// Railway's access log, Cloudflare's and Automate's flow log, and the shared key
+// opens the whole outbox — every customer's number and text — which is exactly
+// why `ack_url` carries a per-message token instead. The same reasoning applies
+// here, so the batch token authorises the report on its own and the address the
+// owner pastes need never contain the shared key. It is read from the query
+// (`b`), a form or JSON body, or an `x-sms-batch` header, so the one value can go
+// wherever the app makes it easiest to drop a plain variable.
+//
+// NOTHING HERE 4xx's A PHONE THAT BROUGHT A TOKEN. A token can only ever settle
+// its own batch, so one we do not recognise — forged, or simply stale because the
+// lease ran out and those messages were handed to a later batch — changes nothing
+// whatever we answer. Answering 200 with ok:false is therefore free, and the
+// alternative is not: an Automate flow stops dead on an error status, and a phone
+// that stopped polling for a whole night is the failure this area exists to undo.
+// The messages stay leased and go out again on the next lease — a duplicate,
+// which is the trade this module makes on purpose.
+//
+// A request with NO token at all is a different thing — a flow that was never
+// wired up, or the address opened in a browser — and that one still has to prove
+// it is the phone, so the route is not an open target. It is told what is missing
+// rather than being allowed to settle "everything", which is the whole defect.
+//
+// GET as well as POST, because "GET" is what an automation app sends when nobody
+// picks a method.
+function smsAckTaken(req, res) {
+  if (!process.env.SMS_GATEWAY_KEY) {
+    return res.status(404).json({ error: 'sms gateway not configured' });
+  }
+  const body = req.method === 'GET' ? req.query : req.body || {};
+  const batch = String(
+    req.query.b || req.query.batch || body.b || body.batch || req.get('x-sms-batch') || ''
+  );
+  if (!batch && !requireSmsGateway(req, res)) return;
+  const { known, sent } = sms.ackTaken({ batch });
+  if (!known) {
+    // The one failure the phone cannot see for itself: its request succeeded,
+    // nothing moved, and the messages go out again on the next lease. Said out
+    // loud so the log shows a report landing nowhere. Sanitised for the same
+    // reason the per-message route sanitises an id — this comes off the wire.
+    const shown = batch.replace(/[^\x20-\x7e]/g, '.').slice(0, 60);
+    console.warn('[sms] batch report for an unknown batch: ' + (shown || '(none given)'));
+    return res.json({ ok: false, sent: 0, error: batch ? 'unknown batch' : 'missing batch' });
+  }
+  // Only a token we issued counts as the phone saying hello — the number on the
+  // admin screen has to mean the gateway is alive, not that someone opened a URL.
+  sms.markPolled();
+  res.json({ ok: true, sent: sent.length });
+}
+app.post('/api/sms/outbox/ack-taken', smsAckTaken);
+app.get('/api/sms/outbox/ack-taken', smsAckTaken);
 
 // Admin: the queue, and when the phone last asked for work. That second number is
 // the one that matters — pending messages plus a poll from two days ago is a

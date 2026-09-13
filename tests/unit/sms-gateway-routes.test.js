@@ -242,3 +242,183 @@ describe('a late report over the wire', () => {
     expect(after.error).toBe(before);
   });
 });
+
+// The same report, for a phone whose flow cannot build a per-message address.
+// One constant URL, pasted after the send block — carrying the one value the
+// poll handed back for the whole run, and settling exactly that run.
+describe('the batch report', () => {
+  it('comes back from the poll as a ready-made address, once for the batch', async () => {
+    queue('c-one');
+    queue('c-two');
+    const { body } = await poll();
+    expect(body.batch).toBeTruthy();
+    expect(body.ack_batch_url).toBe(
+      PUBLIC + '/api/sms/outbox/ack-taken?b=' + encodeURIComponent(body.batch)
+    );
+    // One value for the whole poll, not a field on each message to loop over.
+    for (const m of body.messages) expect(m.batch).toBeUndefined();
+  });
+
+  // The same reasoning as ack_url: a URL is written into Railway's access log,
+  // Cloudflare's and Automate's flow log, and SMS_GATEWAY_KEY opens the whole
+  // outbox — every customer's number and text. The batch token opens one batch's
+  // "that went out" and nothing else, so it is what travels.
+  it('carries the batch token, never the shared gateway key', async () => {
+    queue();
+    const { body } = await poll();
+    expect(body.ack_batch_url).not.toContain(GW);
+    expect(JSON.stringify(body)).not.toContain(GW);
+  });
+
+  // Most polls have nothing to send, and the report block has no condition in
+  // front of it. An idle poll that answered with no address would point that
+  // block at nothing — and an Automate flow stops dead on that, which is how the
+  // gateway went quiet for a night in the first place.
+  it('answers an idle poll with an address too, and reporting it is a clean ok', async () => {
+    const { body } = await poll();
+    expect(body.messages).toEqual([]);
+    expect(body.batch).toBeTruthy();
+    const r = await fetch(local(body.ack_batch_url));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, sent: 0 });
+  });
+
+  it('is omitted, like ack_url, when there is no public address to build on', async () => {
+    const had = process.env.PUBLIC_BASE_URL;
+    delete process.env.PUBLIC_BASE_URL;
+    try {
+      queue();
+      const { body } = await poll();
+      expect(body.batch).toBeTruthy();
+      expect(body.ack_batch_url).toBeUndefined();
+    } finally {
+      process.env.PUBLIC_BASE_URL = had;
+    }
+  });
+
+  it('marks that batch sent on a plain GET of the address it was given', async () => {
+    const m = queue();
+    const { body } = await poll();
+    const r = await fetch(local(body.ack_batch_url));
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, sent: 1 });
+    expect(stateOf(m.id)).toBe('sent');
+  });
+
+  it('is taken as a POST as well', async () => {
+    const m = queue();
+    const { body } = await poll();
+    const r = await fetch(local(body.ack_batch_url), { method: 'POST' });
+    expect(r.status).toBe(200);
+    expect(stateOf(m.id)).toBe('sent');
+  });
+
+  it('takes the token from a body field or a header, not only the query', async () => {
+    const m = queue();
+    const { body } = await poll();
+    const r = await fetch(base + '/api/sms/outbox/ack-taken', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ batch: body.batch }),
+    });
+    expect(await r.json()).toMatchObject({ ok: true, sent: 1 });
+    expect(stateOf(m.id)).toBe('sent');
+
+    const n = queue('c-header');
+    const second = await poll();
+    const r2 = await fetch(base + '/api/sms/outbox/ack-taken', {
+      headers: { 'x-sms-batch': second.body.batch },
+    });
+    expect(await r2.json()).toMatchObject({ ok: true, sent: 1 });
+    expect(stateOf(n.id)).toBe('sent');
+  });
+
+  // THE DEFECT. The poll's response is lost on the way back, Automate retries the
+  // poll, and the phone is handed a second batch. Reporting that one must not
+  // settle the first — those customers were never texted, and `sent` is terminal.
+  it('leaves a batch whose response never arrived alone', async () => {
+    const a = queue('c-a');
+    const b = queue('c-b');
+    const lost = await poll(); // the phone never sees this answer
+    expect(lost.body.messages).toHaveLength(2);
+    // The two go back in the queue when the lease runs out; here the phone simply
+    // polls again, which is what Automate's retry does.
+    for (const id of [a.id, b.id]) {
+      sms.list().find((x) => x.id === id).taken_at = new Date(
+        Date.now() - sms.LEASE_MS - 1000
+      ).toISOString();
+    }
+    const second = await poll();
+    expect(second.body.batch).not.toBe(lost.body.batch);
+
+    const r = await fetch(local(second.body.ack_batch_url));
+    expect(await r.json()).toMatchObject({ ok: true, sent: 2 });
+    // And the address from the lost run now settles nothing, because the messages
+    // moved on to the batch that actually holds them.
+    const stale = await fetch(local(lost.body.ack_batch_url));
+    expect(stale.status).toBe(200);
+    expect(await stale.json()).toMatchObject({ ok: false, sent: 0 });
+  });
+
+  // The doc tells the owner the pasted address is easy to check. Opening the bare
+  // address in a browser mid-batch must not settle what the phone is holding.
+  it('settles nothing when opened with no batch token at all', async () => {
+    const m = queue();
+    await poll();
+    const r = await fetch(base + '/api/sms/outbox/ack-taken?key=' + GW);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: false, sent: 0 });
+    expect(stateOf(m.id)).toBe('taken');
+  });
+
+  it('answers plainly, and without an error status, for a token it does not know', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const m = queue();
+      await poll();
+      const forged = encodeURIComponent('x\n[sms] נשלח בהצלחה');
+      const r = await fetch(base + `/api/sms/outbox/ack-taken?key=${GW}&b=${forged}`);
+      // NOT a 4xx: an Automate flow stops dead on an error status, and a phone
+      // that stops polling is the failure this whole area exists to avoid.
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({ ok: false, sent: 0 });
+      expect(stateOf(m.id)).toBe('taken');
+      const line = warn.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(line).toContain('[sms] batch report for an unknown batch');
+      expect(line.split('\n')).toHaveLength(1);
+      expect(line).not.toContain('נשלח בהצלחה');
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  // Automate repeats a step it is not sure landed. The second report is a no-op,
+  // and answers like one — not an error that keeps the flow retrying.
+  it('is a no-op the second time the same batch is reported', async () => {
+    const m = queue();
+    const { body } = await poll();
+    await fetch(local(body.ack_batch_url));
+    const again = await fetch(local(body.ack_batch_url));
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({ ok: true, sent: 0 });
+    expect(stateOf(m.id)).toBe('sent');
+  });
+
+  it('refuses a wrong key with no token, leaving the message leased', async () => {
+    const m = queue();
+    await poll();
+    expect((await fetch(base + '/api/sms/outbox/ack-taken?key=nope')).status).toBe(403);
+    expect(stateOf(m.id)).toBe('taken');
+  });
+
+  // The shared key stays a fallback for a flow already sending it, but it is the
+  // token that says WHICH batch — the key alone can no longer settle anything.
+  it('needs the token even with the shared key, and the token needs no key', async () => {
+    const m = queue();
+    const { body } = await poll();
+    const r = await fetch(base + '/api/sms/outbox/ack-taken?b=' + body.batch);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ ok: true, sent: 1 });
+    expect(stateOf(m.id)).toBe('sent');
+  });
+});
