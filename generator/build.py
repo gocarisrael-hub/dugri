@@ -314,7 +314,7 @@ def _pitch_note(cfg, wants, pitch):
 
 def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                   progress=False, workdir=None, press_geom=None, paper=None,
-                  photo_views=None, blank_markers=False):
+                  photo_views=None, photo_cutouts=None, blank_markers=False):
     """Assemble the whole deck as a ``(DeckDocument, viewBox_string)`` pair.
 
     Split out from ``build_deck`` so the deck's STRUCTURE — page count, duplex
@@ -394,7 +394,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                                   back_index=i)
                for i in dict.fromkeys(backs)}
     photo_paths = resolve_photos(
-        theme, photos, views=photo_views,
+        theme, photos, views=photo_views, cutouts=photo_cutouts,
         workdir=os.path.join(workdir, "photos") if workdir else None)
     # ONE RHYTHM FOR THE DECK, AND THE DECK PICKS IT. The owner's rule is that
     # every gap between lines is the same, on every card — and the number that
@@ -460,7 +460,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
 def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
                workdir="/tmp/gen/deck", progress=True, chasers=False,
                custom_title=None, photos=None, press_icc=None, press_bleed=None,
-               press_cmyk=True, gender=None, photo_views=None,
+               press_cmyk=True, gender=None, photo_views=None, photo_cutouts=None,
                blank_markers=False):
     """Assemble a v2 order: the card deck PDF + the board PDF.
 
@@ -470,6 +470,9 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
 
     ``photos`` are absolute paths to the customer's pawn photos for the final
     card; short/empty is topped up from the theme's generic fallback set.
+    ``photo_cutouts`` says, per photo, whether the file is her background-removed
+    cutout or her own original — which decides the automatic framing, exactly as
+    it decides it on the page she approved (:func:`square_photo`).
     ``photo_views`` optionally carries the framing the BUYER set for each of
     them, one entry per photo (see :func:`apply_photo_view`); ``None`` entries —
     and an absent list — leave the automatic framing in charge.
@@ -525,6 +528,7 @@ def build_deck(theme, csvp, name, out_pdf, extra_fields=None, word_font=None,
     # (docs/photo-card.md); an unmeasurable front leaves the card as shipped.
     doc, vbs = deck_document(theme, csvp, title_lines, word_font=word_font,
                              photos=photos, photo_views=photo_views,
+                             photo_cutouts=photo_cutouts,
                              progress=progress, workdir=workdir,
                              press_geom=geom, blank_markers=blank_markers,
                              paper=card_paper.front_paper(theme, workdir=workdir))
@@ -946,6 +950,26 @@ class _PhotoFrameAction(argparse.Action):
         frames.append(values)
 
 
+class _PhotoOriginalAction(argparse.Action):
+    """``--photo-original`` — marks the ``--photo`` before it as NOT a cutout.
+
+    A flag rather than a value, and paired like ``--photo-frame`` so it cannot
+    slide onto the wrong photo. Its absence is the normal case, which is why the
+    argv of every order that predates it is unchanged.
+    """
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        photos = getattr(namespace, "photo", None) or []
+        if not photos:
+            parser.error("--photo-original must come after the --photo it marks")
+        cuts = _bucket(namespace, self.dest)
+        while len(cuts) < len(photos) - 1:
+            cuts.append(True)
+        if len(cuts) >= len(photos):
+            parser.error("two --photo-original flags for one --photo")
+        cuts.append(False)
+
+
 def add_photo_args(ap, photo_help):
     """Declare ``--photo`` / ``--photo-frame`` on ``ap``, correctly paired.
 
@@ -964,11 +988,32 @@ def add_photo_args(ap, photo_help):
                          "Repeatable, one at most per --photo; omit it (or pass "
                          "1,0,0) to keep the automatic subject framing for that "
                          "slot")
+    ap.add_argument("--photo-original", action=_PhotoOriginalAction, nargs=0,
+                    default=(),
+                    help="the PRECEDING --photo is the buyer's own original, not "
+                         "a background-removed cutout — so it is framed on the "
+                         "plain square, which is how her collection page framed "
+                         "it when she approved it. Repeatable, one at most per "
+                         "--photo; omit it for a cutout (the normal case)")
 
 
 def photos(args):
     """The ``--photo`` paths as a plain list, in the order they were given."""
     return list(getattr(args, "photo", None) or ())
+
+
+def photo_cutouts(args):
+    """Per ``--photo``, whether it is a CUTOUT — the list :func:`resolve_photos`
+    wants.
+
+    One entry per photo, in order, ``True`` (a cutout) unless the photo was
+    marked ``--photo-original``. Padded the same way the views are, so nothing
+    downstream has to reason about a short list.
+    """
+    given = photos(args)
+    cuts = list(getattr(args, "photo_original", None) or ())
+    cuts += [True] * (len(given) - len(cuts))
+    return cuts[:len(given)]
 
 
 def photo_views(args):
@@ -1034,8 +1079,23 @@ def apply_photo_view(crop, view):
             int(round(cx + new / 2)), int(round(cy + new / 2)))
 
 
-def square_photo(path, workdir, index=0, view=None):
+def square_photo(path, workdir, index=0, view=None, cutout=True):
     """A square copy of a customer photo, framed on the subject.
+
+    ``cutout`` says WHICH file this is — the background-removed cutout, or the
+    buyer's own original — and it decides how the photo is framed, because THE
+    PAGE SHE APPROVED IT ON DECIDES THE SAME WAY. Her collection page measures
+    the silhouette when it is showing a cutout and takes the plain square when it
+    is showing an original (site/collect.html ``measureFrame``); this used to
+    sniff the file's alpha instead, and an ORIGINAL that happens to carry alpha —
+    an already-transparent PNG uploaded by a buyer who then ticked "keep my
+    background" — was framed on its silhouette here and on the plain square
+    there. The owner watched that print: her dog came out a quarter tighter than
+    the circle she had lined it up in, and her zoom multiplied the gap.
+
+    The deck is a promise about a picture she has already seen. So the rule is
+    the page's rule, said the same way on both sides: a cutout is a silhouette
+    and is framed on it; an original is a photograph and gets the square.
 
     With a cutout (the normal case — the wizard cuts the background out on the
     buyer's device) the frame comes from the alpha: the subject's own bounding
@@ -1080,7 +1140,10 @@ def square_photo(path, workdir, index=0, view=None):
             # rectangle. The shipped fallbacks never pass through here, which is
             # why they looked right while real customer photos did not.
             im = im.convert("RGBA")
-            found = subject_box(im)
+            # An ORIGINAL is never measured for a silhouette, even when it has
+            # one. See the ``cutout`` note above: the page did not measure it
+            # either, and the page is what she approved.
+            found = subject_box(im) if cutout else None
             if found:
                 box, alpha = found
                 im.putalpha(alpha)
@@ -1169,7 +1232,7 @@ def fallback_photos(theme, filled):
     return out
 
 
-def resolve_photos(theme, photos, workdir=None, views=None):
+def resolve_photos(theme, photos, workdir=None, views=None, cutouts=None):
     """The four photo-card images: the customer's, topped up from the fallbacks.
 
     A customer who uploaded nothing gets the generic Dugri set; one who uploaded
@@ -1181,16 +1244,24 @@ def resolve_photos(theme, photos, workdir=None, views=None):
     automatically". A photo dropped for not existing takes its view with it, so
     the two lists cannot slide against each other and put one face's framing on
     another's.
+
+    ``cutouts`` says, per photo, whether the file is the background-removed
+    CUTOUT or the buyer's own original — which is what decides the automatic
+    framing (see :func:`square_photo`). Missing entries default to True, which is
+    both the normal case and the behaviour every deck had before an original
+    could reach a slot.
     """
     # Only the CUSTOMER's photos are squared; the shipped pawns are already
     # square sticker art and re-encoding them would only lose quality.
     views = list(views or [])
-    pairs = [(p, views[i] if i < len(views) else None)
+    cuts = list(cutouts or [])
+    pairs = [(p, views[i] if i < len(views) else None,
+              cuts[i] if i < len(cuts) else True)
              for i, p in enumerate(photos or []) if p and os.path.isfile(p)]
-    given = [p for p, _ in pairs]
+    given = [p for p, _, _ in pairs]
     if workdir:
-        given = [square_photo(p, workdir, i, view=v)
-                 for i, (p, v) in enumerate(pairs)]
+        given = [square_photo(p, workdir, i, view=v, cutout=c)
+                 for i, (p, v, c) in enumerate(pairs)]
     out = list(given)
     if len(out) >= 4:
         return out[:4]

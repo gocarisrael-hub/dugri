@@ -126,6 +126,29 @@ generator never branches on which template it loaded.
 | clipping              | in the IMAGE — a disc of 0.90 × the square, always        |
 | `preserveAspectRatio` | `xMidYMid meet` (contain — never crops)                   |
 
+## Which rule frames a photo — and who decides
+
+**A cutout is framed on its silhouette; the buyer's own ORIGINAL is framed on the plain
+square.** Not because of what the file contains, but because **that is how her collection
+page framed it when she approved it** (`site/collect.html` → `measureFrame`, which measures
+the alpha only when the file it is showing is the cutout).
+
+The generator cannot tell the two apart by looking, so it is TOLD: `pawnPhotoEntries` in
+`server/index.js` is the code that chooses cutout-or-original (cutout, unless the buyer
+ticked "keep my background" or we never managed to cut one), and it emits `--photo-original`
+after that photo's `--photo` when it hands over the original. `build.resolve_photos` passes
+the flag to `square_photo`, which skips `subject_box` for it.
+
+This used to be decided by sniffing the file's alpha, which answers differently for an
+**original that carries alpha** — an already-transparent PNG uploaded by a buyer who then
+kept her background. Measured on a real order: the page drew the whole square, the printer
+framed the dog's silhouette, 24.6% of the circle differed, and her zoom of 1.5 multiplied it.
+The deck is a promise about a picture she has already seen, so the print follows the page.
+
+The clip and the halo are unchanged either way: the disc is multiplied into the alpha
+regardless (point 1), so an original that carries a silhouette still prints as a sticker
+traced round its subject — it is only the FRAMING that follows the page.
+
 ## How the generator frames a photo
 
 `generator/build.py` → `square_photo()`, one photo in, one square RGBA PNG out. There is no

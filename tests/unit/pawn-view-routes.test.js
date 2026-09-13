@@ -395,3 +395,101 @@ describe('what the generator is handed', () => {
     expect(app.orderArgs({ ...BASE, photoFrames: [null, null] })).toEqual(app.orderArgs(BASE));
   });
 });
+
+// WHICH FILE THE PRINTER IS BEING HANDED, SAID OUT LOUD.
+//
+// The generator frames a cutout on its silhouette and an original on the plain
+// square — the same fork the collection page takes when it draws the pawn. It
+// used to sniff the file's alpha instead, which answers differently for an
+// ORIGINAL that carries alpha (a buyer's already-transparent PNG, kept because
+// she ticked "keep my background"). That printed: the owner's dog, framed one
+// way on the page she approved it on and another way by the press.
+//
+// So the server says which of the two it picked, and the flag rides the argv
+// pinned to its own --photo, like the frame.
+describe('pawnPhotoCutouts', () => {
+  it('is true when the printer gets the cutout', async () => {
+    const { c, paths } = withPhotos(1, 'cut-');
+    await postCut(c.id, c.owner_token, [
+      { name: 'path', value: paths[0] },
+      { name: 'cut', filename: 'c.png', type: 'image/png', data: pngWith('cutA') },
+    ]);
+    expect(app.pawnPhotoCutouts(db.getCollection(c.id))).toEqual([true]);
+  });
+
+  it('is false when she kept her background, because then it gets the ORIGINAL', async () => {
+    const { c, paths } = withPhotos(1, 'bg-');
+    await postCut(c.id, c.owner_token, [
+      { name: 'path', value: paths[0] },
+      { name: 'cut', filename: 'c.png', type: 'image/png', data: pngWith('cutB') },
+    ]);
+    expect(app.pawnPhotoCutouts(db.getCollection(c.id))).toEqual([true]);
+    await putView(c.id, c.owner_token, { path: paths[0], bg: true });
+    expect(app.pawnPhotoCutouts(db.getCollection(c.id))).toEqual([false]);
+  });
+
+  it('is false when we never managed to cut one', async () => {
+    // A cut that missed sends the original too, and the page shows the original,
+    // so both frame it the plain way.
+    const { c } = withPhotos(1, 'nocut-');
+    expect(app.pawnPhotoCutouts(db.getCollection(c.id))).toEqual([false]);
+  });
+
+  it('lines up with the files, photo for photo', async () => {
+    const { c, paths } = withPhotos(2, 'pair-');
+    await postCut(c.id, c.owner_token, [
+      { name: 'path', value: paths[1] },
+      { name: 'cut', filename: 'c.png', type: 'image/png', data: pngWith('cutC') },
+    ]);
+    const col = db.getCollection(c.id);
+    expect(app.pawnPhotoCutouts(col)).toEqual([false, true]);
+    expect(app.pawnPhotoFiles(col)).toHaveLength(2);
+  });
+});
+
+describe('orderArgs marks an original so the printer frames it the page’s way', () => {
+  const BASE = {
+    theme: 'bachelorette',
+    name: 'Shira',
+    wordsFile: '/tmp/w.txt',
+    outPath: '/tmp/out.pdf',
+  };
+
+  // The argv, walked back into one entry per photo — the only honest way to
+  // assert flags that are POSITIONAL against --photo.
+  function photoEntries(args) {
+    const out = [];
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '--photo') out.push({ file: args[++i], frame: null, original: false });
+      else if (String(args[i]).startsWith('--photo-frame=')) {
+        expect(out.length).toBeGreaterThan(0);
+        out[out.length - 1].frame = String(args[i]).slice('--photo-frame='.length);
+      } else if (args[i] === '--photo-original') {
+        expect(out.length).toBeGreaterThan(0);
+        expect(out[out.length - 1].original).toBe(false); // never twice for one photo
+        out[out.length - 1].original = true;
+      }
+    }
+    return out;
+  }
+
+  it('puts the flag on its own photo and nowhere else', () => {
+    const args = app.orderArgs({
+      ...BASE,
+      photos: ['/tmp/a.png', '/tmp/b.png', '/tmp/c.png'],
+      photoFrames: [null, '1.5,-0.25,0.1', null],
+      photoCutouts: [true, false, true],
+    });
+    expect(photoEntries(args)).toEqual([
+      { file: '/tmp/a.png', frame: null, original: false },
+      { file: '/tmp/b.png', frame: '1.5,-0.25,0.1', original: true },
+      { file: '/tmp/c.png', frame: null, original: false },
+    ]);
+  });
+
+  it('an order that is all cutouts is byte-for-byte what it always was', () => {
+    const all = { ...BASE, photos: ['/tmp/a.png', '/tmp/b.png'] };
+    expect(app.orderArgs({ ...all, photoCutouts: [true, true] })).toEqual(app.orderArgs(all));
+    expect(app.orderArgs(all)).not.toContain('--photo-original');
+  });
+});

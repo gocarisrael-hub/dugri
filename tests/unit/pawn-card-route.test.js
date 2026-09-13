@@ -228,3 +228,29 @@ describe('pawnCardArgs', () => {
     expect(args).not.toContain('--photo');
   });
 });
+
+// …and the preview is spawned with the same marker, from the same helper, so the
+// card she looks at is framed the way the card she receives is.
+describe('pawnCardArgs marks an original too', () => {
+  it('pins the flag to its own photo', () => {
+    const args = app.pawnCardArgs({
+      theme: 'grapefruit',
+      outDir: '/tmp/out',
+      photos: ['/tmp/a.png', '/tmp/b.png'],
+      photoCutouts: [false, true],
+    });
+    const i = args.indexOf('/tmp/a.png');
+    expect(args[i + 1]).toBe('--photo-original');
+    expect(args.filter((a) => a === '--photo-original')).toHaveLength(1);
+  });
+
+  it('says nothing for an all-cutout order', () => {
+    const args = app.pawnCardArgs({
+      theme: 'grapefruit',
+      outDir: '/tmp/out',
+      photos: ['/tmp/a.png'],
+      photoCutouts: [true],
+    });
+    expect(args).not.toContain('--photo-original');
+  });
+});
