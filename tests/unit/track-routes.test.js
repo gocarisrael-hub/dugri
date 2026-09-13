@@ -156,6 +156,57 @@ describe('POST /api/track — a purchase', () => {
     }
     expect((await report()).body.totals).toMatchObject({ orders: 1, revenue: 239 });
   });
+
+  // The wizard hands its touch to the collection it creates; the confirmation
+  // page is then opened from the email, on a laptop, through Gmail.
+  it('credits the sale to how the order was placed, not the browser that paid', async () => {
+    const res = await fetch(base + '/api/collections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        honoree_name: 'מאיה',
+        email: 'a@b.co',
+        arrival: { landing: AD + '&k=should-not-be-kept', referrer: '' },
+      }),
+    });
+    expect(res.status).toBe(201);
+    const { id, owner_token: token } = await res.json();
+    db.setOrder(id, token, { version: 'pdf' });
+    db.markPaid(id, { charged_total: 199 });
+
+    await track({
+      kind: 'purchase',
+      landing: 'https://dugri-israel.co.il/pay-success.html',
+      referrer: 'https://mail.google.com/',
+      collection: id,
+      k: token,
+    });
+    const { rows } = (await report()).body;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      source: 'instagram',
+      medium: 'paid',
+      campaign: 'rovakot',
+      orders: 1,
+      revenue: 199,
+    });
+
+    // Stored as a parsed touch, never a URL, and set once.
+    const arrival = db.getCollection(id).arrival;
+    expect(JSON.stringify(arrival)).not.toMatch(/http|should-not-be-kept/);
+    expect(db.setArrival(id, { source: 'google', medium: 'referral' })).toBe(false);
+    expect(db.getCollection(id).arrival.campaign).toBe('rovakot');
+  });
+
+  it('ignores an arrival that is not an object', async () => {
+    const res = await fetch(base + '/api/collections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ honoree_name: 'נועה', email: 'a@b.co', arrival: 'instagram' }),
+    });
+    expect(res.status).toBe(201);
+    expect(db.getCollection((await res.json()).id).arrival).toBeUndefined();
+  });
 });
 
 describe('the report is admin-only', () => {

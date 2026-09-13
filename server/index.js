@@ -1059,6 +1059,18 @@ app.post('/api/collections', (req, res) => {
     comment: b.comment,
     gender: b.gender,
   });
+  // How this buyer arrived, kept on the order (Agent A — attribution). The sale is
+  // then credited to it even when she pays later from another device. Raw strings
+  // in, parsed here: the client cannot name its own campaign.
+  if (b.arrival && typeof b.arrival === 'object') {
+    db.setArrival(
+      c.id,
+      attribution.arrivalTouch({
+        landing: String(b.arrival.landing || '').slice(0, 2000),
+        referrer: String(b.arrival.referrer || '').slice(0, 500),
+      })
+    );
+  }
   // A new lead just STARTED — fire the owner + buyer emails and open the WhatsApp
   // word-collection group now, so words start flowing before/without payment.
   // Idempotent, so the later order/pay step won't notify again.
@@ -7679,6 +7691,10 @@ app.post('/api/track', (req, res) => {
     visitor: body.visitor,
     order_no: orderNo,
     value,
+    // How the order was PLACED, when the wizard recorded it. The confirmation page
+    // is often opened on another device, from one of our own emails, and that
+    // browser's touch would credit the sale to the inbox instead of the ad.
+    arrival: order ? order.arrival : undefined,
   });
   // Meta's copy of the same sale — the FALLBACK half. The report that matters
   // left from the payment itself (see sendPurchaseToMeta), because a buyer who

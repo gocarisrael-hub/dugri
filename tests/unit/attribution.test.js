@@ -139,6 +139,83 @@ describe('parseTouch — reading a landing URL', () => {
     expect(t.term).toBe('women 25-34');
   });
 
+  // Every buyer email links back to the site, and the old rule filed any
+  // *.google.* referrer as Google search — so orders paid from Gmail were the
+  // report's best "free search" row.
+  it('files a Gmail click as email, and only a real search as google', async () => {
+    const a = await store();
+    const from = (referrer) => a.parseTouch({ landing: 'https://dugri-israel.co.il/', referrer });
+    expect(from('https://mail.google.com/')).toMatchObject({ source: 'gmail', medium: 'email' });
+    expect(from('android-app://com.google.android.gm/')).toMatchObject({
+      source: 'gmail',
+      medium: 'email',
+    });
+    expect(from('https://www.google.co.il/')).toMatchObject({
+      source: 'google',
+      medium: 'referral',
+    });
+    expect(from('https://google.com/')).toMatchObject({ source: 'google' });
+    expect(from('https://docs.google.com/forms/d/x')).toMatchObject({
+      source: 'docs.google.com',
+      medium: 'referral',
+    });
+    expect(from('https://calendar.google.com/')).toMatchObject({ source: 'calendar.google.com' });
+  });
+
+  // A referrer on our own domain only means the first page never saved how the
+  // visitor arrived. It is not a source, and a row named after the site itself
+  // was a row of lost origins.
+  it('never names our own site as the place a visitor came from', async () => {
+    const a = await store();
+    process.env.PUBLIC_BASE_URL = 'https://dugri-israel.co.il';
+    try {
+      expect(
+        a.parseTouch({
+          landing: 'https://dugri-israel.co.il/options.html',
+          referrer: 'https://www.dugri-israel.co.il/products.html',
+        })
+      ).toMatchObject({ source: 'direct', medium: 'none' });
+    } finally {
+      delete process.env.PUBLIC_BASE_URL;
+    }
+  });
+
+  it('calls an untagged arrival on an order page our own link, whatever the referrer', async () => {
+    const a = await store();
+    for (const landing of [
+      'https://dugri-israel.co.il/collect.html',
+      'https://dugri-israel.co.il/collect',
+      'https://dugri-israel.co.il/pay-success.html',
+    ]) {
+      expect(a.parseTouch({ landing, referrer: 'https://mail.google.com/' })).toMatchObject({
+        source: 'order_link',
+        medium: 'own_link',
+      });
+    }
+    // A tagged link to an order page is still the tag's.
+    expect(
+      a.parseTouch({ landing: 'https://dugri-israel.co.il/collect.html?utm_source=whatsapp' })
+    ).toMatchObject({ source: 'whatsapp' });
+    // And the home page from Gmail is Gmail, not an order link.
+    expect(
+      a.parseTouch({ landing: 'https://dugri-israel.co.il/', referrer: 'https://mail.google.com/' })
+    ).toMatchObject({ source: 'gmail' });
+  });
+
+  // An untagged story and an ad both arrive with only ?fbclid=. When the referrer
+  // says Instagram, say Instagram — still paid, since the URL cannot tell them apart.
+  it('names Instagram when Meta’s click id comes out of Instagram', async () => {
+    const a = await store();
+    const landing = 'https://dugri-israel.co.il/?fbclid=IwAR123';
+    const ig = a.parseTouch({ landing, referrer: 'https://l.instagram.com/' });
+    expect(ig).toMatchObject({ source: 'instagram', medium: 'paid' });
+    expect(a.isPaid(ig)).toBe(true);
+    expect(a.parseTouch({ landing, referrer: '' })).toMatchObject({
+      source: 'meta',
+      medium: 'paid',
+    });
+  });
+
   it('spells out every one of Meta’s source shorthands', async () => {
     const a = await store();
     const src = (v) => a.parseTouch({ landing: 'https://x.co/?utm_source=' + v }).source;
@@ -497,5 +574,60 @@ describe('two writers, one file', () => {
     } finally {
       rename.mockRestore();
     }
+  });
+});
+
+// She clicks the ad on her phone, orders, and pays days later from the email on
+// her laptop. The sale belongs to the ad, so a purchase carries the touch stored
+// on the order when it was placed.
+describe('crediting a sale to how the order was placed', () => {
+  const AD =
+    'https://dugri-israel.co.il/?utm_source=instagram&utm_medium=paid&utm_campaign=rovakot';
+  const PAID_FROM_EMAIL = {
+    kind: 'purchase',
+    landing: 'https://dugri-israel.co.il/pay-success.html',
+    referrer: 'https://mail.google.com/',
+    order_no: 'DG-1',
+    value: 199,
+  };
+
+  it('keeps the parsed touch and never the address', async () => {
+    const a = await store();
+    const t = a.arrivalTouch({ landing: AD + '&k=owner-token', referrer: '' });
+    expect(t).toEqual({
+      source: 'instagram',
+      medium: 'paid',
+      campaign: 'rovakot',
+      content: '',
+      term: '',
+      i: 0,
+    });
+    expect(JSON.stringify(t)).not.toContain('owner-token');
+  });
+
+  it('records the purchase under the stored arrival, not the paying browser', async () => {
+    const a = await store();
+    a.record({ ...PAID_FROM_EMAIL, arrival: a.arrivalTouch({ landing: AD }) });
+    const r = a.report({ days: 30 });
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ source: 'instagram', campaign: 'rovakot', revenue: 199 });
+  });
+
+  it('keeps the internal mark the order was given', async () => {
+    const a = await store();
+    a.record({ ...PAID_FROM_EMAIL, arrival: { source: 'instagram', medium: 'paid', i: 1 } });
+    const r = a.report({ days: 30 });
+    expect(r.rows).toHaveLength(0);
+    expect(r.internal).toMatchObject({ orders: 1, revenue: 199 });
+  });
+
+  it('falls back to the landing when the order has no usable arrival', async () => {
+    const a = await store();
+    for (const [i, arrival] of [undefined, 'instagram', [], { source: '' }].entries()) {
+      a.record({ ...PAID_FROM_EMAIL, order_no: 'DG-' + i, arrival });
+    }
+    const r = a.report({ days: 30 });
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0]).toMatchObject({ source: 'order_link', orders: 4 });
   });
 });

@@ -1890,6 +1890,31 @@ const db = {
     return c.order;
   },
 
+  // How the buyer ARRIVED: the parsed attribution touch (source, medium,
+  // campaign, content, term, and the internal mark), set ONCE when the wizard
+  // creates the collection. Never the landing URL — that can carry the owner
+  // token. /api/track credits the eventual purchase to this instead of to the
+  // browser that opens the confirmation page, which is often a different device
+  // reached from one of our own emails. First write wins: a later caller cannot
+  // re-attribute a sale that is already on the books.
+  setArrival(id, touch) {
+    const c = this.getCollection(id);
+    if (!c || c.arrival || !touch || typeof touch !== 'object') return false;
+    const text = (v) => String(v == null ? '' : v).slice(0, 120);
+    const source = text(touch.source).trim();
+    if (!source) return false;
+    c.arrival = {
+      source,
+      medium: text(touch.medium),
+      campaign: text(touch.campaign),
+      content: text(touch.content),
+      term: text(touch.term),
+      i: touch.i === 1 ? 1 : 0,
+    };
+    saveDb();
+    return true;
+  },
+
   // Owner-only: attach/replace the order on a collection.
   // Returns the stored order, or an {error} object on bad input/auth.
   //

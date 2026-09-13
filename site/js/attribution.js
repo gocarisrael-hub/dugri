@@ -312,5 +312,17 @@ export function scheduleVisit() {
 }
 
 if (typeof document !== 'undefined' && typeof location !== 'undefined') {
+  // REMEMBER THE ARRIVAL NOW; ONLY THE BEACON WAITS. The stored touch used to be
+  // written inside sendEvent, which the visit beacon calls after `load` and an
+  // idle moment — seconds, on a phone opening a heavy page over mobile data. A
+  // visitor who tapped onward before then left no memory of the story or ad they
+  // came from, and the next page reported them as a referral from our own site.
+  // One localStorage write costs nothing against the page, and currentTouch is
+  // already guarded against storage that refuses or throws.
+  try {
+    currentTouch(location.href, document.referrer);
+  } catch {
+    /* measurement never costs the page anything */
+  }
   scheduleVisit();
 }

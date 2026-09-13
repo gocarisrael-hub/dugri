@@ -48,7 +48,6 @@ const KNOWN_HOSTS = [
   [/(^|\.)facebook\.com$/, 'facebook'],
   [/(^|\.)fb\.(com|me)$/, 'facebook'],
   [/(^|\.)messenger\.com$/, 'facebook'],
-  [/(^|\.)google\./, 'google'],
   [/(^|\.)tiktok\.com$/, 'tiktok'],
   [/(^|\.)whatsapp\.com$/, 'whatsapp'],
   [/(^|\.)youtube\.com$/, 'youtube'],
@@ -280,11 +279,65 @@ const SITE_SOURCE = Object.assign(Object.create(null), {
   bz: 'business_suite',
 });
 
-function hostLabel(host) {
+// GOOGLE ANSWERS FROM MANY ADDRESSES, AND ONLY ONE OF THEM IS A SEARCH RESULT.
+// The old rule was /\.google\./, and every buyer email links back to the site:
+// a "complete your payment" email opened in Gmail arrives from mail.google.com,
+// so paid orders from our own emails sat in the report as free Google search —
+// the owner's best-converting "source" was her own inbox. Gmail is email (the
+// Android app reports itself as android-app://com.google.android.gm); Docs,
+// Forms, Calendar and the rest keep their own address; only google.<tld>, and
+// the Google app, is search.
+//
+// What this cannot catch: Gmail on the web can route a click through
+// www.google.com/url, and that referrer is indistinguishable from a search. The
+// order-page rule below (OWN_LINK_PATHS) is what covers the email case properly,
+// since every link we send lands on one of those pages.
+const GMAIL_HOSTS = new Set(['mail.google.com', 'inbox.google.com', 'com.google.android.gm']);
+const GOOGLE_SEARCH_RE = /^google\.[a-z]{2,3}(\.[a-z]{2})?$/;
+const GOOGLE_APP_HOST = 'com.google.android.googlequicksearchbox';
+
+/** { source, medium } for a referrer host, or null when it names nothing. */
+function referrerTouch(host) {
   const h = field(host, 120).replace(/^www\./, '');
-  if (!h) return '';
-  for (const [re, name] of KNOWN_HOSTS) if (re.test(h)) return name;
-  return h;
+  if (!h) return null;
+  // OUR OWN ADDRESS IS NOT A PLACE ANYONE COMES FROM. A referrer on the public
+  // domain means the visitor moved between two of our pages and the first page
+  // never got to save how they arrived (see site/js/attribution.js). Reporting
+  // it as a source filled a "dugri-israel.co.il / referral" row with visitors
+  // whose real origin had been lost; as no evidence it is at least honest.
+  const pub = publicHost();
+  if (pub && h === pub) return null;
+  if (GMAIL_HOSTS.has(h)) return { source: 'gmail', medium: 'email' };
+  if (GOOGLE_SEARCH_RE.test(h) || h === GOOGLE_APP_HOST) {
+    return { source: 'google', medium: 'referral' };
+  }
+  for (const [re, name] of KNOWN_HOSTS) if (re.test(h)) return { source: name, medium: 'referral' };
+  return { source: h, medium: 'referral' };
+}
+
+// PAGES NOBODY FINDS BY THEMSELVES. collect.html and pay-success.html only open
+// from a link that carries a collection id: the one our emails, WhatsApp and SMS
+// send the buyer, or the word-collection link her friends are handed. An untagged
+// arrival there is somebody following OUR link, not an acquisition, whatever
+// referrer it came through — so it gets a row of its own instead of being
+// credited to Gmail, Google or "direct". A friend who then orders a deck of her
+// own shows up here too, which is word of mouth and worth seeing as such.
+const OWN_LINK_PATHS = new Set(['/collect.html', '/collect', '/pay-success.html', '/pay-success']);
+
+function pathOf(url) {
+  try {
+    return new URL(String(url)).pathname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function hostOfReferrer(referrer) {
+  try {
+    return new URL(String(referrer)).hostname;
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -294,8 +347,9 @@ function hostLabel(host) {
  * Precedence, strongest evidence first:
  *  1. utm_* on the landing URL — the owner tagged the link herself, so it wins.
  *  2. a click id (fbclid/gclid/…) — a paid click from that network.
- *  3. the referrer host — organic traffic from a named site.
- *  4. nothing — direct.
+ *  3. an order page (collect/pay-success) — a link we sent: order_link / own_link.
+ *  4. the referrer host — organic traffic from a named site.
+ *  5. nothing — direct.
  *
  * Pure: no I/O, no clock. `landing` may be any string; a URL that will not parse
  * degrades to the referrer, and then to direct, rather than throwing.
@@ -319,10 +373,21 @@ function parseTouch({ landing = '', referrer = '' } = {}) {
     term: get('utm_term'),
   };
 
+  const refHost = hostOfReferrer(referrer);
+
   if (!touch.source) {
     const clicked = q ? CLICK_IDS.find(([param]) => q.get(param)) : null;
     if (clicked) {
       touch.source = clicked[1];
+      // Meta's click id names the company, not the app. When the referrer says
+      // the click came out of Instagram, say Instagram: an untagged story, a
+      // boosted post and an ad all arrive this way, and "meta" hid which app the
+      // traffic was on. It stays PAID — nothing in the URL separates an ad from a
+      // story — and meta-insights.js counts 'instagram' as a Meta source, so the
+      // ROAS line credits it exactly as it credited 'meta'.
+      if (clicked[0] === 'fbclid' && /(^|\.)instagram\.com$/i.test(refHost)) {
+        touch.source = 'instagram';
+      }
       // A click id says the network but not the buying model. Only Meta's and
       // Google's are exclusively paid-click parameters; igshid rides on ordinary
       // shared links too, so it must not be reported as spend.
@@ -330,17 +395,16 @@ function parseTouch({ landing = '', referrer = '' } = {}) {
     }
   }
 
+  if (!touch.source && OWN_LINK_PATHS.has(pathOf(landing))) {
+    touch.source = 'order_link';
+    if (!touch.medium) touch.medium = 'own_link';
+  }
+
   if (!touch.source) {
-    let refHost = '';
-    try {
-      refHost = new URL(String(referrer)).hostname;
-    } catch {
-      refHost = '';
-    }
-    const label = hostLabel(refHost);
-    if (label) {
-      touch.source = label;
-      if (!touch.medium) touch.medium = 'referral';
+    const ref = referrerTouch(refHost);
+    if (ref) {
+      touch.source = ref.source;
+      if (!touch.medium) touch.medium = ref.medium;
     }
   }
 
@@ -649,16 +713,49 @@ function flush() {
 }
 
 /**
+ * The touch to keep on an order: the parsed fields and the internal mark, and
+ * NEVER the URL, which can carry the order's owner token. Parsed here, on our
+ * server, from the raw strings the wizard sent — so a caller still cannot name
+ * its own campaign any more than it can through /api/track.
+ */
+function arrivalTouch({ landing = '', referrer = '' } = {}) {
+  return { ...parseTouch({ landing, referrer }), i: isInternalLanding(landing) ? 1 : 0 };
+}
+
+// A touch read back off an order, normalised again on the way out: it comes from
+// the order store, which record() does not otherwise trust for campaign names.
+// Null when there is nothing usable, so the caller falls back to the landing.
+function storedTouch(t) {
+  if (!t || typeof t !== 'object' || Array.isArray(t)) return null;
+  const source = field(t.source, 120);
+  if (!source) return null;
+  return {
+    source,
+    medium: field(t.medium) || 'none',
+    campaign: field(t.campaign),
+    content: field(t.content),
+    term: field(t.term),
+    i: t.i === 1 ? 1 : 0,
+  };
+}
+
+/**
  * Record one event. Returns the stored event, or null when it was refused or
  * deduplicated (an already-counted purchase). Never throws.
  *
  * `landing`/`referrer` are the RAW strings the browser reported; the touch is
  * derived here so a client cannot declare its own campaign. `value` is passed by
  * the caller from the order store, never by the browser.
+ *
+ * `arrival` is the touch stored on the ORDER when it was placed (arrivalTouch()
+ * below, parsed on our server at that time). When it is given it wins over the
+ * landing: the buyer who clicked the ad on her phone and paid from the email on
+ * her laptop bought because of the ad, not because of her inbox.
  */
-function record({ kind, landing, referrer, visitor, order_no, value, at } = {}) {
+function record({ kind, landing, referrer, visitor, order_no, value, at, arrival } = {}) {
   if (!KINDS.has(kind)) return null;
-  const touch = parseTouch({ landing, referrer });
+  const stored = storedTouch(arrival);
+  const touch = stored || parseTouch({ landing, referrer });
   const order = field(order_no, 40);
   // A purchase is counted ONCE per order, whatever the page does — a refresh, a
   // bookmarked confirmation link, two devices. The client guards this too; this
@@ -682,7 +779,8 @@ function record({ kind, landing, referrer, visitor, order_no, value, at } = {}) 
   // this is the only moment at which the address is still known. Written either
   // way, 1 or 0, so that the answer is on the record and the guesswork that fills
   // in for the rows written before this change can never be applied to it.
-  ev.i = isInternalLanding(landing) ? 1 : 0;
+  // A stored arrival carries the answer the door gave when the order was placed.
+  ev.i = stored ? stored.i : isInternalLanding(landing) ? 1 : 0;
   if (order) ev.o = order;
   if (Number.isFinite(value)) ev.val = Math.round(Number(value) * 100) / 100;
   _events.push(ev);
@@ -855,6 +953,7 @@ load();
 
 module.exports = {
   parseTouch,
+  arrivalTouch,
   isInternalLanding,
   internalHosts,
   isPaid,
