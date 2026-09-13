@@ -916,6 +916,17 @@ function publicView(c, { owner = false } = {}) {
     // Whether online card payment is available (PeleCard credentials present).
     // Lets collect.html show the credit-card button only when it will work.
     card_enabled: pelecard.isConfigured(),
+    // HOW THIS DECK IS SPLIT — how many players it is laid out for, how many
+    // pawn cards that is, and what is left for words. PUBLIC, not owner-only:
+    // the word counter is the same counter for every contributor, and a friend
+    // adding words has to be told the same ceiling the owner is.
+    //
+    // The arithmetic is served rather than repeated in the browser because the
+    // server is what enforces it (db.deckWordsFor) — a copy in the page is a
+    // copy that can promise room the deck does not have.
+    players: db.playersFor(c),
+    pawn_cards: db.pawnCardsFor(c),
+    deck_words: db.deckWordsFor(c),
     // The buyer's own pawn photos, so she can see what she sent and change it
     // from her collection page — the wizard step that took them is behind her by
     // then, and she had no way back to it.
@@ -934,13 +945,6 @@ function publicView(c, { owner = false } = {}) {
           pawn_cutouts:
             c.pawn_cutouts && typeof c.pawn_cutouts === 'object' ? { ...c.pawn_cutouts } : {},
           pawn_view: c.pawn_view && typeof c.pawn_view === 'object' ? { ...c.pawn_view } : {},
-          // How many players this deck is laid out for, and what that leaves for
-          // words. Both, rather than the count alone: the page shows the budget
-          // on every render and the arithmetic belongs on the side that lays the
-          // deck out, not in a copy of it in the browser.
-          players: db.playersFor(c),
-          pawn_cards: db.pawnCardsFor(c),
-          deck_words: db.deckWordsFor(c),
           // …and the title she chose, so the same sheet can show and change it.
           // null means she never set one and the theme's own title is printed.
           custom_title: c.custom_title || null,
@@ -1096,6 +1100,12 @@ app.post('/api/collections', (req, res) => {
     // rather than written after, so the one saveDb createCollection already does
     // carries it — saveDb serialises the whole store.
     arrival: arrivalFromBody(b.arrival),
+    // How many players her deck is laid out for — one pawn card per four, and
+    // each pawn card costs a word card. Chosen on the wizard's pawns step, so it
+    // arrives with the order and her word ceiling is right from the first word.
+    // db.createCollection coerces it (4-16, stepped by four; anything else is
+    // the standard deck).
+    players: b.players,
   });
   // A new lead just STARTED — fire the owner + buyer emails and open the WhatsApp
   // word-collection group now, so words start flowing before/without payment.

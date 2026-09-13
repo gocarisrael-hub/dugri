@@ -2924,11 +2924,37 @@
              Its own node (not <strong> inside the sub) because the inline editor
              writes textContent — any markup the owner's first edit touches would
              be wiped. Bold comes from CSS. -->
+        <!-- HOW MANY PLAYERS. Four fill one pawn card, and the deck is always 104
+             cards — so every extra pawn card is a word card fewer. The buttons are
+             built in JS from one list of counts, and the two lines under them are
+             written from the same arithmetic, so the number she is shown and the
+             number the deck is laid out to cannot drift apart.
+
+             Asked HERE, before the collection exists, so her word ceiling is right
+             from the first word rather than moved under her later. -->
+        <span class="pawn-count-label" data-edit="options-photos-count-label">כמה שחקנים?</span>
+        <div
+          class="pawn-count"
+          id="pawnCount"
+          data-testid="pawn-count"
+          role="group"
+          aria-label="מספר שחקנים"
+        ></div>
+        <!-- The ceiling, always on screen rather than a warning that appears when
+             she hits it: "up to 408 words" before she has written one. -->
+        <div class="pawn-budget" data-testid="pawn-budget">
+          <p class="pawn-budget-main" id="pawnBudgetMain"></p>
+          <p class="pawn-budget-note" id="pawnBudgetNote"></p>
+        </div>
+        <!-- Written by JS (how many cards she cuts depends on the count), so this
+             carries no default text; the editor tag stays for the owner's wording
+             of the part that does not change. -->
         <p class="pawn-cut" data-testid="pawn-cut" data-edit="options-photos-cut">
           החיילים מגיעים מודפסים על קלף אחד - פשוט גוזרים אותם בעיגול.
         </p>
         <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
-          <!-- 4 fixed slots; each wraps a hidden file input + a small preview. -->
+          <!-- Four slots in the markup; the rest are cloned from the first when she
+               asks for more players, so there is ONE definition of what a slot is. -->
           <label class="pawn-slot" data-idx="0">
             <input
               class="pawn-input"
@@ -3117,6 +3143,87 @@
             grid-template-columns: repeat(2, 1fr);
             gap: 14px;
             margin: 6px 0 12px;
+          }
+          /* HOW MANY PLAYERS — four buttons, the count she picks in black. */
+          .pawn-count-label {
+            display: block;
+            font-family: var(--display);
+            font-size: 12px;
+            font-weight: 400;
+            letter-spacing: 0.14em;
+            color: var(--muted);
+            text-align: center;
+            margin-bottom: 8px;
+          }
+          .pawn-count {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+          }
+          .pawn-count button {
+            appearance: none;
+            border: 1px solid var(--line);
+            background: var(--surface);
+            color: var(--ink);
+            font: inherit;
+            font-size: 17px;
+            font-weight: 600;
+            padding: 11px 0;
+            cursor: pointer;
+          }
+          .pawn-count button[aria-pressed='true'] {
+            background: var(--ink);
+            border-color: var(--ink);
+            color: #fff;
+          }
+          /* The ceiling, on screen from the start rather than a warning later. */
+          .pawn-budget {
+            border: 1px solid var(--line);
+            background: var(--surface);
+            padding: 10px 12px;
+            margin-bottom: 12px;
+            text-align: center;
+          }
+          .pawn-budget-main {
+            margin: 0;
+            font-size: 16px;
+          }
+          .pawn-budget-main b {
+            font-weight: 700;
+          }
+          .pawn-budget-note {
+            margin: 4px 0 0;
+            font-size: 14.5px;
+            color: var(--muted);
+          }
+          /* WHERE THE NEXT CARD STARTS. Four pawns to a card, and she cuts them
+             card by card — so the grid says where each one begins rather than
+             leaving "four per card" as a sentence she has to trust. */
+          .pawn-card-break {
+            grid-column: 1 / -1;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-family: var(--display);
+            font-size: 11.5px;
+            letter-spacing: 0.14em;
+            color: var(--muted);
+          }
+          .pawn-card-break::before,
+          .pawn-card-break::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--line);
+          }
+          /* A slot past her player count is HIDDEN, not removed — the photo in it
+             is still hers if she changes her mind. Spelled out because
+             `.pawn-slot { display: flex }` outranks the UA's own
+             `[hidden] { display: none }` on specificity, so without this the
+             attribute is set and the slot stays on screen. */
+          .pawn-slot[hidden] {
+            display: none;
           }
           .pawn-slot {
             position: relative;
@@ -6088,11 +6195,77 @@
          File in `pawnFiles[idx]` (null when empty); the compact list sent to the
          server is `pawnFiles.filter(Boolean)`.
          ==================================================================== */
-      const PAWN_MAX = 4;
+      // THE DECK'S SPLIT, mirrored from generator/pack.py and server/db.js. The
+      // deck is always 104 cards; four players fill one pawn card and each pawn
+      // card costs a word card, which is four words. Written out here rather than
+      // fetched because the wizard has no collection yet — and pinned by
+      // tests/unit/pawn-count.test.js against the server's own numbers, so a
+      // change on either side fails rather than quietly showing her a ceiling the
+      // deck does not have.
+      const DECK_CARDS = 104;
+      const PER_CARD = 4;
+      const PLAYER_COUNTS = [4, 8, 12, 16];
+      const pawnPlan = (players) => {
+        const cards = players / PER_CARD;
+        return {
+          players,
+          cards,
+          wordCards: DECK_CARDS - cards,
+          words: (DECK_CARDS - cards) * PER_CARD,
+        };
+      };
+      // How many she has asked for. The first entry is the standard deck and the
+      // default, which is what an order that never touches this control means.
+      let pawnPlayers = PLAYER_COUNTS[0];
+
+      // Every slot the biggest deck can hold. The arrays are sized for the
+      // ceiling and only the first `pawnPlayers` are shown, so switching counts
+      // moves no state around — a photo in slot 6 is still there if she goes back
+      // up to twelve.
+      const PAWN_MAX = PLAYER_COUNTS[PLAYER_COUNTS.length - 1];
       const PAWN_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
       const PAWN_MAX_BYTES = 4 * 1024 * 1024; // mirror the server IMAGE_CAP
       const pawnFiles = new Array(PAWN_MAX).fill(null);
       const pawnObjectUrls = new Array(PAWN_MAX).fill(null);
+      // THE SLOTS, grown to the ceiling by cloning the first one. The markup
+      // carries four; the other twelve are copies with their indices rewritten,
+      // so there is one definition of what a slot is and no chance of the
+      // fifteenth drifting from the first.
+      const pawnGridEl = document.getElementById('pawnGrid');
+      (function growPawnGrid() {
+        const first = pawnGridEl && pawnGridEl.querySelector('.pawn-slot');
+        if (!first) return;
+        const have = pawnGridEl.querySelectorAll('.pawn-slot').length;
+        for (let i = have; i < PAWN_MAX; i++) {
+          const el = first.cloneNode(true);
+          el.setAttribute('data-idx', String(i));
+          el.querySelectorAll('[data-idx]').forEach((n) => n.setAttribute('data-idx', String(i)));
+          // The ids the E2E specs and the buyer's screen reader address slots by.
+          const input = el.querySelector('.pawn-input');
+          if (input) {
+            input.setAttribute('data-testid', 'pawn-input-' + i);
+            input.setAttribute('aria-label', 'תמונה ' + (i + 1));
+            input.value = '';
+          }
+          const remove = el.querySelector('.pawn-remove');
+          if (remove) remove.setAttribute('data-testid', 'pawn-remove-' + i);
+          const status = el.querySelector('.pawn-status');
+          if (status) {
+            status.setAttribute('data-testid', 'pawn-status-' + i);
+            status.textContent = '';
+            status.hidden = true;
+          }
+          // A clone of a FILLED slot would arrive wearing its picture; the markup
+          // ships empty, but this keeps that true however the markup changes.
+          el.className = 'pawn-slot';
+          const thumb = el.querySelector('.pawn-thumb');
+          if (thumb) {
+            thumb.removeAttribute('src');
+            thumb.hidden = true;
+          }
+          pawnGridEl.appendChild(el);
+        }
+      })();
       const pawnSlots = Array.from(document.querySelectorAll('.pawn-slot'));
       // Per-slot background-removed cutout: the transparent PNG Blob (null until
       // it exists / when it never will) plus a coarse state so the slot can say
@@ -6117,6 +6290,92 @@
         // which is the only part she can act on while the picker is still open.
         failed: 'לא הוסר הרקע, עדיף תמונות פנים של בן אדם',
       };
+
+      // THE COUNT, AND EVERYTHING THAT FOLLOWS FROM IT. One function, because
+      // the title, the cut line, the budget and the number of visible slots are
+      // four statements of the same arithmetic and any of them being written
+      // somewhere else is how they come to disagree.
+      const pawnCountEl = document.getElementById('pawnCount');
+      function renderPawnCount() {
+        const plan = pawnPlan(pawnPlayers);
+
+        // The buttons, built once and then only re-pressed.
+        if (pawnCountEl && !pawnCountEl.children.length) {
+          PLAYER_COUNTS.forEach((n) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = String(n);
+            b.setAttribute('data-players', String(n));
+            b.setAttribute('data-testid', 'pawn-count-' + n);
+            b.addEventListener('click', () => {
+              pawnPlayers = n;
+              renderPawnCount();
+            });
+            pawnCountEl.appendChild(b);
+          });
+        }
+        if (pawnCountEl) {
+          Array.from(pawnCountEl.children).forEach((b) => {
+            b.setAttribute('aria-pressed', b.getAttribute('data-players') === String(plan.players));
+          });
+        }
+
+        const title = document.querySelector('[data-edit="options-photos-title"]');
+        if (title) title.textContent = 'העלו עד ' + plan.players + ' תמונות (רשות)';
+
+        const cut = document.querySelector('[data-testid="pawn-cut"]');
+        if (cut) {
+          cut.textContent =
+            plan.cards === 1
+              ? 'החיילים מגיעים מודפסים על קלף אחד - פשוט גוזרים אותם בעיגול.'
+              : 'החיילים מגיעים מודפסים על ' + plan.cards + ' קלפים - פשוט גוזרים אותם בעיגול.';
+        }
+
+        const main = document.getElementById('pawnBudgetMain');
+        const note = document.getElementById('pawnBudgetNote');
+        if (main) {
+          main.innerHTML =
+            plan.players +
+            ' שחקנים · ' +
+            plan.cards +
+            ' ' +
+            (plan.cards === 1 ? 'קלף חיילים' : 'קלפי חיילים') +
+            ' · <b>עד ' +
+            plan.words +
+            ' מילים</b>';
+        }
+        if (note) {
+          // The cost, said as the number rather than as a warning: four words per
+          // four players is about 1% of the deck, and "one word card fewer"
+          // sounds like a sacrifice that it is not.
+          note.textContent =
+            plan.cards === 1
+              ? 'ברירת המחדל - החפיסה המלאה, ' +
+                pawnPlan(PLAYER_COUNTS[0]).wordCards +
+                ' קלפי מילים'
+              : plan.wordCards +
+                ' קלפי מילים במקום ' +
+                pawnPlan(PLAYER_COUNTS[0]).wordCards +
+                ' - ' +
+                (pawnPlan(PLAYER_COUNTS[0]).words - plan.words) +
+                ' מילים פחות';
+        }
+
+        // The slots she can fill, and the line between one card and the next.
+        pawnSlots.forEach((el, i) => {
+          el.hidden = i >= plan.players;
+        });
+        pawnGridEl.querySelectorAll('.pawn-card-break').forEach((n) => n.remove());
+        if (plan.cards > 1) {
+          for (let card = 0; card < plan.cards; card++) {
+            const div = document.createElement('div');
+            div.className = 'pawn-card-break';
+            div.setAttribute('data-testid', 'pawn-card-break-' + (card + 1));
+            div.textContent = 'קלף חיילים ' + (card + 1);
+            pawnGridEl.insertBefore(div, pawnSlots[card * PER_CARD]);
+          }
+        }
+      }
 
       function renderPawnSlot(idx) {
         const slot = pawnSlots[idx];
@@ -6327,7 +6586,14 @@
       }
 
       async function uploadPawns(id, ownerToken) {
-        const picked = pawnFiles.map((f, i) => ({ f, i })).filter((x) => x.f);
+        // Only the slots this deck HAS. She may have filled eight and then gone
+        // back to four players; the deck prints four, so four is what is sent —
+        // and the server would only have stored four anyway, but it would have
+        // been whichever four arrived first rather than the ones she can see.
+        const picked = pawnFiles
+          .slice(0, pawnPlayers)
+          .map((f, i) => ({ f, i }))
+          .filter((x) => x.f);
         if (!picked.length) return;
         await awaitPawnCuts();
         try {
@@ -6438,6 +6704,11 @@
               // credited to the ad even when she pays from the email on another
               // device.
               arrival: currentTouch(location.href, document.referrer),
+              // How many players her deck is laid out for, from the pawns step.
+              // It travels with the ORDER rather than being set afterwards, so
+              // her word ceiling is right from the first word rather than moved
+              // under her once the list has started.
+              players: pawnPlayers,
             }),
           });
           const data = await r.json();
@@ -6921,6 +7192,10 @@
 
       selectTab('front');
       renderDesign();
+      // The pawns step at rest: four players, four slots, the standard deck's
+      // ceiling on screen. Drawn before the first paint so the step is never
+      // shown with a budget line that has not been written yet.
+      renderPawnCount();
       goStep(initialStep, { fromPop: true });
     </script>
   </body>

@@ -3245,10 +3245,20 @@
           : 'רוצים משחק כזה לאירוע שלכם? →';
       }
 
-      // The real product word cap — one full deck, matching generator/topup.py's
-      // TARGET (103 word cards x 4 words). Single source of truth for the counter
-      // pill, the hint copy, and the progress-bar math.
-      const MAX_WORDS = 412;
+      // THE REAL PRODUCT WORD CAP — one full deck. Single source of truth for the
+      // counter pill, the hint copy and the progress-bar maths.
+      //
+      // NOT A CONSTANT any more: the deck is always 104 cards, but the buyer
+      // chooses how many of them are PAWN cards (four players each), and every
+      // pawn card comes out of the word cards' share. So her ceiling is 412 at
+      // four players and 400 at sixteen, and it is the SERVER that says which —
+      // the same number db.deckWordsFor enforces, carried on the collection, so
+      // the page cannot promise room the deck does not have.
+      //
+      // 412 until the collection arrives, which is the standard deck and what
+      // every order means before it says otherwise.
+      const DEFAULT_MAX_WORDS = 412;
+      let MAX_WORDS = DEFAULT_MAX_WORDS;
       const WORD_GOAL = 70; // the "meaningful minimum" milestone
 
       // small transient confirmation pop-up ("word added")
@@ -5123,6 +5133,9 @@
           // delivery address (owner-only), letting a locked delivery order prefill
           // without re-typing. Contributors fetch the plain public view.
           state = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+          // Her deck's own ceiling, before anything is drawn from it. A
+          // contributor's view carries it too — the counter is the same counter.
+          MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;
           render();
         } catch (e) {
           if (e.status === 404) {

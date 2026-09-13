@@ -547,3 +547,91 @@ test.describe('pawn photos: the helper copy', () => {
     expect(styled.text).toBe('נוסח חדש של הבעלים');
   });
 });
+
+// HOW MANY PLAYERS — the control that trades word cards for pawn cards.
+//
+// The deck is always 104 cards. Four players fill one pawn card, and each pawn
+// card costs a word card, which is four words. These drive the real control in a
+// real browser; tests/unit/pawn-count.test.js holds its arithmetic against the
+// server's.
+test.describe('pawn photos: how many players', () => {
+  const VISIBLE = '.pawn-slot:not([hidden])';
+
+  test('opens on the standard deck — four players, four slots, 412 words', async ({ page }) => {
+    await toPawnStep(page);
+    await expect(page.getByTestId('pawn-count-4')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator(VISIBLE)).toHaveCount(4);
+    await expect(page.getByTestId('pawn-budget')).toContainText('עד 412 מילים');
+    // One card, so nothing is divided up.
+    await expect(page.locator('.pawn-card-break')).toHaveCount(0);
+  });
+
+  test('every four players is one more pawn card, four words fewer', async ({ page }) => {
+    await toPawnStep(page);
+    for (const [players, cards, words] of [
+      [8, 2, 408],
+      [12, 3, 404],
+      [16, 4, 400],
+      [4, 1, 412],
+    ]) {
+      await page.getByTestId('pawn-count-' + players).click();
+      await expect(page.locator(VISIBLE)).toHaveCount(players);
+      await expect(page.getByTestId('pawn-budget')).toContainText('עד ' + words + ' מילים');
+      await expect(page.getByTestId('pawn-budget')).toContainText(String(cards));
+      await expect(page.locator('.pawn-card-break')).toHaveCount(cards > 1 ? cards : 0);
+    }
+  });
+
+  test('the step says how many cards she will be cutting', async ({ page }) => {
+    await toPawnStep(page);
+    await expect(page.getByTestId('pawn-cut')).toContainText('קלף אחד');
+    await page.getByTestId('pawn-count-12').click();
+    await expect(page.getByTestId('pawn-cut')).toContainText('3 קלפים');
+    // …and the heading asks for the right number of photos.
+    await expect(page.getByTestId('step-pawns')).toContainText('עד 12 תמונות');
+  });
+
+  test('a photo survives a trip down and back up', async ({ page }) => {
+    // The slots are hidden, not destroyed: she may try sixteen, think better of
+    // it, and change her mind again. Losing her upload for that would be a
+    // punishing way to explore a choice that is free.
+    await stubCutter(page, { succeeds: false });
+    await toPawnStep(page);
+    await page.getByTestId('pawn-count-8').click();
+    await page
+      .getByTestId('pawn-input-5')
+      .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
+    await expect(page.locator('.pawn-slot[data-idx="5"]')).toHaveClass(/is-filled/);
+
+    await page.getByTestId('pawn-count-4').click();
+    await expect(page.locator('.pawn-slot[data-idx="5"]')).toBeHidden();
+
+    await page.getByTestId('pawn-count-8').click();
+    await expect(page.locator('.pawn-slot[data-idx="5"]')).toHaveClass(/is-filled/);
+  });
+
+  test('the count travels with the order', async ({ page }) => {
+    // It is set BEFORE any word is collected, so her ceiling is right from the
+    // first word rather than moved under her later.
+    await stubCreate(page);
+    let body = null;
+    await page.route('**/api/collections', async (route) => {
+      body = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'test-col', owner_token: 'test-tok' }),
+      });
+    });
+    await toPawnStep(page);
+    await page.getByTestId('pawn-count-12').click();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.fill('#ownerEmail', 'a@b.com');
+    await page.fill('#ownerPhone', '0521234567');
+    await page.fill('#buyerNameInput', 'דנה כהן');
+    await page.getByTestId('next-btn').click();
+    await page.waitForURL(/collect\.html\?c=test-col&k=test-tok/);
+    expect(body).toMatchObject({ players: 12 });
+  });
+});
