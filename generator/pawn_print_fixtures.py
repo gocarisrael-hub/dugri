@@ -13,6 +13,7 @@ answers, on real images, and both sides are checked against those answers:
 Regenerate after a deliberate change to the framing (from the repo root):
 
     python3 generator/pawn_print_fixtures.py
+    npx prettier --write tests/unit/fixtures/pawn-print/expected.json
 
 Every image is drawn here, deterministically, so a regenerated set is byte-for-byte
 the same unless build.py changed.
