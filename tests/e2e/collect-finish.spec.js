@@ -1040,7 +1040,10 @@ test('an unpaid list over its free limit reads the same count on the line and in
   const refuse = page.getByTestId('players-refuse');
   await expect(refuse).toBeVisible();
   await expect(refuse).toContainText(collected);
-  await expect(refuse).toContainText('6 מילים');
+  // The whole sentence: a bare "6 מילים" would also be found inside "16 מילים".
+  await expect(page.locator('#playersRefuseMain')).toHaveText(
+    'כדי לעבור ל-12 שחקנים צריך למחוק 6 מילים.'
+  );
 });
 
 test('raising the count past her word list is refused, with the number to delete', async ({
@@ -1061,7 +1064,10 @@ test('raising the count past her word list is refused, with the number to delete
   const refuse = page.getByTestId('players-refuse');
   await expect(refuse).toBeVisible();
   await expect(refuse).toContainText('12 שחקנים');
-  await expect(refuse).toContainText('6 מילים'); // 410 - 404
+  // 410 - 404, as the whole sentence ("6 מילים" alone also matches "16 מילים").
+  await expect(page.locator('#playersRefuseMain')).toHaveText(
+    'כדי לעבור ל-12 שחקנים צריך למחוק 6 מילים.'
+  );
   await expect(refuse).toContainText('404');
 
   // Nothing moved, and the buttons say so.
