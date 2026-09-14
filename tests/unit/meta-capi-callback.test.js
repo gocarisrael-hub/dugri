@@ -280,6 +280,21 @@ describe('the sale is reported without the buyer’s browser', () => {
     ['::FFFF:192.168.1.20', 'v4-mapped private, upper case'],
     ['::ffff:a00:1', 'v4-mapped private, hex form'],
     ['::ffff:7f00:1', 'v4-mapped loopback, hex form'],
+    // IPv4-compatible ::a.b.c.d normalises to ::a00:1, whose first group reads as
+    // 0 — so no range test on the first group can see the private v4 inside it.
+    ['::10.0.0.1', 'v4-compatible private'],
+    ['::127.0.0.1', 'v4-compatible loopback'],
+    ['::192.168.1.20', 'v4-compatible private'],
+    ['0:0:0:0:0:0:a00:1', 'v4-compatible private, uncompressed hex form'],
+    // Deprecated since RFC 4291 and produced by no stack, so no real buyer arrives
+    // with one: the whole ::/96 block is dropped, public v4 inside or not.
+    ['::203.0.113.7', 'v4-compatible public, deprecated form'],
+    // SIIT ::ffff:0:a.b.c.d normalises to ::ffff:0:a00:1, which the mapped
+    // pattern (exactly two groups after ffff) does not match.
+    ['::ffff:0:10.0.0.1', 'v4-translated private'],
+    ['::ffff:0:127.0.0.1', 'v4-translated loopback'],
+    ['::FFFF:0:192.168.1.20', 'v4-translated private, upper case'],
+    ['::ffff:0:a00:1', 'v4-translated private, hex form'],
   ])('drops the non-public IPv6 address %s (%s)', async (priv) => {
     sent = [];
     await completePayment(await startPayment({ cfIp: priv, ip: '203.0.113.7' }));
@@ -292,6 +307,9 @@ describe('the sale is reported without the buyer’s browser', () => {
     ['2a03:2880:f10c:83:face:b00c::25de', '2a03:2880:f10c:83:face:b00c::25de'],
     ['fec0::1', 'fec0::1'], // just past fe80::/10
     ['::ffff:203.0.113.7', '203.0.113.7'], // v4-mapped public, sent bare
+    ['::ffff:0:203.0.113.7', '::ffff:0:203.0.113.7'], // v4-translated public, sent as given
+    ['::ffff:0:cb00:7107', '::ffff:0:cb00:7107'], // the same, hex form
+    ['::1:0:0:1', '::1:0:0:1'], // outside ::/96, not v4-compatible
   ])('still sends the public address %s', async (pub, expected) => {
     sent = [];
     await completePayment(await startPayment({ cfIp: pub }));

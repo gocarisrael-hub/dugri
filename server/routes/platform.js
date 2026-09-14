@@ -814,7 +814,14 @@ function registerAdsSettingsWhatsapp(
       return true;
     }
     if (v6 === '::1' || v6 === '::') return true;
-    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v6);
+    // IPv4-compatible ::a.b.c.d (the whole ::/96 block, which canonicalises to ::x
+    // or ::x:y). Its first group reads as 0, so the range tests below would call
+    // ::10.0.0.1 public. The form is deprecated (RFC 4291) and no stack puts it on
+    // the wire, so no real buyer arrives with one: drop it, public v4 inside or not.
+    if (/^::[0-9a-f]{1,4}(:[0-9a-f]{1,4})?$/.test(v6)) return true;
+    // v4-mapped ::ffff:a.b.c.d and SIIT's v4-translated ::ffff:0:a.b.c.d both carry
+    // a real v4 in their last 32 bits; judge that by the v4 rules.
+    const mapped = /^::ffff:(?:0:)?([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v6);
     if (mapped) {
       const [hi, lo] = [parseInt(mapped[1], 16), parseInt(mapped[2], 16)];
       return isNonPublicIp([hi >> 8, hi & 255, lo >> 8, lo & 255].join('.'));
