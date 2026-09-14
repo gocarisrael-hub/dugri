@@ -470,6 +470,140 @@ function registerTemplateRevert(app, { requireAdmin, TEMPLATE_ROOT, templates })
   });
 }
 
+// Strip anything executable from an SVG before it reaches a page. Both template
+// SVG routes send their output through this.
+//
+// The admin thumbnails cannot use <img>: that context blocks external references,
+// and a de-duplicated card's whole background IS an external reference, so every
+// card rendered as an identical blank rectangle. They inject the markup inline
+// (`thumb.innerHTML = svg`), which makes the background load and also means any
+// script inside it would run in the admin's own session. The storefront route is
+// served as image/svg+xml, so opening that URL directly runs script on the site's
+// origin. These are owner-uploaded Canva exports, closer to self-harm than an
+// attack, but server/content.js already refuses SVG uploads outright over exactly
+// this risk.
+//
+// There is no HTML/XML parser among the server's dependencies, so this is a set
+// of deliberately CONTEXT-FREE passes: none of them decides "this is inside a
+// quoted value, so skip it", because the HTML parser (breakout tags, rawtext,
+// comments) can disagree about where a value ends, and a sanitizer that skips
+// what it believes is a value is how a handler slips through. Real artwork has
+// none of these patterns, so it comes out byte-identical; tests/unit/
+// svg-sanitize.test.js pins that against real template files, and judges every
+// attack by what a real parser builds from the output. The passes only ever
+// delete, and they repeat until nothing changes, so a deletion cannot leave a
+// new match behind.
+const SVG_BLOCKED_NAME = '(?:[\\w.-]+:)?(script|foreignObject|iframe|embed|object)';
+// The element and everything inside it, to its closing tag (any prefix).
+const SVG_BLOCKED_ELEMENT = new RegExp(
+  '<' + SVG_BLOCKED_NAME + '\\b[\\s\\S]*?<\\/(?:[\\w.-]+:)?\\1\\s*>',
+  'gi'
+);
+// Whatever is left: a self-closing, unclosed or stray open/close tag.
+const SVG_BLOCKED_TAG = new RegExp('<\\/?' + SVG_BLOCKED_NAME + '\\b[^>]*>?', 'gi');
+// A possible event-handler attribute: on<name> then "=". Whether it really starts
+// an attribute is decided by svgStartsAttribute.
+const SVG_HANDLER = /on[^\s/>="']*\s*=/gi;
+// A possible attribute with a value, found at every delimiter WITHOUT consuming
+// the value, so an attribute that only looks like it sits inside another value is
+// still examined.
+const SVG_ATTRIBUTE = /[\s"'/]([^\s"'/>=]+)\s*=/g;
+
+// Does position i begin an attribute name? After whitespace or a quote (HTML
+// accepts `id="a"onclick=`), or after slashes that follow a tag name
+// (`<svg/onload=`), an attribute name (`<svg x/onload=`), whitespace or a quote.
+// A "/on…=" inside a base64 image is none of these: walking back from its slash
+// reaches another "/" (from "image/png" or the base64 itself), never "<", a
+// quote or whitespace, so embedded rasters are left alone.
+function svgStartsAttribute(s, i) {
+  const prev = s[i - 1];
+  if (prev === undefined) return false;
+  if (/[\s"']/.test(prev)) return true;
+  if (prev !== '/') return false;
+  let j = i - 1;
+  while (j >= 0 && s[j] === '/') j--;
+  if (j < 0) return false;
+  if (/[\s"']/.test(s[j])) return true;
+  let k = j;
+  while (k >= 0 && !/[\s"'/<>=]/.test(s[k])) k--;
+  return k >= 0 && (s[k] === '<' || /[\s"']/.test(s[k]));
+}
+
+// Index just past an attribute value that starts after the "=" at position i:
+// quoted to the matching quote, otherwise up to whitespace or ">".
+function svgValueEnd(s, i) {
+  let j = i;
+  while (j < s.length && /\s/.test(s[j])) j++;
+  const q = s[j];
+  if (q === '"' || q === "'") {
+    const close = s.indexOf(q, j + 1);
+    return close === -1 ? s.length : close + 1;
+  }
+  while (j < s.length && !/[\s>]/.test(s[j])) j++;
+  return j;
+}
+
+// Would a browser read this attribute value as a script URL? Character references
+// are decoded (&#106; &#x6A &colon; &Tab; …) and every ASCII whitespace/control
+// character dropped, because the URL parser ignores them: "java&#x09;script:" and
+// "  JavaScript:" both run. Checked anywhere in the value, which also covers a
+// <set to="javascript:…"> or an <animate values="#a;javascript:…"> aimed at href.
+function svgValueRunsScript(value) {
+  if (!/[:&]/.test(value)) return false;
+  const decoded = value.replace(
+    /&(?:#x([0-9a-f]+)|#(\d+)|(colon|tab|newline));?/gi,
+    (m, hex, dec, named) => {
+      if (named) return { colon: ':', tab: '\t', newline: '\n' }[named.toLowerCase()];
+      const code = hex ? parseInt(hex, 16) : parseInt(dec, 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+    }
+  );
+  const bare = decoded.replace(/[\x00-\x20\x7f-\x9f]+/g, '').toLowerCase();
+  return /(?:java|vb)script:/.test(bare);
+}
+
+function sanitizeSvgPass(svg) {
+  const out = svg.replace(SVG_BLOCKED_ELEMENT, '').replace(SVG_BLOCKED_TAG, '');
+  const cut = [];
+  let m;
+  SVG_HANDLER.lastIndex = 0;
+  while ((m = SVG_HANDLER.exec(out))) {
+    if (svgStartsAttribute(out, m.index)) {
+      cut.push([m.index, svgValueEnd(out, m.index + m[0].length)]);
+    }
+    SVG_HANDLER.lastIndex = m.index + 1;
+  }
+  SVG_ATTRIBUTE.lastIndex = 0;
+  while ((m = SVG_ATTRIBUTE.exec(out))) {
+    const nameStart = m.index + 1;
+    const valueStart = m.index + m[0].length;
+    const end = svgValueEnd(out, valueStart);
+    let value = out.slice(valueStart, end).trim();
+    if (value[0] === '"' || value[0] === "'") value = value.slice(1, -1);
+    if (svgValueRunsScript(value)) cut.push([nameStart, end]);
+    SVG_ATTRIBUTE.lastIndex = nameStart;
+  }
+  if (!cut.length) return out;
+  cut.sort((a, b) => a[0] - b[0]);
+  let result = '';
+  let at = 0;
+  for (const [start, end] of cut) {
+    if (end <= at) continue;
+    result += out.slice(at, Math.max(at, start));
+    at = end;
+  }
+  return result + out.slice(at);
+}
+
+function sanitizeSvgForDom(svg) {
+  let out = String(svg);
+  for (;;) {
+    const next = sanitizeSvgPass(out);
+    if (next === out) return out;
+    out = next;
+  }
+}
+
 // Design names, custom designs and the template picture/asset routes.
 function registerStorefrontTemplates(
   app,
@@ -659,26 +793,6 @@ function registerStorefrontTemplates(
         encodeURIComponent(name) +
         post
     );
-  }
-
-  // Strip anything executable from an SVG before it is injected into the admin
-  // page's DOM.
-  //
-  // The thumbnails cannot use <img>: that context blocks external references, and
-  // a de-duplicated card's whole background IS an external reference, so every
-  // card rendered as an identical blank rectangle. Injecting the markup inline
-  // makes the background load — and also means any <script> inside it would run,
-  // in the admin's own session. These are owner-uploaded Canva exports, so this is
-  // closer to self-harm than an attack, but server/content.js already refuses SVG
-  // uploads outright over exactly this risk; agreeing with that position costs two
-  // regexes.
-  function sanitizeSvgForDom(svg) {
-    return String(svg)
-      .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
-      .replace(/<script\b[^>]*\/>/gi, '')
-      .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-      .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-      .replace(/(?:xlink:)?href\s*=\s*"javascript:[^"]*"/gi, '');
   }
 
   // One card SVG by ROLE, for the admin checklist's thumbnails. Admin-gated: the
@@ -1061,4 +1175,5 @@ module.exports = {
   registerStorefrontTemplates,
   registerPromoImageGallery,
   registerPromo,
+  sanitizeSvgForDom,
 };
