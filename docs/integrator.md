@@ -124,6 +124,7 @@ gh workflow run "Deploy to Railway" -f environment=production -f ref=<full sha t
 
 - Small fix (a few lines, one domain, obvious test): do it yourself on your own `fix/<short>` branch in your own worktree, open a PR, wait for CI, post the review comment, merge.
 - Anything bigger goes to worktree agents. Split the work by file ownership in `docs/agent-partition.md` so no two parallel agents edit the same file; if two tasks need the same file, run them one after the other. Brief each agent with its domain letter, the task, and "open your PR and stop". If your session is in plan mode, exit it before spawning agents.
+- A background agent that backgrounds its own wait (a CI watch, a long test run, a monitor) ends its turn and is never woken, so its report arrives with the PR half-done. Every brief says: run every wait in the foreground (`gh pr checks <n> --watch` with a 10-minute timeout, re-run until nothing is pending), and never background a wait. If an agent stops early anyway, resume it with a message repeating that instruction.
 
 ## Worktree pruning
 
