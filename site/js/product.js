@@ -790,7 +790,13 @@ function boot() {
   // applyOverridesToPage runs SYNCHRONOUSLY when the editor marks ready (see
   // loadOverrides), i.e. before edit mode captures per-field baselines — so a
   // legacy-inherited value is in the DOM first and never reads as unsaved.
-  loadOverrides((ov) => applyOverridesToPage(d, ov));
+  //
+  // Both callbacks read `currentDesign` at the moment they RUN, never the boot-time
+  // `d`: an uploaded template's page first paints the built-in fallback, and
+  // switchToDesign may have replaced it by the time a slower fetch lands. Keyed off
+  // `d`, a late /api/design-names wrote the fallback's name (פריז) over the uploaded
+  // design's title.
+  loadOverrides((ov) => applyOverridesToPage(currentDesign, ov));
 
   // Overlay the owner-editable store price when it resolves (timeout-bounded,
   // fail-safe). First paint already showed the launch default, so a slow/failed
@@ -809,7 +815,7 @@ function boot() {
   // syncDesignNames updates the CATALOG first, so anything read from it after this
   // point (a gallery slide's label/alt, a rebuilt carousel) carries the renamed
   // value too; the callback then re-stamps the nodes already painted.
-  syncDesignNames((names) => applyDesignNames(d, names));
+  syncDesignNames((names) => applyDesignNames(currentDesign, names));
 
   // Independently overlay the owner's per-design image overrides (store/gallery
   // pictures). Timeout-bounded + fail-safe: a slow/failed fetch never blocks the
