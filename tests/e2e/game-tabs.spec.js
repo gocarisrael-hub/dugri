@@ -229,10 +229,11 @@ test('the pay bar stays on screen in every tab, and the pay tab holds the checko
 // thumbnails answers a different question.
 //
 // The RENDER is the generator's (its own pytest); what this holds is that the
-// page asks for it at the right moments: when the tab is first opened, and again
-// after a photo changes — never on the 5s poll, which would be a browser run on
-// the server every five seconds for a picture that did not move.
-test('the photos tab shows the rendered card, and redraws it when a photo goes', async ({
+// page asks for it at the right moment and no other: once, when the tab is first
+// opened. The card comes back with every disc bare and the page draws her photos
+// and the shipped pawns onto it, so a photo added or removed changes what is
+// drawn, not the picture — and the 5s poll never asks for one either.
+test('the photos tab asks for the card once, and a photo that goes costs no new render', async ({
   page,
 }) => {
   const { url, id, k } = await createCollection(page);
@@ -252,12 +253,9 @@ test('the photos tab shows the rendered card, and redraws it when a photo goes',
   await page.getByTestId('tab-pawns').click();
   await expect(page.getByTestId('pawn-card-preview')).toHaveAttribute('src', /^data:image\/png/);
   await expect.poll(() => asked.length).toBe(1);
-  // …and it says how many discs it is about to cover. The generator fills the
-  // REST with the shipped Dugri pawns, because that is what the printed card
-  // does — an order with two photos prints two faces and two pawns. Asking for a
-  // card with four bare discs and drawing two of them showed her two empty
-  // circles under a caption promising this is exactly how it will be printed.
-  expect(asked[0]).toContain('n=2');
+  // …the live card, and nothing about her photos: not how many, not which.
+  expect(asked[0]).toContain('live=1');
+  expect(asked[0]).not.toContain('n=');
 
   // Leaving and returning does not re-ask — the card cannot have changed.
   await page.getByTestId('tab-words').click();
@@ -265,12 +263,13 @@ test('the photos tab shows the rendered card, and redraws it when a photo goes',
   await page.waitForTimeout(300);
   expect(asked).toHaveLength(1);
 
-  // Removing one does: the card is now a different card — one more pawn on it.
+  // Removing one does not either: one fewer photo is drawn over the same card,
+  // with the shipped pawn the print puts in its place.
   await page.getByTestId('pawn-remove').first().click();
   await page.locator('#msgModalOk').click();
   await expect(page.getByTestId('pawn-thumb')).toHaveCount(1);
-  await expect.poll(() => asked.length).toBe(2);
-  expect(asked[1]).toContain('n=1');
+  await page.waitForTimeout(300);
+  expect(asked).toHaveLength(1);
 });
 
 test('she removes a photo and it stays removed', async ({ page }) => {

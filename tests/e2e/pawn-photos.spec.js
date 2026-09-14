@@ -383,7 +383,10 @@ test.describe('pawn photos: the background cut', () => {
       .getByTestId('pawn-input-0')
       .setInputFiles({ name: 'b.png', mimeType: 'image/png', buffer: PNG_BYTES });
     await expect(slot0).toHaveClass(/is-cut/);
-    await expect(page.getByTestId('pawn-status-0')).toHaveText('הרקע הוסר');
+    // …drawn as the pawn it now prints as — the sticker says the background is
+    // gone, so the band that used to say it is not shown.
+    await expect(slot0).toHaveClass(/is-pawn/);
+    await expect(page.getByTestId('pawn-status-0')).toBeHidden();
   });
 
   test('the real segmenter loads from OUR origin — no CDN, no third-party call', async ({

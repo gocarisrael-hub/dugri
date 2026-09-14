@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """THE PRINT FRAMES A PHOTO THE WAY THE PAGE FRAMED IT.
 
-A pawn photo is framed twice: by site/js/pawn-frame.js on the buyer's collection
+A pawn photo is framed twice: by site/js/pawn-print.js on the buyer's collection
 page, and by build.square_photo for the press. The arithmetic is mirrored
-(tests/unit/pawn-view.test.js holds the two together). What was NOT mirrored was
+(tests/unit/pawn-print.test.js holds the two together). What was NOT mirrored was
 the choice of which rule to apply:
 
   * the PAGE asks "am I showing the cutout or the original?" — it measures the

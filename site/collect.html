@@ -4947,7 +4947,10 @@
           });
           state.pawn_images = r.pawn_images;
           renderPawns();
-          renderPawnCard();
+          // The card is the same picture whatever her photos are (every disc bare),
+          // so a photo added or removed is a repaint over it, never a new render.
+          paintPawnCard();
+          paintPawnPads();
         } catch (e) {
           showPawnErr('לא הצלחנו להסיר את התמונה, נסו שוב');
         }
@@ -5016,7 +5019,8 @@
           pawnBusy = false;
           showPawnBusy('');
           renderPawns();
-          renderPawnCard();
+          paintPawnCard();
+          paintPawnPads();
           // The route is fail-soft: a photo it could not store is missing from the
           // list it just returned, and nothing else would ever mention it. Say it.
           if (!reportPawnSkips(skipped)) {
@@ -5035,7 +5039,8 @@
           // shows the old list sends her to re-add photos the order already has.
           const landed = pawnList().length - before;
           renderPawns();
-          renderPawnCard();
+          paintPawnCard();
+          paintPawnPads();
           if (landed > 0 || skipped.length) {
             // Photos the server skipped on purpose are neither landed nor lost:
             // they get their own sentence, with its advice, after the count.

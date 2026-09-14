@@ -1174,7 +1174,7 @@ const db = {
       // HOW EACH PHOTO SITS IN ITS CIRCLE, when the buyer moved it herself.
       // Keyed by the original's path like pawn_cutouts, and for the same reason.
       // Each value is { zoom, dx, dy, bg }: zoom/dx/dy adjust the automatic frame
-      // (see site/js/pawn-frame.js applyView and build.apply_photo_view — the two
+      // (see site/js/pawn-print.js viewCrop and build.apply_photo_view — the two
       // apply the identical transform), and `bg` keeps the photo's BACKGROUND,
       // i.e. prints the original rather than the cutout. Absent key = the frame
       // the generator picks on its own, which is what every order had before.

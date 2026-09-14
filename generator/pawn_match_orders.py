@@ -290,8 +290,9 @@ def run(orders_dir, out):
             with open(hp, "w", encoding="utf-8") as f:
                 f.write(html)
             png = os.path.join(work, "page-%d.png" % card)
-            jobs.append({"html": hp, "png": png, "w": w + 4 * (tile_px + 10),
-                         "h": h + 20 + math.ceil(tile_px), "scale": SCALE})
+            # Playwright takes whole CSS pixels for a viewport.
+            jobs.append({"html": hp, "png": png, "w": math.ceil(w + 4 * (tile_px + 10)),
+                         "h": math.ceil(h + 20 + tile_px), "scale": SCALE})
             pages.append((card, png, spec, tile_px, n_here))
         shoot(jobs, work)
         for (card, png, spec, tile_px, n_here), printed in zip(pages, prints):

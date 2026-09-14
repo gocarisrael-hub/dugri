@@ -1069,9 +1069,9 @@ def apply_photo_view(crop, view):
     The window is what moves, not the picture: ``zoom`` above 1 shrinks the
     window (closer in), and ``dx``/``dy`` slide it across the source in units of
     the window's OWN side, so the same numbers mean the same thing on a 900px
-    photo and a 4000px one. site/js/pawn-frame.js applyView is the identical
-    transform expressed in percent-of-slot, which is why what she lines up on her
-    phone is what the printer cuts.
+    photo and a 4000px one. site/js/pawn-print.js viewCrop is the identical
+    transform, rounding and all, which is why what she lines up on her phone is
+    what the printer cuts.
 
     Always square, because the slot is: the window's x-side wins, so a rounding
     difference between the two axes cannot stretch the face.
