@@ -1031,6 +1031,112 @@
       const submitBtn = document.getElementById('submit');
       const msg = document.getElementById('msg');
 
+      // Asset-checklist thumbnails are INLINE SVG (the asset loop explains why not
+      // <img>), so their markup is parsed as XML and cut down to an ALLOWLIST before
+      // it touches this page. Kept: static SVG drawing elements in the SVG namespace
+      // (everything real template art uses), minus every on* attribute, and an
+      // href/src only when it is a #fragment, a data:image/… or our own
+      // /api/template-asset/. Dropped: script, foreignObject, iframe/embed/object and
+      // any HTML or unknown-namespace element; <a>; <style>, which would also restyle
+      // this page; and every animation element — <set>/<animate>/<animateTransform>
+      // can rewrite an href or a handler after this check runs, and no real template
+      // uses one. Returns the node to insert, or null when the markup is not an SVG.
+      const THUMB_SVG_NS = 'http://www.w3.org/2000/svg';
+      const THUMB_ELEMENTS = new Set([
+        'svg',
+        'g',
+        'defs',
+        'symbol',
+        'use',
+        'path',
+        'rect',
+        'circle',
+        'ellipse',
+        'line',
+        'polyline',
+        'polygon',
+        'text',
+        'tspan',
+        'textPath',
+        'image',
+        'clipPath',
+        'mask',
+        'pattern',
+        'marker',
+        'linearGradient',
+        'radialGradient',
+        'stop',
+        'filter',
+        'feBlend',
+        'feColorMatrix',
+        'feComponentTransfer',
+        'feComposite',
+        'feConvolveMatrix',
+        'feDiffuseLighting',
+        'feDisplacementMap',
+        'feDistantLight',
+        'feDropShadow',
+        'feFlood',
+        'feFuncA',
+        'feFuncB',
+        'feFuncG',
+        'feFuncR',
+        'feGaussianBlur',
+        'feImage',
+        'feMerge',
+        'feMergeNode',
+        'feMorphology',
+        'feOffset',
+        'fePointLight',
+        'feSpecularLighting',
+        'feSpotLight',
+        'feTile',
+        'feTurbulence',
+        'title',
+        'desc',
+        'metadata',
+        'switch',
+      ]);
+      function thumbUrlAllowed(value) {
+        // The URL parser ignores ASCII whitespace/control characters, so they are
+        // dropped before the prefix check (" javascript:" must not pass as "safe").
+        const v = String(value).replace(/[\x00-\x20\x7f-\x9f]+/g, '');
+        return (
+          v.startsWith('#') || /^data:image\//i.test(v) || v.startsWith('/api/template-asset/')
+        );
+      }
+      function allowlistThumbSvg(markup) {
+        const doc = new DOMParser().parseFromString(markup, 'image/svg+xml');
+        const root = doc.documentElement;
+        if (
+          !root ||
+          doc.getElementsByTagName('parsererror').length ||
+          root.namespaceURI !== THUMB_SVG_NS ||
+          root.localName !== 'svg'
+        ) {
+          return null;
+        }
+        // A static list, so removing an element mid-walk skips nothing; a removed
+        // element's descendants are detached with it.
+        for (const el of [root, ...root.getElementsByTagName('*')]) {
+          if (
+            el !== root &&
+            (el.namespaceURI !== THUMB_SVG_NS || !THUMB_ELEMENTS.has(el.localName))
+          ) {
+            el.remove();
+            continue;
+          }
+          for (const at of Array.from(el.attributes)) {
+            const name = at.localName.toLowerCase();
+            const urlAttr = name === 'href' || name === 'src';
+            if (name.startsWith('on') || (urlAttr && !thumbUrlAllowed(at.value))) {
+              el.removeAttributeNode(at);
+            }
+          }
+        }
+        return document.importNode(root, true);
+      }
+
       function show(kind, text) {
         msg.hidden = false;
         msg.className = 'msg ' + kind;
@@ -2423,11 +2529,10 @@
               // /api/template-asset/ reference, so every such card would render as
               // an identical blank rectangle again (the bug this thumbnail exists
               // to avoid). Inline SVG in the live document does load that
-              // background. So it stays inline, but PARSED AS XML and appended,
-              // never `innerHTML`: the HTML parser is where breakout / mutation
-              // bypasses live, and it is unnecessary here. The server already
-              // sanitizes and sends `… sandbox` CSP; this client-side strip of any
-              // script/handler node is the second, independent defence.
+              // background. So it stays inline, but is never handed to an HTML
+              // parser: it is parsed as XML and cut down by allowlistThumbSvg
+              // (above) before it is appended. That allowlist is the defence for
+              // this page; the server's sanitizer is an extra layer, not relied on.
               const thumb = document.createElement('span');
               thumb.className = 'asset-thumb';
               li.prepend(thumb);
@@ -2443,26 +2548,9 @@
                 .then((svg) => {
                   // A template mid-upload can hold a file that will not draw;
                   // drop the thumbnail rather than leave an empty box.
-                  if (!svg) return thumb.remove();
-                  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
-                  const root = doc.documentElement;
-                  if (
-                    !root ||
-                    root.nodeName === 'parsererror' ||
-                    doc.getElementsByTagName('parsererror').length ||
-                    root.nodeName.toLowerCase() !== 'svg'
-                  ) {
-                    return thumb.remove();
-                  }
-                  root
-                    .querySelectorAll('script, foreignObject, iframe, embed, object')
-                    .forEach((n) => n.remove());
-                  root.querySelectorAll('*').forEach((el) => {
-                    Array.from(el.attributes).forEach((at) => {
-                      if (/^on/i.test(at.localName || at.name)) el.removeAttribute(at.name);
-                    });
-                  });
-                  thumb.appendChild(document.importNode(root, true));
+                  const node = svg ? allowlistThumbSvg(svg) : null;
+                  if (node) thumb.appendChild(node);
+                  else thumb.remove();
                 })
                 .catch(() => thumb.remove());
             }
