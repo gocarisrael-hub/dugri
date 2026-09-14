@@ -33,13 +33,13 @@ You never push to main. Every change, including yours, lands with `gh pr merge`.
    3. Review the diff (`gh pr diff <n>`) and post the review comment (format below).
    4. If approved, merge pinned to the SHA you reviewed:
       `gh pr merge <n> --squash --match-head-commit <full head sha>`
-   5. Watch main's push CI for the merge commit:
+   5. Watch main's push CI for the merge commit. Poll the run's status rather than trusting `gh run watch --exit-status`, which also exits non-zero when the GitHub API itself times out (an HTTP 504 while the run is still in progress), and that reads as a false red:
       ```
       sha=$(gh pr view <n> --json mergeCommit -q .mergeCommit.oid)
       gh run list --workflow CI --commit "$sha" --json databaseId -q '.[0].databaseId'
-      gh run watch <run id> --exit-status
+      gh run view <run id> --json status,conclusion -q '"\(.status) \(.conclusion)"'
       ```
-      (If the list is still empty, the run hasn't registered yet; list again.) If main goes red, fix it at once with a revert PR (`git revert <sha>` on a `fix/revert-<n>` branch in its own worktree, PR, CI, review, merge). Never push a fix to main directly.
+      Repeat the last command until it prints `completed …`; only `completed success` is green. An API error is not a result: ask again. (If the list is still empty, the run hasn't registered yet; list again.) Before calling main red, confirm it job by job with `gh run view <run id> --json jobs`. If main is red, fix it at once with a revert PR (`git revert <sha>` on a `fix/revert-<n>` branch in its own worktree, PR, CI, review, merge). Never push a fix to main directly.
    6. Look at the remaining PRs again. Any that now conflict with or lag main, ask their driver to rebase (a PR comment, or a message to that session). Don't rebase it yourself unless you take the branch over (see Handover).
 5. When the batch is merged and main's push CI is green, deploy staging (below).
 
@@ -92,9 +92,10 @@ After each merge batch, deploy staging yourself without asking:
      run=$(gh run list --workflow "Deploy to Railway" --limit 1 --json databaseId -q '.[0].databaseId')
      [ -n "$run" ] && [ "$run" != "$prev" ] && break
    done
-   if [ "$run" != "$prev" ]; then gh run watch "$run" --exit-status; else echo "no new deploy run appeared"; fi
+   [ "$run" = "$prev" ] && echo "no new deploy run appeared"
+   gh run view "$run" --json status,conclusion -q '"\(.status) \(.conclusion)"'
    ```
-   The run includes the smoke test (`scripts/smoke.mjs`); a red smoke fails the run. "No new deploy run appeared" is a failed deploy, not a green one.
+   Repeat the last command until it prints `completed …`; only `completed success` is a green deploy. An API error is not a result: ask again. The run includes the smoke test (`scripts/smoke.mjs`); a red smoke fails the run. "No new deploy run appeared" is a failed deploy, not a green one.
 4. Report: the deployed SHA, the smoke result, every `After deploy` item from the merged PRs' ready reports, and what changed since the last staging deploy (`git log --oneline <previous staging sha>..<deployed sha>`). The previous staging SHA is the `headSha` of the last successful staging run in `gh run list --workflow "Deploy to Railway" --json databaseId,headSha,conclusion`; confirm a run's environment from its Banner line in `gh run view <id> --log`.
 
 Only when GitHub Actions is down: deploy from a clean detached worktree of origin/main, then smoke it by hand.
