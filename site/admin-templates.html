@@ -1034,9 +1034,11 @@
       // Asset-checklist thumbnails are INLINE SVG (the asset loop explains why not
       // <img>), so their markup is parsed as XML and cut down to an ALLOWLIST before
       // it touches this page. Kept: static SVG drawing elements in the SVG namespace
-      // (everything real template art uses), minus every on* attribute, and an
-      // href/src only when it is a #fragment, a data:image/… or our own
-      // /api/template-asset/. Dropped: script, foreignObject, iframe/embed/object and
+      // (everything real template art uses), minus every on* and style attribute and
+      // any value with a CSS image function not aimed at #id (thumbValueFetches), and
+      // an href/src only when it is a #fragment, a data:image/… or resolves to our
+      // own /api/template-asset/ (thumbUrlAllowed). A thumbnail may draw, but it may
+      // neither run anything nor fetch from anywhere else. Dropped: script, foreignObject, iframe/embed/object and
       // any HTML or unknown-namespace element; <a>; <style>, which would also restyle
       // this page; and every animation element — <set>/<animate>/<animateTransform>
       // can rewrite an href or a handler after this check runs, and no real template
@@ -1099,11 +1101,35 @@
       ]);
       function thumbUrlAllowed(value) {
         // The URL parser ignores ASCII whitespace/control characters, so they are
-        // dropped before the prefix check (" javascript:" must not pass as "safe").
+        // dropped before any check (" javascript:" must not pass as "safe").
         const v = String(value).replace(/[\x00-\x20\x7f-\x9f]+/g, '');
-        return (
-          v.startsWith('#') || /^data:image\//i.test(v) || v.startsWith('/api/template-asset/')
-        );
+        if (v.startsWith('#') || /^data:image\//i.test(v)) return true;
+        // Anything else must RESOLVE to our own /api/template-asset/. Checked on the
+        // normalised URL, not the text: "/api/template-asset/../admin/…" and its
+        // %2e%2e spelling resolve to an admin route and are refused.
+        let u;
+        try {
+          u = new URL(v, location.origin);
+        } catch {
+          return false;
+        }
+        return u.origin === location.origin && u.pathname.startsWith('/api/template-asset/');
+      }
+      // Would this attribute value make the browser FETCH something? Presentation
+      // attributes (fill, stroke, mask, clip-path, filter, cursor, …) are CSS values,
+      // so an image function in one loads its URL from this admin page, which sends no
+      // CSP — revealing the owner's IP to any server a template names. Real art only
+      // ever references its own defs, `url(#id)`, so that is the one form kept. CSS
+      // escapes are decoded first, so `\75 rl(` cannot pass as something else.
+      function thumbValueFetches(value) {
+        const v = String(value)
+          .replace(/\\([0-9a-f]{1,6})\s?/gi, (m, h) =>
+            String.fromCodePoint(parseInt(h, 16) % 0x110000 || 0xfffd)
+          )
+          .replace(/\\(.)/g, '$1')
+          .replace(/[\x00-\x20\x7f-\x9f]+/g, '')
+          .toLowerCase();
+        return /(?:url|image-set|image|cross-fade|element|src)\((?!['"]?#)/.test(v);
       }
       function allowlistThumbSvg(markup) {
         const doc = new DOMParser().parseFromString(markup, 'image/svg+xml');
@@ -1129,7 +1155,12 @@
           for (const at of Array.from(el.attributes)) {
             const name = at.localName.toLowerCase();
             const urlAttr = name === 'href' || name === 'src';
-            if (name.startsWith('on') || (urlAttr && !thumbUrlAllowed(at.value))) {
+            if (
+              name.startsWith('on') ||
+              name === 'style' || // a style attribute is unbounded CSS: never needed by real art
+              (urlAttr && !thumbUrlAllowed(at.value)) ||
+              thumbValueFetches(at.value)
+            ) {
               el.removeAttributeNode(at);
             }
           }
