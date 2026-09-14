@@ -3,10 +3,12 @@
 
 For every order in a directory of orders it renders each pawn card twice:
 
-  * PRINT — what the generator hands the press. On a single-card template that is
-    the real deck PDF (build.build_deck), rasterised; on a sheet template, which
-    prints no deck of its own, it is the pawn card the deck composes
-    (render_page.photo_card_svg), rendered by the same Chrome.
+  * PRINT — the pawn card the deck composes (render_page.photo_card_svg, her photos
+    squared by build.square_photo, on the front's paper), rendered by Chrome. On a
+    single-card template the real deck PDF is built too (build.build_deck) and its
+    pdftoppm raster is reported in a column of its own: a PDF rasteriser
+    resamples embedded photos differently from Chrome, on the print's side and
+    the page's alike.
   * PAGE — what the collection page and the wizard draw: the live route's base
     card (preview.py --pawn-card --no-photos, dealt with build.card_photo_plan)
     with her photos painted over it by site/js/pawn-print.js — the page's own
@@ -111,6 +113,10 @@ def print_cards(order, lines, work):
     out = []
     if config.is_single_card(config.theme(theme)):
         # The real deck: photo cards first, one word card so the deck is a deck.
+        # It is built — so a deck that cannot carry these photos fails here — and
+        # rasterised as print-pdf-N.png, which is compared on its own: a PDF
+        # rasteriser resamples the embedded photos its own way, and that is a
+        # difference between viewers, not between the page and the print.
         csvp = os.path.join(work, "deck.csv")
         with open(csvp, "w", encoding="utf-8", newline="") as f:
             wr = csv.writer(f)
@@ -124,14 +130,13 @@ def print_cards(order, lines, work):
                          workdir=os.path.join(work, "deck"), progress=False)
         for card in range(order["cards"]):
             page = 2 * card + 2  # [back, photo card] per card
-            stem = os.path.join(work, "print-%d" % card)
+            stem = os.path.join(work, "print-pdf-%d" % card)
             subprocess.run(["pdftoppm", "-f", str(page), "-l", str(page), "-png", "-singlefile",
                             "-scale-to-x", str(w * SCALE), "-scale-to-y", str(h * SCALE),
                             pdf, stem], check=True)
-            out.append(stem + ".png")
-        return out
-    # A sheet template: the pawn card the deck composes (photo_card_svg on the
-    # front's paper), through the same single-card render the live preview uses.
+    # The pawn card the deck composes (photo_card_svg on the front's paper), through
+    # the single-card Chrome render the live preview uses — the same rasteriser the
+    # page is drawn by, so what differs is what the two DRAW.
     paths = build.resolve_photos(theme, photos, workdir=os.path.join(work, "sq"), views=views,
                                  cutouts=cuts, slots=build.PHOTO_SLOTS * order["cards"])
     for card in range(order["cards"]):
@@ -318,6 +323,8 @@ def run_order(orders_dir, out, name):
     for (card, png, spec, tile_px, n_here), printed in zip(pages, prints):
         P = Image.open(printed).convert("RGB")
         Q = Image.open(png).convert("RGB")
+        pdf_png = os.path.join(work, "print-pdf-%d.png" % card)
+        R = Image.open(pdf_png).convert("RGB") if os.path.isfile(pdf_png) else None
         # Every slot of the card: her photos, and the shipped pawns the deck
         # deals into the rest.
         for i in range(4):
@@ -341,11 +348,18 @@ def run_order(orders_dir, out, name):
                     i * (tile_px + 10) + tile_px - m, h + 10 + tile_px - m))
                 t = Q.crop(tbox).resize((side, side))
                 tile_sticker, _, _ = slot_diff(p, t, 0.97)
+            pdf_sticker = None
+            pdf_vs_print = None
+            if R is not None:
+                r_crop = R.crop(box).resize((side, side))
+                pdf_sticker = slot_diff(r_crop, q, 0.97)[0]
+                pdf_vs_print = slot_diff(r_crop, p, 0.97)[0]
             row = {"order": name, "theme": order["theme"], "players": order["players"],
                    "card": card, "slot": i, "kind": "photo" if entry else "pawn",
                    "cutout": bool(entry and entry["cutout"]),
                    "view": bool(entry and entry["view"]),
-                   "card_sticker": sticker, "card_square": square, "tile_sticker": tile_sticker}
+                   "card_sticker": sticker, "card_square": square, "tile_sticker": tile_sticker,
+                   "pdf_sticker": pdf_sticker, "pdf_vs_print": pdf_vs_print}
             rows.append(row)
             strip = Image.new("RGB", (side * 4, side), "white")
             for k, im in enumerate((p, q, t, dimg.point(lambda v: min(255, v * 4)))):
@@ -374,6 +388,14 @@ def summary(rows):
                 pct(sum(r["tile_sticker"] for r in photos) / max(1, len(photos))),
                 pct(sum(r["card_square"] for r in rows) / len(rows))),
              "worst five:"]
+    pdf = [r for r in rows if r.get("pdf_sticker") is not None]
+    if pdf:
+        # The deck PDF, rasterised by pdftoppm, against the page — and against the
+        # generator's own Chrome render of the same card. When the two are the same
+        # size the gap is the PDF rasteriser's resampling, not the page.
+        lines.insert(2, "deck PDF (pdftoppm) over %d slots: vs page %s, vs the Chrome print %s"
+                     % (len(pdf), pct(sum(r["pdf_sticker"] for r in pdf) / len(pdf)),
+                        pct(sum(r["pdf_vs_print"] for r in pdf) / len(pdf))))
     for r in worst[:5]:
         lines.append("  %s card %d slot %d (%s %s, cut=%s, view=%s): card %s, tile %s"
                      % (r["order"], r["card"], r["slot"], r["theme"], r["kind"], r["cutout"],
