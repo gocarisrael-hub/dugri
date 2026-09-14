@@ -5,8 +5,12 @@ via the GitHub Actions workflow at `.github/workflows/railway.yml`. Railway
 builds the root `Dockerfile` (Caddy) and serves `site/` on the port Railway
 assigns (`$PORT`).
 
-The workflow runs on every push to `main` (and via manual "Run workflow").
-It will **fail until you complete the steps below** — that is expected.
+The workflow is manual only ("Run workflow" / `gh workflow run`); a push to
+`main` deploys nothing. It will **fail until you complete the steps below** —
+that is expected.
+
+Who deploys: the integrator deploys **staging** after each merge batch;
+**production** is deployed only by the owner. Domain agents deploy nothing.
 
 ## Steps (require your Railway account — must be done by you)
 
@@ -42,9 +46,9 @@ It will **fail until you complete the steps below** — that is expected.
      - Or: `gh variable set RAILWAY_SERVICE --body "your-service-name"`
 
 6. **Trigger a deploy**
-   - Push any commit to `main`, or run the workflow manually from the Actions
-     tab. Railway will build the Dockerfile and serve `site/` on the domain it
-     assigns (Settings → Networking → Generate Domain if you don't have one).
+   - Run the workflow manually from the Actions tab. Railway will build the
+     Dockerfile and serve `site/` on the domain it assigns (Settings →
+     Networking → Generate Domain if you don't have one).
 
 ## Staging environment
 
@@ -60,13 +64,16 @@ promoted to production by an explicit second click.
 
 ### Promotion flow
 
-1. Merge a PR to `main`.
-2. Run the **Deploy to Railway** workflow with `environment = staging` (the
-   default) and `ref = main`. It deploys `main` to the staging environment.
+1. The integrator merges a batch of PRs to `main` (`gh pr merge`; nobody pushes
+   to `main` directly).
+2. The integrator runs the **Deploy to Railway** workflow with
+   `environment = staging` (the default) and `ref = main`
+   (`gh workflow run "Deploy to Railway" -f environment=staging -f ref=main`).
+   It deploys `main` to the staging environment.
 3. The workflow then **auto-runs the smoke test** (`node scripts/smoke.mjs`)
    against the staging domain. If it's red, the run fails and you stop here.
-4. If staging is green, **promote by pinning the exact commit**: run the same
-   workflow again with `environment = production` and set `ref` to the **exact
+4. If staging is green, the **owner** (only) **promotes by pinning the exact
+   commit**: run the same workflow again with `environment = production` and set `ref` to the **exact
    commit SHA that passed staging** (copy it from the staging run), _not_ the
    moving `main` head. Both deploy runs are independent `workflow_dispatch`
    dispatches against a branch that may have moved on, so pinning the SHA is the
@@ -138,9 +145,9 @@ Without `RAILWAY_TOKEN_STAGING`, a staging deploy fails with
 
 ## Simpler native alternative
 
-Instead of this workflow, you can connect the GitHub repo directly in the
-Railway dashboard for automatic deploys on every push (no Actions, no token
-needed) — but the GitHub Actions workflow above is the configured primary path.
+Railway can also auto-deploy on every push when the GitHub repo is connected in
+its dashboard. Keep that **off** for production: production ships only when the
+owner runs the workflow above with a pinned SHA.
 
 ## Word-collection backend (Node service + volume)
 
@@ -249,7 +256,7 @@ checklist and how to get them from PeleCard):
 - **`PELECARD_TERMINAL`** — your internet/CNP terminal number.
 - **`PELECARD_USER`** — API user.
 - **`PELECARD_PASSWORD`** — API password.
-- **`PUBLIC_BASE_URL`** — the site's public origin, e.g. `https://dugri.co.il`
+- **`PUBLIC_BASE_URL`** — the site's public origin, e.g. `https://dugri-israel.co.il`
   (used to build the payment return + server-callback URLs PeleCard calls).
 
 Optional: `PELECARD_BASE_URL` overrides the gateway host (defaults to

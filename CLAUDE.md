@@ -1,174 +1,54 @@
-# דוגרי — מסמך הקשר לפרויקט (CLAUDE.md)
+# דוגרי — CLAUDE.md
 
-מסמך העברה ל-Claude Code. מסכם את כל מה שסוכם עד כה כדי להמשיך מכאן.
-Working language: English. Style: concise and to the point, no long horizontal dividers, no emojis unless asked. (The document body below is in Hebrew; that is fine — only the conversation is in English.)
+Working language: English. Style: concise, no long horizontal dividers, no emojis unless asked. (The body below is partly Hebrew; the conversation is English.)
 
 ## מה הפרויקט
 
-עסק B2C שמוכר משחק מסיבה מותאם אישית בסגנון ניחוש מילים בקבוצות. הלקוח/ה שולח/ת רשימת מילים (מינימום 70, ללא הגבלה עליונה) שקשורות לבעל או בעלת השמחה, ואנחנו מייצרים חפיסת קלפים מעוצבת + לוח משחק. הערת מיתוג: בחומרים ללקוח לא משתמשים בשם "אליאס" (סימן מסחר של Tactic) — מתארים את מנגנון המשחק בלבד.
-קהל יעד: כל אירוע שמסביב לאדם אחד — מסיבות רווקות, ימי הולדת עגולים (30/40/50/60), ימי נישואין, פרישה, מסיבות פרידה. רווקות היא נקודת הכניסה החזקה, אבל המיצוב רחב. סלוגן: "המשחק שמפוצץ את החדר — בלי פילטרים".
-יעד: להשיק תוך פחות משבוע.
+דוגרי: משחק מסיבה מותאם אישית בסגנון ניחוש מילים בקבוצות, סביב אדם אחד — מסיבות רווקות, ימי הולדת עגולים, ימי נישואין, פרישה, פרידה. הלקוחה מזמינה באתר, אוספת מילים על בעל/ת השמחה (לבד או עם חברים), ואנחנו מפיקים חפיסת קלפים מעוצבת + לוח משחק.
 
-## מודל מוצר ואספקה
+- האתר החי: dugri-israel.co.il (הדומיין הישן dugri.co.il מת). קישורים נבנים מ-`PUBLIC_BASE_URL`, לא מכתובת קבועה.
+- בחומרים ללקוח לא משתמשים בשם "אליאס" (סימן מסחר של Tactic) — מתארים את מנגנון המשחק בלבד.
 
-- שלב 1 (השקה): דיגיטלי בלבד. אספקת PDF מוכן להדפסה במייל או בוואטסאפ, כולל הוראות לבית דפוס והוראות גזירה.
-- שלב 2 (בהמשך): גרסה פיזית, מודפסת חתוכה ארוזה ונשלחת עד הבית. דורש סגירת בית דפוס + דוגמה + תמחור יחידה.
-- הסיבה לדיגיטל קודם: אפשר להשיק תוך ימים, אפס סיכון ועלות, ואספקה מיידית מתאימה לרווקות של הרגע האחרון.
+## Where the live truth is
 
-## תמחור (סוכם)
+Business facts change from the admin, not in code. Never copy a number from a doc; read it from its source.
 
-- בסיס: 79 ש"ח. PDF, תבנית לבחירה, החלפת צבעים, ללא הגבלת מילים, חפיסה + לוח + חוקים + הוראות הדפסה וגזירה.
-- פרימיום: 139 ש"ח (הכי נמכר). כל הבסיס + אייקונים מותאמים אישית + לוח על המידה + הדמה לאישור + סבב תיקונים אחד.
-- תוספות: אקספרס בעדיפות (אספקה תוך כמה שעות, +49 עד 79), גרסה פיזית בשלב 2 (מ-390).
-- מינימום 70 מילים בכל הזמנה. אין הגבלה עליונה.
-- אספקה: הקובץ נשלח עד 24 שעות מרגע קבלת רשימת המילים (לא מרגע התשלום).
-- היגיון התמחור: עלות דיגיטלית כמעט אפס, מתמחרים לפי ערך. הרצפה האמיתית היא הזמן לכל הזמנה (30 עד 45 דקות בהתחלה), לכן כל מחיר מעל ~80 משלם על הזמן. קל להעלות מחיר בהמשך, קשה להוריד.
+- Prices, sale mode, enabled versions (pdf / pickup / delivery / custom), free word limit: `server/settings.js` → `REGISTRY.pricing` (defaults), overridden live from `site/admin-pricing.html`. `server/db.js` derives `ORDER_PRICES` from it.
+- Payment: PeleCard card payment, `server/pelecard.js` (setup: `server/PELECARD.md`).
+- Shipping: HFD courier, `server/hfd.js`; self-pickup stickers, `generator/pickup_stickers.py`.
+- Deck production: the Python generator in `generator/` (`docs/deck-rendering.md`, `docs/card-structure-schema.md`, `docs/photo-card.md`). Short word lists are topped up from seed pools (`generator/topup.py`, `server/wordlists.js`).
+- Emails, WhatsApp/SMS texts, reminder timings: `server/settings.js`, edited in the admin.
+- Template artwork and calibration live on the Railway volume per environment, not only in the repo.
+- Deploy and environment setup: `RAILWAY_SETUP.md`. Order recipes for manual work: `dugri_playbook.html` (not served).
 
-## מה הלקוחה מקבלת (חבילת הספקה)
+Decisions that stand and are not visible in code: no "אליאס" in customer-facing material; production deploys are owner-only.
 
-1. חפיסת קלפים מותאמת (PDF) מהמילים שלה.
-2. לוח משחק (PDF).
-3. דף חוקים בעברית: קבוצות, טיימר, שימוש בלוח, ניקוד, ווריאציות לכל אירוע.
-4. עמוד "מתחילים כאן" בעמוד אחד (מה בקובץ, הגדרות הדפסה, גזירה, מה להביא, חוקים בקצרה).
-5. הוראות הדפסה מדויקות: נייר 300 גרם לקלפים, צבע, והוראה קריטית להדפיס בגודל מקורי 100% (לא "התאם לעמוד").
-6. הוראות וקווי גזירה.
-7. דף טוקנים לסימון על הלוח + קישור או QR לטיימר אונליין.
-8. דף עזר לאיסוף מילים (נשלח עם טופס הקליטה): קטגוריות ודוגמאות שעוזרות ללקוח/ה להיזכר במילים שקשורות לבעל/ת השמחה — אנשים, מקומות, בדיחות פנימיות, הרגלים, אוכל, עבודה, ילדות, אירועים מהחיים, ביטויים שתמיד אומר/ת. זה החלק הכי קשה ללקוח, והדף הזה מוריד את החיכוך.
-9. פרימיום: אייקונים מותאמים אישית + לוח על המידה + תווית/שרוול לקופסה.
-10. מיתוג עדין (לוגו בגב הקלף) + עמוד "צילמתן? תייגו אותנו".
-11. פרימיום: הדמה עם סימן מים לאישור לפני הסופי + סבב תיקונים אחד כלול.
+## Git and tests
 
-## מנוע הייצור (Canva + Bulk Create)
+- Branch per change: `feat/<short>` or `fix/<short>` (`docs/<short>` for docs). Open a PR to main.
+- Nobody pushes to main, ever. Every change lands through a PR merged with `gh pr merge`.
+- CI (`.github/workflows/ci.yml`) must be green before merge. Jobs: `Format + Lint + Unit` (Prettier, ESLint, Vitest), `E2E 1/4`..`E2E 4/4` (Playwright, sharded), `Generator tests (pytest)`, and the summary check `CI`, which fails if any job did not succeed. CI runs on every PR and on every push to main (E2E included).
+- Every change ships with tests that cover it: feature, bug fix, or behaviour change.
+- Test locations: unit `tests/unit/*.test.js` (Vitest, jsdom); E2E `tests/e2e/*.spec.js` (Playwright against `site/`); generator `generator/test_*.py` (pytest from `generator/`, `npm run test:py`).
+- Local Vitest needs `cd server && npm ci` first.
+- A red E2E is never "flake" until the failing spec passes in isolation on the same commit.
 
-זה הליבה של העסק. כל הזמנה = "רשימת מילים פנימה, PDF החוצה".
+## Multi-agent workflow
 
-תהליך:
+If you are the integrator, read `docs/integrator.md`. Domain agents don't need it.
 
-1. ממירים את רשימת המילים ל-CSV.
-2. ב-Canva מחברים את שדות הטקסט לתוויות נתונים (autofill fields) שתואמות לכותרות ה-CSV.
-3. Bulk Create מייצר דף לכל שורה.
-4. מייצאים PDF.
+If you were told "you are Agent A/B/C/D", you are one of several parallel domain agents. A single integrator, not you, reviews and merges every PR.
 
-מבנה התבנית הקיימת ("alias Shira"):
+- A — Commerce, B — Catalog & Design, C — Wizard & Word-collection (incl. generator and print), D — Platform & Comms (incl. CI harness). File-level ownership: `docs/agent-partition.md`. Stay inside your domain; ask the integrator before touching another domain's files.
 
-- Canva design id: DAHML5i7T6k
-- כל דף = 8 קלפים, כל קלף 4 מילים = 32 מילים לדף.
-- דף נפרד של לוח המשחק (התחלה, מסלול ממוספר, סוף). הלוח נשאר עותק יחיד ולא חלק מה-Bulk Create.
+Rules:
 
-מפרט ה-CSV:
-
-- 32 עמודות בשמות c1w1 עד c8w4 (c=קלף, w=מילה). כל שורה = דף שלם.
-- מסירים כפילויות מדויקות.
-- מומלץ לערבב את המילים כדי שכל קלף יקבל תערובת ולא אשכול לפי א"ב.
-- משלימים את השורה האחרונה במחרוזות ריקות עד 32.
-- דוגמה (רשימת שירה): 476 שורות -> 470 ייחודיות -> 15 שורות (דף אחרון עם 22 מילים, 10 משבצות ריקות).
-
-סקריפט מחולל ה-CSV (פייתון, לשחזור ב-Claude Code):
-
-```python
-import csv, random, math
-def build_csv(words, out, shuffle=True, seed=42):
-    seen=set(); uniq=[w for w in (x.strip() for x in words) if w and not (w in seen or seen.add(w))]
-    if shuffle:
-        random.seed(seed); random.shuffle(uniq)
-    PER=32
-    pages=math.ceil(len(uniq)/PER)
-    padded=uniq+['']*(pages*PER-len(uniq))
-    headers=[f"c{c}w{w}" for c in range(1,9) for w in range(1,5)]
-    with open(out,'w',encoding='utf-8',newline='') as f:
-        wr=csv.writer(f); wr.writerow(headers)
-        for p in range(pages):
-            wr.writerow(padded[p*PER:(p+1)*PER])
-```
-
-סטטוס אוטומציה (חסום, ממתין לאישור הלקוחה):
-
-- חיבור אוטומטי של 32 השדות ב-Canva דרך ה-MCP נחסם כי פעולות כתיבה ב-Canva דורשות אישור משתמש שלא ניתן.
-- כרגע צריך לחבר את 32 השדות ידנית ב-Bulk Create (קליק ימני על תיבה > Connect data > העמודה המתאימה), או לאשר את פעולת ה-MCP.
-
-## מחקר שוק ומיצוב
-
-- אין מתחרה ישיר ב-B2C שעושה בדיוק "משחק מילים מותאם אישית, שלחו מילים ותקבלו משחק". פינה פנויה.
-- מתחרים עקיפים: משחקי קופסה גנריים (זול), טריוויה מותאמת B2B לארגונים (יקר, פרימיום), מוצרי הדפסה אישיים (למשל סטודיו פמיליה: ~50 ש"ח משלוח, ייצור שבוע עד שבועיים).
-- Etsy: רוב המוצרים הם הורדות PDF זולות שהלקוחה ממלאת לבד, התאמה אמיתית עולה תוספת. לכן ממצבים מעל הגנריים בתור "עשוי בשבילך" בספוק.
-
-## שיווק אינסטגרם
-
-- הצתה: 5 עד 10 הזמנות ראשונות (חברות או מסיבה אמיתית) בתמורה לתוכן, חוות דעת ואישור לפרסם. הוכחה חברתית קודם כול.
-- עמודי תוכן: רגע ה-reveal של קלפים עם בדיחות פנימיות, UGC ממסיבות, לפני/אחרי, מאחורי הקלעים, המלצות.
-- רעיונות לריל: "POV שלחתם לנו 100 מילים על בעל/ת השמחה", הפיכת קלפים, צחוקים מהמסיבה.
-- מנגנון תיוג: הלקוחה מתייגת בסטורי, אנחנו עושים repost. פרסום חינם וזרם לידים.
-- קהל והאשטגים: רווקות (שושבינות ומארגנות) #מסיבת*רווקות #רווקות #כלה #שושבינה #מתחתנת; ימי הולדת עגולים ונישואין — לכוון לבני/בנות זוג וילדים שמארגנים הפתעה (#יום*הולדת*50 #הפתעה #מתנה*מקורית). שיתופי פעולה עם מפיקות אירועים ומקומות אירוח.
-- מסלול: DM או לינק בביו -> טופס קליטה או וואטסאפ.
-
-## הצעדים הבאים (To-do)
-
-- [ ] לנעול 2 עד 3 תבניות עיצוב + ערכות צבעים.
-- [ ] תבנית קבועה לדף החוקים ולעמוד "מתחילים כאן".
-- [ ] דף מפרט הדפסה אחיד לשליחה ללקוחה ולבית הדפוס.
-- [ ] טופס קליטה (גוגל פורם): רשימת מילים, פרטי בעל/ת השמחה, סוג האירוע, בחירת תבנית וצבעים, תאריך האירוע.
-- [ ] דף עזר לאיסוף מילים (קטגוריות + דוגמאות) שנשלח עם טופס הקליטה.
-- [ ] אמצעי תשלום להשקה: ביט או פייבוקס, סליקה בהמשך.
-- [ ] תהליך פרימיום: הדמה לאישור + סבב תיקונים אחד מוגדר.
-- [ ] להגדיר "משחק סטנדרטי" סופית (מינ' 100, ללא הגבלה עליונה).
-- [ ] שלב 2: לאתר בית דפוס, להזמין דוגמה, לתמחר יחידה.
-
-## החלטות פתוחות / לאישור
-
-- שם המותג: דוגרי (שם עבודה נוכחי; קודם "אליאס אישי"). לאשר אחרי בדיקת סימן מסחר, דומיין (dugri.co.il/.com) ויוזר אינסטגרם. בחומרים ללקוח לא משתמשים בשם "אליאס".
-- יוזר האינסטגרם.
-- ערוץ הזמנות: נסגר. תשלום אונליין (Tranzila או דומה) -> אישור במייל + וואטסאפ שמבקש את המילים -> הלקוחה שולחת מילים -> קובץ עד 24 שעות. דרוש: חשבון סוחר/טרמינל ב-Tranzila.
-- אישור גודל "משחק סטנדרטי".
-
-## נכסים שכבר נוצרו (בסביבת Claude.ai, צריך להעביר/לשחזר)
-
-- alias_shira_bulk.csv — ה-CSV לדוגמה של תבנית שירה (15 שורות).
-- dugri_plan.html — מסמך מוצר/תמחור/תוכנית מעוצב (RTL).
-
-## הקשר על בעלת העסק והעדפות עבודה
-
-- מפעילה את חברת האירועים Star Experiences. יש לה רקע בפיתוח (React, PHP), קמפיינים ב-Meta, ושימוש ב-Canva ובמחברים של גוגל וקנבה.
-- מעדיפה תשובות תמציתיות באנגלית, בלי קווים מפרידים ארוכים, ובלי אימוג'ים אלא אם ביקשה.
-- רוצה לרוץ מהר ולהשיק תוך פחות משבוע.
-
-## תהליך עבודה (גיט ובדיקות)
-
-כל שינוי עובר בתהליך הזה, ללא יוצא מן הכלל:
-
-- עובדים על ענף ייעודי: `feat/<תיאור-קצר>` לפיצ'ר, `fix/<תיאור-קצר>` לתיקון. לא דוחפים ישירות ל-main.
-- פותחים Pull Request ל-main.
-- ה-CI חייב להיות ירוק לפני מיזוג. הוא מריץ: Prettier (בדיקת פורמט), ESLint, Vitest (בדיקות יחידה), Playwright (בדיקות E2E) ו-pytest (בדיקות המחולל, ג'וב נפרד שרץ במקביל).
-- אחרי שה-CI עובר — code review בידי האינטגרייטור.
-- **רק האינטגרייטור ממזג ל-main — לא הסוכן שכתב את ה-PR.** סוכן פותח PR ועוצר; לעולם לא ממזג (לא את שלו ולא של אחר). ראו סעיף "עבודה מרובת-סוכנים" למטה.
-- המשתמשת לוחצת ידנית על דיפלוי ב-Railway. אף אחד אחר לא מבצע דיפלוי.
-
-כל שינוי מגיע עם בדיקות. פיצ'ר חדש, תיקון באג או שינוי התנהגות — תמיד מצורפות בדיקות שמכסות את התרחיש. תיקון בלי בדיקה הוא תיקון שיכול להישבר שוב.
-
-מבנה הבדיקות:
-
-- בדיקות יחידה: `tests/unit/*.test.js` (סביבת jsdom, מייבאים מ-`vitest`).
-- בדיקות E2E: `tests/e2e/*.spec.js` (Playwright, מול האתר הסטטי שמוגש מתיקיית `site/`).
-- בדיקות המחולל: `generator/test_*.py` (pytest, רצות מתוך `generator/`; `npm run test:py`).
-
-## עבודה מרובת-סוכנים (Multi-agent workflow)
-
-If you were told "you are Agent A/B/C/D", this section is your operating manual.
-
-You are ONE of several parallel agents. Each works in its OWN git worktree. A single **integrator** — NOT you — reviews and merges every PR to main.
-
-**Domains**
-
-- Agent A — Commerce: pricing, coupons, orders, checkout, payment.
-- Agent B — Catalog & Design: designs, gallery/images, templates, themes, storefront carousels.
-- Agent C — Wizard & Word-collection: buyer wizard, word collection, name preview, the Python generator + print PDF.
-- Agent D — Platform & Comms: settings, content editor, WhatsApp/Whapi, emails/reminders, the test/CI harness.
-  Full detail: `docs/agent-partition.md`.
-
-**Rules (every agent)**
-
-1. Own worktree: you start in the repo root — FIRST run `git worktree add -b feat/<short> ../dugri-<short> origin/main` and do ALL work there. Never edit files in the shared root checkout.
-2. The two monolith files — `server/index.js` (all routes) and `server/db.js` (all stores) — are shared: edit ONLY your domain's block, never reflow another domain's code.
-3. Before EVERY push: `git fetch origin && git rebase origin/main` (resolve only YOUR block), re-run `npm test`, then `git push --force-with-lease`.
-4. Open your OWN PR (`gh pr create`). CI must be green — Prettier, ESLint, Vitest, Playwright (E2E runs on push:main too) and pytest over `generator/` (a separate parallel job). Don't wave a red E2E off as "flake"; root-cause it (CI already retries load-flakes twice).
-5. **You NEVER merge — not your own PR, not anyone's. A single integrator reviews and merges.** Open your PR and STOP.
-6. Never deploy — Railway is owner-only.
+1. Worktree first. From the repo root run `git worktree add -b feat/<short> ../dugri-<short> origin/main` and do all work there. Never edit the shared root checkout.
+2. Monolith files (`server/index.js`, `server/db.js`): edit only your domain's block; never reorder or reflow another domain's code.
+3. Before every push: `git fetch origin && git rebase origin/main`, re-run the tests, then `git push --force-with-lease`.
+4. Open your own PR with `gh pr create` and get CI green. Then stop. If the integrator's review requests changes, you fix them on your branch.
+5. Never merge anything, never push to main, never deploy (staging belongs to the integrator, production to the owner).
+6. Stacked work: PRs always target main. Don't open a PR that depends on an unmerged PR. Wait for the first to merge, or open the second as a draft whose body says "contains #N, rebase after it lands".
+7. One driver per branch: only the session that created a branch pushes to it. If that session has ended and can't be resumed, the integrator or a newly briefed agent may take the branch over: it first posts "Taking over this branch from <session>" on the PR, and is the only driver from then on.
+8. No `git stash`. The stash is shared across all worktrees and can restore another agent's work into your branch. Set work aside with a WIP commit on your branch.
+9. Cleanup: when your PR is merged or closed, run `git worktree remove ../dugri-<short>` and `git branch -D feat/<short>`. Never remove a worktree you didn't create, or one with uncommitted changes.
