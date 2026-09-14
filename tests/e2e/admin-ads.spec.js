@@ -1035,6 +1035,30 @@ test.describe('the ad report', () => {
     expect(stored).not.toContain('e2e-collection-id');
   });
 
+  // A button in one of our buyer emails (server/notify.js emailLink) lands on the
+  // collection page carrying utm_source=email. Without the tag it would read as
+  // order_link / own_link; with it the report gets an email row of its own, and
+  // the owner token in the same address still stays out of the beacon.
+  test('a click in our email is its own row, and the token stays out', async ({ page }) => {
+    const campaign = unique('payment_reminder');
+    const request = await arriveAt(
+      page,
+      '/collect.html?c=e2e-collection-id&k=e2e-owner-token&pay=1' +
+        '&utm_source=email&utm_medium=email&utm_campaign=' +
+        campaign
+    );
+    const body = JSON.parse(request.postData() || '{}');
+    expect(body.landing).toContain('/collect.html');
+    expect(body.landing).toContain('utm_source=email');
+    expect(body.landing).not.toContain('e2e-owner-token');
+
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const row = rowFor(page, campaign);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('email');
+    await expect(row).not.toContainText('order_link');
+  });
+
   test('the admin pages are never counted as traffic', async ({ page }) => {
     let tracked = false;
     page.on('request', (req) => {
