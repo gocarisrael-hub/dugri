@@ -96,6 +96,12 @@ def sticker_spec(theme, png_path):
         "viewBox": list(deck_html.view_box(svg)),
         "disc_fill": buildmod.PHOTO_DISC_FILL,
         "filter": halo.group(0) if halo else None,
+        # The shipped pawns, in the order the deck deals them, as the very bytes
+        # the card embeds (deck_html.image_data_url). The browser deals them into
+        # the slots her photos leave empty itself (pawn-print.js fallbackDeal, the
+        # same rule as build.card_photo_plan), so ONE bare card per design serves
+        # every deck size and every photo count instead of a render per change.
+        "fallbacks": [deck_html.image_data_url(p) for p in config.photo_fallback_paths(theme)],
     }
 
 

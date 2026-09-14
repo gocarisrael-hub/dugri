@@ -8,6 +8,7 @@ import {
   autoCrop,
   cropViewBox,
   DISC_FILL,
+  fallbackDeal,
   haloFilterMarkup,
   pyRound,
   resizeBilinearL,
@@ -61,6 +62,18 @@ describe("Pillow's BILINEAR resize, which the generator thresholds its masks aft
       const [W, H] = r.to;
       expect(sha1(resizeBilinearL(pattern(w, h), w, h, W, H))).toBe(r.sha1);
     });
+  }
+});
+
+// THE SHIPPED PAWNS, DEALT AS THE DECK DEALS THEM. The page draws them into the
+// slots her photos leave empty, so one bare card per design serves every deck
+// size. The answers are build.card_photo_plan's, for pools of one to four pawns.
+test('the shipped pawns are dealt across the deck exactly as the generator deals them', () => {
+  for (const [key, flat] of Object.entries(expected.deals)) {
+    const [pool, cards, filled] = key.split(':').map(Number);
+    const got = [];
+    for (let card = 0; card < cards; card++) got.push(...fallbackDeal(pool, filled, cards, card));
+    expect(got, key).toEqual(flat);
   }
 });
 

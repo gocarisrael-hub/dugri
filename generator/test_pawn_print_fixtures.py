@@ -33,6 +33,10 @@ def test_pillow_still_resamples_as_recorded():
     assert fx.resample_expected() == _stored()["resample"]
 
 
+def test_the_deck_still_deals_its_shipped_pawns_as_recorded():
+    assert fx.deals_expected() == _stored()["deals"]
+
+
 def test_the_fixtures_cover_every_branch_of_the_crop():
     images = _stored()["images"]
     assert any(i["framed"] and i["erased"] for i in images.values()), "bystander erase"

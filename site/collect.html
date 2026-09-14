@@ -3349,6 +3349,7 @@
       // halo filter, over the generator's picture of the card (js/pawn-print.js).
       import {
         preparePhoto,
+        fallbackDeal,
         viewCrop,
         slotRect,
         paintCard,
@@ -3584,6 +3585,8 @@
       let pawnSlots = null;
       let pawnSpec = null;
       const pawnBases = [];
+      // The design's shipped pawns, in deal order, as the card embeds them.
+      let pawnFallbacks = [];
       function pawnPrepared(src, view) {
         const printSrc = pawnPrintSrcFor(src, view);
         const cutout = printSrc !== src;
@@ -4393,11 +4396,21 @@
             photo && { photo, crop: viewCrop(photo.crop, view), src: pawnPrintSrcFor(src, view) }
           );
         });
+        // …and the shipped pawns in the slots her photos leave empty, dealt across
+        // the whole deck by the generator's own rule — card 2 of an eight-player
+        // deck with two photos starts at the third pawn, as it prints.
+        const per = pawnSlots.length;
+        const cards = pawnCardCount();
+        const filled = Math.min(pawnList().length, cards * per);
+        const fallbacks = fallbackDeal(pawnFallbacks.length, filled, cards, card).map((i) =>
+          i == null ? null : pawnFallbacks[i]
+        );
         paintCard(svg, {
           spec: pawnSpec,
           slots: pawnSlots,
           idPrefix: 'pawn-card-' + card,
           stickers,
+          fallbacks,
         });
       }
 
@@ -4423,27 +4436,13 @@
         const fail = box.querySelector('.prev-fail');
         if (!img) return;
         try {
-          // ?live=1: the card WITHOUT her photos, plus where its discs are. Every
-          // adjustment after it is drawn here rather than rendered there, so this
-          // is asked only when a photo is ADDED or REMOVED.
-          //
-          // &n is how many discs this page is about to cover. The rest come back
-          // carrying the shipped Dugri pawns, because that is what the printed
-          // card does — an order with two photos prints two faces and two pawns.
-          // Asking for a card with four bare discs and drawing two of them showed
-          // her two empty circles under a caption that says this is exactly how
-          // the card will be printed.
-          // &n counts her photos over the WHOLE deck and &card names this card:
-          // the shipped pawns are dealt across every card, so a card after the
-          // first does not start the set again (build.card_photo_plan).
-          const r = await api(
-            '/pawn-card?live=1&n=' +
-              pawnList().length +
-              '&card=' +
-              card +
-              '&k=' +
-              encodeURIComponent(ownerToken)
-          );
+          // ?live=1: the card with every disc bare, plus where the discs are, the
+          // card's own sticker filter and its shipped pawns. Her photos AND the
+          // pawns in the discs she has not filled are drawn here — the pawns dealt
+          // as the printed deck deals them (paintOnePawnCard) — so one picture per
+          // design and title serves every card and every photo count, and the
+          // server renders it once rather than on every photo she adds.
+          const r = await api('/pawn-card?live=1&k=' + encodeURIComponent(ownerToken));
           if (seq !== pawnCardSeq) return; // a newer render is already on its way
           if (r && r.card) {
             // The discs are positioned as fractions of THE CARD, and the layer
@@ -4477,6 +4476,7 @@
             };
           }
           if (r && r.card) pawnBases[card] = r.card;
+          if (r && Array.isArray(r.fallbacks)) pawnFallbacks = r.fallbacks;
           paintOnePawnCard(box, card);
           paintPawnPads();
         } catch (e) {

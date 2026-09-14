@@ -456,6 +456,46 @@ export function haloFilterMarkup(filter, id) {
   return String(filter || '').replace(/\bid="sticker-halo"/, `id="${id}"`);
 }
 
+/**
+ * Which shipped pawn goes in each of one card's four slots — build.card_photo_plan.
+ *
+ * `[null, null, 0, 1]`: null where one of her photos goes, otherwise an index into
+ * the theme's pawns. Dealt across the WHOLE deck (her `filled` photos, then the
+ * pawns over every remaining slot), so card 2 of an eight-player deck with two
+ * photos carries pawns 2, 3, 0, 1. On the standard card the set is used once and
+ * a short set leaves empty discs; a bigger deck cycles it. Held to the Python by
+ * tests/unit/pawn-print.test.js.
+ */
+export function fallbackDeal(pool, filled, cards = 1, card = 0) {
+  const n = Math.max(1, Math.trunc(cards) || 1);
+  const slots = 4 * n;
+  const have = Math.max(0, Math.min(Math.trunc(filled) || 0, slots));
+  const at = Math.max(0, Math.min(Math.trunc(card) || 0, n - 1));
+  const flat = new Array(have).fill(null);
+  const want = slots - have;
+  if (pool > 0) {
+    if (slots <= 4) for (let i = 0; i < Math.min(want, pool); i++) flat.push(i);
+    else for (let i = 0; i < want; i++) flat.push(i % pool);
+  }
+  while (flat.length < slots) flat.push(null);
+  return flat.slice(at * 4, at * 4 + 4);
+}
+
+/**
+ * A shipped pawn in a slot, as the photo card draws one: the image straight into
+ * the slot (fitted, never cropped, and NOT clipped — the pawns are drawn inside
+ * the disc already and never pass through square_photo) with the halo `<use>`
+ * behind it.
+ */
+export function fallbackMarkup({ id, slot, href, filterId }) {
+  return (
+    `<use href="#${id}" filter="url(#${filterId})"/>` +
+    `<image id="${id}" data-pawn-fallback href="${esc(href)}" x="${num(slot.x)}"` +
+    ` y="${num(slot.y)}" width="${num(slot.w)}" height="${num(slot.h)}"` +
+    ` preserveAspectRatio="xMidYMid meet"/>`
+  );
+}
+
 /** A slot rect as fractions of the card (preview.pawn_slots) in viewBox units. */
 export function slotRect(frac, viewBox) {
   const [vx, vy, vw, vh] = viewBox;
@@ -469,11 +509,28 @@ export function slotRect(frac, viewBox) {
 // crop's viewBox attribute is touched, and nothing is parsed or decoded.
 
 /**
- * One sticker into `g` (an SVG <g>): `photo` null empties it. Rebuilt only when
- * the photo or the slot changes; a new crop is a single attribute.
+ * One sticker into `g` (an SVG <g>): her photo, or — with no photo — the shipped
+ * pawn `fallback` (an image URL), or nothing. Rebuilt only when what it shows or
+ * where it sits changes; a new crop is a single attribute.
  */
-export function paintSticker(g, { id, slot, photo, crop, filterId }) {
+export function paintSticker(g, { id, slot, photo, crop, filterId, fallback }) {
   if (!g) return;
+  if (!photo && fallback) {
+    const key = [
+      'fallback',
+      fallback.length,
+      fallback.slice(-32),
+      id,
+      filterId,
+      slot.x,
+      slot.y,
+    ].join('|');
+    if (g.__pawnKey !== key) {
+      g.innerHTML = fallbackMarkup({ id, slot, href: fallback, filterId });
+      g.__pawnKey = key;
+    }
+    return;
+  }
   if (!photo) {
     if (g.__pawnKey) g.innerHTML = '';
     g.__pawnKey = null;
@@ -491,11 +548,13 @@ export function paintSticker(g, { id, slot, photo, crop, filterId }) {
 
 /**
  * A whole card's photos over the generator's picture of it. `svg` sits exactly
- * on that picture; `stickers[i]` is `{ photo, crop, src }` or null for slot i,
- * and gets a `<g class="pawn-live-slot">` whether or not its photo has decoded
- * yet. `src` (the file that prints) is stamped on the group as `data-src`.
+ * on that picture; `stickers[i]` is `{ photo, crop, src }` or null for a slot
+ * her photos fill, and gets a `<g class="pawn-live-slot">` whether or not its
+ * photo has decoded yet. `src` (the file that prints) is stamped on the group as
+ * `data-src`. `fallbacks[i]` is the shipped pawn for a slot past her photos, drawn
+ * in a `<g class="pawn-fallback-slot">` of its own.
  */
-export function paintCard(svg, { spec, slots, idPrefix, stickers }) {
+export function paintCard(svg, { spec, slots, idPrefix, stickers, fallbacks = [] }) {
   if (!svg || !spec) return;
   const filterId = idPrefix + '-halo';
   const shell = spec.viewBox.join(' ') + '|' + (spec.filter || '');
@@ -524,6 +583,23 @@ export function paintCard(svg, { spec, slots, idPrefix, stickers }) {
       filterId,
     });
   });
+  // The shipped pawns, one group per slot of the card, painted only where a
+  // pawn is dealt — kept apart from her photos so a count of those is still a
+  // count of her photos.
+  let pawns = svg.querySelectorAll('g.pawn-fallback-slot');
+  while (pawns.length < slots.length) {
+    svg.insertAdjacentHTML('beforeend', '<g class="pawn-fallback-slot"></g>');
+    pawns = svg.querySelectorAll('g.pawn-fallback-slot');
+  }
+  slots.forEach((frac, i) => {
+    paintSticker(pawns[i], {
+      id: `${idPrefix}-f${i}`,
+      slot: slotRect(frac, spec.viewBox),
+      photo: null,
+      fallback: (i >= stickers.length && fallbacks[i]) || null,
+      filterId,
+    });
+  });
 }
 
 /**
@@ -532,7 +608,7 @@ export function paintCard(svg, { spec, slots, idPrefix, stickers }) {
  * sticker on it. `base` is the card picture; without it the tile is the sticker
  * alone until it arrives. `src`, the file that prints, is stamped as `data-src`.
  */
-export function paintTile(svg, { spec, base, slot, margin = 3, id, photo, crop, src }) {
+export function paintTile(svg, { spec, base, slot, margin = 3, id, photo, crop, src, fallback }) {
   if (!svg || !spec) return;
   if (src) svg.setAttribute('data-src', src);
   else svg.removeAttribute('data-src');
@@ -552,7 +628,14 @@ export function paintTile(svg, { spec, base, slot, margin = 3, id, photo, crop, 
     svg.__pawnShell = shell;
     svg.__pawnBase = base;
   }
-  paintSticker(svg.querySelector('g.pawn-sticker'), { id, slot, photo, crop, filterId });
+  paintSticker(svg.querySelector('g.pawn-sticker'), {
+    id,
+    slot,
+    photo,
+    crop,
+    filterId,
+    fallback,
+  });
 }
 
 /** How much of a tile's width the slot square takes (see paintTile's margin). */
@@ -596,17 +679,38 @@ export function releasePhoto(key, { cutout } = {}) {
   if (p) p.then((r) => r && URL.revokeObjectURL(r.href)).catch(() => {});
 }
 
-async function decode(src, cutout) {
-  let bitmap = null;
+// The decoded picture: an ImageBitmap read the way Pillow reads the file, or —
+// for a file the bitmap decoder refuses outright (a PNG with a bad chunk checksum
+// is one; Pillow and an <img> both shrug those off) — the same file through an
+// <img>, which still applies the EXIF rotation. Refusing to draw a photo the
+// printer will print is the one answer worse than a colour-managed one.
+async function picture(blob) {
   try {
-    const blob = typeof src === 'string' ? await fetch(src).then((r) => r.blob()) : src;
-    bitmap = await createImageBitmap(blob, {
+    return await createImageBitmap(blob, {
       imageOrientation: 'from-image',
       colorSpaceConversion: 'none',
       premultiplyAlpha: 'none',
     });
-    const w = bitmap.width;
-    const h = bitmap.height;
+  } catch {
+    const url = URL.createObjectURL(blob);
+    try {
+      const im = document.createElement('img');
+      im.src = url;
+      await im.decode();
+      return im;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+}
+
+async function decode(src, cutout) {
+  let bitmap = null;
+  try {
+    const blob = typeof src === 'string' ? await fetch(src).then((r) => r.blob()) : src;
+    bitmap = await picture(blob);
+    const w = bitmap.naturalWidth || bitmap.width;
+    const h = bitmap.naturalHeight || bitmap.height;
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;

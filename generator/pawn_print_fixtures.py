@@ -139,9 +139,35 @@ def resample_expected():
     return out
 
 
+def deals_expected():
+    """Which shipped pawn goes in which slot, for every deck the buyer can order.
+
+    ``"<pool>:<cards>:<filled>"`` -> the whole deck's slots as pool indices (None
+    where one of her photos goes), straight from build.card_photo_plan with a
+    stand-in pool of ``pool`` pawns — including pools shorter than four, where the
+    standard card stops and a bigger deck cycles.
+    """
+    real = build.config.photo_fallback_paths
+    out = {}
+    try:
+        for pool in (1, 2, 3, 4):
+            names = ["p%d" % i for i in range(pool)]
+            build.config.photo_fallback_paths = lambda theme, names=names: list(names)
+            for cards in (1, 2, 3, 4):
+                for filled in range(4 * cards + 1):
+                    flat = []
+                    for card in range(cards):
+                        flat += [None if p is None else names.index(p)
+                                 for p in build.card_photo_plan("any", filled, cards, card)]
+                    out["%d:%d:%d" % (pool, cards, filled)] = flat
+    finally:
+        build.config.photo_fallback_paths = real
+    return out
+
+
 def compute():
     """The whole expected.json document, from the images on disk."""
-    doc = {"images": {}, "resample": resample_expected()}
+    doc = {"images": {}, "resample": resample_expected(), "deals": deals_expected()}
     for name, (_, cutout) in sorted(images().items()):
         with Image.open(os.path.join(OUT, name + ".png")) as im:
             doc["images"][name] = expected(im.convert("RGBA"), cutout)

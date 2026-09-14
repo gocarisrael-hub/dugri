@@ -3674,7 +3674,7 @@
         loadCustomDesigns,
       } from './js/designs.js';
       // Her pawns drawn as the printer draws them (the wizard's photo step).
-      import { preparePhoto, slotRect, paintTile } from './js/pawn-print.js';
+      import { preparePhoto, slotRect, paintTile, fallbackDeal } from './js/pawn-print.js';
       import {
         applyPalette,
         applyOriginal,
@@ -6316,12 +6316,13 @@
       }
 
       // THE CARD UNDER THE TILES. Every slot is a tile cut from the generator's
-      // own picture of her pawn card (GET /api/pawn-base): its paper, its dashed
-      // cut-line, and the Dugri pawn the print puts in a slot she has not filled —
-      // dealt across the whole deck, the way the print deals them. Asked only while
-      // this step is on screen, a beat after the last change, and cached per
-      // question here and on the server.
-      let pawnBase = null; // { key, spec: { viewBox, filter, slots }, cards: [picture, ...] }
+      // own picture of her pawn card (GET /api/pawn-base): its paper and its
+      // dashed cut-line, with every disc bare. The Dugri pawn the print puts in a
+      // slot she has not filled is drawn on by this page, dealt across the whole
+      // deck the way the print deals them, out of the pawns the card came with —
+      // so there is ONE picture per design, asked once, while this step is on
+      // screen, rather than one per photo count and per card.
+      let pawnBase = null; // { key, spec: { viewBox, filter, slots, fallbacks }, card: picture }
       let pawnBaseSeq = 0;
       let pawnBaseTimer = null;
       const pawnBaseAnswers = new Map();
@@ -6343,23 +6344,21 @@
       async function refreshPawnBase() {
         const theme = currentTheme();
         if (!theme) return;
-        const players = pawnPlayers;
-        const n = Math.min(players, pawnFiles.filter(Boolean).length);
-        const key = [theme, players, n].join('|');
+        const key = theme;
         if (pawnBase && pawnBase.key === key) return;
         const seq = ++pawnBaseSeq;
         try {
-          const answers = await Promise.all(
-            Array.from({ length: players / 4 }, (_, card) =>
-              fetchPawnBase(new URLSearchParams({ theme, players, card, n }).toString())
-            )
-          );
+          const r = await fetchPawnBase(new URLSearchParams({ theme }).toString());
           if (seq !== pawnBaseSeq) return;
-          const first = answers[0];
           pawnBase = {
             key,
-            spec: { viewBox: first.viewBox, filter: first.filter || '', slots: first.slots },
-            cards: answers.map((a) => a.card),
+            spec: {
+              viewBox: r.viewBox,
+              filter: r.filter || '',
+              slots: r.slots,
+              fallbacks: r.fallbacks || [],
+            },
+            card: r.card,
           };
           pawnSlots.forEach((_, i) => renderPawnSlot(i));
         } catch {
@@ -6509,8 +6508,10 @@
             : '';
           pawnOverEl.hidden = !over;
         }
-        // The card under the tiles depends on the count and on how many photos
-        // there are — either may just have changed.
+        // Which pawn each empty slot shows depends on the count and on how many
+        // photos there are — either may just have changed — and the card under
+        // them may not have been asked for yet.
+        pawnSlots.forEach((_, i) => renderPawnSlot(i));
         schedulePawnBase();
       }
 
@@ -6533,8 +6534,20 @@
         slot.classList.toggle('is-cut', Boolean(file && pawnCutouts[idx]));
         slot.classList.toggle('is-pawn', Boolean(photo));
         // A slot past her player count prints nowhere, so no card goes under it.
-        const base = pawnBase && idx < pawnPlayers ? pawnBase.cards[Math.floor(idx / 4)] : null;
+        const onDeck = idx < pawnPlayers;
+        const base = pawnBase && onDeck ? pawnBase.card : null;
         slot.classList.toggle('has-card', Boolean(base));
+        // …and a slot on the deck with no photo in it prints the pawn the deck
+        // deals there, which is what the tile shows under the +.
+        let fallback = null;
+        if (pawnBase && onDeck && !file) {
+          const pool = pawnBase.spec.fallbacks;
+          const filled = Math.min(pawnPlayers, pawnFiles.filter(Boolean).length);
+          const at = fallbackDeal(pool.length, filled, pawnPlayers / 4, Math.floor(idx / 4))[
+            idx % 4
+          ];
+          fallback = at == null ? null : pool[at];
+        }
         if (tile) {
           const where = pawnBase
             ? {
@@ -6548,6 +6561,7 @@
             id: 'pawn-tile-' + idx,
             photo,
             crop: photo && photo.crop,
+            fallback,
           });
         }
         if (status) {

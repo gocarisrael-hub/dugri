@@ -916,6 +916,7 @@ function runPawnCard({
         if (Array.isArray(produced.viewBox)) out.viewBox = produced.viewBox;
         if (typeof produced.disc_fill === 'number') out.disc_fill = produced.disc_fill;
         if (typeof produced.filter === 'string') out.filter = produced.filter;
+        if (Array.isArray(produced.fallbacks)) out.fallbacks = produced.fallbacks;
         cleanup();
         resolve(out);
       } catch (e) {
@@ -3407,16 +3408,15 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   // run on the server — the editor moved at the speed of a render before this,
   // which is to say it was always showing the adjustment before last.
   //
-  // `n` is how many of her photos the DECK carries and `card` which pawn card to
-  // draw; the render leaves her slots bare and deals the shipped Dugri pawns into
-  // the rest across the whole deck, which is what the printed deck does. So this
-  // picture depends on the theme, the deck size, the card and that COUNT — not on
-  // which photos, and not on how she framed them, either of which would put the
-  // render back in the drag loop.
+  // EVERY disc is left bare: the page draws her photos AND the shipped Dugri pawns
+  // into them itself — the pawns dealt across the whole deck by the generator's
+  // own rule (pawn-print.js fallbackDeal, held to build.card_photo_plan), from the
+  // pawn images this answer carries. So the picture depends on the design and the
+  // title alone: not on which photos, how she framed them, how many there are or
+  // how big the deck is. One render serves every one of those, where a picture per
+  // photo count and per card was a Chrome run on every photo she added.
   const live = req.query.live === '1';
-  const cards = live ? Math.max(1, Math.floor(db.playersFor(c) / 4)) : 1;
-  const drawn = live ? Math.max(0, Math.min(4 * cards, Number(req.query.n) || 0)) : 0;
-  const card = live ? Math.max(0, Math.min(cards - 1, Number(req.query.card) || 0)) : 0;
+  const drawn = live ? 4 : 0;
   const photos = live ? [] : pawnPhotoFiles(c);
   const photoFrames = live ? [] : pawnPhotoFrames(c);
   const photoCutouts = live ? [] : pawnPhotoCutouts(c);
@@ -3439,7 +3439,7 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
     title.gender || '',
   ].join('\u0000');
   const cacheKey = live
-    ? 'pawn-base:' + theme + ':' + cards + ':' + card + ':' + drawn + ':' + titleKey
+    ? 'pawn-base:' + theme + ':' + titleKey
     : 'pawn-card:' +
       theme +
       ':' +
@@ -3460,8 +3460,6 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
       photoCutouts,
       empty: live,
       drawn,
-      cards,
-      card,
       ...title,
     });
     pawnCardCache.set(cacheKey, out);
@@ -3477,28 +3475,24 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
 // THE SAME BASE CARD FOR THE WIZARD, before any order exists.
 //
 // The wizard's photo step draws each pawn onto a tile cut from this card — its
-// paper, its dashed cut-line, and the shipped pawns in the slots she has not
-// filled — so the pawn she picks is shown on the card it prints on, not on a
-// placeholder colour with a ring of its own. Nothing of hers goes in, and no
-// title (the tiles are the slots alone; the title band is below them), so one
-// picture per (design, deck size, card, photo count) serves every buyer, from the
-// pawn-card cache. Public, so it is rate-limited in the preview's own bucket; a
-// cache hit costs nothing and is never counted.
+// paper and its dashed cut-line — with her photo, or the shipped pawn the deck
+// deals into that slot, painted on by the page (the pawn images ride along with
+// the card). Nothing of hers goes in and no title (the tiles are the slots alone;
+// the title band is below them), so ONE picture per design serves every buyer at
+// every deck size and photo count, from the pawn-card cache. Public, so it is
+// rate-limited in the preview's own bucket; a cache hit costs nothing and is
+// never counted.
 app.get('/api/pawn-base', async (req, res) => {
   const theme = String(req.query.theme || '').trim();
   if (!validate.getTheme(theme)) return res.status(400).json({ error: 'unknown theme' });
-  const players = db.sanitizePlayers(req.query.players);
-  const cards = Math.max(1, Math.floor(players / 4));
-  const drawn = Math.max(0, Math.min(4 * cards, Number(req.query.n) || 0));
-  const card = Math.max(0, Math.min(cards - 1, Number(req.query.card) || 0));
-  const cacheKey = 'pawn-base-public:' + theme + ':' + cards + ':' + card + ':' + drawn;
+  const cacheKey = 'pawn-base-public:' + theme;
   const cached = pawnCardCache.get(cacheKey);
   if (cached) return res.json(cached);
   if (!previewRate.ok('preview:' + clientKey(req))) {
     return res.status(429).json({ error: 'too many requests' });
   }
   try {
-    const out = await runPawnCard({ theme, empty: true, drawn, cards, card });
+    const out = await runPawnCard({ theme, empty: true, drawn: 4 });
     pawnCardCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
