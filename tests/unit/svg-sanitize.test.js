@@ -20,15 +20,33 @@ const repo = path.join(__dirname, '..', '..');
 
 const { sanitizeSvgForDom: sanitize } = require(path.join(repo, 'server', 'routes', 'catalog.js'));
 
-const BLOCKED = ['script', 'foreignobject', 'iframe', 'embed', 'object'];
+const BLOCKED = ['script', 'foreignobject', 'iframe', 'embed', 'object', 'frame', 'frameset'];
+
+// Threats read off the raw string, for output the XML parser rejects. A parse error
+// does NOT make a document safe: Chromium runs a script that comes before the first
+// fatal error (`<svg><script>alert()</script><g a="<"/></svg>` fires), so a
+// malformed tail must never let everything before it count as clean.
+function stringThreats(markup) {
+  const found = [];
+  const blocked = new RegExp('<(?:[^\\s<>/:=]+:)?(?:' + BLOCKED.join('|') + ')[\\s/>]', 'gi');
+  for (const m of markup.match(blocked) || []) found.push(m);
+  for (const m of markup.match(/[\s"'/]on[a-z]+\s*=/gi) || []) found.push(m.trim());
+  const decoded = markup
+    .replace(/&#x([0-9a-f]+);?/gi, (m, h) => String.fromCodePoint(parseInt(h, 16) % 0x110000))
+    .replace(/&#(\d+);?/g, (m, d) => String.fromCodePoint(parseInt(d, 10) % 0x110000))
+    .replace(/[\x00-\x20\x7f-\x9f]+/g, '')
+    .toLowerCase();
+  if (/(?:java|vb)script:/.test(decoded)) found.push('javascript:');
+  return found;
+}
 
 // Everything executable the XML parser left in the tree. Attribute values come back
 // entity-decoded; the URL parser also drops ASCII whitespace and control
 // characters, so those are removed before looking for the scheme.
 function xmlThreats(markup) {
   const doc = new window.DOMParser().parseFromString(markup, 'image/svg+xml');
-  // A document that is not well-formed renders nothing on a direct open.
-  if (doc.getElementsByTagName('parsererror').length) return [];
+  // Not well-formed: judge the bytes instead (see stringThreats).
+  if (doc.getElementsByTagName('parsererror').length) return stringThreats(markup);
   const found = [];
   for (const el of Array.from(doc.getElementsByTagName('*'))) {
     const tag = el.localName.toLowerCase();
@@ -48,6 +66,16 @@ const XHTML = 'xmlns="http://www.w3.org/1999/xhtml"';
 // [name, input]. Every input is well-formed XML and is checked to be LIVE under
 // DOMParser before sanitizing, so no case can pass by being harmless to begin with.
 const ATTACKS = [
+  // Frames in the XHTML namespace load a document (a data:text/html one runs script)
+  [
+    'XHTML frame with a data:text/html src',
+    `<svg ${NS} xmlns:h="http://www.w3.org/1999/xhtml"><h:frame src="data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;"/></svg>`,
+  ],
+  [
+    'XHTML frameset holding a frame',
+    `<svg ${NS} xmlns:h="http://www.w3.org/1999/xhtml"><h:frameset><h:frame src="https://example.com/"/></h:frameset></svg>`,
+  ],
+
   // Event handlers
   ['handler, double quotes', `<svg ${NS}><g onload="alert(1)"/></svg>`],
   ['handler, single quotes', `<svg ${NS}><g onclick='alert(1)'/></svg>`],
@@ -136,6 +164,21 @@ const ATTACKS = [
     `<svg ${NS}><a><animate attributeName="href" values="#a;javascript:alert(1)"/><rect/></a></svg>`,
   ],
 ];
+
+describe('the threat helper itself', () => {
+  it('flags a script that precedes a fatal XML error instead of calling it clean', () => {
+    expect(xmlThreats('<svg><script>alert()</script><g a="<"/></svg>')).not.toEqual([]);
+  });
+  it('flags a handler, a javascript: URL and a frame in malformed output', () => {
+    expect(xmlThreats('<svg><g onload="x()"><a href="&#106;avascript:x"></svg')).toEqual(
+      expect.arrayContaining(['onload=', 'javascript:'])
+    );
+    expect(xmlThreats('<svg><h:frame src="x"/><g a="<"/></svg>').length).toBeGreaterThan(0);
+  });
+  it('does not flag harmless malformed text', () => {
+    expect(xmlThreats('<svg><text>turn on = off<')).toEqual([]);
+  });
+});
 
 describe('sanitizeSvgForDom — attacks, judged by the XML parser', () => {
   it.each(ATTACKS)('%s', (_name, input) => {

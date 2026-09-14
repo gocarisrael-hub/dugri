@@ -520,7 +520,17 @@ function registerTemplateRevert(app, { requireAdmin, TEMPLATE_ROOT, templates })
 // (SVG_SANITIZE_MAX_PASSES) catches a removal that re-forms a tag; real art is
 // stable on the first pass, and anything still changing at the cap fails closed
 // to "".
-const SVG_BLOCKED_ELEMENTS = new Set(['script', 'foreignobject', 'iframe', 'embed', 'object']);
+// Elements that run script or load another document. frame/frameset matter in the
+// XHTML namespace: `<h:frame src="data:text/html,<script>…">` runs its document.
+const SVG_BLOCKED_ELEMENTS = new Set([
+  'script',
+  'foreignobject',
+  'iframe',
+  'frame',
+  'frameset',
+  'embed',
+  'object',
+]);
 const SVG_SANITIZE_MAX_PASSES = 8;
 
 // The second, independent defence for a template SVG opened DIRECTLY as a document
