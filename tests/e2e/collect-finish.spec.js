@@ -29,6 +29,12 @@ test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
 });
 
+// Routes here hold requests and pass them on with route.fetch(); none may still be
+// running when the page closes (see the same hook in collect.spec.js).
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 async function createCollection(page, title = 'Shira') {
   await page.route('**/api/preview', (route) =>
     route.fulfill({
@@ -894,6 +900,210 @@ test('a count change that never reaches the server says so, and nothing moves', 
   await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
 });
 
+// The 5-second poll, switched off, so the only fetches a test sees are the ones the
+// page makes in answer to what she did.
+async function noPoll(page) {
+  await page.addInitScript(() => {
+    const real = window.setInterval;
+    window.setInterval = (fn, ms, ...rest) => (ms === 5000 ? 0 : real(fn, ms, ...rest));
+  });
+}
+
+// A DROPPED FETCH IS FETCHED AGAIN. A word refused with 402 (the free quota filled
+// under her) asks refresh() for the lock. If a count change lands while that fetch is
+// out, its answer started before the save and is dropped, so the page must fetch once
+// more rather than carry on unlocked.
+test('a count change during the refresh after a 402 still brings the lock on', async ({ page }) => {
+  await noPoll(page);
+  await stubPawnCard(page);
+  const { url } = await createCollection(page);
+
+  let quotaHit = false;
+  let heldGet = null;
+  let releaseGet;
+  let getHeld;
+  const holding = new Promise((r) => (getHeld = r));
+  await page.route('**/api/collections/*/words', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    quotaHit = true;
+    return route.fulfill({ status: 402, json: { error: 'free_limit' } });
+  });
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch();
+    const body = await res.json();
+    if (quotaHit) {
+      // The server's own answer, locked the way it is once the quota is full.
+      body.free_limit_locked = true;
+      if (!heldGet) {
+        // The first fetch after the 402 is held until the count change has landed.
+        heldGet = new Promise((r) => (releaseGet = r));
+        getHeld();
+        await heldGet;
+      }
+    }
+    return route.fulfill({ response: res, json: body });
+  });
+  await page.goto(url);
+
+  await page.fill('#wordInput', 'מילה');
+  await page.click('#addBtn');
+  await holding;
+
+  await page.getByTestId('tab-pawns').click();
+  await page.getByTestId('players-8').click();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(2);
+  releaseGet();
+
+  await expect(page.locator('#addCard')).toHaveClass(/locked/);
+  await expect(page.locator('#wordInput')).toBeDisabled();
+  // …and the count she chose is not rolled back by the fetch that was dropped.
+  await expect(page.getByTestId('players-8')).toHaveAttribute('aria-pressed', 'true');
+});
+
+// THE COLLECTION CLOSED, AND THE FETCH THAT WOULD SHOW IT FAILED. The server has said
+// `closed`, so every count button would only be refused again. The field shows the
+// closed state instead of handing back buttons that repeat a silent 409.
+test('a closed refusal whose follow-up fetch fails still shows the closed state', async ({
+  page,
+}) => {
+  await noPoll(page);
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('players-count')).toBeVisible();
+
+  const closed = await page.request.post(`/api/collections/${id}/close`, {
+    data: { owner_token: k },
+  });
+  expect(closed.status()).toBeLessThan(400);
+  let puts = 0;
+  await page.route('**/api/collections/*/players*', (route) => {
+    puts++;
+    return route.continue();
+  });
+  // Every collection fetch from here on is lost on the network.
+  let aborted = 0;
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    aborted++;
+    return route.abort('failed');
+  });
+
+  await page.getByTestId('players-8').click();
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  // Past the follow-up fetch, which failed: the closed state is still what shows.
+  await expect.poll(() => aborted).toBeGreaterThan(0);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 300)));
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  // …and the refused change cannot be sent again: the button does not answer a press.
+  await pressInDom(page, 'players-8');
+  expect(puts).toBe(1);
+});
+
+// A press that reaches the button even while it is hidden: a DOM click fires on any
+// enabled button, so a button left enabled under the closed state would send.
+async function pressInDom(page, testId) {
+  await page.evaluate((id) => document.querySelector(`[data-testid="${id}"]`).click(), testId);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 300)));
+}
+
+// AN ANSWER FROM BEFORE THE CLOSE. The 5-second poll left while the collection was
+// open; the collection closed elsewhere; her press was refused `closed` and the fetch
+// after it was lost. When that old poll finally lands, its "open" must not bring the
+// count buttons back — every press would only repeat the refusal.
+test('a poll that left before the collection closed does not bring the count back', async ({
+  page,
+}) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+
+  let puts = 0;
+  await page.route('**/api/collections/*/players*', (route) => {
+    puts++;
+    return route.continue();
+  });
+  let hold = false;
+  let aborting = false;
+  let aborted = 0;
+  let heldStarted;
+  const started = new Promise((r) => (heldStarted = r));
+  let release;
+  const released = new Promise((r) => (release = r));
+  let staleLanded;
+  const landed = new Promise((r) => (staleLanded = r));
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    if (aborting) {
+      aborted++;
+      return route.abort('failed');
+    }
+    if (!hold) return route.continue();
+    hold = false;
+    // Answered now, while the collection is still open, and handed back later.
+    const res = await route.fetch();
+    const body = await res.text();
+    heldStarted();
+    await released;
+    await route.fulfill({ response: res, body });
+    staleLanded();
+  });
+
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('players-count')).toBeVisible();
+
+  hold = true;
+  await started; // the next 5-second poll, carrying "open"
+
+  const closed = await page.request.post(`/api/collections/${id}/close`, {
+    data: { owner_token: k },
+  });
+  expect(closed.status()).toBeLessThan(400);
+  aborting = true;
+
+  await page.getByTestId('players-8').click();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  await expect.poll(() => aborted).toBeGreaterThan(0);
+
+  release();
+  await landed;
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 500)));
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  await pressInDom(page, 'players-8');
+  expect(puts).toBe(1);
+});
+
+// A 200 THAT SAYS NOTHING. A proxy page or a cut-off body parses to nothing; the
+// count, the cards and the limit must not go undefined on it. It is a failure: the
+// error line shows and the page keeps what it had.
+test('a count change answered with a 200 that is not JSON is a failure, and nothing moves', async ({
+  page,
+}) => {
+  await stubPawnCard(page);
+  const { url } = await createCollection(page);
+  await page.route('**/api/collections/*/players*', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<html>gateway</html>' })
+  );
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('players-budget')).toContainText('עד 412 מילים');
+
+  await page.getByTestId('players-8').click();
+  await expect(page.getByTestId('players-err')).toBeVisible();
+  await expect(page.getByTestId('players-err')).toContainText('לא הצלחנו');
+  await expect(page.getByTestId('players-4')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('players-budget')).toHaveText(
+    '4 שחקנים · 1 קלף חיילים · עד 412 מילים'
+  );
+  await expect(page.getByTestId('players-8')).toBeEnabled();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
+});
+
 // ANOTHER DEVICE CHANGED THE COUNT. The buttons follow every poll; the preview has
 // to follow the same answer, or it draws one card under a count that promises three.
 test('a count changed from another device redraws the cards on the next poll', async ({ page }) => {
@@ -946,7 +1156,10 @@ test('an unpaid list over its free limit reads the same count on the line and in
   const refuse = page.getByTestId('players-refuse');
   await expect(refuse).toBeVisible();
   await expect(refuse).toContainText(collected);
-  await expect(refuse).toContainText('6 מילים');
+  // The whole sentence: a bare "6 מילים" would also be found inside "16 מילים".
+  await expect(page.locator('#playersRefuseMain')).toHaveText(
+    'כדי לעבור ל-12 שחקנים צריך למחוק 6 מילים.'
+  );
 });
 
 test('raising the count past her word list is refused, with the number to delete', async ({
@@ -967,7 +1180,10 @@ test('raising the count past her word list is refused, with the number to delete
   const refuse = page.getByTestId('players-refuse');
   await expect(refuse).toBeVisible();
   await expect(refuse).toContainText('12 שחקנים');
-  await expect(refuse).toContainText('6 מילים'); // 410 - 404
+  // 410 - 404, as the whole sentence ("6 מילים" alone also matches "16 מילים").
+  await expect(page.locator('#playersRefuseMain')).toHaveText(
+    'כדי לעבור ל-12 שחקנים צריך למחוק 6 מילים.'
+  );
   await expect(refuse).toContainText('404');
 
   // Nothing moved, and the buttons say so.

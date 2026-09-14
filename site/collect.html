@@ -3736,9 +3736,17 @@
       // STALE POLLS. Every collection fetch takes a tick when it STARTS, and a
       // successful count change takes one when it lands. A fetch that started
       // before that save carries the old count and ceiling, so its answer is
-      // dropped rather than allowed to roll the page back.
+      // dropped rather than allowed to roll the page back — and fetched once more,
+      // because a caller may be waiting on that answer (see refresh()).
       let fetchClock = 0;
       let playersSavedAt = 0;
+      // The server refused a count change as `closed`, and no collection fetch that
+      // STARTED after that refusal has landed since. Until one does, the count field
+      // shows the closed state: every button would only be refused again. The
+      // refusal takes a tick on the same clock, so a poll that left while the
+      // collection was still open — and lands late, saying "open" — cannot lift it.
+      let playersClosedSeen = false;
+      let playersClosedAt = 0;
 
       function playersNow() {
         return Number(state && state.players) || PLAYER_COUNTS[0];
@@ -3799,6 +3807,13 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ players: n }),
           });
+          // A 200 that does not carry the new count and ceiling (a proxy page, a
+          // cut-off body — api() hands those back as {}) is not a saved change.
+          // Taking it as one would set the count and limit to undefined, and move
+          // the save marker so the poll that would correct it is dropped.
+          if (!(Number(r && r.players) > 0) || !(Number(r && r.deck_words) > 0)) {
+            throw Object.assign(new Error('players_response'), { status: 200, body: r });
+          }
           playersAsked = null;
           playersBusy = false;
           playersSavedAt = ++fetchClock;
@@ -3824,6 +3839,11 @@
             // The collection closed since the last poll. Fetch it now, with the
             // buttons still disabled, so the closed state (no buttons) replaces
             // them at once instead of five seconds of a control that cannot work.
+            // The server has already said `closed`, so the field shows that even
+            // if this fetch is lost: buttons handed back now would only repeat
+            // the same refusal. The next fetch that lands clears it.
+            playersClosedSeen = true;
+            playersClosedAt = ++fetchClock;
             renderPlayers();
             await refresh();
           } else {
@@ -3839,7 +3859,7 @@
         const row = $('#playersCount');
         const fld = $('#playersFld');
         if (!row || !fld) return;
-        const open = state && state.status === 'open';
+        const open = state && state.status === 'open' && !playersClosedSeen;
         // Owner only, and only while the collection is open: once the deck is in
         // production the count is what it is, and a control that silently 409s is
         // worse than one that is not there.
@@ -5611,27 +5631,44 @@
         }
       }
 
+      // Resolves 'ok' when a fresh state was applied, 'dropped' when every answer
+      // started before a count change landed, and 'failed' when the fetch did.
+      // It never throws.
       async function refresh() {
         try {
           // The owner passes ?k=<owner_token> so the server returns the stored
           // delivery address (owner-only), letting a locked delivery order prefill
           // without re-typing. Contributors fetch the plain public view.
-          const startedAt = ++fetchClock;
-          const next = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
-          // Started before her last count change landed: this answer carries the
-          // old count and ceiling. Drop it; the next poll brings the new ones.
-          if (startedAt < playersSavedAt) return;
+          let next;
+          let startedAt;
+          for (let attempt = 0; ; attempt++) {
+            startedAt = ++fetchClock;
+            next = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+            if (startedAt >= playersSavedAt) break;
+            // Started before her last count change landed: this answer carries the
+            // old count and ceiling, so it is dropped. But a caller may be waiting
+            // on it — addWords after a 402 for the lock, an edit or a removal for
+            // the reverted list, the close for the closed state — so fetch ONCE
+            // more; that fetch starts after the save and carries the new count.
+            if (attempt >= 1) return 'dropped';
+          }
           state = next;
+          // Only an answer that left after the `closed` refusal can speak for the
+          // collection since then; an older one lifting the closed state would
+          // hand back buttons that repeat the refusal.
+          if (startedAt > playersClosedAt) playersClosedSeen = false;
           // Her deck's own ceiling, before anything is drawn from it. A
           // contributor's view carries it too — the counter is the same counter.
           MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;
           render();
           reportLostPhotos();
+          return 'ok';
         } catch (e) {
           if (e.status === 404) {
             $('#title').textContent = 'הקישור לא נמצא';
             $('#subtitle').textContent = 'ייתכן שהקישור שגוי. בקשו מהמארגנ/ת קישור חדש.';
           }
+          return 'failed';
         }
       }
 
