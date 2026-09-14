@@ -733,16 +733,39 @@ test.describe('the ad report', () => {
     await expect(page.getByTestId('meta-account')).toHaveCount(0);
   });
 
-  // The refusal is quoted verbatim — and the field comes with it. A refusal may
-  // BE the account (a wrong META_AD_ACCOUNT_ID, or a token that cannot list the
-  // accounts to choose from), and this page is the only one that can outrank the
-  // environment variable. A field she doesn't need beats a report she cannot fix.
-  test('Meta’s refusal is shown, with the field that may be what fixes it', async ({ page }) => {
-    await serveMeta(page, {
+  // A refusal with no account in play is the token (no ads_read). The field
+  // cannot fix that and the owner asked for the section to go — and it must come
+  // back by itself the moment Meta answers.
+  test('a token refusal hides the Meta section, and a working report brings it back', async ({
+    page,
+  }) => {
+    let answer = {
       ok: false,
       armed: true,
       account_setting: '',
       account_env: '',
+      error: '(#200) Missing Permissions',
+    };
+    await serveMeta(page, () => answer);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('meta-section')).toBeHidden();
+    await expect(page.getByTestId('meta-account')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText('Missing Permissions');
+
+    answer = metaAnswer();
+    await page.getByRole('button', { name: '7 ימים' }).click();
+    await expect(page.getByTestId('meta-section')).toBeVisible();
+    await expect(page.getByTestId('meta-table')).toBeVisible();
+  });
+
+  // A refusal that MAY be the account keeps the section and the field: a wrong
+  // META_AD_ACCOUNT_ID can only be outranked from this page.
+  test('a refusal with an account in the environment keeps the field', async ({ page }) => {
+    await serveMeta(page, {
+      ok: false,
+      armed: true,
+      account_setting: '',
+      account_env: '99999999',
       error: '(#200) Missing Permissions',
     });
     await page.goto(`/admin-ads.html?key=${KEY}`);

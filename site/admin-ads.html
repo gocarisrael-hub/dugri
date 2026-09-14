@@ -457,12 +457,14 @@
         <div class="tiles" id="tiles"></div>
         <p class="hint" id="internalNote" data-testid="ads-internal" hidden></p>
 
-        <h2>מה מטא מדווחת — ומה זה עלה</h2>
-        <p class="hint" style="margin: 0 0 4px">
-          נמשך ישירות מחשבון המודעות שלך. אין מה לסמן ואין מה להדביק בכל מודעה — העלות היא המספר שרק
-          מטא יודעת, וההזמנות בטבלה השנייה הן המספר שרק אנחנו יודעים.
-        </p>
-        <div id="metaBox"></div>
+        <div id="metaSection" data-testid="meta-section">
+          <h2>מה מטא מדווחת — ומה זה עלה</h2>
+          <p class="hint" style="margin: 0 0 4px">
+            נמשך ישירות מחשבון המודעות שלך. אין מה לסמן ואין מה להדביק בכל מודעה — העלות היא המספר
+            שרק מטא יודעת, וההזמנות בטבלה השנייה הן המספר שרק אנחנו יודעים.
+          </p>
+          <div id="metaBox"></div>
+        </div>
 
         <div class="table-head">
           <h2>הספירה שלנו — לפי מקור</h2>
@@ -513,10 +515,10 @@
         </p>
         <p class="hint">
           שמות מקור שאינם פרסום: <code>order_link</code> / <code>own_link</code> = מישהי שנכנסה
-          מקישור ששלחנו בעצמנו (דף ההזמנה או איסוף המילים) — לא פרסום, וגם כל ההזמנות שנעשו לפני
-          שהמדידה הזאת עלתה נופלות לשם, אז השורה הזאת תהיה גדולה בהתחלה ותתכווץ מעצמה.
-          <code>gmail</code> / <code>email</code> = כניסה מתוך מייל. <code>direct</code> /
-          <code>none</code> = בלי שום סימן מאיפה הגיעה.
+          מקישור ששלחנו בעצמנו — המיילים, הוואטסאפ וה-SMS שלנו, או קישור איסוף המילים שחברות מקבלות.
+          כל קישור במייל שלנו מוביל לדף ההזמנה, ולכן כניסות מהמיילים נספרות כאן ולא כ-gmail. לא
+          פרסום. <code>gmail</code> / <code>email</code> = קישור מתוך ג׳ימייל שמוביל לדף אחר באתר
+          (נדיר). <code>direct</code> / <code>none</code> = בלי שום סימן מאיפה הגיעה.
         </p>
 
         <h2>קישור ידני — לביו, לסטורי, למשפיענית</h2>
@@ -1227,9 +1229,29 @@
         );
       }
 
+      // A refusal with no account in play — no saved override, no
+      // META_AD_ACCOUNT_ID, no list to choose from, not our own "which account"
+      // sentence — is the token itself (typically "(#200) Missing Permissions":
+      // no ads_read). Nothing on this page can fix that, so the owner asked for
+      // the section to go: an English error and a field that does nothing only
+      // cost her a scroll. It comes back by itself once Meta answers.
+      function metaQuiet(data) {
+        return (
+          data.armed === true &&
+          data.ok === false &&
+          data.error_source !== 'us' &&
+          !Array.isArray(data.accounts) &&
+          !data.account_setting &&
+          !data.account_env &&
+          accountSaved === null
+        );
+      }
+
       function renderMeta(data) {
         const box = qs('metaBox');
         box.textContent = '';
+        qs('metaSection').hidden = metaQuiet(data);
+        if (qs('metaSection').hidden) return;
 
         if (!data.armed) {
           box.appendChild(
@@ -1480,6 +1502,7 @@
           renderMeta(data);
         } catch (e) {
           if (gen !== reportSeq) return;
+          qs('metaSection').hidden = false;
           qs('metaBox').textContent = '';
           // The save itself landed — only the reload that was going to confirm it
           // didn't. Said here, or the confirmation goes down with the render that
