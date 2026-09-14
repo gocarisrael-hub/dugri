@@ -198,6 +198,33 @@ describe('getTransaction / findTransaction', () => {
   });
 });
 
+describe('getTransaction normalization of the fields verification reads', () => {
+  it('reads tranmode, payment_plan, a numeric response code and a string amount', async () => {
+    fetchMock.mockResolvedValueOnce(
+      ok({
+        transactions: [
+          row({ tranmode: 'a', payment_plan: '1', processor_response_code: 0, amount: '7900' }),
+        ],
+      })
+    );
+    const t = await tz.getTransaction('1696');
+    expect(t).toMatchObject({
+      tranmode: 'A',
+      paymentPlan: 1,
+      responseCode: '0',
+      amountAgorot: 7900,
+    });
+    expect(tz.verifyTransaction(t, { amountNis: 79, token: 'tok123' })).toBe(false);
+  });
+
+  it('treats an empty txn_type as missing', async () => {
+    fetchMock.mockResolvedValueOnce(ok({ transactions: [row({ txn_type: '' })] }));
+    const t = await tz.getTransaction('1696');
+    expect(t.txnType).toBe(null);
+    expect(tz.verifyTransaction(t, { amountNis: 79, token: 'tok123' })).toBe(false);
+  });
+});
+
 describe('verifyTransaction (fail-closed)', () => {
   const tx = (over) => ({
     index: '1696',
@@ -229,9 +256,41 @@ describe('verifyTransaction (fail-closed)', () => {
   });
 
   it('rejects money moving the other way (credit, cancel, verify)', () => {
-    for (const t of ['CREDIT', 'CANCEL', 'VERIFY', 'J2']) {
+    for (const t of ['CREDIT', 'CANCEL', 'VERIFY', 'J2', 'REFUTE']) {
       expect(tz.verifyTransaction(tx({ txnType: t }), expected)).toBe(false);
     }
+  });
+
+  // The buyer can edit tranmode/cred_type in the iframe URL before paying.
+  it('rejects an authorization-only hold (J5) however the report labels it', () => {
+    expect(tz.verifyTransaction(tx({ txnType: 'J5' }), expected)).toBe(false);
+    expect(tz.verifyTransaction(tx({ txnType: 'VERIFY', tranmode: 'V' }), expected)).toBe(false);
+    // Even labelled a debit, a V (hold) or N (card check) mode is not a charge.
+    expect(tz.verifyTransaction(tx({ tranmode: 'V' }), expected)).toBe(false);
+    expect(tz.verifyTransaction(tx({ tranmode: 'N' }), expected)).toBe(false);
+  });
+
+  it('rejects a missing or unknown txn_type rather than assuming a charge', () => {
+    expect(tz.verifyTransaction(tx({ txnType: null }), expected)).toBe(false);
+    expect(tz.verifyTransaction(tx({ txnType: 'FORCE' }), expected)).toBe(false);
+    expect(tz.verifyTransaction(tx({ txnType: 'SOMETHING_NEW' }), expected)).toBe(false);
+  });
+
+  it('accepts standard mode and a regular or debit-card plan; rejects installments', () => {
+    expect(tz.verifyTransaction(tx({ tranmode: 'A', paymentPlan: 1 }), expected)).toBe(true);
+    expect(tz.verifyTransaction(tx({ tranmode: 'A', paymentPlan: 3 }), expected)).toBe(true);
+    expect(tz.verifyTransaction(tx({ paymentPlan: 8 }), expected)).toBe(false);
+    expect(tz.verifyTransaction(tx({ paymentPlan: 6 }), expected)).toBe(false);
+  });
+
+  it('rejects a numeric 0 response code', () => {
+    expect(tz.verifyTransaction(tx({ responseCode: '0' }), expected)).toBe(false);
+  });
+
+  it('rejects a transaction with no token field at all', () => {
+    const raw = row();
+    delete raw.user_defined_3;
+    expect(tz.verifyTransaction(tx({ raw }), expected)).toBe(false);
   });
 
   it("rejects another buyer's real charge: same amount, but not this session's token", () => {

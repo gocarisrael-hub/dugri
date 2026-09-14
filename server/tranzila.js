@@ -48,9 +48,20 @@ const REPORT_BASE = trimBase(process.env.TRANZILA_REPORT_BASE, 'https://report.t
 const NAME = 'tranzila';
 const SUCCESS_CODE = '000';
 const CURRENCY_ILS = '1';
-// Report txn_type values that move no money to us. Anything else that is
-// approved (DEBIT, or FORCE after a J5) is a charge.
-const NOT_A_CHARGE = new Set(['CREDIT', 'VERIFY', 'CANCEL', 'REFUTE', 'J2', 'REVERSAL']);
+// WHAT COUNTS AS MONEY TAKEN — an allowlist, never a blocklist.
+//
+// The iframe URL is built here but opened in the buyer's browser, so the buyer
+// can edit tranmode/cred_type before paying. Tranzila approves an authorization
+// hold (J5, tranmode V) or a card check (J2, tranmode N) with 000, in shekels,
+// for the right amount and carrying the right token — and no money ever moves.
+// So a transaction pays for an order only when it is the exact kind of charge we
+// asked for: a DEBIT (Reports API txn_type), in standard mode (tranmode A), on a
+// regular or debit-card plan (payment_plan 1 / 3, not installments). A missing
+// or unknown txn_type is refused; tranmode and payment_plan are checked whenever
+// the report carries them. Values from docs.tranzila.com (see TRANZILA.md).
+const CHARGE_TXN_TYPES = new Set(['DEBIT']);
+const CHARGE_TRANMODES = new Set(['A']);
+const CHARGE_PAYMENT_PLANS = new Set([1, 3]);
 
 function isConfigured() {
   return Boolean(TERMINAL && APP_KEY && SECRET);
@@ -168,7 +179,9 @@ async function getTransaction(index) {
     amountAgorot: rd.amount != null && rd.amount !== '' ? Number(rd.amount) : null,
     currency: rd.currency != null ? String(rd.currency) : null,
     responseCode: rd.processor_response_code != null ? String(rd.processor_response_code) : null,
-    txnType: rd.txn_type != null ? String(rd.txn_type).toUpperCase() : null,
+    txnType: rd.txn_type != null && rd.txn_type !== '' ? String(rd.txn_type).toUpperCase() : null,
+    tranmode: rd.tranmode != null && rd.tranmode !== '' ? String(rd.tranmode).toUpperCase() : null,
+    paymentPlan: rd.payment_plan != null && rd.payment_plan !== '' ? Number(rd.payment_plan) : null,
     approvalNo: rd.authorization_number || null,
     raw: rd,
   };
@@ -194,11 +207,14 @@ function carriesToken(raw, token) {
   return Object.values(raw).some((v) => v != null && String(v) === String(token));
 }
 
-// FAIL-CLOSED: approved, a charge, shekels, exactly the expected amount in
-// agorot, and bound to the session by its token.
+// FAIL-CLOSED: approved, the kind of charge we asked for (see CHARGE_* above),
+// shekels, exactly the expected amount in agorot, and bound to the session by
+// its token.
 function verifyTransaction(tx, expected = {}) {
   if (!tx || tx.responseCode !== SUCCESS_CODE) return false;
-  if (tx.txnType && NOT_A_CHARGE.has(tx.txnType)) return false;
+  if (!tx.txnType || !CHARGE_TXN_TYPES.has(tx.txnType)) return false;
+  if (tx.tranmode != null && !CHARGE_TRANMODES.has(tx.tranmode)) return false;
+  if (tx.paymentPlan != null && !CHARGE_PAYMENT_PLANS.has(tx.paymentPlan)) return false;
   if (tx.currency !== CURRENCY_ILS) return false;
   if (expected.amountNis == null || tx.amountAgorot == null) return false;
   if (tx.amountAgorot !== toAgorot(expected.amountNis)) return false;

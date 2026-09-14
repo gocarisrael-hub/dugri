@@ -82,7 +82,12 @@ a confirmation, not an accounting document.
    only to learn the transaction `index`. We re-fetch the transaction from the
    Reports API (`report.tranzila.com/v1/transaction`) with our secret key and
    mark the purchase paid only when **all** hold:
-   - `processor_response_code` is `000`, and it is a charge (not credit/cancel/verify),
+   - `processor_response_code` is `000`,
+   - it is the charge we asked for, checked as an **allowlist**: `txn_type` is
+     `DEBIT` (missing or anything else is refused), `tranmode` is `A` and
+     `payment_plan` is `1` or `3` whenever the report carries them. The buyer can
+     edit the iframe URL, so an authorization hold (J5, `tranmode=V`), a card
+     check (J2, `N`) or installments (`cred_type` 6/8) must never count as paid,
    - currency is shekels,
    - `amount` (agorot) equals the session's `charged_total` exactly,
    - the transaction carries the session's token (the user-defined field),
@@ -97,6 +102,28 @@ a confirmation, not an accounting document.
 If the report does not have the transaction yet, the notify answers 502 so
 Tranzila retries. A rejected transaction is logged with its code, type,
 currency, amount, expected amount and whether the token matched (no card data).
+
+## Sources
+
+Read on 14 Sep 2026. The docs site renders client-side; a plain HTTP fetch can
+show "No content yet", open it in a browser.
+
+- `txn_type` values (DEBIT, CREDIT, FORCE, VERIFY, REFUTE, J2, CANCEL),
+  `tranmode`, `payment_plan` (1 regular, 3 debit card, 6 special credit,
+  8 installments), `processor_response_code` "000", and `amount` "in smallest
+  currency unit (agorot for ILS)": Tranzila Transaction Reports API,
+  https://docs.tranzila.com/docs/reports/tranzila-transaction-reports-api
+- iframe parameters (`tranmode` A/V/K/N/J, `cred_type` 1/6/8, `notify_url_address`,
+  `apple_pay`, `google_pay`) and the notify fields (`Response`, `index`):
+  https://docs.tranzila.com/docs/payments-and-billing/iframe-integration-directng
+- HMAC headers: https://docs.tranzila.com/docs/payments-and-billing/authentication
+- Handshake (locks the **sum** only, not the mode):
+  https://docs.tranzila.com/docs/payments-and-billing/handshake-v2
+
+Not yet confirmed against a real transaction, so the staging test must show
+them: the `amount` unit, and the exact `txn_type` / `tranmode` a normal iframe
+charge reports. Either being different fails closed (charged, not marked paid,
+owner alerted) rather than open.
 
 ## Testing on staging
 

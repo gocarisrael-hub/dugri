@@ -30,12 +30,17 @@ const ENV = {
   TRANZILA_APP_KEY: 'app-key',
   TRANZILA_SECRET: 'app-secret',
   TRANZILA_LOOKUP_RETRY_MS: '0',
+  TRANZILA_NOTIFY_RATE_LIMIT: '6',
+  // Several tests here produce approved-but-unverified charges on purpose; the
+  // production cap of 5 owner alerts an hour would silence the later ones.
+  TRANZILA_ALERT_RATE_LIMIT: '50',
 };
 const FEE = 39;
 
 let app;
 let db;
 let settings;
+let notify;
 let server;
 let base;
 
@@ -43,6 +48,8 @@ let base;
 let report = {};
 let reportThrows = false;
 const reportCalls = [];
+// PeleCard's GetTransaction answer, for the cross-provider test.
+let nextPeleTx = null;
 
 const jsonRes = (obj) => ({ ok: true, status: 200, json: async () => obj });
 
@@ -61,11 +68,13 @@ beforeAll(async () => {
   settings.set('pricing', 'delivery_fee', FEE);
   db = require(path.join(serverDir, 'db.js'));
   app = require(path.join(serverDir, 'index.js'));
+  notify = require(path.join(serverDir, 'notify.js'));
 
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url, opts) => {
       const u = String(url);
+      if (u.includes('/PaymentGW/GetTransaction')) return jsonRes(nextPeleTx);
       if (u === 'https://report.tranzila.com/v1/transaction') {
         if (reportThrows) throw new Error('network');
         const body = JSON.parse(opts.body);
@@ -95,6 +104,7 @@ beforeEach(() => {
   report = {};
   reportThrows = false;
   reportCalls.length = 0;
+  nextPeleTx = null;
 });
 
 async function post(urlPath, body) {
@@ -275,6 +285,108 @@ describe('POST /api/payment/tranzila/notify', () => {
     await notifyFor('peletoken123', index);
     expect(db.getCollection(c.id).order.paid).toBe(false);
     expect(reportCalls).toHaveLength(0);
+  });
+});
+
+describe('a buyer who edits the payment page', () => {
+  it('an authorization-only hold (J5) never marks the order paid or spends the coupon', async () => {
+    db.createCoupon({ code: 'TZHOLD', discount_pct: 50 });
+    const c = db.createCollection('החזקה בלבד');
+    const { session } = await openPayment(c, { coupon: 'TZHOLD' });
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      // Approved, shekels, the right amount, the right token — and no money.
+      const hold = charge(session.token, 40, { txn_type: 'VERIFY', tranmode: 'V' });
+      await notifyFor(session.token, hold);
+      const j5 = charge(session.token, 40, { txn_type: 'J5' });
+      await notifyFor(session.token, j5);
+      const unknown = charge(session.token, 40, { txn_type: undefined });
+      await notifyFor(session.token, unknown);
+
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(false);
+      expect(db.getCouponByCode('TZHOLD').uses || 0).toBe(0);
+      // Each approved-but-unverified charge reaches the owner, once per index.
+      expect(alert).toHaveBeenCalledTimes(3);
+      await notifyFor(session.token, hold);
+      expect(alert).toHaveBeenCalledTimes(3);
+      const [subject, lines] = alert.mock.calls[0];
+      expect(subject).toMatch(/טרנזילה/);
+      expect(lines.join('\n')).toContain(String(hold));
+      expect(lines.join('\n')).not.toContain(session.token);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('an approved charge with no token field alerts the owner and is not marked paid', async () => {
+    const c = db.createCollection('בלי שדה אסימון');
+    const { session } = await openPayment(c);
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      const index = charge(session.token, 79, { user_defined_1: undefined });
+      await notifyFor(session.token, index);
+      expect(db.getCollection(c.id).order.paid).toBe(false);
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert.mock.calls[0][1].join('\n')).toMatch(/לא$/m);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('a declined charge does not alert anyone', async () => {
+    const c = db.createCollection('נדחה בלי התראה');
+    const { session } = await openPayment(c);
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      await notifyFor(session.token, charge(session.token, 79, { processor_response_code: '033' }));
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+});
+
+describe('notify abuse', () => {
+  it('rate-limits one token, answering 429 without touching the Reports API', async () => {
+    const c = db.createCollection('הצפה');
+    const { session } = await openPayment(c);
+    for (let i = 0; i < 6; i++) {
+      expect((await notifyFor(session.token, 900000 + i)).status).toBe(502);
+    }
+    reportCalls.length = 0;
+    const limited = await notifyFor(session.token, 900099);
+    expect(limited.status).toBe(429);
+    expect(reportCalls).toHaveLength(0);
+  });
+
+  it('a session that already paid never looks anything up again', async () => {
+    const c = db.createCollection('כבר שולם אין בדיקה');
+    const { session } = await openPayment(c);
+    const index = charge(session.token, 79);
+    await notifyFor(session.token, index);
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+    reportCalls.length = 0;
+    const again = await notifyFor(session.token, 123456);
+    expect(again.status).toBe(200);
+    expect(reportCalls).toHaveLength(0);
+  });
+
+  it('the PeleCard callback refuses a session Tranzila opened, even when PeleCard reports it paid', async () => {
+    const c = db.createCollection('פלאקארד מול טרנזילה');
+    const { session } = await openPayment(c);
+    nextPeleTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'pc-cross',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: session.token,
+        DebitTotal: 7900,
+      },
+    };
+    const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'pc-cross' } });
+    expect(r.status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(false);
   });
 });
 

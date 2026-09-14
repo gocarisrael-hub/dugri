@@ -5495,6 +5495,55 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
 // from Tranzila's Reports API with our secret key, and it pays for the session
 // only when approved, in shekels, for that session's exact amount, carrying that
 // session's token, and not already spent on another purchase.
+//
+// The token is visible to the buyer in the iframe URL, so anyone holding one can
+// POST here with invented indexes. Each such call costs signed Reports API
+// lookups and a few seconds of an open request, so it is rate-limited per token,
+// and a session that has already paid for its purchase never looks anything up.
+const tranzilaNotifyRate = makeRateLimiter({
+  limit: Number(process.env.TRANZILA_NOTIFY_RATE_LIMIT || 10),
+  windowMs: 10 * 60 * 1000,
+  maxKeys: 10000,
+});
+// Owner alerts for an approved charge that did not verify are capped globally,
+// so a stream of forged notifies cannot flood her inbox, and sent once per index.
+const tranzilaAlertRate = makeRateLimiter({
+  limit: Number(process.env.TRANZILA_ALERT_RATE_LIMIT || 5),
+  windowMs: 60 * 60 * 1000,
+  maxKeys: 1,
+});
+const tranzilaAlertedIndexes = new Set();
+
+// An APPROVED Tranzila transaction that did not verify is the one failure that
+// can mean "the buyer was charged and the order is not paid" — a token field
+// missing on the terminal, an amount unit that is not what the docs say — or a
+// buyer who switched the page to a hold. Either way a person has to look, and a
+// log line nobody reads is not that. Card details, tokens and keys stay out.
+function alertUnverifiedTranzilaCharge(c, tx, session) {
+  if (tranzilaAlertedIndexes.has(tx.index)) return;
+  if (!tranzilaAlertRate.ok('all')) return;
+  tranzilaAlertedIndexes.add(tx.index);
+  if (tranzilaAlertedIndexes.size > 1000) {
+    tranzilaAlertedIndexes.delete(tranzilaAlertedIndexes.values().next().value);
+  }
+  const subject = 'טרנזילה: עסקה מאושרת לא אומתה — ההזמנה לא סומנה כשולמה';
+  const lines = [
+    'הזמנה: ' + (c.order_no || c.id),
+    'מספר עסקה בטרנזילה (index): ' + tx.index,
+    'סוג: ' + (tx.txnType || '-') + ' · מצב: ' + (tx.tranmode || '-'),
+    'סכום בדוח: ' +
+      tx.amountAgorot +
+      ' אגורות · צפוי: ' +
+      Math.round(Number(session.charged_total) * 100),
+    'אסימון ההזמנה נמצא בעסקה: ' + (tranzila.carriesToken(tx.raw, session.token) ? 'כן' : 'לא'),
+    'לבדוק ב-My Tranzila אם נגבה כסף, ולזכות או לסמן ידנית לפי הצורך.',
+  ];
+  notify
+    .sendSystemAlert(subject, lines)
+    .then((emailed) => (emailed ? true : alertOwnerViaWhatsApp(subject, lines)))
+    .catch(() => {});
+}
+
 app.post('/api/payment/tranzila/notify', async (req, res) => {
   const parsed = tranzila.parseNotify(req.body || {}, req.query || {});
   if (!tranzila.isConfigured() || !parsed.token || !parsed.index) return res.json({ ok: true });
@@ -5502,10 +5551,18 @@ app.post('/api/payment/tranzila/notify', async (req, res) => {
   // is safe even though the field is untrusted: a forged "declined" cannot stop
   // the real notify for a real charge.
   if (parsed.response && parsed.response !== tranzila.SUCCESS_CODE) return res.json({ ok: true });
+  if (!tranzilaNotifyRate.ok(parsed.token)) {
+    return res.status(429).json({ error: 'too many notifications' });
+  }
 
   const match = db.findPaySession(parsed.token);
   const session = match && match.session;
   if (!session || session.provider !== tranzila.NAME) return res.json({ ok: true });
+  // This session already paid for its purchase (resolved by markPaid, not by the
+  // buyer closing the window): a repeat notify has nothing left to decide.
+  const purchasePaid =
+    match.kind === 'shipping' ? match.collection.order.shipping.paid : match.collection.order.paid;
+  if (purchasePaid && session.resolved && !session.abandoned_at) return res.json({ ok: true });
 
   let tx;
   try {
@@ -5537,6 +5594,9 @@ app.post('/api/payment/tranzila/notify', async (req, res) => {
         ' token=' +
         tranzila.carriesToken(tx.raw, session.token)
     );
+    if (tx.responseCode === tranzila.SUCCESS_CODE) {
+      alertUnverifiedTranzilaCharge(match.collection, tx, session);
+    }
     return res.json({ ok: true });
   }
   if (db.isTransactionUsed(tranzila.NAME, tx.index)) return res.json({ ok: true });
