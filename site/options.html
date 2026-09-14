@@ -6342,6 +6342,10 @@
         return pawnBaseAnswers.get(q);
       }
       async function refreshPawnBase() {
+        // Asked for when the timer FIRES, not when it was set: a buyer who passes
+        // straight through this step has left it by then, and a card nobody will see
+        // is a Chrome run on the server for nothing.
+        if (currentStep !== 5) return;
         const theme = currentTheme();
         if (!theme) return;
         const key = theme;

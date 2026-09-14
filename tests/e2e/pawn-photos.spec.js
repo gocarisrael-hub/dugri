@@ -123,6 +123,61 @@ test.describe('optional pawn-photos step', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
+  // THE SLOTS ARE THE PRINTED CARD'S. The step asks the generator for its card
+  // once — every disc bare, for the design alone — and paints into each empty slot
+  // the Dugri pawn the deck deals there, across the WHOLE deck: with eight players
+  // and two photos the first card's empty slots take pawns 1 and 2, and the second
+  // card starts at pawn 3, as build.card_photo_plan prints it.
+  test('empty slots show the pawns the deck deals there, from one card asked for once', async ({
+    page,
+  }) => {
+    await stubCutter(page, { succeeds: false });
+    const pawnSvg = (fill) =>
+      'data:image/svg+xml;base64,' +
+      Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="${fill}"/></svg>`
+      ).toString('base64');
+    const fallbacks = ['#a00', '#0a0', '#00a', '#aa0'].map(pawnSvg);
+    const asked = [];
+    await page.route('**/api/pawn-base**', (route) => {
+      asked.push(new URL(route.request().url()).search);
+      return route.fulfill({
+        json: {
+          card: 'data:image/png;base64,' + PNG_BYTES.toString('base64'),
+          slots: [
+            { n: 1, x: 0.178, y: 0.279, w: 0.295, h: 0.212 },
+            { n: 2, x: 0.527, y: 0.279, w: 0.295, h: 0.212 },
+            { n: 3, x: 0.178, y: 0.529, w: 0.295, h: 0.212 },
+            { n: 4, x: 0.527, y: 0.529, w: 0.295, h: 0.212 },
+          ],
+          viewBox: [0, 0, 223.92, 312],
+          filter: '',
+          fallbacks,
+        },
+      });
+    });
+    await toPawnStep(page);
+    await page.getByTestId('pawn-count-8').click();
+    for (const i of [0, 1]) {
+      await page
+        .getByTestId('pawn-input-' + i)
+        .setInputFiles({ name: `p${i}.png`, mimeType: 'image/png', buffer: PNG_BYTES });
+    }
+    const pawnIn = (idx) => page.locator(`.pawn-slot[data-idx="${idx}"] image[data-pawn-fallback]`);
+    // Card one: her two photos, then pawns 1 and 2.
+    await expect(pawnIn(2)).toHaveAttribute('href', fallbacks[0]);
+    await expect(pawnIn(3)).toHaveAttribute('href', fallbacks[1]);
+    await expect(pawnIn(0)).toHaveCount(0);
+    // Card two carries on from pawn 3 — it does not start the set again.
+    await expect(pawnIn(4)).toHaveAttribute('href', fallbacks[2]);
+    await expect(pawnIn(5)).toHaveAttribute('href', fallbacks[3]);
+    await expect(pawnIn(6)).toHaveAttribute('href', fallbacks[0]);
+
+    // One card, for the design alone — not one per count, photo or card.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/^\?theme=[^&]+$/);
+  });
+
   test('selecting a file shows a small preview; removing it clears the slot', async ({ page }) => {
     await stubCutter(page, { succeeds: false });
     await toPawnStep(page);
