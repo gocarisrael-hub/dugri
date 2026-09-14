@@ -1377,17 +1377,31 @@ function registerAdsSettingsWhatsapp(
     }
     process.exit(code);
   }
-  process.once('SIGTERM', () => stopWithSignal(143));
-  process.once('SIGINT', () => stopWithSignal(130));
+  // The unit tests reload the app many times in one process, and each load used to
+  // ADD another set of these. Keep the current set on `process` (it outlives the
+  // require.cache purge) and take the previous load's set off first. In production
+  // the app loads once, so there is never anything to remove.
+  const SHUTDOWN = Symbol.for('dugri.platform.shutdownListeners');
+  for (const [event, fn] of process[SHUTDOWN] || []) process.removeListener(event, fn);
+  const onSigterm = () => stopWithSignal(143);
+  const onSigint = () => stopWithSignal(130);
   // Any other way out (an explicit exit elsewhere, a fatal error) still gets the
   // queue written. A second call with nothing new to say writes nothing.
-  process.once('exit', () => {
+  const onExit = () => {
     try {
       attribution.flush();
     } catch {
       /* nothing left to do about it at this point */
     }
-  });
+  };
+  process[SHUTDOWN] = [
+    ['SIGTERM', onSigterm],
+    ['SIGINT', onSigint],
+    ['exit', onExit],
+  ];
+  process.once('SIGTERM', onSigterm);
+  process.once('SIGINT', onSigint);
+  process.once('exit', onExit);
 
   // Admin: owner-editable message templates + settings. The email subject/body
   // templates, the editable label maps and the WhatsApp trigger catalog all live
