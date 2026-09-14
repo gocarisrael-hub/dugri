@@ -418,6 +418,24 @@ function payLink(collection, baseUrl) {
   return link ? link + '&pay=1' : null;
 }
 
+// A link in a BUYER email, tagged so the ad report can tell our emails apart.
+// Untagged, every one of them lands on collect.html and reads as
+// order_link / own_link, the same row as WhatsApp, SMS and a friend's word
+// link. utm beats that rule (server/attribution.js parseTouch), so a click here
+// reads email / <medium> / <which mail>. `mail` is the template key.
+// `toPayment` marks a mail whose button is the checkout (the unpaid order
+// confirmation, the payment reminder, the free-limit mail): those read
+// email / email_payment, every other buyer mail email / email_other, so the owner can
+// tell "came to pay" from "came to add words / see the order" at a glance. The
+// tags are campaign params only, so the tracker keeps them and still drops the
+// token (site/js/attribution.js safeUrl). A purchase is still credited to the
+// touch frozen on the order, so this names visits, not sales. Owner alerts are
+// not tagged: those clicks are hers, not a buyer's.
+function emailLink(link, mail, toPayment) {
+  const medium = toPayment ? 'email_payment' : 'email_other';
+  return link ? link + '&utm_source=email&utm_medium=' + medium + '&utm_campaign=' + mail : null;
+}
+
 // Is this collection's order already paid? Drives which closing line + CTA a
 // buyer email gets. Treated as UNPAID when there is no order yet — the order
 // confirmation fires when a collection is created, often before any version is
@@ -584,7 +602,11 @@ function buildBuyerConfirmation(collection, baseUrl, options) {
   // add-words pair is kept for the one case where that would be wrong — an order
   // already paid when the mail goes out (a 100% coupon).
   const paid = orderPaid(collection);
-  const link = paid ? ownerLink(collection, baseUrl) : payLink(collection, baseUrl);
+  const link = emailLink(
+    paid ? ownerLink(collection, baseUrl) : payLink(collection, baseUrl),
+    'buyer_confirmation',
+    !paid
+  );
   const closing = paid ? step.words : step.pay;
   const ctaLabel = paid ? cta.addWords : cta.pay;
   // {link} is available to the owner inside the template body; '' when absent so
@@ -653,7 +675,7 @@ function buildBuyerReceipt(collection, baseUrl, options) {
   const tpl = emailTpl('buyer_payment_received');
   const cta = ctaLabels();
   const ft = footer();
-  const link = ownerLink(collection, baseUrl);
+  const link = emailLink(ownerLink(collection, baseUrl), 'buyer_payment_received');
   // {link} is available to the owner inside the template body; '' when absent so
   // it vanishes rather than rendering literally.
   const values = { honoree: name, link: link || '' };
@@ -794,7 +816,7 @@ function buildOrderReady(collection, baseUrl) {
   const cta = ctaLabels();
   const ft = footer();
   const order = (collection && collection.order) || null;
-  const link = ownerLink(collection, baseUrl);
+  const link = emailLink(ownerLink(collection, baseUrl), 'order_ready');
   const values = { honoree: name, link: link || '' };
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
@@ -827,7 +849,11 @@ function buildOrderReady(collection, baseUrl) {
 // each one so the client (and Dugri) know exactly what to correct before we can
 // generate. The owner link (when available) lets them update the order.
 // Returns {subject, text} — same shape as the other builders.
-function buildProductionError(collection, baseUrl, problems) {
+//
+// The same mail goes to Dugri and to the buyer. Only the buyer's copy is tagged
+// as an email click (`options.buyer`): the owner's clicks while fixing an order
+// are not buyer traffic and must not land in the email / production_error row.
+function buildProductionError(collection, baseUrl, problems, options) {
   const name = honoreeName(collection);
   const tpl = emailTpl('production_error');
   const cta = ctaLabels();
@@ -838,7 +864,8 @@ function buildProductionError(collection, baseUrl, problems) {
   const items = (Array.isArray(problems) ? problems : []).map((p) => '· ' + p);
   const ref = orderRefLine(collection);
   const lines = [...bodyLines, '', ...items, ...ref];
-  const link = ownerLink(collection, baseUrl);
+  const own = ownerLink(collection, baseUrl);
+  const link = options && options.buyer ? emailLink(own, 'production_error') : own;
   // HTML mirrors the same intro + problem list; the owner link becomes the CTA.
   const htmlLines = [...bodyLines, '', ...items, ...ref];
   if (link) {
@@ -873,7 +900,7 @@ function buildWordsReminder(collection, baseUrl) {
   // The order reference, on every buyer mail from the payment receipt onward.
   bodyLines.push(...orderRefLine(collection));
   const lines = bodyLines.slice();
-  const link = ownerLink(collection, baseUrl);
+  const link = emailLink(ownerLink(collection, baseUrl), 'words_reminder');
   if (link) {
     lines.push('');
     lines.push('להוספת המילים:');
@@ -907,7 +934,7 @@ function buildPaymentReminder(collection, baseUrl) {
   // The order reference, on every buyer mail from the payment receipt onward.
   bodyLines.push(...orderRefLine(collection));
   const lines = bodyLines.slice();
-  const link = ownerLink(collection, baseUrl);
+  const link = emailLink(ownerLink(collection, baseUrl), 'payment_reminder', true);
   if (link) {
     lines.push('');
     lines.push('להשלמת התשלום:');
@@ -1197,7 +1224,7 @@ function buildFreeLimitReached(collection, baseUrl, limit) {
   const subject = interpolate(tpl.subject, values);
   const bodyLines = interpolate(tpl.body, values).split('\n');
   const lines = bodyLines.slice();
-  const link = ownerLink(collection, baseUrl);
+  const link = emailLink(ownerLink(collection, baseUrl), 'free_limit_reached', true);
   if (link) {
     lines.push('');
     lines.push('להשלמת התשלום ולהמשך האיסוף:');
@@ -1289,11 +1316,15 @@ async function sendProductionError(collection, baseUrl, problems) {
   try {
     if (!settings.emailEnabled('production_error')) return false;
     const msg = buildProductionError(collection, baseUrl, problems);
-    const owner = await send(msg); // -> NOTIFY_TO (Dugri)
+    const owner = await send(msg); // -> NOTIFY_TO (Dugri), untagged link
     let client = false;
     const to = collection && collection.owner_email ? String(collection.owner_email).trim() : '';
     if (to && to.toLowerCase() !== String(NOTIFY_TO).toLowerCase()) {
-      client = await send({ ...msg, to });
+      // The buyer's copy carries the email tag; see buildProductionError.
+      client = await send({
+        ...buildProductionError(collection, baseUrl, problems, { buyer: true }),
+        to,
+      });
     }
     return owner || client;
   } catch (e) {
@@ -1318,7 +1349,7 @@ async function sendProductionError(collection, baseUrl, problems) {
 // exactly the same code the send path uses. Returns {subject, text, html}.
 function buildReminderEmail(collection, rawText, baseUrl) {
   const name = honoreeName(collection);
-  const link = ownerLink(collection, baseUrl);
+  const link = emailLink(ownerLink(collection, baseUrl), 'reminder');
   let body = interpolate(String(rawText || ''), { honoree: name });
   body = body
     .replace(/\{link\}/g, '')

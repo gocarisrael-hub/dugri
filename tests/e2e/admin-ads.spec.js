@@ -733,16 +733,56 @@ test.describe('the ad report', () => {
     await expect(page.getByTestId('meta-account')).toHaveCount(0);
   });
 
-  // The refusal is quoted verbatim — and the field comes with it. A refusal may
-  // BE the account (a wrong META_AD_ACCOUNT_ID, or a token that cannot list the
-  // accounts to choose from), and this page is the only one that can outrank the
-  // environment variable. A field she doesn't need beats a report she cannot fix.
-  test('Meta’s refusal is shown, with the field that may be what fixes it', async ({ page }) => {
+  // Refused ON an account that was found by itself, with nothing saved or set:
+  // the token (no ads_read). The field cannot fix that and the owner asked for
+  // the section to go — and it must come back by itself the moment Meta answers.
+  test('a token refusal hides the Meta section, and a working report brings it back', async ({
+    page,
+  }) => {
+    let answer = {
+      ok: false,
+      armed: true,
+      account: '99887766',
+      account_setting: '',
+      account_env: '',
+      error: '(#200) Missing Permissions',
+    };
+    await serveMeta(page, () => answer);
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('meta-section')).toBeHidden();
+    await expect(page.getByTestId('meta-account')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText('Missing Permissions');
+
+    answer = metaAnswer();
+    await page.getByRole('button', { name: '7 ימים' }).click();
+    await expect(page.getByTestId('meta-section')).toBeVisible();
+    await expect(page.getByTestId('meta-table')).toBeVisible();
+  });
+
+  // A refusal from the account LISTING carries no account. A token that can read
+  // a named account but not list them is fixed by typing the id, so the section
+  // and its field stay.
+  test('a refusal before any account was found keeps the field', async ({ page }) => {
     await serveMeta(page, {
       ok: false,
       armed: true,
       account_setting: '',
       account_env: '',
+      error: '(#200) Missing Permissions',
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('meta-section')).toBeVisible();
+    await expect(page.getByTestId('meta-account-id')).toBeVisible();
+  });
+
+  // A refusal that MAY be the account keeps the section and the field: a wrong
+  // META_AD_ACCOUNT_ID can only be outranked from this page.
+  test('a refusal with an account in the environment keeps the field', async ({ page }) => {
+    await serveMeta(page, {
+      ok: false,
+      armed: true,
+      account_setting: '',
+      account_env: '99999999',
       error: '(#200) Missing Permissions',
     });
     await page.goto(`/admin-ads.html?key=${KEY}`);
@@ -1010,6 +1050,30 @@ test.describe('the ad report', () => {
     expect(stored).toContain('utm_source=instagram');
     expect(stored).not.toContain('e2e-owner-token');
     expect(stored).not.toContain('e2e-collection-id');
+  });
+
+  // A button in one of our buyer emails (server/notify.js emailLink) lands on the
+  // collection page carrying utm_source=email. Without the tag it would read as
+  // order_link / own_link; with it the report gets an email row of its own, and
+  // the owner token in the same address still stays out of the beacon.
+  test('a click in our email is its own row, and the token stays out', async ({ page }) => {
+    const campaign = unique('payment_reminder');
+    const request = await arriveAt(
+      page,
+      '/collect.html?c=e2e-collection-id&k=e2e-owner-token&pay=1' +
+        '&utm_source=email&utm_medium=email_payment&utm_campaign=' +
+        campaign
+    );
+    const body = JSON.parse(request.postData() || '{}');
+    expect(body.landing).toContain('/collect.html');
+    expect(body.landing).toContain('utm_source=email');
+    expect(body.landing).not.toContain('e2e-owner-token');
+
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    const row = rowFor(page, campaign);
+    await expect(row).toBeVisible();
+    await expect(row).toContainText('email_payment');
+    await expect(row).not.toContainText('order_link');
   });
 
   test('the admin pages are never counted as traffic', async ({ page }) => {

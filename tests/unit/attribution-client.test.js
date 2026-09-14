@@ -126,6 +126,39 @@ describe('the remembered touch', () => {
       vi.useRealTimers();
     }
   });
+
+  // Our buyer emails tag their links utm_source=email. Opening one in the same
+  // browser that clicked the ad must not wipe the ad's click id, which the pay
+  // flow forwards so Meta can match the sale to the ad.
+  it('a click in our own email keeps the ad click id', async () => {
+    const { currentTouch } = await load();
+    currentTouch('https://dugri-israel.co.il/?fbclid=IwAR_ad', '');
+    const back = currentTouch(
+      'https://dugri-israel.co.il/collect.html?c=x&k=tok&pay=1&utm_source=email' +
+        '&utm_medium=email_payment&utm_campaign=payment_reminder',
+      ''
+    );
+    expect(back.landing).toContain('fbclid=IwAR_ad');
+    expect(localStorage.getItem('dugri_attr')).toContain('fbclid=IwAR_ad');
+    expect(localStorage.getItem('dugri_attr')).not.toContain('utm_source=email');
+  });
+
+  it('a click in our own email still takes over a touch with no click id', async () => {
+    const { currentTouch } = await load();
+    currentTouch('https://dugri-israel.co.il/?utm_source=instagram&utm_campaign=story', '');
+    const back = currentTouch(
+      'https://dugri-israel.co.il/collect.html?utm_source=email&utm_medium=email_other&utm_campaign=order_ready',
+      ''
+    );
+    expect(back.landing).toContain('utm_source=email');
+  });
+
+  it('a newer ad still replaces an older ad click', async () => {
+    const { currentTouch } = await load();
+    currentTouch('https://dugri-israel.co.il/?fbclid=first', '');
+    const second = currentTouch('https://dugri-israel.co.il/?fbclid=second', '');
+    expect(second.landing).toContain('fbclid=second');
+  });
 });
 
 describe('sending events', () => {

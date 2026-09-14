@@ -116,8 +116,11 @@ describe('payment receipt builders', () => {
     expect(msg.html).toContain(BASE + '/assets/dugri-logo-email.png');
     expect(msg.html).toContain(photo);
     expect(msg.html).toContain('alt="קלאסי"');
-    // The CTA href is the same link, HTML-escaped by the shell (& -> &amp;).
-    expect(msg.html).toContain('href="' + link.replace(/&/g, '&amp;') + '"');
+    // The CTA href is the same link, tagged as an email click, HTML-escaped by
+    // the shell (& -> &amp;).
+    const tagged =
+      link + '&utm_source=email&utm_medium=email_other&utm_campaign=buyer_payment_received';
+    expect(msg.html).toContain('href="' + tagged.replace(/&/g, '&amp;') + '"');
     expect(msg.html).toContain('התשלום התקבל — שירה');
     // The raw URL line is plain-text only — in HTML the link is the button.
     expect(msg.html).not.toContain('כאן:');

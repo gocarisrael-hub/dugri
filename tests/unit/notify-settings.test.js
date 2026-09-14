@@ -103,7 +103,8 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         // the buyer to PAY (pay=1 opens the checkout on arrival), not to the
         // word list. Both strings are owner-editable (email.next_step).
         'נשאר רק שלב אחד: להשלים את התשלום, ומתחילים להכין את המשחק.',
-        link + '&pay=1',
+        // Tagged so the ad report shows the click as email (see email-link-tags).
+        link + '&pay=1&utm_source=email&utm_medium=email_payment&utm_campaign=buyer_confirmation',
         '',
         'נתראה על הלוח,',
         'צוות דוגרי',
@@ -150,6 +151,7 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         '· שם חסר',
         '',
         'לעדכון ההזמנה:',
+        // The builder's default is the owner's copy, which is untagged.
         link,
         '',
         'צוות דוגרי',
@@ -168,7 +170,7 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         'ברגע שתוסיפו את המילים נתחיל להכין את הקובץ — זה לוקח כמה דקות בלבד.',
         '',
         'להוספת המילים:',
-        link,
+        link + '&utm_source=email&utm_medium=email_other&utm_campaign=words_reminder',
         '',
         'נתראה על הלוח,',
         'צוות דוגרי',
