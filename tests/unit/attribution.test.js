@@ -543,6 +543,22 @@ describe('the source legend', () => {
       });
     }
   });
+
+  // currentTouch keeps a stored ad touch (fbclid/gclid/ttclid) when a later
+  // arrival is tagged utm_source=email, so Meta keeps its click id for the sale.
+  // The price: a buyer who came from an ad first stays on the ad's row after
+  // clicking our email, and the email rows undercount. The legend must say so,
+  // in the same paragraph that explains the email rows.
+  it('says an ad buyer stays on the ad row after clicking our email', async () => {
+    const html = fs.readFileSync(path.join(SITE, 'admin-ads.html'), 'utf8');
+    const paragraphs = [...html.matchAll(/<p class="hint">([\s\S]*?)<\/p>/g)].map((m) =>
+      m[1].replace(/\s+/g, ' ')
+    );
+    const legend = paragraphs.find((p) => p.includes('<code>email_payment</code>'));
+    expect(legend).toBeTruthy();
+    expect(legend).toContain('נשארת בשורת המודעה');
+    expect(legend).toContain('רק קונות שלא הגיעו קודם ממודעה');
+  });
 });
 
 // The queued write and the shutdown write are two paths to ONE file, and only
