@@ -326,3 +326,65 @@ test.describe('product.html — the buy CTA follows the LATE custom-design switc
     );
   });
 });
+
+// boot() fires /api/design-names and the content overrides alongside
+// /api/custom-designs. Their callbacks used to capture the BUILT-IN fallback the
+// page first painted, so whichever of them landed after the switch stamped the
+// fallback's name over the uploaded design: prod showed דני's page titled פריז on
+// most loads. Force that losing order — the custom design first, the late fetch
+// after — and give every built-in id a name, so the fallback has something to leak.
+test.describe('product.html — a late fetch never renames an uploaded design', () => {
+  const BUILT_IN_IDS = ['bachelorette', 'marriage', 'birthday', 'japanese', 'posttrip', 'kids'];
+  const LEAKED = 'שם של עיצוב אחר';
+
+  async function stubBase(page) {
+    await page.route('**/api/template-image/**', (route) =>
+      route.fulfill({ contentType: 'image/svg+xml', body: SVG })
+    );
+    await page.route('**/api/custom-designs', (route) =>
+      route.fulfill({ json: { designs: [CUSTOM] } })
+    );
+  }
+
+  // Resolve the late response, then give its callback a moment to run before asserting.
+  async function afterLate(page, pattern) {
+    await page.waitForResponse(pattern);
+    await page.evaluate(() => new Promise((r) => setTimeout(r, 250)));
+  }
+
+  test('a late /api/design-names keeps the uploaded design’s title', async ({ page }) => {
+    await stubBase(page);
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    const names = Object.fromEntries(BUILT_IN_IDS.map((id) => [id, LEAKED]));
+    await page.route('**/api/design-names', async (route) => {
+      await new Promise((r) => setTimeout(r, 800));
+      await route.fulfill({ json: { names } });
+    });
+
+    await page.goto('/product.html?design=my-custom');
+    await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
+    await afterLate(page, '**/api/design-names');
+
+    await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
+    await expect(page).toHaveTitle(/עיצוב מותאם/);
+  });
+
+  test('late content overrides keep the uploaded design’s title', async ({ page }) => {
+    await stubBase(page);
+    await page.route('**/api/design-names', (route) => route.fulfill({ json: { names: {} } }));
+    const overrides = Object.fromEntries(
+      BUILT_IN_IDS.map((id) => [`product-${id}-name`, { text: LEAKED }])
+    );
+    await page.route('**/api/content*', async (route) => {
+      await new Promise((r) => setTimeout(r, 800));
+      await route.fulfill({ json: { overrides } });
+    });
+
+    await page.goto('/product.html?design=my-custom');
+    await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
+    await afterLate(page, '**/api/content*');
+
+    await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
+    await expect(page).toHaveTitle(/עיצוב מותאם/);
+  });
+});
