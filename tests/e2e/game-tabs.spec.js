@@ -57,7 +57,7 @@ async function noPoolMenu(page) {
 // walks it the way the wizard's own spec does (deep-link to step 3, fill
 // #customTitleInput, advance), then carries on through the pawn step to contact
 // and submit.
-async function createCollection(page, title = 'Shira') {
+async function createCollection(page, title = 'Shira', { players } = {}) {
   // The create button is gated on the name step until the preview shows — stub
   // /api/preview so the gate opens without the Python render.
   await page.route('**/api/preview', (route) =>
@@ -77,6 +77,10 @@ async function createCollection(page, title = 'Shira') {
   await page.fill('#customTitleInput', title);
   await page.getByTestId('next-btn').click(); // title -> optional pawn photos
   await expect(page.getByTestId('step-pawns')).toBeVisible();
+  // How many players her deck is laid out for — one pawn card per four, and one
+  // photo per player. It is chosen HERE and travels with the order, so a test that
+  // wants a bigger deck has to press the button a buyer presses.
+  if (players) await page.getByTestId('pawn-count-' + players).click();
   await page.getByTestId('next-btn').click(); // pawn photos -> contact
   await expect(page.getByTestId('step-4')).toBeVisible();
   await page.fill('#ownerEmail', 'test@example.com');
@@ -94,27 +98,36 @@ async function createCollection(page, title = 'Shira') {
 // Attach `n` photos the way the wizard does — through the upload route itself,
 // so the test starts from a state a real order can actually be in.
 async function attachPhotos(page, id, k, n) {
-  const boundary = '----dugriE2EPawns';
-  const chunks = [];
-  for (let i = 0; i < n; i++) {
-    chunks.push(
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="pawn${i}"; filename="p${i}.png"\r\nContent-Type: image/png\r\n\r\n`
-      ),
-      // Distinct bytes per photo: the paths are content-addressed, so four copies
-      // of the same file would de-dupe to ONE and the cap tests would be testing
-      // nothing.
-      Buffer.concat([PNG_BYTES, Buffer.from(`slot${i}`)]),
-      Buffer.from('\r\n')
-    );
+  // FOUR TO A REQUEST, which is what both browsers send: the route buffers the
+  // whole body, so PAWN_BATCH_MAX bounds one request while the deck's player count
+  // bounds the total. A test that posted sixteen at once would be testing a shape
+  // no client produces, and would be refused.
+  const BATCH = 4;
+  let images = [];
+  for (let start = 0; start < n; start += BATCH) {
+    const boundary = '----dugriE2EPawns';
+    const chunks = [];
+    for (let i = start; i < Math.min(n, start + BATCH); i++) {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="pawn${i - start}"; filename="p${i}.png"\r\nContent-Type: image/png\r\n\r\n`
+        ),
+        // Distinct bytes per photo: the paths are content-addressed, so four copies
+        // of the same file would de-dupe to ONE and the cap tests would be testing
+        // nothing.
+        Buffer.concat([PNG_BYTES, Buffer.from(`slot${i}`)]),
+        Buffer.from('\r\n')
+      );
+    }
+    chunks.push(Buffer.from(`--${boundary}--\r\n`));
+    const res = await page.request.post(`/api/collections/${id}/pawns?k=${encodeURIComponent(k)}`, {
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      data: Buffer.concat(chunks),
+    });
+    expect(res.status()).toBe(200);
+    images = (await res.json()).pawn_images;
   }
-  chunks.push(Buffer.from(`--${boundary}--\r\n`));
-  const res = await page.request.post(`/api/collections/${id}/pawns?k=${encodeURIComponent(k)}`, {
-    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-    data: Buffer.concat(chunks),
-  });
-  expect(res.status()).toBe(200);
-  return (await res.json()).pawn_images;
+  return images;
 }
 
 // The e2e server runs without PELECARD_* credentials, so the API reports
@@ -281,6 +294,108 @@ test('she removes a photo and it stays removed', async ({ page }) => {
     .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
     .then((r) => r.json());
   expect(state.pawn_images).toHaveLength(2);
+});
+
+// THE COLLECTION PAGE'S CAP IS THE ORDER'S, NOT A FIXED FOUR.
+//
+// The wizard asks a sixteen-player buyer for sixteen photos. This page was the
+// other end of the same promise and still said four: the heading counted to four,
+// the + went dead at four, and the "no room" line named four. She could never make
+// more than four of her sixteen pawns real, on the one page she actually revisits.
+test('a bigger deck takes as many photos as it has pawns', async ({ page }) => {
+  const { url, id, k } = await createCollection(page, 'Shira', { players: 8 });
+  await attachPhotos(page, id, k, 4);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(4);
+
+  // The heading says HER number, and the + is still live at four.
+  await expect(page.getByTestId('photos-label-max')).toHaveText('(עד 8)');
+  const add = page.getByTestId('pawn-add');
+  await expect(add).toBeEnabled();
+
+  await page.getByTestId('pawn-add-input').setInputFiles({
+    name: 'fifth.png',
+    mimeType: 'image/png',
+    buffer: Buffer.concat([PNG_BYTES, Buffer.from('fifth-photo')]),
+  });
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(5);
+  await expect(add).toBeEnabled();
+
+  // …and it is the SERVER's fifth photo, not this tab's optimism.
+  const state = await page.request
+    .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
+    .then((r) => r.json());
+  expect(state.pawn_images).toHaveLength(5);
+  expect(state.players).toBe(8);
+});
+
+// A FAILED BATCH DOES NOT HIDE THE ONES BEFORE IT.
+//
+// Photos go up four to a request. The page used to take the stored list from the
+// LAST answer only, so when request two failed, request one's photos were saved on
+// the server and missing from the strip: she saw nothing added and a plain "try
+// again", and the room count was wrong until a reload.
+test('a batch that fails mid-upload still shows the photos already stored', async ({ page }) => {
+  const { url, id, k } = await createCollection(page, 'Shira', { players: 8 });
+  let posts = 0;
+  await page.route('**/api/collections/*/pawns*', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posts++;
+    if (posts === 1) return route.continue();
+    return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"x"}' });
+  });
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  await page.getByTestId('pawn-add-input').setInputFiles(
+    [0, 1, 2, 3, 4, 5].map((i) => ({
+      name: `batch${i}.png`,
+      mimeType: 'image/png',
+      buffer: Buffer.concat([PNG_BYTES, Buffer.from(`batch-photo-${i}`)]),
+    }))
+  );
+
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(4);
+  await expect(page.locator('#pawnErr')).toContainText('2 תמונות לא הועלו');
+  expect(posts).toBe(2);
+  // The room is the server's: four stored, four more fit.
+  await expect(page.getByTestId('pawn-add')).toBeEnabled();
+  const state = await page.request
+    .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
+    .then((r) => r.json());
+  expect(state.pawn_images).toHaveLength(4);
+});
+
+// SHE ARRIVED WITHOUT THE PHOTOS SHE SENT, and this is where she finds out.
+//
+// The wizard uploads after the order exists and then redirects here. When some of
+// them did not land it now says how many on the way in, instead of redirecting as
+// though everything worked — which is what it did: six faces, six in-browser
+// cutouts, and a collection page with an empty strip and no explanation. This is
+// the page that can do something about it, because the + re-uploads.
+test('a photo lost on the way in is reported here, once', async ({ page }) => {
+  const { url } = await createCollection(page);
+  await page.goto(url + '&photos_lost=2');
+  await page.getByTestId('tab-pawns').click();
+  const err = page.locator('#pawnErr');
+  await expect(err).toBeVisible();
+  await expect(err).toContainText('2 תמונות לא נשמרו');
+  // The parameter is stripped, so a reload is not a second accusation.
+  expect(new URL(page.url()).searchParams.get('photos_lost')).toBe(null);
+  await page.reload();
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.locator('#pawnErr')).toBeHidden();
+});
+
+test('the standard deck still stops at four, and says so with its own number', async ({ page }) => {
+  const { url, id, k } = await createCollection(page);
+  await attachPhotos(page, id, k, 4);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('photos-label-max')).toHaveText('(עד 4)');
+  await expect(page.getByTestId('pawn-add')).toBeDisabled();
+  await expect(page.getByTestId('pawn-add')).toHaveAttribute('title', 'אפשר עד 4 תמונות');
 });
 
 test('she adds a photo back, and the fourth fills the card', async ({ page }) => {

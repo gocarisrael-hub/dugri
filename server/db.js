@@ -1967,7 +1967,11 @@ const db = {
   // owner removes a photo the customer sent by mistake, or reorders them. Adding
   // photos goes through the upload route (addPawnImages); this only ever narrows
   // or reorders what is already stored, so entries are re-validated to our own
-  // /content-uploads paths, de-duped, and capped. An empty array is valid
+  // /content-uploads paths, de-duped, and capped at the DECK's photo count —
+  // playersFor(c), one per pawn, so 4 on the standard deck and up to 16. A fixed 4
+  // here silently DELETED photos 5..16 of a bigger order the first time the owner
+  // pressed Save in the edit dialog, on a list this function is only ever supposed
+  // to narrow or reorder. An empty array is valid
   // (drops every photo). Returns the stored array, or null for a missing
   // collection. The FILES are intentionally left on disk: they are shared,
   // content-addressed uploads, so deleting one could pull the rug out from under

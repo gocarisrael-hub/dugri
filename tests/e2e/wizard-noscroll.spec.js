@@ -576,6 +576,17 @@ test.describe('the deck pictures never bury a control', () => {
   // label and its input are both on screen; on step 5 the photo slots and the hint
   // are. If the row ever grows enough to swallow them, shrink the row — the floor
   // is the owner's 60px picture, not this test.)
+  // `controls` is what counts as "the form" on that step — the thing whose
+  // presence tells the buyer there is more below the pictures.
+  //
+  // On step 5 that is the PHOTO SLOTS, and nothing else. Widening this list to
+  // include `.pawn-count` made the check unfalsifiable: the count buttons sit
+  // above the grid and are essentially always on screen, so `showing.length > 0`
+  // went green with every slot below the fold — which is exactly the state the
+  // player-count row had put the step in. The slot is the thing the buyer has to
+  // see to know the pictures are hers to add, so the slot is what is asserted,
+  // and `assertSlotsShowAtFirstPaint` below holds it at two phone sizes with a
+  // real number rather than a boolean.
   for (const step of [
     { n: 4, id: 'step-4', controls: '.wiz-field' },
     { n: 5, id: 'step-pawns', controls: '.pawn-slot, .pawn-hint' },
@@ -611,6 +622,50 @@ test.describe('the deck pictures never bury a control', () => {
         showing.length,
         'the form must not be entirely below the fold — there would be no cue to scroll'
       ).toBeGreaterThan(0);
+    });
+  }
+
+  // HOW MUCH OF A PHOTO SLOT THE BUYER ACTUALLY SEES, at scroll 0, on the two
+  // phone sizes that matter.
+  //
+  // The loop above only asks whether SOMETHING of the form is on screen. That is
+  // too weak for this step: a 3px sliver of a 172px slot satisfies "part of it is
+  // visible" and looks, on the phone, exactly like a page that ends at the
+  // pictures. And 3px is what the player-count row actually left at 375x667 —
+  // while at 360x640, a common Android size, the first slot sat 17px BELOW the
+  // bar's top, entirely out of sight, where before the count row 35px of it
+  // showed. The spec still passed.
+  //
+  // So this asserts the number. The floor is a quarter of a slot: enough that the
+  // dashed square and its + read as "there is something to do here" rather than
+  // as a page edge. Whatever is added above the grid comes out of this budget.
+  const SLOT_VISIBLE_MIN = 40;
+  for (const phone of [
+    { width: 375, height: 667 }, // iPhone SE / 8
+    { width: 360, height: 640 }, // Galaxy A / the common Android floor
+  ]) {
+    test(`step 5 at ${phone.width}x${phone.height}: a photo slot is genuinely on screen at first paint`, async ({
+      page,
+    }) => {
+      await page.setViewportSize(phone);
+      await withDeckPictures(page);
+      await page.goto('/options.html?design=bachelorette&step=5');
+      await expect(page.getByTestId('step-pawns')).toBeVisible();
+      await assertRowWorthLookingAt(page);
+      await page.evaluate(() => (document.fonts ? document.fonts.ready.then(() => true) : true));
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+      const visible = await page.evaluate(() => {
+        const barTop = document.querySelector('.wiz-bar').getBoundingClientRect().top;
+        const slot = document.querySelector('.pawn-slot:not([hidden])').getBoundingClientRect();
+        // The strip of the slot the buyer can actually see: above the sticky bar
+        // that covers the bottom of the viewport, below the top of the page.
+        return Math.round(Math.min(slot.bottom, barTop) - Math.max(slot.top, 0));
+      });
+      expect(
+        visible,
+        'too little of the first photo slot is showing — the step looks like it ends at the pictures'
+      ).toBeGreaterThanOrEqual(SLOT_VISIBLE_MIN);
     });
   }
 

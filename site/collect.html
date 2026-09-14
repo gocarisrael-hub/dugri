@@ -2148,8 +2148,14 @@
              it to. Same reason #shipAddCard and #shipDoneCard are two cards. -->
         <div class="sheet-fld">
           <span class="fld" id="photosLabel" data-edit="collect-sheet-photos-label"
-            >התמונות שלכם (עד 4)</span
-          >
+            >התמונות שלכם</span
+          ><!-- HOW MANY she may send — her deck's player count, so 4 on the standard
+             deck and 16 on the largest. Its own node, WITHOUT a data-edit key,
+             because it is the one part of this heading that changes per order: the
+             editor writes textContent into every tagged node once on load, so a
+             number JS keeps rewriting into a tagged node would throw the owner's
+             wording away the first time it changed. -->
+          <span class="fld" id="photosLabelMax" data-testid="photos-label-max"></span>
           <span class="fld hidden" id="photosLabelSent" data-edit="collect-sheet-photos-label-sent"
             >התמונות שנשלחו לייצור</span
           >
@@ -2246,9 +2252,10 @@
             לעריכה
           </button>
         </div>
-        <!-- WHICH WORDS WE ADD. A full deck is 412 words and almost nobody writes
-             that many, so most of the deck is filler — and this is the only place
-             she is asked what KIND. Hidden entirely until the owner has built the
+        <!-- WHICH WORDS WE ADD. A full deck is up to 412 words — fewer once she
+             asks for more players, since each pawn card costs a word card — and
+             almost nobody writes that many, so most of the deck is filler. This is
+             the only place she is asked what KIND. Hidden entirely until the owner has built the
              menu in admin-wordlists: an empty chooser would advertise a choice
              that does not exist. It used to sit beside the collected words; it is
              a decision about the finished game, so it belongs with the rest of
@@ -2274,11 +2281,11 @@
                was being asked. What she wants to know here is that she is done
                once she picks: the rest happens without her. -->
           <small class="muted" id="poolHint" data-edit="collect-sheet-pool-hint"
-            >בחרו את הרשימה בעזרת נשלים לכם מילים על מנת להגיע ל412 מילים (עבור חבילה מלאה של קלפים
-            למשחק ארוך וכיפי יותר)</small
+            >בחרו את הרשימה שממנה נשלים לכם מילים עד לחפיסה מלאה (הכמות המדויקת מופיעה במונה למעלה -
+            חבילה מלאה של קלפים, למשחק ארוך וכיפי יותר)</small
           >
           <small class="muted hidden" id="poolHintSent" data-edit="collect-sheet-pool-hint-sent"
-            >מהרשימה המסומנת השלמנו את המילים ל-412 מילים בחפיסה.</small
+            >מהרשימה המסומנת השלמנו את המילים עד לחפיסה מלאה.</small
           >
           <div class="pool-opts" id="poolOpts" role="radiogroup"></div>
           <!-- The LAST row of that group is "don't fill it at all", when the owner
@@ -3245,10 +3252,20 @@
           : 'רוצים משחק כזה לאירוע שלכם? →';
       }
 
-      // The real product word cap — one full deck, matching generator/topup.py's
-      // TARGET (103 word cards x 4 words). Single source of truth for the counter
-      // pill, the hint copy, and the progress-bar math.
-      const MAX_WORDS = 412;
+      // THE REAL PRODUCT WORD CAP — one full deck. Single source of truth for the
+      // counter pill, the hint copy and the progress-bar maths.
+      //
+      // NOT A CONSTANT any more: the deck is always 104 cards, but the buyer
+      // chooses how many of them are PAWN cards (four players each), and every
+      // pawn card comes out of the word cards' share. So her ceiling is 412 at
+      // four players and 400 at sixteen, and it is the SERVER that says which —
+      // the same number db.deckWordsFor enforces, carried on the collection, so
+      // the page cannot promise room the deck does not have.
+      //
+      // 412 until the collection arrives, which is the standard deck and what
+      // every order means before it says otherwise.
+      const DEFAULT_MAX_WORDS = 412;
+      let MAX_WORDS = DEFAULT_MAX_WORDS;
       const WORD_GOAL = 70; // the "meaningful minimum" milestone
 
       // small transient confirmation pop-up ("word added")
@@ -3331,7 +3348,20 @@
       // re-renders from what the server answered, never from an optimistic local
       // copy, so a rejected removal cannot leave the page showing a photo the
       // order no longer has (or hiding one it still does).
-      const PAWN_MAX = 4;
+      // HOW MANY PHOTOS THIS ORDER MAY HOLD — one per player, so 4 on the standard
+      // deck and up to 16, exactly the number the wizard asked her for and the
+      // number db.playersFor lets the route store. A function rather than a
+      // constant because it arrives with the collection and the page renders
+      // before that: 4 until the server says otherwise, which is what every order
+      // placed before the choice existed means.
+      function pawnMax() {
+        const n = Number(state && state.players);
+        return Number.isFinite(n) && n > 0 ? n : 4;
+      }
+      // ONE REQUEST CARRIES THIS MANY, whatever the cap is — server/index.js
+      // PAWN_BATCH_MAX, which is what PAWN_UPLOAD_LIMIT is sized for. Sixteen
+      // photos go up as four requests, not as one body the parser would refuse.
+      const PAWN_BATCH = 4;
       function pawnList() {
         return Array.isArray(state && state.pawn_images) ? state.pawn_images : [];
       }
@@ -3580,10 +3610,10 @@
           add.textContent = '+';
           add.setAttribute('data-testid', 'pawn-add');
           add.setAttribute('aria-label', 'הוספת תמונה');
-          // At four the slot stays VISIBLE but disabled, so the cap is something
-          // she can see rather than a control that silently vanished.
-          add.disabled = photos.length >= PAWN_MAX;
-          add.title = add.disabled ? 'אפשר עד 4 תמונות' : '';
+          // At the cap the slot stays VISIBLE but disabled, so the limit is
+          // something she can see rather than a control that silently vanished.
+          add.disabled = photos.length >= pawnMax();
+          add.title = add.disabled ? 'אפשר עד ' + pawnMax() + ' תמונות' : '';
           add.addEventListener('click', () => $('#pawnAddInput').click());
           strip.appendChild(add);
         }
@@ -4298,6 +4328,12 @@
         // hint that says "drag this" are both about a decision she has already
         // sent, so each swaps for the sentence that describes what was sent.
         $('#photosLabel').classList.toggle('hidden', !open);
+        // …and the cap beside it, which is HER deck's, not a fixed four. Hidden
+        // with the heading once the order is closed: a limit is an instruction and
+        // there is nothing left to instruct.
+        const max = $('#photosLabelMax');
+        max.textContent = open ? '(עד ' + pawnMax() + ')' : '';
+        max.classList.toggle('hidden', !open);
         $('#photosLabelSent').classList.toggle('hidden', open);
         $('#photosHint').classList.toggle('hidden', !open);
         $('#sheetClosedNote').classList.toggle('hidden', open);
@@ -4554,11 +4590,11 @@
       // than looking like a photo nobody tried.
       async function addPawns(files) {
         showPawnErr('');
-        const room = PAWN_MAX - pawnList().length;
+        const room = pawnMax() - pawnList().length;
         const all = Array.from(files || []);
         const picked = all.slice(0, Math.max(0, room));
         if (!picked.length) {
-          if (all.length) showPawnErr(PAWN_SKIP_MSG.no_room);
+          if (all.length) showPawnErr(PAWN_SKIP_MSG.no_room());
           return;
         }
         pawnBusy = true;
@@ -4570,28 +4606,42 @@
         try {
           const ready = await shrinkForUpload(picked);
           const cuts = await cutForUpload(ready);
-          const fd = new FormData();
-          const failed = [];
-          ready.forEach((f, i) => {
-            const name = 'pawn' + i;
-            fd.append(name, f, f.name || name);
-            if (cuts[i]) fd.append('cut:' + name, cuts[i], name + '-cut.png');
-            else failed.push(name);
-          });
-          if (failed.length) fd.append('cutfail', failed.join(','));
-          const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
-            method: 'POST',
-            body: fd,
-          });
-          state.pawn_images = r.pawn_images;
-          state.pawn_cutouts = r.pawn_cutouts || state.pawn_cutouts;
+          // PAWN_BATCH AT A TIME. A sixteen-player deck lets her pick sixteen
+          // photos at once, and sixteen originals plus their cutouts is several
+          // times what the server's body parser accepts — one request would 413
+          // and every photo would be lost. The route caps a batch at the same
+          // number (PAWN_BATCH_MAX) and the TOTAL at her player count, so the
+          // batches fill the order up and stop.
+          const skipped = [];
+          for (let start = 0; start < ready.length; start += PAWN_BATCH) {
+            const fd = new FormData();
+            const failed = [];
+            ready.slice(start, start + PAWN_BATCH).forEach((f, i) => {
+              const name = 'pawn' + i;
+              fd.append(name, f, f.name || name);
+              if (cuts[start + i]) fd.append('cut:' + name, cuts[start + i], name + '-cut.png');
+              else failed.push(name);
+            });
+            if (failed.length) fd.append('cutfail', failed.join(','));
+            // `api` throws on a non-2xx, which the catch below turns into the
+            // retry line — a failed batch is never mistaken for a stored one.
+            const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
+              method: 'POST',
+              body: fd,
+            });
+            if (Array.isArray(r.skipped)) skipped.push(...r.skipped);
+            // Taken after EVERY request, not the last: a batch the server answered
+            // is stored whatever happens to the next one, so the strip has to know.
+            state.pawn_images = r.pawn_images;
+            state.pawn_cutouts = r.pawn_cutouts || state.pawn_cutouts;
+          }
           pawnBusy = false;
           showPawnBusy('');
           renderPawns();
           renderPawnCard();
           // The route is fail-soft: a photo it could not store is missing from the
           // list it just returned, and nothing else would ever mention it. Say it.
-          if (!reportPawnSkips(r.skipped)) {
+          if (!reportPawnSkips(skipped)) {
             // Belt and braces for an older server that does not report skips: if
             // the list did not grow, her photos did not arrive, whatever the
             // status code said.
@@ -4602,7 +4652,20 @@
         } catch (e) {
           pawnBusy = false;
           showPawnBusy('');
-          showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
+          // The batches before the failed one are already stored. Draw them and
+          // say how many did NOT arrive — "try again" over a strip that still
+          // shows the old list sends her to re-add photos the order already has.
+          const landed = pawnList().length - before;
+          renderPawns();
+          renderPawnCard();
+          if (landed > 0) {
+            const lost = picked.length - landed;
+            showPawnErr(
+              lost === 1 ? 'תמונה אחת לא הועלתה, נסו שוב' : lost + ' תמונות לא הועלו, נסו שוב'
+            );
+          } else {
+            showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
+          }
         }
       }
       // The cutouts for a batch, in the same order, with null for every miss.
@@ -4655,10 +4718,13 @@
       // What to tell her about a photo the server would not keep. Counting rather
       // than naming files: she picked them seconds ago and the reason is the part
       // that helps.
+      // Functions, not strings: the "no room" sentence names the cap, and the cap
+      // is this order's player count rather than a fixed four.
       const PAWN_SKIP_MSG = {
-        too_large: 'תמונה אחת כבדה מדי ולא נקלטה. נסו לשלוח אותה שוב או לבחור אחרת.',
-        unsupported: 'תמונה אחת בפורמט שאנחנו לא קוראים ולא נקלטה. נסו לצלם או לשמור אותה כ-JPG.',
-        no_room: 'אפשר עד 4 תמונות - מה שמעבר לא נשמר.',
+        too_large: () => 'תמונה אחת כבדה מדי ולא נקלטה. נסו לשלוח אותה שוב או לבחור אחרת.',
+        unsupported: () =>
+          'תמונה אחת בפורמט שאנחנו לא קוראים ולא נקלטה. נסו לצלם או לשמור אותה כ-JPG.',
+        no_room: () => 'אפשר עד ' + pawnMax() + ' תמונות - מה שמעבר לא נשמר.',
       };
       function reportPawnSkips(skipped) {
         const list = Array.isArray(skipped) ? skipped : [];
@@ -4667,10 +4733,34 @@
         // caveats helps nobody. Plural is stated as a count so the sentence stays
         // true when two photos failed for the same reason.
         const reason = list[0].reason;
-        const one = PAWN_SKIP_MSG[reason] || PAWN_SKIP_MSG.unsupported;
+        const one = (PAWN_SKIP_MSG[reason] || PAWN_SKIP_MSG.unsupported)();
         showPawnErr(list.length > 1 ? one.replace('תמונה אחת', list.length + ' תמונות') : one);
         return true;
       }
+      // SHE ARRIVED WITH FEWER PHOTOS THAN SHE SENT. The wizard uploads the
+      // pictures after the order exists and then redirects here; when some of them
+      // did not land it says how many on the way in (&photos_lost=N) rather than
+      // redirecting as if everything had worked, which is what it used to do —
+      // she sat through six background cutouts and arrived at an empty strip with
+      // nothing to read. This is the page that can actually do something about it,
+      // because the + button re-uploads.
+      //
+      // Said once: the parameter is stripped so a reload does not repeat it.
+      function reportLostPhotos() {
+        const lost = parseInt(params.get('photos_lost') || '', 10);
+        params.delete('photos_lost');
+        if (!(lost > 0)) return;
+        try {
+          const url = new URL(location.href);
+          url.searchParams.delete('photos_lost');
+          history.replaceState(null, '', url);
+        } catch (e) {}
+        showPawnErr(
+          (lost === 1 ? 'תמונה אחת לא נשמרה' : lost + ' תמונות לא נשמרו') +
+            ' עם ההזמנה. אפשר להעלות אותן כאן.'
+        );
+      }
+
       (function wirePawnInput() {
         const input = document.getElementById('pawnAddInput');
         if (!input) return;
@@ -4818,13 +4908,14 @@
                 ')';
         // Two-stage bar. Stage 1 (n < WORD_GOAL) fills toward the 70-word
         // minimum. At 70 it's replaced by Stage 2 — a new bar scaled to
-        // MAX_WORDS, so 70/412 ≈ ⅙ already filled — that grows toward the cap.
+        // MAX_WORDS, so 70/412 ≈ ⅙ of the standard deck already filled — that
+        // grows toward the cap.
         $('#stage1').classList.toggle('hidden', stage2);
         $('#stage2').classList.toggle('hidden', !stage2);
         $('#barFill1').style.width = Math.min(100, (n / WORD_GOAL) * 100) + '%';
         $('#barFill2').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
         // Render-driven Stage-2 label: a message that stays true across the whole
-        // 100→412 range (never claims the "first quarter" is still just full at
+        // 100→MAX_WORDS range (never claims the "first quarter" is still just full at
         // 400 words), and flips to a max-reached framing at/over the cap so it
         // doesn't contradict the "reached maximum" hint.
         $('#stage2Label').textContent = atMax
@@ -4845,7 +4936,7 @@
       // the controls are genuinely disabled so nobody types into a dead box.
       // Takes only `locked`: the quota NUMBER never reaches the browser, so there
       // is nothing here that could leak it before the lock lands.
-      // THE DECK IS FULL — 412 words, one whole deck, and the server refuses more
+      // THE DECK IS FULL — MAX_WORDS words, one whole deck, and the server refuses more
       // (db.addWords). The page has claimed "מקסימום" on the counter since the
       // beginning while the input stayed live and the words kept going in; five
       // orders reached production oversized that way. This closes the box at the
@@ -5123,7 +5214,11 @@
           // delivery address (owner-only), letting a locked delivery order prefill
           // without re-typing. Contributors fetch the plain public view.
           state = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+          // Her deck's own ceiling, before anything is drawn from it. A
+          // contributor's view carries it too — the counter is the same counter.
+          MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;
           render();
+          reportLostPhotos();
         } catch (e) {
           if (e.status === 404) {
             $('#title').textContent = 'הקישור לא נמצא';
