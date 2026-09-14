@@ -397,7 +397,7 @@ function withoutMetaCtx(order) {
 // not be able to drift between the two.
 function pushPaySession(
   holder,
-  { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx }
+  { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx, provider }
 ) {
   const p = holder || { sessions: [] };
   if (!Array.isArray(p.sessions)) p.sessions = [];
@@ -416,6 +416,11 @@ function pushPaySession(
       coupon: coupon ? normCode(coupon) : null,
       discount_pct: discount_pct != null ? discount_pct : null,
       transaction_id: transactionId || null,
+      // Which card provider opened this session. The holder is still called
+      // `pelecard` (every reader of it predates a second provider), but a session
+      // opened on Tranzila settles only through Tranzila's notify. Absent on
+      // sessions written before Tranzila, which were all PeleCard.
+      provider: provider || 'pelecard',
       resolved: false,
       // Per-session timestamp: bounds the in-flight window (see TTL) and is the
       // basis for evicting only OLD, RESOLVED sessions when over the cap.
@@ -2204,7 +2209,7 @@ const db = {
   // Sessions ACCUMULATE (capped). Returns false when there is no order.
   recordPaymentInit(
     id,
-    { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx } = {}
+    { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx, provider } = {}
   ) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
@@ -2215,6 +2220,7 @@ const db = {
       coupon,
       discount_pct,
       metaCtx,
+      provider,
     });
     saveDb();
     return true;
@@ -2299,13 +2305,14 @@ const db = {
   // The upgrade's own PeleCard handshake. Same protocol as the order's, on its
   // own session list — the two charges are different amounts and each callback
   // must verify against its own.
-  recordShippingInit(id, { paramToken, transactionId, charged_total } = {}) {
+  recordShippingInit(id, { paramToken, transactionId, charged_total, provider } = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order || !c.order.shipping) return false;
     c.order.shipping.pelecard = pushPaySession(c.order.shipping.pelecard, {
       paramToken,
       transactionId,
       charged_total,
+      provider,
       // No coupons on shipping: a discount code buys a game, not postage.
       coupon: null,
       discount_pct: null,
@@ -2364,11 +2371,29 @@ const db = {
       (s) =>
         s &&
         !s.resolved &&
-        s.transaction_id &&
+        // PeleCard hands out a transaction id at init; Tranzila has none until
+        // the buyer pays, so an open Tranzila window counts by its provider.
+        (s.transaction_id || s.provider === 'tranzila') &&
         Number(s.charged_total) > 0 &&
         s.initiated_at &&
         now - Date.parse(s.initiated_at) < SESSION_TTL_MS
     );
+  },
+
+  // Has this provider transaction already paid for something — an order or a
+  // shipping upgrade? One real charge pays for one purchase. Defence in depth
+  // behind the token check in tranzila.verifyTransaction: a notify replayed
+  // against a second session of the same amount still cannot spend it twice.
+  isTransactionUsed(method, transactionId) {
+    if (!method || transactionId == null || transactionId === '') return false;
+    const id = String(transactionId);
+    return _db.collections.some((c) => {
+      const o = c.order;
+      if (!o) return false;
+      if (o.paid_method === method && String(o.paid_transaction_id) === id) return true;
+      const sh = o.shipping;
+      return !!(sh && sh.paid_method === method && String(sh.paid_transaction_id) === id);
+    });
   },
 
   // Abandon every in-flight pay session on an order: the buyer CLOSED the payment

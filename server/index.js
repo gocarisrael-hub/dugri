@@ -8,6 +8,7 @@ const { pathToFileURL } = require('url');
 const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
+const tranzila = require('./tranzila');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
@@ -100,6 +101,37 @@ app.use('/api', (req, res, next) => {
 // a real charge would never reach us. Returns null when unconfigured.
 function paymentBaseUrl() {
   return process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/+$/, '') : null;
+}
+
+// WHICH CARD PROVIDER OPENS NEW PAYMENTS. PeleCard, unless PAYMENT_PROVIDER is
+// `tranzila` — set per Railway environment, so staging can take Tranzila while
+// production stays on PeleCard until the owner switches it.
+//
+// Asking for Tranzila without its credentials turns card payment OFF rather than
+// quietly falling back to PeleCard: a staging test that silently ran on the old
+// provider would "pass" and prove nothing.
+//
+// Only NEW payments follow this. Both callbacks stay live whichever is chosen,
+// so a window opened on one provider still settles after the switch.
+function cardProvider() {
+  const want = String(process.env.PAYMENT_PROVIDER || '')
+    .trim()
+    .toLowerCase();
+  if (want === 'tranzila') return tranzila.isConfigured() ? tranzila : null;
+  return pelecard.isConfigured() ? pelecard : null;
+}
+
+// Every return/callback address a provider may need for one payment. Each
+// provider reads its own: PeleCard the callback pair, Tranzila the notify URL,
+// which carries this payment's token so the notify can be matched to it.
+function paymentUrls(base, paramToken) {
+  return {
+    goodUrl: base + '/pay-done.html',
+    errorUrl: base + '/pay-done.html?error=1',
+    serverGoodUrl: base + '/api/payment/callback',
+    serverErrorUrl: base + '/api/payment/callback?error=1',
+    notifyUrl: base + '/api/payment/tranzila/notify?t=' + encodeURIComponent(paramToken),
+  };
 }
 
 const SITE_DIR = path.join(__dirname, '..', 'site');
@@ -921,9 +953,10 @@ function publicView(c, { owner = false } = {}) {
             : {}),
         }
       : null,
-    // Whether online card payment is available (PeleCard credentials present).
-    // Lets collect.html show the credit-card button only when it will work.
-    card_enabled: pelecard.isConfigured(),
+    // Whether online card payment is available (the chosen provider has its
+    // credentials). Lets collect.html show the credit-card button only when it
+    // will work.
+    card_enabled: !!cardProvider(),
     // HOW THIS DECK IS SPLIT — how many players it is laid out for, how many
     // pawn cards that is, and what is left for words. PUBLIC, not owner-only:
     // the word counter is the same counter for every contributor, and a friend
@@ -5123,7 +5156,8 @@ app.post('/api/collections/:id/pay/cancel', (req, res) => {
 // PeleCard for an iframe URL. Returns { url } for the browser to load in an
 // <iframe>. The ParamX token stored here lets the later callback find the order.
 app.post('/api/collections/:id/pay/init', async (req, res) => {
-  if (!pelecard.isConfigured()) {
+  const provider = cardProvider();
+  if (!provider) {
     return res.status(503).json({ error: 'card payment not configured' });
   }
   const base = paymentBaseUrl();
@@ -5241,15 +5275,10 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
 
   const paramToken = newPayToken();
   try {
-    const { url, transactionId } = await pelecard.init({
+    const { url, transactionId } = await provider.init({
       amountNis: charged,
       paramToken,
-      urls: {
-        goodUrl: base + '/pay-done.html',
-        errorUrl: base + '/pay-done.html?error=1',
-        serverGoodUrl: base + '/api/payment/callback',
-        serverErrorUrl: base + '/api/payment/callback?error=1',
-      },
+      urls: paymentUrls(base, paramToken),
     });
     // Record THIS session's own charged amount + coupon so the callback for it
     // verifies against the right price (sessions with different coupons stay
@@ -5261,6 +5290,7 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       coupon: couponCode,
       discount_pct: couponCode ? discountPct : null,
       metaCtx: adCtx,
+      provider: provider.NAME,
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
@@ -5285,7 +5315,8 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
 // owner's rule and the honest one — by then the deck is at the printer and where
 // it goes has already been decided.
 app.post('/api/collections/:id/shipping/init', async (req, res) => {
-  if (!pelecard.isConfigured()) {
+  const provider = cardProvider();
+  if (!provider) {
     return res.status(503).json({ error: 'card payment not configured' });
   }
   const base = paymentBaseUrl();
@@ -5314,20 +5345,16 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
 
   const paramToken = newPayToken();
   try {
-    const { url, transactionId } = await pelecard.init({
+    const { url, transactionId } = await provider.init({
       amountNis: charged,
       paramToken,
-      urls: {
-        goodUrl: base + '/pay-done.html',
-        errorUrl: base + '/pay-done.html?error=1',
-        serverGoodUrl: base + '/api/payment/callback',
-        serverErrorUrl: base + '/api/payment/callback?error=1',
-      },
+      urls: paymentUrls(base, paramToken),
     });
     db.recordShippingInit(req.params.id, {
       paramToken,
       transactionId,
       charged_total: charged,
+      provider: provider.NAME,
     });
     res.json({ url, charged });
   } catch {
@@ -5382,19 +5409,37 @@ app.post('/api/payment/callback', async (req, res) => {
   // "is it already paid?" guard is a different flag for each and the shipping
   // charge is a different (smaller) amount than the order's.
   const match = db.findPaySession(tx.paramX);
-  const c = match && match.collection;
-  const session = match && match.session;
   if (
-    c &&
-    session &&
-    match.kind === 'shipping' &&
-    !c.order.shipping.paid &&
-    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
+    match &&
+    match.session &&
+    (match.session.provider || 'pelecard') === pelecard.NAME &&
+    pelecard.verifyTransaction(tx, { amountNis: match.session.charged_total })
   ) {
-    db.markShippingPaid(c.id, {
-      method: 'pelecard',
+    settleVerifiedPayment(match, {
+      method: pelecard.NAME,
       transactionId: tx.transactionId,
       approvalNo: tx.approvalNo,
+    });
+  }
+  res.json({ ok: true });
+});
+
+// A VERIFIED charge lands. Shared by both providers' callbacks, so what a paid
+// order means — receipts, the coupon count, Meta's copy of the sale, a shipping
+// upgrade converging the order — cannot differ by who cleared the card.
+//
+// `match` is db.findPaySession's { collection, session, kind }; the caller has
+// already proven the charge belongs to that session and is for its amount.
+// Idempotent on each purchase's own paid flag, because a provider may call twice.
+function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
+  const c = match.collection;
+  const session = match.session;
+  if (match.kind === 'shipping') {
+    if (c.order.shipping.paid) return false;
+    db.markShippingPaid(c.id, {
+      method,
+      transactionId,
+      approvalNo,
       token: session.token,
       charged_total: session.charged_total,
     });
@@ -5402,52 +5447,111 @@ app.post('/api/payment/callback', async (req, res) => {
     // the owner is told the same way she is told about any other change of
     // fulfilment — she has a parcel to send that she did not have this morning.
     onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
+    return true;
+  }
+  if (c.order.paid) return false;
+  // metaClaim: the Meta report is claimed inside THIS write. The alternative
+  // was a second synchronous whole-store write on the hot path of a charge
+  // that has just cleared, for a measurement side-effect.
+  const metaArmed = metaCapiArmed();
+  db.markPaid(c.id, {
+    method,
+    transactionId,
+    approvalNo,
+    token: session.token,
+    charged_total: session.charged_total,
+    coupon: session.coupon,
+    discount_pct: session.discount_pct,
+    metaClaim: metaArmed,
+  });
+  // Count the coupon use once, on the real unpaid->paid transition.
+  if (session.coupon) db.incrementCouponUses(session.coupon);
+  // Fire the owner + buyer payment receipts, showing the amount ACTUALLY
+  // charged for THIS session (never the pre-coupon order.total). Gated on
+  // email being configured inside onOrderPaid, and fire-and-forget — a failed
+  // send must never turn a successful charge into a failed callback.
+  onOrderPaid(c.id, paymentBaseUrl(), session.charged_total);
+  // Meta's copy of the sale, sent from HERE — the moment the money actually
+  // landed, in a request made by the provider's server. Nothing about the
+  // buyer's browser can suppress it: a closed tab, a blocked pixel and an in-app
+  // browser that drops third-party scripts all still produce this call. The
+  // buyer's own details ride along from the pay/init handshake (meta_ctx).
+  // Guarded: an `async` handler in Express 4 does not route a rejection to
+  // error middleware, and a payment callback must answer the provider whatever
+  // an ad platform is doing.
+  try {
+    if (metaArmed) sendPurchaseToMeta(c.id, null, { preclaimed: true });
+  } catch (e) {
+    console.error('[meta-capi] ' + c.id + ': ' + ((e && e.message) || e));
+  }
+  return true;
+}
+
+// Tranzila's server-to-server notify (notify_url_address, built in paymentUrls).
+// UNSIGNED, so nothing in the body decides money: it only names our token (in
+// the URL we built) and the transaction index. The transaction is re-fetched
+// from Tranzila's Reports API with our secret key, and it pays for the session
+// only when approved, in shekels, for that session's exact amount, carrying that
+// session's token, and not already spent on another purchase.
+app.post('/api/payment/tranzila/notify', async (req, res) => {
+  const parsed = tranzila.parseNotify(req.body || {}, req.query || {});
+  if (!tranzila.isConfigured() || !parsed.token || !parsed.index) return res.json({ ok: true });
+  // A declined card is reported here too. Skipping the lookup on a plain failure
+  // is safe even though the field is untrusted: a forged "declined" cannot stop
+  // the real notify for a real charge.
+  if (parsed.response && parsed.response !== tranzila.SUCCESS_CODE) return res.json({ ok: true });
+
+  const match = db.findPaySession(parsed.token);
+  const session = match && match.session;
+  if (!session || session.provider !== tranzila.NAME) return res.json({ ok: true });
+
+  let tx;
+  try {
+    tx = await tranzila.findTransaction(parsed.index);
+  } catch (e) {
+    console.error('[tranzila] lookup failed for ' + match.collection.id + ': ' + (e && e.message));
+    return res.status(502).json({ error: 'verification failed' });
+  }
+  // Not in the report yet: non-200 so Tranzila tries again.
+  if (!tx) return res.status(502).json({ error: 'transaction not found' });
+
+  if (!tranzila.verifyTransaction(tx, { amountNis: session.charged_total, token: session.token })) {
+    // Enough to diagnose from the Railway log, and nothing about the card.
+    console.error(
+      '[tranzila] index ' +
+        tx.index +
+        ' did not verify for ' +
+        match.collection.id +
+        ': code=' +
+        tx.responseCode +
+        ' type=' +
+        tx.txnType +
+        ' currency=' +
+        tx.currency +
+        ' amount=' +
+        tx.amountAgorot +
+        ' expected=' +
+        Math.round(Number(session.charged_total) * 100) +
+        ' token=' +
+        tranzila.carriesToken(tx.raw, session.token)
+    );
     return res.json({ ok: true });
   }
-  if (
-    c &&
-    session &&
-    match.kind === 'order' &&
-    !c.order.paid &&
-    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
-  ) {
-    // metaClaim: the Meta report is claimed inside THIS write. The alternative
-    // was a second synchronous whole-store write on the hot path of a charge
-    // that has just cleared, for a measurement side-effect.
-    const metaArmed = metaCapiArmed();
-    db.markPaid(c.id, {
-      method: 'pelecard',
-      transactionId: tx.transactionId,
-      approvalNo: tx.approvalNo,
-      token: session.token,
-      charged_total: session.charged_total,
-      coupon: session.coupon,
-      discount_pct: session.discount_pct,
-      metaClaim: metaArmed,
-    });
-    // Count the coupon use once, on the real unpaid->paid transition.
-    if (session.coupon) db.incrementCouponUses(session.coupon);
-    // Fire the owner + buyer payment receipts, showing the amount ACTUALLY
-    // charged for THIS session (never the pre-coupon order.total). Gated on
-    // email being configured inside onOrderPaid, and fire-and-forget — a failed
-    // send must never turn a successful charge into a failed callback.
-    onOrderPaid(c.id, paymentBaseUrl(), session.charged_total);
-    // Meta's copy of the sale, sent from HERE — the moment the money actually
-    // landed, in a request made by PeleCard's server. Nothing about the buyer's
-    // browser can suppress it: a closed tab, a blocked pixel and an in-app
-    // browser that drops third-party scripts all still produce this call. The
-    // buyer's own details ride along from the pay/init handshake (meta_ctx).
-    // Guarded: an `async` handler in Express 4 does not route a rejection to
-    // error middleware, and a payment callback must answer PeleCard whatever an
-    // ad platform is doing.
-    try {
-      if (metaArmed) sendPurchaseToMeta(c.id, null, { preclaimed: true });
-    } catch (e) {
-      console.error('[meta-capi] ' + c.id + ': ' + ((e && e.message) || e));
-    }
-  }
+  if (db.isTransactionUsed(tranzila.NAME, tx.index)) return res.json({ ok: true });
+
+  settleVerifiedPayment(match, {
+    method: tranzila.NAME,
+    transactionId: tx.index,
+    approvalNo: tx.approvalNo,
+  });
   res.json({ ok: true });
 });
+
+// Tranzila returns the pay window to its success/fail page by POST, where
+// PeleCard used GET. express.static answers GET only, so without this the buyer
+// would be looking at a 404 inside the window they just paid in. Bounce it to the
+// same address as a GET; the page reads nothing but its own ?error flag.
+app.post('/pay-done.html', (req, res) => res.redirect(303, req.originalUrl));
 
 // Agent B: template onboarding and settings, in server/routes/catalog.js.
 catalogRoutes.registerTemplateOnboarding(app, {
