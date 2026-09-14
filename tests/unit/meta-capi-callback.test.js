@@ -263,6 +263,42 @@ describe('the sale is reported without the buyer’s browser', () => {
     }
   });
 
+  // IPv6 is nobody's address in more shapes than ::1. Each of these, arriving as
+  // the Cloudflare header, must be dropped; the public ones must still go through.
+  it.each([
+    ['::1', 'loopback'],
+    ['0:0:0:0:0:0:0:1', 'loopback, uncompressed'],
+    ['::', 'unspecified'],
+    ['ff02::1', 'multicast ff00::/8'],
+    ['FF05::1:3', 'multicast, upper case'],
+    ['fc00::1', 'unique-local fc00::/7'],
+    ['fd12:3456::1', 'unique-local fc00::/7'],
+    ['fe80::1', 'link-local fe80::/10'],
+    ['febf::1', 'link-local fe80::/10, top of range'],
+    ['fe80::1%eth0', 'link-local with a zone id'],
+    ['::ffff:10.0.0.1', 'v4-mapped private'],
+    ['::FFFF:192.168.1.20', 'v4-mapped private, upper case'],
+    ['::ffff:a00:1', 'v4-mapped private, hex form'],
+    ['::ffff:7f00:1', 'v4-mapped loopback, hex form'],
+  ])('drops the non-public IPv6 address %s (%s)', async (priv) => {
+    sent = [];
+    await completePayment(await startPayment({ cfIp: priv, ip: '203.0.113.7' }));
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
+    expect(JSON.stringify(sent[0].body)).not.toContain('203.0.113.7');
+  });
+
+  it.each([
+    ['2a03:2880:f10c:83:face:b00c::25de', '2a03:2880:f10c:83:face:b00c::25de'],
+    ['fec0::1', 'fec0::1'], // just past fe80::/10
+    ['::ffff:203.0.113.7', '203.0.113.7'], // v4-mapped public, sent bare
+  ])('still sends the public address %s', async (pub, expected) => {
+    sent = [];
+    await completePayment(await startPayment({ cfIp: pub }));
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBe(expected);
+  });
+
   it('never leaves user_data empty — Meta rejects the whole event without it', async () => {
     // The buyer this feature is FOR: no fbclid in the URL, no _fbp, no _fbc,
     // contact matching off. There must still be a match key in the payload.
