@@ -330,6 +330,43 @@ test('a bigger deck takes as many photos as it has pawns', async ({ page }) => {
   expect(state.players).toBe(8);
 });
 
+// A FAILED BATCH DOES NOT HIDE THE ONES BEFORE IT.
+//
+// Photos go up four to a request. The page used to take the stored list from the
+// LAST answer only, so when request two failed, request one's photos were saved on
+// the server and missing from the strip: she saw nothing added and a plain "try
+// again", and the room count was wrong until a reload.
+test('a batch that fails mid-upload still shows the photos already stored', async ({ page }) => {
+  const { url, id, k } = await createCollection(page, 'Shira', { players: 8 });
+  let posts = 0;
+  await page.route('**/api/collections/*/pawns*', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posts++;
+    if (posts === 1) return route.continue();
+    return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"x"}' });
+  });
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  await page.getByTestId('pawn-add-input').setInputFiles(
+    [0, 1, 2, 3, 4, 5].map((i) => ({
+      name: `batch${i}.png`,
+      mimeType: 'image/png',
+      buffer: Buffer.concat([PNG_BYTES, Buffer.from(`batch-photo-${i}`)]),
+    }))
+  );
+
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(4);
+  await expect(page.locator('#pawnErr')).toContainText('2 תמונות לא הועלו');
+  expect(posts).toBe(2);
+  // The room is the server's: four stored, four more fit.
+  await expect(page.getByTestId('pawn-add')).toBeEnabled();
+  const state = await page.request
+    .get(`/api/collections/${id}?k=${encodeURIComponent(k)}`)
+    .then((r) => r.json());
+  expect(state.pawn_images).toHaveLength(4);
+});
+
 // SHE ARRIVED WITHOUT THE PHOTOS SHE SENT, and this is where she finds out.
 //
 // The wizard uploads after the order exists and then redirects here. When some of

@@ -6372,7 +6372,13 @@
         // …and a cut that was still running when its photo moved gets started
         // again at the new slot, rather than leaving a sticker that never arrives.
         pawnCutState.forEach((st, i) => {
-          if (st === 'working' && pawnFiles[i]) cutPawnSlot(i, pawnFiles[i]);
+          if (!pawnFiles[i]) return;
+          if (st === 'working') cutPawnSlot(i, pawnFiles[i]);
+          // A cut that had FINISHED but was still being measured lost its
+          // measurement the same way, and would stay a plain thumbnail for good.
+          else if (st === 'done' && pawnCutouts[i] && !pawnFrames[i]) {
+            framePawnSlot(i, pawnFiles[i], pawnCutouts[i]);
+          }
         });
         return true;
       }
@@ -6570,7 +6576,13 @@
         // the render above rather than awaited before it: the cut is the slow
         // part and the buyer should see their sticker the moment it exists,
         // rather than waiting on a measurement that only moves it.
-        if (!blob) return;
+        if (blob) await framePawnSlot(idx, file, blob);
+      }
+
+      // Measure a finished cutout and paint the slot as a pawn. Its own function so
+      // pawnCompact can restart JUST this step for a photo that moved mid-measure.
+      async function framePawnSlot(idx, file, blob) {
+        const seq = pawnCutSeq[idx];
         let frame = null;
         try {
           const fmod = await import('./js/pawn-frame.js');

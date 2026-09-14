@@ -300,6 +300,41 @@ test.describe('pawn photos: the background cut', () => {
     expect(style.top).toBeCloseTo(-13.64, 1);
   });
 
+  // A MOVE MUST NOT COST A PHOTO ITS PAWN. Closing the grid up cancels whatever
+  // each slot had in flight. A cut still running was started again at its new
+  // slot, but the measurement that follows a FINISHED cut was simply dropped — so
+  // the photo that moved up stayed a plain thumbnail instead of the pawn circle.
+  test('a photo that moves up while it is being framed still becomes a pawn', async ({ page }) => {
+    await stubCutter(page, { succeeds: true, png: FRAMEABLE_PNG });
+    let release;
+    const held = new Promise((r) => {
+      release = r;
+    });
+    await page.route(/\/js\/pawn-frame(?:\.[0-9a-f]{8})?\.js(?:\?.*)?$/, async (route) => {
+      await held;
+      return route.continue();
+    });
+    await toPawnStep(page);
+    for (const i of [0, 1]) {
+      await page
+        .getByTestId('pawn-input-' + i)
+        .setInputFiles({ name: `p${i}.png`, mimeType: 'image/png', buffer: PNG_BYTES });
+    }
+    const slot0 = page.locator('.pawn-slot[data-idx="0"]');
+    const slot1 = page.locator('.pawn-slot[data-idx="1"]');
+    // Both cut, neither measured yet: the frame module is being held.
+    await expect(slot1).toHaveClass(/is-cut/);
+    await expect(slot1).not.toHaveClass(/is-pawn/);
+
+    // Dropping the first photo moves the second into slot 0 mid-measure.
+    await slot0.locator('.pawn-remove').click();
+    await expect(slot1).not.toHaveClass(/is-filled/);
+    release();
+
+    await expect(slot0).toHaveClass(/is-pawn/);
+    await expect(slot0.locator('.pawn-cut-line')).toHaveCount(1);
+  });
+
   test('a cut with nothing measurable in it stays a plain thumbnail', async ({ page }) => {
     // The transparent 2x2: a cutout exists, but there is no subject to frame. The
     // slot must NOT dress up as a pawn — a circle whose contents were placed by

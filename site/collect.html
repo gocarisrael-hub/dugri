@@ -4613,7 +4613,6 @@
           // number (PAWN_BATCH_MAX) and the TOTAL at her player count, so the
           // batches fill the order up and stop.
           const skipped = [];
-          let r = null;
           for (let start = 0; start < ready.length; start += PAWN_BATCH) {
             const fd = new FormData();
             const failed = [];
@@ -4626,14 +4625,16 @@
             if (failed.length) fd.append('cutfail', failed.join(','));
             // `api` throws on a non-2xx, which the catch below turns into the
             // retry line — a failed batch is never mistaken for a stored one.
-            r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
+            const r = await api('/pawns?k=' + encodeURIComponent(ownerToken), {
               method: 'POST',
               body: fd,
             });
             if (Array.isArray(r.skipped)) skipped.push(...r.skipped);
+            // Taken after EVERY request, not the last: a batch the server answered
+            // is stored whatever happens to the next one, so the strip has to know.
+            state.pawn_images = r.pawn_images;
+            state.pawn_cutouts = r.pawn_cutouts || state.pawn_cutouts;
           }
-          state.pawn_images = r.pawn_images;
-          state.pawn_cutouts = r.pawn_cutouts || state.pawn_cutouts;
           pawnBusy = false;
           showPawnBusy('');
           renderPawns();
@@ -4651,7 +4652,20 @@
         } catch (e) {
           pawnBusy = false;
           showPawnBusy('');
-          showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
+          // The batches before the failed one are already stored. Draw them and
+          // say how many did NOT arrive — "try again" over a strip that still
+          // shows the old list sends her to re-add photos the order already has.
+          const landed = pawnList().length - before;
+          renderPawns();
+          renderPawnCard();
+          if (landed > 0) {
+            const lost = picked.length - landed;
+            showPawnErr(
+              lost === 1 ? 'תמונה אחת לא הועלתה, נסו שוב' : lost + ' תמונות לא הועלו, נסו שוב'
+            );
+          } else {
+            showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
+          }
         }
       }
       // The cutouts for a batch, in the same order, with null for every miss.
