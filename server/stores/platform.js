@@ -157,10 +157,17 @@ module.exports = function platformStore({
     // collection is due when the number of elapsed milestones exceeds how many
     // reminders it has already received — so each milestone fires exactly once.
     collectionsDueForPaymentReminder(now = Date.now(), delays = [24]) {
-      const list = (Array.isArray(delays) ? delays : [24])
-        .map((d) => Math.max(1, Number(d) || 0))
-        .filter((d) => d > 0)
+      // A non-numeric entry is skipped: `Number(d) || 0` used to read it as 0 and
+      // clamp it up to a 1-hour milestone. Nothing valid left means the 24h default.
+      const list = (Array.isArray(delays) ? delays : [])
+        .filter(
+          (d) =>
+            (typeof d === 'number' || (typeof d === 'string' && d.trim())) &&
+            Number.isFinite(Number(d))
+        )
+        .map((d) => Math.max(1, Number(d)))
         .sort((a, b) => a - b);
+      if (!list.length) list.push(24);
       return _db.collections.filter((c) => {
         if (!c) return false;
         // A ready order has been handed over; chasing it for money is the owner's

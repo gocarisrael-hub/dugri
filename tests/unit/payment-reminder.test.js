@@ -92,6 +92,23 @@ describe('db.collectionsDueForPaymentReminder', () => {
     db.markPaymentReminderSent(c.id);
     expect(dueAt(500)).not.toContain(c.id); // no more milestones -> done
   });
+
+  // A hand-edited settings file is the only way a bad entry gets here (the admin
+  // page and settings.validateValue both refuse one). It must be skipped, not read
+  // as a 1-hour milestone that nudges a buyer an hour after she orders.
+  it('a non-numeric delay is skipped, not turned into a 1h reminder', () => {
+    const c = orderCollection();
+    const at = (h) => Date.now() + h * HOUR;
+    for (const bad of ['abc', null, '', {}, NaN]) {
+      const dueAt = (h) => db.collectionsDueForPaymentReminder(at(h), [bad, 48]).map((x) => x.id);
+      expect(dueAt(2)).not.toContain(c.id); // no phantom 1h milestone
+      expect(dueAt(50)).toContain(c.id); // the valid 48h entry still fires
+    }
+    // Nothing valid left: the single 24h default, as for a missing value.
+    const allBad = (h) => db.collectionsDueForPaymentReminder(at(h), ['x', null]).map((x) => x.id);
+    expect(allBad(2)).not.toContain(c.id);
+    expect(allBad(25)).toContain(c.id);
+  });
 });
 
 describe('payment_reminder settings', () => {
