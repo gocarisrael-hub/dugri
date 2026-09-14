@@ -516,11 +516,12 @@
         <p class="hint">
           שמות מקור שאינם פרסום: <code>order_link</code> / <code>own_link</code> = מישהי שנכנסה
           מקישור ששלחנו בעצמנו בוואטסאפ או ב-SMS, או מקישור איסוף המילים שחברות מקבלות. לא פרסום.
-          <code>email</code> / <code>email</code> = קליק באחד המיילים שלנו ללקוחה; עמודת הקמפיין
-          אומרת איזה מייל (למשל <code>buyer_confirmation</code> = אישור ההזמנה עם כפתור התשלום,
-          <code>payment_reminder</code> = תזכורת תשלום). <code>gmail</code> / <code>email</code> =
-          קישור מתוך ג׳ימייל שאינו מהמיילים שלנו (נדיר). <code>direct</code> / <code>none</code> =
-          בלי שום סימן מאיפה הגיעה.
+          מיילים שלנו ללקוחה: <code>email</code> / <code>email_payment</code> = קליק במייל שהכפתור
+          שלו הוא התשלום (אישור הזמנה שלא שולמה, תזכורת תשלום, הגעה למכסת המילים החינמית).
+          <code>email</code> / <code>email</code> = קליק בכל מייל אחר (קבלה, תזכורת מילים, המשחק
+          מוכן). עמודת הקמפיין אומרת איזה מייל, למשל <code>payment_reminder</code>.
+          <code>gmail</code> / <code>email</code> = קישור מתוך ג׳ימייל שאינו מהמיילים שלנו (נדיר).
+          <code>direct</code> / <code>none</code> = בלי שום סימן מאיפה הגיעה.
         </p>
 
         <h2>קישור ידני — לביו, לסטורי, למשפיענית</h2>
@@ -1242,6 +1243,11 @@
           data.armed === true &&
           data.ok === false &&
           data.error_source !== 'us' &&
+          // Refused ON an account that was found. A refusal from the account
+          // LISTING carries no account, and there typing the id may be exactly
+          // the fix (a token that can read a named account but not list them),
+          // so that one keeps the section and its field.
+          !!data.account &&
           !Array.isArray(data.accounts) &&
           !data.account_setting &&
           !data.account_env &&

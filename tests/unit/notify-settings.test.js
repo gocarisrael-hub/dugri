@@ -104,7 +104,7 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         // word list. Both strings are owner-editable (email.next_step).
         'נשאר רק שלב אחד: להשלים את התשלום, ומתחילים להכין את המשחק.',
         // Tagged so the ad report shows the click as email (see email-link-tags).
-        link + '&pay=1&utm_source=email&utm_medium=email&utm_campaign=buyer_confirmation',
+        link + '&pay=1&utm_source=email&utm_medium=email_payment&utm_campaign=buyer_confirmation',
         '',
         'נתראה על הלוח,',
         'צוות דוגרי',
@@ -151,7 +151,8 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         '· שם חסר',
         '',
         'לעדכון ההזמנה:',
-        link + '&utm_source=email&utm_medium=email&utm_campaign=production_error',
+        // The builder's default is the owner's copy, which is untagged.
+        link,
         '',
         'צוות דוגרי',
       ].join('\n')

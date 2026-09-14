@@ -733,15 +733,16 @@ test.describe('the ad report', () => {
     await expect(page.getByTestId('meta-account')).toHaveCount(0);
   });
 
-  // A refusal with no account in play is the token (no ads_read). The field
-  // cannot fix that and the owner asked for the section to go — and it must come
-  // back by itself the moment Meta answers.
+  // Refused ON an account that was found by itself, with nothing saved or set:
+  // the token (no ads_read). The field cannot fix that and the owner asked for
+  // the section to go — and it must come back by itself the moment Meta answers.
   test('a token refusal hides the Meta section, and a working report brings it back', async ({
     page,
   }) => {
     let answer = {
       ok: false,
       armed: true,
+      account: '99887766',
       account_setting: '',
       account_env: '',
       error: '(#200) Missing Permissions',
@@ -756,6 +757,22 @@ test.describe('the ad report', () => {
     await page.getByRole('button', { name: '7 ימים' }).click();
     await expect(page.getByTestId('meta-section')).toBeVisible();
     await expect(page.getByTestId('meta-table')).toBeVisible();
+  });
+
+  // A refusal from the account LISTING carries no account. A token that can read
+  // a named account but not list them is fixed by typing the id, so the section
+  // and its field stay.
+  test('a refusal before any account was found keeps the field', async ({ page }) => {
+    await serveMeta(page, {
+      ok: false,
+      armed: true,
+      account_setting: '',
+      account_env: '',
+      error: '(#200) Missing Permissions',
+    });
+    await page.goto(`/admin-ads.html?key=${KEY}`);
+    await expect(page.getByTestId('meta-section')).toBeVisible();
+    await expect(page.getByTestId('meta-account-id')).toBeVisible();
   });
 
   // A refusal that MAY be the account keeps the section and the field: a wrong

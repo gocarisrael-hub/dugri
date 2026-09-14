@@ -186,6 +186,32 @@ export function isTagged(url) {
   return campaignKey(url) !== '';
 }
 
+// OUR OWN EMAILS ARE NOT AN AD'S RIVAL. Buyer emails tag their links
+// utm_source=email (server/notify.js emailLink), which makes the click a tagged
+// arrival like any other. But it is a buyer coming back, and replacing a stored
+// touch that holds an ad click id would throw that id away: /pay/init and the
+// purchase beacon forward it so Meta can match the sale to the ad. So an email
+// click takes over an organic or untagged touch, never one with a click id.
+const CLICK_IDS = ['fbclid', 'gclid', 'ttclid'];
+
+function fromOurEmail(url) {
+  try {
+    return new URL(String(url)).searchParams.get('utm_source') === 'email';
+  } catch {
+    return false;
+  }
+}
+
+function storedHasClickId(stored) {
+  if (!stored) return false;
+  try {
+    const params = new URL(String(JSON.parse(stored).landing)).searchParams;
+    return CLICK_IDS.some((t) => params.get(t));
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Return the touch to report, updating the stored one first when this page load
  * IS a new campaign arrival.
@@ -199,7 +225,7 @@ export function isTagged(url) {
 export function currentTouch(href, referrer) {
   const stored = read('localStorage', TOUCH_KEY);
   const arrival = () => ({ landing: safeUrl(href), referrer: safeUrl(referrer) });
-  if (isTagged(href)) {
+  if (isTagged(href) && !(fromOurEmail(href) && storedHasClickId(stored))) {
     const touch = arrival();
     write('localStorage', TOUCH_KEY, JSON.stringify(touch));
     return touch;
