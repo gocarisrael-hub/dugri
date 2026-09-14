@@ -22,6 +22,10 @@ Pricing, coupons, orders, checkout, payment, shipping and pickup.
 - Pages: `product.html`, `options.html` (pricing/checkout parts), `coupons.html`, `partner.html`, `pay-done.html`, `pay-success.html`, `pickup.html`, `dashboard.html` (revenue), `admin-pricing.html`, `admin-inventory.html`, the orders view of `admin.html`
 - In `index.js`: `/api/pricing`, `/api/collections/:id/order`, `/pay/init`, `/api/payment/callback`, `/coupon/validate`, `/api/admin/coupons*`, `/api/partner/*`, `/api/stats/orders`, `/api/admin/stock`, `/api/admin/pickup-stickers`, `/api/admin/hfd/*` + `/api/admin/collections/:id/hfd*`, `/api/admin/orders/ready-batch`
 - In `db.js`: the coupons block, `ORDER_PRICES`/pricing, the stock block, order totals
+- **`server/routes/commerce.js`** (split out of `index.js`): `/api/admin/stickers` + `/api/admin/pickup-stickers` (and the sticker-batch helpers), `/api/admin/stock`, `/api/admin/orders/ready-batch`, `/api/admin/hfd/status` + `/api/admin/collections/:id/hfd*`, `/api/admin/coupons*` + `/api/partner/:token`, `/api/collections/:id/coupon/validate`, `/api/collections/:id/order`, `/pay/cancel` + `/pay/init` + `/shipping/init` + `/api/payment/callback`, `/api/stats/orders`, `/api/pricing` + `/api/delivery-exceptions`. Edit these there, not in `index.js` (see "Splitting the monolith"). `stickerBatch`, `pickupStickerOrders`, `stickerEntries` (unit tests) and `stockDesigns` (`applyOrderReady`) come back to `index.js` as return values.
+- **`server/stores/commerce.js`** (split out of `db.js`): pricing (`ORDER_PRICES`, version enable/price, `effectivePricing`, `deliveryExceptions`, `MAX_COPIES`, `deliveryFee`), order totals (`sanitizeQuantity`, `orderTotal`), the Meta Conversions API report (its helpers, the boot migration and the `claimMetaReport`…`staleMetaReports` methods), the coupons (helpers + methods) and the stock (opening counts + methods). Helper blocks are destructured in `db.js` where they sat; method blocks are spread into `db`.
+- Still in `index.js`, not yet assigned by this map: `/api/admin/collections/:id/to-print` and `/ready` with `applyOrderReady`, `orderReadyEmailArmed`, `orderReadySmsArmed`, `queueReadySms` (their tests, `order-ready`, match A's `order*`).
+- Still in `db.js` (slice 3b): the order and payment methods (`adminUpdateOrder`, `setOrder`, `recordPaymentInit`, the shipping upgrade, the pay sessions, `setOrderSentToPrint`, `setOrderReady` and its counts, `setHfdShipment`, `markPaid`) with `pushPaySession` and `SESSION_TTL_MS`/`MAX_SESSIONS`.
 - Tests: `pricing-*`, `price-row*`, `struck-price`, `sale-mode*`, `sale-switch`, `how-price`, `coupon*`, `partner-*`, `dashboard-coupons`, `order*` (except `order-wordlist`), `pelecard*`, `pay-*`, `payment-*`, `thankyou`, `free-order-emails`, `custom-product`, `hfd*`, `admin-hfd`, `shipping-upgrade`, `remote-towns`, `pickup-*`, `stock`, `admin-inventory`, `ready-batch`, `admin-ready-batch`, `revenue-agrees`, `admin-order-edit`, `admin-edit-order`, `staff-key*`, `purchase-event`
 
 ## Agent B — Catalog & Design (what exists, how it looks, its imagery)
@@ -63,7 +67,7 @@ Settings, content editor, WhatsApp/Whapi, SMS, emails/reminders, ads attribution
 - **`server/routes/platform.js`** (split out of `index.js`): content/settings/features routes, `/api/whatsapp/*` + `/api/admin/whatsapp/*`, `/api/sms/*` + `/api/admin/sms`, `/api/track`, `/api/admin/ads*`, `/api/admin/meta-capi/*`, `/api/admin/message-preview*`, `/api/faq`, `/api/unsubscribe*` + `/api/resubscribe`, `/api/admin/playbook*`, the content/store/template import routes. Edit these there, not in `index.js` (see "Splitting the monolith").
 - **`server/stores/platform.js`** (split out of `db.js`): the words/payment reminder state, the owner reminder-list state, the order-notified claim.
 - Still in `index.js` (slice 1b): the WhatsApp/notification hooks (`onOrderCreated`, `onOrderPaid`, `openWhatsappGroup`, `handleWaEvent`, `runReminderListScan`…), the reminder/nudge scans, the SPA `GET *` catch-all and static serving
-- Still in `db.js`: the Meta Conversions API report state (`claimMetaReport`…`staleMetaReports`). Its helpers and env constants are shared with the payment path, so it moves with the Commerce slice.
+- The Meta Conversions API report state (`claimMetaReport`…`staleMetaReports`) moved to `server/stores/commerce.js` with the Commerce slice, because its helpers and env constants are shared with the payment path (`markPaid`). D's ads routes still call it through `db`.
 - Test/CI harness (D arbitrates): `package.json`, `vitest.config.js`, `playwright.config.js`, `eslint.config.js`, `.github/workflows/*`, `scripts/smoke.mjs`, `scripts/stress/`, `scripts/fetch-fonts.mjs`, `scripts/localize-font-links.mjs`, `tests/e2e/{tpl-fixture,global-setup,feature-flags,server-target}.js`
   - The e2e server's port is derived per checkout (`server-target.js`), so worktrees can run E2E concurrently; `E2E_PORT=<n>` overrides. global-setup FAILS the run if that port answers with another checkout's config.
 - Tests: `settings*`, `content-*`, `store-import`, `template-import`, `whatsapp*`, `wa-*`, `sms-*`, `admin-texts-sms`, `admin-whatsapp-groups`, `notify*`, `close-emails`, `email-toggles`, `message-preview`, `admin-preview`, `unsubscribe`, `reminder*`, `playbook*`, `admin-playbook`, `faq*`, `admin-faq`, `terms`, `analytics*`, `attribution*`, `ads-base-url`, `admin-ads`, `admin-analytics`, `meta-*`, `track-routes`, `editor*`, `site-editability`, `feature-flags`, `options-feature-flags`, `admin-features`, `admin-nav`, `content-editor`, `server-routing`, `api-no-store`, `asset-hashing`, `runtime-assets`, `fonts-self-hosted`, `manifest`, `pwa-icons`, `db-atomic-write`, `eslint-server-coverage`, `e2e-harness`, `stress-harness`, `smoke`
@@ -112,8 +116,16 @@ Planned order:
    C's and move with C's slice. Two comments that describe B routes (the "REMOVE an optional asset"
    note above `TYPEFIT_TIMEOUT_MS`, the "REVERT a shipped template" note above `/redetect`) were
    already detached from their routes and stay where they were.
-3. **A — Commerce**: pricing/coupons/pay/callback/stock/HFD routes + the coupons, stock, pay-session
-   and Meta-report store blocks.
+3. **A — Commerce** (done: routes + pricing, order totals, Meta-report, coupons and stock store
+   blocks). Left in place on purpose: the `/to-print` and `/ready` routes with `applyOrderReady`
+   (not assigned in the map, so not moved), and C's `/cancel`, `/reopen` and collection DELETE routes
+   that sit between A's HFD and coupon blocks. The pay/cancel and shipping/init routes and
+   `/api/delivery-exceptions` moved with A because they sit inside A's payment and pricing blocks.
+   `newPayToken` moved into the payment block, its only user. D's `metaAdContext`, `metaCapiArmed`
+   and `sendPurchaseToMeta` are registered below the payment block, so `index.js` passes them as
+   call-time forwarders. Slice 3b: the order and payment methods of `db.js` (`setOrder`, pay
+   sessions, shipping upgrade, `markPaid`, print/ready state, `setHfdShipment`), which sit inside
+   the collections block.
 4. **C — Wizard & Word-collection**, last: collections/pawns/players/preview/wordlists routes + the
    collections, words and word-bank stores. Waits for the open pawn/player PRs to land, since those
    edit exactly this code.
