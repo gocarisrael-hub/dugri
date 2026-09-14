@@ -984,13 +984,97 @@ test('a closed refusal whose follow-up fetch fails still shows the closed state'
     return route.continue();
   });
   // Every collection fetch from here on is lost on the network.
-  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, (route) =>
-    route.request().method() === 'GET' ? route.abort('failed') : route.continue()
-  );
+  let aborted = 0;
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    aborted++;
+    return route.abort('failed');
+  });
 
   await page.getByTestId('players-8').click();
   await expect(page.getByTestId('players-count')).toBeHidden();
   await expect(page.locator('#playersClosed')).toBeVisible();
+  // Past the follow-up fetch, which failed: the closed state is still what shows.
+  await expect.poll(() => aborted).toBeGreaterThan(0);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 300)));
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  // …and the refused change cannot be sent again: the button does not answer a press.
+  await pressInDom(page, 'players-8');
+  expect(puts).toBe(1);
+});
+
+// A press that reaches the button even while it is hidden: a DOM click fires on any
+// enabled button, so a button left enabled under the closed state would send.
+async function pressInDom(page, testId) {
+  await page.evaluate((id) => document.querySelector(`[data-testid="${id}"]`).click(), testId);
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 300)));
+}
+
+// AN ANSWER FROM BEFORE THE CLOSE. The 5-second poll left while the collection was
+// open; the collection closed elsewhere; her press was refused `closed` and the fetch
+// after it was lost. When that old poll finally lands, its "open" must not bring the
+// count buttons back — every press would only repeat the refusal.
+test('a poll that left before the collection closed does not bring the count back', async ({
+  page,
+}) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+
+  let puts = 0;
+  await page.route('**/api/collections/*/players*', (route) => {
+    puts++;
+    return route.continue();
+  });
+  let hold = false;
+  let aborting = false;
+  let aborted = 0;
+  let heldStarted;
+  const started = new Promise((r) => (heldStarted = r));
+  let release;
+  const released = new Promise((r) => (release = r));
+  let staleLanded;
+  const landed = new Promise((r) => (staleLanded = r));
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    if (aborting) {
+      aborted++;
+      return route.abort('failed');
+    }
+    if (!hold) return route.continue();
+    hold = false;
+    // Answered now, while the collection is still open, and handed back later.
+    const res = await route.fetch();
+    const body = await res.text();
+    heldStarted();
+    await released;
+    await route.fulfill({ response: res, body });
+    staleLanded();
+  });
+
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('players-count')).toBeVisible();
+
+  hold = true;
+  await started; // the next 5-second poll, carrying "open"
+
+  const closed = await page.request.post(`/api/collections/${id}/close`, {
+    data: { owner_token: k },
+  });
+  expect(closed.status()).toBeLessThan(400);
+  aborting = true;
+
+  await page.getByTestId('players-8').click();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  await expect.poll(() => aborted).toBeGreaterThan(0);
+
+  release();
+  await landed;
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 500)));
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  await pressInDom(page, 'players-8');
   expect(puts).toBe(1);
 });
 

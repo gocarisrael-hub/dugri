@@ -3740,10 +3740,13 @@
       // because a caller may be waiting on that answer (see refresh()).
       let fetchClock = 0;
       let playersSavedAt = 0;
-      // The server refused a count change as `closed`, and no collection fetch has
-      // landed since. Until one does, the count field shows the closed state: every
-      // button would only be refused again.
+      // The server refused a count change as `closed`, and no collection fetch that
+      // STARTED after that refusal has landed since. Until one does, the count field
+      // shows the closed state: every button would only be refused again. The
+      // refusal takes a tick on the same clock, so a poll that left while the
+      // collection was still open — and lands late, saying "open" — cannot lift it.
       let playersClosedSeen = false;
+      let playersClosedAt = 0;
 
       function playersNow() {
         return Number(state && state.players) || PLAYER_COUNTS[0];
@@ -3840,6 +3843,7 @@
             // if this fetch is lost: buttons handed back now would only repeat
             // the same refusal. The next fetch that lands clears it.
             playersClosedSeen = true;
+            playersClosedAt = ++fetchClock;
             renderPlayers();
             await refresh();
           } else {
@@ -5636,8 +5640,9 @@
           // delivery address (owner-only), letting a locked delivery order prefill
           // without re-typing. Contributors fetch the plain public view.
           let next;
+          let startedAt;
           for (let attempt = 0; ; attempt++) {
-            const startedAt = ++fetchClock;
+            startedAt = ++fetchClock;
             next = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
             if (startedAt >= playersSavedAt) break;
             // Started before her last count change landed: this answer carries the
@@ -5648,7 +5653,10 @@
             if (attempt >= 1) return 'dropped';
           }
           state = next;
-          playersClosedSeen = false;
+          // Only an answer that left after the `closed` refusal can speak for the
+          // collection since then; an older one lifting the closed state would
+          // hand back buttons that repeat the refusal.
+          if (startedAt > playersClosedAt) playersClosedSeen = false;
           // Her deck's own ceiling, before anything is drawn from it. A
           // contributor's view carries it too — the counter is the same counter.
           MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;
