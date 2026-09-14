@@ -60,7 +60,13 @@ fs.writeFileSync(
     'base64'
   )
 );
-process.stdout.write(JSON.stringify({ pawns: out, slots: [{ n: 1, x: 0, y: 0, w: 0.3, h: 0.2 }] }));
+process.stdout.write(JSON.stringify({
+  pawns: out,
+  slots: [{ n: 1, x: 0, y: 0, w: 0.3, h: 0.2 }],
+  viewBox: [0, 0, 223.92, 312],
+  disc_fill: 0.9,
+  filter: '<filter id="sticker-halo"><feMorphology radius="1.5"/></filter>',
+}));
 `
   );
   fs.chmodSync(stub, 0o755);
@@ -98,14 +104,16 @@ function runs() {
     .map((l) => JSON.parse(l));
 }
 
-// `--drawn` as the child was given it, or null when it was not asked for at all.
-function drawnOf(argv) {
-  const i = argv.indexOf('--drawn');
+// A flag's value as the child was given it, or null when it was not asked for.
+function argOf(argv, flag) {
+  const i = argv.indexOf(flag);
   return i < 0 ? null : argv[i + 1];
 }
+const drawnOf = (argv) => argOf(argv, '--drawn');
 
-async function askLive(id, k, n) {
-  const q = n == null ? '' : '&n=' + encodeURIComponent(n);
+async function askLive(id, k, n, card) {
+  let q = n == null ? '' : '&n=' + encodeURIComponent(n);
+  if (card != null) q += '&card=' + encodeURIComponent(card);
   const r = await fetch(
     base + '/api/collections/' + id + '/pawn-card?live=1' + q + '&k=' + encodeURIComponent(k)
   );
@@ -162,5 +170,77 @@ describe('the live pawn card carries the pawns the page will not draw', () => {
     await askLive(c.id, c.owner_token);
     // Two distinct cards behind those four asks: the clamped 4, and 0 three times.
     expect(runs().map(drawnOf)).toEqual(['4', '0']);
+  });
+
+  it("hands the page the card's sticker spec with the picture", async () => {
+    const c = db.createCollection('בדיקה', { theme: 'birthday-girls' });
+    const r = await askLive(c.id, c.owner_token, 1);
+    // The page draws her photos through the card's OWN halo filter, in the
+    // card's own units — so the spec has to reach it, not stop at the route.
+    expect(r.body.viewBox).toEqual([0, 0, 223.92, 312]);
+    expect(r.body.disc_fill).toBe(0.9);
+    expect(r.body.filter).toContain('id="sticker-halo"');
+  });
+});
+
+// A BIGGER DECK DEALS THE SHIPPED PAWNS ACROSS ALL OF ITS CARDS. `n` is how many
+// of her photos the whole deck carries and `card` which pawn card to draw, so the
+// generator can cut that card out of the deck's own deal (build.card_photo_plan):
+// card 2 of an eight-player order with two photos carries pawns 3, 4, 1, 2.
+describe('each pawn card of a bigger deck is its own picture', () => {
+  it('names the card and the deck, and holds the count to the deck', async () => {
+    const c = db.createCollection('בדיקה', { theme: 'football-boys', players: 8 });
+    await askLive(c.id, c.owner_token, 2, 1);
+    await askLive(c.id, c.owner_token, 99, 7);
+    const [a, b] = runs();
+    expect([argOf(a, '--cards'), argOf(a, '--card'), argOf(a, '--drawn')]).toEqual(['2', '1', '2']);
+    // Past the end on both: the last card, and every slot of the deck taken.
+    expect([argOf(b, '--card'), argOf(b, '--drawn')]).toEqual(['1', '8']);
+  });
+
+  it('caches each card on its own', async () => {
+    const c = db.createCollection('בדיקה', { theme: 'trip comeback', players: 12 });
+    await askLive(c.id, c.owner_token, 5, 0);
+    await askLive(c.id, c.owner_token, 5, 1);
+    await askLive(c.id, c.owner_token, 5, 0);
+    expect(runs().map((a) => argOf(a, '--card'))).toEqual(['0', '1']);
+  });
+});
+
+// THE WIZARD'S BASE CARD — before any order exists, so there is no owner token
+// and nothing of hers in it: a design, a deck size, a card and a count.
+describe('GET /api/pawn-base', () => {
+  const askBase = async (q) => {
+    const r = await fetch(base + '/api/pawn-base?' + q);
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  };
+
+  it('renders the deal for a design with no order at all', async () => {
+    const r = await askBase('theme=japanese&players=12&card=2&n=5');
+    expect(r.status).toBe(200);
+    expect(r.body.card).toMatch(/^data:image\/png/);
+    expect(r.body.filter).toContain('sticker-halo');
+    const [argv] = runs();
+    expect([argOf(argv, '--cards'), argOf(argv, '--card'), argOf(argv, '--drawn')]).toEqual([
+      '3',
+      '2',
+      '5',
+    ]);
+    // No title and no photos: the tiles show the slots alone.
+    // argv is [preview.py, theme, name, outDir, ...]: the name is empty.
+    expect(argv[2]).toBe('');
+    expect(argv).not.toContain('--photo');
+    expect(argv.some((a) => a.startsWith('--title'))).toBe(false);
+  });
+
+  it('is one picture for every buyer asking the same question', async () => {
+    await askBase('theme=anniversary&players=4&n=1');
+    await askBase('theme=anniversary&players=4&n=1');
+    expect(runs()).toHaveLength(1);
+  });
+
+  it('refuses a design it does not know, without rendering', async () => {
+    expect((await askBase('theme=nope&players=4')).status).toBe(400);
+    expect(runs()).toHaveLength(0);
   });
 });

@@ -77,6 +77,28 @@ def pawn_slots(theme):
     return out
 
 
+def sticker_spec(theme, png_path):
+    """What a browser needs to draw her photos onto a base card as the print does.
+
+    The slots (:func:`pawn_slots`), the card's own viewBox so they can be placed
+    in card units, the disc the photo is clipped to (``build.PHOTO_DISC_FILL``),
+    and the card's ``<filter id="sticker-halo">`` — read out of the very SVG this
+    render was made from (``render_single_card`` writes it beside the PNG), so a
+    theme that re-tints its shadow hands over its own tint and the browser's
+    white edge IS the printed one rather than an imitation of it.
+    """
+    import re
+    with open(png_path[:-4] + ".svg", encoding="utf-8") as f:
+        svg = f.read()
+    halo = re.search(r'<filter\b[^>]*\bid="sticker-halo".*?</filter>', svg, re.S)
+    return {
+        "slots": pawn_slots(theme),
+        "viewBox": list(deck_html.view_box(svg)),
+        "disc_fill": buildmod.PHOTO_DISC_FILL,
+        "filter": halo.group(0) if halo else None,
+    }
+
+
 def _title_lines_for(args):
     """The order title for a ``--pawn-card`` run, from the CLI's title arguments.
 
@@ -555,11 +577,17 @@ def main():
                          "depends on the theme and --drawn alone and is cached "
                          "as such")
     ap.add_argument("--drawn", type=int, default=0, metavar="N",
-                    help="with --no-photos: how many of the four slots the "
-                         "CALLER will fill in. Those are left bare; the rest get "
-                         "the shipped Dugri pawns, exactly as the printed card "
-                         "tops itself up. 0 (the default) is the card an order "
-                         "with no photos at all prints")
+                    help="with --no-photos: how many of HER photos the deck "
+                         "carries in all. The slots they take are left bare for "
+                         "the caller to fill; the rest get the shipped Dugri "
+                         "pawns, exactly as the printed deck tops itself up. 0 "
+                         "(the default) is the card an order with no photos prints")
+    ap.add_argument("--cards", type=int, default=1, metavar="N",
+                    help="with --no-photos: how many pawn cards the deck has. "
+                         "The shipped pawns are dealt across all of them, so a "
+                         "card after the first does not start the set again")
+    ap.add_argument("--card", type=int, default=0, metavar="I",
+                    help="with --no-photos: which of those cards to render (0-based)")
     # Same declaration the deck uses (build.add_photo_args): this preview only
     # earns its place by being the picture the printer makes, which it stops
     # being the moment the two parse their photo arguments differently.
@@ -587,10 +615,10 @@ def main():
         # photos prints two faces and two pawns; a base card with four bare discs
         # made the preview promise an empty circle where a pawn prints, under a
         # caption reading "this is exactly how the card will be printed". Only
-        # the first --drawn slots are left bare, and they are the only ones the
-        # caller covers.
-        drawn = max(0, min(4, args.drawn))
-        photos = [None] * drawn + buildmod.fallback_photos(args.theme, drawn)
+        # the slots her photos take are left bare, and they are the only ones the
+        # caller covers. Which pawns go in the rest is the DECK's deal
+        # (build.card_photo_plan), not this card's alone.
+        photos = buildmod.card_photo_plan(args.theme, args.drawn, args.cards, args.card)
         out = os.path.join(args.out_dir, "pawns-empty.png")
         os.makedirs(args.out_dir, exist_ok=True)
         # The title is part of the BASE card, not of the photos the caller draws
@@ -600,7 +628,7 @@ def main():
                               _title_lines_for(args), out, kind="photo",
                               photos=photos)
         _downscale(out, CARD_MAX_W)
-        print(json.dumps({"pawns": out, "slots": pawn_slots(args.theme)}))
+        print(json.dumps({"pawns": out, **sticker_spec(args.theme, out)}))
         return
 
     if args.pawn_card:
