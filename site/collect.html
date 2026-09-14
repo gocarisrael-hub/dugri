@@ -3736,7 +3736,8 @@
       // STALE POLLS. Every collection fetch takes a tick when it STARTS, and a
       // successful count change takes one when it lands. A fetch that started
       // before that save carries the old count and ceiling, so its answer is
-      // dropped rather than allowed to roll the page back.
+      // dropped rather than allowed to roll the page back — and fetched once more,
+      // because a caller may be waiting on that answer (see refresh()).
       let fetchClock = 0;
       let playersSavedAt = 0;
 
@@ -5611,27 +5612,39 @@
         }
       }
 
+      // Resolves 'ok' when a fresh state was applied, 'dropped' when every answer
+      // started before a count change landed, and 'failed' when the fetch did.
+      // It never throws.
       async function refresh() {
         try {
           // The owner passes ?k=<owner_token> so the server returns the stored
           // delivery address (owner-only), letting a locked delivery order prefill
           // without re-typing. Contributors fetch the plain public view.
-          const startedAt = ++fetchClock;
-          const next = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
-          // Started before her last count change landed: this answer carries the
-          // old count and ceiling. Drop it; the next poll brings the new ones.
-          if (startedAt < playersSavedAt) return;
+          let next;
+          for (let attempt = 0; ; attempt++) {
+            const startedAt = ++fetchClock;
+            next = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+            if (startedAt >= playersSavedAt) break;
+            // Started before her last count change landed: this answer carries the
+            // old count and ceiling, so it is dropped. But a caller may be waiting
+            // on it — addWords after a 402 for the lock, an edit or a removal for
+            // the reverted list, the close for the closed state — so fetch ONCE
+            // more; that fetch starts after the save and carries the new count.
+            if (attempt >= 1) return 'dropped';
+          }
           state = next;
           // Her deck's own ceiling, before anything is drawn from it. A
           // contributor's view carries it too — the counter is the same counter.
           MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;
           render();
           reportLostPhotos();
+          return 'ok';
         } catch (e) {
           if (e.status === 404) {
             $('#title').textContent = 'הקישור לא נמצא';
             $('#subtitle').textContent = 'ייתכן שהקישור שגוי. בקשו מהמארגנ/ת קישור חדש.';
           }
+          return 'failed';
         }
       }
 

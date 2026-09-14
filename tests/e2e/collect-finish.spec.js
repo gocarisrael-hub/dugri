@@ -894,6 +894,67 @@ test('a count change that never reaches the server says so, and nothing moves', 
   await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
 });
 
+// The 5-second poll, switched off, so the only fetches a test sees are the ones the
+// page makes in answer to what she did.
+async function noPoll(page) {
+  await page.addInitScript(() => {
+    const real = window.setInterval;
+    window.setInterval = (fn, ms, ...rest) => (ms === 5000 ? 0 : real(fn, ms, ...rest));
+  });
+}
+
+// A DROPPED FETCH IS FETCHED AGAIN. A word refused with 402 (the free quota filled
+// under her) asks refresh() for the lock. If a count change lands while that fetch is
+// out, its answer started before the save and is dropped, so the page must fetch once
+// more rather than carry on unlocked.
+test('a count change during the refresh after a 402 still brings the lock on', async ({ page }) => {
+  await noPoll(page);
+  await stubPawnCard(page);
+  const { url } = await createCollection(page);
+
+  let quotaHit = false;
+  let heldGet = null;
+  let releaseGet;
+  let getHeld;
+  const holding = new Promise((r) => (getHeld = r));
+  await page.route('**/api/collections/*/words', (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    quotaHit = true;
+    return route.fulfill({ status: 402, json: { error: 'free_limit' } });
+  });
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const res = await route.fetch();
+    const body = await res.json();
+    if (quotaHit) {
+      // The server's own answer, locked the way it is once the quota is full.
+      body.free_limit_locked = true;
+      if (!heldGet) {
+        // The first fetch after the 402 is held until the count change has landed.
+        heldGet = new Promise((r) => (releaseGet = r));
+        getHeld();
+        await heldGet;
+      }
+    }
+    return route.fulfill({ response: res, json: body });
+  });
+  await page.goto(url);
+
+  await page.fill('#wordInput', 'מילה');
+  await page.click('#addBtn');
+  await holding;
+
+  await page.getByTestId('tab-pawns').click();
+  await page.getByTestId('players-8').click();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(2);
+  releaseGet();
+
+  await expect(page.locator('#addCard')).toHaveClass(/locked/);
+  await expect(page.locator('#wordInput')).toBeDisabled();
+  // …and the count she chose is not rolled back by the fetch that was dropped.
+  await expect(page.getByTestId('players-8')).toHaveAttribute('aria-pressed', 'true');
+});
+
 // ANOTHER DEVICE CHANGED THE COUNT. The buttons follow every poll; the preview has
 // to follow the same answer, or it draws one card under a count that promises three.
 test('a count changed from another device redraws the cards on the next poll', async ({ page }) => {
