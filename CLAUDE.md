@@ -46,9 +46,22 @@ Rules:
 1. Worktree first. From the repo root run `git worktree add -b feat/<short> ../dugri-<short> origin/main` and do all work there. Never edit the shared root checkout.
 2. Monolith files (`server/index.js`, `server/db.js`): edit only your domain's block; never reorder or reflow another domain's code.
 3. Before every push: `git fetch origin && git rebase origin/main`, re-run the tests, then `git push --force-with-lease`.
-4. Open your own PR with `gh pr create` and get CI green. Then stop. If the integrator's review requests changes, you fix them on your branch.
+4. The draft flag is your PR's status. Open it with `gh pr create --draft` and keep it a draft while you work (CI runs on drafts too). When the work is finished and CI is green: `gh pr ready <n>`, post a ready report (below), then stop. If you pick the PR up again (requested changes, a rebase), first run `gh pr ready <n> --undo`; when done, mark it ready again with a new report.
 5. Never merge anything, never push to main, never deploy (staging belongs to the integrator, production to the owner).
-6. Stacked work: PRs always target main. Don't open a PR that depends on an unmerged PR. Wait for the first to merge, or open the second as a draft whose body says "contains #N, rebase after it lands".
+6. Stacked work: PRs always target main. Don't open a PR that depends on an unmerged PR. Wait for the first to merge, or open the second as a draft whose body says "contains #N, rebase after it lands". It stays a draft until #N merges and you have rebased.
 7. One driver per branch: only the session that created a branch pushes to it. If that session has ended and can't be resumed, the integrator or a newly briefed agent may take the branch over: it first posts "Taking over this branch from <session>" on the PR, and is the only driver from then on.
 8. No `git stash`. The stash is shared across all worktrees and can restore another agent's work into your branch. Set work aside with a WIP commit on your branch.
 9. Cleanup: when your PR is merged or closed, run `git worktree remove ../dugri-<short>` and `git branch -D feat/<short>`. Never remove a worktree you didn't create, or one with uncommitted changes.
+
+Ready report: every time you mark a PR ready, post this with `gh pr comment <n> --body-file <file>`. Fill every line; the integrator decides merge order from it and merges only when the latest report is for the PR's current head.
+
+```
+## Ready for review @ <short head sha>
+Status: new | updated after review | rebased only | taken over
+Depends on: none | #N (merge #N first)
+Merge order: any | before #N / after #N, and why
+Shared files: none | server/index.js (<domain> block), server/db.js (<block>)
+Overlaps open PRs: none | #N (same file or area; check `gh pr list` and `gh pr diff`)
+After deploy: nothing | what staging or production needs (a setting, volume data)
+Changed since last review: (only when updated) one line per change
+```

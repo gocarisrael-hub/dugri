@@ -16,8 +16,8 @@ You never push to main. Every change, including yours, lands with `gh pr merge`.
 
 1. List what is waiting:
    `gh pr list --state open --json number,title,headRefName,isDraft,headRefOid,files`
-2. Skip drafts. A draft that says "contains #N" waits until #N is merged and its author has rebased it.
-3. Order the rest cheapest-conflict first: PRs that touch no shared file (`server/index.js`, `server/db.js`, the CI harness) and few files go before PRs that touch the monoliths or overlap another open PR.
+2. Skip drafts: their driver is still working. A draft that says "contains #N" waits until #N is merged and its driver has rebased it. Also skip a ready PR whose latest `## Ready for review @` report is not for its current head (it was pushed after reporting), and ask for a report on a ready PR that has none.
+3. Order by the ready reports: honour `Depends on` and `Merge order`; for PRs that list each other under `Overlaps`, merge first the one that leaves the smaller rebase. Then cheapest-conflict first: PRs that touch no shared file (`server/index.js`, `server/db.js`, the CI harness) and few files go before PRs that touch the monoliths.
 4. For each PR, in that order:
    1. Check CI at the current head: `gh pr checks <n>`. The `CI` summary check must be green. Never merge past a red or pending check, and never call a red E2E "flake" until the failing spec passes in isolation on the same commit.
    2. Check the head contains current main (docs-only PRs are exempt):
@@ -60,7 +60,7 @@ Rules:
 
 - Merge only when the latest `## Integrator review:` comment is an approval for the PR's current head SHA.
 - Any push after an approval, a rebase included, invalidates it. Review the new head and post a new comment before merging.
-- When you request changes, the PR's author (the session driving that branch) fixes them. You don't push to that branch: one driver per branch.
+- When you request changes, the PR's driver fixes them: it flips the PR back to draft while working and posts a new ready report when done. You don't push to that branch: one driver per branch.
 - Your own PRs get the same comment format before you merge them.
 
 ## Handover
@@ -69,7 +69,7 @@ A branch whose creating session has ended has no driver, so a PR that needs a re
 
 1. First try to resume the original session (for a subagent, send it a message; it keeps its context).
 2. If it has ended, take the branch over: yourself for a small fix, otherwise brief a new worktree agent on that branch.
-3. Whoever takes over posts `Taking over this branch from <session>` on the PR before its first push, and is the only driver from then on.
+3. Whoever takes over posts `Taking over this branch from <session>` on the PR before its first push, and is the only driver from then on. Its ready report says `Status: taken over`.
 
 ## Staging deploy
 
@@ -95,7 +95,7 @@ After each merge batch, deploy staging yourself without asking:
    if [ "$run" != "$prev" ]; then gh run watch "$run" --exit-status; else echo "no new deploy run appeared"; fi
    ```
    The run includes the smoke test (`scripts/smoke.mjs`); a red smoke fails the run. "No new deploy run appeared" is a failed deploy, not a green one.
-4. Report: the deployed SHA, the smoke result, and what changed since the last staging deploy (`git log --oneline <previous staging sha>..<deployed sha>`). The previous staging SHA is the `headSha` of the last successful staging run in `gh run list --workflow "Deploy to Railway" --json databaseId,headSha,conclusion`; confirm a run's environment from its Banner line in `gh run view <id> --log`.
+4. Report: the deployed SHA, the smoke result, every `After deploy` item from the merged PRs' ready reports, and what changed since the last staging deploy (`git log --oneline <previous staging sha>..<deployed sha>`). The previous staging SHA is the `headSha` of the last successful staging run in `gh run list --workflow "Deploy to Railway" --json databaseId,headSha,conclusion`; confirm a run's environment from its Banner line in `gh run view <id> --log`.
 
 Only when GitHub Actions is down: deploy from a clean detached worktree of origin/main, then smoke it by hand.
 
