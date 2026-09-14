@@ -62,26 +62,34 @@ async function createCollection(page, title = 'Shira') {
 }
 
 // Attach `n` photos through the upload route itself, so the test starts from a
-// state a real order can be in.
+// state a real order can be in. FOUR TO A REQUEST, which is what both browsers
+// send: the route caps one request at PAWN_BATCH_MAX (the body is buffered whole)
+// and the total at the deck's player count, so posting five at once is a shape no
+// client produces and is refused with a 400.
 async function attachPhotos(page, id, k, n) {
+  const BATCH = 4;
   const boundary = '----dugriFinishPawns';
-  const chunks = [];
-  for (let i = 0; i < n; i++) {
-    chunks.push(
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="pawn${i}"; filename="p${i}.png"\r\nContent-Type: image/png\r\n\r\n`
-      ),
-      Buffer.concat([PNG_BYTES, Buffer.from(`finish${i}`)]),
-      Buffer.from('\r\n')
-    );
+  let images = [];
+  for (let start = 0; start < n; start += BATCH) {
+    const chunks = [];
+    for (let i = start; i < Math.min(n, start + BATCH); i++) {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="pawn${i - start}"; filename="p${i}.png"\r\nContent-Type: image/png\r\n\r\n`
+        ),
+        Buffer.concat([PNG_BYTES, Buffer.from(`finish${i}`)]),
+        Buffer.from('\r\n')
+      );
+    }
+    chunks.push(Buffer.from(`--${boundary}--\r\n`));
+    const res = await page.request.post(`/api/collections/${id}/pawns?k=${encodeURIComponent(k)}`, {
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      data: Buffer.concat(chunks),
+    });
+    expect(res.status()).toBe(200);
+    images = (await res.json()).pawn_images;
   }
-  chunks.push(Buffer.from(`--${boundary}--\r\n`));
-  const res = await page.request.post(`/api/collections/${id}/pawns?k=${encodeURIComponent(k)}`, {
-    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-    data: Buffer.concat(chunks),
-  });
-  expect(res.status()).toBe(200);
-  return (await res.json()).pawn_images;
+  return images;
 }
 
 // A background-removed cutout for a photo already on the order — the route the
