@@ -49,6 +49,6 @@ Rules:
 4. Open your own PR with `gh pr create` and get CI green. Then stop. If the integrator's review requests changes, you fix them on your branch.
 5. Never merge anything, never push to main, never deploy (staging belongs to the integrator, production to the owner).
 6. Stacked work: PRs always target main. Don't open a PR that depends on an unmerged PR. Wait for the first to merge, or open the second as a draft whose body says "contains #N, rebase after it lands".
-7. One driver per branch: only the session that created a branch pushes to it.
+7. One driver per branch: only the session that created a branch pushes to it. If that session has ended and can't be resumed, the integrator or a newly briefed agent may take the branch over: it first posts "Taking over this branch from <session>" on the PR, and is the only driver from then on.
 8. No `git stash`. The stash is shared across all worktrees and can restore another agent's work into your branch. Set work aside with a WIP commit on your branch.
 9. Cleanup: when your PR is merged or closed, run `git worktree remove ../dugri-<short>` and `git branch -D feat/<short>`. Never remove a worktree you didn't create, or one with uncommitted changes.

@@ -20,11 +20,24 @@ You never push to main. Every change, including yours, lands with `gh pr merge`.
 3. Order the rest cheapest-conflict first: PRs that touch no shared file (`server/index.js`, `server/db.js`, the CI harness) and few files go before PRs that touch the monoliths or overlap another open PR.
 4. For each PR, in that order:
    1. Check CI at the current head: `gh pr checks <n>`. The `CI` summary check must be green. Never merge past a red or pending check, and never call a red E2E "flake" until the failing spec passes in isolation on the same commit.
-   2. Review the diff (`gh pr diff <n>`) and post the review comment (format below).
-   3. If approved, merge pinned to the SHA you reviewed:
+   2. Check the head contains current main (docs-only PRs are exempt):
+      ```
+      git fetch origin && git fetch origin pull/<n>/head
+      git merge-base --is-ancestor origin/main <full head sha> && echo up-to-date
+      ```
+      If it doesn't, ask the driver to rebase. CI and your review then run again on the new head. Why: two PRs each green against an older main can break main with no text conflict, e.g. one renames an export the other still imports.
+   3. Review the diff (`gh pr diff <n>`) and post the review comment (format below).
+   4. If approved, merge pinned to the SHA you reviewed:
       `gh pr merge <n> --squash --match-head-commit <full head sha>`
-   4. After the merge, look at the remaining PRs again. Any that now conflict with main, ask their author to rebase (a PR comment, or a message to that session). Don't rebase it yourself.
-5. When the batch is merged, deploy staging (below).
+   5. Watch main's push CI for the merge commit:
+      ```
+      sha=$(gh pr view <n> --json mergeCommit -q .mergeCommit.oid)
+      gh run list --workflow CI --commit "$sha" --json databaseId -q '.[0].databaseId'
+      gh run watch <run id> --exit-status
+      ```
+      (If the list is still empty, the run hasn't registered yet; list again.) If main goes red, fix it at once with a revert PR (`git revert <sha>` on a `fix/revert-<n>` branch in its own worktree, PR, CI, review, merge). Never push a fix to main directly.
+   6. Look at the remaining PRs again. Any that now conflict with or lag main, ask their driver to rebase (a PR comment, or a message to that session). Don't rebase it yourself unless you take the branch over (see Handover).
+5. When the batch is merged and main's push CI is green, deploy staging (below).
 
 ## Review record
 
@@ -46,20 +59,38 @@ Rules:
 - When you request changes, the PR's author (the session driving that branch) fixes them. You don't push to that branch: one driver per branch.
 - Your own PRs get the same comment format before you merge them.
 
+## Handover
+
+A branch whose creating session has ended has no driver, so a PR that needs a rebase or requested changes can never merge. A worktree subagent ends when it reports; a terminal session can be closed.
+
+1. First try to resume the original session (for a subagent, send it a message; it keeps its context).
+2. If it has ended, take the branch over: yourself for a small fix, otherwise brief a new worktree agent on that branch.
+3. Whoever takes over posts `Taking over this branch from <session>` on the PR before its first push, and is the only driver from then on.
+
 ## Staging deploy
 
 After each merge batch, deploy staging yourself without asking:
 
-1. Make sure no deploy is running. The workflow cancels any in-progress deploy, including a production deploy the owner started:
-   `gh run list --workflow "Deploy to Railway" --status in_progress`
+1. Make sure no deploy is queued, waiting or running. The workflow's `cancel-in-progress` cancels all of them, including an owner's production deploy still waiting for a runner. Every line must print `[]`:
+   ```
+   for s in queued waiting pending requested in_progress; do
+     gh run list --workflow "Deploy to Railway" --status "$s" --json databaseId,status
+   done
+   ```
 2. Note the commit you are shipping: `git fetch origin && git rev-parse origin/main`.
-3. Dispatch and watch:
+3. Dispatch and watch. Record the latest run id before dispatching, because right after dispatch `gh run list` can still return the previous finished run:
    ```
+   prev=$(gh run list --workflow "Deploy to Railway" --limit 1 --json databaseId -q '.[0].databaseId')
    gh workflow run "Deploy to Railway" -f environment=staging -f ref=main
-   gh run list --workflow "Deploy to Railway" --limit 1 --json databaseId -q '.[0].databaseId'
-   gh run watch <run id> --exit-status
+   run=$prev
+   for i in $(seq 60); do
+     sleep 5
+     run=$(gh run list --workflow "Deploy to Railway" --limit 1 --json databaseId -q '.[0].databaseId')
+     [ -n "$run" ] && [ "$run" != "$prev" ] && break
+   done
+   if [ "$run" != "$prev" ]; then gh run watch "$run" --exit-status; else echo "no new deploy run appeared"; fi
    ```
-   The run includes the smoke test (`scripts/smoke.mjs`); a red smoke fails the run.
+   The run includes the smoke test (`scripts/smoke.mjs`); a red smoke fails the run. "No new deploy run appeared" is a failed deploy, not a green one.
 4. Report: the deployed SHA, the smoke result, and what changed since the last staging deploy (`git log --oneline <previous staging sha>..<deployed sha>`). The previous staging SHA is the `headSha` of the last successful staging run in `gh run list --workflow "Deploy to Railway" --json databaseId,headSha,conclusion`; confirm a run's environment from its Banner line in `gh run view <id> --log`.
 
 Only when GitHub Actions is down: deploy from a clean detached worktree of origin/main, then smoke it by hand.
