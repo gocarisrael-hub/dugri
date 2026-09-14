@@ -988,6 +988,32 @@ test('a closed refusal whose follow-up fetch fails still shows the closed state'
   expect(puts).toBe(1);
 });
 
+// A 200 THAT SAYS NOTHING. A proxy page or a cut-off body parses to nothing; the
+// count, the cards and the limit must not go undefined on it. It is a failure: the
+// error line shows and the page keeps what it had.
+test('a count change answered with a 200 that is not JSON is a failure, and nothing moves', async ({
+  page,
+}) => {
+  await stubPawnCard(page);
+  const { url } = await createCollection(page);
+  await page.route('**/api/collections/*/players*', (route) =>
+    route.fulfill({ status: 200, contentType: 'text/html', body: '<html>gateway</html>' })
+  );
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('players-budget')).toContainText('עד 412 מילים');
+
+  await page.getByTestId('players-8').click();
+  await expect(page.getByTestId('players-err')).toBeVisible();
+  await expect(page.getByTestId('players-err')).toContainText('לא הצלחנו');
+  await expect(page.getByTestId('players-4')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('players-budget')).toHaveText(
+    '4 שחקנים · 1 קלף חיילים · עד 412 מילים'
+  );
+  await expect(page.getByTestId('players-8')).toBeEnabled();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
+});
+
 // ANOTHER DEVICE CHANGED THE COUNT. The buttons follow every poll; the preview has
 // to follow the same answer, or it draws one card under a count that promises three.
 test('a count changed from another device redraws the cards on the next poll', async ({ page }) => {

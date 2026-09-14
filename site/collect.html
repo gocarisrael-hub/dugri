@@ -3804,6 +3804,13 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ players: n }),
           });
+          // A 200 that does not carry the new count and ceiling (a proxy page, a
+          // cut-off body — api() hands those back as {}) is not a saved change.
+          // Taking it as one would set the count and limit to undefined, and move
+          // the save marker so the poll that would correct it is dropped.
+          if (!(Number(r && r.players) > 0) || !(Number(r && r.deck_words) > 0)) {
+            throw Object.assign(new Error('players_response'), { status: 200, body: r });
+          }
           playersAsked = null;
           playersBusy = false;
           playersSavedAt = ++fetchClock;
