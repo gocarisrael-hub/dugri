@@ -804,11 +804,26 @@ function registerAdsSettingsWhatsapp(
       return false;
     }
     if (!ip.includes(':')) return true; // not an address at all
-    const v6 = ip.toLowerCase();
+    if (!/^[0-9a-f:.]+$/i.test(ip)) return true; // a zone id, or not an address
+    // Classify the CANONICAL form (lower case, zeros compressed, a mapped v4 in
+    // hex), so 0:0:0:0:0:0:0:1 is ::1 and ::FFFF:10.0.0.1 is ::ffff:a00:1.
+    let v6;
+    try {
+      v6 = new URL('http://[' + ip + ']').hostname.slice(1, -1);
+    } catch {
+      return true;
+    }
     if (v6 === '::1' || v6 === '::') return true;
-    if (/^f[cd]/.test(v6)) return true; // fc00::/7 unique-local
-    if (/^fe[89ab]/.test(v6)) return true; // fe80::/10 link-local
-    return /^[0-9a-f:.]+$/.test(v6) ? false : true;
+    const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/.exec(v6);
+    if (mapped) {
+      const [hi, lo] = [parseInt(mapped[1], 16), parseInt(mapped[2], 16)];
+      return isNonPublicIp([hi >> 8, hi & 255, lo >> 8, lo & 255].join('.'));
+    }
+    const first = v6.startsWith(':') ? 0 : parseInt(v6.split(':')[0], 16);
+    if (first >= 0xfc00 && first <= 0xfdff) return true; // fc00::/7 unique-local
+    if (first >= 0xfe80 && first <= 0xfebf) return true; // fe80::/10 link-local
+    if (first >= 0xff00) return true; // ff00::/8 multicast
+    return false;
   }
 
   // The buyer's address as Meta should see it.
@@ -851,7 +866,9 @@ function registerAdsSettingsWhatsapp(
       const ip = String(raw || '')
         .trim()
         .slice(0, 45);
-      const bare = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+      // Only a DOTTED mapped v4 is sent bare; stripping a hex one (::ffff:a00:1)
+      // would leave "a00:1", which is no address at all.
+      const bare = /^::ffff:\d+\.\d+\.\d+\.\d+$/i.test(ip) ? ip.slice(7) : ip;
       return isNonPublicIp(bare) ? '' : bare;
     };
     const cf = usable(req.get('cf-connecting-ip'));
