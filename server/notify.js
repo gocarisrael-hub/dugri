@@ -425,14 +425,14 @@ function payLink(collection, baseUrl) {
 // reads email / <medium> / <which mail>. `mail` is the template key.
 // `toPayment` marks a mail whose button is the checkout (the unpaid order
 // confirmation, the payment reminder, the free-limit mail): those read
-// email / email_payment, every other buyer mail email / email, so the owner can
+// email / email_payment, every other buyer mail email / email_other, so the owner can
 // tell "came to pay" from "came to add words / see the order" at a glance. The
 // tags are campaign params only, so the tracker keeps them and still drops the
 // token (site/js/attribution.js safeUrl). A purchase is still credited to the
 // touch frozen on the order, so this names visits, not sales. Owner alerts are
 // not tagged: those clicks are hers, not a buyer's.
 function emailLink(link, mail, toPayment) {
-  const medium = toPayment ? 'email_payment' : 'email';
+  const medium = toPayment ? 'email_payment' : 'email_other';
   return link ? link + '&utm_source=email&utm_medium=' + medium + '&utm_campaign=' + mail : null;
 }
 

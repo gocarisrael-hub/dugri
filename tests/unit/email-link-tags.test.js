@@ -2,7 +2,7 @@
 // Every link in a BUYER email is tagged utm_source=email, so the ad report shows
 // our emails as their own rows instead of folding them into order_link /
 // own_link with WhatsApp, SMS and friends' word links. Mails whose button is the
-// checkout read email / email_payment; the rest read email / email. Owner alerts
+// checkout read email / email_payment; the rest read email / email_other. Owner alerts
 // (and the owner's copy of a shared mail) stay untagged: those clicks are hers.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createRequire } from 'node:module';
@@ -20,7 +20,7 @@ const settingsPath = path.join(serverDir, 'settings.js');
 const BASE = 'https://dugri.example';
 const collectLink = `${BASE}/collect.html?c=col-1&k=tok-abc`;
 const payTag = (mail) => `&utm_source=email&utm_medium=email_payment&utm_campaign=${mail}`;
-const tag = (mail) => `&utm_source=email&utm_medium=email&utm_campaign=${mail}`;
+const tag = (mail) => `&utm_source=email&utm_medium=email_other&utm_campaign=${mail}`;
 const htmlUrl = (u) => u.replace(/&/g, '&amp;');
 
 const unpaid = {
@@ -109,7 +109,7 @@ describe('buyer email links carry the email tag', () => {
     it(`${name}: reads email_payment`, () => expectTagged(build(notify), expected));
   }
   for (const [name, build, expected] of toOther) {
-    it(`${name}: reads email`, () => {
+    it(`${name}: reads email_other`, () => {
       const msg = build(notify);
       expectTagged(msg, expected);
       expect(msg.text).not.toContain('email_payment');
@@ -179,7 +179,11 @@ describe('the report reads a tagged email click as email, not order_link', () =>
       landing: `${BASE}/collect.html?x=1${tag('order_ready')}`,
       referrer: '',
     });
-    expect(other).toMatchObject({ source: 'email', medium: 'email', campaign: 'order_ready' });
+    expect(other).toMatchObject({
+      source: 'email',
+      medium: 'email_other',
+      campaign: 'order_ready',
+    });
     // Neither is ad spend.
     expect(attribution.isPaid(pay)).toBe(false);
     expect(attribution.isPaid(other)).toBe(false);

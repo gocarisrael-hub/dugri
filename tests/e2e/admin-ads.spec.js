@@ -1061,7 +1061,7 @@ test.describe('the ad report', () => {
     const request = await arriveAt(
       page,
       '/collect.html?c=e2e-collection-id&k=e2e-owner-token&pay=1' +
-        '&utm_source=email&utm_medium=email&utm_campaign=' +
+        '&utm_source=email&utm_medium=email_payment&utm_campaign=' +
         campaign
     );
     const body = JSON.parse(request.postData() || '{}');
@@ -1072,7 +1072,7 @@ test.describe('the ad report', () => {
     await page.goto(`/admin-ads.html?key=${KEY}`);
     const row = rowFor(page, campaign);
     await expect(row).toBeVisible();
-    await expect(row).toContainText('email');
+    await expect(row).toContainText('email_payment');
     await expect(row).not.toContainText('order_link');
   });
 

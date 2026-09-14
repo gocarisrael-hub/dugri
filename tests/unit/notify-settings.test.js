@@ -170,7 +170,7 @@ describe('defaults are byte-identical to the pre-refactor strings', () => {
         'ברגע שתוסיפו את המילים נתחיל להכין את הקובץ — זה לוקח כמה דקות בלבד.',
         '',
         'להוספת המילים:',
-        link + '&utm_source=email&utm_medium=email&utm_campaign=words_reminder',
+        link + '&utm_source=email&utm_medium=email_other&utm_campaign=words_reminder',
         '',
         'נתראה על הלוח,',
         'צוות דוגרי',

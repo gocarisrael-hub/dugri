@@ -147,7 +147,7 @@ describe('the remembered touch', () => {
     const { currentTouch } = await load();
     currentTouch('https://dugri-israel.co.il/?utm_source=instagram&utm_campaign=story', '');
     const back = currentTouch(
-      'https://dugri-israel.co.il/collect.html?utm_source=email&utm_medium=email&utm_campaign=order_ready',
+      'https://dugri-israel.co.il/collect.html?utm_source=email&utm_medium=email_other&utm_campaign=order_ready',
       ''
     );
     expect(back.landing).toContain('utm_source=email');
