@@ -5279,6 +5279,7 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       amountNis: charged,
       paramToken,
       urls: paymentUrls(base, paramToken),
+      buyer: { email: c.owner_email, phone: c.owner_phone },
     });
     // Record THIS session's own charged amount + coupon so the callback for it
     // verifies against the right price (sessions with different coupons stay
@@ -5349,6 +5350,7 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
       amountNis: charged,
       paramToken,
       urls: paymentUrls(base, paramToken),
+      buyer: { email: c.owner_email, phone: c.owner_phone },
     });
     db.recordShippingInit(req.params.id, {
       paramToken,
@@ -5552,6 +5554,22 @@ app.post('/api/payment/tranzila/notify', async (req, res) => {
 // would be looking at a 404 inside the window they just paid in. Bounce it to the
 // same address as a GET; the page reads nothing but its own ?error flag.
 app.post('/pay-done.html', (req, res) => res.redirect(303, req.originalUrl));
+
+// APPLE PAY DOMAIN VERIFICATION. Apple checks this exact, extension-less address
+// on the domain the buyer pays on before Tranzila's page may show Apple Pay. The
+// file is Tranzila's (the same for every Tranzila merchant, published at
+// api.tranzila.com/assets/apple_pay/merchant_authentication_file.zip) and public.
+// It needs its own route: express.static skips dot-directories, and the SPA
+// fallback below would answer an extension-less path with the homepage.
+const APPLE_PAY_DOMAIN_FILE = path.join(
+  __dirname,
+  'apple-pay',
+  'apple-developer-merchantid-domain-association'
+);
+app.get('/.well-known/apple-developer-merchantid-domain-association', (req, res) => {
+  res.type('text/plain');
+  res.sendFile(APPLE_PAY_DOMAIN_FILE);
+});
 
 // Agent B: template onboarding and settings, in server/routes/catalog.js.
 catalogRoutes.registerTemplateOnboarding(app, {

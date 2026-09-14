@@ -241,3 +241,52 @@ describe('verifyTransaction (fail-closed)', () => {
     expect(tz.verifyTransaction(tx(), { amountNis: 79 })).toBe(false);
   });
 });
+
+describe('init: buyer details and wallets', () => {
+  const urls = {
+    goodUrl: 'https://s.example/pay-done.html',
+    errorUrl: 'https://s.example/pay-done.html?error=1',
+    notifyUrl: 'https://s.example/api/payment/tranzila/notify?t=tok123',
+  };
+
+  it("passes the buyer's email and phone, and leaves them out when the order has none", async () => {
+    const { url } = await tz.init({
+      amountNis: 79,
+      paramToken: 'tok123',
+      urls,
+      buyer: { email: 'buyer@example.com', phone: '0501234567' },
+    });
+    const q = new URL(url).searchParams;
+    expect(q.get('email')).toBe('buyer@example.com');
+    expect(q.get('phone')).toBe('0501234567');
+
+    const bare = new URL(
+      (await tz.init({ amountNis: 79, paramToken: 'tok123', urls, buyer: { email: null } })).url
+    ).searchParams;
+    expect(bare.has('email')).toBe(false);
+    expect(bare.has('phone')).toBe(false);
+  });
+
+  it('offers no wallet unless the environment switches it on', async () => {
+    const q = new URL((await tz.init({ amountNis: 79, paramToken: 'tok123', urls })).url)
+      .searchParams;
+    expect(q.has('apple_pay')).toBe(false);
+    expect(q.has('google_pay')).toBe(false);
+  });
+
+  it('adds apple_pay and google_pay each on its own switch', async () => {
+    process.env.TRANZILA_APPLE_PAY = '1';
+    let q = new URL((await load().init({ amountNis: 79, paramToken: 'tok123', urls })).url)
+      .searchParams;
+    expect(q.get('apple_pay')).toBe('1');
+    expect(q.has('google_pay')).toBe(false);
+
+    delete process.env.TRANZILA_APPLE_PAY;
+    process.env.TRANZILA_GOOGLE_PAY = '1';
+    q = new URL((await load().init({ amountNis: 79, paramToken: 'tok123', urls })).url)
+      .searchParams;
+    expect(q.has('apple_pay')).toBe(false);
+    expect(q.get('google_pay')).toBe('1');
+    delete process.env.TRANZILA_GOOGLE_PAY;
+  });
+});

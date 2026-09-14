@@ -19,6 +19,8 @@ delivery orders, and the delivery upgrade on a paid order (shipping/init).
 | `TRANZILA_SECRET`      | API secret key, from My Tranzila                             |
 | `TRANZILA_TOKEN_FIELD` | _optional_, default `dugri_token` (see below)                |
 | `TRANZILA_HANDSHAKE`   | _optional_, `1` only once Tranzila turns handshake on        |
+| `TRANZILA_APPLE_PAY`   | _optional_, `1` once Apple Pay is active for this domain     |
+| `TRANZILA_GOOGLE_PAY`  | _optional_, `1` once Google Pay is active for this domain    |
 | `PUBLIC_BASE_URL`      | the environment's own origin (staging domain on staging)     |
 
 `PAYMENT_PROVIDER=tranzila` with a missing Tranzila variable turns card payment
@@ -38,6 +40,35 @@ just before a switch still settles.
    payment charges the card but never marks the order paid** (fails closed,
    logged as `token=false`).
 3. **Notify / return addresses** come with each payment, nothing to configure.
+
+## Apple Pay and Google Pay
+
+They appear as buttons on Tranzila's own page, inside the same pay modal, and
+settle through the same verified notify as a card. What makes them appear:
+
+1. **The site** (done in code): the pay iframe carries `allow="payment"` and
+   `allowpaymentrequest`, and every environment serves Tranzila's Apple domain
+   file at `/.well-known/apple-developer-merchantid-domain-association`
+   (`server/apple-pay/`, from
+   `api.tranzila.com/assets/apple_pay/merchant_authentication_file.zip`).
+2. **Tranzila** (owner, by phone 073-2224444): activate Apple Pay and Google Pay
+   on the terminal and register each domain buyers pay on
+   (`dugri-israel.co.il`, and the staging domain to test there). Apple Pay does
+   not work until Tranzila confirms the registration.
+3. **The environment**: set `TRANZILA_APPLE_PAY=1` / `TRANZILA_GOOGLE_PAY=1`
+   once step 2 is confirmed for that environment's domain.
+
+Apple Pay shows only on Apple devices with a supported browser; everyone else
+sees the card form as before.
+
+## Accounting documents (חשבונית / קבלה)
+
+Issued by Tranzila's documents module, not by this code, so the document type
+follows the business details in the Tranzila account. Ask Tranzila to issue a
+document automatically for every iframe transaction and email it to the buyer.
+The payment page is pre-filled with the order's email and phone (`email`,
+`phone`) so the document reaches the buyer. Our own "payment received" email is
+a confirmation, not an accounting document.
 
 ## How the flow works
 

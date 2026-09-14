@@ -33,6 +33,12 @@ const TOKEN_FIELD = process.env.TRANZILA_TOKEN_FIELD || 'dugri_token';
 // once Tranzila switches it on for the terminal, becomes mandatory for every
 // charge — so it follows the terminal, set TRANZILA_HANDSHAKE=1 when it is on.
 const HANDSHAKE = process.env.TRANZILA_HANDSHAKE === '1';
+// Wallet buttons on Tranzila's page. Each works only after Tranzila activates it
+// for the terminal AND registers the domain the buyer pays on (Apple also reads
+// /.well-known/apple-developer-merchantid-domain-association there), so each is
+// switched on per environment, once that environment's domain is registered.
+const APPLE_PAY = process.env.TRANZILA_APPLE_PAY === '1';
+const GOOGLE_PAY = process.env.TRANZILA_GOOGLE_PAY === '1';
 
 const trimBase = (v, d) => (v || d).replace(/\/+$/, '');
 const IFRAME_BASE = trimBase(process.env.TRANZILA_IFRAME_BASE, 'https://directng.tranzila.com');
@@ -86,7 +92,10 @@ function toAgorot(amountNis) {
 //
 // urls: { goodUrl, errorUrl, notifyUrl } — absolute. paramToken goes both into
 // the notify URL and into TOKEN_FIELD.
-async function init({ amountNis, paramToken, urls, description = 'משחק דוגרי' } = {}) {
+//
+// buyer: { email, phone } from the order, optional. Tranzila pre-fills its form
+// with them and addresses the accounting document it issues for the charge.
+async function init({ amountNis, paramToken, urls, buyer = {}, description = 'משחק דוגרי' } = {}) {
   if (!isConfigured()) throw new Error('tranzila not configured');
   const agorot = toAgorot(amountNis);
   if (!Number.isFinite(agorot) || agorot <= 0) throw new Error('bad amount');
@@ -107,6 +116,10 @@ async function init({ amountNis, paramToken, urls, description = 'משחק דו�
     notify_url_address: urls.notifyUrl,
   });
   params.set(TOKEN_FIELD, paramToken);
+  if (buyer && buyer.email) params.set('email', String(buyer.email));
+  if (buyer && buyer.phone) params.set('phone', String(buyer.phone));
+  if (APPLE_PAY) params.set('apple_pay', '1');
+  if (GOOGLE_PAY) params.set('google_pay', '1');
 
   if (HANDSHAKE) {
     const data = await postJson(API_BASE + '/v2/handshake/create', {

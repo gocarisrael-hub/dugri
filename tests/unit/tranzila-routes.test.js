@@ -366,3 +366,30 @@ describe('POST /pay-done.html', () => {
     expect(res.headers.get('location')).toBe('/pay-done.html?error=1');
   });
 });
+
+describe('buyer details reach the payment page', () => {
+  it("pay/init sends the order's email and phone to Tranzila", async () => {
+    const c = db.createCollection('עם פרטים', { email: 'buyer@example.com', phone: '0501234567' });
+    const { r } = await openPayment(c);
+    const q = new URL(r.body.url).searchParams;
+    expect(q.get('email')).toBe('buyer@example.com');
+    expect(q.get('phone')).toBe('0501234567');
+  });
+});
+
+describe('GET /.well-known/apple-developer-merchantid-domain-association', () => {
+  it("serves Tranzila's Apple Pay domain file byte for byte, not the homepage", async () => {
+    const res = await realFetch(
+      base + '/.well-known/apple-developer-merchantid-domain-association'
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toMatch(/^text\/plain/);
+    const expected = fs.readFileSync(
+      path.join(serverDir, 'apple-pay', 'apple-developer-merchantid-domain-association'),
+      'utf8'
+    );
+    const body = await res.text();
+    expect(body).toBe(expected);
+    expect(body).not.toMatch(/<html/i);
+  });
+});

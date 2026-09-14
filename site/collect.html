@@ -3175,7 +3175,9 @@
       <a class="order-cta" id="orderCta" href="options.html" data-testid="order-cta"></a>
     </div>
 
-    <!-- credit-card payment modal (PeleCard iframe) -->
+    <!-- credit-card payment modal (the provider's hosted page: PeleCard or Tranzila).
+         allow="payment" + allowpaymentrequest let Tranzila's page offer Apple Pay and
+         Google Pay from inside the frame; without them the wallet buttons never show. -->
     <div
       id="payModal"
       class="pay-modal hidden"
@@ -3185,7 +3187,13 @@
     >
       <div class="pay-modal-card">
         <button type="button" class="pay-modal-x" id="payModalClose" aria-label="סגירה">×</button>
-        <iframe id="payFrame" title="תשלום מאובטח" src="about:blank"></iframe>
+        <iframe
+          id="payFrame"
+          title="תשלום מאובטח"
+          src="about:blank"
+          allow="payment"
+          allowpaymentrequest="true"
+        ></iframe>
       </div>
     </div>
 
