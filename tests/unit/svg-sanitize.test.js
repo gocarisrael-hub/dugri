@@ -72,6 +72,10 @@ const ATTACKS = [
   ['handler with spaces around =', `<svg ${NS}><rect onmouseover = "alert(1)"/></svg>`],
   ['handler on a new line', `<svg ${NS}><rect\nonclick="alert(1)"/></svg>`],
   ['animation handler', `<svg><animate onbegin=alert(1) attributeName=x dur=1s /></svg>`],
+  // A stray "=" starts a fresh attribute name for the HTML parser, so the handler
+  // after it is live even though the walk-back used to stop at "=".
+  ['handler after a stray = (img)', `<svg><img src=x =/onerror=alert(1)></svg>`],
+  ['handler after a stray = (a)', `<svg><a=/onmouseover=alert(1)>x</a></svg>`],
   [
     'handler hidden from a tag-aware scan by an HTML breakout',
     `<svg><p><style><g title="</style><img src=x onerror=alert(1)>"></g></style></p></svg>`,
@@ -85,6 +89,15 @@ const ATTACKS = [
   [
     'namespace-prefixed script',
     `<svg ${NS} xmlns:s="http://www.w3.org/2000/svg"><s:script>alert(1)</s:script></svg>`,
+  ],
+  // A Unicode namespace prefix: an ASCII-only prefix pattern missed these.
+  [
+    'non-ASCII prefix script (é, SVG ns)',
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:é="http://www.w3.org/2000/svg"><é:script>alert(1)</é:script></svg>`,
+  ],
+  [
+    'non-ASCII prefix iframe (ש, XHTML ns)',
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:ש="http://www.w3.org/1999/xhtml"><ש:iframe src="https://example.com/"></ש:iframe></svg>`,
   ],
   [
     'foreignObject',
@@ -183,6 +196,15 @@ const ARTWORK = [
     'Hebrew title and an ordinary link',
     `<svg ${NS}><title>דוגרי — כרטיס</title><a href="https://dugri-israel.co.il/products.html"><rect/></a></svg>`,
   ],
+  // Character data, including "on" and a bare "=", is never scanned for
+  // attributes — only tag interiors are — so a title reading like a handler is
+  // left intact and the card stays valid XML (a previous version cut through the
+  // closing tag and blanked the whole card).
+  ['text that reads like a handler', `<svg ${NS}><text>turn on = off</text></svg>`],
+  [
+    'a comment and CDATA are inert and kept',
+    `<svg ${NS}><!-- on=1 --><style><![CDATA[.a{}]]></style></svg>`,
+  ],
 ];
 
 // Real template files from the repo, whole. Chosen to cover <use>, filters, masks,
@@ -207,5 +229,83 @@ describe('sanitizeSvgForDom — real artwork is unchanged', () => {
     // Compare lengths first so a failure does not print megabytes of SVG.
     expect(out.length).toBe(art.length);
     expect(out === art).toBe(true);
+  });
+
+  it('leaves a card that reads like a handler as valid, unchanged XML', () => {
+    const art = `<svg ${NS}><text>turn on = off</text></svg>`;
+    const out = sanitize(art);
+    expect(out).toBe(art);
+    const doc = new window.DOMParser().parseFromString(out, 'image/svg+xml');
+    expect(doc.getElementsByTagName('parsererror').length).toBe(0);
+    expect(doc.documentElement.textContent).toBe('turn on = off');
+  });
+});
+
+// DTD entity expansion: libxml2 (Chrome's SVG XML parser) expands DOCTYPE
+// entities, jsdom does not — which is why the parser-judged cases above can't see
+// this one. The defence is to remove the DOCTYPE entirely, so there is nothing
+// left to define an entity. Judged on the output string.
+describe('sanitizeSvgForDom — DTDs and processing instructions are refused', () => {
+  it('strips a DOCTYPE whose entities expand into a script and a javascript: href', () => {
+    const input =
+      '<!DOCTYPE svg [<!ENTITY x "&#60;script xmlns=&#34;http://www.w3.org/2000/svg&#34;&#62;alert(1)&#60;/script&#62;">' +
+      '<!ENTITY j "javascript:alert(1)">]>' +
+      '<svg xmlns="http://www.w3.org/2000/svg">&x;<a xlink:href="&j;"><rect/></a></svg>';
+    const out = sanitize(input);
+    expect(out).not.toMatch(/<!DOCTYPE/i);
+    expect(out).not.toMatch(/<!ENTITY/i);
+    // The internal subset's "]" and ">" are consumed with the declaration.
+    expect(out).not.toContain(']>');
+    // The body survives; with no DTD, "&x;"/"&j;" are now undefined entities, so
+    // libxml2 errors instead of expanding them into live nodes.
+    expect(out).toContain('<svg');
+  });
+
+  it('strips <?xml-stylesheet?> but keeps a plain <?xml?> declaration', () => {
+    const styled = sanitize('<?xml-stylesheet href="x.xsl" type="text/xsl"?><svg><rect/></svg>');
+    expect(styled).not.toMatch(/xml-stylesheet/i);
+    expect(styled).toContain('<svg>');
+    const plain =
+      '<?xml version="1.0" encoding="UTF-8"?><svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>';
+    expect(sanitize(plain)).toBe(plain);
+  });
+});
+
+// Every crafted input the review flagged as super-linear must finish in near-
+// linear time. Generous ceilings (real machines vary); the point is that none is
+// the multi-second blow-up the old passes showed (5.9s / 3.7s), not a tight
+// benchmark.
+describe('sanitizeSvgForDom — linear on adversarial input', () => {
+  const LIMIT_MS = 1500;
+  function timed(input) {
+    const t0 = Date.now();
+    const out = sanitize(input);
+    return { ms: Date.now() - t0, out };
+  }
+
+  it('the handler pattern does not rescan from every "on" (160KB)', () => {
+    const { ms, out } = timed('<svg ' + 'on '.repeat(60000) + '><rect/></svg>');
+    expect(ms).toBeLessThan(LIMIT_MS);
+    // None of those became a live handler (no "on…=" survived as an attribute).
+    expect(htmlThreats(out)).toEqual([]);
+  });
+
+  it('an unclosed <script does not rescan to the end each pass (640KB)', () => {
+    const { ms, out } = timed('<svg><script ' + 'a'.repeat(640000));
+    expect(ms).toBeLessThan(LIMIT_MS);
+    expect(out).not.toMatch(/<script/i);
+  });
+
+  it('nested / re-forming tags settle within the pass cap (deep)', () => {
+    // Each removal could reveal another blocked tag; the fixpoint is capped, so
+    // this must terminate quickly and leave nothing live.
+    const { ms, out } = timed(
+      '<svg>' + '<scri'.repeat(20000) + '<script>alert(1)</script>' + 'pt>'.repeat(20000) + '</svg>'
+    );
+    expect(ms).toBeLessThan(LIMIT_MS);
+    // Judged by what a parser builds, not by substring: no live script survives in
+    // either the HTML (innerHTML) or the XML (direct-open) reading.
+    expect(htmlThreats(out)).toEqual([]);
+    expect(xmlThreats(out)).toEqual([]);
   });
 });

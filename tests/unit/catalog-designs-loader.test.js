@@ -146,6 +146,20 @@ describe('catalog available', () => {
     expect(Object.keys(body.fields).length).toBeGreaterThan(0);
   });
 
+  it('serves a template SVG as a sandboxed document (CSP + nosniff)', async () => {
+    const r = await fetch(base + '/api/template-image/my-custom/front');
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toMatch(/image\/svg\+xml/);
+    expect(r.headers.get('x-content-type-options')).toBe('nosniff');
+    const csp = r.headers.get('content-security-policy') || '';
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain('img-src data:');
+    expect(csp).toContain('sandbox');
+    // The body still went through the sanitizer (a script inside would be gone),
+    // and a directly opened image can run nothing under this policy.
+    expect(await r.text()).toContain('my-custom-fronts');
+  });
+
   it('GET /api/custom-designs lists only the public uploaded template with art', async () => {
     const r = await fetch(base + '/api/custom-designs');
     expect(r.status).toBe(200);

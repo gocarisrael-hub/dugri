@@ -2417,12 +2417,17 @@
             // for SVG roles that are present — a font has nothing to show, and a
             // missing file would just 404.
             if (a.present && a.kind === 'svg') {
-              // Injected INLINE, not via <img>: an <img> sandboxes the SVG and
-              // blocks external references, and a de-duplicated card's entire
-              // background is one — so every card came out an identical blank
-              // rectangle. Inline, the browser fetches that background once and
-              // reuses it across every thumbnail. The server strips anything
-              // executable before sending it.
+              // Injected INLINE, not via <img>: an <img>/blob:/data: SVG runs in
+              // the image sandbox, which blocks EVERY external reference — and a
+              // de-duplicated card's whole background is a same-origin
+              // /api/template-asset/ reference, so every such card would render as
+              // an identical blank rectangle again (the bug this thumbnail exists
+              // to avoid). Inline SVG in the live document does load that
+              // background. So it stays inline, but PARSED AS XML and appended,
+              // never `innerHTML`: the HTML parser is where breakout / mutation
+              // bypasses live, and it is unnecessary here. The server already
+              // sanitizes and sends `… sandbox` CSP; this client-side strip of any
+              // script/handler node is the second, independent defence.
               const thumb = document.createElement('span');
               thumb.className = 'asset-thumb';
               li.prepend(thumb);
@@ -2438,8 +2443,26 @@
                 .then((svg) => {
                   // A template mid-upload can hold a file that will not draw;
                   // drop the thumbnail rather than leave an empty box.
-                  if (svg) thumb.innerHTML = svg;
-                  else thumb.remove();
+                  if (!svg) return thumb.remove();
+                  const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+                  const root = doc.documentElement;
+                  if (
+                    !root ||
+                    root.nodeName === 'parsererror' ||
+                    doc.getElementsByTagName('parsererror').length ||
+                    root.nodeName.toLowerCase() !== 'svg'
+                  ) {
+                    return thumb.remove();
+                  }
+                  root
+                    .querySelectorAll('script, foreignObject, iframe, embed, object')
+                    .forEach((n) => n.remove());
+                  root.querySelectorAll('*').forEach((el) => {
+                    Array.from(el.attributes).forEach((at) => {
+                      if (/^on/i.test(at.localName || at.name)) el.removeAttribute(at.name);
+                    });
+                  });
+                  thumb.appendChild(document.importNode(root, true));
                 })
                 .catch(() => thumb.remove());
             }
