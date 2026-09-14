@@ -152,9 +152,9 @@ describe('catalog available', () => {
     expect(r.headers.get('content-type')).toMatch(/image\/svg\+xml/);
     expect(r.headers.get('x-content-type-options')).toBe('nosniff');
     const csp = r.headers.get('content-security-policy') || '';
-    expect(csp).toContain("default-src 'none'");
-    expect(csp).toContain('img-src data:');
-    expect(csp).toContain('sandbox');
+    expect(csp).toBe(
+      "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; font-src data:; sandbox"
+    );
     // The body still went through the sanitizer (a script inside would be gone),
     // and a directly opened image can run nothing under this policy.
     expect(await r.text()).toContain('my-custom-fronts');

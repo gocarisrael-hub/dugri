@@ -488,88 +488,71 @@ function registerTemplateRevert(app, { requireAdmin, TEMPLATE_ROOT, templates })
   });
 }
 
-// Strip anything executable from an SVG before it reaches a page. Both template
-// SVG routes send their output through this, and both ALSO ship a
-// `Content-Security-Policy: … sandbox` header (below) so a directly opened image
-// cannot run script even if a byte slips past here — this function is the first
-// of two independent defences, never the only one.
+// Strip anything executable from a template SVG before it is served. Both template
+// SVG routes send their output through this.
 //
-// Why the admin thumbnails inject inline (`appendChild` of a parsed node) rather
-// than `<img src>`: an SVG loaded through <img>, a blob: URL or a data: URL runs
-// in the image sandbox, which blocks EVERY external reference — including the
-// same-origin /api/template-asset/ URL a de-duplicated card points its background
-// at — so those cards would each render as an identical blank rectangle again,
-// the exact bug inline injection was added to fix. Inline SVG in the live
-// document does load that background. The admin page therefore parses the markup
-// as XML (never innerHTML) and strips script/handler nodes client-side too, so
-// this server-side pass is again one of two defences there.
+// WHAT IT TARGETS: the XML parser, and only that. Both routes answer
+// `image/svg+xml`, and the one way a response becomes a live document is opening
+// the URL directly, which parses it as XML. No production path hands these
+// responses to an HTML parser: the storefront, wizard, collect and admin-images
+// pages use <img src> (an SVG image runs no script and loads nothing external),
+// admin-bench draws through a data: <img>, and the admin checklist
+// (admin-templates.html) parses with DOMParser as image/svg+xml and runs its own
+// allowlist over the parsed tree before inserting it. This scanner therefore makes
+// NO claim about what an HTML parser (innerHTML) would build from its output, and
+// nothing in XML is raw text: a <script> inside <style> or <title> is a script
+// element like any other, and is removed like any other.
 //
-// The parser: there is no HTML/XML parser among the server's dependencies
-// (express only; svgo is a dev-only tool, absent at runtime, and adding a
-// dependency for this was not warranted). So this is a single linear left-to-right
-// scan that COPIES safe bytes verbatim and DROPS only dangerous spans — which is
-// both why real artwork comes out byte-identical (tests/unit/svg-sanitize.test.js
-// sweeps real template files) and why it is O(n): every character is visited once,
-// and each element/attribute/close-tag search advances the cursor past what it
-// scanned. Because the scan copies tag INTERIORS as attribute text and never
-// re-parses a "<" inside one, the only way an attack reforms a tag across a cut is
-// caught by a bounded fixpoint (SVG_SANITIZE_MAX_PASSES); art stabilises on the
-// first pass (no change), and anything still mutating after the cap fails closed
+// It is one of two defences on a direct open. The other is TEMPLATE_SVG_CSP (no
+// script, sandboxed), so a byte that slips past here still cannot run.
+//
+// Why a scanner and not a parser: express is the server's only runtime dependency
+// (svgo is a dev-only tool, absent at runtime). The scan COPIES safe bytes
+// verbatim and DROPS only dangerous spans, so well-formed art comes out
+// byte-identical (tests/unit/svg-sanitize.test.js checks real template files).
+//
+// It is O(n) per pass. The cursor only moves forward; a tag's end is looked for
+// once, from that tag's own "<", and the next search starts past it. A tag with no
+// closing ">" ends the scan: everything from it on is dropped, because an XML
+// parser renders nothing past a tag it cannot close, and re-scanning from the next
+// "<" is exactly what made the previous version quadratic. A "<" that does not
+// start a name is copied as one character without any search. A bounded fixpoint
+// (SVG_SANITIZE_MAX_PASSES) catches a removal that re-forms a tag; real art is
+// stable on the first pass, and anything still changing at the cap fails closed
 // to "".
 const SVG_BLOCKED_ELEMENTS = new Set(['script', 'foreignobject', 'iframe', 'embed', 'object']);
-// The HTML parser reads these elements' content as raw text, not markup, so a "<"
-// inside them (even inside what looks like a quoted attribute) does NOT start a
-// tag — which is how `<style><g title="</style><img onerror=…>` smuggles a live
-// handler past a scanner that trusts quotes. Their content is therefore copied
-// verbatim up to the matching close tag (exactly the HTML parser's own boundary),
-// so the scan agrees with the parser about where the element ends. Content stays
-// byte-identical (real art's <style>/<title> come out unchanged) and is inert
-// anyway — CSS/text can't run script, and the CSP header blocks any url()/@import
-// on a directly opened image.
-const SVG_RAWTEXT_ELEMENTS = new Set([
-  'style',
-  'title',
-  'textarea',
-  'noscript',
-  'noframes',
-  'noembed',
-  'xmp',
-]);
 const SVG_SANITIZE_MAX_PASSES = 8;
 
 // The second, independent defence for a template SVG opened DIRECTLY as a document
-// (both routes below set it). Even if a byte slips past sanitizeSvgForDom, this
-// tells the browser the document may run no script and reach no network: only its
-// own inline styles, data: images and data: fonts — which is all real card art
-// needs. `sandbox` (no allow-tokens) drops it to an opaque origin with scripting
-// disabled. It does NOT change how the storefront shows these SVGs (there they are
-// <img src>, where a response's CSP does not apply and the image sandbox already
-// blocks scripts and external refs); it only hardens the direct-navigation view.
+// (both routes below set it): the document may run no script and fetch nothing but
+// images from data: or our own origin, inline styles and data: fonts. `sandbox`
+// (no allow-tokens) gives it an opaque origin with scripting disabled. `img-src
+// 'self'` is there for de-duplicated cards, whose background is an
+// "../assets/<sha>.png" reference rewritten to /api/template-asset/… (without it a
+// directly opened card lost its background). No page loads these routes as a
+// document — they are all <img src>, where a response CSP does not apply — so this
+// only hardens the direct-open view.
 const TEMPLATE_SVG_CSP =
-  "default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:; sandbox";
+  "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; font-src data:; sandbox";
 
-// The local name of a possibly namespace-prefixed tag name, lower-cased. The
-// prefix is anything up to the first ":", and Unicode: `<é:script>` and
-// `<ש:iframe>` are as blocked as `<svg:script>` (an ASCII-only `[\w.-]+:` missed
-// them). A name with no prefix is its own local name.
+// The local name of a possibly namespace-prefixed name, lower-cased. The prefix is
+// anything up to the first ":", in any script: `<é:script>` and `<ש:iframe>` are as
+// blocked as `<svg:script>`.
 function svgLocalName(name) {
   const colon = name.indexOf(':');
   return (colon === -1 ? name : name.slice(colon + 1)).toLowerCase();
 }
 
-// A tag-name / attribute-name character: anything that is not a delimiter. "="
-// counts as a delimiter, so a stray "=" starts a fresh attribute name the way the
-// HTML tokenizer treats it (`<img src=x =/onerror=…>` → `onerror` is its own
-// attribute). "<" is a delimiter too, so a "<" wedged inside a tag ends the name.
+// A name character: anything that is not whitespace, "/", "=", "<", ">" or a quote.
 function svgIsNameChar(ch) {
   return ch !== undefined && !/[\s/=><"']/.test(ch);
 }
 
-// Would a browser read this attribute value as a script URL? Character references
-// are decoded (&#106; &#x6A &colon; &Tab; …) and every ASCII whitespace/control
-// character dropped, because the URL parser ignores them: "java&#x09;script:" and
-// "  JavaScript:" both run. Checked anywhere in the value, which also covers a
-// <set to="javascript:…"> or an <animate values="#a;javascript:…"> aimed at href.
+// Would this attribute value be read as a script URL? Character references are
+// decoded (&#106; &#x6A; …) and every ASCII whitespace/control character dropped,
+// because the URL parser ignores them: "java&#x09;script:" and "  JavaScript:" both
+// run. Checked anywhere in the value, which also covers <set to="javascript:…"> and
+// <animate values="#a;javascript:…"> aimed at an href.
 function svgValueRunsScript(value) {
   if (!/[:&]/.test(value)) return false;
   const decoded = value.replace(
@@ -584,17 +567,14 @@ function svgValueRunsScript(value) {
   return /(?:java|vb)script:/.test(bare);
 }
 
-// Clean ONE tag's interior (the text between "<" and ">", a leading "/" kept for a
-// close tag). Copies it verbatim except that event-handler attributes (name
-// starts with "on") and any attribute whose value is a script URL are removed with
-// their value. Nothing is reordered or re-spaced, so a tag with no such attribute
-// comes back byte-for-byte — which is the whole artwork-unchanged guarantee.
+// Clean ONE tag's interior (the text between "<" and ">"). Copies it verbatim except
+// that event-handler attributes (name starts with "on") and any attribute whose
+// value is a script URL are removed with their value. Nothing is reordered or
+// re-spaced, so a tag without such an attribute comes back byte-for-byte.
 function svgCleanTag(inner) {
-  let i = inner[0] === '/' ? 1 : 0;
-  while (i < inner.length && svgIsNameChar(inner[i])) i++;
-  const nameEnd = i;
+  let j = inner[0] === '/' ? 1 : 0;
+  while (j < inner.length && svgIsNameChar(inner[j])) j++;
   const cuts = [];
-  let j = nameEnd;
   const L = inner.length;
   while (j < L) {
     const ch = inner[j];
@@ -610,13 +590,13 @@ function svgCleanTag(inner) {
     const nameStart = j;
     while (j < L && svgIsNameChar(inner[j])) j++;
     if (j === nameStart) {
-      j++; // a stray "<" or ">" lodged in the tag: skip it so j always advances
+      j++; // a stray "<" inside the tag: step over it, so j always advances
       continue;
     }
     const attrName = inner.slice(nameStart, j);
     let k = j;
     while (k < L && /\s/.test(inner[k])) k++;
-    let end = j; // no value: span is just the name
+    let end = j;
     let value = '';
     if (inner[k] === '=') {
       k++;
@@ -627,7 +607,7 @@ function svgCleanTag(inner) {
         value = inner.slice(k + 1, close === -1 ? L : close);
       } else {
         let m = k;
-        while (m < L && !/\s/.test(inner[m])) m++; // unquoted value ends at whitespace (no ">" is left inside a tag)
+        while (m < L && !/\s/.test(inner[m])) m++;
         end = m;
         value = inner.slice(k, m);
       }
@@ -647,8 +627,8 @@ function svgCleanTag(inner) {
 }
 
 // The end of a "<!DOCTYPE …>" / "<!ENTITY …>" declaration: the next ">", but a
-// DOCTYPE's internal subset ("[ … ]") may itself contain ">", so a "[" is skipped
-// to its "]" first. Returns the index just past the closing ">".
+// DOCTYPE's internal subset ("[ … ]") may contain ">", so a "[" is skipped to its
+// "]" first. Returns the index just past the ">" (or the end of the input).
 function svgSkipDeclaration(s, lt) {
   let i = lt + 2;
   while (i < s.length) {
@@ -664,24 +644,29 @@ function svgSkipDeclaration(s, lt) {
   return s.length;
 }
 
-// The index of the matching ">" for a tag opened at "<" (position lt), skipping
-// any ">" that sits inside a quoted attribute value.
+// The index of the ">" that ends the tag opened at "<" (position lt), skipping a
+// ">" inside a quoted attribute value; -1 when the tag never closes. A "<" outside
+// quotes also means it never closes: XML allows no "<" inside a tag, so the parser
+// stops there, and so does the scan (rather than letting the tag swallow the next
+// tag's ">", which would carry that tag's bytes through uncleaned).
 function svgTagEnd(s, lt) {
   let i = lt + 1;
   while (i < s.length) {
     const c = s[i];
     if (c === '"' || c === "'") {
       const close = s.indexOf(c, i + 1);
-      i = close === -1 ? s.length : close + 1;
+      if (close === -1) return -1;
+      i = close + 1;
       continue;
     }
     if (c === '>') return i;
+    if (c === '<') return -1;
     i++;
   }
   return -1;
 }
 
-// One linear pass. Copies safe bytes, drops dangerous spans.
+// One forward pass: copies safe bytes, drops dangerous spans.
 function svgSanitizePass(s) {
   let out = '';
   let i = 0;
@@ -693,62 +678,60 @@ function svgSanitizePass(s) {
       out += s.slice(i);
       break;
     }
-    out += s.slice(i, lt); // character data between tags: copied verbatim
+    out += s.slice(i, lt); // character data: copied verbatim
     if (s.startsWith('<!--', lt)) {
       const e = s.indexOf('-->', lt + 4);
       const end = e === -1 ? n : e + 3;
-      out += s.slice(lt, end); // comments are inert: kept verbatim
+      out += s.slice(lt, end); // an XML comment is inert
       i = end;
       continue;
     }
     if (s.startsWith('<![CDATA[', lt)) {
       const e = s.indexOf(']]>', lt + 9);
       const end = e === -1 ? n : e + 3;
-      out += s.slice(lt, end); // CDATA is character data: kept, and not misparsed
+      out += s.slice(lt, end); // CDATA is character data in XML
       i = end;
       continue;
     }
     if (s[lt + 1] === '!') {
-      // <!DOCTYPE …> / <!ENTITY …>: DROPPED. Removing the DOCTYPE removes every
-      // entity definition, so an entity-expansion payload has nothing to expand
-      // (libxml2, Chrome's SVG XML parser, then errors on the undefined reference
-      // and renders nothing — it never becomes a live <script> or javascript:).
+      // <!DOCTYPE …> / <!ENTITY …>: DROPPED. Without the DOCTYPE no entity is
+      // defined, so an entity-expansion payload (which libxml2 would expand into a
+      // live <script> or a javascript: value) has nothing to expand; the XML parser
+      // errors on the undefined reference and renders nothing.
       i = svgSkipDeclaration(s, lt);
       continue;
     }
     if (s[lt + 1] === '?') {
       const e = s.indexOf('?>', lt + 2);
       const end = e === -1 ? n : e + 2;
-      // <?xml-stylesheet …?> can pull in an external stylesheet: DROPPED. A plain
-      // <?xml …?> declaration is inert and kept, so it stays byte-identical.
+      // <?xml-stylesheet …?> can pull in a stylesheet: DROPPED. A plain <?xml …?>
+      // declaration is inert and kept, so art that has one stays byte-identical.
       if (!/^<\?xml-stylesheet/i.test(s.slice(lt, end))) out += s.slice(lt, end);
       i = end;
       continue;
     }
-    const gt = svgTagEnd(s, lt);
-    const unclosed = gt === -1;
-    const inner = s.slice(lt + 1, unclosed ? n : gt);
-    let p = inner[0] === '/' ? 1 : 0;
+    // The name first, without searching: a "<" that starts no name is copied as one
+    // character, so a run of them costs nothing.
+    const p = s[lt + 1] === '/' ? lt + 2 : lt + 1;
     let q = p;
-    while (q < inner.length && svgIsNameChar(inner[q])) q++;
+    while (q < n && svgIsNameChar(s[q])) q++;
     if (q === p) {
-      out += '<'; // "<" not starting a name (e.g. "< "): literal text
+      out += '<';
       i = lt + 1;
       continue;
     }
-    if (SVG_BLOCKED_ELEMENTS.has(svgLocalName(inner.slice(p, q)))) {
-      if (unclosed) {
-        i = n; // an unclosed blocked tag ("<script aaa…" with no ">"): drop the rest
-        continue;
-      }
+    const gt = svgTagEnd(s, lt);
+    if (gt === -1) break; // an unclosed tag ends the document for an XML parser
+    const inner = s.slice(lt + 1, gt);
+    const local = svgLocalName(s.slice(p, q));
+    if (SVG_BLOCKED_ELEMENTS.has(local)) {
       if (inner[0] === '/' || inner[inner.length - 1] === '/') {
-        i = gt + 1; // a close tag or self-closing tag: drop just the tag
+        i = gt + 1; // a close tag or a self-closing tag: drop just the tag
         continue;
       }
-      // An open blocked element: drop it AND its content up to the matching close
-      // tag (any prefix). indexOf-style search that never rescans, so still linear.
+      // An open blocked element: drop it and its content up to the next close tag
+      // with the same local name (any prefix); none left means drop to the end.
       closeRe.lastIndex = gt + 1;
-      const local = svgLocalName(inner.slice(p, q));
       let m;
       let closeEnd = n;
       while ((m = closeRe.exec(s))) {
@@ -758,38 +741,6 @@ function svgSanitizePass(s) {
         }
       }
       i = closeEnd;
-      continue;
-    }
-    if (
-      SVG_RAWTEXT_ELEMENTS.has(svgLocalName(inner.slice(p, q))) &&
-      inner[0] !== '/' &&
-      !unclosed &&
-      inner[inner.length - 1] !== '/'
-    ) {
-      // Clean the open tag itself (a handler on <style …> is still a handler), then
-      // copy content VERBATIM to the matching close tag — the HTML parser's own
-      // rawtext boundary, so a "</style>" inside a quoted value ends it here too.
-      out += '<' + svgCleanTag(inner) + '>';
-      closeRe.lastIndex = gt + 1;
-      const local = svgLocalName(inner.slice(p, q));
-      let m;
-      let after = n;
-      while ((m = closeRe.exec(s))) {
-        if (svgLocalName(m[1]) === local) {
-          after = m.index + m[0].length;
-          break;
-        }
-      }
-      out += s.slice(gt + 1, after); // content + its close tag, verbatim
-      i = after;
-      continue;
-    }
-    if (unclosed) {
-      // A non-blocked tag with no ">" (truncated markup): emit "<" literally and
-      // let the remainder be treated as text. Nothing dangerous, since the name is
-      // not a blocked element.
-      out += '<';
-      i = lt + 1;
       continue;
     }
     out += '<' + svgCleanTag(inner) + '>';
@@ -802,11 +753,10 @@ function sanitizeSvgForDom(svg) {
   let s = String(svg);
   for (let pass = 0; pass < SVG_SANITIZE_MAX_PASSES; pass++) {
     const next = svgSanitizePass(s);
-    if (next === s) return s; // stable — real artwork reaches here on pass 0
+    if (next === s) return s; // stable: real artwork returns here on the first pass
     s = next;
   }
-  // Still mutating after the cap: an adversarial self-reforming payload. Fail
-  // closed to a blank card rather than ship something the scan can't settle.
+  // Still changing at the cap: a self-re-forming payload. Fail closed.
   return svgSanitizePass(s) === s ? s : '';
 }
 
