@@ -367,6 +367,51 @@ test('a batch that fails mid-upload still shows the photos already stored', asyn
   expect(state.pawn_images).toHaveLength(4);
 });
 
+// A PHOTO REFUSED EARLIER IS NOT COUNTED AS LOST LATER.
+//
+// When batch one comes back with a photo the server deliberately skipped (a format
+// it cannot read) and batch two then fails, the skip used to be forgotten with the
+// `try` it was declared in: she read "3 photos not uploaded, try again", with no
+// save-as-JPG advice, and retrying re-sent the same unreadable file.
+test('a photo the server skipped before a later batch failed keeps its own reason', async ({
+  page,
+}) => {
+  const { url } = await createCollection(page, 'Shira', { players: 8 });
+  let posts = 0;
+  await page.route('**/api/collections/*/pawns*', async (route) => {
+    if (route.request().method() !== 'POST') return route.continue();
+    posts++;
+    if (posts === 1) {
+      // The real server stores the batch; its answer then reports one of the four
+      // as refused, the way the route does for a file it cannot type.
+      const res = await route.fetch();
+      const body = await res.json();
+      body.pawn_images = body.pawn_images.slice(0, 3);
+      body.skipped = [{ name: 'pawn3', filename: 'IMG_0004.HEIC', reason: 'unsupported' }];
+      return route.fulfill({ response: res, json: body });
+    }
+    return route.fulfill({ status: 500, contentType: 'application/json', body: '{"error":"x"}' });
+  });
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  await page.getByTestId('pawn-add-input').setInputFiles(
+    [0, 1, 2, 3, 4, 5].map((i) => ({
+      name: `skip${i}.png`,
+      mimeType: 'image/png',
+      buffer: Buffer.concat([PNG_BYTES, Buffer.from(`skip-photo-${i}`)]),
+    }))
+  );
+
+  await expect(page.getByTestId('pawn-thumb')).toHaveCount(3);
+  expect(posts).toBe(2);
+  const err = page.locator('#pawnErr');
+  // Six picked: three stored, one refused on purpose, two lost with the failed batch.
+  await expect(err).toContainText('2 תמונות לא הועלו');
+  await expect(err).toContainText('JPG');
+  await expect(err).not.toContainText('3 תמונות לא הועלו');
+});
+
 // SHE ARRIVED WITHOUT THE PHOTOS SHE SENT, and this is where she finds out.
 //
 // The wizard uploads after the order exists and then redirects here. When some of

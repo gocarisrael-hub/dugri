@@ -1023,6 +1023,87 @@
         color: var(--muted);
         margin: 8px 0 0;
       }
+      /* ONE BOX PER PAWN CARD, stacked. Four is the most a deck can carry and they
+         are read one after another — she cuts them one at a time — so a column
+         beats a grid that would shrink each card to a thumbnail. */
+      .pawn-cards {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+      }
+      /* HOW MANY PLAYERS. Same control as the wizard's pawns step
+         (site/options.html), same arithmetic — it is the same choice, met again. */
+      .pawn-count-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 4px 0 8px;
+      }
+      .pawn-count {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 6px;
+        flex: 1;
+      }
+      .pawn-count button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--ink);
+        font: inherit;
+        font-size: 16px;
+        font-weight: 600;
+        padding: 8px 0;
+        cursor: pointer;
+      }
+      .pawn-count button[aria-pressed='true'] {
+        background: var(--ink);
+        border-color: var(--ink);
+        color: #fff;
+      }
+      .pawn-budget-main {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+      .pawn-budget-main b {
+        font-weight: 700;
+      }
+      .pawn-budget-note {
+        margin: 2px 0 0;
+        font-size: 13.5px;
+        line-height: 1.45;
+        color: var(--muted);
+      }
+      /* THE REFUSAL. Raising the count lowers her word ceiling, and her list may
+         already be past it. Never a greyed-out button with no reason: this says
+         both numbers and how many words to delete. */
+      .players-refuse {
+        margin-top: 10px;
+        padding: 12px;
+        border: 1px solid var(--accent-deep);
+        background: var(--accent-tint);
+      }
+      .players-refuse p {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.55;
+      }
+      .players-refuse p + p {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .players-refuse-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+      .players-refuse-actions button {
+        font-size: 15px;
+        padding: 8px 16px;
+      }
       /* The remove control sits ON the photo, at the corner the thumb's own
          content is least likely to matter (a face is centred). Big enough to hit
          with a thumb — 26px, over the 24px floor — without covering the picture. */
@@ -2128,17 +2209,64 @@
              send?"; this answers the question she is actually asking, which is
              what her guests will be holding. Rendered by the generator through
              the same path the deck uses (GET .../pawn-card). -->
-        <div class="prev-box pawn-live" id="pawnPrevBox">
-          <img id="pawnPrevImg" alt="קלף החיילים שלכם" data-testid="pawn-card-preview" />
-          <div class="pawn-live-slots" id="pawnLiveSlots" aria-hidden="true"></div>
-          <span class="prev-busy" data-edit="collect-pawn-card-rendering">מעדכן…</span>
-          <span class="prev-fail hidden" id="pawnPrevFail" data-edit="collect-pawn-card-fail"
-            >לא הצלחנו להציג את הקלף כרגע</span
-          >
+        <!-- ONE BOX PER PAWN CARD. The deck carries one per four players, and the
+             first keeps the ids the alignment harness and the E2E specs address it
+             by (#pawnPrevBox / #pawnPrevImg / #pawnLiveSlots); the rest are clones
+             appended beside it. A chooser that let her ask for twelve pawns while
+             showing one card would be a preview that lies, which is the one thing
+             this panel exists not to do. -->
+        <div id="pawnPrevCards" class="pawn-cards">
+          <div class="prev-box pawn-live" id="pawnPrevBox">
+            <img id="pawnPrevImg" alt="קלף החיילים שלכם" data-testid="pawn-card-preview" />
+            <div class="pawn-live-slots" id="pawnLiveSlots" aria-hidden="true"></div>
+            <span class="prev-busy" data-edit="collect-pawn-card-rendering">מעדכן…</span>
+            <span class="prev-fail hidden" id="pawnPrevFail" data-edit="collect-pawn-card-fail"
+              >לא הצלחנו להציג את הקלף כרגע</span
+            >
+          </div>
         </div>
         <p class="pawn-final" data-edit="collect-pawn-final-note" data-testid="pawn-final-note">
           זו התוצאה הסופית - בדיוק ככה הקלף יודפס וייצא אליכם.
         </p>
+
+        <!-- HOW MANY PLAYERS, the same choice the wizard offered — she can still
+             change it while the collection is open. The deck is always 104 cards,
+             so more pawn cards means fewer word cards, and RAISING the count can
+             be refused: her list may already be longer than the smaller deck
+             holds. The refusal says both numbers and how many words to delete
+             (server: db.setPlayers), because a disabled button with no reason is
+             not an answer. -->
+        <div class="sheet-fld" id="playersFld">
+          <span class="fld" data-edit="collect-sheet-players-label">כמה שחקנים</span>
+          <div class="pawn-count-row">
+            <div
+              class="pawn-count"
+              id="playersCount"
+              data-testid="players-count"
+              role="group"
+              aria-label="מספר שחקנים"
+            ></div>
+          </div>
+          <p class="pawn-budget-main" id="playersBudget" data-testid="players-budget"></p>
+          <p class="pawn-budget-note" id="playersNote" data-testid="players-note"></p>
+          <!-- Any failure that is not the too-many-words refusal: a lost connection,
+               a refused token. Short, and cleared on the next attempt. -->
+          <div class="pawn-err hidden" id="playersErr" role="alert" data-testid="players-err"></div>
+          <!-- Only ever shown with the numbers filled in. -->
+          <div class="players-refuse hidden" id="playersRefuse" data-testid="players-refuse">
+            <p id="playersRefuseMain"></p>
+            <p id="playersRefuseWhy"></p>
+            <div class="players-refuse-actions">
+              <button type="button" id="playersRefuseWords" data-testid="players-refuse-words">
+                לרשימת המילים
+              </button>
+              <button type="button" class="ghost" id="playersRefuseKeep">להישאר כמו שזה</button>
+            </div>
+          </div>
+          <small class="muted hidden" id="playersClosed" data-edit="collect-sheet-players-closed"
+            >האיסוף נסגר - מספר השחקנים כבר בהפקה.</small
+          >
+        </div>
 
         <!-- OPEN and CLOSED are two different sentences about the same photos, so
              they are two elements rather than one string this file rewrites. Both
@@ -3591,6 +3719,188 @@
       // rebuilt when the ANSWER changed.
       let pawnSig = null;
 
+      // ---- HOW MANY PLAYERS, on the page she revisits -------------------------
+      // The same choice the wizard's pawns step offered, met again while the
+      // collection is open. The deck is always 104 cards, so more pawn cards means
+      // fewer word cards — and RAISING the count can be refused, because her list
+      // may already be longer than the smaller deck holds. The server decides
+      // that (db.setPlayers) and returns the numbers; this turns them into a
+      // sentence with something to do about it.
+      const PLAYER_COUNTS = [4, 8, 12, 16];
+      // What she last ASKED for, while the request is in flight — so the button
+      // she pressed is the one that looks pressed, and a refusal can name it.
+      let playersAsked = null;
+      // A request (or the refresh after a `closed` refusal) is in flight: every
+      // count button is disabled, so none can be pressed against a stale state.
+      let playersBusy = false;
+      // STALE POLLS. Every collection fetch takes a tick when it STARTS, and a
+      // successful count change takes one when it lands. A fetch that started
+      // before that save carries the old count and ceiling, so its answer is
+      // dropped rather than allowed to roll the page back.
+      let fetchClock = 0;
+      let playersSavedAt = 0;
+
+      function playersNow() {
+        return Number(state && state.players) || PLAYER_COUNTS[0];
+      }
+
+      // ONE definition of "collected" on this panel, for the line under the count
+      // and for the refusal alike: the stored words, and — named as such — the
+      // held ones waiting for payment. The server's refusal counts both (a held
+      // word becomes a real one the moment she pays), so a line that showed only
+      // the stored ones would disagree with it on the same screen.
+      function playersCollectedText(words, held) {
+        return 'נאספו ' + words + ' מילים' + (held > 0 ? ' ועוד ' + held + ' שממתינות להוספה' : '');
+      }
+
+      function showPlayersErr(msg) {
+        const el = $('#playersErr');
+        if (!el) return;
+        el.textContent = msg || '';
+        el.classList.toggle('hidden', !msg);
+      }
+
+      function showPlayersRefusal(info) {
+        const box = $('#playersRefuse');
+        if (!box) return;
+        if (!info) {
+          box.classList.add('hidden');
+          return;
+        }
+        $('#playersRefuseMain').textContent =
+          'כדי לעבור ל-' + info.players + ' שחקנים צריך למחוק ' + info.remove + ' מילים.';
+        // Both numbers, in her units: what is already collected, and what the
+        // deck she is asking for would hold.
+        $('#playersRefuseWhy').textContent =
+          'כבר ' +
+          playersCollectedText(info.words, info.held || 0) +
+          ', ו-' +
+          info.players +
+          ' שחקנים משאירים מקום ל-' +
+          info.deck_words +
+          ' בלבד (' +
+          info.pawn_cards +
+          ' קלפי חיילים, ' +
+          info.deck_words / 4 +
+          ' קלפי מילים).';
+        box.classList.remove('hidden');
+      }
+
+      async function setPlayers(n) {
+        if (!isOwner || playersBusy || n === playersNow()) return;
+        playersAsked = n;
+        playersBusy = true;
+        showPlayersRefusal(null);
+        showPlayersErr('');
+        renderPlayers();
+        try {
+          const r = await api('/players?k=' + encodeURIComponent(ownerToken), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ players: n }),
+          });
+          playersAsked = null;
+          playersBusy = false;
+          playersSavedAt = ++fetchClock;
+          if (state) {
+            state.players = r.players;
+            state.pawn_cards = r.pawn_cards;
+            state.deck_words = r.deck_words;
+          }
+          MAX_WORDS = r.deck_words || MAX_WORDS;
+          // The cards below ARE the choice — a count with the old number of cards
+          // under it would be the preview lying again.
+          pawnCardLoaded = false;
+          loadPawnCard();
+          render();
+        } catch (e) {
+          playersAsked = null;
+          const error = e && e.body && e.body.error;
+          if (e && e.status === 409 && error === 'words') {
+            // Her list is already longer than the deck she asked for: both
+            // numbers, and the way out.
+            showPlayersRefusal(e.body);
+          } else if (e && e.status === 409 && error === 'closed') {
+            // The collection closed since the last poll. Fetch it now, with the
+            // buttons still disabled, so the closed state (no buttons) replaces
+            // them at once instead of five seconds of a control that cannot work.
+            renderPlayers();
+            await refresh();
+          } else {
+            // A refused token or a lost connection: nothing moved, and she is told.
+            showPlayersErr('לא הצלחנו לשנות את מספר השחקנים. נסו שוב.');
+          }
+          playersBusy = false;
+          renderPlayers();
+        }
+      }
+
+      function renderPlayers() {
+        const row = $('#playersCount');
+        const fld = $('#playersFld');
+        if (!row || !fld) return;
+        const open = state && state.status === 'open';
+        // Owner only, and only while the collection is open: once the deck is in
+        // production the count is what it is, and a control that silently 409s is
+        // worse than one that is not there.
+        fld.classList.toggle('hidden', !isOwner);
+        $('#playersClosed').classList.toggle('hidden', open);
+        row.classList.toggle('hidden', !open);
+        if (!row.children.length) {
+          PLAYER_COUNTS.forEach((n) => {
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = String(n);
+            b.setAttribute('data-players', String(n));
+            b.setAttribute('data-testid', 'players-' + n);
+            b.addEventListener('click', () => setPlayers(n));
+            row.appendChild(b);
+          });
+        }
+        const showing = playersAsked || playersNow();
+        Array.from(row.children).forEach((b) => {
+          b.setAttribute('aria-pressed', b.getAttribute('data-players') === String(showing));
+          b.disabled = !open || playersBusy;
+        });
+        // THE BOXES FOLLOW THE COUNT, whoever changed it. The buttons re-render on
+        // every poll, so a count changed on another device (or by the owner in the
+        // admin) reaches them; the preview has to follow the same answer, or it
+        // shows one card under a count that promises three.
+        if (pawnCardLoaded && pawnCardBoxes().length !== pawnCardCount()) renderPawnCard();
+        const cards = pawnCardCount();
+        const words = Number(state && state.deck_words) || MAX_WORDS;
+        $('#playersBudget').innerHTML =
+          playersNow() +
+          ' שחקנים · ' +
+          cards +
+          ' ' +
+          (cards === 1 ? 'קלף חיילים' : 'קלפי חיילים') +
+          ' · <b>עד ' +
+          words +
+          ' מילים</b>';
+        $('#playersNote').textContent = playersCollectedText(
+          state && Array.isArray(state.words) ? state.words.length : 0,
+          state && Array.isArray(state.held_words) ? state.held_words.length : 0
+        );
+      }
+
+      // The way OUT of the refusal, both halves of it: go and delete some words,
+      // or keep the deck she has. Wired once — the block itself is only shown
+      // with the numbers filled in.
+      (function wirePlayersRefusal() {
+        const words = $('#playersRefuseWords');
+        const keep = $('#playersRefuseKeep');
+        if (words) {
+          words.addEventListener('click', () => {
+            showPlayersRefusal(null);
+            // The words tab is where the deleting happens; sending her there with
+            // the number still on screen would be a dead end.
+            showTab('words');
+          });
+        }
+        if (keep) keep.addEventListener('click', () => showPlayersRefusal(null));
+      })();
+
       function renderPawns() {
         const strip = $('#pawnStrip');
         if (!strip) return;
@@ -3993,11 +4303,11 @@
       // and on an iPhone it left a 36px band down each side — enough to stretch
       // every pawn into an ellipse 27% too wide and drag the left-hand pair 22px
       // clear of their rings. Measuring beats assuming, and costs nothing.
-      function fitLiveSlots() {
-        const layer = $('#pawnLiveSlots');
-        const img = $('#pawnPrevImg');
-        const frame = $('#pawnPrevBox');
-        if (!layer || !img || !frame) return;
+      function fitLiveSlots(frame) {
+        if (!frame) return;
+        const layer = frame.querySelector('.pawn-live-slots');
+        const img = frame.querySelector('img');
+        if (!layer || !img) return;
         const ir = img.getBoundingClientRect();
         const fit = containRect(ir.width, ir.height, img.naturalWidth, img.naturalHeight);
         // No picture yet (or none that has decoded): leave the layer as the
@@ -4022,19 +4332,81 @@
       // a desktop window drag, the address bar collapsing on a phone — and a
       // layer measured at the old size is a layer in the wrong place. Watching the
       // image is cheaper and more honest than a resize listener with a debounce.
-      function watchPawnCardSize() {
-        const img = $('#pawnPrevImg');
+      const pawnSizeWatched = new WeakSet();
+      function watchPawnCardSize(frame) {
+        const img = frame && frame.querySelector('img');
         if (!img || typeof ResizeObserver === 'undefined') return;
+        // Once per picture — this is called on every render, and a second observer
+        // on the same image is a second redraw for every resize.
+        if (pawnSizeWatched.has(img)) return;
+        pawnSizeWatched.add(img);
         new ResizeObserver(() => {
-          fitLiveSlots();
+          fitLiveSlots(frame);
         }).observe(img);
       }
 
+      // ---- one box per pawn card ---------------------------------------------
+      // The deck carries one pawn card per four players. The FIRST box is the
+      // markup's — it keeps the ids the alignment harness and the E2E specs
+      // address (#pawnPrevBox / #pawnPrevImg / #pawnLiveSlots) — and the rest are
+      // clones of it, built here so there is one definition of what a box is.
+      function pawnCardCount() {
+        return Math.max(1, Number(state && state.pawn_cards) || 1);
+      }
+      function pawnCardBoxes() {
+        const host = $('#pawnPrevCards');
+        return host ? Array.from(host.querySelectorAll('.prev-box.pawn-live')) : [];
+      }
+      function ensurePawnCardBoxes() {
+        const host = $('#pawnPrevCards');
+        const first = host && host.querySelector('.prev-box.pawn-live');
+        if (!host || !first) return [];
+        const want = pawnCardCount();
+        let boxes = pawnCardBoxes();
+        while (boxes.length > want) {
+          // Never the first — its ids are load-bearing.
+          host.removeChild(boxes.pop());
+        }
+        while (boxes.length < want) {
+          const el = first.cloneNode(true);
+          // Ids are the first box's alone; the clones are found by class.
+          el.removeAttribute('id');
+          el.querySelectorAll('[id]').forEach((n) => n.removeAttribute('id'));
+          el.classList.remove('has-card', 'busy');
+          const img = el.querySelector('img');
+          if (img) {
+            img.removeAttribute('src');
+            // The alt names WHICH card, so a screen reader gets four different
+            // pictures rather than the same sentence four times.
+            img.setAttribute('alt', 'קלף החיילים ' + (boxes.length + 1));
+            img.removeAttribute('data-testid');
+          }
+          const layer = el.querySelector('.pawn-live-slots');
+          if (layer) layer.innerHTML = '';
+          host.appendChild(el);
+          boxes = pawnCardBoxes();
+        }
+        return boxes;
+      }
+
       function paintPawnCard() {
-        const box = $('#pawnLiveSlots');
+        if (!pawnSlots) return;
+        pawnCardBoxes().forEach((frame, card) => paintOnePawnCard(frame, card));
+      }
+
+      // The photos THIS card carries: the first four on the first card, the next
+      // four on the second, in the order she uploaded them — exactly how
+      // build.deck_document deals them onto the printed cards.
+      function pawnPhotosForCard(card) {
+        const per = pawnSlots ? pawnSlots.length : 4;
+        return pawnList().slice(card * per, card * per + per);
+      }
+
+      function paintOnePawnCard(frame, card) {
+        const box = frame && frame.querySelector('.pawn-live-slots');
         if (!box || !pawnSlots) return;
-        fitLiveSlots();
-        const photos = pawnList().slice(0, pawnSlots.length);
+        fitLiveSlots(frame);
+        const photos = pawnPhotosForCard(card);
         // One element per disc, reused — rebuilding four <img> per pointer move
         // would decode the photos again and again.
         while (box.children.length > photos.length) box.lastChild.remove();
@@ -4064,13 +4436,26 @@
       }
 
       async function renderPawnCard() {
-        const box = $('#pawnPrevBox');
-        const img = $('#pawnPrevImg');
-        const fail = $('#pawnPrevFail');
-        if (!box || !isOwner) return;
+        if (!isOwner) return;
         const seq = ++pawnCardSeq;
-        box.classList.add('busy');
-        fail.classList.add('hidden');
+        const boxes = ensurePawnCardBoxes();
+        if (!boxes.length) return;
+        boxes.forEach((b) => {
+          b.classList.add('busy');
+          const f = b.querySelector('.prev-fail');
+          if (f) f.classList.add('hidden');
+        });
+        // Each card is asked for separately — the base card differs only by how
+        // many of ITS discs this page is about to cover, and the server caches on
+        // exactly that, so four cards cost at most four renders and usually one.
+        await Promise.all(boxes.map((b, i) => renderOnePawnCard(b, i, seq)));
+        if (seq === pawnCardSeq) paintPawnCard();
+      }
+
+      async function renderOnePawnCard(box, card, seq) {
+        const img = box.querySelector('img');
+        const fail = box.querySelector('.prev-fail');
+        if (!img) return;
         try {
           // ?live=1: the card WITHOUT her photos, plus where its discs are. Every
           // adjustment after it is drawn here rather than rendered there, so this
@@ -4083,7 +4468,10 @@
           // her two empty circles under a caption that says this is exactly how
           // the card will be printed.
           const r = await api(
-            '/pawn-card?live=1&n=' + pawnList().length + '&k=' + encodeURIComponent(ownerToken)
+            '/pawn-card?live=1&n=' +
+              pawnPhotosForCard(card).length +
+              '&k=' +
+              encodeURIComponent(ownerToken)
           );
           if (seq !== pawnCardSeq) return; // a newer render is already on its way
           if (r && r.card) {
@@ -4099,19 +4487,22 @@
                 // The picture is here: it sizes the frame from now on, and the
                 // photo layer is measured onto wherever it actually landed.
                 box.classList.add('has-card');
-                paintPawnCard();
+                watchPawnCardSize(box);
+                paintOnePawnCard(box, card);
               },
               { once: true }
             );
             img.src = r.card;
           }
+          // The disc geometry is the artwork's, so every card has the same four —
+          // one answer for all of them.
           if (r && Array.isArray(r.slots) && r.slots.length) pawnSlots = r.slots;
-          paintPawnCard();
+          paintOnePawnCard(box, card);
         } catch (e) {
           if (seq !== pawnCardSeq) return;
           // Keep whatever card is on screen — a stale picture of her deck beats an
           // empty box — and say the PICTURE is what is missing, not the photos.
-          fail.classList.remove('hidden');
+          if (fail) fail.classList.remove('hidden');
         } finally {
           if (seq === pawnCardSeq) box.classList.remove('busy');
         }
@@ -4264,16 +4655,12 @@
       // that shows it — it is a browser run on the server, and most owners come
       // to this page to add words.
       let pawnCardLoaded = false;
-      let pawnCardWatched = false;
       function loadPawnCard() {
         if (pawnCardLoaded) return;
         pawnCardLoaded = true;
-        // Once per page, not once per render: a second ResizeObserver on the same
-        // image would refit the slots twice for every resize.
-        if (!pawnCardWatched) {
-          pawnCardWatched = true;
-          watchPawnCardSize();
-        }
+        // The size watch moved onto each card's own picture, armed when that
+        // picture loads (watchPawnCardSize is once-per-image by WeakSet) — a
+        // page-level flag could not cover cards that do not exist yet.
         renderPawnCard();
       }
 
@@ -4337,6 +4724,7 @@
         $('#photosLabelSent').classList.toggle('hidden', open);
         $('#photosHint').classList.toggle('hidden', !open);
         $('#sheetClosedNote').classList.toggle('hidden', open);
+        renderPlayers();
         renderPawns();
         loadPoolOptions();
         renderPoolOpts();
@@ -4603,6 +4991,12 @@
         // Say so, because `renderPawns` draws nothing at all while pawnBusy.
         showPawnBusy(picked.length > 1 ? 'מעלים את התמונות…' : 'מעלים את התמונה…');
         const before = pawnList().length;
+        // What the server deliberately did NOT keep, across every batch that it
+        // answered. Outside the `try` because a later batch can still fail: those
+        // photos were refused for a reason (a format it cannot read), not lost on
+        // the way, and counting them as "not uploaded, try again" would drop the
+        // advice and send her to re-send the same unreadable file.
+        const skipped = [];
         try {
           const ready = await shrinkForUpload(picked);
           const cuts = await cutForUpload(ready);
@@ -4612,7 +5006,6 @@
           // and every photo would be lost. The route caps a batch at the same
           // number (PAWN_BATCH_MAX) and the TOTAL at her player count, so the
           // batches fill the order up and stop.
-          const skipped = [];
           for (let start = 0; start < ready.length; start += PAWN_BATCH) {
             const fd = new FormData();
             const failed = [];
@@ -4658,11 +5051,16 @@
           const landed = pawnList().length - before;
           renderPawns();
           renderPawnCard();
-          if (landed > 0) {
-            const lost = picked.length - landed;
-            showPawnErr(
-              lost === 1 ? 'תמונה אחת לא הועלתה, נסו שוב' : lost + ' תמונות לא הועלו, נסו שוב'
-            );
+          if (landed > 0 || skipped.length) {
+            // Photos the server skipped on purpose are neither landed nor lost:
+            // they get their own sentence, with its advice, after the count.
+            const lost = Math.max(0, picked.length - landed - skipped.length);
+            const failLine = !lost
+              ? ''
+              : lost === 1
+                ? 'תמונה אחת לא הועלתה, נסו שוב.'
+                : lost + ' תמונות לא הועלו, נסו שוב.';
+            showPawnErr([failLine, pawnSkipText(skipped)].filter(Boolean).join(' '));
           } else {
             showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
           }
@@ -4726,15 +5124,20 @@
           'תמונה אחת בפורמט שאנחנו לא קוראים ולא נקלטה. נסו לצלם או לשמור אותה כ-JPG.',
         no_room: () => 'אפשר עד ' + pawnMax() + ' תמונות - מה שמעבר לא נשמר.',
       };
-      function reportPawnSkips(skipped) {
+      function pawnSkipText(skipped) {
         const list = Array.isArray(skipped) ? skipped : [];
-        if (!list.length) return false;
+        if (!list.length) return '';
         // One reason, the first one: a mixed batch is rare and a paragraph of
         // caveats helps nobody. Plural is stated as a count so the sentence stays
         // true when two photos failed for the same reason.
         const reason = list[0].reason;
         const one = (PAWN_SKIP_MSG[reason] || PAWN_SKIP_MSG.unsupported)();
-        showPawnErr(list.length > 1 ? one.replace('תמונה אחת', list.length + ' תמונות') : one);
+        return list.length > 1 ? one.replace('תמונה אחת', list.length + ' תמונות') : one;
+      }
+      function reportPawnSkips(skipped) {
+        const text = pawnSkipText(skipped);
+        if (!text) return false;
+        showPawnErr(text);
         return true;
       }
       // SHE ARRIVED WITH FEWER PHOTOS THAN SHE SENT. The wizard uploads the
@@ -5213,7 +5616,12 @@
           // The owner passes ?k=<owner_token> so the server returns the stored
           // delivery address (owner-only), letting a locked delivery order prefill
           // without re-typing. Contributors fetch the plain public view.
-          state = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+          const startedAt = ++fetchClock;
+          const next = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+          // Started before her last count change landed: this answer carries the
+          // old count and ceiling. Drop it; the next poll brings the new ones.
+          if (startedAt < playersSavedAt) return;
+          state = next;
           // Her deck's own ceiling, before anything is drawn from it. A
           // contributor's view carries it too — the counter is the same counter.
           MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;

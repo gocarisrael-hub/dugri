@@ -62,26 +62,34 @@ async function createCollection(page, title = 'Shira') {
 }
 
 // Attach `n` photos through the upload route itself, so the test starts from a
-// state a real order can be in.
+// state a real order can be in. FOUR TO A REQUEST, which is what both browsers
+// send: the route caps one request at PAWN_BATCH_MAX (the body is buffered whole)
+// and the total at the deck's player count, so posting five at once is a shape no
+// client produces and is refused with a 400.
 async function attachPhotos(page, id, k, n) {
+  const BATCH = 4;
   const boundary = '----dugriFinishPawns';
-  const chunks = [];
-  for (let i = 0; i < n; i++) {
-    chunks.push(
-      Buffer.from(
-        `--${boundary}\r\nContent-Disposition: form-data; name="pawn${i}"; filename="p${i}.png"\r\nContent-Type: image/png\r\n\r\n`
-      ),
-      Buffer.concat([PNG_BYTES, Buffer.from(`finish${i}`)]),
-      Buffer.from('\r\n')
-    );
+  let images = [];
+  for (let start = 0; start < n; start += BATCH) {
+    const chunks = [];
+    for (let i = start; i < Math.min(n, start + BATCH); i++) {
+      chunks.push(
+        Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="pawn${i - start}"; filename="p${i}.png"\r\nContent-Type: image/png\r\n\r\n`
+        ),
+        Buffer.concat([PNG_BYTES, Buffer.from(`finish${i}`)]),
+        Buffer.from('\r\n')
+      );
+    }
+    chunks.push(Buffer.from(`--${boundary}--\r\n`));
+    const res = await page.request.post(`/api/collections/${id}/pawns?k=${encodeURIComponent(k)}`, {
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
+      data: Buffer.concat(chunks),
+    });
+    expect(res.status()).toBe(200);
+    images = (await res.json()).pawn_images;
   }
-  chunks.push(Buffer.from(`--${boundary}--\r\n`));
-  const res = await page.request.post(`/api/collections/${id}/pawns?k=${encodeURIComponent(k)}`, {
-    headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}` },
-    data: Buffer.concat(chunks),
-  });
-  expect(res.status()).toBe(200);
-  return (await res.json()).pawn_images;
+  return images;
 }
 
 // A background-removed cutout for a photo already on the order — the route the
@@ -757,4 +765,232 @@ test('the circle says it can be dragged, until it has been', async ({ page }) =>
   await dragBy(page.locator('.pawn-disc').first(), 15, 0);
   // An instruction that stays after it has been followed is noise.
   await expect(badge).toBeHidden();
+});
+
+// HOW MANY PLAYERS, on the page she revisits.
+//
+// The same choice the wizard's pawns step offered, met again while the collection
+// is open. The deck is always 104 cards, so more pawn cards means fewer word
+// cards — and RAISING the count can be refused, because her list may already be
+// longer than the smaller deck holds.
+test('the pawns tab offers the count, and draws one card per four players', async ({ page }) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  await attachPhotos(page, id, k, 1);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  // Opens on the standard deck: four players, one card, 412 words.
+  await expect(page.getByTestId('players-4')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('players-budget')).toContainText('עד 412 מילים');
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
+
+  // Twelve players is three pawn cards — and three cards on screen, because a
+  // count that showed one card would be the preview lying.
+  await page.getByTestId('players-12').click();
+  await expect(page.getByTestId('players-budget')).toContainText('עד 404 מילים');
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(3);
+
+  // …and back down again.
+  await page.getByTestId('players-4').click();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
+});
+
+test('her photos are dealt four to a card, in the order she sent them', async ({ page }) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await page.getByTestId('players-8').click();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(2);
+
+  // Five photos: four on the first card, one on the second. The rest of the
+  // second card's discs carry the shipped Dugri pawns, which is what the printed
+  // card does — so the page covers one disc there, not five.
+  const images = await attachPhotos(page, id, k, 5);
+  expect(images).toHaveLength(5);
+  await page.reload();
+  await page.getByTestId('tab-pawns').click();
+  const boxes = page.locator('#pawnPrevCards .prev-box');
+  await expect(boxes).toHaveCount(2);
+  await expect(boxes.nth(0).locator('.pawn-live-slot')).toHaveCount(4);
+  await expect(boxes.nth(1).locator('.pawn-live-slot')).toHaveCount(1);
+  // …and WHICH photo sits where: the first four in the order sent, disc by disc,
+  // then the fifth on the second card's first disc. None has a cutout, so each
+  // disc draws the photo itself.
+  for (let i = 0; i < 4; i++) {
+    await expect(boxes.nth(0).locator('.pawn-live-slot img').nth(i)).toHaveAttribute(
+      'src',
+      images[i]
+    );
+  }
+  await expect(boxes.nth(1).locator('.pawn-live-slot img').first()).toHaveAttribute(
+    'src',
+    images[4]
+  );
+});
+
+// THE COLLECTION CLOSED UNDER HER. The page last polled while it was open, so the
+// buttons are still there; pressing one is refused with `closed`. The page fetches
+// the collection at once and shows the closed state — rather than a button that
+// snaps back and stays pressable until a poll happens to land.
+//
+// The 5-second poll is switched off here, so the only thing that can bring the
+// closed state on screen is the page's answer to the refusal.
+test('a count pressed after the collection closed shows the closed state at once', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const real = window.setInterval;
+    window.setInterval = (fn, ms, ...rest) => (ms === 5000 ? 0 : real(fn, ms, ...rest));
+  });
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('players-count')).toBeVisible();
+
+  const closed = await page.request.post(`/api/collections/${id}/close`, {
+    data: { owner_token: k },
+  });
+  expect(closed.status()).toBeLessThan(400);
+
+  await page.getByTestId('players-8').click();
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  await expect(page.getByTestId('players-err')).toBeHidden();
+  await expect(page.getByTestId('players-budget')).toContainText('4 שחקנים');
+});
+
+// A LOST CONNECTION IS SAID OUT LOUD. While the request is out, no count can be
+// pressed; when it fails, the buttons show the count the order still has, they
+// work again, and a short line says the change did not happen.
+test('a count change that never reaches the server says so, and nothing moves', async ({
+  page,
+}) => {
+  await stubPawnCard(page);
+  const { url } = await createCollection(page);
+  let release;
+  const held = new Promise((r) => (release = r));
+  await page.route('**/api/collections/*/players*', async (route) => {
+    await held;
+    return route.abort('failed');
+  });
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  await page.getByTestId('players-8').click();
+  // In flight: the pressed button is the one she asked for, and none is pressable.
+  await expect(page.getByTestId('players-8')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('players-4')).toBeDisabled();
+  await expect(page.getByTestId('players-12')).toBeDisabled();
+  release();
+
+  await expect(page.getByTestId('players-err')).toBeVisible();
+  await expect(page.getByTestId('players-err')).toContainText('לא הצלחנו');
+  await expect(page.getByTestId('players-4')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('players-8')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('players-8')).toBeEnabled();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
+});
+
+// ANOTHER DEVICE CHANGED THE COUNT. The buttons follow every poll; the preview has
+// to follow the same answer, or it draws one card under a count that promises three.
+test('a count changed from another device redraws the cards on the next poll', async ({ page }) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
+
+  const res = await page.request.put(`/api/collections/${id}/players?k=${encodeURIComponent(k)}`, {
+    data: { players: 12 },
+  });
+  expect(res.status()).toBe(200);
+
+  // The page polls every five seconds.
+  await expect(page.getByTestId('players-12')).toHaveAttribute('aria-pressed', 'true', {
+    timeout: 12000,
+  });
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(3);
+  await expect(page.getByTestId('players-budget')).toContainText('עד 404 מילים');
+});
+
+// ONE NUMBER FOR "COLLECTED". An unpaid collection keeps its stored words at the
+// free limit and holds the rest. The refusal counts the held ones (they become real
+// the moment she pays), so the line under the count has to count them the same way
+// — two different "collected" numbers on one panel is a panel that cannot be trusted.
+test('an unpaid list over its free limit reads the same count on the line and in the refusal', async ({
+  page,
+}) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  const posted = await page.request.post(
+    `/api/collections/${id}/words?k=${encodeURIComponent(k)}`,
+    { data: { words: Array.from({ length: 410 }, (_, i) => 'מילה' + i), added_by: 'בדיקה' } }
+  );
+  expect(posted.status()).toBeLessThan(400);
+  const view = await owned(page, id, k);
+  const stored = view.words.length;
+  const held = view.held_words.length;
+  // The case this is about: some of the list is held, not stored.
+  expect(held).toBeGreaterThan(0);
+  expect(stored + held).toBe(410);
+
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  const collected = `נאספו ${stored} מילים ועוד ${held} שממתינות להוספה`;
+  await expect(page.getByTestId('players-note')).toHaveText(collected);
+
+  await page.getByTestId('players-12').click();
+  const refuse = page.getByTestId('players-refuse');
+  await expect(refuse).toBeVisible();
+  await expect(refuse).toContainText(collected);
+  await expect(refuse).toContainText('6 מילים');
+});
+
+test('raising the count past her word list is refused, with the number to delete', async ({
+  page,
+}) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  // 410 words fits the standard deck (412) but not a 12-player one (404).
+  const res = await page.request.post(`/api/collections/${id}/words?k=${encodeURIComponent(k)}`, {
+    data: { words: Array.from({ length: 410 }, (_, i) => 'מילה' + i), added_by: 'בדיקה' },
+  });
+  expect(res.status()).toBeLessThan(400);
+
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await page.getByTestId('players-12').click();
+
+  const refuse = page.getByTestId('players-refuse');
+  await expect(refuse).toBeVisible();
+  await expect(refuse).toContainText('12 שחקנים');
+  await expect(refuse).toContainText('6 מילים'); // 410 - 404
+  await expect(refuse).toContainText('404');
+
+  // Nothing moved, and the buttons say so.
+  await expect(page.getByTestId('players-4')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#pawnPrevCards .prev-box')).toHaveCount(1);
+
+  // …and there is a way out of it, not just a wall.
+  await page.getByTestId('players-refuse-words').click();
+  await expect(refuse).toBeHidden();
+  await expect(page.locator('#addCard')).toBeVisible();
+});
+
+test('a closed collection shows the count but cannot change it', async ({ page }) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  const closed = await page.request.post(`/api/collections/${id}/close`, {
+    data: { owner_token: k },
+  });
+  expect(closed.status()).toBeLessThan(400);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  // The deck is in production: a control that silently 409s is worse than one
+  // that is not there.
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.getByTestId('players-budget')).toBeVisible();
 });
