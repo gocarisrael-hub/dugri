@@ -47,6 +47,28 @@ function registerAdminDesigns(
   });
 }
 
+// site/js/designs.js, the ESM design catalog, loaded ONCE for every route in this
+// file. A CommonJS file can only reach it through a dynamic import, so the cache is
+// the import promise, keyed by the file's URL (derived from the `__dirname` each
+// register function is given). A FAILED import is dropped from the cache, so the
+// next request tries again, as it did when each route imported the file itself.
+// It rejects rather than resolving to a fallback because the callers disagree on
+// what a missing catalog means: the public routes answer empty, the template
+// delete guard refuses (fail closed).
+const designsModules = new Map();
+function loadDesignsModule({ path, __dirname, pathToFileURL }) {
+  const url = pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')).href;
+  let loading = designsModules.get(url);
+  if (!loading) {
+    loading = import(url);
+    designsModules.set(url, loading);
+    loading.catch(() => {
+      if (designsModules.get(url) === loading) designsModules.delete(url);
+    });
+  }
+  return loading;
+}
+
 // The design -> theme map, the in-store check and the private-design access codes.
 function registerDesignCodes(
   app,
@@ -70,9 +92,7 @@ function registerDesignCodes(
   async function loadThemeByDesign() {
     if (_themeByDesign) return _themeByDesign;
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       _themeByDesign = mod.THEME_BY_DESIGN || {};
     } catch {
       _themeByDesign = {};
@@ -328,9 +348,7 @@ function registerTemplateOnboarding(
     if (!requireAdmin(req, res)) return;
     let inUse;
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       inUse = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
     } catch (e) {
       return res.status(500).json({
@@ -470,6 +488,305 @@ function registerTemplateRevert(app, { requireAdmin, TEMPLATE_ROOT, templates })
   });
 }
 
+// Strip anything executable from a template SVG before it is served. Both template
+// SVG routes send their output through this.
+//
+// WHAT IT TARGETS: the XML parser, and only that. Both routes answer
+// `image/svg+xml`, and the one way a response becomes a live document is opening
+// the URL directly, which parses it as XML. No production path hands these
+// responses to an HTML parser: the storefront, wizard, collect and admin-images
+// pages use <img src> (an SVG image runs no script and loads nothing external),
+// admin-bench draws through a data: <img>, and the admin checklist
+// (admin-templates.html) parses with DOMParser as image/svg+xml and runs its own
+// allowlist over the parsed tree before inserting it. This scanner therefore makes
+// NO claim about what an HTML parser (innerHTML) would build from its output, and
+// nothing in XML is raw text: a <script> inside <style> or <title> is a script
+// element like any other, and is removed like any other.
+//
+// It is one of two defences on a direct open. The other is TEMPLATE_SVG_CSP (no
+// script, sandboxed), so a byte that slips past here still cannot run.
+//
+// Why a scanner and not a parser: express is the server's only runtime dependency
+// (svgo is a dev-only tool, absent at runtime). The scan COPIES safe bytes
+// verbatim and DROPS only dangerous spans, so well-formed art comes out
+// byte-identical (tests/unit/svg-sanitize.test.js checks real template files).
+//
+// It is O(n) per pass. The cursor only moves forward; a tag's end is looked for
+// once, from that tag's own "<", and the next search starts past it. A tag with no
+// closing ">" ends the scan: everything from it on is dropped, because an XML
+// parser renders nothing past a tag it cannot close, and re-scanning from the next
+// "<" is exactly what made the previous version quadratic. A "<" that does not
+// start a name is copied as one character without any search. A bounded fixpoint
+// (SVG_SANITIZE_MAX_PASSES) catches a removal that re-forms a tag; real art is
+// stable on the first pass, and anything still changing at the cap fails closed
+// to "".
+// Elements that run script or load another document. frame/frameset matter in the
+// XHTML namespace: `<h:frame src="data:text/html,<script>…">` runs its document.
+const SVG_BLOCKED_ELEMENTS = new Set([
+  'script',
+  'foreignobject',
+  'iframe',
+  'frame',
+  'frameset',
+  'embed',
+  'object',
+]);
+const SVG_SANITIZE_MAX_PASSES = 8;
+
+// The second, independent defence for a template SVG opened DIRECTLY as a document
+// (both routes below set it): the document may run no script and fetch nothing but
+// images from data: or our own origin, inline styles and data: fonts. `sandbox`
+// (no allow-tokens) gives it an opaque origin with scripting disabled. `img-src
+// 'self'` is there for de-duplicated cards, whose background is an
+// "../assets/<sha>.png" reference rewritten to /api/template-asset/… (without it a
+// directly opened card lost its background). No page loads these routes as a
+// document — they are all <img src>, where a response CSP does not apply — so this
+// only hardens the direct-open view.
+const TEMPLATE_SVG_CSP =
+  "default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; font-src data:; sandbox";
+
+// The local name of a possibly namespace-prefixed name, lower-cased. The prefix is
+// anything up to the first ":", in any script: `<é:script>` and `<ש:iframe>` are as
+// blocked as `<svg:script>`.
+function svgLocalName(name) {
+  const colon = name.indexOf(':');
+  return (colon === -1 ? name : name.slice(colon + 1)).toLowerCase();
+}
+
+// A name character (by char code): anything above ASCII space that is not "/", "=",
+// "<", ">" or a quote. XML whitespace is all at or below 0x20.
+function svgIsNameChar(c) {
+  return c > 32 && c !== 47 && c !== 61 && c !== 60 && c !== 62 && c !== 34 && c !== 39;
+}
+
+// Would this attribute value be read as a script URL? Character references are
+// decoded (&#106; &#x6A; …) and every ASCII whitespace/control character dropped,
+// because the URL parser ignores them: "java&#x09;script:" and "  JavaScript:" both
+// run. Checked anywhere in the value, which also covers <set to="javascript:…"> and
+// <animate values="#a;javascript:…"> aimed at an href.
+function svgValueRunsScript(value) {
+  if (!/[:&]/.test(value)) return false;
+  const decoded = value.replace(
+    /&(?:#x([0-9a-f]+)|#(\d+)|(colon|tab|newline));?/gi,
+    (m, hex, dec, named) => {
+      if (named) return { colon: ':', tab: '\t', newline: '\n' }[named.toLowerCase()];
+      const code = hex ? parseInt(hex, 16) : parseInt(dec, 10);
+      return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+    }
+  );
+  const bare = decoded.replace(/[\x00-\x20\x7f-\x9f]+/g, '').toLowerCase();
+  return /(?:java|vb)script:/.test(bare);
+}
+
+// Clean ONE tag's interior (the text between "<" and ">"). Removes event-handler
+// attributes (name starts with "on") and any attribute whose value is a script URL,
+// each with its value. Returns the SAME string when nothing is removed, so the
+// caller can tell "unchanged" by reference; nothing is reordered or re-spaced.
+function svgCleanTag(inner) {
+  const L = inner.length;
+  let j = inner.charCodeAt(0) === 47 ? 1 : 0;
+  while (j < L && svgIsNameChar(inner.charCodeAt(j))) j++;
+  let parts = null;
+  let keep = 0;
+  while (j < L) {
+    const c = inner.charCodeAt(j);
+    if (c <= 32 || c === 47 || c === 61) {
+      j++;
+      continue;
+    }
+    if (c === 34 || c === 39) {
+      const close = inner.indexOf(inner[j], j + 1);
+      j = close === -1 ? L : close + 1;
+      continue;
+    }
+    const nameStart = j;
+    while (j < L && svgIsNameChar(inner.charCodeAt(j))) j++;
+    if (j === nameStart) {
+      j++; // a stray "<" or ">" inside the tag: step over it, so j always advances
+      continue;
+    }
+    let k = j;
+    while (k < L && inner.charCodeAt(k) <= 32) k++;
+    let end = j;
+    let value = '';
+    if (inner.charCodeAt(k) === 61) {
+      k++;
+      while (k < L && inner.charCodeAt(k) <= 32) k++;
+      const q = inner.charCodeAt(k);
+      if (q === 34 || q === 39) {
+        const close = inner.indexOf(inner[k], k + 1);
+        end = close === -1 ? L : close + 1;
+        value = inner.slice(k + 1, close === -1 ? L : close);
+      } else {
+        let m = k;
+        while (m < L && inner.charCodeAt(m) > 32) m++;
+        end = m;
+        value = inner.slice(k, m);
+      }
+    }
+    const handler =
+      (inner.charCodeAt(nameStart) | 32) === 111 && (inner.charCodeAt(nameStart + 1) | 32) === 110;
+    if (handler || svgValueRunsScript(value)) {
+      if (!parts) parts = [];
+      parts.push(inner.slice(keep, nameStart));
+      keep = end;
+    }
+    j = Math.max(j, end);
+  }
+  if (!parts) return inner;
+  parts.push(inner.slice(keep));
+  return parts.join('');
+}
+
+// The end of a "<!DOCTYPE …>" / "<!ENTITY …>" declaration: the next ">", but a
+// DOCTYPE's internal subset ("[ … ]") may contain ">", so a "[" is skipped to its
+// "]" first. Returns the index just past the ">" (or the end of the input).
+function svgSkipDeclaration(s, lt) {
+  let i = lt + 2;
+  while (i < s.length) {
+    const c = s.charCodeAt(i);
+    if (c === 91) {
+      const close = s.indexOf(']', i + 1);
+      i = close === -1 ? s.length : close + 1;
+      continue;
+    }
+    if (c === 62) return i + 1;
+    i++;
+  }
+  return s.length;
+}
+
+// The index of the ">" that ends the tag opened at "<" (position lt), skipping a
+// ">" inside a quoted attribute value; -1 when the tag never closes. A "<" outside
+// quotes also means it never closes: XML allows no "<" inside a tag, so the parser
+// stops there, and so does the scan (rather than letting the tag swallow the next
+// tag's ">", which would carry that tag's bytes through uncleaned).
+function svgTagEnd(s, lt) {
+  const n = s.length;
+  let i = lt + 1;
+  while (i < n) {
+    const c = s.charCodeAt(i);
+    if (c === 34 || c === 39) {
+      const close = s.indexOf(s[i], i + 1);
+      if (close === -1) return -1;
+      i = close + 1;
+      continue;
+    }
+    if (c === 62) return i;
+    if (c === 60) return -1;
+    i++;
+  }
+  return -1;
+}
+
+// One forward pass. Kept bytes are never copied piece by piece: the pass only
+// records where a removal or a cleaned tag interrupts the input, and joins the
+// pieces once at the end. A pass that changes nothing returns the input string
+// itself, so real art costs no copy and the fixpoint check is a reference compare.
+function svgSanitizePass(s) {
+  const n = s.length;
+  const parts = [];
+  let keep = 0; // s[keep..] has not been emitted yet
+  const cut = (from, to) => {
+    parts.push(s.slice(keep, from));
+    keep = to;
+  };
+  const closeRe = /<\/(?:[^\s<>/:=]+:)?([^\s<>/:=]+)\s*>/gi;
+  let i = 0;
+  while (i < n) {
+    const lt = s.indexOf('<', i);
+    if (lt === -1) break;
+    const next = s.charCodeAt(lt + 1);
+    if (next === 33 /* ! */) {
+      if (s.startsWith('<!--', lt)) {
+        const e = s.indexOf('-->', lt + 4); // an XML comment is inert: kept
+        i = e === -1 ? n : e + 3;
+        continue;
+      }
+      if (s.startsWith('<![CDATA[', lt)) {
+        const e = s.indexOf(']]>', lt + 9); // CDATA is character data in XML: kept
+        i = e === -1 ? n : e + 3;
+        continue;
+      }
+      // <!DOCTYPE …> / <!ENTITY …>: REMOVED. Without the DOCTYPE no entity is
+      // defined, so an entity-expansion payload (which libxml2 would expand into a
+      // live <script> or a javascript: value) has nothing to expand; the XML parser
+      // errors on the undefined reference and renders nothing.
+      const end = svgSkipDeclaration(s, lt);
+      cut(lt, end);
+      i = end;
+      continue;
+    }
+    if (next === 63 /* ? */) {
+      const e = s.indexOf('?>', lt + 2);
+      const end = e === -1 ? n : e + 2;
+      // <?xml-stylesheet …?> can pull in a stylesheet: REMOVED. A plain <?xml …?>
+      // declaration is inert and kept, so art that has one stays byte-identical.
+      if (s.slice(lt, lt + 16).toLowerCase() === '<?xml-stylesheet') cut(lt, end);
+      i = end;
+      continue;
+    }
+    // The name first, without searching: a "<" that starts no name is kept as one
+    // character, so a run of them costs nothing.
+    const p = next === 47 ? lt + 2 : lt + 1;
+    let q = p;
+    while (q < n && svgIsNameChar(s.charCodeAt(q))) q++;
+    if (q === p) {
+      i = lt + 1;
+      continue;
+    }
+    const gt = svgTagEnd(s, lt);
+    if (gt === -1) {
+      cut(lt, n); // an unclosed tag ends the document for an XML parser
+      i = n;
+      break;
+    }
+    const local = svgLocalName(s.slice(p, q));
+    if (SVG_BLOCKED_ELEMENTS.has(local)) {
+      if (next === 47 || s.charCodeAt(gt - 1) === 47) {
+        cut(lt, gt + 1); // a close tag or a self-closing tag: remove just the tag
+        i = gt + 1;
+        continue;
+      }
+      // An open blocked element: remove it and its content up to the next close tag
+      // with the same local name (any prefix); none left means remove to the end.
+      closeRe.lastIndex = gt + 1;
+      let m;
+      let closeEnd = n;
+      while ((m = closeRe.exec(s))) {
+        if (svgLocalName(m[1]) === local) {
+          closeEnd = m.index + m[0].length;
+          break;
+        }
+      }
+      cut(lt, closeEnd);
+      i = closeEnd;
+      continue;
+    }
+    const inner = s.slice(lt + 1, gt);
+    const cleaned = svgCleanTag(inner);
+    if (cleaned !== inner) {
+      cut(lt + 1, gt);
+      parts.push(cleaned);
+    }
+    i = gt + 1;
+  }
+  if (!parts.length) return s;
+  parts.push(s.slice(keep));
+  return parts.join('');
+}
+
+function sanitizeSvgForDom(svg) {
+  let s = String(svg);
+  for (let pass = 0; pass < SVG_SANITIZE_MAX_PASSES; pass++) {
+    const next = svgSanitizePass(s);
+    if (next === s) return s; // stable: real artwork returns here on the first pass
+    s = next;
+  }
+  // Still changing at the cap: a self-re-forming payload. Fail closed.
+  return svgSanitizePass(s) === s ? s : '';
+}
+
 // Design names, custom designs and the template picture/asset routes.
 function registerStorefrontTemplates(
   app,
@@ -498,9 +815,7 @@ function registerStorefrontTemplates(
     let names = {};
     let fields = {};
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       // PUBLIC subset only — a private/access-gated design's name must never leak to
       // anonymous visitors. themes.json is read through an mtime cache so this hot
       // endpoint doesn't hit disk on every products.html / product.html load.
@@ -546,9 +861,7 @@ function registerStorefrontTemplates(
   app.get('/api/custom-designs', async (req, res) => {
     let out = [];
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       const builtIn = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
       const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
       for (const key of Object.keys(themes || {})) {
@@ -661,26 +974,6 @@ function registerStorefrontTemplates(
     );
   }
 
-  // Strip anything executable from an SVG before it is injected into the admin
-  // page's DOM.
-  //
-  // The thumbnails cannot use <img>: that context blocks external references, and
-  // a de-duplicated card's whole background IS an external reference, so every
-  // card rendered as an identical blank rectangle. Injecting the markup inline
-  // makes the background load — and also means any <script> inside it would run,
-  // in the admin's own session. These are owner-uploaded Canva exports, so this is
-  // closer to self-harm than an attack, but server/content.js already refuses SVG
-  // uploads outright over exactly this risk; agreeing with that position costs two
-  // regexes.
-  function sanitizeSvgForDom(svg) {
-    return String(svg)
-      .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
-      .replace(/<script\b[^>]*\/>/gi, '')
-      .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, '')
-      .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, '')
-      .replace(/(?:xlink:)?href\s*=\s*"javascript:[^"]*"/gi, '');
-  }
-
   // One card SVG by ROLE, for the admin checklist's thumbnails. Admin-gated: the
   // public storefront route below exposes only the three display slots.
   app.get('/api/admin/templates/:key/asset-svg/:role', (req, res) => {
@@ -710,6 +1003,7 @@ function registerStorefrontTemplates(
     if (svg == null) return res.status(404).type('txt').send('Not found');
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', TEMPLATE_SVG_CSP);
     res.setHeader('Cache-Control', 'no-store');
     res.send(sanitizeSvgForDom(svg));
   });
@@ -727,6 +1021,7 @@ function registerStorefrontTemplates(
     if (!file || !fs.existsSync(file)) return res.status(404).type('txt').send('Not found');
     res.setHeader('Content-Type', 'image/svg+xml; charset=utf-8');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', TEMPLATE_SVG_CSP);
     res.setHeader('Cache-Control', 'public, max-age=300');
     // NOT sendFile: a de-duplicated card points at "../assets/<sha>.png", which
     // resolves to nothing from this URL, so the storefront was showing those
@@ -1061,4 +1356,5 @@ module.exports = {
   registerStorefrontTemplates,
   registerPromoImageGallery,
   registerPromo,
+  sanitizeSvgForDom,
 };

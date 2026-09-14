@@ -1031,6 +1031,143 @@
       const submitBtn = document.getElementById('submit');
       const msg = document.getElementById('msg');
 
+      // Asset-checklist thumbnails are INLINE SVG (the asset loop explains why not
+      // <img>), so their markup is parsed as XML and cut down to an ALLOWLIST before
+      // it touches this page. Kept: static SVG drawing elements in the SVG namespace
+      // (everything real template art uses), minus every on* and style attribute and
+      // any value with a CSS image function not aimed at #id (thumbValueFetches), and
+      // an href/src only when it is a #fragment, a data:image/… or resolves to our
+      // own /api/template-asset/ (thumbUrlAllowed). A thumbnail may draw, but it may
+      // neither run anything nor fetch from anywhere else. Dropped: script, foreignObject, iframe/embed/object and
+      // any HTML or unknown-namespace element; <a>; <style>, which would also restyle
+      // this page; and every animation element — <set>/<animate>/<animateTransform>
+      // can rewrite an href or a handler after this check runs, and no real template
+      // uses one. Returns the node to insert, or null when the markup is not an SVG.
+      const THUMB_SVG_NS = 'http://www.w3.org/2000/svg';
+      const THUMB_ELEMENTS = new Set([
+        'svg',
+        'g',
+        'defs',
+        'symbol',
+        'use',
+        'path',
+        'rect',
+        'circle',
+        'ellipse',
+        'line',
+        'polyline',
+        'polygon',
+        'text',
+        'tspan',
+        'textPath',
+        'image',
+        'clipPath',
+        'mask',
+        'pattern',
+        'marker',
+        'linearGradient',
+        'radialGradient',
+        'stop',
+        'filter',
+        'feBlend',
+        'feColorMatrix',
+        'feComponentTransfer',
+        'feComposite',
+        'feConvolveMatrix',
+        'feDiffuseLighting',
+        'feDisplacementMap',
+        'feDistantLight',
+        'feDropShadow',
+        'feFlood',
+        'feFuncA',
+        'feFuncB',
+        'feFuncG',
+        'feFuncR',
+        'feGaussianBlur',
+        'feImage',
+        'feMerge',
+        'feMergeNode',
+        'feMorphology',
+        'feOffset',
+        'fePointLight',
+        'feSpecularLighting',
+        'feSpotLight',
+        'feTile',
+        'feTurbulence',
+        'title',
+        'desc',
+        'metadata',
+        'switch',
+      ]);
+      function thumbUrlAllowed(value) {
+        // The URL parser ignores ASCII whitespace/control characters, so they are
+        // dropped before any check (" javascript:" must not pass as "safe").
+        const v = String(value).replace(/[\x00-\x20\x7f-\x9f]+/g, '');
+        if (v.startsWith('#') || /^data:image\//i.test(v)) return true;
+        // Anything else must RESOLVE to our own /api/template-asset/. Checked on the
+        // normalised URL, not the text: "/api/template-asset/../admin/…" and its
+        // %2e%2e spelling resolve to an admin route and are refused.
+        let u;
+        try {
+          u = new URL(v, location.origin);
+        } catch {
+          return false;
+        }
+        return u.origin === location.origin && u.pathname.startsWith('/api/template-asset/');
+      }
+      // Would this attribute value make the browser FETCH something? Presentation
+      // attributes (fill, stroke, mask, clip-path, filter, cursor, …) are CSS values,
+      // so an image function in one loads its URL from this admin page, which sends no
+      // CSP — revealing the owner's IP to any server a template names. Real art only
+      // ever references its own defs, `url(#id)`, so that is the one form kept. CSS
+      // escapes are decoded first, so `\75 rl(` cannot pass as something else.
+      function thumbValueFetches(value) {
+        const v = String(value)
+          .replace(/\\([0-9a-f]{1,6})\s?/gi, (m, h) =>
+            String.fromCodePoint(parseInt(h, 16) % 0x110000 || 0xfffd)
+          )
+          .replace(/\\(.)/g, '$1')
+          .replace(/[\x00-\x20\x7f-\x9f]+/g, '')
+          .toLowerCase();
+        return /(?:url|image-set|image|cross-fade|element|src)\((?!['"]?#)/.test(v);
+      }
+      function allowlistThumbSvg(markup) {
+        const doc = new DOMParser().parseFromString(markup, 'image/svg+xml');
+        const root = doc.documentElement;
+        if (
+          !root ||
+          doc.getElementsByTagName('parsererror').length ||
+          root.namespaceURI !== THUMB_SVG_NS ||
+          root.localName !== 'svg'
+        ) {
+          return null;
+        }
+        // A static list, so removing an element mid-walk skips nothing; a removed
+        // element's descendants are detached with it.
+        for (const el of [root, ...root.getElementsByTagName('*')]) {
+          if (
+            el !== root &&
+            (el.namespaceURI !== THUMB_SVG_NS || !THUMB_ELEMENTS.has(el.localName))
+          ) {
+            el.remove();
+            continue;
+          }
+          for (const at of Array.from(el.attributes)) {
+            const name = at.localName.toLowerCase();
+            const urlAttr = name === 'href' || name === 'src';
+            if (
+              name.startsWith('on') ||
+              name === 'style' || // a style attribute is unbounded CSS: never needed by real art
+              (urlAttr && !thumbUrlAllowed(at.value)) ||
+              thumbValueFetches(at.value)
+            ) {
+              el.removeAttributeNode(at);
+            }
+          }
+        }
+        return document.importNode(root, true);
+      }
+
       function show(kind, text) {
         msg.hidden = false;
         msg.className = 'msg ' + kind;
@@ -2417,12 +2554,16 @@
             // for SVG roles that are present — a font has nothing to show, and a
             // missing file would just 404.
             if (a.present && a.kind === 'svg') {
-              // Injected INLINE, not via <img>: an <img> sandboxes the SVG and
-              // blocks external references, and a de-duplicated card's entire
-              // background is one — so every card came out an identical blank
-              // rectangle. Inline, the browser fetches that background once and
-              // reuses it across every thumbnail. The server strips anything
-              // executable before sending it.
+              // Injected INLINE, not via <img>: an <img>/blob:/data: SVG runs in
+              // the image sandbox, which blocks EVERY external reference — and a
+              // de-duplicated card's whole background is a same-origin
+              // /api/template-asset/ reference, so every such card would render as
+              // an identical blank rectangle again (the bug this thumbnail exists
+              // to avoid). Inline SVG in the live document does load that
+              // background. So it stays inline, but is never handed to an HTML
+              // parser: it is parsed as XML and cut down by allowlistThumbSvg
+              // (above) before it is appended. That allowlist is the defence for
+              // this page; the server's sanitizer is an extra layer, not relied on.
               const thumb = document.createElement('span');
               thumb.className = 'asset-thumb';
               li.prepend(thumb);
@@ -2438,7 +2579,8 @@
                 .then((svg) => {
                   // A template mid-upload can hold a file that will not draw;
                   // drop the thumbnail rather than leave an empty box.
-                  if (svg) thumb.innerHTML = svg;
+                  const node = svg ? allowlistThumbSvg(svg) : null;
+                  if (node) thumb.appendChild(node);
                   else thumb.remove();
                 })
                 .catch(() => thumb.remove());
