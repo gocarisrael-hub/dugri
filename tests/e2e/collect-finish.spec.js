@@ -29,6 +29,12 @@ test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
 });
 
+// Routes here hold requests and pass them on with route.fetch(); none may still be
+// running when the page closes (see the same hook in collect.spec.js).
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 async function createCollection(page, title = 'Shira') {
   await page.route('**/api/preview', (route) =>
     route.fulfill({

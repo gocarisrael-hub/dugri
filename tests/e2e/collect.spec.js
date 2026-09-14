@@ -10,6 +10,20 @@ test.beforeEach(async ({ page }) => {
   await noPoolMenu(page);
 });
 
+// NO ROUTE OUTLIVES ITS TEST. Several routes here pass the request on with
+// route.fetch() and rewrite the answer (withCardEnabled, enableCardButton, the
+// honoree-name strip). The page fetches its collection on load and every five
+// seconds, so when a test ends one of those fetches can still be out; the page then
+// closes under it and the handler throws "apiResponse.json: Response has been
+// disposed" — an error that fails a test whose assertions all passed, and only when
+// the machine is slow enough for a fetch to be mid-flight. (Seen on "a successful
+// card payment lands on the confirmation page", which ends the moment collect.html
+// is back.) Removing every route before the page closes, ignoring whatever an
+// in-flight handler throws after that, ends the race.
+test.afterEach(async ({ page }) => {
+  await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
 // THE WORD-POOL MENU IS A GLOBAL SETTING, and closing an order now requires a
 // pick from it whenever one is offered (see wordlist-menu.spec.js for that
 // gate's own tests). Its default is empty, but tests/e2e/wordlist-menu.spec.js
