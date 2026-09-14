@@ -57,14 +57,64 @@ Settings, content editor, WhatsApp/Whapi, SMS, emails/reminders, ads attribution
 - `site/js/editor.js` (loaded on every page), `header.js`, `analytics.js`, `attribution.js`, `timer.js`, `faq.js`, `consent.js` (shared w/ C), `demo-banner.js` (no-op)
 - Pages: `admin.html` chrome, `admin-features.html`, `admin-texts.html`, `admin-preview.html`, `admin-playbook.html`, `admin-faq.html`, `admin-ads.html`, `admin-analytics.html` (pixel/analytics settings), `how.html`, `timer.html`, `terms.html`, `unsubscribe.html`, homepage marketing shell
 - Docs: `docs/sms-gateway.md`, `docs/whatsapp-arming.md`, `RAILWAY_SETUP.md`
-- In `index.js`: content/settings/features routes, `/api/whatsapp/webhook`, `/api/sms/*` + `/api/admin/sms`, `/api/track`, `/api/admin/ads*`, `/api/admin/meta-capi/*`, `/api/admin/message-preview*`, `/api/faq`, `/api/unsubscribe*` + `/api/resubscribe`, the store/template import routes, the reminder/nudge scans, the SPA `GET *` catch-all
+- **`server/routes/platform.js`** (split out of `index.js`): content/settings/features routes, `/api/whatsapp/*` + `/api/admin/whatsapp/*`, `/api/sms/*` + `/api/admin/sms`, `/api/track`, `/api/admin/ads*`, `/api/admin/meta-capi/*`, `/api/admin/message-preview*`, `/api/faq`, `/api/unsubscribe*` + `/api/resubscribe`, `/api/admin/playbook*`, the content/store/template import routes. Edit these there, not in `index.js` (see "Splitting the monolith").
+- **`server/stores/platform.js`** (split out of `db.js`): the words/payment reminder state, the owner reminder-list state, the order-notified claim.
+- Still in `index.js` (slice 1b): the WhatsApp/notification hooks (`onOrderCreated`, `onOrderPaid`, `openWhatsappGroup`, `handleWaEvent`, `runReminderListScan`…), the reminder/nudge scans, the SPA `GET *` catch-all and static serving
+- Still in `db.js`: the Meta Conversions API report state (`claimMetaReport`…`staleMetaReports`). Its helpers and env constants are shared with the payment path, so it moves with the Commerce slice.
 - Test/CI harness (D arbitrates): `package.json`, `vitest.config.js`, `playwright.config.js`, `eslint.config.js`, `.github/workflows/*`, `scripts/smoke.mjs`, `scripts/stress/`, `scripts/fetch-fonts.mjs`, `scripts/localize-font-links.mjs`, `tests/e2e/{tpl-fixture,global-setup,feature-flags,server-target}.js`
   - The e2e server's port is derived per checkout (`server-target.js`), so worktrees can run E2E concurrently; `E2E_PORT=<n>` overrides. global-setup FAILS the run if that port answers with another checkout's config.
 - Tests: `settings*`, `content-*`, `store-import`, `template-import`, `whatsapp*`, `wa-*`, `sms-*`, `admin-texts-sms`, `admin-whatsapp-groups`, `notify*`, `close-emails`, `email-toggles`, `message-preview`, `admin-preview`, `unsubscribe`, `reminder*`, `playbook*`, `admin-playbook`, `faq*`, `admin-faq`, `terms`, `analytics*`, `attribution*`, `ads-base-url`, `admin-ads`, `admin-analytics`, `meta-*`, `track-routes`, `editor*`, `site-editability`, `feature-flags`, `options-feature-flags`, `admin-features`, `admin-nav`, `content-editor`, `server-routing`, `api-no-store`, `asset-hashing`, `runtime-assets`, `fonts-self-hosted`, `manifest`, `pwa-icons`, `db-atomic-write`, `eslint-server-coverage`, `e2e-harness`, `stress-harness`, `smoke`
 
+## Splitting the monolith
+
+`server/index.js` and `server/db.js` are being split by domain so parallel PRs stop colliding in
+them. Each slice moves ONE domain, as a pure move with zero behaviour change.
+
+The pattern (slice 1, Agent D, is the reference):
+
+- **Routes** go to `server/routes/<domain>.js`. The module exports `register<Block>(app, deps)`
+  functions, one per contiguous block that used to sit inline in `index.js`, and `index.js` calls
+  each one at exactly the spot the block occupied. Express answers with the first matching layer,
+  so registration order is behaviour; a block must never be mounted somewhere more convenient.
+  Anything `index.js` still needs from a block (e.g. `sendPurchaseToMeta` for the payment callback)
+  comes back as the return value.
+- **Stores** go to `server/stores/<domain>.js`: a factory that receives `_db`, `saveDb` and the
+  helpers it uses, and returns the methods. `db.js` spreads them into the `db` object at the same
+  position (`...platformStore({ ... })`), so `db.someFn` callers, `this`, the one JSON file and the
+  one `saveDb` are all unchanged. Load/save/locks stay in `db.js`, never duplicated.
+- **Dependencies are passed in, never required.** A domain module requires nothing at the top level
+  and holds no module-level state: the unit tests reload the app by purging `require.cache` for
+  `server/*.js`, and a cached domain module must not keep a previous load's instances. It never
+  requires `index.js` (cycle).
+- **Move verbatim.** Only glue changes (requires, exports, deps). Bugs spotted during a move are
+  listed in the PR, not fixed in it.
+  `git diff --color-moved=zebra --color-moved-ws=allow-indentation-change` should show the code as
+  moved blocks.
+- **Move only what the map above gives the domain.** A route that sits inside a domain's region but
+  belongs to another domain (e.g. B's `/api/promo` next to D's `/api/faq`) stays in `index.js`.
+- **Route order is pinned** by `tests/unit/route-order.test.js` (a snapshot of every layer's
+  method + path, in order). If you add or remove a route on purpose, run
+  `npx vitest run -u tests/unit/route-order.test.js` and check the snapshot diff shows only your
+  route, where you meant it.
+
+Once your domain has moved, edit `server/routes/<domain>.js` / `server/stores/<domain>.js`, not
+blocks in `index.js` / `db.js`.
+
+Planned order:
+
+1. **D — Platform & Comms** (done: routes + reminder store). Chosen first because no open PR touched
+   its code. Slice 1b: D's non-route machinery (WhatsApp/notify hooks, reminder schedulers).
+2. **B — Catalog & Design**: templates/designs/gallery/promo routes + the design-codes store.
+3. **A — Commerce**: pricing/coupons/pay/callback/stock/HFD routes + the coupons, stock, pay-session
+   and Meta-report store blocks.
+4. **C — Wizard & Word-collection**, last: collections/pawns/players/preview/wordlists routes + the
+   collections, words and word-bank stores. Waits for the open pawn/player PRs to land, since those
+   edit exactly this code.
+
 ## Shared / coordination points
 
-- `server/index.js`, `server/db.js` — edit only your block (above).
+- `server/index.js`, `server/db.js` — edit only your block (above). Domains that have been split out
+  edit their own `server/routes/<domain>.js` / `server/stores/<domain>.js` instead.
 - `site/admin.html` — split by view: chrome/nav D, orders A, collections C.
 - `site/options.html` — pricing/checkout A, wizard C.
 - `site/index.html` — catalog/carousel/promo B, marketing shell/FAQ D, the start explainer hook C.
