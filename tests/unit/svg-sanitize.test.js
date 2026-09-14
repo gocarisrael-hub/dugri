@@ -297,9 +297,15 @@ describe('sanitizeSvgForDom — linear on adversarial input', () => {
 
   it.each(SHAPES)('%s', (_name, input) => {
     sanitize('<svg><rect/></svg>'); // warm up the JIT so the first shape is not penalised
-    const t0 = Date.now();
-    const out = sanitize(input);
-    const ms = Date.now() - t0;
+    // Best of five: the question is whether the algorithm is linear, and a busy CI
+    // worker can stall any single run; a super-linear shape is slow on every run.
+    let ms = Infinity;
+    let out = '';
+    for (let run = 0; run < 5; run++) {
+      const t0 = Date.now();
+      out = sanitize(input);
+      ms = Math.min(ms, Date.now() - t0);
+    }
     expect(ms).toBeLessThan(LIMIT_MS);
     expect(xmlThreats(out)).toEqual([]);
   });

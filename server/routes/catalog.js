@@ -543,9 +543,10 @@ function svgLocalName(name) {
   return (colon === -1 ? name : name.slice(colon + 1)).toLowerCase();
 }
 
-// A name character: anything that is not whitespace, "/", "=", "<", ">" or a quote.
-function svgIsNameChar(ch) {
-  return ch !== undefined && !/[\s/=><"']/.test(ch);
+// A name character (by char code): anything above ASCII space that is not "/", "=",
+// "<", ">" or a quote. XML whitespace is all at or below 0x20.
+function svgIsNameChar(c) {
+  return c > 32 && c !== 47 && c !== 61 && c !== 60 && c !== 62 && c !== 34 && c !== 39;
 }
 
 // Would this attribute value be read as a script URL? Character references are
@@ -567,63 +568,64 @@ function svgValueRunsScript(value) {
   return /(?:java|vb)script:/.test(bare);
 }
 
-// Clean ONE tag's interior (the text between "<" and ">"). Copies it verbatim except
-// that event-handler attributes (name starts with "on") and any attribute whose
-// value is a script URL are removed with their value. Nothing is reordered or
-// re-spaced, so a tag without such an attribute comes back byte-for-byte.
+// Clean ONE tag's interior (the text between "<" and ">"). Removes event-handler
+// attributes (name starts with "on") and any attribute whose value is a script URL,
+// each with its value. Returns the SAME string when nothing is removed, so the
+// caller can tell "unchanged" by reference; nothing is reordered or re-spaced.
 function svgCleanTag(inner) {
-  let j = inner[0] === '/' ? 1 : 0;
-  while (j < inner.length && svgIsNameChar(inner[j])) j++;
-  const cuts = [];
   const L = inner.length;
+  let j = inner.charCodeAt(0) === 47 ? 1 : 0;
+  while (j < L && svgIsNameChar(inner.charCodeAt(j))) j++;
+  let parts = null;
+  let keep = 0;
   while (j < L) {
-    const ch = inner[j];
-    if (/[\s/=]/.test(ch)) {
+    const c = inner.charCodeAt(j);
+    if (c <= 32 || c === 47 || c === 61) {
       j++;
       continue;
     }
-    if (ch === '"' || ch === "'") {
-      const close = inner.indexOf(ch, j + 1);
+    if (c === 34 || c === 39) {
+      const close = inner.indexOf(inner[j], j + 1);
       j = close === -1 ? L : close + 1;
       continue;
     }
     const nameStart = j;
-    while (j < L && svgIsNameChar(inner[j])) j++;
+    while (j < L && svgIsNameChar(inner.charCodeAt(j))) j++;
     if (j === nameStart) {
-      j++; // a stray "<" inside the tag: step over it, so j always advances
+      j++; // a stray "<" or ">" inside the tag: step over it, so j always advances
       continue;
     }
-    const attrName = inner.slice(nameStart, j);
     let k = j;
-    while (k < L && /\s/.test(inner[k])) k++;
+    while (k < L && inner.charCodeAt(k) <= 32) k++;
     let end = j;
     let value = '';
-    if (inner[k] === '=') {
+    if (inner.charCodeAt(k) === 61) {
       k++;
-      while (k < L && /\s/.test(inner[k])) k++;
-      if (inner[k] === '"' || inner[k] === "'") {
+      while (k < L && inner.charCodeAt(k) <= 32) k++;
+      const q = inner.charCodeAt(k);
+      if (q === 34 || q === 39) {
         const close = inner.indexOf(inner[k], k + 1);
         end = close === -1 ? L : close + 1;
         value = inner.slice(k + 1, close === -1 ? L : close);
       } else {
         let m = k;
-        while (m < L && !/\s/.test(inner[m])) m++;
+        while (m < L && inner.charCodeAt(m) > 32) m++;
         end = m;
         value = inner.slice(k, m);
       }
     }
-    if (/^on/i.test(attrName) || svgValueRunsScript(value)) cuts.push([nameStart, end]);
+    const handler =
+      (inner.charCodeAt(nameStart) | 32) === 111 && (inner.charCodeAt(nameStart + 1) | 32) === 110;
+    if (handler || svgValueRunsScript(value)) {
+      if (!parts) parts = [];
+      parts.push(inner.slice(keep, nameStart));
+      keep = end;
+    }
     j = Math.max(j, end);
   }
-  if (!cuts.length) return inner;
-  let out = '';
-  let at = 0;
-  for (const [start, stop] of cuts) {
-    if (start < at) continue;
-    out += inner.slice(at, start);
-    at = stop;
-  }
-  return out + inner.slice(at);
+  if (!parts) return inner;
+  parts.push(inner.slice(keep));
+  return parts.join('');
 }
 
 // The end of a "<!DOCTYPE …>" / "<!ENTITY …>" declaration: the next ">", but a
@@ -632,13 +634,13 @@ function svgCleanTag(inner) {
 function svgSkipDeclaration(s, lt) {
   let i = lt + 2;
   while (i < s.length) {
-    const c = s[i];
-    if (c === '[') {
+    const c = s.charCodeAt(i);
+    if (c === 91) {
       const close = s.indexOf(']', i + 1);
       i = close === -1 ? s.length : close + 1;
       continue;
     }
-    if (c === '>') return i + 1;
+    if (c === 62) return i + 1;
     i++;
   }
   return s.length;
@@ -650,87 +652,94 @@ function svgSkipDeclaration(s, lt) {
 // stops there, and so does the scan (rather than letting the tag swallow the next
 // tag's ">", which would carry that tag's bytes through uncleaned).
 function svgTagEnd(s, lt) {
+  const n = s.length;
   let i = lt + 1;
-  while (i < s.length) {
-    const c = s[i];
-    if (c === '"' || c === "'") {
-      const close = s.indexOf(c, i + 1);
+  while (i < n) {
+    const c = s.charCodeAt(i);
+    if (c === 34 || c === 39) {
+      const close = s.indexOf(s[i], i + 1);
       if (close === -1) return -1;
       i = close + 1;
       continue;
     }
-    if (c === '>') return i;
-    if (c === '<') return -1;
+    if (c === 62) return i;
+    if (c === 60) return -1;
     i++;
   }
   return -1;
 }
 
-// One forward pass: copies safe bytes, drops dangerous spans.
+// One forward pass. Kept bytes are never copied piece by piece: the pass only
+// records where a removal or a cleaned tag interrupts the input, and joins the
+// pieces once at the end. A pass that changes nothing returns the input string
+// itself, so real art costs no copy and the fixpoint check is a reference compare.
 function svgSanitizePass(s) {
-  let out = '';
-  let i = 0;
   const n = s.length;
+  const parts = [];
+  let keep = 0; // s[keep..] has not been emitted yet
+  const cut = (from, to) => {
+    parts.push(s.slice(keep, from));
+    keep = to;
+  };
   const closeRe = /<\/(?:[^\s<>/:=]+:)?([^\s<>/:=]+)\s*>/gi;
+  let i = 0;
   while (i < n) {
     const lt = s.indexOf('<', i);
-    if (lt === -1) {
-      out += s.slice(i);
-      break;
-    }
-    out += s.slice(i, lt); // character data: copied verbatim
-    if (s.startsWith('<!--', lt)) {
-      const e = s.indexOf('-->', lt + 4);
-      const end = e === -1 ? n : e + 3;
-      out += s.slice(lt, end); // an XML comment is inert
-      i = end;
-      continue;
-    }
-    if (s.startsWith('<![CDATA[', lt)) {
-      const e = s.indexOf(']]>', lt + 9);
-      const end = e === -1 ? n : e + 3;
-      out += s.slice(lt, end); // CDATA is character data in XML
-      i = end;
-      continue;
-    }
-    if (s[lt + 1] === '!') {
-      // <!DOCTYPE …> / <!ENTITY …>: DROPPED. Without the DOCTYPE no entity is
+    if (lt === -1) break;
+    const next = s.charCodeAt(lt + 1);
+    if (next === 33 /* ! */) {
+      if (s.startsWith('<!--', lt)) {
+        const e = s.indexOf('-->', lt + 4); // an XML comment is inert: kept
+        i = e === -1 ? n : e + 3;
+        continue;
+      }
+      if (s.startsWith('<![CDATA[', lt)) {
+        const e = s.indexOf(']]>', lt + 9); // CDATA is character data in XML: kept
+        i = e === -1 ? n : e + 3;
+        continue;
+      }
+      // <!DOCTYPE …> / <!ENTITY …>: REMOVED. Without the DOCTYPE no entity is
       // defined, so an entity-expansion payload (which libxml2 would expand into a
       // live <script> or a javascript: value) has nothing to expand; the XML parser
       // errors on the undefined reference and renders nothing.
-      i = svgSkipDeclaration(s, lt);
-      continue;
-    }
-    if (s[lt + 1] === '?') {
-      const e = s.indexOf('?>', lt + 2);
-      const end = e === -1 ? n : e + 2;
-      // <?xml-stylesheet …?> can pull in a stylesheet: DROPPED. A plain <?xml …?>
-      // declaration is inert and kept, so art that has one stays byte-identical.
-      if (!/^<\?xml-stylesheet/i.test(s.slice(lt, end))) out += s.slice(lt, end);
+      const end = svgSkipDeclaration(s, lt);
+      cut(lt, end);
       i = end;
       continue;
     }
-    // The name first, without searching: a "<" that starts no name is copied as one
+    if (next === 63 /* ? */) {
+      const e = s.indexOf('?>', lt + 2);
+      const end = e === -1 ? n : e + 2;
+      // <?xml-stylesheet …?> can pull in a stylesheet: REMOVED. A plain <?xml …?>
+      // declaration is inert and kept, so art that has one stays byte-identical.
+      if (s.slice(lt, lt + 16).toLowerCase() === '<?xml-stylesheet') cut(lt, end);
+      i = end;
+      continue;
+    }
+    // The name first, without searching: a "<" that starts no name is kept as one
     // character, so a run of them costs nothing.
-    const p = s[lt + 1] === '/' ? lt + 2 : lt + 1;
+    const p = next === 47 ? lt + 2 : lt + 1;
     let q = p;
-    while (q < n && svgIsNameChar(s[q])) q++;
+    while (q < n && svgIsNameChar(s.charCodeAt(q))) q++;
     if (q === p) {
-      out += '<';
       i = lt + 1;
       continue;
     }
     const gt = svgTagEnd(s, lt);
-    if (gt === -1) break; // an unclosed tag ends the document for an XML parser
-    const inner = s.slice(lt + 1, gt);
+    if (gt === -1) {
+      cut(lt, n); // an unclosed tag ends the document for an XML parser
+      i = n;
+      break;
+    }
     const local = svgLocalName(s.slice(p, q));
     if (SVG_BLOCKED_ELEMENTS.has(local)) {
-      if (inner[0] === '/' || inner[inner.length - 1] === '/') {
-        i = gt + 1; // a close tag or a self-closing tag: drop just the tag
+      if (next === 47 || s.charCodeAt(gt - 1) === 47) {
+        cut(lt, gt + 1); // a close tag or a self-closing tag: remove just the tag
+        i = gt + 1;
         continue;
       }
-      // An open blocked element: drop it and its content up to the next close tag
-      // with the same local name (any prefix); none left means drop to the end.
+      // An open blocked element: remove it and its content up to the next close tag
+      // with the same local name (any prefix); none left means remove to the end.
       closeRe.lastIndex = gt + 1;
       let m;
       let closeEnd = n;
@@ -740,13 +749,21 @@ function svgSanitizePass(s) {
           break;
         }
       }
+      cut(lt, closeEnd);
       i = closeEnd;
       continue;
     }
-    out += '<' + svgCleanTag(inner) + '>';
+    const inner = s.slice(lt + 1, gt);
+    const cleaned = svgCleanTag(inner);
+    if (cleaned !== inner) {
+      cut(lt + 1, gt);
+      parts.push(cleaned);
+    }
     i = gt + 1;
   }
-  return out;
+  if (!parts.length) return s;
+  parts.push(s.slice(keep));
+  return parts.join('');
 }
 
 function sanitizeSvgForDom(svg) {
