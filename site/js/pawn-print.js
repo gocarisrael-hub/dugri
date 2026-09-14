@@ -491,8 +491,9 @@ export function paintSticker(g, { id, slot, photo, crop, filterId }) {
 
 /**
  * A whole card's photos over the generator's picture of it. `svg` sits exactly
- * on that picture; `stickers[i]` is `{ photo, crop }` or null for slot i, and
- * gets a `<g class="pawn-live-slot">` whether or not its photo has decoded yet.
+ * on that picture; `stickers[i]` is `{ photo, crop, src }` or null for slot i,
+ * and gets a `<g class="pawn-live-slot">` whether or not its photo has decoded
+ * yet. `src` (the file that prints) is stamped on the group as `data-src`.
  */
 export function paintCard(svg, { spec, slots, idPrefix, stickers }) {
   if (!svg || !spec) return;
@@ -505,14 +506,23 @@ export function paintCard(svg, { spec, slots, idPrefix, stickers }) {
     svg.__pawnShell = shell;
   }
   let groups = svg.querySelectorAll('g.pawn-live-slot');
-  while (groups.length > stickers.length) groups[groups.length - 1].remove(), (groups = svg.querySelectorAll('g.pawn-live-slot'));
+  while (groups.length > stickers.length)
+    (groups[groups.length - 1].remove(), (groups = svg.querySelectorAll('g.pawn-live-slot')));
   while (groups.length < stickers.length) {
     svg.insertAdjacentHTML('beforeend', '<g class="pawn-live-slot"></g>');
     groups = svg.querySelectorAll('g.pawn-live-slot');
   }
   stickers.forEach((s, i) => {
     const slot = slotRect(slots[i], spec.viewBox);
-    paintSticker(groups[i], { id: `${idPrefix}-s${i}`, slot, photo: s && s.photo, crop: s && s.crop, filterId });
+    if (s && s.src) groups[i].setAttribute('data-src', s.src);
+    else groups[i].removeAttribute('data-src');
+    paintSticker(groups[i], {
+      id: `${idPrefix}-s${i}`,
+      slot,
+      photo: s && s.photo,
+      crop: s && s.crop,
+      filterId,
+    });
   });
 }
 
@@ -520,10 +530,12 @@ export function paintCard(svg, { spec, slots, idPrefix, stickers }) {
  * One slot as a tile: the generator's card cropped to the slot (plus `margin`
  * card units of paper, so the cut-line and its shadow show whole) with the
  * sticker on it. `base` is the card picture; without it the tile is the sticker
- * alone until it arrives.
+ * alone until it arrives. `src`, the file that prints, is stamped as `data-src`.
  */
-export function paintTile(svg, { spec, base, slot, margin = 3, id, photo, crop }) {
+export function paintTile(svg, { spec, base, slot, margin = 3, id, photo, crop, src }) {
   if (!svg || !spec) return;
+  if (src) svg.setAttribute('data-src', src);
+  else svg.removeAttribute('data-src');
   const filterId = id + '-halo';
   const vb = [slot.x - margin, slot.y - margin, slot.w + 2 * margin, slot.h + 2 * margin];
   const shell = vb.join(' ') + '|' + (spec.filter || '') + '|' + (base || '').length + '|' + id;
@@ -608,7 +620,7 @@ async function decode(src, cutout) {
     }
     const href = URL.createObjectURL(await canvasBlob(canvas));
     return { href, width: w, height: h, crop };
-  } catch (e) {
+  } catch {
     return null;
   } finally {
     if (bitmap && typeof bitmap.close === 'function') bitmap.close();

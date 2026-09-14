@@ -3574,6 +3574,16 @@
       // on the card. The answers that have landed live here, so a drag frame never
       // waits on a promise; one still decoding paints everything when it lands.
       const pawnReady = new Map();
+      // What the card's render says about drawing on it — its four slots as
+      // fractions of the card (preview.pawn_slots), its viewBox and its own halo
+      // filter (preview.sticker_spec) — and the picture of each pawn card by index,
+      // since each photo's tile is cut from its card. Null until the card loads.
+      // Declared HERE, before anything that paints: the photo rows read them the
+      // moment they are built, and a `let` read before its own line has run
+      // throws — which took the whole collection page down with it.
+      let pawnSlots = null;
+      let pawnSpec = null;
+      const pawnBases = [];
       function pawnPrepared(src, view) {
         const printSrc = pawnPrintSrcFor(src, view);
         const cutout = printSrc !== src;
@@ -3605,6 +3615,7 @@
           id: 'pawn-pad-' + at,
           photo,
           crop: photo && viewCrop(photo.crop, view),
+          src: photo ? pawnPrintSrcFor(src, view) : null,
         });
       }
       function paintPawnPads() {
@@ -4245,14 +4256,8 @@
         pawnLiveViews.set(src, view);
         paintPawnCard();
       }
-      // The card's four discs, as fractions of the card picture (from the
-      // generator — see preview.pawn_slots). Null until the card has loaded.
-      let pawnSlots = null;
-      // …and the rest of what the card's render says about drawing on it: its
-      // viewBox and its own halo filter (preview.sticker_spec). Plus the picture of
-      // each pawn card by index, because each photo's tile is cut from its card.
-      let pawnSpec = null;
-      const pawnBases = [];
+      // (The card's slots, sticker spec and pictures — pawnSlots, pawnSpec and
+      // pawnBases — are declared with pawnReady, above.)
 
       // Draw the buyer's photos into the card's discs. Called on every drag frame,
       // so it does nothing but move CSS: no fetch, no decode, no server.
@@ -4384,7 +4389,9 @@
         const stickers = pawnPhotosForCard(card).map((src) => {
           const view = pawnLiveViews.get(src) || pawnViewFor(src);
           const photo = pawnPrepared(src, view);
-          return photo && { photo, crop: viewCrop(photo.crop, view) };
+          return (
+            photo && { photo, crop: viewCrop(photo.crop, view), src: pawnPrintSrcFor(src, view) }
+          );
         });
         paintCard(svg, {
           spec: pawnSpec,
@@ -4461,7 +4468,14 @@
           // The disc geometry is the artwork's, so every card has the same four —
           // one answer for all of them.
           if (r && Array.isArray(r.slots) && r.slots.length) pawnSlots = r.slots;
-          if (r && Array.isArray(r.viewBox)) pawnSpec = { viewBox: r.viewBox, filter: r.filter || '' };
+          // A card that came back without its sticker spec (an older server) is
+          // still placed in the card's standard units — just without the halo.
+          if (r && r.card) {
+            pawnSpec = {
+              viewBox: Array.isArray(r.viewBox) ? r.viewBox : [0, 0, 223.92, 312],
+              filter: r.filter || '',
+            };
+          }
           if (r && r.card) pawnBases[card] = r.card;
           paintOnePawnCard(box, card);
           paintPawnPads();

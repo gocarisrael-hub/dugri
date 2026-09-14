@@ -172,42 +172,31 @@ def test_the_ring_is_the_slot_s_own_circle():
 
 
 def test_the_page_and_the_generator_agree_on_the_disc():
-    # DISC_FILL in site/js/pawn-frame.js against PHOTO_DISC_FILL in build.py.
+    # DISC_FILL in site/js/pawn-print.js against PHOTO_DISC_FILL in build.py.
     # tests/unit/photo-card.test.js checks the same pair from the other side; both
     # exist because the two files are edited by different hands.
     import re
     import build
-    js = h._read(os.path.join(h.SITE, "js", "pawn-frame.js"))
+    js = h._read(os.path.join(h.SITE, "js", "pawn-print.js"))
     fill = float(re.search(r"export const DISC_FILL = ([\d.]+);", js).group(1))
     assert abs(fill - build.PHOTO_DISC_FILL) < 1e-9, (fill, build.PHOTO_DISC_FILL)
-    ring = float(re.search(r"export const RING_FILL = ([\d.]+);", js).group(1))
-    assert ring == 1, ring
 
 
-def test_the_stylesheet_takes_its_circles_from_the_module():
-    # The two insets are the bug's own scene: the cut-line was a literal 5% — the
-    # DISC's inset — sitting next to the disc's own 5%, which is exactly how they
-    # came to be the same circle. Both now read the module, and the literals left
-    # behind are fallbacks for the instant before it runs.
+def test_every_pawn_on_the_site_is_painted_by_the_print_module():
+    # The harness renders its two browser panes with paintCard / paintTile. It is
+    # only a test of the real pages for as long as they draw through them too —
+    # and nothing may creep back in beside them: an imitation halo or a CSS ring
+    # is exactly the second drawing this module replaced.
+    collect = h._read(os.path.join(h.SITE, "collect.html"))
+    wizard = h._read(os.path.join(h.SITE, "options.html"))
     css = h._read(os.path.join(h.SITE, "css", "pawn.css"))
-    assert "inset: var(--pawn-disc-inset, 5%)" in css
-    assert "inset: var(--pawn-ring-inset, 0%)" in css
-    # The halo goes on the CIRCLE, never on the photo inside it: the circle clips
-    # with overflow:hidden, and a filter on the clipped child is cut off at the
-    # same rim — no white edge where the print has one.
-    assert ".pawn-disc.is-cut,\n.pawn-live-slot.is-cut {" in css
-    # …and the page has to actually hand them over.
-    page = h._read(os.path.join(h.SITE, "collect.html"))
-    assert "pawnCssVars()" in page
-
-
-def test_the_page_places_every_photo_through_the_shared_geometry():
-    # The harness renders its two browser panes with liveSlotStyle /
-    # discPhotoStyle / haloFilter. It is only a test of the real page for as long
-    # as the real page uses them too.
-    page = h._read(os.path.join(h.SITE, "collect.html"))
-    for fn in ("liveSlotStyle(", "discPhotoStyle(", "haloFilter("):
-        assert fn in page, fn
+    for page, calls in ((collect, ("paintCard(", "paintTile(")), (wizard, ("paintTile(",))):
+        assert "from './js/pawn-print.js'" in page
+        for fn in calls:
+            assert fn in page, fn
+    for page in (collect, wizard, css):
+        assert "pawn-cut-line" not in page
+        assert "drop-shadow(0 0 2px #fff)" not in page
 
 
 def test_the_preview_card_measures_where_the_card_was_actually_drawn():

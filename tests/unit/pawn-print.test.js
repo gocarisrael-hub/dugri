@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { decodePng } from './helpers/png-decode.js';
 import {
   autoCrop,
@@ -22,7 +23,7 @@ import {
 // build.py by generator/test_pawn_print_fixtures.py — so a pass here means the
 // browser agrees with the printer, not with a copy of it.
 
-const DIR = path.join(__dirname, 'fixtures', 'pawn-print');
+const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'pawn-print');
 const expected = JSON.parse(readFileSync(path.join(DIR, 'expected.json'), 'utf8'));
 const sha1 = (bytes) => createHash('sha1').update(bytes).digest('hex');
 
@@ -104,9 +105,15 @@ describe('the sticker markup', () => {
     // An odd rounding can leave the window one pixel taller than wide; the
     // generator's resize to a square stretches it, and so does this.
     expect(cropViewBox([-54, 131, 1055, 1241])).toBe('-54 131 1109 1110');
-    expect(stickerMarkup({ id: 'a', slot, photo: { href: 'u', width: 1, height: 1 }, crop: [0, 0, 5, 6], filterId: 'f' })).toContain(
-      'preserveAspectRatio="none"'
-    );
+    expect(
+      stickerMarkup({
+        id: 'a',
+        slot,
+        photo: { href: 'u', width: 1, height: 1 },
+        crop: [0, 0, 5, 6],
+        filterId: 'f',
+      })
+    ).toContain('preserveAspectRatio="none"');
   });
 
   test("renames the theme's own filter rather than rewriting it", () => {
@@ -115,7 +122,7 @@ describe('the sticker markup', () => {
     expect(haloFilterMarkup(theme, 'halo-card2')).toBe(theme.replace('sticker-halo', 'halo-card2'));
   });
 
-  test('turns the generator\'s fractional slot into card units', () => {
+  test("turns the generator's fractional slot into card units", () => {
     const r = slotRect({ x: 0.2, y: 0.25, w: 0.3, h: 0.2 }, [0, 0, 200, 400]);
     expect(r).toEqual({ x: 40, y: 100, w: 60, h: 80 });
   });

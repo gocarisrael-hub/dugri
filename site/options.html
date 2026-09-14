@@ -2952,7 +2952,7 @@
               aria-label="תמונה 1"
             />
             <span class="pawn-plus" aria-hidden="true">+</span>
-            <img class="pawn-thumb" alt="" hidden />
+            <svg class="pawn-tile" aria-hidden="true"></svg>
             <button
               class="pawn-remove"
               type="button"
@@ -2975,7 +2975,7 @@
               aria-label="תמונה 2"
             />
             <span class="pawn-plus" aria-hidden="true">+</span>
-            <img class="pawn-thumb" alt="" hidden />
+            <svg class="pawn-tile" aria-hidden="true"></svg>
             <button
               class="pawn-remove"
               type="button"
@@ -2998,7 +2998,7 @@
               aria-label="תמונה 3"
             />
             <span class="pawn-plus" aria-hidden="true">+</span>
-            <img class="pawn-thumb" alt="" hidden />
+            <svg class="pawn-tile" aria-hidden="true"></svg>
             <button
               class="pawn-remove"
               type="button"
@@ -3021,7 +3021,7 @@
               aria-label="תמונה 4"
             />
             <span class="pawn-plus" aria-hidden="true">+</span>
-            <img class="pawn-thumb" alt="" hidden />
+            <svg class="pawn-tile" aria-hidden="true"></svg>
             <button
               class="pawn-remove"
               type="button"
@@ -3276,18 +3276,38 @@
             opacity: 0;
             cursor: pointer;
           }
+          /* Over the tile, which shows the Dugri pawn an empty slot prints with. */
           .pawn-plus {
-            font-size: 26px;
+            position: relative;
+            z-index: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.88);
+            font-size: 24px;
             font-weight: 700;
-            color: var(--muted);
+            color: var(--ink);
             line-height: 1;
           }
-          .pawn-thumb {
+          /* THE PAWN, as the printer draws it: a tile cut from the generator's
+             own picture of her card — paper, cut-line, the pawn in an empty
+             slot — with her photo on it through the card's own sticker filter
+             (js/pawn-print.js). Clicks go through it to the file input. */
+          .pawn-tile {
             position: absolute;
-            inset: 0;
+            left: 0;
+            top: 0;
+            display: block;
             width: 100%;
             height: 100%;
-            object-fit: cover;
+            pointer-events: none;
+          }
+          .pawn-slot.has-card,
+          .pawn-slot.is-pawn {
+            border-color: transparent;
           }
           .pawn-remove {
             position: absolute;
@@ -3309,64 +3329,6 @@
           }
           .pawn-slot.is-filled .pawn-plus {
             display: none;
-          }
-          /* THE PAWN PREVIEW. Once the cutout is framed (pawn-frame.js measured
-             its subject), the slot stops being a thumbnail and becomes the pawn:
-             the card's paper, the dashed cut-line the buyer scissors along, and
-             the photo scaled so the WHOLE subject sits inside that circle — the
-             same rule generator/build.py prints by.
-
-             The white ring is stacked drop-shadows standing in for the card's
-             feMorphology dilation. It is an approximation and the copy under the
-             grid says so; what IS exact is the framing, since both sides measure
-             the same alpha with the same arithmetic.
-
-             The slot clips to its SQUARE, not to the circle the card cuts to. That
-             is deliberate and it costs nothing: the framing puts the whole subject
-             inside the circle by construction, so there is no ink between the two
-             shapes to clip — and this treatment is only applied to a cutout whose
-             subject was actually measured (`is-pawn` needs a frame). Clipping to
-             the circle would mean a wrapper element around the image, for a case
-             the rule above cannot produce. */
-          .pawn-slot.is-pawn {
-            border: none;
-            background: var(--pawn-card, #f2cbd6);
-          }
-          .pawn-slot.is-pawn .pawn-cut-line {
-            position: absolute;
-            inset: 6%;
-            border: 1.5px dashed rgba(20, 20, 20, 0.32);
-            border-radius: 50%;
-            pointer-events: none;
-          }
-          /* The framed image is positioned per photo, in percentages of the slot
-             (see pawn-frame.js) — inset/width come from the inline style. */
-          .pawn-slot.is-pawn .pawn-thumb {
-            inset: auto;
-            object-fit: contain;
-            background: none;
-            filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 2px #fff) drop-shadow(0 0 1.5px #fff);
-          }
-          /* A cutout is mostly transparent, so `cover` would blow the subject up
-             and crop it — show it CONTAINED over a light checkerboard, which is
-             what makes "the background is gone" legible at thumbnail size. This
-             is the fallback for a cut we could not MEASURE (no subject, or a
-             browser that would not give us pixels): the slot keeps the old
-             treatment rather than guessing at a frame. */
-          .pawn-slot.is-cut:not(.is-pawn) .pawn-thumb {
-            object-fit: contain;
-            background-color: #fff;
-            background-image:
-              linear-gradient(45deg, #e9e9e9 25%, transparent 25%),
-              linear-gradient(-45deg, #e9e9e9 25%, transparent 25%),
-              linear-gradient(45deg, transparent 75%, #e9e9e9 75%),
-              linear-gradient(-45deg, transparent 75%, #e9e9e9 75%);
-            background-size: 12px 12px;
-            background-position:
-              0 0,
-              0 6px,
-              6px -6px,
-              -6px 0;
           }
           .pawn-status {
             position: absolute;
@@ -3711,6 +3673,8 @@
         syncDesignNames,
         loadCustomDesigns,
       } from './js/designs.js';
+      // Her pawns drawn as the printer draws them (the wizard's photo step).
+      import { preparePhoto, slotRect, paintTile } from './js/pawn-print.js';
       import {
         applyPalette,
         applyOriginal,
@@ -6185,6 +6149,9 @@
           // render (or refresh) the live preview for the current title/theme
           requestPreview({ immediate: true });
         }
+        // The pawn step draws its tiles on her card — asked for only now, when
+        // someone is actually looking at them (a design picked since is a new card).
+        if (currentStep === 5) schedulePawnBase();
         if (currentStep === 4) {
           paintStep5Summary();
           emailInput.focus();
@@ -6269,7 +6236,6 @@
       const PAWN_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
       const PAWN_MAX_BYTES = 4 * 1024 * 1024; // mirror the server IMAGE_CAP
       const pawnFiles = new Array(PAWN_MAX).fill(null);
-      const pawnObjectUrls = new Array(PAWN_MAX).fill(null);
       // THE SLOTS, grown to the ceiling by cloning the first one. The markup
       // carries four; the other twelve are copies with their indices rewritten,
       // so there is one definition of what a slot is and no chance of the
@@ -6301,11 +6267,8 @@
           // A clone of a FILLED slot would arrive wearing its picture; the markup
           // ships empty, but this keeps that true however the markup changes.
           el.className = 'pawn-slot';
-          const thumb = el.querySelector('.pawn-thumb');
-          if (thumb) {
-            thumb.removeAttribute('src');
-            thumb.hidden = true;
-          }
+          const tile = el.querySelector('.pawn-tile');
+          if (tile) tile.innerHTML = '';
           pawnGridEl.appendChild(el);
         }
       })();
@@ -6316,15 +6279,10 @@
       // the image's OWN alpha, so an uncut photo prints as a white rectangle —
       // showing the cut here is the buyer's only chance to catch that.
       const pawnCutouts = new Array(PAWN_MAX).fill(null);
-      const pawnCutUrls = new Array(PAWN_MAX).fill(null);
       const pawnCutState = new Array(PAWN_MAX).fill(''); // '' | working | done | failed
       // Monotonic per slot: a fast re-pick must not have the OLD cutout land on
       // top of the new photo, so a result is only applied when it is still current.
       const pawnCutSeq = new Array(PAWN_MAX).fill(0);
-      // Where each cutout's subject sits inside the pawn's circle — the answer
-      // from pawn-frame.js, or null when it could not be measured, in which case
-      // the slot keeps the old contained-on-checkerboard look.
-      const pawnFrames = new Array(PAWN_MAX).fill(null);
       const PAWN_CUT_LABEL = {
         working: 'מסירים רקע…',
         done: 'הרקע הוסר',
@@ -6333,6 +6291,82 @@
         // which is the only part she can act on while the picker is still open.
         failed: 'לא הוסר הרקע, עדיף תמונות פנים של בן אדם',
       };
+
+      // EACH PHOTO AS THE PRINTER WILL DRAW IT — decoded once, with the generator's
+      // own crop (js/pawn-print.js). The cutout once there is one; her original
+      // until then, or for good if the cut misses — exactly the file the order
+      // prints. An answer is applied wherever that photo now sits, and dropped if
+      // it was re-picked, removed or re-cut meanwhile, so one photo's crop can
+      // never land on another.
+      const pawnPrep = new Array(PAWN_MAX).fill(null);
+      const pawnBlobKeys = new WeakMap();
+      let pawnBlobSeq = 0;
+      function blobKey(blob) {
+        if (!pawnBlobKeys.has(blob)) pawnBlobKeys.set(blob, 'wizard-' + ++pawnBlobSeq);
+        return pawnBlobKeys.get(blob);
+      }
+      async function preparePawnSlot(idx, file) {
+        const cut = pawnCutouts[idx];
+        const src = cut || file;
+        const photo = await preparePhoto(src, { cutout: Boolean(cut), key: blobKey(src) });
+        const at = pawnFiles.indexOf(file);
+        if (at < 0 || pawnCutouts[at] !== cut) return;
+        pawnPrep[at] = photo;
+        renderPawnSlot(at);
+      }
+
+      // THE CARD UNDER THE TILES. Every slot is a tile cut from the generator's
+      // own picture of her pawn card (GET /api/pawn-base): its paper, its dashed
+      // cut-line, and the Dugri pawn the print puts in a slot she has not filled —
+      // dealt across the whole deck, the way the print deals them. Asked only while
+      // this step is on screen, a beat after the last change, and cached per
+      // question here and on the server.
+      let pawnBase = null; // { key, spec: { viewBox, filter, slots }, cards: [picture, ...] }
+      let pawnBaseSeq = 0;
+      let pawnBaseTimer = null;
+      const pawnBaseAnswers = new Map();
+      function schedulePawnBase() {
+        if (currentStep !== 5) return;
+        clearTimeout(pawnBaseTimer);
+        pawnBaseTimer = setTimeout(refreshPawnBase, 250);
+      }
+      function fetchPawnBase(q) {
+        if (!pawnBaseAnswers.has(q)) {
+          const ask = fetch('/api/pawn-base?' + q).then((r) =>
+            r.ok ? r.json() : Promise.reject(new Error(String(r.status)))
+          );
+          pawnBaseAnswers.set(q, ask);
+          ask.catch(() => pawnBaseAnswers.delete(q));
+        }
+        return pawnBaseAnswers.get(q);
+      }
+      async function refreshPawnBase() {
+        const theme = currentTheme();
+        if (!theme) return;
+        const players = pawnPlayers;
+        const n = Math.min(players, pawnFiles.filter(Boolean).length);
+        const key = [theme, players, n].join('|');
+        if (pawnBase && pawnBase.key === key) return;
+        const seq = ++pawnBaseSeq;
+        try {
+          const answers = await Promise.all(
+            Array.from({ length: players / 4 }, (_, card) =>
+              fetchPawnBase(new URLSearchParams({ theme, players, card, n }).toString())
+            )
+          );
+          if (seq !== pawnBaseSeq) return;
+          const first = answers[0];
+          pawnBase = {
+            key,
+            spec: { viewBox: first.viewBox, filter: first.filter || '', slots: first.slots },
+            cards: answers.map((a) => a.card),
+          };
+          pawnSlots.forEach((_, i) => renderPawnSlot(i));
+        } catch {
+          // Keep the tiles as they are: a card picture that did not come is a
+          // plainer preview, never a broken step.
+        }
+      }
 
       // THE PHOTOS SIT IN THE FIRST SLOTS, ALWAYS. The list the wizard uploads is
       // `pawnFiles` in slot order, so a gap in the middle — or a photo left in
@@ -6353,14 +6387,14 @@
         const moved = from.map((i) => ({
           file: pawnFiles[i],
           cut: pawnCutouts[i],
-          frame: pawnFrames[i],
+          prep: pawnPrep[i],
           state: pawnCutState[i],
         }));
         for (let i = 0; i < PAWN_MAX; i++) {
           const m = moved[i] || null;
           pawnFiles[i] = m ? m.file : null;
           pawnCutouts[i] = m ? m.cut : null;
-          pawnFrames[i] = m ? m.frame : null;
+          pawnPrep[i] = m ? m.prep : null;
           pawnCutState[i] = m ? m.state : '';
           // A cut still in flight for whatever USED to be in this slot would land
           // on the photo that just moved in, so every slot's sequence moves on.
@@ -6374,11 +6408,9 @@
         pawnCutState.forEach((st, i) => {
           if (!pawnFiles[i]) return;
           if (st === 'working') cutPawnSlot(i, pawnFiles[i]);
-          // A cut that had FINISHED but was still being measured lost its
-          // measurement the same way, and would stay a plain thumbnail for good.
-          else if (st === 'done' && pawnCutouts[i] && !pawnFrames[i]) {
-            framePawnSlot(i, pawnFiles[i], pawnCutouts[i]);
-          }
+          // A photo whose drawing was still being prepared when it moved is
+          // started again where it now sits.
+          else if (!pawnPrep[i]) preparePawnSlot(i, pawnFiles[i]);
         });
         return true;
       }
@@ -6477,73 +6509,53 @@
             : '';
           pawnOverEl.hidden = !over;
         }
+        // The card under the tiles depends on the count and on how many photos
+        // there are — either may just have changed.
+        schedulePawnBase();
       }
 
+      // ONE SLOT, drawn as the printed pawn: a tile cut from her card with the
+      // photo on it as the card carries it (js/pawn-print.js paintTile). An empty
+      // slot shows what the print puts there — the Dugri pawn — under the + that
+      // fills it. Until the card's picture arrives a photo is drawn on its own.
+      const LOOSE_SPEC = { viewBox: [0, 0, 66, 66], filter: '' };
+      const LOOSE_SLOT = { x: 0, y: 0, w: 66, h: 66 };
       function renderPawnSlot(idx) {
         const slot = pawnSlots[idx];
         if (!slot) return;
-        const img = slot.querySelector('.pawn-thumb');
+        const tile = slot.querySelector('.pawn-tile');
         const removeBtn = slot.querySelector('.pawn-remove');
         const status = slot.querySelector('.pawn-status');
         const file = pawnFiles[idx];
-        if (file) {
-          if (pawnObjectUrls[idx]) URL.revokeObjectURL(pawnObjectUrls[idx]);
-          pawnObjectUrls[idx] = URL.createObjectURL(file);
-          if (pawnCutUrls[idx]) URL.revokeObjectURL(pawnCutUrls[idx]);
-          pawnCutUrls[idx] = pawnCutouts[idx] ? URL.createObjectURL(pawnCutouts[idx]) : null;
-          // Prefer the CUT once it exists — that is what actually goes on the card.
-          img.src = pawnCutUrls[idx] || pawnObjectUrls[idx];
-          img.hidden = false;
-          removeBtn.hidden = false;
-          slot.classList.add('is-filled');
-        } else {
-          if (pawnObjectUrls[idx]) {
-            URL.revokeObjectURL(pawnObjectUrls[idx]);
-            pawnObjectUrls[idx] = null;
-          }
-          if (pawnCutUrls[idx]) {
-            URL.revokeObjectURL(pawnCutUrls[idx]);
-            pawnCutUrls[idx] = null;
-          }
-          img.removeAttribute('src');
-          img.hidden = true;
-          removeBtn.hidden = true;
-          slot.classList.remove('is-filled');
-        }
+        const photo = file ? pawnPrep[idx] : null;
+        removeBtn.hidden = !file;
+        slot.classList.toggle('is-filled', Boolean(file));
         slot.classList.toggle('is-cut', Boolean(file && pawnCutouts[idx]));
-        // The pawn treatment needs BOTH a cutout and a measurement of it: the
-        // circle is only honest when the photo inside it is placed the way the
-        // printer will place it, so an unmeasured cut stays a thumbnail.
-        const frame = file && pawnCutouts[idx] ? pawnFrames[idx] : null;
-        slot.classList.toggle('is-pawn', Boolean(frame));
-        let cutLine = slot.querySelector('.pawn-cut-line');
-        if (frame) {
-          if (!cutLine) {
-            cutLine = document.createElement('span');
-            cutLine.className = 'pawn-cut-line';
-            cutLine.setAttribute('aria-hidden', 'true');
-            slot.appendChild(cutLine);
-          }
-          img.style.width = frame.widthPct.toFixed(2) + '%';
-          img.style.height = frame.heightPct.toFixed(2) + '%';
-          img.style.insetInlineStart = '';
-          img.style.left = frame.leftPct.toFixed(2) + '%';
-          img.style.top = frame.topPct.toFixed(2) + '%';
-        } else {
-          if (cutLine) cutLine.remove();
-          img.style.width = '';
-          img.style.height = '';
-          img.style.left = '';
-          img.style.top = '';
+        slot.classList.toggle('is-pawn', Boolean(photo));
+        // A slot past her player count prints nowhere, so no card goes under it.
+        const base = pawnBase && idx < pawnPlayers ? pawnBase.cards[Math.floor(idx / 4)] : null;
+        slot.classList.toggle('has-card', Boolean(base));
+        if (tile) {
+          const where = pawnBase
+            ? {
+                spec: pawnBase.spec,
+                slot: slotRect(pawnBase.spec.slots[idx % 4], pawnBase.spec.viewBox),
+              }
+            : { spec: LOOSE_SPEC, slot: LOOSE_SLOT };
+          paintTile(tile, {
+            ...where,
+            base,
+            id: 'pawn-tile-' + idx,
+            photo,
+            crop: photo && photo.crop,
+          });
         }
         if (status) {
           let label = file ? PAWN_CUT_LABEL[pawnCutState[idx]] || '' : '';
-          // "הרקע הוסר" existed to tell the buyer what the checkerboard meant. On a
-          // pawn slot the sticker says it better than the sentence does, and the
-          // label's band would sit across the bottom of the circle it is describing.
-          // The other two states still say something the picture cannot ('working'
-          // is a wait, 'failed' is a promise to fix it by hand), so they stay.
-          if (frame && pawnCutState[idx] === 'done') label = '';
+          // "הרקע הוסר" is said by the sticker itself, and the band would sit
+          // across the bottom of the circle it describes. 'working' is a wait and
+          // 'failed' says what to do, neither of which the picture can, so they stay.
+          if (photo && pawnCutState[idx] === 'done') label = '';
           status.textContent = label;
           status.hidden = !label;
         }
@@ -6558,7 +6570,6 @@
       async function cutPawnSlot(idx, file) {
         const seq = ++pawnCutSeq[idx];
         pawnCutouts[idx] = null;
-        pawnFrames[idx] = null;
         pawnCutState[idx] = 'working';
         renderPawnSlot(idx);
         let blob = null;
@@ -6572,27 +6583,9 @@
         pawnCutouts[idx] = blob;
         pawnCutState[idx] = blob ? 'done' : 'failed';
         renderPawnSlot(idx);
-        // Measure where the subject sits, then paint again. Deliberately AFTER
-        // the render above rather than awaited before it: the cut is the slow
-        // part and the buyer should see their sticker the moment it exists,
-        // rather than waiting on a measurement that only moves it.
-        if (blob) await framePawnSlot(idx, file, blob);
-      }
-
-      // Measure a finished cutout and paint the slot as a pawn. Its own function so
-      // pawnCompact can restart JUST this step for a photo that moved mid-measure.
-      async function framePawnSlot(idx, file, blob) {
-        const seq = pawnCutSeq[idx];
-        let frame = null;
-        try {
-          const fmod = await import('./js/pawn-frame.js');
-          frame = await fmod.frameFromBlob(blob);
-        } catch {
-          frame = null;
-        }
-        if (seq !== pawnCutSeq[idx] || pawnFiles[idx] !== file) return; // superseded
-        pawnFrames[idx] = frame;
-        renderPawnSlot(idx);
+        // …and draw the file that will now print: the cutout, framed on its
+        // silhouette — or her original again, if the cut missed.
+        await preparePawnSlot(idx, file);
       }
 
       const pawnErr = document.getElementById('pawnErr');
@@ -6630,13 +6623,15 @@
           // with it, so neither follows the new photo when the grid closes up.
           pawnFiles[idx] = file;
           pawnCutouts[idx] = null;
-          pawnFrames[idx] = null;
+          pawnPrep[idx] = null;
           pawnCutState[idx] = '';
           // She may have tapped slot 4 with 1-3 still empty. The deck fills from
           // the front, so the photo lands at the front; `at` is where it ended up.
           const at = pawnCompact() ? pawnFiles.indexOf(file) : idx;
           renderPawnSlot(at);
           renderPawnCount();
+          // Her photo as it stands is drawn at once; the cut replaces it when ready.
+          preparePawnSlot(at, file);
           cutPawnSlot(at, file);
         });
         // The × sits inside the slot's <label>, so stop the click from re-opening
@@ -6646,7 +6641,7 @@
           e.stopPropagation();
           pawnFiles[idx] = null;
           pawnCutouts[idx] = null;
-          pawnFrames[idx] = null;
+          pawnPrep[idx] = null;
           pawnCutState[idx] = '';
           pawnCutSeq[idx]++; // abandon an in-flight cut for the photo just dropped
           input.value = '';
