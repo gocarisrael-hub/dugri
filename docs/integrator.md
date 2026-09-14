@@ -25,7 +25,11 @@ You never push to main. Every change, including yours, lands with `gh pr merge`.
       git fetch origin && git fetch origin pull/<n>/head
       git merge-base --is-ancestor origin/main <full head sha> && echo up-to-date
       ```
-      If it doesn't, ask the driver to rebase. CI and your review then run again on the new head. Why: two PRs each green against an older main can break main with no text conflict, e.g. one renames an export the other still imports.
+      If it doesn't, list what main has that the head lacks:
+      ```
+      git diff --name-only $(git merge-base <full head sha> origin/main) origin/main
+      ```
+      If every path it prints ends in `.md`, the head counts as up to date: markdown can't break code, and a rebase would only cost another CI run. Otherwise ask the driver to rebase. CI and your review then run again on the new head. Why: two PRs each green against an older main can break main with no text conflict, e.g. one renames an export the other still imports.
    3. Review the diff (`gh pr diff <n>`) and post the review comment (format below).
    4. If approved, merge pinned to the SHA you reviewed:
       `gh pr merge <n> --squash --match-head-commit <full head sha>`
