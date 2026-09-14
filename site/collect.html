@@ -2248,7 +2248,10 @@
             ></div>
           </div>
           <p class="pawn-budget-main" id="playersBudget" data-testid="players-budget"></p>
-          <p class="pawn-budget-note" id="playersNote"></p>
+          <p class="pawn-budget-note" id="playersNote" data-testid="players-note"></p>
+          <!-- Any failure that is not the too-many-words refusal: a lost connection,
+               a refused token. Short, and cleared on the next attempt. -->
+          <div class="pawn-err hidden" id="playersErr" role="alert" data-testid="players-err"></div>
           <!-- Only ever shown with the numbers filled in. -->
           <div class="players-refuse hidden" id="playersRefuse" data-testid="players-refuse">
             <p id="playersRefuseMain"></p>
@@ -3727,9 +3730,34 @@
       // What she last ASKED for, while the request is in flight — so the button
       // she pressed is the one that looks pressed, and a refusal can name it.
       let playersAsked = null;
+      // A request (or the refresh after a `closed` refusal) is in flight: every
+      // count button is disabled, so none can be pressed against a stale state.
+      let playersBusy = false;
+      // STALE POLLS. Every collection fetch takes a tick when it STARTS, and a
+      // successful count change takes one when it lands. A fetch that started
+      // before that save carries the old count and ceiling, so its answer is
+      // dropped rather than allowed to roll the page back.
+      let fetchClock = 0;
+      let playersSavedAt = 0;
 
       function playersNow() {
         return Number(state && state.players) || PLAYER_COUNTS[0];
+      }
+
+      // ONE definition of "collected" on this panel, for the line under the count
+      // and for the refusal alike: the stored words, and — named as such — the
+      // held ones waiting for payment. The server's refusal counts both (a held
+      // word becomes a real one the moment she pays), so a line that showed only
+      // the stored ones would disagree with it on the same screen.
+      function playersCollectedText(words, held) {
+        return 'נאספו ' + words + ' מילים' + (held > 0 ? ' ועוד ' + held + ' שממתינות להוספה' : '');
+      }
+
+      function showPlayersErr(msg) {
+        const el = $('#playersErr');
+        if (!el) return;
+        el.textContent = msg || '';
+        el.classList.toggle('hidden', !msg);
       }
 
       function showPlayersRefusal(info) {
@@ -3744,9 +3772,9 @@
         // Both numbers, in her units: what is already collected, and what the
         // deck she is asking for would hold.
         $('#playersRefuseWhy').textContent =
-          'כבר נאספו ' +
-          (info.words + (info.held || 0)) +
-          ' מילים, ו-' +
+          'כבר ' +
+          playersCollectedText(info.words, info.held || 0) +
+          ', ו-' +
           info.players +
           ' שחקנים משאירים מקום ל-' +
           info.deck_words +
@@ -3759,9 +3787,11 @@
       }
 
       async function setPlayers(n) {
-        if (!isOwner || n === playersNow()) return;
+        if (!isOwner || playersBusy || n === playersNow()) return;
         playersAsked = n;
+        playersBusy = true;
         showPlayersRefusal(null);
+        showPlayersErr('');
         renderPlayers();
         try {
           const r = await api('/players?k=' + encodeURIComponent(ownerToken), {
@@ -3770,6 +3800,8 @@
             body: JSON.stringify({ players: n }),
           });
           playersAsked = null;
+          playersBusy = false;
+          playersSavedAt = ++fetchClock;
           if (state) {
             state.players = r.players;
             state.pawn_cards = r.pawn_cards;
@@ -3783,12 +3815,22 @@
           render();
         } catch (e) {
           playersAsked = null;
-          // The one refusal worth a sentence: her list is already longer than the
-          // deck she asked for. Anything else (a closed collection, a lost
-          // connection) leaves the buttons where they were.
-          if (e && e.status === 409 && e.body && e.body.error === 'words') {
+          const error = e && e.body && e.body.error;
+          if (e && e.status === 409 && error === 'words') {
+            // Her list is already longer than the deck she asked for: both
+            // numbers, and the way out.
             showPlayersRefusal(e.body);
+          } else if (e && e.status === 409 && error === 'closed') {
+            // The collection closed since the last poll. Fetch it now, with the
+            // buttons still disabled, so the closed state (no buttons) replaces
+            // them at once instead of five seconds of a control that cannot work.
+            renderPlayers();
+            await refresh();
+          } else {
+            // A refused token or a lost connection: nothing moved, and she is told.
+            showPlayersErr('לא הצלחנו לשנות את מספר השחקנים. נסו שוב.');
           }
+          playersBusy = false;
           renderPlayers();
         }
       }
@@ -3818,8 +3860,13 @@
         const showing = playersAsked || playersNow();
         Array.from(row.children).forEach((b) => {
           b.setAttribute('aria-pressed', b.getAttribute('data-players') === String(showing));
-          b.disabled = !open;
+          b.disabled = !open || playersBusy;
         });
+        // THE BOXES FOLLOW THE COUNT, whoever changed it. The buttons re-render on
+        // every poll, so a count changed on another device (or by the owner in the
+        // admin) reaches them; the preview has to follow the same answer, or it
+        // shows one card under a count that promises three.
+        if (pawnCardLoaded && pawnCardBoxes().length !== pawnCardCount()) renderPawnCard();
         const cards = pawnCardCount();
         const words = Number(state && state.deck_words) || MAX_WORDS;
         $('#playersBudget').innerHTML =
@@ -3831,8 +3878,10 @@
           ' · <b>עד ' +
           words +
           ' מילים</b>';
-        $('#playersNote').textContent =
-          'נאספו ' + (state && state.words ? state.words.length : 0) + ' מילים';
+        $('#playersNote').textContent = playersCollectedText(
+          state && Array.isArray(state.words) ? state.words.length : 0,
+          state && Array.isArray(state.held_words) ? state.held_words.length : 0
+        );
       }
 
       // The way OUT of the refusal, both halves of it: go and delete some words,
@@ -5567,7 +5616,12 @@
           // The owner passes ?k=<owner_token> so the server returns the stored
           // delivery address (owner-only), letting a locked delivery order prefill
           // without re-typing. Contributors fetch the plain public view.
-          state = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+          const startedAt = ++fetchClock;
+          const next = await api(isOwner ? '?k=' + encodeURIComponent(ownerToken) : '');
+          // Started before her last count change landed: this answer carries the
+          // old count and ceiling. Drop it; the next poll brings the new ones.
+          if (startedAt < playersSavedAt) return;
+          state = next;
           // Her deck's own ceiling, before anything is drawn from it. A
           // contributor's view carries it too — the counter is the same counter.
           MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;
