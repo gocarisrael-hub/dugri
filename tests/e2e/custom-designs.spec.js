@@ -346,9 +346,27 @@ test.describe('product.html — a late fetch never renames an uploaded design', 
     );
   }
 
-  // Resolve the late response, then give its callback a moment to run before asserting.
-  async function afterLate(page, pattern) {
-    await page.waitForResponse(pattern);
+  // A route handler that answers late and COUNTS its answers. Both boot and the
+  // switch fire the request, so there can be two late answers, and on a slow runner
+  // either can already have landed while page.goto was still returning. Waiting on a
+  // response event that has already fired would never resolve.
+  function lateRoute(json) {
+    const late = { started: 0, done: 0 };
+    late.handler = async (route) => {
+      late.started++;
+      await new Promise((r) => setTimeout(r, 800));
+      await route.fulfill({ json });
+      late.done++;
+    };
+    return late;
+  }
+
+  // Wait until every late answer that was asked for has been delivered, however early
+  // that happened, then give its callback a moment to run before asserting.
+  async function afterLate(page, late) {
+    await expect
+      .poll(() => late.started > 0 && late.done === late.started, { timeout: 15000 })
+      .toBe(true);
     await page.evaluate(() => new Promise((r) => setTimeout(r, 250)));
   }
 
@@ -356,14 +374,12 @@ test.describe('product.html — a late fetch never renames an uploaded design', 
     await stubBase(page);
     await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
     const names = Object.fromEntries(BUILT_IN_IDS.map((id) => [id, LEAKED]));
-    await page.route('**/api/design-names', async (route) => {
-      await new Promise((r) => setTimeout(r, 800));
-      await route.fulfill({ json: { names } });
-    });
+    const late = lateRoute({ names });
+    await page.route('**/api/design-names', late.handler);
 
     await page.goto('/product.html?design=my-custom');
     await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
-    await afterLate(page, '**/api/design-names');
+    await afterLate(page, late);
 
     await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
     await expect(page).toHaveTitle(/עיצוב מותאם/);
@@ -375,14 +391,12 @@ test.describe('product.html — a late fetch never renames an uploaded design', 
     const overrides = Object.fromEntries(
       BUILT_IN_IDS.map((id) => [`product-${id}-name`, { text: LEAKED }])
     );
-    await page.route('**/api/content*', async (route) => {
-      await new Promise((r) => setTimeout(r, 800));
-      await route.fulfill({ json: { overrides } });
-    });
+    const late = lateRoute({ overrides });
+    await page.route('**/api/content*', late.handler);
 
     await page.goto('/product.html?design=my-custom');
     await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
-    await afterLate(page, '**/api/content*');
+    await afterLate(page, late);
 
     await expect(page.locator('#pdpTitle')).toHaveText('עיצוב מותאם');
     await expect(page).toHaveTitle(/עיצוב מותאם/);
