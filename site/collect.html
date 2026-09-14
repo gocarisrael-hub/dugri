@@ -4942,6 +4942,12 @@
         // Say so, because `renderPawns` draws nothing at all while pawnBusy.
         showPawnBusy(picked.length > 1 ? 'מעלים את התמונות…' : 'מעלים את התמונה…');
         const before = pawnList().length;
+        // What the server deliberately did NOT keep, across every batch that it
+        // answered. Outside the `try` because a later batch can still fail: those
+        // photos were refused for a reason (a format it cannot read), not lost on
+        // the way, and counting them as "not uploaded, try again" would drop the
+        // advice and send her to re-send the same unreadable file.
+        const skipped = [];
         try {
           const ready = await shrinkForUpload(picked);
           const cuts = await cutForUpload(ready);
@@ -4951,7 +4957,6 @@
           // and every photo would be lost. The route caps a batch at the same
           // number (PAWN_BATCH_MAX) and the TOTAL at her player count, so the
           // batches fill the order up and stop.
-          const skipped = [];
           for (let start = 0; start < ready.length; start += PAWN_BATCH) {
             const fd = new FormData();
             const failed = [];
@@ -4997,11 +5002,16 @@
           const landed = pawnList().length - before;
           renderPawns();
           renderPawnCard();
-          if (landed > 0) {
-            const lost = picked.length - landed;
-            showPawnErr(
-              lost === 1 ? 'תמונה אחת לא הועלתה, נסו שוב' : lost + ' תמונות לא הועלו, נסו שוב'
-            );
+          if (landed > 0 || skipped.length) {
+            // Photos the server skipped on purpose are neither landed nor lost:
+            // they get their own sentence, with its advice, after the count.
+            const lost = Math.max(0, picked.length - landed - skipped.length);
+            const failLine = !lost
+              ? ''
+              : lost === 1
+                ? 'תמונה אחת לא הועלתה, נסו שוב.'
+                : lost + ' תמונות לא הועלו, נסו שוב.';
+            showPawnErr([failLine, pawnSkipText(skipped)].filter(Boolean).join(' '));
           } else {
             showPawnErr('לא הצלחנו להעלות את התמונה, נסו שוב');
           }
@@ -5065,15 +5075,20 @@
           'תמונה אחת בפורמט שאנחנו לא קוראים ולא נקלטה. נסו לצלם או לשמור אותה כ-JPG.',
         no_room: () => 'אפשר עד ' + pawnMax() + ' תמונות - מה שמעבר לא נשמר.',
       };
-      function reportPawnSkips(skipped) {
+      function pawnSkipText(skipped) {
         const list = Array.isArray(skipped) ? skipped : [];
-        if (!list.length) return false;
+        if (!list.length) return '';
         // One reason, the first one: a mixed batch is rare and a paragraph of
         // caveats helps nobody. Plural is stated as a count so the sentence stays
         // true when two photos failed for the same reason.
         const reason = list[0].reason;
         const one = (PAWN_SKIP_MSG[reason] || PAWN_SKIP_MSG.unsupported)();
-        showPawnErr(list.length > 1 ? one.replace('תמונה אחת', list.length + ' תמונות') : one);
+        return list.length > 1 ? one.replace('תמונה אחת', list.length + ' תמונות') : one;
+      }
+      function reportPawnSkips(skipped) {
+        const text = pawnSkipText(skipped);
+        if (!text) return false;
+        showPawnErr(text);
         return true;
       }
       // SHE ARRIVED WITH FEWER PHOTOS THAN SHE SENT. The wizard uploads the
