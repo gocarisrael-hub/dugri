@@ -31,6 +31,9 @@ Designs, gallery/images, templates and their artwork, themes, storefront carouse
 - `server/templates.js`, `server/template-store.js`, `server/design-catalog.js`, `server/design-images.js`, `server/image-thumbs.js`, `server/promo.js`; `scripts/tokenize-svg.mjs`, `render-design-assets.mjs`, `product-thumbs.mjs` (need `magick`), `backup-templates.mjs`, `icon-contact-sheet.py`, `icon-clearance-proof.py`
 - `site/js/designs.js` (+ `designs.generated.js` — BUILD OUTPUT, never hand-edit), `site/js/design-images.js`, `site/js/carousel.js`, `site/js/lazy-media.js`, `site/js/pinch-zoom.js`, `site/js/promo.js`
 - Pages: `products.html`, `index.html` (catalog/carousel), `admin-designs.html`, `admin-images.html`, `admin-templates.html`, `admin-newgame.html`, `design-codes.html`
+- **`server/routes/catalog.js`** (split out of `index.js`): `/api/admin/designs`, `/api/admin/design-codes*` + `/api/design-code/validate` (with the design → theme map and `designIsInStore`), `/api/admin/templates` upload/create/list/rename/settings/delete + `/assets/:role` (replace, read, remove) + `/revert`, `/api/design-names`, `/api/custom-designs`, `/api/template-asset/*`, `/api/admin/templates/:key/asset-svg/:role`, `/api/template-image/*`, `/api/admin/promo/image`, `/api/design-images` + `/api/admin/design-images/*`, `/design-img/*`, `/design-thumb/*`, `/api/promo`. Edit these there, not in `index.js` (see "Splitting the monolith"). `saveGalleryUpload` comes back to `index.js` as a return value, because C's photo-fallback upload uses it.
+- **`server/stores/catalog.js`** (split out of `db.js`): the private-design access codes, as two factories (`designCodesCreate`, `designCodesManage`) because the block is split around A's stock block.
+- Still in `index.js`, owned by C: `/api/admin/templates/:key/typefit`, `/entry` (the calibration screen's reads) and `/redetect`.
 - CSS: `site/css/tokens.css`, `site/css/carousel.css`
 - In `index.js`: the designs/templates/preview region, `/api/design-names`, `/api/design-images*`, `/api/admin/templates*` (upload, artwork/asset SVGs, fonts), `/api/custom-designs`, `/api/template-image/*`, `/api/promo` + `/api/admin/promo/*`
 - In `db.js`: the design-codes block
@@ -70,7 +73,7 @@ Settings, content editor, WhatsApp/Whapi, SMS, emails/reminders, ads attribution
 `server/index.js` and `server/db.js` are being split by domain so parallel PRs stop colliding in
 them. Each slice moves ONE domain, as a pure move with zero behaviour change.
 
-The pattern (slice 1, Agent D, is the reference):
+The pattern (slice 1, Agent D, is the reference; slice 2, Agent B, follows it):
 
 - **Routes** go to `server/routes/<domain>.js`. The module exports `register<Block>(app, deps)`
   functions, one per contiguous block that used to sit inline in `index.js`, and `index.js` calls
@@ -104,7 +107,11 @@ Planned order:
 
 1. **D — Platform & Comms** (done: routes + reminder store). Chosen first because no open PR touched
    its code. Slice 1b: D's non-route machinery (WhatsApp/notify hooks, reminder schedulers).
-2. **B — Catalog & Design**: templates/designs/gallery/promo routes + the design-codes store.
+2. **B — Catalog & Design** (done: routes + design-codes store). Left in `index.js` on purpose: the
+   calibration routes that sit inside B's templates region (`/typefit`, `/entry`, `/redetect`) are
+   C's and move with C's slice. Two comments that describe B routes (the "REMOVE an optional asset"
+   note above `TYPEFIT_TIMEOUT_MS`, the "REVERT a shipped template" note above `/redetect`) were
+   already detached from their routes and stay where they were.
 3. **A — Commerce**: pricing/coupons/pay/callback/stock/HFD routes + the coupons, stock, pay-session
    and Meta-report store blocks.
 4. **C — Wizard & Word-collection**, last: collections/pawns/players/preview/wordlists routes + the

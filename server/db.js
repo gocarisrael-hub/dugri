@@ -15,6 +15,8 @@ const validate = require('./validate');
 const reminders = require('./reminders');
 // Agent D's store block (server/stores/platform.js), spread into `db` below.
 const platformStore = require('./stores/platform');
+// Agent B's store blocks (server/stores/catalog.js), spread into `db` below.
+const catalogStore = require('./stores/catalog');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
@@ -3237,36 +3239,8 @@ const db = {
   // Agent D: reminder + order-notified state, in server/stores/platform.js.
   ...platformStore({ _db, saveDb, nowIso, reminders, effectiveStatus, REMINDER_AFTER_MS }),
 
-  // --- Private-design access codes ----------------------------------------
-  createDesignCode({ code, design_id, valid_until } = {}) {
-    const c = normCode(code);
-    if (!/^[A-Z0-9]{3,20}$/.test(c)) return { error: 'bad code' };
-    const design = String(design_id == null ? '' : design_id)
-      .trim()
-      .slice(0, 80);
-    if (!design) return { error: 'bad design_id' };
-    let until = null;
-    if (valid_until != null && valid_until !== '') {
-      const s = String(valid_until).trim();
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || Number.isNaN(Date.parse(s))) {
-        return { error: 'bad valid_until' };
-      }
-      until = s;
-    }
-    if (_db.design_codes.some((x) => x.code === c)) return { error: 'duplicate' };
-    const rec = {
-      id: uid(),
-      code: c,
-      design_id: design,
-      valid_until: until,
-      active: true,
-      created_at: nowIso(),
-      uses: 0,
-    };
-    _db.design_codes.push(rec);
-    saveDb();
-    return rec;
-  },
+  // Agent B: design access codes (create), in server/stores/catalog.js.
+  ...catalogStore.designCodesCreate({ _db, saveDb, normCode, uid, nowIso }),
 
   // --- stock ------------------------------------------------------------------
 
@@ -3442,52 +3416,8 @@ const db = {
     return null;
   },
 
-  listDesignCodes() {
-    return [..._db.design_codes].sort((a, b) => b.created_at.localeCompare(a.created_at));
-  },
-
-  getDesignCodeByCode(code) {
-    const c = normCode(code);
-    return _db.design_codes.find((x) => x.code === c) || null;
-  },
-
-  getDesignCodeById(id) {
-    return _db.design_codes.find((x) => x.id === id) || null;
-  },
-
-  setDesignCodeActive(id, active) {
-    const c = this.getDesignCodeById(id);
-    if (!c) return null;
-    c.active = !!active;
-    saveDb();
-    return c;
-  },
-
-  deleteDesignCode(id) {
-    const before = _db.design_codes.length;
-    _db.design_codes = _db.design_codes.filter((x) => x.id !== id);
-    if (_db.design_codes.length === before) return false;
-    saveDb();
-    return true;
-  },
-
-  validateDesignCode(code) {
-    const c = this.getDesignCodeByCode(code);
-    if (!c) return { valid: false, reason: 'not_found' };
-    if (!c.active) return { valid: false, reason: 'inactive' };
-    if (c.valid_until && todayStrIsrael() > c.valid_until) {
-      return { valid: false, reason: 'expired' };
-    }
-    return { valid: true, design_id: c.design_id };
-  },
-
-  incrementDesignCodeUses(code) {
-    const c = this.getDesignCodeByCode(code);
-    if (!c) return false;
-    c.uses = (c.uses || 0) + 1;
-    saveDb();
-    return true;
-  },
+  // Agent B: design access codes (the rest), in server/stores/catalog.js.
+  ...catalogStore.designCodesManage({ _db, saveDb, normCode, todayStrIsrael }),
 };
 
 module.exports = db;

@@ -2128,8 +2128,11 @@ describe('templates.shrinkSvgImages with real Python (skipped without Pillow)', 
 // every card rendered as an identical blank rectangle. Injected inline instead,
 // which means the markup must not be able to execute anything.
 describe('sanitizeSvgForDom (thumbnail injection)', () => {
-  const src = fs.readFileSync(path.join(serverDir, 'index.js'), 'utf8');
-  const fn = src.match(/function sanitizeSvgForDom[\s\S]*?\n}\n/)[0];
+  // Agent B's routes left index.js for server/routes/catalog.js (slice 2 of the
+  // monolith split), where the helper sits one level deep inside its register
+  // function — hence the indented closing brace.
+  const src = fs.readFileSync(path.join(serverDir, 'routes', 'catalog.js'), 'utf8');
+  const fn = src.match(/function sanitizeSvgForDom[\s\S]*?\n {2}}\n/)[0];
   const sanitize = eval(fn + ';sanitizeSvgForDom');
 
   it('strips <script> blocks and self-closing script tags', () => {
