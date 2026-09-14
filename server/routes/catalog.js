@@ -47,6 +47,28 @@ function registerAdminDesigns(
   });
 }
 
+// site/js/designs.js, the ESM design catalog, loaded ONCE for every route in this
+// file. A CommonJS file can only reach it through a dynamic import, so the cache is
+// the import promise, keyed by the file's URL (derived from the `__dirname` each
+// register function is given). A FAILED import is dropped from the cache, so the
+// next request tries again, as it did when each route imported the file itself.
+// It rejects rather than resolving to a fallback because the callers disagree on
+// what a missing catalog means: the public routes answer empty, the template
+// delete guard refuses (fail closed).
+const designsModules = new Map();
+function loadDesignsModule({ path, __dirname, pathToFileURL }) {
+  const url = pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js')).href;
+  let loading = designsModules.get(url);
+  if (!loading) {
+    loading = import(url);
+    designsModules.set(url, loading);
+    loading.catch(() => {
+      if (designsModules.get(url) === loading) designsModules.delete(url);
+    });
+  }
+  return loading;
+}
+
 // The design -> theme map, the in-store check and the private-design access codes.
 function registerDesignCodes(
   app,
@@ -70,9 +92,7 @@ function registerDesignCodes(
   async function loadThemeByDesign() {
     if (_themeByDesign) return _themeByDesign;
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       _themeByDesign = mod.THEME_BY_DESIGN || {};
     } catch {
       _themeByDesign = {};
@@ -328,9 +348,7 @@ function registerTemplateOnboarding(
     if (!requireAdmin(req, res)) return;
     let inUse;
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       inUse = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
     } catch (e) {
       return res.status(500).json({
@@ -632,9 +650,7 @@ function registerStorefrontTemplates(
     let names = {};
     let fields = {};
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       // PUBLIC subset only — a private/access-gated design's name must never leak to
       // anonymous visitors. themes.json is read through an mtime cache so this hot
       // endpoint doesn't hit disk on every products.html / product.html load.
@@ -680,9 +696,7 @@ function registerStorefrontTemplates(
   app.get('/api/custom-designs', async (req, res) => {
     let out = [];
     try {
-      const mod = await import(
-        pathToFileURL(path.join(__dirname, '..', 'site', 'js', 'designs.js'))
-      );
+      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
       const builtIn = new Set(Object.values(mod.THEME_BY_DESIGN || {}));
       const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
       for (const key of Object.keys(themes || {})) {
