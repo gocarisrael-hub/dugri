@@ -955,6 +955,39 @@ test('a count change during the refresh after a 402 still brings the lock on', a
   await expect(page.getByTestId('players-8')).toHaveAttribute('aria-pressed', 'true');
 });
 
+// THE COLLECTION CLOSED, AND THE FETCH THAT WOULD SHOW IT FAILED. The server has said
+// `closed`, so every count button would only be refused again. The field shows the
+// closed state instead of handing back buttons that repeat a silent 409.
+test('a closed refusal whose follow-up fetch fails still shows the closed state', async ({
+  page,
+}) => {
+  await noPoll(page);
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+  await expect(page.getByTestId('players-count')).toBeVisible();
+
+  const closed = await page.request.post(`/api/collections/${id}/close`, {
+    data: { owner_token: k },
+  });
+  expect(closed.status()).toBeLessThan(400);
+  let puts = 0;
+  await page.route('**/api/collections/*/players*', (route) => {
+    puts++;
+    return route.continue();
+  });
+  // Every collection fetch from here on is lost on the network.
+  await page.route(/\/api\/collections\/[^/?]+(\?|$)/, (route) =>
+    route.request().method() === 'GET' ? route.abort('failed') : route.continue()
+  );
+
+  await page.getByTestId('players-8').click();
+  await expect(page.getByTestId('players-count')).toBeHidden();
+  await expect(page.locator('#playersClosed')).toBeVisible();
+  expect(puts).toBe(1);
+});
+
 // ANOTHER DEVICE CHANGED THE COUNT. The buttons follow every poll; the preview has
 // to follow the same answer, or it draws one card under a count that promises three.
 test('a count changed from another device redraws the cards on the next poll', async ({ page }) => {

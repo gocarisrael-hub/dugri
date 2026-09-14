@@ -3740,6 +3740,10 @@
       // because a caller may be waiting on that answer (see refresh()).
       let fetchClock = 0;
       let playersSavedAt = 0;
+      // The server refused a count change as `closed`, and no collection fetch has
+      // landed since. Until one does, the count field shows the closed state: every
+      // button would only be refused again.
+      let playersClosedSeen = false;
 
       function playersNow() {
         return Number(state && state.players) || PLAYER_COUNTS[0];
@@ -3825,6 +3829,10 @@
             // The collection closed since the last poll. Fetch it now, with the
             // buttons still disabled, so the closed state (no buttons) replaces
             // them at once instead of five seconds of a control that cannot work.
+            // The server has already said `closed`, so the field shows that even
+            // if this fetch is lost: buttons handed back now would only repeat
+            // the same refusal. The next fetch that lands clears it.
+            playersClosedSeen = true;
             renderPlayers();
             await refresh();
           } else {
@@ -3840,7 +3848,7 @@
         const row = $('#playersCount');
         const fld = $('#playersFld');
         if (!row || !fld) return;
-        const open = state && state.status === 'open';
+        const open = state && state.status === 'open' && !playersClosedSeen;
         // Owner only, and only while the collection is open: once the deck is in
         // production the count is what it is, and a control that silently 409s is
         // worse than one that is not there.
@@ -5633,6 +5641,7 @@
             if (attempt >= 1) return 'dropped';
           }
           state = next;
+          playersClosedSeen = false;
           // Her deck's own ceiling, before anything is drawn from it. A
           // contributor's view carries it too — the counter is the same counter.
           MAX_WORDS = Number(state && state.deck_words) || DEFAULT_MAX_WORDS;
