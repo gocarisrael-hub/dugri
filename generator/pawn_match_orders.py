@@ -45,16 +45,14 @@ sys.path.insert(0, HERE)
 from PIL import Image, ImageChops  # noqa: E402
 
 import build  # noqa: E402
-import card_paper  # noqa: E402
-import chrome  # noqa: E402
 import config  # noqa: E402
 import preview  # noqa: E402
 import render_page as rp  # noqa: E402
 
-# Pixels per CSS pixel of the card. The card is ~224 x 312 CSS px, so 4 gives an
-# 896 px wide raster: the pawn slot is ~264 px across, enough to see a one-pixel
-# placement error and the width of the white edge.
-SCALE = 4
+# Pixels per CSS pixel of the card — the scale the generator's own single-card
+# render uses. The card is ~224 x 312 CSS px, so a pawn slot is ~132 px across:
+# a 1% placement error is more than a pixel, and the white edge is ~3 px wide.
+SCALE = 2
 # A slot counts as matching when fewer than this share of its sticker pixels
 # differ by more than DIFF_AT (out of 255, max channel). Anti-aliasing and
 # resampling alone differ by a few levels, so the threshold looks past those.
@@ -132,20 +130,15 @@ def print_cards(order, lines, work):
                             pdf, stem], check=True)
             out.append(stem + ".png")
         return out
-    # A sheet template: the pawn card the deck composes, rendered by Chrome.
+    # A sheet template: the pawn card the deck composes (photo_card_svg on the
+    # front's paper), through the same single-card render the live preview uses.
     paths = build.resolve_photos(theme, photos, workdir=os.path.join(work, "sq"), views=views,
                                  cutouts=cuts, slots=build.PHOTO_SLOTS * order["cards"])
-    paper = card_paper.front_paper(theme, workdir=work)
     for card in range(order["cards"]):
         group = paths[card * 4:(card + 1) * 4]
-        svg = rp.photo_card_svg(theme, group, paper=paper, title_lines=lines)
-        faces = "<style>" + rp.GEOMETRIC_TEXT_STYLE + rp.title_faces(
-            theme, config.theme(theme), lines=lines) + "</style>"
-        svgp = os.path.join(work, "print-%d.svg" % card)
-        with open(svgp, "w", encoding="utf-8") as f:
-            f.write(svg.replace("</svg>", faces + "</svg>"))
         png = os.path.join(work, "print-%d.png" % card)
-        chrome.screenshot(svgp, png, w, h, scale=SCALE, what="pawn match print")
+        rp.render_single_card(theme, config.photo_card_path(theme), [], lines, png,
+                              kind="photo", photos=group)
         out.append(png)
     return out
 
@@ -268,74 +261,99 @@ def slot_diff(a, b, inner_share):
     return bin_ / tin, bad / tot, d
 
 
+FAILED = []
+
+
 def run(orders_dir, out):
+    """Every order, each one on its own: a failure is recorded and the run goes on,
+    and an order already measured (its rows.json exists) is not measured again."""
     os.makedirs(out, exist_ok=True)
     rows = []
     names = sorted(n for n in os.listdir(orders_dir)
                    if os.path.isfile(os.path.join(orders_dir, n, "order.json")))
     for name in names:
-        order = load_order(os.path.join(orders_dir, name))
-        work = os.path.join(out, name)
-        shutil.rmtree(work, ignore_errors=True)
-        os.makedirs(work)
-        lines = title_lines(order)
-        w, h = rp.dims(config.photo_card_path(order["theme"]))
-        prints = print_cards(order, lines, work)
-        jobs, pages = [], []
-        for card in range(order["cards"]):
-            n_here = len(order["entries"][card * 4:(card + 1) * 4])
-            base, spec = base_card(order, card, lines, work)
-            html, tile_px = page_html(order, card, base, spec, w, h)
-            hp = os.path.join(work, "page-%d.html" % card)
-            with open(hp, "w", encoding="utf-8") as f:
-                f.write(html)
-            png = os.path.join(work, "page-%d.png" % card)
-            # Playwright takes whole CSS pixels for a viewport.
-            jobs.append({"html": hp, "png": png, "w": math.ceil(w + 4 * (tile_px + 10)),
-                         "h": math.ceil(h + 20 + tile_px), "scale": SCALE})
-            pages.append((card, png, spec, tile_px, n_here))
-        shoot(jobs, work)
-        for (card, png, spec, tile_px, n_here), printed in zip(pages, prints):
-            P = Image.open(printed).convert("RGB")
-            Q = Image.open(png).convert("RGB")
-            # Every slot of the card: her photos, and the shipped pawns the deck
-            # deals into the rest.
-            for i in range(4):
-                s = spec["slots"][i]
-                box = tuple(round(v * SCALE) for v in (s["x"] * w, s["y"] * h,
-                                                       (s["x"] + s["w"]) * w, (s["y"] + s["h"]) * h))
-                side = box[2] - box[0]
-                p = P.crop(box).resize((side, side))
-                q = Q.crop(box).resize((side, side))
-                # The sticker: everything inside the cut-line stroke (r = 33 of 33).
-                sticker, square, dimg = slot_diff(p, q, 0.97)
-                # The editor tile of the same photo, its middle square — photos only;
-                # an empty slot has no row of its own to edit.
-                entry = order["entries"][card * 4 + i] if i < n_here else None
-                t = None
-                tile_sticker = None
-                if entry:
-                    m = tile_px * 3 / (s["w"] * spec["viewBox"][2] + 6)
-                    tbox = tuple(round(v * SCALE) for v in (
-                        i * (tile_px + 10) + m, h + 10 + m,
-                        i * (tile_px + 10) + tile_px - m, h + 10 + tile_px - m))
-                    t = Q.crop(tbox).resize((side, side))
-                    tile_sticker, _, _ = slot_diff(p, t, 0.97)
-                row = {"order": name, "theme": order["theme"], "players": order["players"],
-                       "card": card, "slot": i, "kind": "photo" if entry else "pawn",
-                       "cutout": bool(entry and entry["cutout"]),
-                       "view": bool(entry and entry["view"]),
-                       "card_sticker": sticker, "card_square": square, "tile_sticker": tile_sticker}
-                rows.append(row)
-                strip = Image.new("RGB", (side * 4, side), "white")
-                for k, im in enumerate((p, q, t, dimg.point(lambda v: min(255, v * 4)))):
-                    if im is not None:
-                        strip.paste(im, (k * side, 0))
-                strip.save(os.path.join(work, "slot-c%d-s%d.png" % (card, i)))
-        print("%s done (%s, %d players, %d photos)" % (name, order["theme"], order["players"],
-                                                       len(order["entries"])), flush=True)
+        done = os.path.join(out, name, "rows.json")
+        if os.path.isfile(done):
+            with open(done, encoding="utf-8") as f:
+                rows.extend(json.load(f))
+            continue
+        try:
+            got = run_order(orders_dir, out, name)
+        except Exception as exc:  # noqa: BLE001 - one order must not end the run
+            FAILED.append((name, "%s: %s" % (type(exc).__name__, str(exc)[:200])))
+            print("%s FAILED: %s" % FAILED[-1], flush=True)
+            continue
+        with open(done, "w", encoding="utf-8") as f:
+            json.dump(got, f)
+        rows.extend(got)
     with open(os.path.join(out, "results.json"), "w", encoding="utf-8") as f:
         json.dump(rows, f, indent=1)
+    return rows
+
+
+def run_order(orders_dir, out, name):
+    """Render and compare one order; returns its rows."""
+    rows = []
+    order = load_order(os.path.join(orders_dir, name))
+    work = os.path.join(out, name)
+    shutil.rmtree(work, ignore_errors=True)
+    os.makedirs(work)
+    lines = title_lines(order)
+    w, h = rp.dims(config.photo_card_path(order["theme"]))
+    prints = print_cards(order, lines, work)
+    jobs, pages = [], []
+    for card in range(order["cards"]):
+        n_here = len(order["entries"][card * 4:(card + 1) * 4])
+        base, spec = base_card(order, card, lines, work)
+        html, tile_px = page_html(order, card, base, spec, w, h)
+        hp = os.path.join(work, "page-%d.html" % card)
+        with open(hp, "w", encoding="utf-8") as f:
+            f.write(html)
+        png = os.path.join(work, "page-%d.png" % card)
+        # Playwright takes whole CSS pixels for a viewport.
+        jobs.append({"html": hp, "png": png, "w": math.ceil(w + 4 * (tile_px + 10)),
+                     "h": math.ceil(h + 20 + tile_px), "scale": SCALE})
+        pages.append((card, png, spec, tile_px, n_here))
+    shoot(jobs, work)
+    for (card, png, spec, tile_px, n_here), printed in zip(pages, prints):
+        P = Image.open(printed).convert("RGB")
+        Q = Image.open(png).convert("RGB")
+        # Every slot of the card: her photos, and the shipped pawns the deck
+        # deals into the rest.
+        for i in range(4):
+            s = spec["slots"][i]
+            box = tuple(round(v * SCALE) for v in (s["x"] * w, s["y"] * h,
+                                                   (s["x"] + s["w"]) * w, (s["y"] + s["h"]) * h))
+            side = box[2] - box[0]
+            p = P.crop(box).resize((side, side))
+            q = Q.crop(box).resize((side, side))
+            # The sticker: everything inside the cut-line stroke (r = 33 of 33).
+            sticker, square, dimg = slot_diff(p, q, 0.97)
+            # The editor tile of the same photo, its middle square — photos only;
+            # an empty slot has no row of its own to edit.
+            entry = order["entries"][card * 4 + i] if i < n_here else None
+            t = None
+            tile_sticker = None
+            if entry:
+                m = tile_px * 3 / (s["w"] * spec["viewBox"][2] + 6)
+                tbox = tuple(round(v * SCALE) for v in (
+                    i * (tile_px + 10) + m, h + 10 + m,
+                    i * (tile_px + 10) + tile_px - m, h + 10 + tile_px - m))
+                t = Q.crop(tbox).resize((side, side))
+                tile_sticker, _, _ = slot_diff(p, t, 0.97)
+            row = {"order": name, "theme": order["theme"], "players": order["players"],
+                   "card": card, "slot": i, "kind": "photo" if entry else "pawn",
+                   "cutout": bool(entry and entry["cutout"]),
+                   "view": bool(entry and entry["view"]),
+                   "card_sticker": sticker, "card_square": square, "tile_sticker": tile_sticker}
+            rows.append(row)
+            strip = Image.new("RGB", (side * 4, side), "white")
+            for k, im in enumerate((p, q, t, dimg.point(lambda v: min(255, v * 4)))):
+                if im is not None:
+                    strip.paste(im, (k * side, 0))
+            strip.save(os.path.join(work, "slot-c%d-s%d.png" % (card, i)))
+    print("%s done (%s, %d players, %d photos)" % (name, order["theme"], order["players"],
+                                                   len(order["entries"])), flush=True)
     return rows
 
 
@@ -370,6 +388,8 @@ def main():
     ap.add_argument("--out", required=True)
     args = ap.parse_args()
     print(summary(run(args.orders, args.out)))
+    for name, why in FAILED:
+        print("FAILED %s: %s" % (name, why))
 
 
 if __name__ == "__main__":
