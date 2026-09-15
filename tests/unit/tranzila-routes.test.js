@@ -399,6 +399,44 @@ describe('approved rows that do not settle reach the owner', () => {
     }
   });
 
+  // Not only a DEBIT. Only DEBIT settles, and the string a normal iframe charge
+  // reports is unconfirmed until the staging test, so a row typed anything else
+  // with nothing to match it against is precisely the one nobody can account for.
+  // Gating these two branches on 'DEBIT' swallowed it — charged, not settled, not
+  // reported — the same failure as an unknown type on an unpaid purchase.
+  it('and so is one typed something this build does not recognise', async () => {
+    const alert = spyAlerts();
+    try {
+      const noToken = charge(undefined, 79, { txn_type: 'SALE' });
+      // This environment's token, but its session is gone with the collection —
+      // the orphan branch, which carried the same DEBIT-only gate.
+      const c = db.createCollection('עסקה יתומה בסוג לא מוכר');
+      const { session } = await openPayment(c);
+      const orphan = charge(session.token, 79, { txn_type: 'SALE' });
+      db.deleteCollection(c.id);
+
+      await app.tranzilaSweeper.sweep();
+      const text = alertText(alert);
+      expect(text).toContain(String(noToken));
+      expect(text).toContain(String(orphan));
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('but a known money-back type with no session stays silent', async () => {
+    const alert = spyAlerts();
+    try {
+      for (const t of ['CREDIT', 'CANCEL', 'REFUTE', 'REVERSAL']) {
+        charge(undefined, 79, { txn_type: t });
+      }
+      await app.tranzilaSweeper.sweep();
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
   it('on staging, the same untagged row is not reported (production owns those)', async () => {
     process.env.PAYMENT_ENV = 'staging';
     const alert = spyAlerts();

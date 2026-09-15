@@ -5704,15 +5704,25 @@ function decideTranzilaRow(tx) {
       },
     };
   }
+  // Money that may have moved with nothing here to match it against. The test is
+  // NOT `=== 'DEBIT'`: verifyTransaction settles DEBIT alone, but the string a
+  // normal iframe charge reports is unconfirmed until the staging test, so a row
+  // typed anything else — or typed nothing — is exactly the one nobody can
+  // account for and must be looked at. Only a type this build knows to be money
+  // going BACK stays silent, the same rule the matched branch above applies.
+  // Without this the two branches below would swallow an unknown-type charge with
+  // no session, which is the same failure as an unknown type on an unpaid
+  // purchase: charged, not settled, not reported.
+  const worthReporting = !tx.txnType || !TRANZILA_REFUND_TYPES.has(tx.txnType);
   // This environment's token and no session for it: the collection was deleted,
   // or the session evicted, while its charge was on its way. Money was taken.
   if (mine.length) {
-    if (tx.txnType === 'DEBIT' && env === 'p') {
+    if (worthReporting && env === 'p') {
       return { outcome: 'rejected', alert: { ...base, kind: 'orphan' } };
     }
     return { outcome: 'ignored' };
   }
-  if (tx.txnType === 'DEBIT' && env === 'p') {
+  if (worthReporting && env === 'p') {
     return { outcome: 'rejected', alert: { ...base, kind: 'unmatched' } };
   }
   return { outcome: 'ignored' };

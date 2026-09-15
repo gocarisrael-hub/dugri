@@ -125,9 +125,15 @@ From real rows only, by email with WhatsApp as the fallback:
   a hold, a wrong amount, a foreign currency, or **a second charge on a purchase
   that is already paid**;
 - a verified charge whose order changed after its pay window opened;
-- on production, an approved `DEBIT` carrying this environment's token whose
+- on production, an approved row carrying this environment's token whose
   collection no longer exists (deleted, or its session evicted);
-- on production, an approved `DEBIT` carrying no session token;
+- on production, an approved row carrying no session token;
+
+Neither of those two is limited to `DEBIT`. Only `DEBIT` settles, and the string a
+normal iframe charge reports is unconfirmed until the staging test, so a row typed
+anything else — or typed nothing — with no session to match it against is exactly
+the one nobody can account for. Only a type this build knows to be money going
+back stays silent, the same rule the matched case follows.
 
 Refunds and cancellations (`CREDIT`, `CANCEL`, `REFUTE`, `REVERSAL`) are never
 reported, though they carry the order's token. A money-back type this build does
