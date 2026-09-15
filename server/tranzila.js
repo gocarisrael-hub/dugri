@@ -207,6 +207,18 @@ function carriesToken(raw, token) {
   return Object.values(raw).some((v) => v != null && String(v) === String(token));
 }
 
+// The values on a transaction shaped like a pay-session token (ours are 18
+// lowercase hex characters, PeleCard's ParamX at most 19 of [0-9a-z]). Only ever
+// used to recognise ANOTHER session's token — the caller checks each against the
+// real sessions — never to accept a charge.
+function tokenCandidates(raw) {
+  if (!raw) return [];
+  return Object.values(raw)
+    .filter((v) => typeof v === 'string' || typeof v === 'number')
+    .map(String)
+    .filter((v) => /^[0-9a-z]{12,19}$/.test(v));
+}
+
 // FAIL-CLOSED: approved, the kind of charge we asked for (see CHARGE_* above),
 // shekels, exactly the expected amount in agorot, and bound to the session by
 // its token.
@@ -231,6 +243,7 @@ module.exports = {
   findTransaction,
   verifyTransaction,
   carriesToken,
+  tokenCandidates,
   TOKEN_FIELD,
   SUCCESS_CODE,
 };

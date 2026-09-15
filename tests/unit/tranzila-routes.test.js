@@ -34,6 +34,9 @@ const ENV = {
   // Several tests here produce approved-but-unverified charges on purpose; the
   // production cap of 5 owner alerts an hour would silence the later ones.
   TRANZILA_ALERT_RATE_LIMIT: '50',
+  // This file makes dozens of lookups within a minute; the global lookup cap has
+  // its own tests in tranzila-notify-abuse.test.js.
+  TRANZILA_LOOKUP_RATE_LIMIT: '1000',
 };
 const FEE = 39;
 

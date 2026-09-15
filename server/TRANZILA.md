@@ -29,6 +29,12 @@ delivery orders, and the delivery upgrade on a paid order (shipping/init).
 Both callbacks stay live whichever provider is chosen, so a pay window opened
 just before a switch still settles.
 
+Notify limits, all optional with safe defaults: `TRANZILA_NOTIFY_RATE_LIMIT`
+(10 per real session token per 10 minutes), `TRANZILA_LOOKUP_RATE_LIMIT` (60
+Reports API lookups a minute across all tokens) and `TRANZILA_ALERT_RATE_LIMIT`
+(5 owner alerts an hour). Over a notify limit the answer is 429, before any call
+to Tranzila.
+
 ## One-time setup in My Tranzila
 
 1. **API keys.** Create an app key + secret for the terminal. These sign every
@@ -121,8 +127,10 @@ show "No content yet", open it in a browser.
   https://docs.tranzila.com/docs/payments-and-billing/handshake-v2
 
 Not yet confirmed against a real transaction, so the staging test must show
-them: the `amount` unit, and the exact `txn_type` / `tranmode` a normal iframe
-charge reports. Either being different fails closed (charged, not marked paid,
+them: the `amount` unit, the exact `txn_type` / `tranmode` a normal iframe
+charge reports, and that the report **always carries `tranmode`** (a DEBIT
+reported without one still settles, so a hold must never come back as a
+`tranmode`-less DEBIT). Either being different fails closed (charged, not marked paid,
 owner alerted) rather than open.
 
 ## Testing on staging

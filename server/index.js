@@ -5498,21 +5498,35 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
 //
 // The token is visible to the buyer in the iframe URL, so anyone holding one can
 // POST here with invented indexes. Each such call costs signed Reports API
-// lookups and a few seconds of an open request, so it is rate-limited per token,
-// and a session that has already paid for its purchase never looks anything up.
+// lookups and a few seconds of an open request. So: a session that has already
+// paid for its purchase never looks anything up; the rest are limited per REAL
+// session token (an invented token never gets a bucket, so a flood of them
+// cannot evict a real one's), and all lookups together are capped, because
+// tokens are cheap to collect — every pay/init mints one.
 const tranzilaNotifyRate = makeRateLimiter({
   limit: Number(process.env.TRANZILA_NOTIFY_RATE_LIMIT || 10),
   windowMs: 10 * 60 * 1000,
-  maxKeys: 10000,
+  maxKeys: Number(process.env.TRANZILA_NOTIFY_RATE_MAX_KEYS || 10000),
+});
+const tranzilaLookupRate = makeRateLimiter({
+  limit: Number(process.env.TRANZILA_LOOKUP_RATE_LIMIT || 60),
+  windowMs: 60 * 1000,
+  maxKeys: 1,
 });
 // Owner alerts for an approved charge that did not verify are capped globally,
-// so a stream of forged notifies cannot flood her inbox, and sent once per index.
+// so a stream of forged notifies cannot flood her inbox.
 const tranzilaAlertRate = makeRateLimiter({
   limit: Number(process.env.TRANZILA_ALERT_RATE_LIMIT || 5),
   windowMs: 60 * 60 * 1000,
   maxKeys: 1,
 });
-const tranzilaAlertedIndexes = new Set();
+const tranzilaAlerted = new Set();
+
+// Does this transaction carry ANOTHER real pay session's token? Then it is some
+// other buyer's charge, posted against the wrong session.
+function carriesOtherSessionToken(raw, ownToken) {
+  return tranzila.tokenCandidates(raw).some((v) => v !== ownToken && !!db.findPaySession(v));
+}
 
 // An APPROVED Tranzila transaction that did not verify is the one failure that
 // can mean "the buyer was charged and the order is not paid" — a token field
@@ -5520,11 +5534,26 @@ const tranzilaAlertedIndexes = new Set();
 // buyer who switched the page to a hold. Either way a person has to look, and a
 // log line nobody reads is not that. Card details, tokens and keys stay out.
 function alertUnverifiedTranzilaCharge(c, tx, session) {
-  if (tranzilaAlertedIndexes.has(tx.index)) return;
+  // Two situations are worth a person: the transaction carries THIS session's
+  // token (the buyer's own charge, of the wrong kind or amount), or no session
+  // token at all (the token field is missing or misnamed on the terminal). One
+  // carrying ANOTHER session's token is someone else's charge posted here — it
+  // is ignored before the cap, so other buyers' indexes can neither flood the
+  // owner nor use up the alerts a real fault needs.
+  if (
+    !tranzila.carriesToken(tx.raw, session.token) &&
+    carriesOtherSessionToken(tx.raw, session.token)
+  ) {
+    return;
+  }
+  // Once per index AND session: keyed by index alone, posting a real order's
+  // index first would mark it alerted before that order's own notify arrived.
+  const key = tx.index + ':' + session.token;
+  if (tranzilaAlerted.has(key)) return;
   if (!tranzilaAlertRate.ok('all')) return;
-  tranzilaAlertedIndexes.add(tx.index);
-  if (tranzilaAlertedIndexes.size > 1000) {
-    tranzilaAlertedIndexes.delete(tranzilaAlertedIndexes.values().next().value);
+  tranzilaAlerted.add(key);
+  if (tranzilaAlerted.size > 1000) {
+    tranzilaAlerted.delete(tranzilaAlerted.values().next().value);
   }
   const subject = 'טרנזילה: עסקה מאושרת לא אומתה — ההזמנה לא סומנה כשולמה';
   const lines = [
@@ -5551,9 +5580,6 @@ app.post('/api/payment/tranzila/notify', async (req, res) => {
   // is safe even though the field is untrusted: a forged "declined" cannot stop
   // the real notify for a real charge.
   if (parsed.response && parsed.response !== tranzila.SUCCESS_CODE) return res.json({ ok: true });
-  if (!tranzilaNotifyRate.ok(parsed.token)) {
-    return res.status(429).json({ error: 'too many notifications' });
-  }
 
   const match = db.findPaySession(parsed.token);
   const session = match && match.session;
@@ -5563,6 +5589,10 @@ app.post('/api/payment/tranzila/notify', async (req, res) => {
   const purchasePaid =
     match.kind === 'shipping' ? match.collection.order.shipping.paid : match.collection.order.paid;
   if (purchasePaid && session.resolved && !session.abandoned_at) return res.json({ ok: true });
+  // Limits only past this point, where the token is a real Tranzila session.
+  if (!tranzilaNotifyRate.ok(session.token) || !tranzilaLookupRate.ok('all')) {
+    return res.status(429).json({ error: 'too many notifications' });
+  }
 
   let tx;
   try {
