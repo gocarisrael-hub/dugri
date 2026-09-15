@@ -197,7 +197,23 @@ async function listTransactions({ startDate, endDate } = {}) {
       page_results: PAGE_RESULTS,
       order_direction: 'desc',
     });
-    const list = (data && Array.isArray(data.transactions) && data.transactions) || [];
+    // An error can come back as HTTP 200 with an error body (keys without report
+    // access, a wrong terminal name). Read as "no rows" it would count as a
+    // successful sweep — the last-swept time moves on and nobody is told — so
+    // anything but a transactions list with no error code is a failure.
+    const failed =
+      !data ||
+      typeof data !== 'object' ||
+      (data.error_code != null && Number(data.error_code) !== 0) ||
+      !Array.isArray(data.transactions);
+    if (failed) {
+      throw new Error(
+        'tranzila report error ' +
+          (data && data.error_code != null ? data.error_code : 'without a transactions list') +
+          (data && data.message ? ': ' + String(data.message).slice(0, 120) : '')
+      );
+    }
+    const list = data.transactions;
     for (const t of list) if (t && t.index != null) out.push(normalizeRow(t));
     if (list.length < PAGE_RESULTS) break;
   }

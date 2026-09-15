@@ -179,8 +179,8 @@ describe('owner alerts', () => {
   it('held back by the cap, every queued row stays queued — none trimmed — and all go out once allowed', async () => {
     const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
     try {
-      // Use up the cap.
-      while (app.tranzilaAlertRate.ok('all'));
+      // Use up the cap: two batches sent in the last hour (the limit here).
+      app.tranzilaAlertSends.push(Date.now(), Date.now());
       const s = await openSession('תור התראות');
       const indexes = Array.from({ length: 25 }, () => charge(s.token, { amount: 1 }));
       await app.tranzilaSweeper.sweep();
@@ -189,7 +189,7 @@ describe('owner alerts', () => {
         expect.arrayContaining(indexes.map(String))
       );
 
-      app.tranzilaAlertRate._buckets.clear();
+      app.tranzilaAlertSends.length = 0;
       await app.tranzilaSweeper.sweep();
       // 25 lines in chunks of 10: three messages, one batch against the cap.
       expect(alert).toHaveBeenCalledTimes(3);

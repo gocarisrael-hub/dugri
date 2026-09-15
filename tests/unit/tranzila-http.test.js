@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 // server/tranzila.js talking to Tranzila: a call that hangs is aborted instead
-// of holding a sweep open, and the report listing follows every page — or throws
-// past its hard limit, never quietly returning part of the report.
+// of holding a sweep open; the report listing follows every page, throws past
+// its hard limit, and treats an error body as an error, never as "no rows".
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const modPath = path.join(__dirname, '..', '..', 'server', 'tranzila.js');
@@ -47,6 +47,7 @@ const page = (n, from) =>
     processor_response_code: '000',
     txn_type: 'DEBIT',
   }));
+const range = { startDate: '2026-09-15', endDate: '2026-09-16' };
 
 describe('a Tranzila call that never answers', () => {
   it('is aborted after TRANZILA_HTTP_TIMEOUT_MS', async () => {
@@ -57,7 +58,7 @@ describe('a Tranzila call that never answers', () => {
         })
     );
     const started = Date.now();
-    await expect(tz.listTransactions({ startDate: 'a', endDate: 'b' })).rejects.toThrow('aborted');
+    await expect(tz.listTransactions(range)).rejects.toThrow('aborted');
     expect(Date.now() - started).toBeLessThan(2000);
     expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
   });
@@ -68,7 +69,7 @@ describe('listTransactions paging', () => {
     fetchMock
       .mockResolvedValueOnce(ok({ transactions: page(1000, 1) }))
       .mockResolvedValueOnce(ok({ transactions: page(3, 1001) }));
-    const rows = await tz.listTransactions({ startDate: '2026-09-15', endDate: '2026-09-16' });
+    const rows = await tz.listTransactions(range);
     expect(rows).toHaveLength(1003);
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
@@ -79,9 +80,33 @@ describe('listTransactions paging', () => {
 
   it('throws past its hard page limit instead of dropping the oldest rows', async () => {
     fetchMock.mockImplementation(async () => ok({ transactions: page(1000, 1) }));
-    await expect(tz.listTransactions({ startDate: 'a', endDate: 'b' })).rejects.toThrow(
-      /more than/
-    );
+    await expect(tz.listTransactions(range)).rejects.toThrow(/more than/);
     expect(fetchMock).toHaveBeenCalledTimes(200);
+  });
+});
+
+describe('a report that answers HTTP 200 with an error', () => {
+  it('throws on an error code, with the code and message, rather than returning no rows', async () => {
+    fetchMock.mockResolvedValueOnce(ok({ error_code: 20003, message: 'No report permission' }));
+    await expect(tz.listTransactions(range)).rejects.toThrow(/20003.*No report permission/);
+  });
+
+  it('throws on a reply without a transactions list', async () => {
+    fetchMock.mockResolvedValueOnce(ok({}));
+    await expect(tz.listTransactions(range)).rejects.toThrow(/without a transactions list/);
+    fetchMock.mockResolvedValueOnce(ok({ transactions: 'none' }));
+    await expect(tz.listTransactions(range)).rejects.toThrow();
+  });
+
+  it('throws on an error on a later page too', async () => {
+    fetchMock
+      .mockResolvedValueOnce(ok({ transactions: page(1000, 1) }))
+      .mockResolvedValueOnce(ok({ error_code: 500, message: 'busy' }));
+    await expect(tz.listTransactions(range)).rejects.toThrow(/500/);
+  });
+
+  it('accepts error_code 0 with an empty list as a real empty report', async () => {
+    fetchMock.mockResolvedValueOnce(ok({ error_code: 0, transactions: [] }));
+    expect(await tz.listTransactions(range)).toEqual([]);
   });
 });

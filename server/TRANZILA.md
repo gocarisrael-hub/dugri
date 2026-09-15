@@ -33,6 +33,7 @@ delivery orders, and the delivery upgrade on a paid order (shipping/init).
 | `PAY_INIT_RATE_LIMIT_COLLECTION` | _optional_, 20 Tranzila pay/inits per collection per 10 minutes                            |
 | `PAYMENT_PROXY_HOPS`             | _optional_, 1: proxies appending to X-Forwarded-For (Railway)                              |
 | `TRANZILA_LOG_CLIENT_IP`         | _optional_, `1` only for the go-live check below, then remove                              |
+| `TRANZILA_SWEEP_TICK_MS`         | _optional_, 15000: how often the periodic sweep checks whether it is due                   |
 
 `PAYMENT_PROVIDER=tranzila` with a missing Tranzila variable turns card payment
 **off** (`card_enabled: false`). It never silently falls back to PeleCard. Any
@@ -64,13 +65,15 @@ is unsigned and nothing documents it being retried, so it decides nothing.
    and 16 random hex characters.
 2. The buyer pays inside the modal on `collect.html`. Card data never touches us.
 3. Tranzila POSTs to the notify URL (`/api/payment/tranzila/notify?t=<token>`).
-   For a real, unpaid Tranzila session the server only **asks for a sweep**
+   For a real, unpaid Tranzila session whose window is still open (not closed by
+   the buyer, opened within the 20-minute session TTL) the server only **asks for a sweep**
    (at most one per `TRANZILA_SWEEP_MIN_SPACING_MS`) and answers 200. No lookup,
    no store write, nothing per session.
 4. **The sweep** (`server/tranzila-sweep.js`) reads the terminal's rows from the
    Reports API (`report.tranzila.com/v1/transaction`) with our secret key, from
    the persisted `last_swept_at` minus `TRANZILA_SWEEP_OVERLAP_MS` to today,
-   following every page (it throws past 200,000 rows rather than return part of
+   following every page (a reply carrying an error code, or no transactions
+   list, is a failed sweep, never "no rows"; it throws past 200,000 rows rather than return part of
    the report). Each row is matched to a session by the token it carries, and
    marks the purchase paid only when **all** hold:
    - `processor_response_code` is `000`,
@@ -82,7 +85,16 @@ is unsigned and nothing documents it being retried, so it decides nothing.
    - currency is shekels,
    - `amount` (agorot) equals the session's `charged_total` exactly,
    - the row carries the session's token,
-   - that index has not already paid for another purchase.
+   - that index has not already paid for another purchase,
+   - the order is still priced as it was when that pay window opened (version,
+     copies, unit price, delivery fee, total; the fee for a shipping upgrade),
+     stored on the session at pay/init. A charge from a cheaper window the buyer
+     closed before changing the order does not pay for the changed order; the
+     owner is told instead.
+
+   A session closed by the buyer (resolved) still settles: sessions are found by
+   token whatever their state and skipped only once their purchase is paid.
+
 5. Tranzila returns the window to `pay-done.html` by POST; the server bounces it
    to a GET, and the checkout's own polling shows the order paid once the sweep
    has settled it.
@@ -108,7 +120,14 @@ From real rows only, by email with WhatsApp as the fallback:
 - an approved row that carries one of our sessions' tokens but does not settle:
   a hold, a wrong amount, a foreign currency, or **a second charge on a purchase
   that is already paid**;
+- a verified charge whose order changed after its pay window opened;
+- on production, an approved `DEBIT` carrying this environment's token whose
+  collection no longer exists (deleted, or its session evicted);
 - on production, an approved `DEBIT` carrying no session token;
+
+Refunds and cancellations (`CREDIT`, `CANCEL`, `REFUTE`, `REVERSAL`) are never
+reported, though they carry the order's token.
+
 - sweeps that have failed for `TRANZILA_SWEEP_FAIL_ALERT_MS` (Reports API down,
   timeouts, the page limit), repeated at most every 3 hours while it goes on, and
   a short note once a sweep works again.
@@ -116,7 +135,10 @@ From real rows only, by email with WhatsApp as the fallback:
 Alerts wait in a persisted queue and a transaction is marked reported only once
 an alert has really gone out, so a restart or a full hourly cap loses nothing
 and nothing is reported twice. Everything queued goes in one batch, split into
-messages of `TRANZILA_ALERT_CHUNK` lines; nothing is trimmed. Messages carry
+messages of `TRANZILA_ALERT_CHUNK` lines; nothing is trimmed. Each message counts
+as delivered on its own (a failed one is sent again alone, one that arrived is
+never repeated), and a batch takes an hourly slot only once something reached
+the owner. Messages carry
 order numbers, transaction indexes and amounts: no tokens, card data or keys.
 With no alert channel configured at all, the alert is written to the log.
 

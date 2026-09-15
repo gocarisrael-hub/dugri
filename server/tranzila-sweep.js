@@ -45,7 +45,7 @@ function createSweeper({
   state,
   listRows, // async ({ startDate, endDate }) => tx[]; throws on failure
   decide, // (tx) => { outcome: 'settled' | 'used' | 'ignored' | 'rejected', alert? }
-  deliver, // async (items) => true only when the owner was really told
+  deliver, // async (items) => the items that really reached the owner (or true for all)
   hasRecentUnpaid, // (atMs) => an unpaid Tranzila session was opened recently
   // How far before the last sweep the next one reads again: report lag, clock
   // skew between us and Tranzila, and the Israel-date boundary (the Reports query
@@ -83,25 +83,37 @@ function createSweeper({
     return st;
   }
 
-  // Send everything queued. Marked reported, and removed from the queue, only
-  // when the owner was actually told; otherwise it stays for the next sweep.
+  // A store write that must not turn one failure into another: a full disk while
+  // recording a failure still leaves the in-memory state to act on.
+  function safeSave() {
+    try {
+      state.save();
+    } catch (e) {
+      onError(e);
+    }
+  }
+
+  // Send everything queued. `deliver` answers with the items that really reached
+  // the owner (or true for all of them); only those are marked reported and
+  // leave the queue, so a message that failed is sent again — alone — next time.
   async function flush(at) {
     const st = stateNow();
     if (!st.alert_queue.length) return false;
     const batch = st.alert_queue.slice();
-    let delivered = false;
+    let result;
     try {
-      delivered = await deliver(batch);
+      result = await deliver(batch);
     } catch {
-      delivered = false;
+      result = [];
     }
-    if (!delivered) return false;
-    for (const item of batch) st.alerted[item.index] = at;
-    st.alert_queue = st.alert_queue.filter((q) => !batch.includes(q));
+    const sent = result === true ? batch : Array.isArray(result) ? result : [];
+    if (!sent.length) return false;
+    for (const item of sent) st.alerted[item.index] = at;
+    st.alert_queue = st.alert_queue.filter((q) => !sent.includes(q));
     for (const [index, when] of Object.entries(st.alerted)) {
       if (at - Number(when) > keepAlertedMs) delete st.alerted[index];
     }
-    state.save();
+    safeSave();
     return true;
   }
 
@@ -111,7 +123,7 @@ function createSweeper({
   function noteFailure(st, at, e) {
     if (!st.failing_since) {
       st.failing_since = at;
-      state.save();
+      safeSave();
     }
     const since = Number(st.failing_since);
     if (at - since < failAlertAfterMs) return;
@@ -124,7 +136,7 @@ function createSweeper({
       error: String((e && e.message) || e).slice(0, 200),
       queued_at: at,
     });
-    state.save();
+    safeSave();
   }
 
   // The first sweep that works again after a failure the owner was told about.
@@ -142,7 +154,7 @@ function createSweeper({
         queued_at: at,
       });
     }
-    state.save();
+    safeSave();
   }
 
   async function run(at) {
@@ -151,35 +163,47 @@ function createSweeper({
     try {
       const since = st.last_swept_at ? Number(st.last_swept_at) - overlapMs : at - bootstrapMs;
       const from = Math.max(at - maxLookbackMs, Math.min(since, at));
-      let rows;
+      // Reading the terminal AND handling every row are one pass: a row that
+      // throws (a full disk while settling) fails the sweep exactly like an
+      // unreadable report — last_swept_at holds, the failure clock runs and the
+      // owner is told — instead of silently stopping at that row on every pass.
+      let result;
       try {
-        rows = (await listRows({ startDate: israelDate(from), endDate: israelDate(at) })) || [];
+        const rows =
+          (await listRows({ startDate: israelDate(from), endDate: israelDate(at) })) || [];
+        let settled = 0;
+        let queued = 0;
+        for (const tx of rows) {
+          const d = decide(tx) || {};
+          if (d.outcome === 'settled') settled += 1;
+          if (d.alert) {
+            const index = String(tx.index);
+            if (!st.alerted[index] && !st.alert_queue.some((q) => q.index === index)) {
+              st.alert_queue.push({ ...d.alert, index, queued_at: at });
+              queued += 1;
+            }
+          }
+        }
+        st.last_swept_at = at;
+        // A quiet sweep writes the store at most every saveEveryMs: last_swept_at
+        // is a lower bound, and the overlap covers what an older value misses.
+        if (
+          settled ||
+          queued ||
+          !st.last_saved_at ||
+          at - Number(st.last_saved_at) >= saveEveryMs
+        ) {
+          st.last_saved_at = at;
+          state.save();
+        }
+        result = { rows: rows.length, settled, queued };
       } catch (e) {
         noteFailure(st, at, e);
         throw e;
       }
+      // Recovered only once a whole pass has worked.
       noteRecovery(st, at);
-      let settled = 0;
-      let queued = 0;
-      for (const tx of rows) {
-        const d = decide(tx) || {};
-        if (d.outcome === 'settled') settled += 1;
-        if (d.alert) {
-          const index = String(tx.index);
-          if (!st.alerted[index] && !st.alert_queue.some((q) => q.index === index)) {
-            st.alert_queue.push({ ...d.alert, index, queued_at: at });
-            queued += 1;
-          }
-        }
-      }
-      st.last_swept_at = at;
-      // A quiet sweep writes the store at most every saveEveryMs: last_swept_at
-      // is a lower bound, and the overlap covers what an older value misses.
-      if (settled || queued || !st.last_saved_at || at - Number(st.last_saved_at) >= saveEveryMs) {
-        st.last_saved_at = at;
-        state.save();
-      }
-      return { rows: rows.length, settled, queued };
+      return result;
     } finally {
       // Queued alerts go out even when Tranzila could not be read this time.
       await flush(at);

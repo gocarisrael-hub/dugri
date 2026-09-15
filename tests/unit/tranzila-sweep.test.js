@@ -225,6 +225,44 @@ describe('sweeps that keep failing', () => {
     await s.sweep(T0 + MIN);
     expect(deps.deliver).not.toHaveBeenCalled();
   });
+
+  it('a row that throws while being handled fails the sweep the same way, and alerts after 15 minutes', async () => {
+    const { s, deps, st } = harness({
+      st: { last_swept_at: T0 - MIN },
+      listRows: vi.fn(async () => [{ index: '51' }]),
+      decide: vi.fn(() => {
+        throw new Error('ENOSPC');
+      }),
+    });
+    for (let m = 0; m <= 16; m++) {
+      await expect(s.sweep(T0 + m * MIN)).rejects.toThrow('ENOSPC');
+    }
+    expect(st.last_swept_at).toBe(T0 - MIN);
+    expect(st.failing_since).toBe(T0);
+    const failing = deps.deliver.mock.calls
+      .flatMap((c) => c[0])
+      .filter((i) => i.kind === 'sweep_failing');
+    expect(failing).toHaveLength(1);
+    expect(failing[0].error).toBe('ENOSPC');
+  });
+});
+
+describe('partial delivery', () => {
+  it('marks only what was delivered: a failed message stays queued and goes out alone next time', async () => {
+    const { s, deps, st } = harness({
+      listRows: vi.fn(async () => [{ index: '41' }, { index: '42' }, { index: '43' }]),
+      decide: vi.fn(() => ({ outcome: 'rejected', alert: { kind: 'unverified' } })),
+      deliver: vi.fn(async (items) => items.filter((i) => i.index !== '42')),
+    });
+    await s.sweep(T0);
+    expect(st.alert_queue.map((q) => q.index)).toEqual(['42']);
+    expect(Object.keys(st.alerted).sort()).toEqual(['41', '43']);
+
+    deps.deliver.mockImplementation(async (items) => items);
+    await s.sweep(T0 + MIN);
+    expect(deps.deliver.mock.calls[1][0].map((i) => i.index)).toEqual(['42']);
+    expect(st.alert_queue).toEqual([]);
+  });
 });
 
 describe('scheduling', () => {

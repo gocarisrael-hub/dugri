@@ -395,9 +395,31 @@ function withoutMetaCtx(order) {
 // but the rules for keeping a list (dedupe by token, never evict an unresolved
 // session, per-session timestamp and amount) are the payment protocol and must
 // not be able to drift between the two.
+// WHAT A PAY SESSION WAS PRICED AGAINST: the parts of the order (or of the
+// shipping upgrade) that decide what it costs, as one comparable string. Stored
+// on the session at pay/init and compared when a charge settles it, so a charge
+// made in an old pay window cannot pay for an order the buyer has since changed —
+// a 79 ₪ PDF window closed, the order switched to delivery, and the old charge
+// arriving later. Null for nothing to price.
+function orderPriceKey(order) {
+  if (!order) return null;
+  return [
+    'order',
+    order.version,
+    Number(order.quantity) || 1,
+    Number(order.unit_price),
+    Number(order.delivery_fee) || 0,
+    Number(order.total),
+  ].join('|');
+}
+function shippingPriceKey(shipping) {
+  if (!shipping) return null;
+  return ['shipping', Number(shipping.fee)].join('|');
+}
+
 function pushPaySession(
   holder,
-  { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx, provider }
+  { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx, provider, priceKey }
 ) {
   const p = holder || { sessions: [] };
   if (!Array.isArray(p.sessions)) p.sessions = [];
@@ -421,6 +443,8 @@ function pushPaySession(
       // opened on Tranzila settles only through Tranzila's notify. Absent on
       // sessions written before Tranzila, which were all PeleCard.
       provider: provider || 'pelecard',
+      // orderPriceKey / shippingPriceKey at pay/init (Tranzila checks it).
+      price_key: priceKey || null,
       resolved: false,
       // Per-session timestamp: bounds the in-flight window (see TTL) and is the
       // basis for evicting only OLD, RESOLVED sessions when over the cap.
@@ -2209,7 +2233,16 @@ const db = {
   // Sessions ACCUMULATE (capped). Returns false when there is no order.
   recordPaymentInit(
     id,
-    { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx, provider } = {}
+    {
+      paramToken,
+      transactionId,
+      charged_total,
+      coupon,
+      discount_pct,
+      metaCtx,
+      provider,
+      priceKey,
+    } = {}
   ) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
@@ -2221,6 +2254,7 @@ const db = {
       discount_pct,
       metaCtx,
       provider,
+      priceKey,
     });
     saveDb();
     return true;
@@ -2305,7 +2339,7 @@ const db = {
   // The upgrade's own PeleCard handshake. Same protocol as the order's, on its
   // own session list — the two charges are different amounts and each callback
   // must verify against its own.
-  recordShippingInit(id, { paramToken, transactionId, charged_total, provider } = {}) {
+  recordShippingInit(id, { paramToken, transactionId, charged_total, provider, priceKey } = {}) {
     const c = this.getCollection(id);
     if (!c || !c.order || !c.order.shipping) return false;
     c.order.shipping.pelecard = pushPaySession(c.order.shipping.pelecard, {
@@ -2313,6 +2347,7 @@ const db = {
       transactionId,
       charged_total,
       provider,
+      priceKey,
       // No coupons on shipping: a discount code buys a game, not postage.
       coupon: null,
       discount_pct: null,
@@ -2490,6 +2525,25 @@ const db = {
 
   saveTranzilaSweepState() {
     saveDb();
+  },
+
+  // See orderPriceKey / shippingPriceKey above.
+  orderPriceKey(order) {
+    return orderPriceKey(order);
+  },
+  shippingPriceKey(shipping) {
+    return shippingPriceKey(shipping);
+  },
+
+  // Could a live pay window still own this session? Unresolved (the buyer has
+  // not closed it) and opened within SESSION_TTL_MS.
+  isPaySessionOpen(session) {
+    return (
+      !!session &&
+      !session.resolved &&
+      !!session.initiated_at &&
+      Date.now() - Date.parse(session.initiated_at) < SESSION_TTL_MS
+    );
   },
 
   // Is there a purchase still unpaid whose session this provider opened since

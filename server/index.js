@@ -5339,6 +5339,7 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       discount_pct: couponCode ? discountPct : null,
       metaCtx: adCtx,
       provider: provider.NAME,
+      priceKey: db.orderPriceKey(order),
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
@@ -5413,6 +5414,7 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
       transactionId,
       charged_total: charged,
       provider: provider.NAME,
+      priceKey: db.shippingPriceKey(shipping),
     });
     res.json({ url, charged });
   } catch {
@@ -5583,14 +5585,21 @@ function tranzilaPurchasePaid(match) {
 // minted in the OTHER environment is neither settled nor reported here. A row
 // with no session token at all (an old or manual charge in My Tranzila, or a
 // misconfigured token field) is reported by production only.
+// Money going back to the buyer. A refund of a paid order carries its token too,
+// and is nothing to report.
+const TRANZILA_REFUND_TYPES = new Set(['CREDIT', 'CANCEL', 'REFUTE', 'REVERSAL']);
+
 function decideTranzilaRow(tx) {
   if (tx.responseCode !== tranzila.SUCCESS_CODE) return { outcome: 'ignored' };
   if (db.isTransactionUsed(tranzila.NAME, tx.index)) return { outcome: 'used' };
+  if (TRANZILA_REFUND_TYPES.has(tx.txnType)) return { outcome: 'ignored' };
   const env = tranzila.envTag();
   const tokens = tranzila.sessionTokenValues(tx.raw);
   const mine = tokens.filter((t) => tranzila.tokenEnv(t) === env);
   if (tokens.length && !mine.length) return { outcome: 'other_env' };
   const matches = mine.map(tranzilaMatch).filter(Boolean);
+  // Verified charges whose order has changed since their pay window opened.
+  const repriced = [];
   for (const m of matches) {
     if (tranzilaPurchasePaid(m)) continue;
     const ok = tranzila.verifyTransaction(tx, {
@@ -5598,6 +5607,16 @@ function decideTranzilaRow(tx) {
       token: m.session.token,
     });
     if (!ok) continue;
+    // The purchase must still be priced as it was when this window opened: the
+    // buyer may have closed a cheaper window and changed the order since.
+    const current =
+      m.kind === 'shipping'
+        ? db.shippingPriceKey(m.collection.order.shipping)
+        : db.orderPriceKey(m.collection.order);
+    if (!m.session.price_key || m.session.price_key !== current) {
+      repriced.push(m);
+      continue;
+    }
     settleVerifiedPayment(m, {
       method: tranzila.NAME,
       transactionId: tx.index,
@@ -5611,6 +5630,17 @@ function decideTranzilaRow(tx) {
     mode: tx.tranmode,
     date: tx.raw && tx.raw.transaction_date ? String(tx.raw.transaction_date) : null,
   };
+  if (repriced.length) {
+    console.error('[tranzila] index ' + tx.index + ' paid for an order that has changed since');
+    return {
+      outcome: 'rejected',
+      alert: {
+        ...base,
+        kind: 'order_changed',
+        orders: repriced.map((m) => m.collection.order_no || m.collection.id),
+      },
+    };
+  }
   if (matches.length) {
     // Enough to diagnose from the Railway log, and nothing about the card.
     console.error(
@@ -5635,8 +5665,14 @@ function decideTranzilaRow(tx) {
       },
     };
   }
-  // This environment's token, but no session for it: a deleted collection's.
-  if (mine.length) return { outcome: 'ignored' };
+  // This environment's token and no session for it: the collection was deleted,
+  // or the session evicted, while its charge was on its way. Money was taken.
+  if (mine.length) {
+    if (tx.txnType === 'DEBIT' && env === 'p') {
+      return { outcome: 'rejected', alert: { ...base, kind: 'orphan' } };
+    }
+    return { outcome: 'ignored' };
+  }
   if (tx.txnType === 'DEBIT' && env === 'p') {
     return { outcome: 'rejected', alert: { ...base, kind: 'unmatched' } };
   }
@@ -5675,6 +5711,17 @@ function describeTranzilaAlert(item) {
   if (item.kind === 'unmatched') {
     return head + ' — אושרה ולא שייכת לאף הזמנה (האם שדה dugri_token מוגדר במסוף?)';
   }
+  if (item.kind === 'orphan') {
+    return head + ' — אושרה עבור הזמנה שכבר לא קיימת במערכת (נמחקה?)';
+  }
+  if (item.kind === 'order_changed') {
+    return (
+      head +
+      ' — שולמה עבור הזמנה ' +
+      (item.orders || []).join(', ') +
+      ' שהשתנתה מאז שנפתח חלון התשלום, ולכן לא סומנה כשולמה'
+    );
+  }
   return (
     head +
     ' — לא אומתה עבור הזמנה ' +
@@ -5686,41 +5733,46 @@ function describeTranzilaAlert(item) {
 }
 
 // OWNER ALERTS. Everything queued goes in one batch, split into messages of
-// TRANZILA_ALERT_CHUNK lines so each fits WhatsApp, and the batch counts once
-// against the hourly cap. True only when every message was really delivered —
-// until then the sweep keeps the queue (persisted) and tries again. With no
-// channel configured at all there is nobody to tell: logged loudly, and counted
-// as delivered so the queue does not grow for ever.
-const tranzilaAlertRate = makeRateLimiter({
-  limit: tzLimit('TRANZILA_ALERT_RATE_LIMIT', 5),
-  windowMs: 60 * 60 * 1000,
-  maxKeys: 1,
-});
+// TRANZILA_ALERT_CHUNK lines so each fits WhatsApp. Answers with the items whose
+// message really went out; the sweep marks only those reported, so a message
+// that failed is sent again alone and one that arrived is never repeated. A batch
+// takes one of the TRANZILA_ALERT_RATE_LIMIT hourly slots, and only once
+// something reached the owner — failed attempts cost nothing. With no channel
+// configured at all there is nobody to tell: logged loudly, and counted as
+// delivered so the queue does not grow for ever.
+const tranzilaAlertSends = [];
+function tranzilaAlertCapFull(at) {
+  while (tranzilaAlertSends.length && at - tranzilaAlertSends[0] >= 60 * 60 * 1000) {
+    tranzilaAlertSends.shift();
+  }
+  return tranzilaAlertSends.length >= tzLimit('TRANZILA_ALERT_RATE_LIMIT', 5);
+}
 async function deliverTranzilaAlerts(items) {
-  const lines = items.map(describeTranzilaAlert);
-  if (!tranzilaAlertRate.ok('all')) return false;
+  const at = Date.now();
+  if (tranzilaAlertCapFull(at)) return [];
   const size = Math.floor(tzLimit('TRANZILA_ALERT_CHUNK', 15));
   const parts = [];
-  for (let i = 0; i < lines.length; i += size) parts.push(lines.slice(i, i + size));
-  let all = true;
+  for (let i = 0; i < items.length; i += size) parts.push(items.slice(i, i + size));
+  const delivered = [];
   for (let i = 0; i < parts.length; i++) {
     const subject =
       'טרנזילה: ' +
       items.length +
       ' פריטים לבדיקה' +
       (parts.length > 1 ? ' (' + (i + 1) + '/' + parts.length + ')' : '');
-    const body = parts[i].concat([
-      'לבדוק ב-My Tranzila אם נגבה כסף, ולזכות או לסמן ידנית לפי הצורך.',
-    ]);
+    const body = parts[i]
+      .map(describeTranzilaAlert)
+      .concat(['לבדוק ב-My Tranzila אם נגבה כסף, ולזכות או לסמן ידנית לפי הצורך.']);
     let ok = await notify.sendSystemAlert(subject, body).catch(() => false);
     if (!ok) ok = await alertOwnerViaWhatsApp(subject, body);
     if (!ok && !notify.isConfigured() && !ownerWaId()) {
       console.error('[tranzila] OWNER ALERT, no channel configured: ' + body.join(' | '));
       ok = true;
     }
-    if (!ok) all = false;
+    if (ok) delivered.push(...parts[i]);
   }
-  return all;
+  if (delivered.length) tranzilaAlertSends.push(at);
+  return delivered;
 }
 
 const tranzilaSweeper = createSweeper({
@@ -5745,7 +5797,13 @@ app.post('/api/payment/tranzila/notify', (req, res) => {
   const failed = parsed.response && parsed.response !== tranzila.SUCCESS_CODE;
   if (tranzila.isConfigured() && parsed.token && !failed) {
     const match = tranzilaMatch(parsed.token);
-    if (match && !tranzilaPurchasePaid(match)) tranzilaSweeper.request();
+    // Only a window that could still be paying asks for a sweep. An old or
+    // closed session's charge is found by the periodic sweep; letting its token
+    // trigger sweeps would let one stale token hammer the Reports API (shared
+    // with the other environment) every few seconds for ever.
+    if (match && !tranzilaPurchasePaid(match) && db.isPaySessionOpen(match.session)) {
+      tranzilaSweeper.request();
+    }
   }
   res.json({ ok: true });
 });
@@ -6601,9 +6659,12 @@ if (require.main === module) {
     setTimeout(() => {
       tranzilaSweeper.sweep().catch(logSweep);
     }, 0).unref();
-    const tzTimer = setInterval(() => {
-      tranzilaSweeper.tick().catch(logSweep);
-    }, 15 * 1000);
+    const tzTimer = setInterval(
+      () => {
+        tranzilaSweeper.tick().catch(logSweep);
+      },
+      positiveNumber(process.env.TRANZILA_SWEEP_TICK_MS, 15 * 1000)
+    );
     if (tzTimer.unref) tzTimer.unref();
   }
   // Hourly reminder scan, only when email is configured. unref() so the timer
@@ -6637,10 +6698,11 @@ if (require.main === module) {
 }
 
 module.exports = app;
-// The Tranzila sweeper and its alert cap, for tests: a sweep can be run on demand
-// instead of waiting for the timers (which tests never start).
+// The Tranzila sweeper and its alert cap (the times of batches sent in the last
+// hour), for tests: a sweep can be run on demand instead of waiting for the
+// timers (which tests never start).
 module.exports.tranzilaSweeper = tranzilaSweeper;
-module.exports.tranzilaAlertRate = tranzilaAlertRate;
+module.exports.tranzilaAlertSends = tranzilaAlertSends;
 // Exposed for tests + the scheduler: a single WhatsApp nudge pass, and the
 // paid-order group-open hook. Attached to the app export (which stays the default
 // export) so a test can drive them with injected inputs, hermetically.

@@ -11,7 +11,8 @@ import fs from 'node:fs';
 // The boot path itself: `node server/index.js`, the require.main block, with
 // Tranzila configured against a stub Reports API. A charge made while the
 // server was down must be found by the sweep the server runs as it starts, with
-// no notify and no manual call.
+// no notify and no manual call. The periodic tick is pushed out to 10 minutes
+// here, so nothing but the boot sweep can have settled it.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.join(__dirname, '..', '..');
@@ -66,6 +67,7 @@ describe('node server/index.js with Tranzila configured', () => {
       TRANZILA_APP_KEY: 'app-key',
       TRANZILA_SECRET: 'app-secret',
       TRANZILA_REPORT_BASE: stubUrl,
+      TRANZILA_SWEEP_TICK_MS: String(10 * 60 * 1000),
     };
     delete env.PELECARD_TERMINAL;
     delete env.VITEST;
@@ -82,7 +84,12 @@ describe('node server/index.js with Tranzila configured', () => {
     const c = db.createCollection('נפלה בזמן הפריסה');
     db.setOrder(c.id, c.owner_token, { version: 'pickup' });
     const token = tz.newSessionToken();
-    db.recordPaymentInit(c.id, { paramToken: token, charged_total: 199, provider: 'tranzila' });
+    db.recordPaymentInit(c.id, {
+      paramToken: token,
+      charged_total: 199,
+      provider: 'tranzila',
+      priceKey: db.orderPriceKey(db.getCollection(c.id).order),
+    });
     delete require.cache[dbPath];
     delete process.env.PAYMENT_ENV;
 
@@ -107,7 +114,8 @@ describe('node server/index.js with Tranzila configured', () => {
     child.stdout.on('data', (d) => (childLog += d));
     child.stderr.on('data', (d) => (childLog += d));
 
-    const deadline = Date.now() + 20000;
+    // Well inside the 10-minute tick: only the boot sweep can settle it in time.
+    const deadline = Date.now() + 15000;
     let paid = false;
     while (Date.now() < deadline && !paid) {
       await new Promise((r) => setTimeout(r, 200));
