@@ -39,6 +39,15 @@ beforeEach(() => {
 });
 
 const ok = (obj) => ({ ok: true, status: 200, json: async () => obj });
+// A 200 whose body will not parse: an HTML maintenance page, a proxy error, an
+// empty body. What fetch does with any of them is throw from .json().
+const notJson = () => ({
+  ok: true,
+  status: 200,
+  json: async () => {
+    throw new SyntaxError('Unexpected token < in JSON at position 0');
+  },
+});
 const page = (n, from) =>
   Array.from({ length: n }, (_, i) => ({
     index: from + i,
@@ -106,6 +115,22 @@ describe('a report that answers HTTP 200 with an error', () => {
     expect(await tz.listTransactions(range)).toEqual([]);
     fetchMock.mockResolvedValueOnce(ok({ error_code: 0, message: 'no transactions found' }));
     expect(await tz.listTransactions(range)).toEqual([]);
+  });
+
+  // That tolerance is for genuine JSON only. A 200 carrying something else — an
+  // HTML maintenance page, a proxy error page, an empty body — read as {} would
+  // become a quiet day: the watermark advances past rows nobody read, the failure
+  // clock clears and nothing alerts.
+  it('throws when a 200 body is not JSON, instead of reading it as an empty day', async () => {
+    fetchMock.mockResolvedValueOnce(notJson());
+    await expect(tz.listTransactions(range)).rejects.toThrow(/not json/);
+  });
+
+  it('throws on a non-JSON later page instead of dropping the oldest rows', async () => {
+    fetchMock
+      .mockResolvedValueOnce(ok({ transactions: page(1000, 1) }))
+      .mockResolvedValueOnce(notJson());
+    await expect(tz.listTransactions(range)).rejects.toThrow(/not json/);
   });
 
   it('throws on an error on a later page too', async () => {

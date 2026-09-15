@@ -100,7 +100,17 @@ async function postJson(url, payload) {
       signal: ctrl.signal,
     });
     if (!res.ok) throw new Error('tranzila http ' + res.status);
-    return await res.json().catch(() => ({}));
+    // A 200 that is NOT JSON — an HTML maintenance page, a proxy error page, an
+    // empty body — must never read as an empty reply. listTransactions treats a
+    // parsed reply carrying no transactions as a quiet day, so answering {} here
+    // would advance `last_swept_at` past rows nobody ever read, clear
+    // `failing_since` and alert no one; on page 2 and beyond it would silently
+    // drop the oldest rows. Only genuine JSON earns the quiet-day tolerance.
+    try {
+      return await res.json();
+    } catch {
+      throw new Error('tranzila reply is not json');
+    }
   } finally {
     clearTimeout(timer);
   }

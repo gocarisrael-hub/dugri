@@ -417,6 +417,24 @@ function shippingPriceKey(shipping) {
   return ['shipping', Number(shipping.fee)].join('|');
 }
 
+// Is a pay window opened within the last SESSION_TTL still waiting on its charge?
+// Deliberately NOT gated on `resolved`: pay-done's close beacon resolves a
+// session while its charge is still on its way, which on Tranzila is every
+// ordinary successful payment. Used to hold an order's price still while a buyer
+// is paying it.
+function payWindowOpen(order) {
+  const sessions = order && order.pelecard && order.pelecard.sessions;
+  if (!Array.isArray(sessions)) return false;
+  const now = Date.now();
+  return sessions.some(
+    (s) =>
+      s &&
+      Number(s.charged_total) > 0 &&
+      s.initiated_at &&
+      now - Date.parse(s.initiated_at) < SESSION_TTL_MS
+  );
+}
+
 function pushPaySession(
   holder,
   { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx, provider, priceKey }
@@ -2201,7 +2219,26 @@ const db = {
       sameAsExisting && Number.isInteger(existing.unit_price)
         ? existing.unit_price
         : versionPrice(version);
-    const fee = version === 'delivery' ? deliveryFee() : 0;
+    // The fee is the ONE priced field still read from live settings on a
+    // re-submit — unit_price above is already kept — and that re-read is a false
+    // refusal waiting to happen: an order placed at a 39₪ fee with its pay window
+    // open, the owner raises the fee, the buyer fixes the address or re-opens the
+    // modal, and the stored price moves out from under a charge already on its
+    // way, which is then refused with the money taken (server/tranzila-sweep.js).
+    // So while a pay window from the last SESSION_TTL is still unpaid, the fee it
+    // quoted stands. The same reasoning as adminUpdateOrder's re-pricing guard,
+    // for the buyer's own path.
+    //
+    // Outside that window an unpaid order re-prices from settings exactly as
+    // before, so collect.html's renderTotal and the charge still agree by
+    // construction rather than by coincidence.
+    const quotedFee = Number(existing && existing.delivery_fee);
+    const fee =
+      version !== 'delivery'
+        ? 0
+        : sameAsExisting && quotedFee > 0 && payWindowOpen(existing)
+          ? quotedFee
+          : deliveryFee();
     c.order = {
       version,
       // Copies of the same game, and the per-copy price behind the total. Kept as

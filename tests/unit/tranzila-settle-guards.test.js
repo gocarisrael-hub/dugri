@@ -323,6 +323,31 @@ describe('a refund of a paid order', () => {
       alert.mockRestore();
     }
   });
+
+  // The other half of that rule, and the dangerous half. Ignoring an unknown type
+  // is only safe once the purchase is PAID. verifyTransaction settles 'DEBIT'
+  // alone, and the string a normal iframe charge reports is unconfirmed until the
+  // staging test — so if it turns out to be 'SALE', every single payment would
+  // fail verification and be swallowed here, the buyer charged and the order
+  // unpaid with nobody told. It has to be reported.
+  it('but an unknown type on an UNPAID purchase is still reported', async () => {
+    const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      const c = db.createCollection('סוג לא מוכר על הזמנה שלא שולמה');
+      const s = await openPayment(c);
+      charge(s.token, 79, { txn_type: 'SALE' });
+      await app.tranzilaSweeper.sweep();
+
+      const col = db.getCollection(c.id);
+      expect(col.order.paid).toBe(false);
+      expect(alert).toHaveBeenCalled();
+      expect(alertText(alert)).toContain(String(col.order_no || col.id));
+    } finally {
+      alert.mockRestore();
+      cfg.mockRestore();
+    }
+  });
 });
 
 describe('an admin edit that changes no price', () => {
@@ -345,6 +370,58 @@ describe('an admin edit that changes no price', () => {
       charge(s.token, s.charged_total);
       await app.tranzilaSweeper.sweep();
       expect(db.getCollection(c.id).order.paid).toBe(true);
+    } finally {
+      settings.set('pricing', 'delivery_fee', FEE);
+    }
+  });
+});
+
+describe('the buyer re-submitting an order while its pay window is open', () => {
+  it('keeps the fee it was quoted, so the charge on its way still settles', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('הקונה מתקן כתובת');
+    const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    const s = await openPayment(c, { version: 'delivery', address });
+    const placed = db.getCollection(c.id).order.total;
+
+    // The owner raises the fee while the buyer is mid-payment, and the buyer
+    // fixes a typo in the street — the buyer's own path, not the admin one.
+    settings.set('pricing', 'delivery_fee', FEE + 20);
+    try {
+      db.setOrder(c.id, c.owner_token, {
+        version: 'delivery',
+        address: { ...address, street: 'הרצל 12' },
+      });
+      const order = db.getCollection(c.id).order;
+      expect(order.delivery_fee).toBe(FEE);
+      expect(order.total).toBe(placed);
+      expect(order.address.street).toBe('הרצל 12');
+
+      charge(s.token, s.charged_total);
+      await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+    } finally {
+      settings.set('pricing', 'delivery_fee', FEE);
+    }
+  });
+
+  // The freeze lasts exactly as long as the window. With none open, an unpaid
+  // order still re-prices from settings — collect.html's renderTotal prices the
+  // same way, so the number on the screen and the number charged stay equal by
+  // construction.
+  it('but with no window open an unpaid order still re-prices from settings', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('הזמנה בלי חלון תשלום');
+    const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    db.setOrder(c.id, c.owner_token, { version: 'delivery', address });
+    expect(db.getCollection(c.id).order.delivery_fee).toBe(FEE);
+
+    settings.set('pricing', 'delivery_fee', FEE + 20);
+    try {
+      db.setOrder(c.id, c.owner_token, { version: 'delivery', address });
+      const order = db.getCollection(c.id).order;
+      expect(order.delivery_fee).toBe(FEE + 20);
+      expect(order.total).toBe(order.unit_price * (order.quantity || 1) + FEE + 20);
     } finally {
       settings.set('pricing', 'delivery_fee', FEE);
     }

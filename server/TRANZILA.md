@@ -74,9 +74,11 @@ is unsigned and nothing documents it being retried, so it decides nothing.
 4. **The sweep** (`server/tranzila-sweep.js`) reads the terminal's rows from the
    Reports API (`report.tranzila.com/v1/transaction`) with our secret key, from
    the persisted `last_swept_at` minus `TRANZILA_SWEEP_OVERLAP_MS` to today,
-   following every page (a reply carrying an error code, or no transactions
-   list, is a failed sweep, never "no rows"; it throws past 200,000 rows rather than return part of
-   the report). Each row is matched to a session by the token it carries, and
+   following every page (a reply carrying an error code, a transactions list that
+   is not a list, or a body that is not JSON at all — an HTML maintenance or proxy
+   page — is a failed sweep, never "no rows"; it throws past 200,000 rows rather
+   than return part of the report). Each row is matched to a session by the token
+   it carries, and
    marks the purchase paid only when **all** hold:
    - `processor_response_code` is `000`,
    - it is the charge we asked for, checked as an **allowlist**: `txn_type` is
@@ -128,7 +130,13 @@ From real rows only, by email with WhatsApp as the fallback:
 - on production, an approved `DEBIT` carrying no session token;
 
 Refunds and cancellations (`CREDIT`, `CANCEL`, `REFUTE`, `REVERSAL`) are never
-reported, though they carry the order's token.
+reported, though they carry the order's token. A money-back type this build does
+not know by name is ignored on the same grounds, but **only once every purchase
+the row could belong to is already paid** — an unknown `txn_type` on an UNPAID
+purchase is reported like any other row that did not settle. Only `DEBIT`
+settles, and the string a normal iframe charge reports is unconfirmed until the
+staging test, so were it anything else, ignoring it would swallow every payment
+in silence.
 
 - sweeps that have failed for `TRANZILA_SWEEP_FAIL_ALERT_MS` (Reports API down,
   timeouts, the page limit), repeated at most every 3 hours while it goes on, and
@@ -211,8 +219,10 @@ still settles), that the user-defined field appears on the row, **what a day wit
 no transactions answers** (an empty list, a missing key, or an error code — a
 reply with no error code and no transactions is read as an empty day), and **the
 exact `txn_type` a refund and a cancellation report** (a money-back type this
-build does not know by name is ignored rather than reported as a second charge). Any of these
-being different fails closed (charged, not marked paid, reported) rather than open.
+build does not know by name is ignored rather than reported as a second charge —
+but only on a purchase that is already paid, so an unknown type on an unpaid one
+is still reported). Any of these being different fails closed (charged, not
+marked paid, reported) rather than open.
 
 ## Before going live, on each environment
 

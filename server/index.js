@@ -5662,7 +5662,20 @@ function decideTranzilaRow(tx) {
       },
     };
   }
-  if (matches.length && tx.txnType && !TRANZILA_CHARGE_ATTEMPT_TYPES.has(tx.txnType)) {
+  if (
+    matches.length &&
+    tx.txnType &&
+    !TRANZILA_CHARGE_ATTEMPT_TYPES.has(tx.txnType) &&
+    // ONLY when every purchase this row could belong to is ALREADY PAID. An
+    // unknown type on an UNPAID purchase is the dangerous shape: verifyTransaction
+    // settles 'DEBIT' alone, and the exact string a normal iframe charge reports
+    // is unconfirmed until the staging test. If it turns out to be anything else,
+    // the row fails verification and would be swallowed here — the buyer charged,
+    // the order unpaid, nobody told, on EVERY payment. It falls through to the
+    // 'unverified' alert instead, which is the fail-closed promise TRANZILA.md
+    // makes. A real refund carries a paid order's token, so it is still ignored.
+    matches.every(tranzilaPurchasePaid)
+  ) {
     // Our token, approved, but a type this build does not know as a charge: most
     // likely money going back (a refund under another name). Not a second charge.
     return { outcome: 'ignored' };
