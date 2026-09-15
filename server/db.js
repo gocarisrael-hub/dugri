@@ -2478,62 +2478,36 @@ const db = {
     return session ? { collection: c, session, kind: 'shipping' } : null;
   },
 
-  // Is this findPaySession match the LATEST session of its purchase? With
-  // `open`, also still unresolved and inside SESSION_TTL_MS: the only session a
-  // live pay window can belong to. Used to decide whether an unverified charge
-  // on it is worth the owner's attention.
-  isCurrentPaySession(match, { open = false } = {}) {
-    if (!match || !match.session || !match.collection || !match.collection.order) return false;
-    const order = match.collection.order;
-    const holder =
-      match.kind === 'shipping' ? order.shipping && order.shipping.pelecard : order.pelecard;
-    const list = holder && Array.isArray(holder.sessions) ? holder.sessions : [];
-    if (list[list.length - 1] !== match.session) return false;
-    if (!open) return true;
-    const s = match.session;
-    return (
-      !s.resolved && !!s.initiated_at && Date.now() - Date.parse(s.initiated_at) < SESSION_TTL_MS
-    );
+  // TRANZILA SWEEP STATE (server/tranzila-sweep.js): when the terminal's rows
+  // were last read, which transaction indexes the owner has already been told
+  // about, and the alerts not yet delivered. One small object, persisted, so a
+  // restart neither re-reads months of rows, re-alerts, nor loses an alert.
+  // Absent from every store written before it existed; created on first use.
+  tranzilaSweepState() {
+    if (!_db.tranzila_sweep || typeof _db.tranzila_sweep !== 'object') _db.tranzila_sweep = {};
+    return _db.tranzila_sweep;
   },
 
-  // PENDING CHECKS (Tranzila, server/tranzila-reconcile.js). A notify the server
-  // could not verify on the spot is recorded ON its pay session, in the store, so
-  // a restart or deploy between answering Tranzila and settling loses nothing.
-  //
-  // Every session this provider opened that carries a check, on a purchase still
-  // unpaid (the order's own or a shipping upgrade's). Uncapped. Live objects: the
-  // reconciler updates them in place and saves once per pass.
-  listPendingChecks(provider) {
-    const out = [];
-    const take = (holder) => {
-      if (!holder || !Array.isArray(holder.sessions)) return;
-      for (const s of holder.sessions) {
-        if (s && s.provider === provider && s.pending_check) {
-          out.push({ token: s.token, pending: s.pending_check });
-        }
-      }
-    };
-    for (const c of _db.collections) {
-      const o = c && c.order;
-      if (!o) continue;
-      if (!o.paid) take(o.pelecard);
-      if (o.shipping && !o.shipping.paid) take(o.shipping.pelecard);
-    }
-    return out;
-  },
-
-  // Set a session's pending check, or remove it with null. Does not save; the
-  // caller batches and calls savePaySessions().
-  setPendingCheck(token, pending) {
-    const match = this.findPaySession(token);
-    if (!match) return false;
-    if (pending) match.session.pending_check = pending;
-    else delete match.session.pending_check;
-    return true;
-  },
-
-  savePaySessions() {
+  saveTranzilaSweepState() {
     saveDb();
+  },
+
+  // Is there a purchase still unpaid whose session this provider opened since
+  // `sinceMs`? Then a buyer may be paying right now, and the sweep runs often.
+  hasRecentUnpaidProviderSession(provider, sinceMs) {
+    const recent = (holder) =>
+      !!holder &&
+      Array.isArray(holder.sessions) &&
+      holder.sessions.some(
+        (s) =>
+          s && s.provider === provider && s.initiated_at && Date.parse(s.initiated_at) >= sinceMs
+      );
+    return _db.collections.some((c) => {
+      const o = c && c.order;
+      if (!o) return false;
+      if (!o.paid && recent(o.pelecard)) return true;
+      return !!(o.shipping && !o.shipping.paid && recent(o.shipping.pelecard));
+    });
   },
 
   // Admin: flip an order between "still here" and SENT TO THE PRINT SHOP. The

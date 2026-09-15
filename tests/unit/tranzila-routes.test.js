@@ -7,13 +7,14 @@ import os from 'node:os';
 import fs from 'node:fs';
 
 // The Tranzila money path end to end, with PAYMENT_PROVIDER=tranzila: pay/init
-// hands out Tranzila's iframe, the notify is verified against the Reports API
-// (stubbed here) and only a genuine, matching, unspent charge marks anything
-// paid — the order, a coupon order, or a shipping upgrade.
+// hands out Tranzila's iframe; a notify only asks for a sweep; the sweep reads the
+// terminal's rows (the Reports API, stubbed here) and settles a session only from
+// a genuine, matching, unspent row — the order, a coupon order, a shipping
+// upgrade — and tells the owner about approved rows that do not settle.
 //
 // PeleCard credentials are set as well, on purpose: the switch must win over a
 // configured PeleCard, and a PeleCard session must not be settleable through
-// Tranzila's notify.
+// Tranzila.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -26,16 +27,14 @@ const ENV = {
   PELECARD_PASSWORD: 'secret',
   PUBLIC_BASE_URL: 'https://test.dugri.example',
   PAYMENT_PROVIDER: 'tranzila',
+  PAYMENT_ENV: 'production',
   TRANZILA_TERMINAL: 'fxptest',
   TRANZILA_APP_KEY: 'app-key',
   TRANZILA_SECRET: 'app-secret',
-  TRANZILA_NOTIFY_RATE_LIMIT: '6',
-  // Several tests here produce approved-but-unverified charges on purpose; the
-  // production cap of 5 owner alerts an hour would silence the later ones.
-  TRANZILA_ALERT_RATE_LIMIT: '50',
-  // This file makes dozens of lookups within a minute; the global lookup cap has
-  // its own tests in tranzila-notify-abuse.test.js.
-  TRANZILA_LOOKUP_RATE_LIMIT: '1000',
+  // Every notify in this file may start its own sweep.
+  TRANZILA_SWEEP_MIN_SPACING_MS: '1',
+  // Several tests here raise alerts on purpose.
+  TRANZILA_ALERT_RATE_LIMIT: '100',
 };
 const FEE = 39;
 
@@ -46,7 +45,7 @@ let notify;
 let server;
 let base;
 
-// Report rows by index; an index missing from here is "not in the report yet".
+// Report rows by index; the stub answers a date-range query with all of them.
 let report = {};
 let reportThrows = false;
 const reportCalls = [];
@@ -59,7 +58,15 @@ beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-tz-'));
   Object.assign(process.env, ENV);
   delete process.env.TRANZILA_HANDSHAKE;
-  for (const f of ['db.js', 'pelecard.js', 'tranzila.js', 'settings.js', 'notify.js', 'index.js']) {
+  for (const f of [
+    'db.js',
+    'pelecard.js',
+    'tranzila.js',
+    'tranzila-sweep.js',
+    'settings.js',
+    'notify.js',
+    'index.js',
+  ]) {
     const p = require.resolve(path.join(serverDir, f));
     if (require.cache[p]) delete require.cache[p];
   }
@@ -81,13 +88,8 @@ beforeAll(async () => {
         if (reportThrows) throw new Error('network');
         const body = JSON.parse(opts.body);
         reportCalls.push(body);
-        // A date-range query (the sweep) gets every row; an index query, one.
-        if (body.transaction_index == null) {
-          const rows = Object.values(report);
-          return jsonRes({ transactions: rows, rows: rows.length });
-        }
-        const r = report[body.transaction_index];
-        return jsonRes({ transactions: r ? [r] : [], rows: r ? 1 : 0 });
+        const rows = Object.values(report);
+        return jsonRes({ transactions: rows, rows: rows.length });
       }
       throw new Error('unexpected fetch ' + u);
     })
@@ -107,7 +109,8 @@ afterAll(() => {
   for (const k of Object.keys(ENV)) delete process.env[k];
 });
 
-beforeEach(() => {
+beforeEach(async () => {
+  await app.tranzilaSweeper.whenIdle();
   report = {};
   reportThrows = false;
   reportCalls.length = 0;
@@ -123,18 +126,20 @@ async function post(urlPath, body) {
   return { status: res.status, body: await res.json().catch(() => ({})) };
 }
 
-// Tranzila posts its notify as a form.
+// Tranzila posts its notify as a form. Waits for any sweep it started.
 async function notifyForm(query, fields) {
   const res = await realFetch(base + '/api/payment/tranzila/notify?' + query, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams(fields).toString(),
   });
-  return { status: res.status, body: await res.json().catch(() => ({})) };
+  const out = { status: res.status, body: await res.json().catch(() => ({})) };
+  await app.tranzilaSweeper.whenIdle();
+  return out;
 }
 
 let nextIndex = 5000;
-// A report row for an approved debit of `nis` carrying `token`.
+// An approved debit row of `nis` carrying `token`.
 function charge(token, nis, over = {}) {
   const index = nextIndex++;
   report[index] = {
@@ -143,8 +148,9 @@ function charge(token, nis, over = {}) {
     currency: '1',
     processor_response_code: '000',
     txn_type: 'DEBIT',
+    tranmode: 'A',
     authorization_number: 'A' + index,
-    user_defined_1: token,
+    ...(token ? { user_defined_1: token } : {}),
     ...over,
   };
   return index;
@@ -160,11 +166,16 @@ async function openPayment(c, body = {}) {
   return { r, session: sessions[sessions.length - 1] };
 }
 
-const notifyFor = (token, index, extra = {}) =>
+const notifyFor = (token, index = 1, extra = {}) =>
   notifyForm('t=' + token, { index: String(index), Response: '000', ...extra });
 
+function spyAlerts() {
+  return vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+}
+const alertText = (spy) => spy.mock.calls.map(([, lines]) => lines.join('\n')).join('\n');
+
 describe('choosing the provider', () => {
-  it('advertises card payment and opens a Tranzila iframe, not PeleCard', async () => {
+  it('advertises card payment and opens a Tranzila iframe with an environment-tagged token', async () => {
     const c = db.createCollection('טרנזילה');
     const view = await realFetch(base + '/api/collections/' + c.id).then((x) => x.json());
     expect(view.card_enabled).toBe(true);
@@ -174,6 +185,7 @@ describe('choosing the provider', () => {
     const u = new URL(r.body.url);
     expect(u.origin + u.pathname).toBe('https://directng.tranzila.com/fxptest/iframenew.php');
     expect(u.searchParams.get('sum')).toBe('79.00');
+    expect(session.token).toMatch(/^dp[0-9a-f]{16}$/);
     expect(u.searchParams.get('dugri_token')).toBe(session.token);
     expect(u.searchParams.get('notify_url_address')).toBe(
       'https://test.dugri.example/api/payment/tranzila/notify?t=' + session.token
@@ -186,15 +198,16 @@ describe('choosing the provider', () => {
   });
 });
 
-describe('POST /api/payment/tranzila/notify', () => {
-  it('marks the order paid once the report confirms the charge', async () => {
+describe('a notify asks for a sweep; the sweep settles from real rows', () => {
+  it('marks the order paid from the row the terminal reports', async () => {
     const c = db.createCollection('שולם בטרנזילה');
     const { session } = await openPayment(c);
     const index = charge(session.token, 79);
 
     const r = await notifyFor(session.token, index);
     expect(r.status).toBe(200);
-    expect(reportCalls).toEqual([{ terminal_name: 'fxptest', transaction_index: index }]);
+    expect(reportCalls).toHaveLength(1);
+    expect(reportCalls[0].transaction_index).toBeUndefined();
     const order = db.getCollection(c.id).order;
     expect(order.paid).toBe(true);
     expect(order.paid_method).toBe('tranzila');
@@ -204,31 +217,36 @@ describe('POST /api/payment/tranzila/notify', () => {
     expect(order.pelecard.sessions[0].resolved).toBe(true);
   });
 
-  it('is idempotent when Tranzila calls twice', async () => {
+  it('asks Tranzila for the Israel dates from the last sweep, minus the overlap, to today', async () => {
+    const { israelDate } = require(path.join(serverDir, 'tranzila-sweep.js'));
+    await app.tranzilaSweeper.sweep();
+    const last = db.tranzilaSweepState().last_swept_at;
+    reportCalls.length = 0;
+    const now = last + 1000;
+    await app.tranzilaSweeper.sweep(now);
+    expect(reportCalls[0].transaction_start_date).toBe(israelDate(last - 60 * 60 * 1000));
+    expect(reportCalls[0].transaction_end_date).toBe(israelDate(now));
+  });
+
+  it('is idempotent across repeated notifies and sweeps', async () => {
     const c = db.createCollection('פעמיים');
     const { session } = await openPayment(c);
-    const index = charge(session.token, 79);
-    await notifyFor(session.token, index);
+    charge(session.token, 79);
+    await notifyFor(session.token);
     const paidAt = db.getCollection(c.id).order.paid_at;
-    const again = await notifyFor(session.token, index);
-    expect(again.status).toBe(200);
+    await app.tranzilaSweeper.sweep();
     expect(db.getCollection(c.id).order.paid_at).toBe(paidAt);
   });
 
-  it("does not let a checkout claim another buyer's charge by its index", async () => {
+  it("a notify on another buyer's token cannot claim that buyer's charge: the row pays its own session", async () => {
     const victim = db.createCollection('קונה אמיתית');
     const attacker = db.createCollection('מתחזה');
     const v = await openPayment(victim);
     const a = await openPayment(attacker);
-    // The victim's genuine 79 ₪ charge, same amount the attacker's order costs.
     const index = charge(v.session.token, 79);
 
-    const forged = await notifyFor(a.session.token, index);
-    expect(forged.status).toBe(200);
+    expect((await notifyFor(a.session.token, index)).status).toBe(200);
     expect(db.getCollection(attacker.id).order.paid).toBe(false);
-
-    // …and the victim's own notify still pays for the victim.
-    await notifyFor(v.session.token, index);
     expect(db.getCollection(victim.id).order.paid).toBe(true);
   });
 
@@ -238,240 +256,189 @@ describe('POST /api/payment/tranzila/notify', () => {
     const s1 = (await openPayment(c1)).session;
     const s2 = (await openPayment(c2)).session;
     // A pathological row that carries BOTH tokens.
-    const index = charge(s1.token, 79, { user_defined_2: s2.token });
-    await notifyFor(s1.token, index);
-    await notifyFor(s2.token, index);
-    expect(db.getCollection(c1.id).order.paid).toBe(true);
-    expect(db.getCollection(c2.id).order.paid).toBe(false);
+    charge(s1.token, 79, { user_defined_2: s2.token });
+    await notifyFor(s1.token);
+    await notifyFor(s2.token);
+    const paid = [db.getCollection(c1.id).order.paid, db.getCollection(c2.id).order.paid];
+    expect(paid.filter(Boolean)).toHaveLength(1);
   });
 
-  it('does not mark paid when the charged amount differs from the session', async () => {
-    const c = db.createCollection('סכום אחר');
-    const { session } = await openPayment(c);
-    const index = charge(session.token, 1);
-    await notifyFor(session.token, index);
-    expect(db.getCollection(c.id).order.paid).toBe(false);
-  });
-
-  it('does not mark paid on a declined charge, and skips the lookup when the notify says so', async () => {
-    const c = db.createCollection('נדחה');
-    const { session } = await openPayment(c);
-    const declined = charge(session.token, 79, { processor_response_code: '004' });
-    await notifyFor(session.token, declined);
-    expect(db.getCollection(c.id).order.paid).toBe(false);
-
-    reportCalls.length = 0;
-    await notifyFor(session.token, declined, { Response: '004' });
-    expect(reportCalls).toHaveLength(0);
-    expect(db.getCollection(c.id).order.paid).toBe(false);
-  });
-
-  // Nothing says Tranzila retries a non-200, so a notify that cannot be checked
-  // right now is answered 200 and re-checked by the server.
-  it('answers 200 when the report lags or is down, and settles on the server-side retry', async () => {
+  it('a row whose report lags the notify is settled by the next sweep', async () => {
     const c = db.createCollection('עוד לא בדוח');
     const { session } = await openPayment(c);
-    const index = nextIndex++;
-    expect((await notifyFor(session.token, index)).status).toBe(200);
-    reportThrows = true;
-    expect((await notifyFor(session.token, index)).status).toBe(200);
+    expect((await notifyFor(session.token)).status).toBe(200);
     expect(db.getCollection(c.id).order.paid).toBe(false);
+    charge(session.token, 79);
+    await app.tranzilaSweeper.sweep();
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+  });
 
+  it('a notify while the Reports API is down still answers 200, and nothing is marked paid', async () => {
+    const c = db.createCollection('דוח למטה');
+    const { session } = await openPayment(c);
+    charge(session.token, 79);
+    reportThrows = true;
+    expect((await notifyFor(session.token)).status).toBe(200);
+    expect(db.getCollection(c.id).order.paid).toBe(false);
     reportThrows = false;
-    report[index] = {
-      index,
-      amount: 7900,
-      currency: '1',
-      processor_response_code: '000',
-      txn_type: 'DEBIT',
-      authorization_number: 'A' + index,
-      user_defined_1: session.token,
-    };
-    await app.tranzilaReconciler.runDue(Date.now() + 60 * 60 * 1000);
-    const order = db.getCollection(c.id).order;
-    expect(order.paid).toBe(true);
-    expect(order.paid_transaction_id).toBe(String(index));
+    await app.tranzilaSweeper.sweep();
+    expect(db.getCollection(c.id).order.paid).toBe(true);
   });
 
   it('the sweep settles a session whose notify never arrived', async () => {
     const c = db.createCollection('בלי הודעה');
     const { session } = await openPayment(c);
     charge(session.token, 79);
-    reportCalls.length = 0;
-    const r = await app.tranzilaReconciler.sweep();
+    const r = await app.tranzilaSweeper.sweep();
     expect(r.settled).toBeGreaterThanOrEqual(1);
-    expect(reportCalls).toHaveLength(1);
-    expect(reportCalls[0].transaction_index).toBeUndefined();
     expect(db.getCollection(c.id).order.paid).toBe(true);
-    expect(db.getCollection(c.id).order.paid_method).toBe('tranzila');
   });
 
-  it('a pending payment still unsettled after the wait alerts the owner once', async () => {
-    const c = db.createCollection('ממתין זמן רב');
+  it('asks for nothing on a declined notify, an unknown token, a missing token, or a PeleCard session', async () => {
+    const c = db.createCollection('לא בודקים');
     const { session } = await openPayment(c);
-    expect((await notifyFor(session.token, nextIndex++)).status).toBe(200);
-    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
-    try {
-      await app.tranzilaReconciler.runDue(Date.now() + 11 * 60 * 1000);
-      expect(alert).toHaveBeenCalledTimes(1);
-      expect(alert.mock.calls[0][1].join('\n')).toContain(db.getCollection(c.id).order_no || c.id);
-      expect(alert.mock.calls[0][1].join('\n')).not.toContain(session.token);
-      await app.tranzilaReconciler.runDue(Date.now() + 30 * 60 * 1000);
-      expect(alert).toHaveBeenCalledTimes(1);
-      expect(db.getCollection(c.id).order.paid).toBe(false);
-    } finally {
-      alert.mockRestore();
-    }
-  });
+    await notifyFor(session.token, 1, { Response: '004' });
+    await notifyForm('t=dp0000000000000000', { index: '1' });
+    await notifyForm('', { index: '1' });
 
-  it('ignores an unknown token, a missing index, and a PeleCard session', async () => {
-    expect((await notifyForm('t=nosuchtoken', { index: '1' })).status).toBe(200);
-    expect((await notifyForm('', { index: '1' })).status).toBe(200);
-
-    const c = db.createCollection('פלאקארד');
-    db.setOrder(c.id, c.owner_token, { version: 'pdf' });
-    db.recordPaymentInit(c.id, {
+    const pc = db.createCollection('פלאקארד');
+    db.setOrder(pc.id, pc.owner_token, { version: 'pdf' });
+    db.recordPaymentInit(pc.id, {
       paramToken: 'peletoken123',
       transactionId: 'pc-1',
       charged_total: 79,
     });
-    const index = charge('peletoken123', 79);
-    await notifyFor('peletoken123', index);
-    expect(db.getCollection(c.id).order.paid).toBe(false);
+    await notifyFor('peletoken123');
+    expect(reportCalls).toHaveLength(0);
+  });
+
+  it('a session that already paid asks for no sweep', async () => {
+    const c = db.createCollection('כבר שולם');
+    const { session } = await openPayment(c);
+    charge(session.token, 79);
+    await notifyFor(session.token);
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+    reportCalls.length = 0;
+    await notifyFor(session.token);
     expect(reportCalls).toHaveLength(0);
   });
 });
 
-describe('pending checks decided later', () => {
-  it('a no-token charge found on a retry after the buyer closed the window still alerts', async () => {
-    const c = db.createCollection('נסגר החלון');
-    const { session } = await openPayment(c);
-    const index = nextIndex++;
-    // The notify arrives while the window is open; the report does not have it yet.
-    expect((await notifyFor(session.token, index)).status).toBe(200);
-    await post('/api/collections/' + c.id + '/pay/cancel', { owner_token: c.owner_token });
-    expect(db.getCollection(c.id).order.pelecard.sessions.slice(-1)[0].resolved).toBe(true);
-    // The charge lands in the report without its token (a misconfigured field).
-    report[index] = {
-      index,
-      amount: 7900,
-      currency: '1',
-      processor_response_code: '000',
-      txn_type: 'DEBIT',
-      authorization_number: 'A' + index,
-    };
-    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
-    try {
-      await app.tranzilaReconciler.runDue(Date.now() + 60 * 1000);
-      expect(alert.mock.calls.some(([, lines]) => lines.join('\n').includes(String(index)))).toBe(
-        true
-      );
-      expect(db.getCollection(c.id).order.paid).toBe(false);
-    } finally {
-      alert.mockRestore();
-    }
-  });
-
-  it('the sweep asks Tranzila for the Israel dates from the oldest pending check to today', async () => {
-    const { israelDate } = require(path.join(serverDir, 'tranzila-reconcile.js'));
-    const c = db.createCollection('טווח תאריכים');
-    const { session } = await openPayment(c);
-    expect((await notifyFor(session.token, nextIndex++)).status).toBe(200);
-    reportCalls.length = 0;
-    const now = Date.now();
-    await app.tranzilaReconciler.sweep(now);
-    const q = reportCalls.find((b) => b.transaction_index == null);
-    // Every pending check here is minutes old, so the 2 h window is the earlier bound.
-    expect(q.transaction_start_date).toBe(israelDate(now - 2 * 60 * 60 * 1000));
-    expect(q.transaction_end_date).toBe(israelDate(now));
-  });
-});
-
-describe('a buyer who edits the payment page', () => {
-  it('an authorization-only hold (J5) never marks the order paid or spends the coupon', async () => {
+describe('approved rows that do not settle reach the owner', () => {
+  it('an authorization-only hold never marks the order paid or spends the coupon, and is reported once', async () => {
     db.createCoupon({ code: 'TZHOLD', discount_pct: 50 });
     const c = db.createCollection('החזקה בלבד');
     const { session } = await openPayment(c, { coupon: 'TZHOLD' });
-    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    const alert = spyAlerts();
     try {
-      // Approved, shekels, the right amount, the right token — and no money.
       const hold = charge(session.token, 40, { txn_type: 'VERIFY', tranmode: 'V' });
-      await notifyFor(session.token, hold);
       const j5 = charge(session.token, 40, { txn_type: 'J5' });
-      await notifyFor(session.token, j5);
       const unknown = charge(session.token, 40, { txn_type: undefined });
-      await notifyFor(session.token, unknown);
+      await notifyFor(session.token);
 
       const order = db.getCollection(c.id).order;
       expect(order.paid).toBe(false);
       expect(db.getCouponByCode('TZHOLD').uses || 0).toBe(0);
-      // Each approved-but-unverified charge reaches the owner, once per index.
-      expect(alert).toHaveBeenCalledTimes(3);
-      await notifyFor(session.token, hold);
-      expect(alert).toHaveBeenCalledTimes(3);
-      const [subject, lines] = alert.mock.calls[0];
-      expect(subject).toMatch(/טרנזילה/);
-      expect(lines.join('\n')).toContain(String(hold));
-      expect(lines.join('\n')).not.toContain(session.token);
-    } finally {
-      alert.mockRestore();
-    }
-  });
-
-  it('an approved charge with no token field alerts the owner and is not marked paid', async () => {
-    const c = db.createCollection('בלי שדה אסימון');
-    const { session } = await openPayment(c);
-    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
-    try {
-      const index = charge(session.token, 79, { user_defined_1: undefined });
-      await notifyFor(session.token, index);
-      expect(db.getCollection(c.id).order.paid).toBe(false);
       expect(alert).toHaveBeenCalledTimes(1);
-      expect(alert.mock.calls[0][1].join('\n')).toMatch(/לא$/m);
+      const text = alertText(alert);
+      for (const i of [hold, j5, unknown]) expect(text).toContain(String(i));
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      expect(text).not.toContain(session.token);
+
+      await notifyFor(session.token);
+      await app.tranzilaSweeper.sweep();
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(db.tranzilaSweepState().alerted[String(hold)]).toBeTruthy();
     } finally {
       alert.mockRestore();
     }
   });
 
-  it('a declined charge does not alert anyone', async () => {
-    const c = db.createCollection('נדחה בלי התראה');
+  it('a wrong amount is reported and not marked paid', async () => {
+    const c = db.createCollection('סכום אחר');
     const { session } = await openPayment(c);
-    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    const alert = spyAlerts();
     try {
-      await notifyFor(session.token, charge(session.token, 79, { processor_response_code: '033' }));
+      const index = charge(session.token, 1);
+      await notifyFor(session.token);
+      expect(db.getCollection(c.id).order.paid).toBe(false);
+      expect(alertText(alert)).toContain(String(index));
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('a second charge on a purchase that is already paid is reported', async () => {
+    const c = db.createCollection('חיוב כפול');
+    const { session } = await openPayment(c);
+    const first = charge(session.token, 79);
+    await notifyFor(session.token);
+    expect(db.getCollection(c.id).order.paid_transaction_id).toBe(String(first));
+    const alert = spyAlerts();
+    try {
+      const second = charge(session.token, 79);
+      await app.tranzilaSweeper.sweep();
+      const text = alertText(alert);
+      expect(text).toContain(String(second));
+      expect(text).not.toContain(String(first) + ' ');
+      expect(text).toContain(db.getCollection(c.id).order_no);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('on production, an approved debit carrying no session token is reported', async () => {
+    const alert = spyAlerts();
+    try {
+      const index = charge(undefined, 79);
+      await app.tranzilaSweeper.sweep();
+      expect(alertText(alert)).toContain(String(index));
+      expect(alertText(alert)).toContain('dugri_token');
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('on staging, the same untagged row is not reported (production owns those)', async () => {
+    process.env.PAYMENT_ENV = 'staging';
+    const alert = spyAlerts();
+    try {
+      charge(undefined, 79);
+      await app.tranzilaSweeper.sweep();
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+      process.env.PAYMENT_ENV = 'production';
+    }
+  });
+
+  it('a row tagged for the other environment is neither settled nor reported', async () => {
+    const c = db.createCollection('סביבה אחרת');
+    const { session } = await openPayment(c);
+    const alert = spyAlerts();
+    try {
+      // The same session, but the token as staging would have minted it.
+      const stagingToken = 'ds' + session.token.slice(2);
+      charge(stagingToken, 79);
+      await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(false);
       expect(alert).not.toHaveBeenCalled();
     } finally {
       alert.mockRestore();
     }
   });
-});
 
-describe('notify abuse', () => {
-  it('past its free lookups and its budget a token is answered 200 and kept pending, with no lookup', async () => {
-    const c = db.createCollection('הצפה');
+  it('a declined row reports nothing', async () => {
+    const c = db.createCollection('נדחה בלי התראה');
     const { session } = await openPayment(c);
-    // 3 free lookups, then the per-token budget of 6.
-    for (let i = 0; i < 9; i++) {
-      expect((await notifyFor(session.token, 900000 + i)).status).toBe(200);
+    const alert = spyAlerts();
+    try {
+      charge(session.token, 79, { processor_response_code: '033' });
+      await app.tranzilaSweeper.sweep();
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
     }
-    expect(reportCalls).toHaveLength(9);
-    reportCalls.length = 0;
-    const limited = await notifyFor(session.token, 900099);
-    expect(limited.status).toBe(200);
-    expect(limited.body.pending).toBe(true);
-    expect(reportCalls).toHaveLength(0);
-  });
-
-  it('a session that already paid never looks anything up again', async () => {
-    const c = db.createCollection('כבר שולם אין בדיקה');
-    const { session } = await openPayment(c);
-    const index = charge(session.token, 79);
-    await notifyFor(session.token, index);
-    expect(db.getCollection(c.id).order.paid).toBe(true);
-    reportCalls.length = 0;
-    const again = await notifyFor(session.token, 123456);
-    expect(again.status).toBe(200);
-    expect(reportCalls).toHaveLength(0);
   });
 
   it('the PeleCard callback refuses a session Tranzila opened, even when PeleCard reports it paid', async () => {
@@ -493,18 +460,19 @@ describe('notify abuse', () => {
 });
 
 describe('coupons through Tranzila', () => {
-  it('charges the discounted amount, verifies against it, and counts the use once', async () => {
+  it('charges the discounted amount, settles against it, and counts the use once', async () => {
     expect(db.createCoupon({ code: 'TZHALF', discount_pct: 50 }).error).toBeUndefined();
     const c = db.createCollection('חצי מחיר');
     const { r, session } = await openPayment(c, { coupon: 'TZHALF' });
     expect(r.body.charged).toBe(40);
     expect(new URL(r.body.url).searchParams.get('sum')).toBe('40.00');
 
-    // The full price is not what this session costs, so it does not verify.
-    await notifyFor(session.token, charge(session.token, 79));
+    charge(session.token, 79);
+    await notifyFor(session.token);
     expect(db.getCollection(c.id).order.paid).toBe(false);
 
-    await notifyFor(session.token, charge(session.token, 40));
+    charge(session.token, 40);
+    await notifyFor(session.token);
     const order = db.getCollection(c.id).order;
     expect(order.paid).toBe(true);
     expect(order.coupon).toBe('TZHALF');
@@ -542,7 +510,8 @@ describe('delivery through Tranzila', () => {
     expect(r.status).toBe(200);
     const total = db.getCollection(c.id).order.total;
     expect(r.body.charged).toBe(total);
-    await notifyFor(session.token, charge(session.token, total));
+    charge(session.token, total);
+    await notifyFor(session.token);
     expect(db.getCollection(c.id).order.paid).toBe(true);
   });
 
@@ -560,7 +529,8 @@ describe('delivery through Tranzila', () => {
     const session = db.getCollection(c.id).order.shipping.pelecard.sessions.slice(-1)[0];
     expect(session.provider).toBe('tranzila');
 
-    await notifyFor(session.token, charge(session.token, FEE));
+    charge(session.token, FEE);
+    await notifyFor(session.token);
     const order = db.getCollection(c.id).order;
     expect(order.shipping.paid).toBe(true);
     expect(order.shipping.paid_method).toBe('tranzila');

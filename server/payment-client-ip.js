@@ -1,4 +1,4 @@
-// The client address the PAYMENT rate limits are keyed by, in a form a client
+// The client key the PAYMENT rate limits are counted by, in a form a client
 // cannot choose.
 //
 // req.ip will not do: with app.set('trust proxy', true) it is the LEFTMOST
@@ -15,9 +15,18 @@
 // address instead. (The same reasoning as clientIpForMeta in
 // server/routes/platform.js, which cannot range-check because it keys off req.ip.)
 //
+// Hops are counted on the RAW list, before anything is parsed, so an entry that
+// does not parse cannot shift the count onto one the client wrote; if the entry
+// our proxy should have written does not parse, the socket peer is used.
+//
+// An IPv6 client is keyed by its /64: one ordinary allocation holds 2^64
+// addresses, and a limit per address would be no limit.
+//
 // PAYMENT_PROXY_HOPS (default 1) is how many trusted proxies append to
 // X-Forwarded-For in front of this process; 0 ignores the header. With no
-// X-Forwarded-For at all (a local run) the socket peer is the client.
+// X-Forwarded-For at all (a local run) the socket peer is the client. That
+// hop count, and Cloudflare's ranges below, are checked once per environment
+// before Tranzila goes live (TRANZILA_LOG_CLIENT_IP=1 in server/index.js).
 //
 // The global `trust proxy` setting and the older limiters that use req.ip are
 // deliberately untouched here; that is a separate change.
@@ -113,28 +122,41 @@ function normalizeIp(raw) {
   return '';
 }
 
+// The limiter key for an address: an IPv4 as is, an IPv6 as its /64.
+function limitKey(ip) {
+  if (!ip || parseV4(ip) != null) return ip;
+  const v6 = parseV6(ip);
+  if (v6 == null) return ip;
+  return (v6 >> 64n).toString(16).padStart(16, '0') + '::/64';
+}
+
 function trustedHops() {
   const n = Number(process.env.PAYMENT_PROXY_HOPS);
   return Number.isInteger(n) && n >= 0 ? n : 1;
 }
 
-function paymentClientIp(req, hops = trustedHops()) {
-  const socket = normalizeIp(req && req.socket && req.socket.remoteAddress) || 'unknown';
+function clientAddress(req, hops) {
+  const socket = normalizeIp(req && req.socket && req.socket.remoteAddress);
   if (hops === 0) return socket;
   const headers = (req && req.headers) || {};
   const raw = headers['x-forwarded-for'];
   const list = String(Array.isArray(raw) ? raw.join(',') : raw || '')
     .split(',')
-    .map(normalizeIp)
-    .filter(Boolean);
+    .map((s) => s.trim())
+    .filter((s) => s !== '');
   if (!list.length) return socket;
-  // Fewer entries than our own proxies write: the header is not what we expect,
-  // so nothing in it is trusted.
   const at = list.length - hops;
+  // Fewer entries than our own proxies write, or theirs does not parse: nothing
+  // in the header is trusted.
   if (at < 0) return socket;
-  const peer = list[at];
+  const peer = normalizeIp(list[at]);
+  if (!peer) return socket;
   const cf = normalizeIp(headers['cf-connecting-ip']);
   return cf && isCloudflare(peer) ? cf : peer;
 }
 
-module.exports = { paymentClientIp, isCloudflare, normalizeIp, CLOUDFLARE_RANGES };
+function paymentClientIp(req, hops = trustedHops()) {
+  return limitKey(clientAddress(req, hops)) || 'unknown';
+}
+
+module.exports = { paymentClientIp, isCloudflare, normalizeIp, limitKey, CLOUDFLARE_RANGES };

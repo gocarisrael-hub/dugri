@@ -5,9 +5,9 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-// server/tranzila.js on its own: the auth signature, the iframe URL, what the
-// notify is allowed to tell us, and the fail-closed verification. The routes
-// that use it are covered in tranzila-routes.test.js.
+// server/tranzila.js on its own: the auth signature, the iframe URL, the report
+// listing and its normalization, environment-tagged session tokens, and the
+// fail-closed verification. The routes are covered in tranzila-routes.test.js.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const modPath = path.join(__dirname, '..', '..', 'server', 'tranzila.js');
@@ -30,11 +30,12 @@ function load() {
 beforeAll(() => {
   Object.assign(process.env, ENV);
   delete process.env.TRANZILA_HANDSHAKE;
+  delete process.env.PAYMENT_ENV;
   tz = load();
 });
 
 afterAll(() => {
-  for (const k of [...Object.keys(ENV), 'TRANZILA_HANDSHAKE']) delete process.env[k];
+  for (const k of [...Object.keys(ENV), 'TRANZILA_HANDSHAKE', 'PAYMENT_ENV']) delete process.env[k];
   delete require.cache[require.resolve(modPath)];
   vi.unstubAllGlobals();
 });
@@ -141,7 +142,7 @@ describe('init', () => {
 });
 
 describe('parseNotify', () => {
-  it('takes the token from our own notify URL and the index + result from the body', () => {
+  it('takes the token from our own notify URL and the result from the body', () => {
     expect(tz.parseNotify({ index: '1696', Response: '000', sum: '1' }, { t: 'tok123' })).toEqual({
       token: 'tok123',
       index: '1696',
@@ -158,37 +159,8 @@ describe('parseNotify', () => {
   });
 });
 
-describe('getTransaction / findTransaction', () => {
-  it('looks the index up on the Reports API with the signed headers and normalizes it', async () => {
-    fetchMock.mockResolvedValueOnce(ok({ transactions: [row()], rows: 1 }));
-    const tx = await tz.getTransaction('1696');
-    const [calledUrl, opts] = fetchMock.mock.calls[0];
-    expect(calledUrl).toBe('https://report.tranzila.com/v1/transaction');
-    expect(JSON.parse(opts.body)).toEqual({ terminal_name: 'fxptest', transaction_index: 1696 });
-    expect(opts.headers['X-tranzila-api-app-key']).toBe('app-key-123');
-    expect(tx).toMatchObject({
-      index: '1696',
-      amountAgorot: 7900,
-      currency: '1',
-      responseCode: '000',
-      txnType: 'DEBIT',
-      approvalNo: '0587923',
-    });
-  });
-
-  it('is null for an index Tranzila does not have, or one that is not a number', async () => {
-    fetchMock.mockResolvedValueOnce(ok({ transactions: [], rows: 0 }));
-    expect(await tz.getTransaction('1696')).toBe(null);
-    expect(await tz.getTransaction('abc')).toBe(null);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('throws on an HTTP error so the route can ask for a retry', async () => {
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) });
-    await expect(tz.getTransaction('1696')).rejects.toThrow(/401/);
-  });
-
-  it('lists a date range for the sweep, newest first and normalized', async () => {
+describe('listTransactions', () => {
+  it('lists a date range with the signed headers, newest first and normalized', async () => {
     fetchMock.mockResolvedValueOnce(
       ok({ transactions: [row({ index: 2 }), row({ index: 1, txn_type: 'credit' })] })
     );
@@ -203,13 +175,17 @@ describe('getTransaction / findTransaction', () => {
       page_results: 1000,
       order_direction: 'desc',
     });
-    expect(opts.headers['X-tranzila-api-access-token']).toMatch(/^[0-9a-f]{64}$/);
+    expect(opts.headers['X-tranzila-api-app-key']).toBe('app-key-123');
     expect(rows.map((r) => r.index)).toEqual(['2', '1']);
     expect(rows[1].txnType).toBe('CREDIT');
+    expect(rows[0]).toMatchObject({
+      amountAgorot: 7900,
+      currency: '1',
+      responseCode: '000',
+      approvalNo: '0587923',
+    });
   });
-});
 
-describe('getTransaction normalization of the fields verification reads', () => {
   it('reads tranmode, payment_plan, a numeric response code and a string amount', async () => {
     fetchMock.mockResolvedValueOnce(
       ok({
@@ -218,7 +194,7 @@ describe('getTransaction normalization of the fields verification reads', () => 
         ],
       })
     );
-    const t = await tz.getTransaction('1696');
+    const [t] = await tz.listTransactions({ startDate: 'a', endDate: 'b' });
     expect(t).toMatchObject({
       tranmode: 'A',
       paymentPlan: 1,
@@ -230,9 +206,42 @@ describe('getTransaction normalization of the fields verification reads', () => 
 
   it('treats an empty txn_type as missing', async () => {
     fetchMock.mockResolvedValueOnce(ok({ transactions: [row({ txn_type: '' })] }));
-    const t = await tz.getTransaction('1696');
+    const [t] = await tz.listTransactions({ startDate: 'a', endDate: 'b' });
     expect(t.txnType).toBe(null);
     expect(tz.verifyTransaction(t, { amountNis: 79, token: 'tok123' })).toBe(false);
+  });
+
+  it('throws on an HTTP error rather than returning an empty report', async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) });
+    await expect(tz.listTransactions({ startDate: 'a', endDate: 'b' })).rejects.toThrow(/401/);
+  });
+});
+
+describe('environment-tagged session tokens', () => {
+  it('carries the environment: production, staging, anything else', () => {
+    process.env.PAYMENT_ENV = 'production';
+    const p = tz.newSessionToken();
+    expect(p).toMatch(/^dp[0-9a-f]{16}$/);
+    expect(tz.tokenEnv(p)).toBe('p');
+    process.env.PAYMENT_ENV = 'staging';
+    expect(tz.newSessionToken()).toMatch(/^ds[0-9a-f]{16}$/);
+    delete process.env.PAYMENT_ENV;
+    process.env.RAILWAY_ENVIRONMENT_NAME = 'staging';
+    expect(tz.envTag()).toBe('s');
+    delete process.env.RAILWAY_ENVIRONMENT_NAME;
+    expect(tz.envTag()).toBe('l');
+    expect(tz.newSessionToken()).not.toBe(tz.newSessionToken());
+  });
+
+  it('finds session tokens on a row, and nothing else that happens to look similar', () => {
+    const r = row({
+      user_defined_1: 'dp0123456789abcdef',
+      credit_card_token: 'ab7969f6582d29a5409',
+      refnr: '56510713',
+      user_defined_3: 'ds0123456789abcdef',
+    });
+    expect(tz.sessionTokenValues(r).sort()).toEqual(['dp0123456789abcdef', 'ds0123456789abcdef']);
+    expect(tz.tokenEnv('0123456789abcdef01')).toBe(null);
   });
 });
 
@@ -276,7 +285,6 @@ describe('verifyTransaction (fail-closed)', () => {
   it('rejects an authorization-only hold (J5) however the report labels it', () => {
     expect(tz.verifyTransaction(tx({ txnType: 'J5' }), expected)).toBe(false);
     expect(tz.verifyTransaction(tx({ txnType: 'VERIFY', tranmode: 'V' }), expected)).toBe(false);
-    // Even labelled a debit, a V (hold) or N (card check) mode is not a charge.
     expect(tz.verifyTransaction(tx({ tranmode: 'V' }), expected)).toBe(false);
     expect(tz.verifyTransaction(tx({ tranmode: 'N' }), expected)).toBe(false);
   });

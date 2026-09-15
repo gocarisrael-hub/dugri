@@ -21,7 +21,7 @@
 // and even then only used where PAYMENT_PROVIDER=tranzila (server/index.js).
 
 const crypto = require('crypto');
-const { positiveNumber } = require('./tranzila-reconcile');
+const { positiveNumber } = require('./tranzila-sweep');
 
 const TERMINAL = process.env.TRANZILA_TERMINAL || '';
 const APP_KEY = process.env.TRANZILA_APP_KEY || '';
@@ -163,8 +163,9 @@ async function init({ amountNis, paramToken, urls, buyer = {}, description = 'מ
 }
 
 // What we take from the (untrusted) notify POST: our token from the URL we
-// built, the transaction index to look up, and Tranzila's own result code — used
-// only to skip the lookup for a charge that plainly failed.
+// built and Tranzila's own result code. Neither decides money; the token only
+// says which session might have paid, so a sweep is worth running, and a plain
+// failure code skips even that.
 function parseNotify(body = {}, query = {}) {
   const pick = (v) => (v == null || v === '' ? null : String(v));
   return {
@@ -174,29 +175,20 @@ function parseNotify(body = {}, query = {}) {
   };
 }
 
-// Fetch one transaction by index from the Reports API, with our secret key.
-// Returns a normalized record, or null when Tranzila has no such transaction.
-async function getTransaction(index) {
-  if (!isConfigured()) throw new Error('tranzila not configured');
-  const n = Number(index);
-  if (!Number.isInteger(n) || n <= 0) return null;
-  const data = await postJson(REPORT_BASE + '/v1/transaction', {
-    terminal_name: TERMINAL,
-    transaction_index: n,
-  });
-  const list = (data && Array.isArray(data.transactions) && data.transactions) || [];
-  const rd = list.find((t) => t && Number(t.index) === n);
-  return rd ? normalizeRow(rd) : null;
-}
-
 // The terminal's transactions between two Israel dates (YYYY-MM-DD), newest
-// first, normalized. Pages of 1000 rows, followed while full, up to maxPages.
-// Throws on a transport error or timeout.
+// first, normalized, with our secret key. Every page of 1000 rows is followed
+// until a short one. Past MAX_PAGES it THROWS rather than return a partial
+// list: pages are newest-first, so a silent stop would drop the oldest rows.
+// Throws on a transport error or timeout too.
 const PAGE_RESULTS = 1000;
-async function listTransactions({ startDate, endDate, maxPages = 10 } = {}) {
+const MAX_PAGES = 200;
+async function listTransactions({ startDate, endDate } = {}) {
   if (!isConfigured()) throw new Error('tranzila not configured');
   const out = [];
-  for (let page = 1; page <= maxPages; page++) {
+  for (let page = 1; ; page++) {
+    if (page > MAX_PAGES) {
+      throw new Error('tranzila report has more than ' + MAX_PAGES * PAGE_RESULTS + ' rows');
+    }
     const data = await postJson(REPORT_BASE + '/v1/transaction', {
       terminal_name: TERMINAL,
       transaction_start_date: startDate,
@@ -234,16 +226,38 @@ function carriesToken(raw, token) {
   return Object.values(raw).some((v) => v != null && String(v) === String(token));
 }
 
-// The values on a transaction shaped like a pay-session token (ours are 18
-// lowercase hex characters, PeleCard's ParamX at most 19 of [0-9a-z]). Only ever
-// used to recognise ANOTHER session's token — the caller checks each against the
-// real sessions — never to accept a charge.
-function tokenCandidates(raw) {
+// WHICH ENVIRONMENT A CHARGE BELONGS TO. Staging and production share one
+// terminal, so each environment's sweep reads the other's rows. Every Tranzila
+// session token therefore carries its environment: 'd', one letter, 16 hex
+// characters (18 in all, 64 random bits). PAYMENT_ENV wins; otherwise Railway's
+// own RAILWAY_ENVIRONMENT_NAME. Read at call time.
+function envTag() {
+  const name = String(process.env.PAYMENT_ENV || process.env.RAILWAY_ENVIRONMENT_NAME || '')
+    .trim()
+    .toLowerCase();
+  if (name === 'production') return 'p';
+  if (name === 'staging') return 's';
+  return 'l';
+}
+
+function newSessionToken() {
+  return 'd' + envTag() + crypto.randomBytes(8).toString('hex');
+}
+
+const SESSION_TOKEN = /^d([a-z])[0-9a-f]{16}$/;
+
+// The values on a transaction shaped exactly like a Tranzila session token —
+// how a row is matched to its session (the caller looks each one up), and how a
+// row carrying another environment's token is told apart from one carrying none.
+function sessionTokenValues(raw) {
   if (!raw) return [];
-  return Object.values(raw)
-    .filter((v) => typeof v === 'string' || typeof v === 'number')
-    .map(String)
-    .filter((v) => /^[0-9a-z]{12,19}$/.test(v));
+  return Object.values(raw).filter((v) => typeof v === 'string' && SESSION_TOKEN.test(v));
+}
+
+// The environment letter a session token was minted in, or null.
+function tokenEnv(token) {
+  const m = SESSION_TOKEN.exec(String(token || ''));
+  return m ? m[1] : null;
 }
 
 // FAIL-CLOSED: approved, the kind of charge we asked for (see CHARGE_* above),
@@ -266,11 +280,13 @@ module.exports = {
   authHeaders,
   init,
   parseNotify,
-  getTransaction,
   listTransactions,
   verifyTransaction,
   carriesToken,
-  tokenCandidates,
+  sessionTokenValues,
+  tokenEnv,
+  envTag,
+  newSessionToken,
   TOKEN_FIELD,
   SUCCESS_CODE,
 };

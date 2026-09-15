@@ -6,32 +6,27 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-// What a buyer holding their OWN session tokens can do to POST
-// /api/payment/tranzila/notify with other buyers' (sequential, guessable)
-// transaction indexes, no-token indexes and invented tokens — with every limit
-// set small so each cap is reachable in a test. The limits are shared across the
-// whole file, so the tests run IN ORDER and each one's budget is in its comment.
-//
-//   alerts: 5 an hour · free lookups: 1 per session · per real token: 3
-//   limiter keys: 5 · global lookups: 16 a minute
+// What a buyer holding real session tokens can do to POST
+// /api/payment/tranzila/notify: invented indexes, floods, their own and other
+// buyers' tokens. A notify only asks for a sweep, so none of it creates lookups,
+// per-session state, store writes or alerts — only real rows do.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
 
 const realFetch = globalThis.fetch;
 
+const SPACING = 200;
 const ENV = {
   PUBLIC_BASE_URL: 'https://test.dugri.example',
   PAYMENT_PROVIDER: 'tranzila',
+  PAYMENT_ENV: 'production',
   TRANZILA_TERMINAL: 'fxptest',
   TRANZILA_APP_KEY: 'app-key',
   TRANZILA_SECRET: 'app-secret',
-  TRANZILA_ALERT_RATE_LIMIT: '5',
-  TRANZILA_FREE_LOOKUPS: '1',
-  TRANZILA_NOTIFY_RATE_LIMIT: '3',
-  TRANZILA_NOTIFY_RATE_MAX_KEYS: '5',
-  TRANZILA_LOOKUP_RATE_LIMIT: '16',
-  TRANZILA_RETRY_BATCH: '5',
+  TRANZILA_SWEEP_MIN_SPACING_MS: String(SPACING),
+  TRANZILA_ALERT_RATE_LIMIT: '2',
+  TRANZILA_ALERT_CHUNK: '10',
 };
 
 let app;
@@ -39,7 +34,6 @@ let db;
 let notify;
 let server;
 let base;
-let alert;
 
 let report = {};
 const reportCalls = [];
@@ -61,7 +55,7 @@ beforeAll(async () => {
     'db.js',
     'pelecard.js',
     'tranzila.js',
-    'tranzila-reconcile.js',
+    'tranzila-sweep.js',
     'settings.js',
     'notify.js',
     'index.js',
@@ -74,16 +68,14 @@ beforeAll(async () => {
   db = require(path.join(serverDir, 'db.js'));
   app = require(path.join(serverDir, 'index.js'));
   notify = require(path.join(serverDir, 'notify.js'));
-  alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
 
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url, opts) => {
       if (String(url) === 'https://report.tranzila.com/v1/transaction') {
-        const body = JSON.parse(opts.body);
-        reportCalls.push(body);
-        const r = report[body.transaction_index];
-        return jsonRes({ transactions: r ? [r] : [], rows: r ? 1 : 0 });
+        reportCalls.push(JSON.parse(opts.body));
+        const rows = Object.values(report);
+        return jsonRes({ transactions: rows });
       }
       throw new Error('unexpected fetch ' + url);
     })
@@ -98,24 +90,23 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  alert.mockRestore();
   vi.unstubAllGlobals();
   if (server) server.close();
   for (const k of Object.keys(ENV)) delete process.env[k];
 });
 
-beforeEach(() => {
-  alert.mockClear();
+beforeEach(async () => {
+  await app.tranzilaSweeper.whenIdle();
+  report = {};
   reportCalls.length = 0;
 });
 
-async function notifyForm(token, index) {
-  const res = await realFetch(base + '/api/payment/tranzila/notify?t=' + token, {
+function postNotify(token, index) {
+  return realFetch(base + '/api/payment/tranzila/notify?t=' + token, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({ index: String(index), Response: '000' }).toString(),
   });
-  return res.status;
 }
 
 async function openSession(name) {
@@ -131,170 +122,99 @@ async function openSession(name) {
 }
 
 let nextIndex = 70000;
-// An approved 79 ₪ report row at `index`; `token` undefined leaves the token out.
-function rowAt(index, token, over = {}) {
+function charge(token, over = {}) {
+  const index = nextIndex++;
   report[index] = {
     index,
     amount: 7900,
     currency: '1',
     processor_response_code: '000',
     txn_type: 'DEBIT',
+    tranmode: 'A',
     authorization_number: 'A' + index,
     ...(token ? { user_defined_1: token } : {}),
     ...over,
   };
   return index;
 }
-const charge = (token, over) => rowAt(nextIndex++, token, over);
 
-const paid = (s) => db.getCollection(s.c.id).order.paid;
-
-describe("the owner alert cannot be silenced, pre-empted or flooded with other buyers' indexes", () => {
-  // alerts 1 · global lookups 0 (both lookups are each session's free one)
-  it("posting a real order's index first with a foreign token does not stop that order's alert", async () => {
-    const victim = await openSession('הזמנה אמיתית');
-    const attacker = await openSession('מקדימה');
-    // The victim's own approved charge of the wrong kind: a genuine alert case.
-    const hold = charge(victim.token, { txn_type: 'VERIFY', tranmode: 'V' });
-
-    expect(await notifyForm(attacker.token, hold)).toBe(200);
-    expect(alert).not.toHaveBeenCalled();
-
-    expect(await notifyForm(victim.token, hold)).toBe(200);
-    expect(alert).toHaveBeenCalledTimes(1);
-    expect(alert.mock.calls[0][1].join('\n')).toContain(
-      db.getCollection(victim.c.id).order_no || victim.c.id
-    );
-    expect(paid(victim)).toBe(false);
-  });
-
-  // alerts 2 (total 3) · global lookups 2
-  it('a foreign-token charge posted repeatedly alerts nobody and uses none of the cap', async () => {
-    const other = await openSession('קונה אחרת');
-    const attacker = await openSession('מציפה');
-    const theirs = charge(other.token);
-    for (let i = 0; i < 3; i++) expect(await notifyForm(attacker.token, theirs)).toBe(200);
-    expect(alert).not.toHaveBeenCalled();
-    expect(paid(attacker)).toBe(false);
-
-    // Two genuine faults afterwards (charges with no token field) both alert.
-    for (const name of ['שדה חסר א', 'שדה חסר ב']) {
-      const s = await openSession(name);
-      expect(await notifyForm(s.token, charge(undefined))).toBe(200);
-    }
-    expect(alert).toHaveBeenCalledTimes(2);
-  });
-
-  // alerts 2 (total 5, the cap) · global lookups 0
-  it('one no-token index posted under five of your own tokens is one alert, and a later genuine fault still alerts', async () => {
-    // A no-token approved index anyone can find: a staging charge on the shared
-    // terminal, a refund, a 10-agorot charge with the token dropped.
-    const loose = charge(undefined, { amount: 10 });
-    for (let i = 0; i < 5; i++) {
-      const own = await openSession('אסימון ' + i);
-      expect(await notifyForm(own.token, loose)).toBe(200);
-    }
-    expect(alert).toHaveBeenCalledTimes(1);
-
-    const genuine = await openSession('תקלה אמיתית');
-    expect(await notifyForm(genuine.token, charge(undefined))).toBe(200);
-    expect(alert).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('the notify limits', () => {
-  // global lookups 5 (total 7)
-  it("invented tokens get no bucket, so they cannot reset a real token's budget", async () => {
-    const real = await openSession('מוגבלת');
-    // 1 free + 3 from its budget: four lookups, each answered 200 and kept pending.
-    for (let i = 0; i < 4; i++) expect(await notifyForm(real.token, 990000 + i)).toBe(200);
-    expect(reportCalls).toHaveLength(4);
-    expect(await notifyForm(real.token, 990010)).toBe(200);
-    expect(reportCalls).toHaveLength(4);
-
-    // More invented tokens than the limiter holds keys (5). Were they given
-    // buckets, the real token's would be evicted and its budget start over.
-    for (let i = 0; i < 8; i++) {
-      expect(await notifyForm('invented' + String(i).padStart(10, '0'), 1)).toBe(200);
-    }
-    expect(await notifyForm(real.token, 990011)).toBe(200);
-    expect(reportCalls).toHaveLength(4);
-  });
-
-  // fills the global cap
-  it('with the lookup cap held full, a genuine notify is answered 200, costs its session nothing, and settles on the retry', async () => {
-    const { notifyRate, lookupRate } = app.tranzilaLimits;
-    while (lookupRate.ok('all'));
-
-    const victim = await openSession('נפגעת');
-    const index = nextIndex++;
-    // First notify: the session's free lookup is made even with the cap full; the
-    // report does not have the charge yet, so it waits as pending.
-    expect(await notifyForm(victim.token, index)).toBe(200);
-    expect(reportCalls).toHaveLength(1);
-    // Tranzila (or anyone) posting it again while the cap is full: all 200, no
-    // lookup, and none of the victim session's own budget spent.
-    for (let i = 0; i < 4; i++) expect(await notifyForm(victim.token, index)).toBe(200);
-    expect(reportCalls).toHaveLength(1);
-    expect(notifyRate._buckets.get(victim.token)).toBeUndefined();
-    expect(paid(victim)).toBe(false);
-
-    // The charge lands in the report; the server's own retry settles it.
-    rowAt(index, victim.token);
-    await app.tranzilaReconciler.runDue(Date.now() + 60 * 60 * 1000);
-    expect(paid(victim)).toBe(true);
-
-    // And a different session's first notify is still looked up and settled at
-    // once, cap or no cap.
-    const other = await openSession('ראשונה בתור');
-    expect(await notifyForm(other.token, charge(other.token))).toBe(200);
-    expect(paid(other)).toBe(true);
-  });
-});
-
-describe('a flood of throwaway pending checks', () => {
-  // retry batch: 5 lookups a pass
-  it("does not starve a genuine pending check's retry", async () => {
-    const attackers = [];
-    for (let i = 0; i < 12; i++) {
-      const s = await openSession('זבל ' + i);
-      // Each session's free lookup finds nothing: one pending check per session,
-      // however many invented indexes it posts.
-      expect(await notifyForm(s.token, 60000 + i)).toBe(200);
-      expect(await notifyForm(s.token, 61000 + i)).toBe(200);
-      attackers.push(s);
-    }
-    const victim = await openSession('אמיתית בתור');
-    const index = nextIndex++;
-    expect(await notifyForm(victim.token, index)).toBe(200);
-    rowAt(index, victim.token);
-
+describe('a flood of notifies', () => {
+  it('causes no store writes and at most one sweep per spacing interval', async () => {
+    const s = await openSession('מוצפת');
+    // A recent sweep, so the state is fresh and nothing is due to be written.
+    await app.tranzilaSweeper.sweep();
     reportCalls.length = 0;
-    const at = Date.now() + 2 * 60 * 60 * 1000;
-    // At most: 1 older session from earlier in this file + 12 attackers + the
-    // victim, 5 a pass: the victim's turn comes by the third pass.
-    for (let pass = 0; pass < 3 && !paid(victim); pass++) {
-      await app.tranzilaReconciler.runDue(at);
+    const writes = vi.spyOn(fs, 'writeFileSync');
+    try {
+      const started = Date.now();
+      await Promise.all(Array.from({ length: 300 }, (_, i) => postNotify(s.token, 900000 + i)));
+      await app.tranzilaSweeper.whenIdle();
+      const elapsed = Date.now() - started;
+      expect(writes).not.toHaveBeenCalled();
+      expect(reportCalls.length).toBeLessThanOrEqual(1 + Math.ceil(elapsed / SPACING));
+      expect(db.getCollection(s.c.id).order.pelecard.sessions.slice(-1)[0]).not.toHaveProperty(
+        'pending_check'
+      );
+    } finally {
+      writes.mockRestore();
     }
-    expect(paid(victim)).toBe(true);
-    const looked = reportCalls.map((b) => b.transaction_index);
-    expect(looked.length).toBeLessThanOrEqual(15);
-    expect(new Set(looked).size).toBe(looked.length);
   });
 
-  it('an alert held back by the cap still names its order when it goes out', async () => {
-    const { alertRate } = app.tranzilaLimits;
-    while (alertRate.ok('all'));
-    const late = await openSession('ממתינה להתראה');
-    expect(await notifyForm(late.token, nextIndex++)).toBe(200);
-    await app.tranzilaReconciler.runDue(Date.now() + 3 * 60 * 60 * 1000);
-    expect(alert).not.toHaveBeenCalled();
+  it('invented indexes and tokens settle nothing and alert nobody', async () => {
+    const s = await openSession('אינדקסים מומצאים');
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      for (let i = 0; i < 20; i++) await postNotify(s.token, 123456 + i);
+      for (let i = 0; i < 20; i++) await postNotify('dp' + String(i).padStart(16, '0'), 1);
+      await app.tranzilaSweeper.whenIdle();
+      expect(db.getCollection(s.c.id).order.paid).toBe(false);
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+});
 
-    alertRate._buckets.clear();
-    app.flushHeldTranzilaAlerts();
-    expect(alert).toHaveBeenCalledTimes(1);
-    expect(alert.mock.calls[0][1].join('\n')).toContain(
-      db.getCollection(late.c.id).order_no || late.c.id
-    );
+describe('owner alerts', () => {
+  it('held back by the cap, every queued row stays queued — none trimmed — and all go out once allowed', async () => {
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      // Use up the cap.
+      while (app.tranzilaAlertRate.ok('all'));
+      const s = await openSession('תור התראות');
+      const indexes = Array.from({ length: 25 }, () => charge(s.token, { amount: 1 }));
+      await app.tranzilaSweeper.sweep();
+      expect(alert).not.toHaveBeenCalled();
+      expect(db.tranzilaSweepState().alert_queue.map((q) => q.index)).toEqual(
+        expect.arrayContaining(indexes.map(String))
+      );
+
+      app.tranzilaAlertRate._buckets.clear();
+      await app.tranzilaSweeper.sweep();
+      // 25 lines in chunks of 10: three messages, one batch against the cap.
+      expect(alert).toHaveBeenCalledTimes(3);
+      const text = alert.mock.calls.map(([, lines]) => lines.join('\n')).join('\n');
+      for (const i of indexes) expect(text).toContain(String(i));
+      expect(text).toContain(db.getCollection(s.c.id).order_no);
+      expect(db.tranzilaSweepState().alert_queue).toEqual([]);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it("another buyer's token on a row cannot make that buyer's payment alert for someone else", async () => {
+    const victim = await openSession('קונה');
+    const attacker = await openSession('מתחזה');
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      charge(victim.token);
+      await postNotify(attacker.token, 1);
+      await app.tranzilaSweeper.whenIdle();
+      expect(db.getCollection(victim.c.id).order.paid).toBe(true);
+      expect(db.getCollection(attacker.c.id).order.paid).toBe(false);
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
   });
 });

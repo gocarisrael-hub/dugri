@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 // server/tranzila.js talking to Tranzila: a call that hangs is aborted instead
-// of holding a notify or a pass open, and the sweep's listing follows full pages.
+// of holding a sweep open, and the report listing follows every page — or throws
+// past its hard limit, never quietly returning part of the report.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const modPath = path.join(__dirname, '..', '..', 'server', 'tranzila.js');
@@ -38,6 +39,14 @@ beforeEach(() => {
 });
 
 const ok = (obj) => ({ ok: true, status: 200, json: async () => obj });
+const page = (n, from) =>
+  Array.from({ length: n }, (_, i) => ({
+    index: from + i,
+    amount: 100,
+    currency: '1',
+    processor_response_code: '000',
+    txn_type: 'DEBIT',
+  }));
 
 describe('a Tranzila call that never answers', () => {
   it('is aborted after TRANZILA_HTTP_TIMEOUT_MS', async () => {
@@ -48,22 +57,14 @@ describe('a Tranzila call that never answers', () => {
         })
     );
     const started = Date.now();
-    await expect(tz.getTransaction('1696')).rejects.toThrow('aborted');
+    await expect(tz.listTransactions({ startDate: 'a', endDate: 'b' })).rejects.toThrow('aborted');
     expect(Date.now() - started).toBeLessThan(2000);
     expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
   });
 });
 
-describe('listTransactions', () => {
+describe('listTransactions paging', () => {
   it('follows full pages and stops at the first short one', async () => {
-    const page = (n, from) =>
-      Array.from({ length: n }, (_, i) => ({
-        index: from + i,
-        amount: 100,
-        currency: '1',
-        processor_response_code: '000',
-        txn_type: 'DEBIT',
-      }));
     fetchMock
       .mockResolvedValueOnce(ok({ transactions: page(1000, 1) }))
       .mockResolvedValueOnce(ok({ transactions: page(3, 1001) }));
@@ -74,5 +75,13 @@ describe('listTransactions', () => {
       page: 2,
       page_results: 1000,
     });
+  });
+
+  it('throws past its hard page limit instead of dropping the oldest rows', async () => {
+    fetchMock.mockImplementation(async () => ok({ transactions: page(1000, 1) }));
+    await expect(tz.listTransactions({ startDate: 'a', endDate: 'b' })).rejects.toThrow(
+      /more than/
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(200);
   });
 });

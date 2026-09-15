@@ -6,11 +6,11 @@ import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
 
-// A Tranzila pay/init mints a pay session token on every call, and those tokens
-// are what the notify, its retries and its limits are keyed by — so it is limited
+// A Tranzila pay/init mints a pay session token on every call, so it is limited
 // per client and per collection. The client key must not be something the client
-// writes (X-Forwarded-For's left side). PeleCard is not limited. Small limits
-// here; the tests run in order (budgets in the comments).
+// writes (X-Forwarded-For's left side), and an IPv6 client counts as its /64.
+// PeleCard is not limited. Small limits here; the tests run in order (budgets in
+// the comments).
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -110,6 +110,19 @@ describe('pay/init rate limits (Tranzila)', () => {
       statuses.push(
         await payInit(db.createCollection('מתחפשת ' + i), {
           headers: { 'X-Forwarded-For': spoof + ', 203.0.113.50' },
+        })
+      );
+    }
+    expect(statuses).toEqual([200, 200, 200, 200, 200, 200, 200, 200, 429, 429]);
+  });
+
+  // a separate IPv6 client: its whole /64 shares one budget of 8
+  it('an IPv6 client using a different address of its /64 each time still shares one bucket', async () => {
+    const statuses = [];
+    for (let i = 1; i <= 10; i++) {
+      statuses.push(
+        await payInit(db.createCollection('IPv6 ' + i), {
+          headers: { 'X-Forwarded-For': `9.9.9.${i}, 2001:db8:abcd:77::${i.toString(16)}` },
         })
       );
     }
