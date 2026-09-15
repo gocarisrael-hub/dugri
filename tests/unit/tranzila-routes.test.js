@@ -459,6 +459,54 @@ describe('approved rows that do not settle reach the owner', () => {
   });
 });
 
+// The buyer pays, then closes the modal before the row reaches the report:
+// pay/cancel marks the session resolved while the purchase is still unpaid. A
+// session is looked up by its token whatever its resolved state and skipped only
+// once its PURCHASE is paid, so the sweep still decides that charge in full.
+describe('a payment window closed before the row reached the report', () => {
+  it('a verified charge on the released session settles it, and counts the coupon once', async () => {
+    db.createCoupon({ code: 'TZCLOSED', discount_pct: 50 });
+    const c = db.createCollection('נסגר לפני הדוח');
+    const { session } = await openPayment(c, { coupon: 'TZCLOSED' });
+    await post('/api/collections/' + c.id + '/pay/cancel', { owner_token: c.owner_token });
+    const released = db.getCollection(c.id).order.pelecard.sessions.slice(-1)[0];
+    expect(released.resolved).toBe(true);
+    expect(db.getCollection(c.id).order.paid).toBe(false);
+
+    const index = charge(session.token, 40);
+    await app.tranzilaSweeper.sweep();
+    const order = db.getCollection(c.id).order;
+    expect(order.paid).toBe(true);
+    expect(order.paid_transaction_id).toBe(String(index));
+    expect(order.charged_total).toBe(40);
+    expect(order.coupon).toBe('TZCLOSED');
+    expect(db.getCouponByCode('TZCLOSED').uses).toBe(1);
+
+    await app.tranzilaSweeper.sweep();
+    expect(db.getCouponByCode('TZCLOSED').uses).toBe(1);
+  });
+
+  it('a charge on the released session that fails verification does not settle, and is reported', async () => {
+    const c = db.createCollection('נסגר וסכום שגוי');
+    const { session } = await openPayment(c);
+    await post('/api/collections/' + c.id + '/pay/cancel', { owner_token: c.owner_token });
+    expect(db.getCollection(c.id).order.pelecard.sessions.slice(-1)[0].resolved).toBe(true);
+
+    const alert = spyAlerts();
+    try {
+      const index = charge(session.token, 1);
+      await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(false);
+      const text = alertText(alert);
+      expect(text).toContain(String(index));
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      expect(text).not.toContain(session.token);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+});
+
 describe('coupons through Tranzila', () => {
   it('charges the discounted amount, settles against it, and counts the use once', async () => {
     expect(db.createCoupon({ code: 'TZHALF', discount_pct: 50 }).error).toBeUndefined();
