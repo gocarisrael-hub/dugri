@@ -5638,6 +5638,18 @@ function decideTranzilaRow(tx) {
         ...base,
         kind: 'order_changed',
         orders: repriced.map((m) => m.collection.order_no || m.collection.id),
+        // What that pay window was priced at — the charge had to equal it to
+        // verify — and what the purchase costs NOW. The gap between the two is
+        // the refusal, and both belong in the message so the owner can act on it
+        // without opening the store.
+        expected: repriced.map((m) => Math.round(Number(m.session.charged_total) * 100)),
+        now: repriced.map((m) =>
+          Math.round(
+            Number(
+              m.kind === 'shipping' ? m.collection.order.shipping.fee : m.collection.order.total
+            ) * 100
+          )
+        ),
       },
     };
   }
@@ -5719,7 +5731,11 @@ function describeTranzilaAlert(item) {
       head +
       ' — שולמה עבור הזמנה ' +
       (item.orders || []).join(', ') +
-      ' שהשתנתה מאז שנפתח חלון התשלום, ולכן לא סומנה כשולמה'
+      ' שהשתנתה מאז שנפתח חלון התשלום (חלון התשלום: ' +
+      (item.expected || []).join('/') +
+      ' אגורות · ההזמנה עכשיו: ' +
+      (item.now || []).join('/') +
+      ' אגורות), ולכן לא סומנה כשולמה'
     );
   }
   return (

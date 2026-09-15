@@ -242,6 +242,10 @@ describe('a charge from a pay window opened before the order changed', () => {
       expect(text).toContain(String(old));
       expect(text).toContain(db.getCollection(c.id).order_no);
       expect(text).toContain('השתנתה');
+      // Both numbers, so the owner can see the gap without opening the store:
+      // what was charged (the old window's price) and what the order costs now.
+      expect(text).toContain('7900 אגורות');
+      expect(text).toContain(String(Math.round(dearer.charged_total * 100)) + ' אגורות');
 
       charge(dearer.token, dearer.charged_total);
       await app.tranzilaSweeper.sweep();
