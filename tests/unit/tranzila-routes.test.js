@@ -29,7 +29,6 @@ const ENV = {
   TRANZILA_TERMINAL: 'fxptest',
   TRANZILA_APP_KEY: 'app-key',
   TRANZILA_SECRET: 'app-secret',
-  TRANZILA_LOOKUP_RETRY_MS: '0',
   TRANZILA_NOTIFY_RATE_LIMIT: '6',
   // Several tests here produce approved-but-unverified charges on purpose; the
   // production cap of 5 owner alerts an hour would silence the later ones.
@@ -82,6 +81,11 @@ beforeAll(async () => {
         if (reportThrows) throw new Error('network');
         const body = JSON.parse(opts.body);
         reportCalls.push(body);
+        // A date-range query (the sweep) gets every row; an index query, one.
+        if (body.transaction_index == null) {
+          const rows = Object.values(report);
+          return jsonRes({ transactions: rows, rows: rows.length });
+        }
         const r = report[body.transaction_index];
         return jsonRes({ transactions: r ? [r] : [], rows: r ? 1 : 0 });
       }
@@ -262,15 +266,62 @@ describe('POST /api/payment/tranzila/notify', () => {
     expect(db.getCollection(c.id).order.paid).toBe(false);
   });
 
-  it('asks Tranzila to retry (502) when the report does not have it yet or is down', async () => {
+  // Nothing says Tranzila retries a non-200, so a notify that cannot be checked
+  // right now is answered 200 and re-checked by the server.
+  it('answers 200 when the report lags or is down, and settles on the server-side retry', async () => {
     const c = db.createCollection('עוד לא בדוח');
     const { session } = await openPayment(c);
-    const missing = await notifyFor(session.token, 999999);
-    expect(missing.status).toBe(502);
+    const index = nextIndex++;
+    expect((await notifyFor(session.token, index)).status).toBe(200);
     reportThrows = true;
-    const down = await notifyFor(session.token, 999998);
-    expect(down.status).toBe(502);
+    expect((await notifyFor(session.token, index)).status).toBe(200);
     expect(db.getCollection(c.id).order.paid).toBe(false);
+
+    reportThrows = false;
+    report[index] = {
+      index,
+      amount: 7900,
+      currency: '1',
+      processor_response_code: '000',
+      txn_type: 'DEBIT',
+      authorization_number: 'A' + index,
+      user_defined_1: session.token,
+    };
+    await app.tranzilaReconciler.runDue(Date.now() + 60 * 60 * 1000);
+    const order = db.getCollection(c.id).order;
+    expect(order.paid).toBe(true);
+    expect(order.paid_transaction_id).toBe(String(index));
+  });
+
+  it('the sweep settles a session whose notify never arrived', async () => {
+    const c = db.createCollection('בלי הודעה');
+    const { session } = await openPayment(c);
+    charge(session.token, 79);
+    reportCalls.length = 0;
+    const r = await app.tranzilaReconciler.sweep();
+    expect(r.settled).toBeGreaterThanOrEqual(1);
+    expect(reportCalls).toHaveLength(1);
+    expect(reportCalls[0].transaction_index).toBeUndefined();
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+    expect(db.getCollection(c.id).order.paid_method).toBe('tranzila');
+  });
+
+  it('a pending payment still unsettled after the wait alerts the owner once', async () => {
+    const c = db.createCollection('ממתין זמן רב');
+    const { session } = await openPayment(c);
+    expect((await notifyFor(session.token, nextIndex++)).status).toBe(200);
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      await app.tranzilaReconciler.runDue(Date.now() + 11 * 60 * 1000);
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alert.mock.calls[0][1].join('\n')).toContain(db.getCollection(c.id).order_no || c.id);
+      expect(alert.mock.calls[0][1].join('\n')).not.toContain(session.token);
+      await app.tranzilaReconciler.runDue(Date.now() + 30 * 60 * 1000);
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(db.getCollection(c.id).order.paid).toBe(false);
+    } finally {
+      alert.mockRestore();
+    }
   });
 
   it('ignores an unknown token, a missing index, and a PeleCard session', async () => {
@@ -351,15 +402,18 @@ describe('a buyer who edits the payment page', () => {
 });
 
 describe('notify abuse', () => {
-  it('rate-limits one token, answering 429 without touching the Reports API', async () => {
+  it('past its free lookups and its budget a token is answered 200 and kept pending, with no lookup', async () => {
     const c = db.createCollection('הצפה');
     const { session } = await openPayment(c);
-    for (let i = 0; i < 6; i++) {
-      expect((await notifyFor(session.token, 900000 + i)).status).toBe(502);
+    // 3 free lookups, then the per-token budget of 6.
+    for (let i = 0; i < 9; i++) {
+      expect((await notifyFor(session.token, 900000 + i)).status).toBe(200);
     }
+    expect(reportCalls).toHaveLength(9);
     reportCalls.length = 0;
     const limited = await notifyFor(session.token, 900099);
-    expect(limited.status).toBe(429);
+    expect(limited.status).toBe(200);
+    expect(limited.body.pending).toBe(true);
     expect(reportCalls).toHaveLength(0);
   });
 

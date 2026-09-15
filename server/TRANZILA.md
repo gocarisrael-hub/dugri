@@ -32,8 +32,13 @@ just before a switch still settles.
 Notify limits, all optional with safe defaults: `TRANZILA_NOTIFY_RATE_LIMIT`
 (10 per real session token per 10 minutes), `TRANZILA_LOOKUP_RATE_LIMIT` (60
 Reports API lookups a minute across all tokens) and `TRANZILA_ALERT_RATE_LIMIT`
-(5 owner alerts an hour). Over a notify limit the answer is 429, before any call
-to Tranzila.
+(5 owner alerts an hour; alerts held back are folded into the next one), plus
+`TRANZILA_FREE_LOOKUPS` (3: each session's first lookups ignore both caps). A
+notify over a limit is still answered 200 and waits as pending, with no call to
+Tranzila. `PAY_INIT_RATE_LIMIT_IP` (60) and `PAY_INIT_RATE_LIMIT_COLLECTION` (20)
+limit pay/init and shipping/init per 10 minutes, because every call mints a pay
+session token. Any of these set to something that is not a positive number
+falls back to its default.
 
 ## One-time setup in My Tranzila
 
@@ -105,8 +110,18 @@ a confirmation, not an accounting document.
 4. Tranzila returns the window to `pay-done.html` by POST; the server bounces it
    to a GET, and the page tells the checkout to finish, as with PeleCard.
 
-If the report does not have the transaction yet, the notify answers 502 so
-Tranzila retries. A rejected transaction is logged with its code, type,
+**Nothing in Tranzila's documentation says a notify is sent again** after a
+non-200, so the server never relies on it. For a real Tranzila session the
+notify always answers 200. Anything it could not check right then (the lookup
+cap was full, the session's budget was spent, the report did not have the
+transaction yet, the Reports API failed) is kept as pending and re-checked by
+the server on a backoff (15 s, 30 s, 1 min, 2 min, 4 min, 8 min). Every
+`TRANZILA_SWEEP_MS` (default 2 min) one Reports API call reads the terminal's
+recent transactions and settles any unpaid Tranzila session from the last
+`TRANZILA_SWEEP_WINDOW_MS` (default 2 h) whose charge is there, which covers a
+notify that never arrived. A pending payment still unsettled after
+`TRANZILA_PENDING_ALERT_MS` (default 10 min) sends the owner one grouped alert.
+Pending entries live in memory; after a restart the sweep covers them. A rejected transaction is logged with its code, type,
 currency, amount, expected amount and whether the token matched (no card data).
 
 ## Sources

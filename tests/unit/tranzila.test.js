@@ -188,13 +188,24 @@ describe('getTransaction / findTransaction', () => {
     await expect(tz.getTransaction('1696')).rejects.toThrow(/401/);
   });
 
-  it('retries a transaction the report does not have yet', async () => {
-    fetchMock
-      .mockResolvedValueOnce(ok({ transactions: [] }))
-      .mockResolvedValueOnce(ok({ transactions: [row()] }));
-    const tx = await tz.findTransaction('1696', { attempts: 3, delayMs: 0 });
-    expect(tx.index).toBe('1696');
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+  it('lists a date range for the sweep, newest first and normalized', async () => {
+    fetchMock.mockResolvedValueOnce(
+      ok({ transactions: [row({ index: 2 }), row({ index: 1, txn_type: 'credit' })] })
+    );
+    const rows = await tz.listTransactions({ startDate: '2026-09-15', endDate: '2026-09-16' });
+    const [calledUrl, opts] = fetchMock.mock.calls[0];
+    expect(calledUrl).toBe('https://report.tranzila.com/v1/transaction');
+    expect(JSON.parse(opts.body)).toEqual({
+      terminal_name: 'fxptest',
+      transaction_start_date: '2026-09-15',
+      transaction_end_date: '2026-09-16',
+      page: 1,
+      page_results: 1000,
+      order_direction: 'desc',
+    });
+    expect(opts.headers['X-tranzila-api-access-token']).toMatch(/^[0-9a-f]{64}$/);
+    expect(rows.map((r) => r.index)).toEqual(['2', '1']);
+    expect(rows[1].txnType).toBe('CREDIT');
   });
 });
 

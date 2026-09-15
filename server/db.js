@@ -2478,6 +2478,47 @@ const db = {
     return session ? { collection: c, session, kind: 'shipping' } : null;
   },
 
+  // Is this findPaySession match the LATEST session of its purchase? With
+  // `open`, also still unresolved and inside SESSION_TTL_MS: the only session a
+  // live pay window can belong to. Used to decide whether an unverified charge
+  // on it is worth the owner's attention.
+  isCurrentPaySession(match, { open = false } = {}) {
+    if (!match || !match.session || !match.collection || !match.collection.order) return false;
+    const order = match.collection.order;
+    const holder =
+      match.kind === 'shipping' ? order.shipping && order.shipping.pelecard : order.pelecard;
+    const list = holder && Array.isArray(holder.sessions) ? holder.sessions : [];
+    if (list[list.length - 1] !== match.session) return false;
+    if (!open) return true;
+    const s = match.session;
+    return (
+      !s.resolved && !!s.initiated_at && Date.now() - Date.parse(s.initiated_at) < SESSION_TTL_MS
+    );
+  },
+
+  // Sessions a provider opened since `sinceMs` on purchases that are still
+  // unpaid — the order's own, and a shipping upgrade's. Resolved ones included:
+  // a buyer who closed the window may still have paid. Newest first, capped.
+  unpaidProviderSessions(provider, sinceMs, limit = 200) {
+    const out = [];
+    const take = (holder) => {
+      if (!holder || !Array.isArray(holder.sessions)) return;
+      for (const s of holder.sessions) {
+        const at = s && s.initiated_at ? Date.parse(s.initiated_at) : NaN;
+        if (s && s.provider === provider && at >= sinceMs) {
+          out.push({ token: s.token, initiatedAt: at });
+        }
+      }
+    };
+    for (const c of _db.collections) {
+      const o = c && c.order;
+      if (!o) continue;
+      if (!o.paid) take(o.pelecard);
+      if (o.shipping && !o.shipping.paid) take(o.shipping.pelecard);
+    }
+    return out.sort((a, b) => b.initiatedAt - a.initiatedAt).slice(0, limit);
+  },
+
   // Admin: flip an order between "still here" and SENT TO THE PRINT SHOP. The
   // first of the two hand-pressed production steps: the PDF is generated (that
   // is `order.production`, which the generator sets by itself), the owner mails

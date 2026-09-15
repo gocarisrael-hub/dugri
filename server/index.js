@@ -9,6 +9,7 @@ const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
 const tranzila = require('./tranzila');
+const { createReconciler, positiveNumber } = require('./tranzila-reconcile');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
@@ -5155,6 +5156,22 @@ app.post('/api/collections/:id/pay/cancel', (req, res) => {
 // Persists/refreshes the order first (same validation as /order), then asks
 // PeleCard for an iframe URL. Returns { url } for the browser to load in an
 // <iframe>. The ParamX token stored here lets the later callback find the order.
+//
+// EVERY CALL MINTS A PAY SESSION, and a session's token is what the Tranzila
+// notify, its retries and its limits are keyed by — so an unbounded pay/init is
+// an unbounded supply of real tokens. Limited per client IP (before anything
+// else) and per collection (after the owner check, so a stranger cannot spend a
+// buyer's budget). Shared with shipping/init, which mints sessions the same way.
+const payInitIpRate = makeRateLimiter({
+  limit: positiveNumber(process.env.PAY_INIT_RATE_LIMIT_IP, 60),
+  windowMs: 10 * 60 * 1000,
+  maxKeys: 10000,
+});
+const payInitCollectionRate = makeRateLimiter({
+  limit: positiveNumber(process.env.PAY_INIT_RATE_LIMIT_COLLECTION, 20),
+  windowMs: 10 * 60 * 1000,
+  maxKeys: 10000,
+});
 app.post('/api/collections/:id/pay/init', async (req, res) => {
   const provider = cardProvider();
   if (!provider) {
@@ -5162,10 +5179,13 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   }
   const base = paymentBaseUrl();
   if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+  if (!payInitIpRate.ok(clientKey(req)))
+    return res.status(429).json({ error: 'too many attempts' });
 
   const b = req.body || {};
   const c = db.getCollection(req.params.id);
   if (!c || c.owner_token !== b.owner_token) return res.status(403).json({ error: 'forbidden' });
+  if (!payInitCollectionRate.ok(c.id)) return res.status(429).json({ error: 'too many attempts' });
   // Never re-open payment on an order that is already paid (re-clicking the card
   // button must not rebuild the order and discard the recorded payment).
   if (c.order && c.order.paid) return res.status(409).json({ error: 'already paid' });
@@ -5322,10 +5342,13 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
   }
   const base = paymentBaseUrl();
   if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+  if (!payInitIpRate.ok(clientKey(req)))
+    return res.status(429).json({ error: 'too many attempts' });
 
   const b = req.body || {};
   const c = db.getCollection(req.params.id);
   if (!c || c.owner_token !== b.owner_token) return res.status(403).json({ error: 'forbidden' });
+  if (!payInitCollectionRate.ok(c.id)) return res.status(429).json({ error: 'too many attempts' });
 
   // Stage it (address sanitized, fee re-read from settings, availability
   // re-checked — the collection can close between rendering the offer and
@@ -5496,31 +5519,90 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
 // only when approved, in shekels, for that session's exact amount, carrying that
 // session's token, and not already spent on another purchase.
 //
+// NOTHING SAYS TRANZILA SENDS A NOTIFY AGAIN. Its documentation is silent on
+// retries, so a notify this server refuses or cannot check is never answered
+// with an error and left to chance. For a real Tranzila session the answer is
+// always 200, and whatever could not be checked right then goes to
+// tranzilaReconciler (server/tranzila-reconcile.js): it re-checks on a backoff,
+// sweeps the terminal's recent transactions for sessions whose notify never
+// came, and tells the owner about anything still unsettled.
+//
 // The token is visible to the buyer in the iframe URL, so anyone holding one can
-// POST here with invented indexes. Each such call costs signed Reports API
-// lookups and a few seconds of an open request. So: a session that has already
-// paid for its purchase never looks anything up; the rest are limited per REAL
-// session token (an invented token never gets a bucket, so a flood of them
-// cannot evict a real one's), and all lookups together are capped, because
-// tokens are cheap to collect — every pay/init mints one.
+// POST here with invented indexes, and tokens are cheap (every pay/init mints
+// one, which is why pay/init is rate-limited too). So: invented tokens never
+// reach a limiter; a session that already paid never looks anything up; each
+// session's first few lookups are always made, so a flood cannot starve a
+// genuine first notify; past those, the global lookup cap is checked BEFORE the
+// session's own budget, so a notify the cap turns away costs the session nothing
+// — and anything turned away waits in the reconciler instead of being lost.
+const tzLimit = (name, fallback) => positiveNumber(process.env[name], fallback);
+const TRANZILA_FREE_LOOKUPS = Math.floor(tzLimit('TRANZILA_FREE_LOOKUPS', 3));
 const tranzilaNotifyRate = makeRateLimiter({
-  limit: Number(process.env.TRANZILA_NOTIFY_RATE_LIMIT || 10),
+  limit: tzLimit('TRANZILA_NOTIFY_RATE_LIMIT', 10),
   windowMs: 10 * 60 * 1000,
-  maxKeys: Number(process.env.TRANZILA_NOTIFY_RATE_MAX_KEYS || 10000),
+  maxKeys: tzLimit('TRANZILA_NOTIFY_RATE_MAX_KEYS', 10000),
 });
 const tranzilaLookupRate = makeRateLimiter({
-  limit: Number(process.env.TRANZILA_LOOKUP_RATE_LIMIT || 60),
+  limit: tzLimit('TRANZILA_LOOKUP_RATE_LIMIT', 60),
   windowMs: 60 * 1000,
   maxKeys: 1,
 });
-// Owner alerts for an approved charge that did not verify are capped globally,
-// so a stream of forged notifies cannot flood her inbox.
+// Immediate lookups made per session, for the free allowance above. Bounded.
+const tranzilaImmediateLookups = new Map();
+function countImmediateLookup(token) {
+  tranzilaImmediateLookups.set(token, (tranzilaImmediateLookups.get(token) || 0) + 1);
+  if (tranzilaImmediateLookups.size > 10000) {
+    tranzilaImmediateLookups.delete(tranzilaImmediateLookups.keys().next().value);
+  }
+}
+
+// OWNER ALERTS. Capped globally so no stream of notifies can flood her inbox;
+// what the cap holds back is counted and folded into the next alert (or a
+// summary on the reconciler's next pass) rather than silently dropped.
 const tranzilaAlertRate = makeRateLimiter({
-  limit: Number(process.env.TRANZILA_ALERT_RATE_LIMIT || 5),
+  limit: tzLimit('TRANZILA_ALERT_RATE_LIMIT', 5),
   windowMs: 60 * 60 * 1000,
   maxKeys: 1,
 });
-const tranzilaAlerted = new Set();
+let tranzilaAlertsHeld = 0;
+function sendTranzilaAlert(subject, lines, { summary = false } = {}) {
+  if (!tranzilaAlertRate.ok('all')) {
+    if (!summary) tranzilaAlertsHeld += 1;
+    return false;
+  }
+  const held = tranzilaAlertsHeld;
+  tranzilaAlertsHeld = 0;
+  const body = held
+    ? lines.concat([
+        'ועוד ' +
+          held +
+          ' התראות טרנזילה שנעצרו בהגבלת הקצב מאז ההתראה הקודמת — לבדוק ב-My Tranzila.',
+      ])
+    : lines;
+  notify
+    .sendSystemAlert(subject, body)
+    .then((emailed) => (emailed ? true : alertOwnerViaWhatsApp(subject, body)))
+    .catch(() => {});
+  return true;
+}
+function flushHeldTranzilaAlerts() {
+  if (!tranzilaAlertsHeld) return;
+  sendTranzilaAlert('טרנזילה: התראות שנעצרו בהגבלת הקצב', ['סיכום התראות טרנזילה:'], {
+    summary: true,
+  });
+}
+
+// Once-only sets. A charge carrying the session's OWN token is keyed by
+// index + session; one carrying NO session token is keyed by index alone, so a
+// single such index (a staging charge on the shared terminal, a refund, a
+// self-made charge with the token dropped) posted under many tokens is still
+// one alert.
+const tranzilaAlertedOwn = new Set();
+const tranzilaAlertedIndex = new Set();
+function rememberBounded(set, key) {
+  set.add(key);
+  if (set.size > 1000) set.delete(set.values().next().value);
+}
 
 // Does this transaction carry ANOTHER real pay session's token? Then it is some
 // other buyer's charge, posted against the wrong session.
@@ -5533,30 +5615,28 @@ function carriesOtherSessionToken(raw, ownToken) {
 // missing on the terminal, an amount unit that is not what the docs say — or a
 // buyer who switched the page to a hold. Either way a person has to look, and a
 // log line nobody reads is not that. Card details, tokens and keys stay out.
-function alertUnverifiedTranzilaCharge(c, tx, session) {
-  // Two situations are worth a person: the transaction carries THIS session's
-  // token (the buyer's own charge, of the wrong kind or amount), or no session
-  // token at all (the token field is missing or misnamed on the terminal). One
-  // carrying ANOTHER session's token is someone else's charge posted here — it
-  // is ignored before the cap, so other buyers' indexes can neither flood the
-  // owner nor use up the alerts a real fault needs.
-  if (
-    !tranzila.carriesToken(tx.raw, session.token) &&
-    carriesOtherSessionToken(tx.raw, session.token)
-  ) {
-    return;
+function alertUnverifiedTranzilaCharge(match, tx) {
+  const c = match.collection;
+  const session = match.session;
+  const own = tranzila.carriesToken(tx.raw, session.token);
+  let set;
+  let key;
+  if (own) {
+    // The buyer's own charge, of the wrong kind or amount.
+    set = tranzilaAlertedOwn;
+    key = tx.index + ':' + session.token;
+  } else {
+    // Someone else's real charge posted against this session: not a fault.
+    if (carriesOtherSessionToken(tx.raw, session.token)) return;
+    // No token at all (a missing or misnamed token field) is worth a person only
+    // for a session a live pay window can belong to.
+    if (!db.isCurrentPaySession(match, { open: true })) return;
+    set = tranzilaAlertedIndex;
+    key = String(tx.index);
   }
-  // Once per index AND session: keyed by index alone, posting a real order's
-  // index first would mark it alerted before that order's own notify arrived.
-  const key = tx.index + ':' + session.token;
-  if (tranzilaAlerted.has(key)) return;
-  if (!tranzilaAlertRate.ok('all')) return;
-  tranzilaAlerted.add(key);
-  if (tranzilaAlerted.size > 1000) {
-    tranzilaAlerted.delete(tranzilaAlerted.values().next().value);
-  }
-  const subject = 'טרנזילה: עסקה מאושרת לא אומתה — ההזמנה לא סומנה כשולמה';
-  const lines = [
+  if (set.has(key)) return;
+  rememberBounded(set, key);
+  sendTranzilaAlert('טרנזילה: עסקה מאושרת לא אומתה — ההזמנה לא סומנה כשולמה', [
     'הזמנה: ' + (c.order_no || c.id),
     'מספר עסקה בטרנזילה (index): ' + tx.index,
     'סוג: ' + (tx.txnType || '-') + ' · מצב: ' + (tx.tranmode || '-'),
@@ -5564,46 +5644,26 @@ function alertUnverifiedTranzilaCharge(c, tx, session) {
       tx.amountAgorot +
       ' אגורות · צפוי: ' +
       Math.round(Number(session.charged_total) * 100),
-    'אסימון ההזמנה נמצא בעסקה: ' + (tranzila.carriesToken(tx.raw, session.token) ? 'כן' : 'לא'),
+    'אסימון ההזמנה נמצא בעסקה: ' + (own ? 'כן' : 'לא'),
     'לבדוק ב-My Tranzila אם נגבה כסף, ולזכות או לסמן ידנית לפי הצורך.',
-  ];
-  notify
-    .sendSystemAlert(subject, lines)
-    .then((emailed) => (emailed ? true : alertOwnerViaWhatsApp(subject, lines)))
-    .catch(() => {});
+  ]);
 }
 
-app.post('/api/payment/tranzila/notify', async (req, res) => {
-  const parsed = tranzila.parseNotify(req.body || {}, req.query || {});
-  if (!tranzila.isConfigured() || !parsed.token || !parsed.index) return res.json({ ok: true });
-  // A declined card is reported here too. Skipping the lookup on a plain failure
-  // is safe even though the field is untrusted: a forged "declined" cannot stop
-  // the real notify for a real charge.
-  if (parsed.response && parsed.response !== tranzila.SUCCESS_CODE) return res.json({ ok: true });
+// A real Tranzila session for this token, or null.
+function tranzilaMatch(token) {
+  const m = token ? db.findPaySession(token) : null;
+  return m && m.session && m.session.provider === tranzila.NAME ? m : null;
+}
+function tranzilaPurchasePaid(match) {
+  return match.kind === 'shipping'
+    ? !!match.collection.order.shipping.paid
+    : !!match.collection.order.paid;
+}
 
-  const match = db.findPaySession(parsed.token);
-  const session = match && match.session;
-  if (!session || session.provider !== tranzila.NAME) return res.json({ ok: true });
-  // This session already paid for its purchase (resolved by markPaid, not by the
-  // buyer closing the window): a repeat notify has nothing left to decide.
-  const purchasePaid =
-    match.kind === 'shipping' ? match.collection.order.shipping.paid : match.collection.order.paid;
-  if (purchasePaid && session.resolved && !session.abandoned_at) return res.json({ ok: true });
-  // Limits only past this point, where the token is a real Tranzila session.
-  if (!tranzilaNotifyRate.ok(session.token) || !tranzilaLookupRate.ok('all')) {
-    return res.status(429).json({ error: 'too many notifications' });
-  }
-
-  let tx;
-  try {
-    tx = await tranzila.findTransaction(parsed.index);
-  } catch (e) {
-    console.error('[tranzila] lookup failed for ' + match.collection.id + ': ' + (e && e.message));
-    return res.status(502).json({ error: 'verification failed' });
-  }
-  // Not in the report yet: non-200 so Tranzila tries again.
-  if (!tx) return res.status(502).json({ error: 'transaction not found' });
-
+// Decide one looked-up transaction for a session — shared by the notify, the
+// reconciler's retries and its sweep, so all three settle by the same rules.
+function handleTranzilaTransaction(match, tx) {
+  const session = match.session;
   if (!tranzila.verifyTransaction(tx, { amountNis: session.charged_total, token: session.token })) {
     // Enough to diagnose from the Railway log, and nothing about the card.
     console.error(
@@ -5615,6 +5675,8 @@ app.post('/api/payment/tranzila/notify', async (req, res) => {
         tx.responseCode +
         ' type=' +
         tx.txnType +
+        ' mode=' +
+        tx.tranmode +
         ' currency=' +
         tx.currency +
         ' amount=' +
@@ -5624,18 +5686,91 @@ app.post('/api/payment/tranzila/notify', async (req, res) => {
         ' token=' +
         tranzila.carriesToken(tx.raw, session.token)
     );
-    if (tx.responseCode === tranzila.SUCCESS_CODE) {
-      alertUnverifiedTranzilaCharge(match.collection, tx, session);
-    }
-    return res.json({ ok: true });
+    if (tx.responseCode === tranzila.SUCCESS_CODE) alertUnverifiedTranzilaCharge(match, tx);
+    return 'rejected';
   }
-  if (db.isTransactionUsed(tranzila.NAME, tx.index)) return res.json({ ok: true });
-
-  settleVerifiedPayment(match, {
+  if (db.isTransactionUsed(tranzila.NAME, tx.index)) return 'used';
+  const settled = settleVerifiedPayment(match, {
     method: tranzila.NAME,
     transactionId: tx.index,
     approvalNo: tx.approvalNo,
   });
+  return settled ? 'settled' : 'used';
+}
+
+const tranzilaReconciler = createReconciler({
+  lookup: (index) => tranzila.getTransaction(index),
+  listRecent: (range) => tranzila.listTransactions(range),
+  candidates: (at) =>
+    db.unpaidProviderSessions(
+      tranzila.NAME,
+      at - tzLimit('TRANZILA_SWEEP_WINDOW_MS', 2 * 60 * 60 * 1000)
+    ),
+  carries: (tx, token) => tranzila.carriesToken(tx.raw, token),
+  isSettled: (token) => {
+    const m = tranzilaMatch(token);
+    return !m || tranzilaPurchasePaid(m);
+  },
+  handle: async (token, tx) => {
+    const m = tranzilaMatch(token);
+    if (!m) return 'gone';
+    if (tranzilaPurchasePaid(m)) return 'used';
+    return handleTranzilaTransaction(m, tx);
+  },
+  // One alert for the whole pass: every order whose notify could not be checked
+  // and is still unpaid after the wait.
+  alertStale: (tokens) => {
+    const orders = tokens
+      .map(tranzilaMatch)
+      .filter((m) => m && !tranzilaPurchasePaid(m) && db.isCurrentPaySession(m))
+      .map((m) => m.collection.order_no || m.collection.id);
+    if (!orders.length) return;
+    sendTranzilaAlert('טרנזילה: תשלום שלא ניתן היה לאמת — ההזמנה עדיין לא שולמה', [
+      'לא הצלחנו לבדוק מול טרנזילה הודעת תשלום עבור: ' + orders.join(', '),
+      'ייתכן שנגבה כסף וההזמנה לא סומנה כשולמה. לבדוק ב-My Tranzila.',
+    ]);
+  },
+  alertAfterMs: tzLimit('TRANZILA_PENDING_ALERT_MS', 10 * 60 * 1000),
+});
+
+app.post('/api/payment/tranzila/notify', async (req, res) => {
+  const parsed = tranzila.parseNotify(req.body || {}, req.query || {});
+  if (!tranzila.isConfigured() || !parsed.token || !parsed.index) return res.json({ ok: true });
+  // A declined card is reported here too. Skipping the lookup on a plain failure
+  // is safe even though the field is untrusted: a forged "declined" cannot stop
+  // the real notify for a real charge.
+  if (parsed.response && parsed.response !== tranzila.SUCCESS_CODE) return res.json({ ok: true });
+
+  const match = tranzilaMatch(parsed.token);
+  if (!match) return res.json({ ok: true });
+  const session = match.session;
+  // This session already paid for its purchase (resolved by markPaid, not by the
+  // buyer closing the window): a repeat notify has nothing left to decide.
+  if (tranzilaPurchasePaid(match) && session.resolved && !session.abandoned_at) {
+    return res.json({ ok: true });
+  }
+
+  const free = (tranzilaImmediateLookups.get(session.token) || 0) < TRANZILA_FREE_LOOKUPS;
+  // Global cap first: when it refuses, the session's own budget is untouched.
+  const allowed = free || (tranzilaLookupRate.ok('all') && tranzilaNotifyRate.ok(session.token));
+  if (!allowed) {
+    tranzilaReconciler.recordPending(session.token, parsed.index);
+    return res.json({ ok: true, pending: true });
+  }
+  countImmediateLookup(session.token);
+
+  let tx = null;
+  try {
+    tx = await tranzila.getTransaction(parsed.index);
+  } catch (e) {
+    console.error('[tranzila] lookup failed for ' + match.collection.id + ': ' + (e && e.message));
+  }
+  // Not in the report yet, or the Reports API failed: the reconciler checks again.
+  if (!tx) {
+    tranzilaReconciler.recordPending(session.token, parsed.index);
+    return res.json({ ok: true, pending: true });
+  }
+  handleTranzilaTransaction(match, tx);
   res.json({ ok: true });
 });
 
@@ -6480,6 +6615,28 @@ if (require.main === module) {
       /* the cache warms lazily instead */
     }
   }, 0).unref();
+  // Tranzila payments the notify could not settle on the spot: re-checked every
+  // 15 seconds (each pending index on its own backoff), and the terminal swept
+  // every few minutes for sessions whose notify never came. Only when Tranzila
+  // is configured; unref()'d and fire-and-forget like the scans below.
+  if (tranzila.isConfigured()) {
+    const tzRetryTimer = setInterval(() => {
+      tranzilaReconciler
+        .runDue()
+        .then(flushHeldTranzilaAlerts)
+        .catch((e) => console.error('[tranzila] retry pass failed: ' + (e && e.message)));
+    }, 15 * 1000);
+    if (tzRetryTimer.unref) tzRetryTimer.unref();
+    const tzSweepTimer = setInterval(
+      () => {
+        tranzilaReconciler
+          .sweep()
+          .catch((e) => console.error('[tranzila] sweep failed: ' + (e && e.message)));
+      },
+      positiveNumber(process.env.TRANZILA_SWEEP_MS, 2 * 60 * 1000)
+    );
+    if (tzSweepTimer.unref) tzSweepTimer.unref();
+  }
   // Hourly reminder scan, only when email is configured. unref() so the timer
   // never keeps the process alive on its own, and the scan is fire-and-forget.
   if (notify.isConfigured()) {
@@ -6511,6 +6668,10 @@ if (require.main === module) {
 }
 
 module.exports = app;
+// The Tranzila retry/sweep engine and the notify limiters, for tests: a pass can
+// be run on demand instead of waiting for the timers (which tests never start).
+module.exports.tranzilaReconciler = tranzilaReconciler;
+module.exports.tranzilaLimits = { notifyRate: tranzilaNotifyRate, lookupRate: tranzilaLookupRate };
 // Exposed for tests + the scheduler: a single WhatsApp nudge pass, and the
 // paid-order group-open hook. Attached to the app export (which stays the default
 // export) so a test can drive them with injected inputs, hermetically.

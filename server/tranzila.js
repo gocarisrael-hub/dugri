@@ -173,7 +173,27 @@ async function getTransaction(index) {
   });
   const list = (data && Array.isArray(data.transactions) && data.transactions) || [];
   const rd = list.find((t) => t && Number(t.index) === n);
-  if (!rd) return null;
+  return rd ? normalizeRow(rd) : null;
+}
+
+// The terminal's transactions between two Israel dates (YYYY-MM-DD), newest
+// first, normalized. One page of up to 1000 rows: the sweep looks back hours,
+// not months. Throws on a transport error.
+async function listTransactions({ startDate, endDate } = {}) {
+  if (!isConfigured()) throw new Error('tranzila not configured');
+  const data = await postJson(REPORT_BASE + '/v1/transaction', {
+    terminal_name: TERMINAL,
+    transaction_start_date: startDate,
+    transaction_end_date: endDate,
+    page: 1,
+    page_results: 1000,
+    order_direction: 'desc',
+  });
+  const list = (data && Array.isArray(data.transactions) && data.transactions) || [];
+  return list.filter((t) => t && t.index != null).map(normalizeRow);
+}
+
+function normalizeRow(rd) {
   return {
     index: String(rd.index),
     amountAgorot: rd.amount != null && rd.amount !== '' ? Number(rd.amount) : null,
@@ -185,18 +205,6 @@ async function getTransaction(index) {
     approvalNo: rd.authorization_number || null,
     raw: rd,
   };
-}
-
-// The report can trail the notify by a moment. Try a few times before giving
-// up; null means "still not there", which the route answers with a 502.
-async function findTransaction(index, { attempts = 3, delayMs } = {}) {
-  const wait = delayMs != null ? delayMs : Number(process.env.TRANZILA_LOOKUP_RETRY_MS || 2000);
-  for (let i = 0; i < attempts; i++) {
-    const tx = await getTransaction(index);
-    if (tx) return tx;
-    if (i < attempts - 1 && wait > 0) await new Promise((r) => setTimeout(r, wait));
-  }
-  return null;
 }
 
 // Does this transaction carry our token? Checked across every field Tranzila
@@ -240,7 +248,7 @@ module.exports = {
   init,
   parseNotify,
   getTransaction,
-  findTransaction,
+  listTransactions,
   verifyTransaction,
   carriesToken,
   tokenCandidates,
