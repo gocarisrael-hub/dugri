@@ -36,8 +36,12 @@ Reports API lookups a minute across all tokens) and `TRANZILA_ALERT_RATE_LIMIT`
 `TRANZILA_FREE_LOOKUPS` (3: each session's first lookups ignore both caps). A
 notify over a limit is still answered 200 and waits as pending, with no call to
 Tranzila. `PAY_INIT_RATE_LIMIT_IP` (60) and `PAY_INIT_RATE_LIMIT_COLLECTION` (20)
-limit pay/init and shipping/init per 10 minutes, because every call mints a pay
-session token. Any of these set to something that is not a positive number
+limit pay/init and shipping/init per 10 minutes when the provider is Tranzila
+(PeleCard is not limited), because every call mints a pay session token. The
+client is the address our own proxy saw: the `X-Forwarded-For` entry
+`PAYMENT_PROXY_HOPS` (default 1, Railway) from the right, or Cloudflare's
+`CF-Connecting-IP` when that entry is a Cloudflare edge address. Never the
+leftmost entry, which the client writes. Any of these set to something that is not a positive number
 falls back to its default.
 
 ## One-time setup in My Tranzila
@@ -120,8 +124,20 @@ the server on a backoff (15 s, 30 s, 1 min, 2 min, 4 min, 8 min). Every
 recent transactions and settles any unpaid Tranzila session from the last
 `TRANZILA_SWEEP_WINDOW_MS` (default 2 h) whose charge is there, which covers a
 notify that never arrived. A pending payment still unsettled after
-`TRANZILA_PENDING_ALERT_MS` (default 10 min) sends the owner one grouped alert.
-Pending entries live in memory; after a restart the sweep covers them. A rejected transaction is logged with its code, type,
+`TRANZILA_PENDING_ALERT_MS` (default 10 min) sends the owner one grouped alert
+naming the orders.
+
+The pending check is stored **on the pay session in the store** (`pending_check`:
+index, first-notify time, whether the session was open then, attempts), so a
+restart or deploy loses nothing: a sweep and a retry pass run once at boot, the
+retry pass and the alert read the stored checks, and the sweep reaches back to
+the oldest one (at most 7 days). One check per session (the newest index);
+retries go least-recently-tried first, `TRANZILA_RETRY_BATCH` (20) lookups per
+pass. The sweep matches the terminal's rows to sessions by the token each row
+carries, so it covers every session however many exist. A pass that is still
+running makes the next tick a no-op, and every Tranzila call is aborted after
+`TRANZILA_HTTP_TIMEOUT_MS` (10 s). Owner alerts held back by the hourly cap are
+listed by order number in the next alert, never folded into a count. A rejected transaction is logged with its code, type,
 currency, amount, expected amount and whether the token matched (no card data).
 
 ## Sources

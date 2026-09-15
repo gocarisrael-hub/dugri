@@ -342,6 +342,51 @@ describe('POST /api/payment/tranzila/notify', () => {
   });
 });
 
+describe('pending checks decided later', () => {
+  it('a no-token charge found on a retry after the buyer closed the window still alerts', async () => {
+    const c = db.createCollection('נסגר החלון');
+    const { session } = await openPayment(c);
+    const index = nextIndex++;
+    // The notify arrives while the window is open; the report does not have it yet.
+    expect((await notifyFor(session.token, index)).status).toBe(200);
+    await post('/api/collections/' + c.id + '/pay/cancel', { owner_token: c.owner_token });
+    expect(db.getCollection(c.id).order.pelecard.sessions.slice(-1)[0].resolved).toBe(true);
+    // The charge lands in the report without its token (a misconfigured field).
+    report[index] = {
+      index,
+      amount: 7900,
+      currency: '1',
+      processor_response_code: '000',
+      txn_type: 'DEBIT',
+      authorization_number: 'A' + index,
+    };
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      await app.tranzilaReconciler.runDue(Date.now() + 60 * 1000);
+      expect(alert.mock.calls.some(([, lines]) => lines.join('\n').includes(String(index)))).toBe(
+        true
+      );
+      expect(db.getCollection(c.id).order.paid).toBe(false);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('the sweep asks Tranzila for the Israel dates from the oldest pending check to today', async () => {
+    const { israelDate } = require(path.join(serverDir, 'tranzila-reconcile.js'));
+    const c = db.createCollection('טווח תאריכים');
+    const { session } = await openPayment(c);
+    expect((await notifyFor(session.token, nextIndex++)).status).toBe(200);
+    reportCalls.length = 0;
+    const now = Date.now();
+    await app.tranzilaReconciler.sweep(now);
+    const q = reportCalls.find((b) => b.transaction_index == null);
+    // Every pending check here is minutes old, so the 2 h window is the earlier bound.
+    expect(q.transaction_start_date).toBe(israelDate(now - 2 * 60 * 60 * 1000));
+    expect(q.transaction_end_date).toBe(israelDate(now));
+  });
+});
+
 describe('a buyer who edits the payment page', () => {
   it('an authorization-only hold (J5) never marks the order paid or spends the coupon', async () => {
     db.createCoupon({ code: 'TZHOLD', discount_pct: 50 });

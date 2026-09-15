@@ -2496,17 +2496,20 @@ const db = {
     );
   },
 
-  // Sessions a provider opened since `sinceMs` on purchases that are still
-  // unpaid — the order's own, and a shipping upgrade's. Resolved ones included:
-  // a buyer who closed the window may still have paid. Newest first, capped.
-  unpaidProviderSessions(provider, sinceMs, limit = 200) {
+  // PENDING CHECKS (Tranzila, server/tranzila-reconcile.js). A notify the server
+  // could not verify on the spot is recorded ON its pay session, in the store, so
+  // a restart or deploy between answering Tranzila and settling loses nothing.
+  //
+  // Every session this provider opened that carries a check, on a purchase still
+  // unpaid (the order's own or a shipping upgrade's). Uncapped. Live objects: the
+  // reconciler updates them in place and saves once per pass.
+  listPendingChecks(provider) {
     const out = [];
     const take = (holder) => {
       if (!holder || !Array.isArray(holder.sessions)) return;
       for (const s of holder.sessions) {
-        const at = s && s.initiated_at ? Date.parse(s.initiated_at) : NaN;
-        if (s && s.provider === provider && at >= sinceMs) {
-          out.push({ token: s.token, initiatedAt: at });
+        if (s && s.provider === provider && s.pending_check) {
+          out.push({ token: s.token, pending: s.pending_check });
         }
       }
     };
@@ -2516,7 +2519,21 @@ const db = {
       if (!o.paid) take(o.pelecard);
       if (o.shipping && !o.shipping.paid) take(o.shipping.pelecard);
     }
-    return out.sort((a, b) => b.initiatedAt - a.initiatedAt).slice(0, limit);
+    return out;
+  },
+
+  // Set a session's pending check, or remove it with null. Does not save; the
+  // caller batches and calls savePaySessions().
+  setPendingCheck(token, pending) {
+    const match = this.findPaySession(token);
+    if (!match) return false;
+    if (pending) match.session.pending_check = pending;
+    else delete match.session.pending_check;
+    return true;
+  },
+
+  savePaySessions() {
+    saveDb();
   },
 
   // Admin: flip an order between "still here" and SENT TO THE PRINT SHOP. The

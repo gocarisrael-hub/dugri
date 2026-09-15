@@ -21,6 +21,7 @@
 // and even then only used where PAYMENT_PROVIDER=tranzila (server/index.js).
 
 const crypto = require('crypto');
+const { positiveNumber } = require('./tranzila-reconcile');
 
 const TERMINAL = process.env.TRANZILA_TERMINAL || '';
 const APP_KEY = process.env.TRANZILA_APP_KEY || '';
@@ -83,14 +84,26 @@ function authHeaders({ now = Date.now(), nonce = crypto.randomBytes(40).toString
   };
 }
 
+// A Tranzila call that never answers must not hold a notify, a retry pass or the
+// sweep open for Node's default of about five minutes: it is aborted after
+// TRANZILA_HTTP_TIMEOUT_MS and the caller treats it as a failed call.
+const HTTP_TIMEOUT_MS = positiveNumber(process.env.TRANZILA_HTTP_TIMEOUT_MS, 10 * 1000);
+
 async function postJson(url, payload) {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error('tranzila http ' + res.status);
-  return res.json().catch(() => ({}));
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(payload),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) throw new Error('tranzila http ' + res.status);
+    return await res.json().catch(() => ({}));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function toAgorot(amountNis) {
@@ -177,20 +190,26 @@ async function getTransaction(index) {
 }
 
 // The terminal's transactions between two Israel dates (YYYY-MM-DD), newest
-// first, normalized. One page of up to 1000 rows: the sweep looks back hours,
-// not months. Throws on a transport error.
-async function listTransactions({ startDate, endDate } = {}) {
+// first, normalized. Pages of 1000 rows, followed while full, up to maxPages.
+// Throws on a transport error or timeout.
+const PAGE_RESULTS = 1000;
+async function listTransactions({ startDate, endDate, maxPages = 10 } = {}) {
   if (!isConfigured()) throw new Error('tranzila not configured');
-  const data = await postJson(REPORT_BASE + '/v1/transaction', {
-    terminal_name: TERMINAL,
-    transaction_start_date: startDate,
-    transaction_end_date: endDate,
-    page: 1,
-    page_results: 1000,
-    order_direction: 'desc',
-  });
-  const list = (data && Array.isArray(data.transactions) && data.transactions) || [];
-  return list.filter((t) => t && t.index != null).map(normalizeRow);
+  const out = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await postJson(REPORT_BASE + '/v1/transaction', {
+      terminal_name: TERMINAL,
+      transaction_start_date: startDate,
+      transaction_end_date: endDate,
+      page,
+      page_results: PAGE_RESULTS,
+      order_direction: 'desc',
+    });
+    const list = (data && Array.isArray(data.transactions) && data.transactions) || [];
+    for (const t of list) if (t && t.index != null) out.push(normalizeRow(t));
+    if (list.length < PAGE_RESULTS) break;
+  }
+  return out;
 }
 
 function normalizeRow(rd) {

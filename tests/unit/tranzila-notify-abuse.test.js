@@ -31,6 +31,7 @@ const ENV = {
   TRANZILA_NOTIFY_RATE_LIMIT: '3',
   TRANZILA_NOTIFY_RATE_MAX_KEYS: '5',
   TRANZILA_LOOKUP_RATE_LIMIT: '16',
+  TRANZILA_RETRY_BATCH: '5',
 };
 
 let app;
@@ -248,5 +249,52 @@ describe('the notify limits', () => {
     const other = await openSession('ראשונה בתור');
     expect(await notifyForm(other.token, charge(other.token))).toBe(200);
     expect(paid(other)).toBe(true);
+  });
+});
+
+describe('a flood of throwaway pending checks', () => {
+  // retry batch: 5 lookups a pass
+  it("does not starve a genuine pending check's retry", async () => {
+    const attackers = [];
+    for (let i = 0; i < 12; i++) {
+      const s = await openSession('זבל ' + i);
+      // Each session's free lookup finds nothing: one pending check per session,
+      // however many invented indexes it posts.
+      expect(await notifyForm(s.token, 60000 + i)).toBe(200);
+      expect(await notifyForm(s.token, 61000 + i)).toBe(200);
+      attackers.push(s);
+    }
+    const victim = await openSession('אמיתית בתור');
+    const index = nextIndex++;
+    expect(await notifyForm(victim.token, index)).toBe(200);
+    rowAt(index, victim.token);
+
+    reportCalls.length = 0;
+    const at = Date.now() + 2 * 60 * 60 * 1000;
+    // At most: 1 older session from earlier in this file + 12 attackers + the
+    // victim, 5 a pass: the victim's turn comes by the third pass.
+    for (let pass = 0; pass < 3 && !paid(victim); pass++) {
+      await app.tranzilaReconciler.runDue(at);
+    }
+    expect(paid(victim)).toBe(true);
+    const looked = reportCalls.map((b) => b.transaction_index);
+    expect(looked.length).toBeLessThanOrEqual(15);
+    expect(new Set(looked).size).toBe(looked.length);
+  });
+
+  it('an alert held back by the cap still names its order when it goes out', async () => {
+    const { alertRate } = app.tranzilaLimits;
+    while (alertRate.ok('all'));
+    const late = await openSession('ממתינה להתראה');
+    expect(await notifyForm(late.token, nextIndex++)).toBe(200);
+    await app.tranzilaReconciler.runDue(Date.now() + 3 * 60 * 60 * 1000);
+    expect(alert).not.toHaveBeenCalled();
+
+    alertRate._buckets.clear();
+    app.flushHeldTranzilaAlerts();
+    expect(alert).toHaveBeenCalledTimes(1);
+    expect(alert.mock.calls[0][1].join('\n')).toContain(
+      db.getCollection(late.c.id).order_no || late.c.id
+    );
   });
 });
