@@ -4173,6 +4173,24 @@
           'so that preview stands in Aharoni.';
   }
 
+  /* The back title box to save, or NOTHING. The box's colours come from the
+   template's own back title, and a design whose back is pure artwork (ריאל
+   מדריד: the crest) has none — so the box went out as a bare `frac`, the API
+   refused it ("back.fill must be a hex color"), and the refusal took every other
+   knob in that save down with it. Omitted, the key is simply not sent
+   (saveToSite copies only what `out` carries), and the saved null stands: the
+   bench has no colour picker, so it cannot give a back title to a design that
+   never had one. */
+  function backForSave(liveBack, box) {
+    if (!liveBack || !liveBack.fill || !liveBack.outline) return {};
+    return {
+      back: {
+        ...liveBack,
+        frac: { x0: r4(box.x0), y0: r4(box.y0), x1: r4(box.x1), y1: r4(box.y1) },
+      },
+    };
+  }
+
   function writeJSON() {
     // The five decisions this bench exists to settle come FIRST — they are what
     // she came here for; the geometry below is the same shape the template
@@ -4237,10 +4255,7 @@
           ])
         ),
       },
-      back: {
-        ...LIVE.back,
-        frac: { x0: r4(S.back.x0), y0: r4(S.back.y0), x1: r4(S.back.x1), y1: r4(S.back.y1) },
-      },
+      ...backForSave(LIVE.back, S.back),
     };
     LAST_OUT = out;
     // One box per line: forty boxes down the page is a wall nobody reads.
