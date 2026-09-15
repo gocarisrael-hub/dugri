@@ -91,11 +91,21 @@ describe('a report that answers HTTP 200 with an error', () => {
     await expect(tz.listTransactions(range)).rejects.toThrow(/20003.*No report permission/);
   });
 
-  it('throws on a reply without a transactions list', async () => {
-    fetchMock.mockResolvedValueOnce(ok({}));
-    await expect(tz.listTransactions(range)).rejects.toThrow(/without a transactions list/);
+  it('throws when transactions is present but unreadable', async () => {
     fetchMock.mockResolvedValueOnce(ok({ transactions: 'none' }));
-    await expect(tz.listTransactions(range)).rejects.toThrow();
+    await expect(tz.listTransactions(range)).rejects.toThrow(/not a list/);
+  });
+
+  // Which shape a day with no charges comes back in is unconfirmed until the
+  // staging test. Failing closed on it would stop every sweep on the first quiet
+  // night, so a reply with no error and no transactions is an empty day.
+  it('reads a reply with no error and no transactions as an empty day, not a failure', async () => {
+    fetchMock.mockResolvedValueOnce(ok({}));
+    expect(await tz.listTransactions(range)).toEqual([]);
+    fetchMock.mockResolvedValueOnce(ok({ transactions: null }));
+    expect(await tz.listTransactions(range)).toEqual([]);
+    fetchMock.mockResolvedValueOnce(ok({ error_code: 0, message: 'no transactions found' }));
+    expect(await tz.listTransactions(range)).toEqual([]);
   });
 
   it('throws on an error on a later page too', async () => {

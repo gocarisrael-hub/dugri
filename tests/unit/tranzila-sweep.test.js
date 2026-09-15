@@ -226,6 +226,24 @@ describe('sweeps that keep failing', () => {
     expect(deps.deliver).not.toHaveBeenCalled();
   });
 
+  it('one throwing row does not hide the rows behind it: they are still settled and reported', async () => {
+    const settled = [];
+    const { s, st } = harness({
+      st: { last_swept_at: T0 - MIN },
+      listRows: vi.fn(async () => [{ index: '61' }, { index: '62' }, { index: '63' }]),
+      decide: vi.fn((tx) => {
+        if (tx.index === '62') throw new Error('ENOSPC');
+        settled.push(tx.index);
+        return { outcome: 'settled' };
+      }),
+    });
+    await expect(s.sweep(T0)).rejects.toThrow('ENOSPC');
+    // Newest-first: the row after the thrower was still handled.
+    expect(settled).toEqual(['61', '63']);
+    // …and the watermark holds, so the failed row is read again next pass.
+    expect(st.last_swept_at).toBe(T0 - MIN);
+  });
+
   it('a row that throws while being handled fails the sweep the same way, and alerts after 15 minutes', async () => {
     const { s, deps, st } = harness({
       st: { last_swept_at: T0 - MIN },

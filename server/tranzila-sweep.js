@@ -173,8 +173,19 @@ function createSweeper({
           (await listRows({ startDate: israelDate(from), endDate: israelDate(at) })) || [];
         let settled = 0;
         let queued = 0;
+        // Per row, because rows are newest-first: a row that throws every time
+        // would otherwise stop the pass at the same place for ever and hide every
+        // older charge behind it. What can be settled is settled, and the pass
+        // still fails at the end so the owner is told and last_swept_at holds.
+        let rowError = null;
         for (const tx of rows) {
-          const d = decide(tx) || {};
+          let d;
+          try {
+            d = decide(tx) || {};
+          } catch (e) {
+            rowError = rowError || e;
+            continue;
+          }
           if (d.outcome === 'settled') settled += 1;
           if (d.alert) {
             const index = String(tx.index);
@@ -183,6 +194,12 @@ function createSweeper({
               queued += 1;
             }
           }
+        }
+        if (rowError) {
+          // Keep what this pass managed to do, but not the watermark: those rows
+          // must be read again.
+          if (settled || queued) safeSave();
+          throw rowError;
         }
         st.last_swept_at = at;
         // A quiet sweep writes the store at most every saveEveryMs: last_swept_at

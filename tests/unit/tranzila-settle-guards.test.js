@@ -306,23 +306,73 @@ describe('a refund of a paid order', () => {
       alert.mockRestore();
     }
   });
+
+  it('nor is a money-back type this build does not know by name', async () => {
+    const c = db.createCollection('זיכוי בשם אחר');
+    const s = await openPayment(c);
+    charge(s.token, 79);
+    await app.tranzilaSweeper.sweep();
+    expect(db.getCollection(c.id).order.paid).toBe(true);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      for (const t of ['REFUND', 'VOID']) charge(s.token, 79, { txn_type: t });
+      await app.tranzilaSweeper.sweep();
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+});
+
+describe('an admin edit that changes no price', () => {
+  it('leaves the order priced as it was, so a charge already made still settles', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('תיקון כתובת');
+    const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    const s = await openPayment(c, { version: 'delivery', address });
+    const placed = db.getCollection(c.id).order.total;
+
+    // The owner raises the delivery fee, then fixes a typo in the street.
+    settings.set('pricing', 'delivery_fee', FEE + 20);
+    try {
+      db.adminUpdateOrder(c.id, { address: { ...address, street: 'הרצל 12' } });
+      const order = db.getCollection(c.id).order;
+      expect(order.total).toBe(placed);
+      expect(order.delivery_fee).toBe(FEE);
+      expect(order.address.street).toBe('הרצל 12');
+
+      charge(s.token, s.charged_total);
+      await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+    } finally {
+      settings.set('pricing', 'delivery_fee', FEE);
+    }
+  });
 });
 
 describe('which notifies ask for a sweep', () => {
-  it('an open window does; a closed one or one past the session TTL does not', async () => {
+  it('a recent window does, even after the buyer closed it; one past the TTL does not', async () => {
     const open = await openPayment(db.createCollection('חלון פתוח'));
     await notifyFor(open.token);
     expect(reportCalls).toHaveLength(1);
 
+    // The close beacon lands before the notify — the ordinary successful payment,
+    // because on Tranzila the order is still unpaid when the window closes. The
+    // charge must still settle at once, not wait for the periodic sweep.
     reportCalls.length = 0;
-    const closedCol = db.createCollection('חלון סגור');
+    const closedCol = db.createCollection('חלון שנסגר');
     const closed = await openPayment(closedCol);
     await post('/api/collections/' + closedCol.id + '/pay/cancel', {
       owner_token: closedCol.owner_token,
     });
+    expect(db.getCollection(closedCol.id).order.pelecard.sessions.slice(-1)[0].resolved).toBe(true);
+    charge(closed.token, 79);
     await notifyFor(closed.token);
-    expect(reportCalls).toHaveLength(0);
+    expect(reportCalls).toHaveLength(1);
+    expect(db.getCollection(closedCol.id).order.paid).toBe(true);
 
+    reportCalls.length = 0;
     const staleCol = db.createCollection('חלון ישן');
     const stale = await openPayment(staleCol);
     db.getCollection(staleCol.id).order.pelecard.sessions.slice(-1)[0].initiated_at = new Date(

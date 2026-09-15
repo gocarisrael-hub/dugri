@@ -199,19 +199,26 @@ async function listTransactions({ startDate, endDate } = {}) {
     });
     // An error can come back as HTTP 200 with an error body (keys without report
     // access, a wrong terminal name). Read as "no rows" it would count as a
-    // successful sweep — the last-swept time moves on and nobody is told — so
-    // anything but a transactions list with no error code is a failure.
-    const failed =
-      !data ||
-      typeof data !== 'object' ||
-      (data.error_code != null && Number(data.error_code) !== 0) ||
-      !Array.isArray(data.transactions);
-    if (failed) {
+    // successful sweep — the last-swept time moves on and nobody is told — so an
+    // error code is fatal.
+    //
+    // A QUIET DAY IS NOT AN ERROR, though. Which shape Tranzila answers a day
+    // with no transactions in is unconfirmed (it is on the go-live checklist), so
+    // a reply carrying no error code and no transactions — the key missing, or
+    // null — is an empty report. Failing closed on that shape would stop every
+    // sweep for ever on the first quiet night. A `transactions` that is present
+    // but not a list is still a failure: that is a shape nobody can read.
+    const errorCode = data && data.error_code;
+    if (!data || typeof data !== 'object' || (errorCode != null && Number(errorCode) !== 0)) {
       throw new Error(
         'tranzila report error ' +
-          (data && data.error_code != null ? data.error_code : 'without a transactions list') +
+          (data && data.error_code != null ? data.error_code : 'unreadable reply') +
           (data && data.message ? ': ' + String(data.message).slice(0, 120) : '')
       );
+    }
+    if (data.transactions == null) break;
+    if (!Array.isArray(data.transactions)) {
+      throw new Error('tranzila report error: transactions is not a list');
     }
     const list = data.transactions;
     for (const t of list) if (t && t.index != null) out.push(normalizeRow(t));

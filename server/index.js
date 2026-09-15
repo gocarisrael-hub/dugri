@@ -5588,6 +5588,15 @@ function tranzilaPurchasePaid(match) {
 // Money going back to the buyer. A refund of a paid order carries its token too,
 // and is nothing to report.
 const TRANZILA_REFUND_TYPES = new Set(['CREDIT', 'CANCEL', 'REFUTE', 'REVERSAL']);
+// The types a row can be and still be money the buyer meant to pay us: a real
+// charge, or an attempt that took none (a hold or a card check — what a buyer who
+// edits the iframe URL produces, and the one thing an unsettled row must still
+// report). A type outside this set is money going the other way under a name this
+// list does not know, so it is NOT reported as a suspected second charge: the
+// real strings are confirmed in the staging test (server/TRANZILA.md). A row with
+// no type at all stays reportable — an unreadable charge on our own token is
+// exactly what the owner should see.
+const TRANZILA_CHARGE_ATTEMPT_TYPES = new Set(['DEBIT', 'FORCE', 'VERIFY', 'J5', 'J2']);
 
 function decideTranzilaRow(tx) {
   if (tx.responseCode !== tranzila.SUCCESS_CODE) return { outcome: 'ignored' };
@@ -5652,6 +5661,11 @@ function decideTranzilaRow(tx) {
         ),
       },
     };
+  }
+  if (matches.length && tx.txnType && !TRANZILA_CHARGE_ATTEMPT_TYPES.has(tx.txnType)) {
+    // Our token, approved, but a type this build does not know as a charge: most
+    // likely money going back (a refund under another name). Not a second charge.
+    return { outcome: 'ignored' };
   }
   if (matches.length) {
     // Enough to diagnose from the Railway log, and nothing about the card.
@@ -5813,11 +5827,13 @@ app.post('/api/payment/tranzila/notify', (req, res) => {
   const failed = parsed.response && parsed.response !== tranzila.SUCCESS_CODE;
   if (tranzila.isConfigured() && parsed.token && !failed) {
     const match = tranzilaMatch(parsed.token);
-    // Only a window that could still be paying asks for a sweep. An old or
-    // closed session's charge is found by the periodic sweep; letting its token
-    // trigger sweeps would let one stale token hammer the Reports API (shared
-    // with the other environment) every few seconds for ever.
-    if (match && !tranzilaPurchasePaid(match) && db.isPaySessionOpen(match.session)) {
+    // Only a window whose charge could still be on its way asks for a sweep: the
+    // purchase unpaid, the session opened within the TTL. Being "resolved" is not
+    // part of it — the browser's close beacon resolves the session while the
+    // order is still unpaid on this provider, and a buyer who paid and closed the
+    // window is exactly who needs the fast settle. A stale token still ages out
+    // after 20 minutes, so it cannot drive sweeps for ever.
+    if (match && !tranzilaPurchasePaid(match) && db.isPaySessionRecent(match.session)) {
       tranzilaSweeper.request();
     }
   }

@@ -65,8 +65,10 @@ is unsigned and nothing documents it being retried, so it decides nothing.
    and 16 random hex characters.
 2. The buyer pays inside the modal on `collect.html`. Card data never touches us.
 3. Tranzila POSTs to the notify URL (`/api/payment/tranzila/notify?t=<token>`).
-   For a real, unpaid Tranzila session whose window is still open (not closed by
-   the buyer, opened within the 20-minute session TTL) the server only **asks for a sweep**
+   For a real Tranzila session whose purchase is unpaid and that was opened
+   within the 20-minute session TTL — closed windows included, because on this
+   provider the buyer's close beacon fires while the order is still unpaid — the
+   server only **asks for a sweep**
    (at most one per `TRANZILA_SWEEP_MIN_SPACING_MS`) and answers 200. No lookup,
    no store write, nothing per session.
 4. **The sweep** (`server/tranzila-sweep.js`) reads the terminal's rows from the
@@ -205,7 +207,11 @@ show "No content yet", open it in a browser.
 Not yet confirmed against a real transaction, so the staging test must show
 them: the `amount` unit, the exact `txn_type` / `tranmode` a normal iframe charge
 reports, that the report always carries `tranmode` (a DEBIT reported without one
-still settles), and that the user-defined field appears on the row. Any of these
+still settles), that the user-defined field appears on the row, **what a day with
+no transactions answers** (an empty list, a missing key, or an error code — a
+reply with no error code and no transactions is read as an empty day), and **the
+exact `txn_type` a refund and a cancellation report** (a money-back type this
+build does not know by name is ignored rather than reported as a second charge). Any of these
 being different fails closed (charged, not marked paid, reported) rather than open.
 
 ## Before going live, on each environment

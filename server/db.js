@@ -2078,7 +2078,15 @@ const db = {
     // PAID order's total is history: it is what the card was actually charged, and
     // rewriting it would make the receipt lie. Money owed either way is settled
     // off-system, exactly as with a version change.
-    if (!c.order.paid) {
+    //
+    // ONLY when a priced field actually changes. An address-only fix must not
+    // re-stamp the order from today's settings: a delivery order placed at a 39₪
+    // fee, a later fee rise, then a typo fixed in the street would re-price the
+    // order to 45₪ — and a card charge already made for the old total would stop
+    // matching the pay session's price snapshot (server/tranzila-sweep.js), so a
+    // real payment would be refused with the money already taken.
+    const priceChanged = next !== c.order.version || nextQty !== (c.order.quantity || 1);
+    if (!c.order.paid && priceChanged) {
       const unit =
         next === c.order.version && Number.isInteger(c.order.unit_price)
           ? c.order.unit_price
@@ -2535,12 +2543,14 @@ const db = {
     return shippingPriceKey(shipping);
   },
 
-  // Could a live pay window still own this session? Unresolved (the buyer has
-  // not closed it) and opened within SESSION_TTL_MS.
-  isPaySessionOpen(session) {
+  // Was this session opened recently enough that a charge for it can still be on
+  // its way? `resolved` is deliberately NOT consulted: it is set by the browser's
+  // fire-and-forget close beacon (abandonPaySessions), which on Tranzila fires
+  // while the order is still unpaid — the sweep is what settles it — so a buyer
+  // who paid and closed the window would look "not paying" a moment later.
+  isPaySessionRecent(session) {
     return (
       !!session &&
-      !session.resolved &&
       !!session.initiated_at &&
       Date.now() - Date.parse(session.initiated_at) < SESSION_TTL_MS
     );
