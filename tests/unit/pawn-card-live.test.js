@@ -60,7 +60,14 @@ fs.writeFileSync(
     'base64'
   )
 );
-process.stdout.write(JSON.stringify({ pawns: out, slots: [{ n: 1, x: 0, y: 0, w: 0.3, h: 0.2 }] }));
+process.stdout.write(JSON.stringify({
+  pawns: out,
+  slots: [{ n: 1, x: 0, y: 0, w: 0.3, h: 0.2 }],
+  viewBox: [0, 0, 223.92, 312],
+  disc_fill: 0.9,
+  filter: '<filter id="sticker-halo"><feMorphology radius="1.5"/></filter>',
+  fallbacks: ['data:image/svg+xml;base64,PHN2Zy8+', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='],
+}));
 `
   );
   fs.chmodSync(stub, 0o755);
@@ -98,22 +105,24 @@ function runs() {
     .map((l) => JSON.parse(l));
 }
 
-// `--drawn` as the child was given it, or null when it was not asked for at all.
-function drawnOf(argv) {
-  const i = argv.indexOf('--drawn');
+// A flag's value as the child was given it, or null when it was not asked for.
+function argOf(argv, flag) {
+  const i = argv.indexOf(flag);
   return i < 0 ? null : argv[i + 1];
 }
+const drawnOf = (argv) => argOf(argv, '--drawn');
 
-async function askLive(id, k, n) {
-  const q = n == null ? '' : '&n=' + encodeURIComponent(n);
+async function askLive(id, k, n, card) {
+  let q = n == null ? '' : '&n=' + encodeURIComponent(n);
+  if (card != null) q += '&card=' + encodeURIComponent(card);
   const r = await fetch(
     base + '/api/collections/' + id + '/pawn-card?live=1' + q + '&k=' + encodeURIComponent(k)
   );
   return { status: r.status, body: await r.json().catch(() => ({})) };
 }
 
-describe('the live pawn card carries the pawns the page will not draw', () => {
-  it('passes the disc count straight through to the generator', async () => {
+describe('the live pawn card is the design with every disc bare', () => {
+  it('asks the generator for the bare card, and nothing of hers', async () => {
     const c = db.createCollection('בדיקה', { theme: 'grapefruit' });
     const r = await askLive(c.id, c.owner_token, 2);
     expect(r.status).toBe(200);
@@ -121,46 +130,76 @@ describe('the live pawn card carries the pawns the page will not draw', () => {
     const argv = runs();
     expect(argv).toHaveLength(1);
     expect(argv[0]).toContain('--no-photos');
-    expect(drawnOf(argv[0])).toBe('2');
-    // …and nothing of HERS goes with it: this render is the card alone, which is
-    // what lets one picture serve every buyer on that design with that count.
+    // All four discs bare: the page draws her photos AND the shipped pawns.
+    expect(drawnOf(argv[0])).toBe('4');
     expect(argv[0]).not.toContain('--photo');
-    // …which is why it is cached on the DESIGN and the count alone: a second
-    // buyer on the same design with the same number of photos is looking at the
-    // same picture, and pays nothing for it.
+    // …which is why a second buyer on the same design pays nothing for it.
     const other = db.createCollection('בדיקה', { theme: 'grapefruit' });
-    expect((await askLive(other.id, other.owner_token, 2)).status).toBe(200);
+    expect((await askLive(other.id, other.owner_token, 3)).status).toBe(200);
     expect(runs()).toHaveLength(1);
   });
 
-  it('re-renders when the count changes, and only then', async () => {
-    // Its own design, so the cache above (which is shared, and rightly) cannot
-    // answer for it and hide the very thing this is testing.
-    const c = db.createCollection('בדיקה', { theme: 'bachelorette' });
-    await askLive(c.id, c.owner_token, 1);
-    await askLive(c.id, c.owner_token, 1);
-    // The same card twice: one render, and the second answer came from the cache.
+  it('is ONE render whatever her photo count and deck size', async () => {
+    // Its own design, so the cache above cannot answer for it. Every photo she
+    // added used to be a new Chrome run on the server, per pawn card; the page
+    // deals the pawns itself now, so none of these may render twice.
+    const c = db.createCollection('בדיקה', { theme: 'bachelorette', players: 16 });
+    for (const [n, card] of [
+      [0, 0],
+      [1, 0],
+      [5, 1],
+      [16, 3],
+      ['לא מספר', 9],
+    ]) {
+      expect((await askLive(c.id, c.owner_token, n, card)).status).toBe(200);
+    }
     expect(runs()).toHaveLength(1);
-    // A photo added or removed IS a different card — one more pawn on it, or one
-    // fewer — so it must not be served from the entry above.
-    await askLive(c.id, c.owner_token, 2);
-    expect(runs().map(drawnOf)).toEqual(['1', '2']);
-    // …and the first count is still cached, so going back is free.
-    await askLive(c.id, c.owner_token, 1);
-    expect(runs()).toHaveLength(2);
   });
 
-  it('holds the count inside the four slots the card has', async () => {
-    const c = db.createCollection('בדיקה', { theme: 'japanese' });
-    // A number out of range is not an error — it is a query string, and anyone
-    // with the owner link can type one. It is clamped to what a card can hold, so
-    // the worst it can do is ask for a picture that already exists.
-    await askLive(c.id, c.owner_token, 9);
-    await askLive(c.id, c.owner_token, -3);
-    await askLive(c.id, c.owner_token, 'לא מספר');
-    // …and no `n` at all means no photos, which is the full generic set of pawns.
-    await askLive(c.id, c.owner_token);
-    // Two distinct cards behind those four asks: the clamped 4, and 0 three times.
-    expect(runs().map(drawnOf)).toEqual(['4', '0']);
+  it("hands the page the card's sticker spec and its shipped pawns", async () => {
+    const c = db.createCollection('בדיקה', { theme: 'birthday-girls' });
+    const r = await askLive(c.id, c.owner_token, 1);
+    // The page draws through the card's OWN halo filter, in the card's own units,
+    // and deals the pawns out of the list the card came with — so all of it has
+    // to reach the page, not stop at the route.
+    expect(r.body.viewBox).toEqual([0, 0, 223.92, 312]);
+    expect(r.body.disc_fill).toBe(0.9);
+    expect(r.body.filter).toContain('id="sticker-halo"');
+    expect(r.body.fallbacks).toHaveLength(2);
+  });
+});
+
+// THE WIZARD'S BASE CARD — before any order exists, so there is no owner token
+// and nothing of hers in it: the design alone.
+describe('GET /api/pawn-base', () => {
+  const askBase = async (q) => {
+    const r = await fetch(base + '/api/pawn-base?' + q);
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  };
+
+  it('renders the bare card for a design with no order at all', async () => {
+    const r = await askBase('theme=japanese&players=12&card=2&n=5');
+    expect(r.status).toBe(200);
+    expect(r.body.card).toMatch(/^data:image\/png/);
+    expect(r.body.filter).toContain('sticker-halo');
+    expect(r.body.fallbacks).toHaveLength(2);
+    const [argv] = runs();
+    expect(argOf(argv, '--drawn')).toBe('4');
+    // No title and no photos: the tiles show the slots alone.
+    // argv is [preview.py, theme, name, outDir, ...]: the name is empty.
+    expect(argv[2]).toBe('');
+    expect(argv).not.toContain('--photo');
+    expect(argv.some((a) => a.startsWith('--title'))).toBe(false);
+  });
+
+  it('is one picture for every buyer on the design, whatever they ask', async () => {
+    await askBase('theme=anniversary&players=4&n=1');
+    await askBase('theme=anniversary&players=16&card=3&n=9');
+    expect(runs()).toHaveLength(1);
+  });
+
+  it('refuses a design it does not know, without rendering', async () => {
+    expect((await askBase('theme=nope&players=4')).status).toBe(400);
+    expect(runs()).toHaveLength(0);
   });
 });

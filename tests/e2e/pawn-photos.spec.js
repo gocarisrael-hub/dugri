@@ -123,6 +123,61 @@ test.describe('optional pawn-photos step', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
+  // THE SLOTS ARE THE PRINTED CARD'S. The step asks the generator for its card
+  // once — every disc bare, for the design alone — and paints into each empty slot
+  // the Dugri pawn the deck deals there, across the WHOLE deck: with eight players
+  // and two photos the first card's empty slots take pawns 1 and 2, and the second
+  // card starts at pawn 3, as build.card_photo_plan prints it.
+  test('empty slots show the pawns the deck deals there, from one card asked for once', async ({
+    page,
+  }) => {
+    await stubCutter(page, { succeeds: false });
+    const pawnSvg = (fill) =>
+      'data:image/svg+xml;base64,' +
+      Buffer.from(
+        `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="${fill}"/></svg>`
+      ).toString('base64');
+    const fallbacks = ['#a00', '#0a0', '#00a', '#aa0'].map(pawnSvg);
+    const asked = [];
+    await page.route('**/api/pawn-base**', (route) => {
+      asked.push(new URL(route.request().url()).search);
+      return route.fulfill({
+        json: {
+          card: 'data:image/png;base64,' + PNG_BYTES.toString('base64'),
+          slots: [
+            { n: 1, x: 0.178, y: 0.279, w: 0.295, h: 0.212 },
+            { n: 2, x: 0.527, y: 0.279, w: 0.295, h: 0.212 },
+            { n: 3, x: 0.178, y: 0.529, w: 0.295, h: 0.212 },
+            { n: 4, x: 0.527, y: 0.529, w: 0.295, h: 0.212 },
+          ],
+          viewBox: [0, 0, 223.92, 312],
+          filter: '',
+          fallbacks,
+        },
+      });
+    });
+    await toPawnStep(page);
+    await page.getByTestId('pawn-count-8').click();
+    for (const i of [0, 1]) {
+      await page
+        .getByTestId('pawn-input-' + i)
+        .setInputFiles({ name: `p${i}.png`, mimeType: 'image/png', buffer: PNG_BYTES });
+    }
+    const pawnIn = (idx) => page.locator(`.pawn-slot[data-idx="${idx}"] image[data-pawn-fallback]`);
+    // Card one: her two photos, then pawns 1 and 2.
+    await expect(pawnIn(2)).toHaveAttribute('href', fallbacks[0]);
+    await expect(pawnIn(3)).toHaveAttribute('href', fallbacks[1]);
+    await expect(pawnIn(0)).toHaveCount(0);
+    // Card two carries on from pawn 3 — it does not start the set again.
+    await expect(pawnIn(4)).toHaveAttribute('href', fallbacks[2]);
+    await expect(pawnIn(5)).toHaveAttribute('href', fallbacks[3]);
+    await expect(pawnIn(6)).toHaveAttribute('href', fallbacks[0]);
+
+    // One card, for the design alone — not one per count, photo or card.
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/^\?theme=[^&]+$/);
+  });
+
   test('selecting a file shows a small preview; removing it clears the slot', async ({ page }) => {
     await stubCutter(page, { succeeds: false });
     await toPawnStep(page);
@@ -133,13 +188,14 @@ test.describe('optional pawn-photos step', () => {
       .getByTestId('pawn-input-0')
       .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
     await expect(slot0).toHaveClass(/is-filled/);
-    await expect(slot0.locator('.pawn-thumb')).toBeVisible();
+    // The photo is drawn as its pawn: an image inside the slot's tile.
+    await expect(slot0.locator('.pawn-tile svg[data-pawn-crop] image')).toHaveCount(1);
     await expect(page.getByTestId('pawn-remove-0')).toBeVisible();
 
     // Removing clears the preview and the filled state.
     await page.getByTestId('pawn-remove-0').click();
     await expect(slot0).not.toHaveClass(/is-filled/);
-    await expect(slot0.locator('.pawn-thumb')).toBeHidden();
+    await expect(slot0.locator('.pawn-tile svg[data-pawn-crop]')).toHaveCount(0);
   });
 
   test('a rejected file (unsupported type) shows a clear inline message', async ({ page }) => {
@@ -231,12 +287,13 @@ test.describe('pawn photos: the background cut', () => {
       .getByTestId('pawn-input-0')
       .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
 
-    // The slot switches to the cutout presentation and says so.
+    // The slot switches to the cutout, drawn as the pawn it prints as.
     await expect(slot0).toHaveClass(/is-cut/);
-    await expect(page.getByTestId('pawn-status-0')).toHaveText('הרקע הוסר');
-    // What it shows is the CUTOUT blob, not the original object URL.
-    const shown = await slot0.locator('.pawn-thumb').getAttribute('src');
-    expect(shown).toMatch(/^blob:/);
+    await expect(slot0).toHaveClass(/is-pawn/);
+    await expect(slot0.locator('.pawn-tile svg[data-pawn-crop] image')).toHaveAttribute(
+      'href',
+      /^blob:/
+    );
 
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
@@ -268,52 +325,28 @@ test.describe('pawn photos: the background cut', () => {
       .getByTestId('pawn-input-0')
       .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
 
-    // The slot stops being a thumbnail: the card's paper, the dashed cut-line
-    // the buyer scissors along, and the photo placed inside it.
+    // Drawn as the pawn, through the photo card's own sticker markup…
     await expect(slot0).toHaveClass(/is-pawn/);
-    await expect(slot0.locator('.pawn-cut-line')).toHaveCount(1);
+    await expect(slot0.locator('.pawn-tile use[filter]')).toHaveCount(1);
     // …and the "background removed" band is gone: the sticker says it, and the
     // band would sit across the bottom of the circle it is describing.
     await expect(page.getByTestId('pawn-status-0')).toBeHidden();
 
-    // The FRAMING is the promise this preview makes, so it is asserted as a
-    // number rather than as "something was set". For a 4x4 image whose subject is
-    // the middle 2x2, the silhouette reaches sqrt(0.5) px from the box's centre;
-    // build.subject_reach then adds one mask pixel of slack and clamps at the
-    // box's own corner, which on an image this small is the clamp that binds:
-    // reach = hypot(2,2)/2 = 1.4142. The disc radius is 45% of the slot, so the
-    // image is drawn at 4 * 45/1.4142 = 127.28% with its top-left at
-    // 50 - 2 * 45/1.4142 = -13.64%.
-    //
-    // These numbers were 254.56 / -77.28 — the answer with the slack MISSING —
-    // under a comment claiming they were the generator's. They were not:
-    // build.subject_reach has clamped this fixture to 1.4142 all along, so the
-    // wizard was drawing this sticker at twice the size the printer does. Run
-    // build.subject_window on the same alpha if either number ever moves again.
-    const style = await slot0.locator('.pawn-thumb').evaluate((el) => ({
-      width: parseFloat(el.style.width),
-      left: parseFloat(el.style.left),
-      top: parseFloat(el.style.top),
-    }));
-    expect(style.width).toBeCloseTo(127.28, 1);
-    expect(style.left).toBeCloseTo(-13.64, 1);
-    expect(style.top).toBeCloseTo(-13.64, 1);
+    // The FRAMING is the promise this preview makes, so it is asserted as the
+    // generator's own crop window rather than as "something was set". For a 4x4
+    // image whose subject is the middle 2x2, build.subject_reach clamps at the
+    // box's corner (hypot(2,2)/2 = 1.4142); the disc is 0.9 of the square, so the
+    // window is 2 * 1.4142 / 0.9 = 3.14 px wide about the centre — left 0.43,
+    // right 3.57, which Python rounds to 0 and 4. Run build.subject_window on the
+    // same alpha if this ever moves.
+    await expect(slot0.locator('svg[data-pawn-crop]')).toHaveAttribute('viewBox', '0 0 4 4');
   });
 
-  // A MOVE MUST NOT COST A PHOTO ITS PAWN. Closing the grid up cancels whatever
-  // each slot had in flight. A cut still running was started again at its new
-  // slot, but the measurement that follows a FINISHED cut was simply dropped — so
-  // the photo that moved up stayed a plain thumbnail instead of the pawn circle.
-  test('a photo that moves up while it is being framed still becomes a pawn', async ({ page }) => {
+  // A MOVE MUST NOT COST A PHOTO ITS PAWN. Closing the grid up moves each photo's
+  // drawing with it — and one still being prepared is started again where it
+  // lands — so the photo that moves up is drawn exactly as it was.
+  test('a photo that moves up keeps its pawn, framed as it was', async ({ page }) => {
     await stubCutter(page, { succeeds: true, png: FRAMEABLE_PNG });
-    let release;
-    const held = new Promise((r) => {
-      release = r;
-    });
-    await page.route(/\/js\/pawn-frame(?:\.[0-9a-f]{8})?\.js(?:\?.*)?$/, async (route) => {
-      await held;
-      return route.continue();
-    });
     await toPawnStep(page);
     for (const i of [0, 1]) {
       await page
@@ -322,23 +355,21 @@ test.describe('pawn photos: the background cut', () => {
     }
     const slot0 = page.locator('.pawn-slot[data-idx="0"]');
     const slot1 = page.locator('.pawn-slot[data-idx="1"]');
-    // Both cut, neither measured yet: the frame module is being held.
-    await expect(slot1).toHaveClass(/is-cut/);
-    await expect(slot1).not.toHaveClass(/is-pawn/);
+    await expect(slot1.locator('svg[data-pawn-crop]')).toHaveAttribute('viewBox', '0 0 4 4');
 
-    // Dropping the first photo moves the second into slot 0 mid-measure.
+    // Dropping the first photo moves the second into slot 0.
     await slot0.locator('.pawn-remove').click();
     await expect(slot1).not.toHaveClass(/is-filled/);
-    release();
-
     await expect(slot0).toHaveClass(/is-pawn/);
-    await expect(slot0.locator('.pawn-cut-line')).toHaveCount(1);
+    await expect(slot0.locator('svg[data-pawn-crop]')).toHaveAttribute('viewBox', '0 0 4 4');
   });
 
-  test('a cut with nothing measurable in it stays a plain thumbnail', async ({ page }) => {
-    // The transparent 2x2: a cutout exists, but there is no subject to frame. The
-    // slot must NOT dress up as a pawn — a circle whose contents were placed by
-    // guesswork is a promise we cannot keep.
+  test('a cut with no subject in it is drawn on the plain square, as it prints', async ({
+    page,
+  }) => {
+    // The transparent 2x2 has nothing to frame by. The printer does not refuse it:
+    // it cuts the plain square and clips it round (build.plain_crop) — so the pawn
+    // shows exactly that, rather than a thumbnail the card never prints.
     await stubCutter(page, { succeeds: true });
     await toPawnStep(page);
     const slot0 = page.locator('.pawn-slot[data-idx="0"]');
@@ -347,8 +378,8 @@ test.describe('pawn photos: the background cut', () => {
       .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
 
     await expect(slot0).toHaveClass(/is-cut/);
-    await expect(slot0).not.toHaveClass(/is-pawn/);
-    await expect(slot0.locator('.pawn-cut-line')).toHaveCount(0);
+    await expect(slot0).toHaveClass(/is-pawn/);
+    await expect(slot0.locator('svg[data-pawn-crop]')).toHaveAttribute('viewBox', '0 0 2 2');
   });
 
   test('a cut we cannot make keeps the ORIGINAL and records the miss', async ({ page }) => {
@@ -407,7 +438,10 @@ test.describe('pawn photos: the background cut', () => {
       .getByTestId('pawn-input-0')
       .setInputFiles({ name: 'b.png', mimeType: 'image/png', buffer: PNG_BYTES });
     await expect(slot0).toHaveClass(/is-cut/);
-    await expect(page.getByTestId('pawn-status-0')).toHaveText('הרקע הוסר');
+    // …drawn as the pawn it now prints as — the sticker says the background is
+    // gone, so the band that used to say it is not shown.
+    await expect(slot0).toHaveClass(/is-pawn/);
+    await expect(page.getByTestId('pawn-status-0')).toBeHidden();
   });
 
   test('the real segmenter loads from OUR origin — no CDN, no third-party call', async ({

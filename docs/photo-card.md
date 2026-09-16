@@ -144,7 +144,7 @@ generator never branches on which template it loaded.
 
 **A cutout is framed on its silhouette; the buyer's own ORIGINAL is framed on the plain
 square.** Not because of what the file contains, but because **that is how her collection
-page framed it when she approved it** (`site/collect.html` → `measureFrame`, which measures
+page framed it when she approved it** (`site/js/pawn-print.js` → `autoCrop`, which measures
 the alpha only when the file it is showing is the cutout).
 
 The generator cannot tell the two apart by looking, so it is TOLD: `pawnPhotoEntries` in
@@ -237,12 +237,11 @@ wants with its background takes the no-alpha path above and comes out round with
 inside the circle. The admin orders table reads `bg` too, so a deliberate keep-the-background is
 not flagged red as a cut that needs doing by hand.
 
-**Two implementations, one transform.** `site/js/pawn-frame.js` `applyView()` is the same
-arithmetic expressed in percent-of-slot, because the circle on her phone has to be the circle on
-the card — a preview that framed differently from the printer is worse than no preview, since she
-believes it. `tests/unit/pawn-view.test.js` holds the two together by deriving one from the other;
-`generator/test_photo_view.py` holds the Python half on its own. If either side changes, change
-both.
+**Two implementations, one transform.** `site/js/pawn-print.js` `viewCrop()` is the same
+arithmetic, rounding included (Python's half-to-even), because the circle on her phone has to be
+the circle on the card. `tests/unit/pawn-print.test.js` holds it to `apply_photo_view` on the
+generator's own answers (`generator/pawn_print_fixtures.py`); `generator/test_photo_view.py`
+holds the Python half on its own. If either side changes, change both.
 
 ## Geometry
 
@@ -567,20 +566,23 @@ by slot index, so a two-photo order gets pawns 1 and 2 in slots 3 and 4. That is
 is also what any preview has to show; `build.fallback_photos(theme, filled)` is the one place the
 rule lives and both paths read it.
 
-**The LIVE preview is the second of those paths, and it is why that matters.** `collect.html` draws
-the buyer's photos onto the card itself so the picture keeps up with a drag, and asks the generator
-only for the card underneath — `preview.py --pawn-card --no-photos --drawn N`, where `N` is how many
-discs the page will cover. Those N are left bare and **the rest carry their pawns**, which is the
-whole point: rendered with four empty discs, the preview promised an empty circle wherever a pawn
-prints, under a caption reading "this is exactly how the card will be printed".
+**The site draws the same deal itself.** The collection page and the wizard ask the generator
+for ONE card per design (and title) with every disc bare — `preview.py --pawn-card --no-photos
+--drawn 4` — which comes back with its slots, viewBox, `#sticker-halo` filter and the shipped
+pawns (`preview.sticker_spec`). The page then paints her photos AND the shipped pawns onto it:
+the pawns dealt across the whole deck by `site/js/pawn-print.js` `fallbackDeal`, which is
+`build.card_photo_plan` repeated and held to it by `tests/unit/pawn-print.test.js` — so card 2 of
+an eight-player order with two photos shows pawns 3, 4, 1, 2, as it prints. One render per design
+serves every deck size and photo count; a render per count and per card used to be a Chrome run
+on every photo she added.
 
-The framing of those photos is mirrored in `site/js/pawn-frame.js` rather than rendered, so that
-file is a second implementation of `subject_box` / `subject_reach` / `subject_window` and has to
-move with them. It drifted once already — it measured every blob where `subject_box` keeps only the
-one nearest the centre of the frame, so a photo of two people previewed with both of them shrunk to
-fit the circle and printed with the honoree alone at full size. The cross-check at the foot of
-`tests/unit/pawn-view.test.js` transcribes the Python and derives one answer from the other, on
-fixtures small enough that the 200 px working mask never enters into it.
+Her photos are not approximated either. `pawn-print.js` repeats `square_photo`'s crop number for
+number — `subject_box` on the full-resolution alpha (Pillow's own BILINEAR resampling for the
+blob mask, and the bystander erase), `subject_reach`, `subject_window`, `plain_crop`,
+`apply_photo_view` — and draws each one with the photo card's own markup: the photo clipped to
+the same disc and a `<use>` of it through the theme's own halo filter. The one thing not repeated
+is the resize to 512 px before placing; the browser scales the source straight into the slot.
+`generator/pawn_match_orders.py` renders real orders both ways and compares them pixel by pixel.
 
 The fallbacks are 200 × 200 SVGs, each pawn centred on the slot and **drawn inside the cut-line —
 never outside it and never on it**, which is the owner's rule and this contract's debt now paid.

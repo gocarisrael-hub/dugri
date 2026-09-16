@@ -3340,33 +3340,22 @@
         applySale,
         PRICING_FALLBACK,
       } from './js/pricing.js';
-      // The pawn geometry, shared with the wizard and mirrored in the generator:
-      // where a subject sits inside the printed circle, and how the buyer's own
-      // adjustment moves it. Static (a few hundred bytes) unlike the CUTTER,
-      // which is 18MB of model and is only imported when a photo needs cutting.
+      // The buyer's adjustment (its range and its default) and where a picture
+      // lands inside its box. Static, unlike the CUTTER, which is 18MB of model
+      // and is only imported when a photo needs cutting.
+      import { clampView, VIEW_DEFAULT, ZOOM_MIN, ZOOM_MAX, containRect } from './js/pawn-frame.js';
+      // THE PAWN AS THE PRINTER DRAWS IT: build.square_photo's crop repeated number
+      // for number, and the photo card's own sticker drawn through the card's own
+      // halo filter, over the generator's picture of the card (js/pawn-print.js).
       import {
-        frameFromBlob,
-        plainFrame,
-        applyView,
-        clampView,
-        VIEW_DEFAULT,
-        ZOOM_MIN,
-        ZOOM_MAX,
-        DISC_FILL,
-        pawnCssVars,
-        haloFilter,
-        liveSlotStyle,
-        discPhotoStyle,
-        containRect,
-      } from './js/pawn-frame.js';
-
-      // The circles' proportions, handed to site/css/pawn.css. Both files carry
-      // the same numbers as literal fallbacks so nothing is ever drawn wrong
-      // before this line runs; what this buys is that there is ONE place to
-      // change them, and generator/test_pawn_three_views.py reads that place.
-      for (const [k, v] of Object.entries(pawnCssVars())) {
-        document.documentElement.style.setProperty(k, v);
-      }
+        preparePhoto,
+        fallbackDeal,
+        viewCrop,
+        slotRect,
+        paintCard,
+        paintTile,
+        tileSlotShare,
+      } from './js/pawn-print.js';
 
       const params = new URLSearchParams(location.search);
       const id = params.get('c');
@@ -3579,80 +3568,68 @@
         return !view.bg && cut ? cut : src;
       }
 
-      // Where the subject sits, measured ONCE per image and cached: the answer
-      // depends on the file alone, and measuring means decoding a photo and
-      // scanning it. A cutout is measured from its alpha (the printer's own
-      // rule); anything opaque falls back to the head-anchored square, which is
-      // the same degraded path build.square_photo takes for it.
-      const pawnFrames = new Map();
-      function naturalSize(src) {
-        return new Promise((resolve, reject) => {
-          const im = new Image();
-          im.onload = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
-          im.onerror = () => reject(new Error('decode failed'));
-          im.src = src;
+      // Each photo decoded ONCE, the way Pillow reads it, with the generator's own
+      // automatic crop worked out (js/pawn-print.js preparePhoto). Keyed by the
+      // file that PRINTS — her cutout, or her original when she keeps the
+      // background — because the crop differs between the two exactly as it does
+      // on the card. The answers that have landed live here, so a drag frame never
+      // waits on a promise; one still decoding paints everything when it lands.
+      const pawnReady = new Map();
+      // What the card's render says about drawing on it — its four slots as
+      // fractions of the card (preview.pawn_slots), its viewBox and its own halo
+      // filter (preview.sticker_spec) — and the picture of each pawn card by index,
+      // since each photo's tile is cut from its card. Null until the card loads.
+      // Declared HERE, before anything that paints: the photo rows read them the
+      // moment they are built, and a `let` read before its own line has run
+      // throws — which took the whole collection page down with it.
+      let pawnSlots = null;
+      let pawnSpec = null;
+      const pawnBases = [];
+      // The design's shipped pawns, in deal order, as the card embeds them.
+      let pawnFallbacks = [];
+      function pawnPrepared(src, view) {
+        const printSrc = pawnPrintSrcFor(src, view);
+        const cutout = printSrc !== src;
+        const key = (cutout ? 'c:' : 'o:') + printSrc;
+        if (!pawnReady.has(key)) {
+          pawnReady.set(key, null);
+          preparePhoto(printSrc, { cutout }).then((p) => {
+            pawnReady.set(key, p);
+            paintPawnPads();
+            paintPawnCard();
+          });
+        }
+        return pawnReady.get(key);
+      }
+      // ONE PHOTO'S TILE: the generator's picture of the card this photo prints on,
+      // cropped to its slot — the paper, the cut-line — with the photo on it as the
+      // card carries it. Repainted on every drag frame; paintTile only rebuilds
+      // when the photo or the card changed, so a drag moves one attribute.
+      function paintPad(pad, src, view) {
+        const svg = pad && pad.querySelector('svg');
+        const at = pawnList().indexOf(src);
+        if (!svg || at < 0 || !pawnSpec || !pawnSlots) return;
+        const per = pawnSlots.length;
+        const photo = pawnPrepared(src, view);
+        paintTile(svg, {
+          spec: pawnSpec,
+          base: pawnBases[Math.floor(at / per)] || null,
+          slot: slotRect(pawnSlots[at % per], pawnSpec.viewBox),
+          id: 'pawn-pad-' + at,
+          photo,
+          crop: photo && viewCrop(photo.crop, view),
+          src: photo ? pawnPrintSrcFor(src, view) : null,
         });
       }
-      function measureFrame(src, alpha) {
-        const key = (alpha ? 'a:' : 'p:') + src;
-        if (!pawnFrames.has(key)) {
-          pawnFrames.set(
-            key,
-            (async () => {
-              try {
-                if (alpha) {
-                  const blob = await fetch(src).then((r) => r.blob());
-                  const f = await frameFromBlob(blob);
-                  if (f) return f;
-                }
-                const size = await naturalSize(src);
-                return plainFrame(size.w, size.h);
-              } catch (e) {
-                return null; // unmeasurable: the slot shows the photo as it is
-              }
-            })()
-          );
-        }
-        return pawnFrames.get(key);
+      function paintPawnPads() {
+        for (const pad of document.querySelectorAll('.pawn-pad')) if (pad.__paint) pad.__paint();
       }
-
-      // THE WHITE STICKER EDGE, sized for the circle it goes around. The row's
-      // circle is roughly twice the card's, so a fixed pixel width is a different
-      // rim on each — which is what the two used to draw.
-      //
-      // WATCHED, not read once. A circle's width is not knowable when its row is
-      // built: the whole tab is `display: none` until she opens it and every box
-      // in it measures zero, which left the stylesheet's fallback edge on every
-      // pawn on the page. It also changes afterwards, when the card picture
-      // arrives and the preview box takes its shape. So the size is observed and
-      // the halo re-sized whenever it moves.
-      const pawnHaloWatched = new WeakSet();
-      function watchHalo(el) {
-        const apply = () => {
-          const slotPx = el.getBoundingClientRect().width / DISC_FILL;
-          if (slotPx > 0) el.style.setProperty('--pawn-halo', haloFilter(slotPx));
-        };
-        apply();
-        if (pawnHaloWatched.has(el) || typeof ResizeObserver !== 'function') return;
-        pawnHaloWatched.add(el);
-        new ResizeObserver(apply).observe(el);
-      }
-
-      // Put one image where the printer will put it, and give it the same white
-      // sticker edge the print has. The arithmetic is discPhotoStyle's, in
-      // pawn-frame.js, so this page and the comparison harness
-      // (generator/pawn_three_views.py) place the photo with the very same
-      // function. Whether the photo HAS an edge to trace (the `is-cut` class)
-      // stays with the callers — they are the ones that know whether they are
-      // showing the cut-out or the original.
-      function placePawn(img, frame, view) {
-        const s = discPhotoStyle(frame, view);
-        img.style.width = s.width;
-        img.style.height = s.height;
-        img.style.left = s.left;
-        img.style.top = s.top;
-        img.style.objectFit = s.objectFit;
-        if (img.parentElement) watchHalo(img.parentElement);
+      // How many screen pixels the SLOT spans inside a tile — what a drag divides
+      // by, because the buyer's pan is measured in slots.
+      function padSlotPx(pad) {
+        const share =
+          pawnSpec && pawnSlots ? tileSlotShare(slotRect(pawnSlots[0], pawnSpec.viewBox)) : 66 / 72;
+        return pad.getBoundingClientRect().width * share;
       }
 
       // Saving is DEBOUNCED and batched by photo: a drag emits a view per pointer
@@ -3967,13 +3944,11 @@
         cell.className = 'pawn-cell';
         const pad = document.createElement('div');
         pad.className = 'pawn-pad';
-        const disc = document.createElement('div');
-        disc.className = 'pawn-disc';
-        const img = document.createElement('img');
-        img.alt = 'תמונה שנשלחה עם ההזמנה';
-        img.draggable = false;
-        img.setAttribute('data-testid', 'pawn-thumb');
-        disc.appendChild(img);
+        const tile = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        tile.setAttribute('class', 'pawn-tile');
+        tile.setAttribute('role', 'img');
+        tile.setAttribute('aria-label', 'תמונה שנשלחה עם ההזמנה');
+        tile.setAttribute('data-testid', 'pawn-thumb');
         // NOBODY DRAGS WHAT LOOKS LIKE A PICTURE. The badge shows until the first
         // drag on this page, then never again — an instruction that stays after
         // it has been followed is noise.
@@ -3989,38 +3964,16 @@
         grab.textContent = '✥ גררו למיקום';
         grab.setAttribute('aria-hidden', 'true');
         if (pawnDragged || !open) grab.hidden = true;
-        const line = document.createElement('span');
-        line.className = 'pawn-cut-line';
-        line.setAttribute('aria-hidden', 'true');
-        pad.appendChild(disc);
-        pad.appendChild(line);
+        pad.appendChild(tile);
         pad.appendChild(grab);
         cell.appendChild(pad);
 
         let view = pawnViewFor(src);
-        let frame = null;
-        // Paint from whatever we have, then again once the frame is measured —
-        // the picture appears immediately and settles into its real placement,
-        // rather than the row sitting empty while a photo is decoded.
-        const paint = () => {
-          const printSrc = pawnPrintSrcFor(src, view);
-          const cut = printSrc !== src;
-          disc.classList.toggle('is-cut', cut);
-          if (img.getAttribute('src') !== printSrc) img.src = printSrc;
-          placePawn(img, frame, view);
-        };
-        const remeasure = async () => {
-          const printSrc = pawnPrintSrcFor(src, view);
-          const measured = await measureFrame(printSrc, printSrc !== src);
-          // Another toggle may have landed while this was decoding.
-          if (pawnPrintSrcFor(src, view) !== printSrc) return;
-          frame = measured;
-          pawnLiveFrames.set(src, measured);
-          paint();
-          paintPawnCard();
-        };
+        // Paints whatever is ready; a photo still decoding paints itself, and the
+        // card, the moment it lands (pawnPrepared).
+        const paint = () => paintPad(pad, src, view);
+        pad.__paint = paint;
         paint();
-        remeasure();
 
         const ctl = document.createElement('div');
         ctl.className = 'pawn-ctl';
@@ -4069,7 +4022,6 @@
               }
             }
             savePawnView(src, view);
-            await remeasure();
             paint();
             pawnShowView(src, view);
           });
@@ -4117,7 +4069,7 @@
         const setZoom = (z) => {
           view = clampView({ ...view, zoom: z });
           zoom.value = String(view.zoom);
-          placePawn(img, frame, view);
+          paint();
           pawnShowView(src, view);
           savePawnView(src, view);
         };
@@ -4152,7 +4104,7 @@
           reset.addEventListener('click', () => {
             view = clampView({ ...VIEW_DEFAULT, bg: view.bg });
             zoom.value = String(view.zoom);
-            placePawn(img, frame, view);
+            paint();
             pawnShowView(src, view);
             savePawnView(src, view);
           });
@@ -4181,7 +4133,7 @@
         // A press that never moved is not a drag — it is the old "let me see the
         // whole thing" tap, which still opens the photo full size.
         let drag = null;
-        disc.addEventListener('pointerdown', (e) => {
+        pad.addEventListener('pointerdown', (e) => {
           // LOOKING IS NOT EDITING. A closed collection used to swallow the press
           // whole, which took the full-size view down with the drag — so the one
           // thing a buyer comes back to a finished order for, "let me see the
@@ -4196,14 +4148,14 @@
             for (const b of document.querySelectorAll('.pawn-grab')) b.hidden = true;
           }
           try {
-            disc.setPointerCapture(e.pointerId);
+            pad.setPointerCapture(e.pointerId);
           } catch (err) {
             /* a browser that won't capture still gets the moves via bubbling */
           }
         });
-        disc.addEventListener('pointermove', (e) => {
+        pad.addEventListener('pointermove', (e) => {
           if (!drag || drag.frozen || e.pointerId !== drag.id) return;
-          const slot = disc.getBoundingClientRect().width / DISC_FILL;
+          const slot = padSlotPx(pad);
           if (!(slot > 0)) return;
           const dxPx = e.clientX - drag.x;
           const dyPx = e.clientY - drag.y;
@@ -4213,7 +4165,7 @@
             dx: drag.view.dx - dxPx / slot / drag.view.zoom,
             dy: drag.view.dy - dyPx / slot / drag.view.zoom,
           });
-          placePawn(img, frame, view);
+          paint();
           // …and the card at the top moves with it, in the same frame.
           pawnShowView(src, view);
         });
@@ -4229,8 +4181,8 @@
           // would see as a failure on a page she was only reading.
           else if (!frozen) savePawnView(src, view);
         };
-        disc.addEventListener('pointerup', endDrag);
-        disc.addEventListener('pointercancel', endDrag);
+        pad.addEventListener('pointerup', endDrag);
+        pad.addEventListener('pointercancel', endDrag);
         return cell;
       }
 
@@ -4298,11 +4250,6 @@
       // change. The server caches on the exact photo list, so a re-ask after a
       // change re-renders and a re-ask after none is free.
       let pawnCardSeq = 0;
-      // What each photo's frame RESOLVED to, so the card can be drawn from the
-      // same numbers as the row that set them. (measureFrame's own cache holds
-      // promises keyed by cut-or-original; this holds the answer, per photo, for
-      // whichever of the two is currently printing.) Filled by pawnCell.
-      const pawnLiveFrames = new Map();
       // …and what she is doing to a photo RIGHT NOW. A drag does not touch the
       // order until it ends (and then only after a debounce), so the card cannot
       // read the STORED view or it would draw the position before last — which is
@@ -4312,9 +4259,8 @@
         pawnLiveViews.set(src, view);
         paintPawnCard();
       }
-      // The card's four discs, as fractions of the card picture (from the
-      // generator — see preview.pawn_slots). Null until the card has loaded.
-      let pawnSlots = null;
+      // (The card's slots, sticker spec and pictures — pawnSlots, pawnSpec and
+      // pawnBases — are declared with pawnReady, above.)
 
       // Draw the buyer's photos into the card's discs. Called on every drag frame,
       // so it does nothing but move CSS: no fetch, no decode, no server.
@@ -4431,35 +4377,40 @@
       }
 
       function paintOnePawnCard(frame, card) {
-        const box = frame && frame.querySelector('.pawn-live-slots');
-        if (!box || !pawnSlots) return;
+        const layer = frame && frame.querySelector('.pawn-live-slots');
+        if (!layer || !pawnSlots || !pawnSpec) return;
         fitLiveSlots(frame);
-        const photos = pawnPhotosForCard(card);
-        // One element per disc, reused — rebuilding four <img> per pointer move
-        // would decode the photos again and again.
-        while (box.children.length > photos.length) box.lastChild.remove();
-        while (box.children.length < photos.length) {
-          const slot = document.createElement('div');
-          slot.className = 'pawn-live-slot';
-          slot.appendChild(document.createElement('img'));
-          box.appendChild(slot);
+        let svg = layer.querySelector('svg');
+        if (!svg) {
+          svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          svg.setAttribute('class', 'pawn-live-svg');
+          layer.appendChild(svg);
         }
-        photos.forEach((src, i) => {
-          const geo = pawnSlots[i];
-          const el = box.children[i];
-          const img = el.firstChild;
+        // One sticker per photo on this card, drawn in the card's own units over
+        // the card's own picture — so every photo sits where the print puts it and
+        // wears the print's own white edge, whatever size the card is shown at.
+        const stickers = pawnPhotosForCard(card).map((src) => {
           const view = pawnLiveViews.get(src) || pawnViewFor(src);
-          // The DISC is DISC_FILL of the slot square, centred in it — the same
-          // relation the row's own circle has, so placePawn can be shared.
-          Object.assign(el.style, liveSlotStyle(geo));
-          const want = pawnPrintSrcFor(src, view);
-          if (img.getAttribute('src') !== want) img.src = want;
-          // A cut-out photo prints with a white sticker edge around it, and this
-          // card is the picture she signs off. It went out WITHOUT one — the row
-          // below drew the halo, the print drew the halo, and the card between
-          // them drew a bare circle, which is a third version of the same photo.
-          el.classList.toggle('is-cut', want !== src);
-          placePawn(img, pawnLiveFrames.get(src) || null, view);
+          const photo = pawnPrepared(src, view);
+          return (
+            photo && { photo, crop: viewCrop(photo.crop, view), src: pawnPrintSrcFor(src, view) }
+          );
+        });
+        // …and the shipped pawns in the slots her photos leave empty, dealt across
+        // the whole deck by the generator's own rule — card 2 of an eight-player
+        // deck with two photos starts at the third pawn, as it prints.
+        const per = pawnSlots.length;
+        const cards = pawnCardCount();
+        const filled = Math.min(pawnList().length, cards * per);
+        const fallbacks = fallbackDeal(pawnFallbacks.length, filled, cards, card).map((i) =>
+          i == null ? null : pawnFallbacks[i]
+        );
+        paintCard(svg, {
+          spec: pawnSpec,
+          slots: pawnSlots,
+          idPrefix: 'pawn-card-' + card,
+          stickers,
+          fallbacks,
         });
       }
 
@@ -4485,22 +4436,13 @@
         const fail = box.querySelector('.prev-fail');
         if (!img) return;
         try {
-          // ?live=1: the card WITHOUT her photos, plus where its discs are. Every
-          // adjustment after it is drawn here rather than rendered there, so this
-          // is asked only when a photo is ADDED or REMOVED.
-          //
-          // &n is how many discs this page is about to cover. The rest come back
-          // carrying the shipped Dugri pawns, because that is what the printed
-          // card does — an order with two photos prints two faces and two pawns.
-          // Asking for a card with four bare discs and drawing two of them showed
-          // her two empty circles under a caption that says this is exactly how
-          // the card will be printed.
-          const r = await api(
-            '/pawn-card?live=1&n=' +
-              pawnPhotosForCard(card).length +
-              '&k=' +
-              encodeURIComponent(ownerToken)
-          );
+          // ?live=1: the card with every disc bare, plus where the discs are, the
+          // card's own sticker filter and its shipped pawns. Her photos AND the
+          // pawns in the discs she has not filled are drawn here — the pawns dealt
+          // as the printed deck deals them (paintOnePawnCard) — so one picture per
+          // design and title serves every card and every photo count, and the
+          // server renders it once rather than on every photo she adds.
+          const r = await api('/pawn-card?live=1&k=' + encodeURIComponent(ownerToken));
           if (seq !== pawnCardSeq) return; // a newer render is already on its way
           if (r && r.card) {
             // The discs are positioned as fractions of THE CARD, and the layer
@@ -4525,7 +4467,18 @@
           // The disc geometry is the artwork's, so every card has the same four —
           // one answer for all of them.
           if (r && Array.isArray(r.slots) && r.slots.length) pawnSlots = r.slots;
+          // A card that came back without its sticker spec (an older server) is
+          // still placed in the card's standard units — just without the halo.
+          if (r && r.card) {
+            pawnSpec = {
+              viewBox: Array.isArray(r.viewBox) ? r.viewBox : [0, 0, 223.92, 312],
+              filter: r.filter || '',
+            };
+          }
+          if (r && r.card) pawnBases[card] = r.card;
+          if (r && Array.isArray(r.fallbacks)) pawnFallbacks = r.fallbacks;
           paintOnePawnCard(box, card);
+          paintPawnPads();
         } catch (e) {
           if (seq !== pawnCardSeq) return;
           // Keep whatever card is on screen — a stale picture of her deck beats an
@@ -4994,7 +4947,10 @@
           });
           state.pawn_images = r.pawn_images;
           renderPawns();
-          renderPawnCard();
+          // The card is the same picture whatever her photos are (every disc bare),
+          // so a photo added or removed is a repaint over it, never a new render.
+          paintPawnCard();
+          paintPawnPads();
         } catch (e) {
           showPawnErr('לא הצלחנו להסיר את התמונה, נסו שוב');
         }
@@ -5063,7 +5019,8 @@
           pawnBusy = false;
           showPawnBusy('');
           renderPawns();
-          renderPawnCard();
+          paintPawnCard();
+          paintPawnPads();
           // The route is fail-soft: a photo it could not store is missing from the
           // list it just returned, and nothing else would ever mention it. Say it.
           if (!reportPawnSkips(skipped)) {
@@ -5082,7 +5039,8 @@
           // shows the old list sends her to re-add photos the order already has.
           const landed = pawnList().length - before;
           renderPawns();
-          renderPawnCard();
+          paintPawnCard();
+          paintPawnPads();
           if (landed > 0 || skipped.length) {
             // Photos the server skipped on purpose are neither landed nor lost:
             // they get their own sentence, with its advice, after the count.

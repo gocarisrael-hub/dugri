@@ -783,6 +783,8 @@ function pawnCardArgs({
   photoCutouts,
   empty = false,
   drawn = 0,
+  cards = 1,
+  card = 0,
   name = '',
   extraFields,
   customTitle,
@@ -804,13 +806,17 @@ function pawnCardArgs({
   // discs are. The browser lays her photos onto it — which is what lets the
   // card move under her finger instead of a second behind it.
   //
-  // `drawn` is how many discs it will cover, and the render fills the REST with
-  // the shipped Dugri pawns, exactly as the printed card tops itself up. Leaving
-  // them bare showed her an empty circle where a pawn prints, under a caption
-  // promising this is exactly what will be printed. It is one more cache
-  // dimension, and a small one: 0..4 per theme, and a card that changes only
-  // when the number of photos does.
-  if (empty) args.push('--no-photos', '--drawn', String(drawn));
+  // `drawn` is how many of her photos the DECK carries and `card` which of its
+  // `cards` this is. The slots her photos take are left bare; the rest get the
+  // shipped Dugri pawns, dealt across the whole deck exactly as the print deals
+  // them (build.card_photo_plan) — so card 2 of an eight-player order with two
+  // photos carries pawns 3, 4, 1, 2, not a fresh 1, 2, 3, 4. Leaving them bare
+  // showed her an empty circle where a pawn prints, under a caption promising
+  // this is exactly what will be printed.
+  if (empty) {
+    args.push('--no-photos', '--drawn', String(drawn), '--cards', String(cards));
+    args.push('--card', String(card));
+  }
   // Photos, frames and cutout markers, emitted by the SAME helper the deck run
   // uses — this preview only earns its place by being the same picture the
   // printer makes, and a preview that framed differently would be the one thing
@@ -826,6 +832,8 @@ function runPawnCard({
   photoCutouts,
   empty = false,
   drawn = 0,
+  cards = 1,
+  card = 0,
   name = '',
   extraFields,
   customTitle,
@@ -853,6 +861,8 @@ function runPawnCard({
       photoCutouts,
       empty,
       drawn,
+      cards,
+      card,
       name,
       extraFields,
       customTitle,
@@ -897,9 +907,18 @@ function runPawnCard({
           return reject(new Error('pawn card render produced no image'));
         }
         const url = 'data:image/png;base64,' + fs.readFileSync(file).toString('base64');
-        const slots = Array.isArray(produced.slots) ? produced.slots : null;
+        const out = { card: url };
+        // The live card's sticker spec rides along (preview.sticker_spec): the
+        // slots, the card's viewBox, the disc and the theme's own halo filter —
+        // everything the page needs to draw her photos onto this card the way the
+        // printer draws them, rather than an imitation of it.
+        if (Array.isArray(produced.slots)) out.slots = produced.slots;
+        if (Array.isArray(produced.viewBox)) out.viewBox = produced.viewBox;
+        if (typeof produced.disc_fill === 'number') out.disc_fill = produced.disc_fill;
+        if (typeof produced.filter === 'string') out.filter = produced.filter;
+        if (Array.isArray(produced.fallbacks)) out.fallbacks = produced.fallbacks;
         cleanup();
-        resolve(slots ? { card: url, slots } : { card: url });
+        resolve(out);
       } catch (e) {
         cleanup();
         reject(e);
@@ -3389,12 +3408,15 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   // run on the server — the editor moved at the speed of a render before this,
   // which is to say it was always showing the adjustment before last.
   //
-  // `n` is how many discs the page will cover; the render fills the rest with the
-  // shipped Dugri pawns, which is what the printed card does. So this picture
-  // depends on the theme and that COUNT — not on which photos, and not on how she
-  // framed them, either of which would put the render back in the drag loop.
+  // EVERY disc is left bare: the page draws her photos AND the shipped Dugri pawns
+  // into them itself — the pawns dealt across the whole deck by the generator's
+  // own rule (pawn-print.js fallbackDeal, held to build.card_photo_plan), from the
+  // pawn images this answer carries. So the picture depends on the design and the
+  // title alone: not on which photos, how she framed them, how many there are or
+  // how big the deck is. One render serves every one of those, where a picture per
+  // photo count and per card was a Chrome run on every photo she added.
   const live = req.query.live === '1';
-  const drawn = live ? Math.max(0, Math.min(4, Number(req.query.n) || 0)) : 0;
+  const drawn = live ? 4 : 0;
   const photos = live ? [] : pawnPhotoFiles(c);
   const photoFrames = live ? [] : pawnPhotoFrames(c);
   const photoCutouts = live ? [] : pawnPhotoCutouts(c);
@@ -3417,7 +3439,7 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
     title.gender || '',
   ].join('\u0000');
   const cacheKey = live
-    ? 'pawn-base:' + theme + ':' + drawn + ':' + titleKey
+    ? 'pawn-base:' + theme + ':' + titleKey
     : 'pawn-card:' +
       theme +
       ':' +
@@ -3447,6 +3469,35 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
     // the strip either way, and says the picture is what is missing.
     console.error('pawn card render failed:', (e && e.message) || e);
     res.status(502).json({ error: 'pawn card render failed' });
+  }
+});
+
+// THE SAME BASE CARD FOR THE WIZARD, before any order exists.
+//
+// The wizard's photo step draws each pawn onto a tile cut from this card — its
+// paper and its dashed cut-line — with her photo, or the shipped pawn the deck
+// deals into that slot, painted on by the page (the pawn images ride along with
+// the card). Nothing of hers goes in and no title (the tiles are the slots alone;
+// the title band is below them), so ONE picture per design serves every buyer at
+// every deck size and photo count, from the pawn-card cache. Public, so it is
+// rate-limited in the preview's own bucket; a cache hit costs nothing and is
+// never counted.
+app.get('/api/pawn-base', async (req, res) => {
+  const theme = String(req.query.theme || '').trim();
+  if (!validate.getTheme(theme)) return res.status(400).json({ error: 'unknown theme' });
+  const cacheKey = 'pawn-base-public:' + theme;
+  const cached = pawnCardCache.get(cacheKey);
+  if (cached) return res.json(cached);
+  if (!previewRate.ok('preview:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many requests' });
+  }
+  try {
+    const out = await runPawnCard({ theme, empty: true, drawn: 4 });
+    pawnCardCache.set(cacheKey, out);
+    res.json(out);
+  } catch (e) {
+    console.error('pawn base render failed:', (e && e.message) || e);
+    res.status(502).json({ error: 'pawn base render failed' });
   }
 });
 

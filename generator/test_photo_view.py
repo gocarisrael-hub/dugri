@@ -9,7 +9,7 @@ square the automatic rules picked.
 
 The numbers come off a slider in her browser (``site/js/pawn-frame.js``), travel
 through the collection as ``pawn_view``, and arrive here as ``--photo-frame``.
-``tests/unit/pawn-view.test.js`` holds the browser half against this transform;
+``tests/unit/pawn-print.test.js`` holds the browser half against this transform;
 this file holds the transform itself, and that ``square_photo`` actually applies
 it.
 
