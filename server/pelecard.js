@@ -163,6 +163,7 @@ function verifyTransaction(tx, expected = {}) {
 }
 
 module.exports = {
+  NAME: 'pelecard',
   isConfigured,
   init,
   getTransaction,

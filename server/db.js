@@ -395,9 +395,41 @@ function withoutMetaCtx(order) {
 // but the rules for keeping a list (dedupe by token, never evict an unresolved
 // session, per-session timestamp and amount) are the payment protocol and must
 // not be able to drift between the two.
+// WHAT A PAY SESSION WAS PRICED AGAINST: the parts of the order (or of the
+// shipping upgrade) that decide what it costs, as one comparable string. Stored
+// on the session at pay/init and compared when a charge settles it, so a charge
+// made in an old pay window cannot pay for an order the buyer has since changed —
+// a 79 ₪ PDF window closed, the order switched to delivery, and the old charge
+// arriving later. Null for nothing to price.
+// WHAT IS BEING BOUGHT, not what it costs. The amount is already checked exactly,
+// against that session's own `charged_total`, so this only has to answer "is this
+// still the same purchase?". Deliberately NOT the delivery fee or the total: those
+// move with live settings on any re-submit, and refusing a verified charge because
+// the owner changed the fee meanwhile means money taken and the order left unpaid.
+// The case this exists for still fails, because it changes `version`: a 79 ₪ PDF
+// window closed, the order switched to delivery, the old charge arriving later.
+function orderPriceKey(order) {
+  if (!order) return null;
+  return ['order', order.version, Number(order.quantity) || 1, Number(order.unit_price)].join('|');
+}
+function shippingPriceKey(shipping) {
+  if (!shipping) return null;
+  return ['shipping', Number(shipping.fee)].join('|');
+}
+
 function pushPaySession(
   holder,
-  { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx }
+  {
+    paramToken,
+    transactionId,
+    charged_total,
+    coupon,
+    discount_pct,
+    metaCtx,
+    provider,
+    priceKey,
+    feeAtInit,
+  }
 ) {
   const p = holder || { sessions: [] };
   if (!Array.isArray(p.sessions)) p.sessions = [];
@@ -416,6 +448,20 @@ function pushPaySession(
       coupon: coupon ? normCode(coupon) : null,
       discount_pct: discount_pct != null ? discount_pct : null,
       transaction_id: transactionId || null,
+      // Which card provider opened this session. The holder is still called
+      // `pelecard` (every reader of it predates a second provider), but a session
+      // opened on Tranzila settles only through Tranzila's notify. Absent on
+      // sessions written before Tranzila, which were all PeleCard.
+      provider: provider || 'pelecard',
+      // orderPriceKey / shippingPriceKey at pay/init (Tranzila checks it).
+      price_key: priceKey || null,
+      // The delivery fee this window quoted. DATA, and deliberately NOT part of
+      // `price_key`: a fee that moved must never refuse a verified charge — that
+      // was the false refusal the key narrowing removed. It is kept so settlement
+      // can notice the move and TELL the owner, because the order is marked paid
+      // with a `total` that no longer equals what the card was charged and nobody
+      // would otherwise know. Null when the purchase carries no fee.
+      fee_at_init: Number.isFinite(Number(feeAtInit)) ? Number(feeAtInit) : null,
       resolved: false,
       // Per-session timestamp: bounds the in-flight window (see TTL) and is the
       // basis for evicting only OLD, RESOLVED sessions when over the cap.
@@ -2049,6 +2095,17 @@ const db = {
     // PAID order's total is history: it is what the card was actually charged, and
     // rewriting it would make the receipt lie. Money owed either way is settled
     // off-system, exactly as with a version change.
+    //
+    // The SAME rule as the buyer's own path (setOrder): an unpaid order prices
+    // from today's settings on any edit. This once re-priced only when the version
+    // or the copy count changed, to stop an address fix moving a stored total out
+    // from under a charge already on its way — but the delivery fee and the total
+    // no longer take part in the price key, so that refusal cannot happen, and the
+    // guard only left the two paths disagreeing: an admin edit kept yesterday's
+    // fee while a buyer edit re-priced, so the admin table could show a total the
+    // server would never charge. A fee that moves under a settling charge is
+    // reported to the owner instead — `reportFeeMovedOnSettle` in server/index.js,
+    // which both providers' callbacks reach through `settleVerifiedPayment`.
     if (!c.order.paid) {
       const unit =
         next === c.order.version && Number.isInteger(c.order.unit_price)
@@ -2204,7 +2261,17 @@ const db = {
   // Sessions ACCUMULATE (capped). Returns false when there is no order.
   recordPaymentInit(
     id,
-    { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx } = {}
+    {
+      paramToken,
+      transactionId,
+      charged_total,
+      coupon,
+      discount_pct,
+      metaCtx,
+      provider,
+      priceKey,
+      feeAtInit,
+    } = {}
   ) {
     const c = this.getCollection(id);
     if (!c || !c.order) return false;
@@ -2215,6 +2282,9 @@ const db = {
       coupon,
       discount_pct,
       metaCtx,
+      provider,
+      priceKey,
+      feeAtInit,
     });
     saveDb();
     return true;
@@ -2299,13 +2369,19 @@ const db = {
   // The upgrade's own PeleCard handshake. Same protocol as the order's, on its
   // own session list — the two charges are different amounts and each callback
   // must verify against its own.
-  recordShippingInit(id, { paramToken, transactionId, charged_total } = {}) {
+  recordShippingInit(
+    id,
+    { paramToken, transactionId, charged_total, provider, priceKey, feeAtInit } = {}
+  ) {
     const c = this.getCollection(id);
     if (!c || !c.order || !c.order.shipping) return false;
     c.order.shipping.pelecard = pushPaySession(c.order.shipping.pelecard, {
       paramToken,
       transactionId,
       charged_total,
+      provider,
+      priceKey,
+      feeAtInit,
       // No coupons on shipping: a discount code buys a game, not postage.
       coupon: null,
       discount_pct: null,
@@ -2364,11 +2440,29 @@ const db = {
       (s) =>
         s &&
         !s.resolved &&
-        s.transaction_id &&
+        // PeleCard hands out a transaction id at init; Tranzila has none until
+        // the buyer pays, so an open Tranzila window counts by its provider.
+        (s.transaction_id || s.provider === 'tranzila') &&
         Number(s.charged_total) > 0 &&
         s.initiated_at &&
         now - Date.parse(s.initiated_at) < SESSION_TTL_MS
     );
+  },
+
+  // Has this provider transaction already paid for something — an order or a
+  // shipping upgrade? One real charge pays for one purchase. Defence in depth
+  // behind the token check in tranzila.verifyTransaction: a notify replayed
+  // against a second session of the same amount still cannot spend it twice.
+  isTransactionUsed(method, transactionId) {
+    if (!method || transactionId == null || transactionId === '') return false;
+    const id = String(transactionId);
+    return _db.collections.some((c) => {
+      const o = c.order;
+      if (!o) return false;
+      if (o.paid_method === method && String(o.paid_transaction_id) === id) return true;
+      const sh = o.shipping;
+      return !!(sh && sh.paid_method === method && String(sh.paid_transaction_id) === id);
+    });
   },
 
   // Abandon every in-flight pay session on an order: the buyer CLOSED the payment
@@ -2451,6 +2545,59 @@ const db = {
     if (!c) return null;
     const session = c.order.shipping.pelecard.sessions.find((s) => s.token === token) || null;
     return session ? { collection: c, session, kind: 'shipping' } : null;
+  },
+
+  // TRANZILA SWEEP STATE (server/tranzila-sweep.js): when the terminal's rows
+  // were last read, which transaction indexes the owner has already been told
+  // about, and the alerts not yet delivered. One small object, persisted, so a
+  // restart neither re-reads months of rows, re-alerts, nor loses an alert.
+  // Absent from every store written before it existed; created on first use.
+  tranzilaSweepState() {
+    if (!_db.tranzila_sweep || typeof _db.tranzila_sweep !== 'object') _db.tranzila_sweep = {};
+    return _db.tranzila_sweep;
+  },
+
+  saveTranzilaSweepState() {
+    saveDb();
+  },
+
+  // See orderPriceKey / shippingPriceKey above.
+  orderPriceKey(order) {
+    return orderPriceKey(order);
+  },
+  shippingPriceKey(shipping) {
+    return shippingPriceKey(shipping);
+  },
+
+  // Was this session opened recently enough that a charge for it can still be on
+  // its way? `resolved` is deliberately NOT consulted: it is set by the browser's
+  // fire-and-forget close beacon (abandonPaySessions), which on Tranzila fires
+  // while the order is still unpaid — the sweep is what settles it — so a buyer
+  // who paid and closed the window would look "not paying" a moment later.
+  isPaySessionRecent(session) {
+    return (
+      !!session &&
+      !!session.initiated_at &&
+      Date.now() - Date.parse(session.initiated_at) < SESSION_TTL_MS
+    );
+  },
+
+  // Is there a purchase still unpaid whose session this provider opened since
+  // `sinceMs`? Then a buyer may be paying right now, and the sweep runs often.
+  hasRecentUnpaidProviderSession(provider, sinceMs) {
+    const recent = (holder) =>
+      !!holder &&
+      Array.isArray(holder.sessions) &&
+      holder.sessions.some(
+        (s) =>
+          s && s.provider === provider && s.initiated_at && Date.parse(s.initiated_at) >= sinceMs
+      );
+    return _db.collections.some((c) => {
+      const o = c && c.order;
+      if (!o) return false;
+      if (!o.paid && recent(o.pelecard)) return true;
+      return !!(o.shipping && !o.shipping.paid && recent(o.shipping.pelecard));
+    });
   },
 
   // Admin: flip an order between "still here" and SENT TO THE PRINT SHOP. The

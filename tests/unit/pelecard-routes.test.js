@@ -185,6 +185,170 @@ describe('POST /api/payment/callback', () => {
     expect(order.paid_approval_no).toBe('86-001-006');
   });
 
+  // EMAIL IS NOT THE ONLY CHANNEL. This notice is sent, not enqueued, so if the
+  // email send fails — a Resend 5xx, or RESEND_API_KEY/NOTIFY_TO unset on this
+  // environment — the fallback is its only second chance. Every other owner
+  // escalation in index.js falls back to WhatsApp; this one now does too.
+  //
+  // WHAPI_OWNER_WA is unset in this suite, so `alertOwnerViaWhatsApp` takes its
+  // no-channel branch and logs OWNER ESCALATION NOT DELIVERED — which is the
+  // observable proof that the fallback was reached at all.
+  it('falls back off email when the send reports failure', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('נפילת אימייל');
+    const addr = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'delivery',
+      address: addr,
+    });
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+    const feeWas = db.getCollection(c.id).order.delivery_fee;
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(false);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    settings.set('pricing', 'delivery_fee', feeWas + 20);
+    try {
+      db.adminUpdateOrder(c.id, { address: { ...addr, street: 'הרצל 7' } });
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-fallback',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-011',
+        },
+      };
+      const r = await post('/api/payment/callback', {
+        ResultData: { TransactionId: 'tx-fallback' },
+      });
+      expect(r.status).toBe(200);
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(alert).toHaveBeenCalled();
+
+      // The fallback runs in a .then AFTER the callback answers, so let the
+      // microtask queue drain before asserting on it.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const escalated = logged.mock.calls
+        .map((args) => args.map((a) => String(a)).join(' '))
+        .join('\n');
+      expect(escalated).toContain('OWNER ESCALATION NOT DELIVERED');
+      expect(escalated).toContain('דמי המשלוח השתנו');
+    } finally {
+      logged.mockRestore();
+      alert.mockRestore();
+      settings.set('pricing', 'delivery_fee', feeWas);
+    }
+  });
+
+  // A NOTIFICATION MUST NEVER UNMAKE A SETTLE. By the time the notice runs the
+  // money has cleared and the order is already marked paid, so anything throwing
+  // on the way to telling the owner would answer the provider with a failure and
+  // prompt a retry — over a message. A SYNCHRONOUS throw is the case that matters:
+  // `sendSystemAlert` catches its own rejections internally, so the async path is
+  // already safe and only a sync throw could escape.
+  it('still settles when the fee-moved notice itself throws', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('התראה שנכשלת');
+    const addr = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'delivery',
+      address: addr,
+    });
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+    const feeWas = db.getCollection(c.id).order.delivery_fee;
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockImplementation(() => {
+      throw new Error('notify exploded');
+    });
+    settings.set('pricing', 'delivery_fee', feeWas + 20);
+    try {
+      db.adminUpdateOrder(c.id, { address: { ...addr, street: 'הרצל 9' } });
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-boom',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-010',
+        },
+      };
+
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-boom' } });
+      // The provider is answered, and the payment stands.
+      expect(r.status).toBe(200);
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(true);
+      expect(order.charged_total).toBe(charged);
+      expect(order.paid_transaction_id).toBe('tx-boom');
+      expect(alert).toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+      settings.set('pricing', 'delivery_fee', feeWas);
+    }
+  });
+
+  // PELECARD IS WHAT PRODUCTION CHARGES WITH, so the fee-moved notice has to
+  // reach the owner from this callback too — not only from the Tranzila sweep.
+  // The case is reachable on the admin path: an unpaid delivery order with a pay
+  // modal open, the owner raises the fee and fixes a typo, `adminUpdateOrder`
+  // re-prices, and the in-flight charge then settles at the old amount. Without
+  // the notice the order is marked paid with `total` != `charged_total` and
+  // nobody is told.
+  it('reports a fee that moved under an in-flight charge', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('דמי משלוח זזו באמצע');
+    const addr = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'delivery',
+      address: addr,
+    });
+    expect(init.status).toBe(200);
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+    const feeWas = db.getCollection(c.id).order.delivery_fee;
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    settings.set('pricing', 'delivery_fee', feeWas + 20);
+    try {
+      db.adminUpdateOrder(c.id, { address: { ...addr, street: 'הרצל 12' } });
+      expect(db.getCollection(c.id).order.delivery_fee).toBe(feeWas + 20);
+
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-fee',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-009',
+        },
+      };
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-fee' } });
+      expect(r.status).toBe(200);
+
+      // Settles — the charge was correct for the window it was made in.
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(true);
+      expect(order.charged_total).toBe(charged);
+      // ...and she is told, on PeleCard, with the fee move and the shortfall.
+      const subjects = alert.mock.calls.map(([subject]) => subject);
+      expect(subjects).toContain('שולם, אבל דמי המשלוח השתנו בינתיים');
+      const text = alert.mock.calls.map(([, lines]) => lines.join('\n')).join('\n');
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      expect(text).toContain(feeWas + ' ₪ ← ' + (feeWas + 20) + ' ₪');
+    } finally {
+      alert.mockRestore();
+      settings.set('pricing', 'delivery_fee', feeWas);
+    }
+  });
+
   it('does NOT mark paid when SHVA did not approve the charge (ShvaResult != 000)', async () => {
     const c = db.createCollection('לא אושר');
     await post('/api/collections/' + c.id + '/pay/init', {

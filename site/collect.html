@@ -3175,7 +3175,9 @@
       <a class="order-cta" id="orderCta" href="options.html" data-testid="order-cta"></a>
     </div>
 
-    <!-- credit-card payment modal (PeleCard iframe) -->
+    <!-- credit-card payment modal (the provider's hosted page: PeleCard or Tranzila).
+         allow="payment" + allowpaymentrequest let Tranzila's page offer Apple Pay and
+         Google Pay from inside the frame; without them the wallet buttons never show. -->
     <div
       id="payModal"
       class="pay-modal hidden"
@@ -3185,7 +3187,13 @@
     >
       <div class="pay-modal-card">
         <button type="button" class="pay-modal-x" id="payModalClose" aria-label="סגירה">×</button>
-        <iframe id="payFrame" title="תשלום מאובטח" src="about:blank"></iframe>
+        <iframe
+          id="payFrame"
+          title="תשלום מאובטח"
+          src="about:blank"
+          allow="payment"
+          allowpaymentrequest="true"
+        ></iframe>
       </div>
     </div>
 
@@ -4863,10 +4871,14 @@
             // 409 is the collection closing (or a second press after it went
             // through) — both are "this is no longer on offer", and the server's
             // own Hebrew is better than a generic line when it sends one.
+            // 429 is the payment-window limit: retrying at once only spends more
+            // of it, so say to wait, as the checkout does.
             err.textContent =
               e.status === 409
                 ? (e.body && e.body.message) || 'המשלוח כבר נוסף להזמנה'
-                : 'לא הצלחנו לפתוח את התשלום, נסו שוב';
+                : e.status === 429
+                  ? 'יותר מדי ניסיונות, נסו עוד רגע'
+                  : 'לא הצלחנו לפתוח את התשלום, נסו שוב';
             err.classList.remove('hidden');
             // …and re-read the offer, so a card that is no longer on offer goes
             // away rather than sitting there refusing.

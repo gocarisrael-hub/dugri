@@ -8,6 +8,9 @@ const { pathToFileURL } = require('url');
 const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
+const tranzila = require('./tranzila');
+const { createSweeper, positiveNumber } = require('./tranzila-sweep');
+const { paymentClientIp } = require('./payment-client-ip');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
@@ -100,6 +103,37 @@ app.use('/api', (req, res, next) => {
 // a real charge would never reach us. Returns null when unconfigured.
 function paymentBaseUrl() {
   return process.env.PUBLIC_BASE_URL ? process.env.PUBLIC_BASE_URL.replace(/\/+$/, '') : null;
+}
+
+// WHICH CARD PROVIDER OPENS NEW PAYMENTS. PeleCard, unless PAYMENT_PROVIDER is
+// `tranzila` — set per Railway environment, so staging can take Tranzila while
+// production stays on PeleCard until the owner switches it.
+//
+// Asking for Tranzila without its credentials turns card payment OFF rather than
+// quietly falling back to PeleCard: a staging test that silently ran on the old
+// provider would "pass" and prove nothing.
+//
+// Only NEW payments follow this. Both callbacks stay live whichever is chosen,
+// so a window opened on one provider still settles after the switch.
+function cardProvider() {
+  const want = String(process.env.PAYMENT_PROVIDER || '')
+    .trim()
+    .toLowerCase();
+  if (want === 'tranzila') return tranzila.isConfigured() ? tranzila : null;
+  return pelecard.isConfigured() ? pelecard : null;
+}
+
+// Every return/callback address a provider may need for one payment. Each
+// provider reads its own: PeleCard the callback pair, Tranzila the notify URL,
+// which carries this payment's token so the notify can be matched to it.
+function paymentUrls(base, paramToken) {
+  return {
+    goodUrl: base + '/pay-done.html',
+    errorUrl: base + '/pay-done.html?error=1',
+    serverGoodUrl: base + '/api/payment/callback',
+    serverErrorUrl: base + '/api/payment/callback?error=1',
+    notifyUrl: base + '/api/payment/tranzila/notify?t=' + encodeURIComponent(paramToken),
+  };
 }
 
 const SITE_DIR = path.join(__dirname, '..', 'site');
@@ -921,9 +955,10 @@ function publicView(c, { owner = false } = {}) {
             : {}),
         }
       : null,
-    // Whether online card payment is available (PeleCard credentials present).
-    // Lets collect.html show the credit-card button only when it will work.
-    card_enabled: pelecard.isConfigured(),
+    // Whether online card payment is available (the chosen provider has its
+    // credentials). Lets collect.html show the credit-card button only when it
+    // will work.
+    card_enabled: !!cardProvider(),
     // HOW THIS DECK IS SPLIT — how many players it is laid out for, how many
     // pawn cards that is, and what is left for words. PUBLIC, not owner-only:
     // the word counter is the same counter for every contributor, and a friend
@@ -5122,16 +5157,60 @@ app.post('/api/collections/:id/pay/cancel', (req, res) => {
 // Persists/refreshes the order first (same validation as /order), then asks
 // PeleCard for an iframe URL. Returns { url } for the browser to load in an
 // <iframe>. The ParamX token stored here lets the later callback find the order.
+//
+// EVERY TRANZILA CALL MINTS A PAY SESSION, and a session's token is what the
+// Tranzila notify, its retries and its limits are keyed by — so an unbounded
+// pay/init is an unbounded supply of real tokens. Limited per client (before
+// anything else) and per collection (after the owner check, so a stranger cannot
+// spend a buyer's budget), for Tranzila only: PeleCard's flow is unchanged. The
+// client is paymentClientIp (server/payment-client-ip.js), the address our own
+// proxy saw, never an X-Forwarded-For entry the client wrote. Shared with
+// shipping/init, which mints sessions the same way.
+const payInitIpRate = makeRateLimiter({
+  limit: positiveNumber(process.env.PAY_INIT_RATE_LIMIT_IP, 60),
+  windowMs: 10 * 60 * 1000,
+  maxKeys: 10000,
+});
+// The per-client key, and — only while TRANZILA_LOG_CLIENT_IP=1, for the one-off
+// go-live check that our proxy hop count is right — the headers it came from.
+// Off by default: these are buyers' addresses.
+function payInitClientKey(req) {
+  const key = paymentClientIp(req);
+  if (process.env.TRANZILA_LOG_CLIENT_IP === '1') {
+    console.log(
+      '[tranzila] client key ' +
+        key +
+        ' x-forwarded-for=' +
+        JSON.stringify(req.headers['x-forwarded-for'] || '') +
+        ' cf-connecting-ip=' +
+        JSON.stringify(req.headers['cf-connecting-ip'] || '')
+    );
+  }
+  return key;
+}
+const payInitCollectionRate = makeRateLimiter({
+  limit: positiveNumber(process.env.PAY_INIT_RATE_LIMIT_COLLECTION, 20),
+  windowMs: 10 * 60 * 1000,
+  maxKeys: 10000,
+});
 app.post('/api/collections/:id/pay/init', async (req, res) => {
-  if (!pelecard.isConfigured()) {
+  const provider = cardProvider();
+  if (!provider) {
     return res.status(503).json({ error: 'card payment not configured' });
   }
   const base = paymentBaseUrl();
   if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+  const limited = provider.NAME === tranzila.NAME;
+  if (limited && !payInitIpRate.ok(payInitClientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
 
   const b = req.body || {};
   const c = db.getCollection(req.params.id);
   if (!c || c.owner_token !== b.owner_token) return res.status(403).json({ error: 'forbidden' });
+  if (limited && !payInitCollectionRate.ok(c.id)) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
   // Never re-open payment on an order that is already paid (re-clicking the card
   // button must not rebuild the order and discard the recorded payment).
   if (c.order && c.order.paid) return res.status(409).json({ error: 'already paid' });
@@ -5239,17 +5318,15 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     return res.json({ free: true, paid: true, total: 0 });
   }
 
-  const paramToken = newPayToken();
+  // A Tranzila token carries this environment (tranzila.newSessionToken), so a
+  // sweep on the shared terminal can tell its own charges from the other's.
+  const paramToken = provider.NAME === tranzila.NAME ? tranzila.newSessionToken() : newPayToken();
   try {
-    const { url, transactionId } = await pelecard.init({
+    const { url, transactionId } = await provider.init({
       amountNis: charged,
       paramToken,
-      urls: {
-        goodUrl: base + '/pay-done.html',
-        errorUrl: base + '/pay-done.html?error=1',
-        serverGoodUrl: base + '/api/payment/callback',
-        serverErrorUrl: base + '/api/payment/callback?error=1',
-      },
+      urls: paymentUrls(base, paramToken),
+      buyer: { email: c.owner_email, phone: c.owner_phone },
     });
     // Record THIS session's own charged amount + coupon so the callback for it
     // verifies against the right price (sessions with different coupons stay
@@ -5261,6 +5338,11 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       coupon: couponCode,
       discount_pct: couponCode ? discountPct : null,
       metaCtx: adCtx,
+      provider: provider.NAME,
+      priceKey: db.orderPriceKey(order),
+      // Not in the key — kept so a settle can tell the owner the fee moved under
+      // it, rather than refusing a charge the buyer made correctly.
+      feeAtInit: Number(order.delivery_fee) || 0,
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
@@ -5285,15 +5367,23 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
 // owner's rule and the honest one — by then the deck is at the printer and where
 // it goes has already been decided.
 app.post('/api/collections/:id/shipping/init', async (req, res) => {
-  if (!pelecard.isConfigured()) {
+  const provider = cardProvider();
+  if (!provider) {
     return res.status(503).json({ error: 'card payment not configured' });
   }
   const base = paymentBaseUrl();
   if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+  const limited = provider.NAME === tranzila.NAME;
+  if (limited && !payInitIpRate.ok(payInitClientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
 
   const b = req.body || {};
   const c = db.getCollection(req.params.id);
   if (!c || c.owner_token !== b.owner_token) return res.status(403).json({ error: 'forbidden' });
+  if (limited && !payInitCollectionRate.ok(c.id)) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
 
   // Stage it (address sanitized, fee re-read from settings, availability
   // re-checked — the collection can close between rendering the offer and
@@ -5312,22 +5402,23 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
   // init is the one failure mode that would look like a free upgrade.
   if (!(charged > 0)) return res.status(400).json({ error: 'invalid order total' });
 
-  const paramToken = newPayToken();
+  // A Tranzila token carries this environment (tranzila.newSessionToken), so a
+  // sweep on the shared terminal can tell its own charges from the other's.
+  const paramToken = provider.NAME === tranzila.NAME ? tranzila.newSessionToken() : newPayToken();
   try {
-    const { url, transactionId } = await pelecard.init({
+    const { url, transactionId } = await provider.init({
       amountNis: charged,
       paramToken,
-      urls: {
-        goodUrl: base + '/pay-done.html',
-        errorUrl: base + '/pay-done.html?error=1',
-        serverGoodUrl: base + '/api/payment/callback',
-        serverErrorUrl: base + '/api/payment/callback?error=1',
-      },
+      urls: paymentUrls(base, paramToken),
+      buyer: { email: c.owner_email, phone: c.owner_phone },
     });
     db.recordShippingInit(req.params.id, {
       paramToken,
       transactionId,
       charged_total: charged,
+      provider: provider.NAME,
+      priceKey: db.shippingPriceKey(shipping),
+      feeAtInit: Number(shipping.fee) || 0,
     });
     res.json({ url, charged });
   } catch {
@@ -5382,19 +5473,40 @@ app.post('/api/payment/callback', async (req, res) => {
   // "is it already paid?" guard is a different flag for each and the shipping
   // charge is a different (smaller) amount than the order's.
   const match = db.findPaySession(tx.paramX);
-  const c = match && match.collection;
-  const session = match && match.session;
   if (
-    c &&
-    session &&
-    match.kind === 'shipping' &&
-    !c.order.shipping.paid &&
-    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
+    match &&
+    match.session &&
+    (match.session.provider || 'pelecard') === pelecard.NAME &&
+    pelecard.verifyTransaction(tx, { amountNis: match.session.charged_total })
   ) {
-    db.markShippingPaid(c.id, {
-      method: 'pelecard',
+    settleVerifiedPayment(match, {
+      method: pelecard.NAME,
       transactionId: tx.transactionId,
       approvalNo: tx.approvalNo,
+    });
+  }
+  res.json({ ok: true });
+});
+
+// A VERIFIED charge lands. Shared by both providers' callbacks, so what a paid
+// order means — receipts, the coupon count, Meta's copy of the sale, a shipping
+// upgrade converging the order — cannot differ by who cleared the card.
+//
+// `match` is db.findPaySession's { collection, session, kind }; the caller has
+// already proven the charge belongs to that session and is for its amount.
+// Idempotent on each purchase's own paid flag, because a provider may call twice.
+// The fee-moved notice it fires is defined directly below it.
+function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
+  const c = match.collection;
+  const session = match.session;
+  // Before any write: convergence and markPaid both move the numbers this reads.
+  const feeMoved = feeMoveOnSettle(match);
+  if (match.kind === 'shipping') {
+    if (c.order.shipping.paid) return false;
+    db.markShippingPaid(c.id, {
+      method,
+      transactionId,
+      approvalNo,
       token: session.token,
       charged_total: session.charged_total,
     });
@@ -5402,51 +5514,465 @@ app.post('/api/payment/callback', async (req, res) => {
     // the owner is told the same way she is told about any other change of
     // fulfilment — she has a parcel to send that she did not have this morning.
     onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
-    return res.json({ ok: true });
+    if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
+    return true;
+  }
+  if (c.order.paid) return false;
+  // metaClaim: the Meta report is claimed inside THIS write. The alternative
+  // was a second synchronous whole-store write on the hot path of a charge
+  // that has just cleared, for a measurement side-effect.
+  const metaArmed = metaCapiArmed();
+  db.markPaid(c.id, {
+    method,
+    transactionId,
+    approvalNo,
+    token: session.token,
+    charged_total: session.charged_total,
+    coupon: session.coupon,
+    discount_pct: session.discount_pct,
+    metaClaim: metaArmed,
+  });
+  // Count the coupon use once, on the real unpaid->paid transition.
+  if (session.coupon) db.incrementCouponUses(session.coupon);
+  // Fire the owner + buyer payment receipts, showing the amount ACTUALLY
+  // charged for THIS session (never the pre-coupon order.total). Gated on
+  // email being configured inside onOrderPaid, and fire-and-forget — a failed
+  // send must never turn a successful charge into a failed callback.
+  onOrderPaid(c.id, paymentBaseUrl(), session.charged_total);
+  // Meta's copy of the sale, sent from HERE — the moment the money actually
+  // landed, in a request made by the provider's server. Nothing about the
+  // buyer's browser can suppress it: a closed tab, a blocked pixel and an in-app
+  // browser that drops third-party scripts all still produce this call. The
+  // buyer's own details ride along from the pay/init handshake (meta_ctx).
+  // Guarded: an `async` handler in Express 4 does not route a rejection to
+  // error middleware, and a payment callback must answer the provider whatever
+  // an ad platform is doing.
+  try {
+    if (metaArmed) sendPurchaseToMeta(c.id, null, { preclaimed: true });
+  } catch (e) {
+    console.error('[meta-capi] ' + c.id + ': ' + ((e && e.message) || e));
+  }
+  // Last, and only on a real unpaid->paid transition: the DELIVERY FEE moved
+  // between this window opening and the charge settling, so the order is paid at a
+  // total that is off by that fee delta. Scoped to the fee on purpose — this
+  // checks nothing else, and a total that diverges for another reason (a copy
+  // count edited under an in-flight charge, say) is a separate, pre-existing gap
+  // on both providers, not something this notice claims to cover.
+  //
+  // BOTH providers reach here, which is the whole point: the admin re-pricing path
+  // that produces this runs on PeleCard too, and PeleCard is what production
+  // charges with, so a notice living only in the Tranzila sweep would miss every
+  // real occurrence today.
+  if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
+  return true;
+}
+
+// The delivery fee this window quoted, against the one the purchase carries right
+// now. Read BEFORE anything settles, because the shipping path's convergence
+// rewrites `delivery_fee` and `total` as it marks the upgrade paid.
+//
+// The comparison is the FEE, not charged-vs-total: a coupon discounts the game and
+// never the postage (pay/init), so with a 50% code on a 238 ₪ order charged 139 ₪
+// a charged-vs-total reading reports a ~119 ₪ gap when the buyer owes exactly the
+// 20 ₪ the fee moved by. The fee delta IS the shortfall, coupon or not.
+function feeMoveOnSettle(match) {
+  const quoted = match.session && match.session.fee_at_init;
+  // Null means a session written before this field existed: nothing to compare,
+  // so nothing is claimed. Never treat it as 0 — that would report the whole fee
+  // of every pre-existing delivery order as a change.
+  if (quoted == null) return null;
+  const order = match.collection.order;
+  const now =
+    match.kind === 'shipping' ? Number(order.shipping.fee) || 0 : Number(order.delivery_fee) || 0;
+  return Number(quoted) === now ? null : { from: Number(quoted), to: now };
+}
+
+// Money moved and the purchase IS paid, so this is a notice, not a refusal. Sent
+// straight out rather than queued, because it has to reach the owner from BOTH
+// providers' callbacks and only Tranzila has a sweep to queue into.
+function reportFeeMovedOnSettle(c, moved, { method, transactionId }) {
+  const ref = db.orderRef(c);
+  const delta = moved.to - moved.from;
+  console.error(
+    '[payment] ' + ref + ': settled after the delivery fee moved ' + moved.from + ' -> ' + moved.to
+  );
+  const lines = [
+    'הזמנה: ' + ref,
+    'התשלום התקבל וסומן כשולם' + (transactionId ? ' (עסקה ' + transactionId + ')' : '') + '.',
+    'דמי המשלוח השתנו מאז שנפתח חלון התשלום: ' + moved.from + ' ₪ ← ' + moved.to + ' ₪.',
+    delta > 0
+      ? 'חסרים ' + delta + ' ₪ מול המחיר הנוכחי — להשלים או להשאיר כפי שהוא, לפי שיקולך.'
+      : 'נגבו ' + -delta + ' ₪ יותר מהמחיר הנוכחי — לזכות את ההפרש אם מגיע.',
+    'אמצעי תשלום: ' + (method || '—'),
+  ];
+  // Email, then WhatsApp — the same escalation every other owner alert in this
+  // file uses. Email-only would have been the quietest possible failure: a Resend
+  // 5xx, or RESEND_API_KEY/NOTIFY_TO unset on this environment, at the exact
+  // moment a moved-fee charge settles, and she is never told, with a console line
+  // as the only trace. This notice has no queue behind it (it is sent, not
+  // enqueued), so the fallback is the only second chance it gets.
+  const subject = 'שולם, אבל דמי המשלוח השתנו בינתיים';
+  notify
+    .sendSystemAlert(subject, lines)
+    .then((ok) => ok || alertOwnerViaWhatsApp(subject, lines))
+    .catch(() => {});
+}
+
+// A NOTIFICATION MUST NEVER UNMAKE A SETTLE. The money has cleared and the
+// purchase is already marked paid by the time this runs, so anything that throws
+// on the way to telling the owner would propagate into the provider's callback —
+// answering it with a failure, prompting a retry, and on the Tranzila side
+// failing the whole sweep pass — over a message. `sendSystemAlert` itself never
+// rejects (it catches internally and answers false), so this guards the work
+// AROUND it: the order lookup, the string building, the log line. Same reasoning
+// as the Meta call above, which is wrapped for exactly this.
+function safelyReportFeeMoved(c, moved, meta) {
+  try {
+    reportFeeMovedOnSettle(c, moved, meta);
+  } catch (e) {
+    console.error('[payment] fee-moved notice failed: ' + ((e && e.message) || e));
+  }
+}
+
+// TRANZILA: SETTLED FROM THE TERMINAL'S OWN ROWS (server/tranzila-sweep.js).
+//
+// Tranzila's notify (notify_url_address, built in paymentUrls) is UNSIGNED and
+// nothing documents it being retried, so it decides nothing. For a real, unpaid
+// Tranzila session it only asks for a sweep, and answers 200. The sweep reads the
+// terminal's transaction rows from the Reports API with our secret key — the only
+// thing that proves a charge — and matches each to its pay session by the token
+// the row carries. A row pays for a session only when approved, a DEBIT in
+// standard mode on a regular plan, in shekels, for that session's exact amount,
+// carrying that session's token, and not already spent on another purchase.
+//
+// Invented indexes and tokens are not rows. A flood of notifies therefore costs
+// at most one sweep per TRANZILA_SWEEP_MIN_SPACING_MS, writes nothing per
+// session, and can neither settle nor alert anything.
+const tzLimit = (name, fallback) => positiveNumber(process.env[name], fallback);
+
+// A real Tranzila session for this token, or null.
+function tranzilaMatch(token) {
+  const m = token ? db.findPaySession(token) : null;
+  return m && m.session && m.session.provider === tranzila.NAME ? m : null;
+}
+function tranzilaPurchasePaid(match) {
+  return match.kind === 'shipping'
+    ? !!match.collection.order.shipping.paid
+    : !!match.collection.order.paid;
+}
+
+// Decide one row of the terminal's report. Settles what verifies; returns an
+// `alert` for an approved row a person has to look at:
+//   • it carries one of our sessions' tokens but did not settle — a hold, a
+//     wrong amount, a foreign currency, or a second charge on a purchase that is
+//     already paid;
+//   • it is an approved DEBIT carrying no session token at all — the token field
+//     missing or misnamed on the terminal, or a charge made outside the site.
+// Staging and production share the terminal: a row whose session token was
+// minted in the OTHER environment is neither settled nor reported here. A row
+// with no session token at all (an old or manual charge in My Tranzila, or a
+// misconfigured token field) is reported by production only.
+// Money going back to the buyer. A refund of a paid order carries its token too,
+// and is nothing to report.
+const TRANZILA_REFUND_TYPES = new Set(['CREDIT', 'CANCEL', 'REFUTE', 'REVERSAL']);
+// The types a row can be and still be money the buyer meant to pay us: a real
+// charge, or an attempt that took none (a hold or a card check — what a buyer who
+// edits the iframe URL produces, and the one thing an unsettled row must still
+// report). A type outside this set is money going the other way under a name this
+// list does not know, so it is NOT reported as a suspected second charge: the
+// real strings are confirmed in the staging test (server/TRANZILA.md). A row with
+// no type at all stays reportable — an unreadable charge on our own token is
+// exactly what the owner should see.
+const TRANZILA_CHARGE_ATTEMPT_TYPES = new Set(['DEBIT', 'FORCE', 'VERIFY', 'J5', 'J2']);
+
+function decideTranzilaRow(tx) {
+  if (tx.responseCode !== tranzila.SUCCESS_CODE) return { outcome: 'ignored' };
+  if (db.isTransactionUsed(tranzila.NAME, tx.index)) return { outcome: 'used' };
+  if (TRANZILA_REFUND_TYPES.has(tx.txnType)) return { outcome: 'ignored' };
+  const env = tranzila.envTag();
+  const tokens = tranzila.sessionTokenValues(tx.raw);
+  const mine = tokens.filter((t) => tranzila.tokenEnv(t) === env);
+  if (tokens.length && !mine.length) return { outcome: 'other_env' };
+  const matches = mine.map(tranzilaMatch).filter(Boolean);
+  // Verified charges whose order has changed since their pay window opened.
+  const repriced = [];
+  for (const m of matches) {
+    if (tranzilaPurchasePaid(m)) continue;
+    const ok = tranzila.verifyTransaction(tx, {
+      amountNis: m.session.charged_total,
+      token: m.session.token,
+    });
+    if (!ok) continue;
+    // The purchase must still be priced as it was when this window opened: the
+    // buyer may have closed a cheaper window and changed the order since.
+    const current =
+      m.kind === 'shipping'
+        ? db.shippingPriceKey(m.collection.order.shipping)
+        : db.orderPriceKey(m.collection.order);
+    if (!m.session.price_key || m.session.price_key !== current) {
+      repriced.push(m);
+      continue;
+    }
+    // A fee that moved under this charge is reported by settleVerifiedPayment,
+    // NOT from here: the same thing happens on PeleCard — which is what production
+    // charges with — so the notice belongs at the one point both providers pass
+    // through. Queueing it here as well would tell her twice.
+    settleVerifiedPayment(m, {
+      method: tranzila.NAME,
+      transactionId: tx.index,
+      approvalNo: tx.approvalNo,
+    });
+    return { outcome: 'settled' };
+  }
+  const base = {
+    amount: tx.amountAgorot,
+    type: tx.txnType,
+    mode: tx.tranmode,
+    date: tx.raw && tx.raw.transaction_date ? String(tx.raw.transaction_date) : null,
+  };
+  if (repriced.length) {
+    console.error('[tranzila] index ' + tx.index + ' paid for an order that has changed since');
+    return {
+      outcome: 'rejected',
+      alert: {
+        ...base,
+        kind: 'order_changed',
+        orders: repriced.map((m) => m.collection.order_no || m.collection.id),
+        // What that pay window was priced at — the charge had to equal it to
+        // verify — and what the purchase costs NOW. The gap between the two is
+        // the refusal, and both belong in the message so the owner can act on it
+        // without opening the store.
+        expected: repriced.map((m) => Math.round(Number(m.session.charged_total) * 100)),
+        now: repriced.map((m) =>
+          Math.round(
+            Number(
+              m.kind === 'shipping' ? m.collection.order.shipping.fee : m.collection.order.total
+            ) * 100
+          )
+        ),
+      },
+    };
   }
   if (
-    c &&
-    session &&
-    match.kind === 'order' &&
-    !c.order.paid &&
-    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
+    matches.length &&
+    tx.txnType &&
+    !TRANZILA_CHARGE_ATTEMPT_TYPES.has(tx.txnType) &&
+    // ONLY when every purchase this row could belong to is ALREADY PAID. An
+    // unknown type on an UNPAID purchase is the dangerous shape: verifyTransaction
+    // settles 'DEBIT' alone, and the exact string a normal iframe charge reports
+    // is unconfirmed until the staging test. If it turns out to be anything else,
+    // the row fails verification and would be swallowed here — the buyer charged,
+    // the order unpaid, nobody told, on EVERY payment. It falls through to the
+    // 'unverified' alert instead, which is the fail-closed promise TRANZILA.md
+    // makes. A real refund carries a paid order's token, so it is still ignored.
+    matches.every(tranzilaPurchasePaid)
   ) {
-    // metaClaim: the Meta report is claimed inside THIS write. The alternative
-    // was a second synchronous whole-store write on the hot path of a charge
-    // that has just cleared, for a measurement side-effect.
-    const metaArmed = metaCapiArmed();
-    db.markPaid(c.id, {
-      method: 'pelecard',
-      transactionId: tx.transactionId,
-      approvalNo: tx.approvalNo,
-      token: session.token,
-      charged_total: session.charged_total,
-      coupon: session.coupon,
-      discount_pct: session.discount_pct,
-      metaClaim: metaArmed,
-    });
-    // Count the coupon use once, on the real unpaid->paid transition.
-    if (session.coupon) db.incrementCouponUses(session.coupon);
-    // Fire the owner + buyer payment receipts, showing the amount ACTUALLY
-    // charged for THIS session (never the pre-coupon order.total). Gated on
-    // email being configured inside onOrderPaid, and fire-and-forget — a failed
-    // send must never turn a successful charge into a failed callback.
-    onOrderPaid(c.id, paymentBaseUrl(), session.charged_total);
-    // Meta's copy of the sale, sent from HERE — the moment the money actually
-    // landed, in a request made by PeleCard's server. Nothing about the buyer's
-    // browser can suppress it: a closed tab, a blocked pixel and an in-app
-    // browser that drops third-party scripts all still produce this call. The
-    // buyer's own details ride along from the pay/init handshake (meta_ctx).
-    // Guarded: an `async` handler in Express 4 does not route a rejection to
-    // error middleware, and a payment callback must answer PeleCard whatever an
-    // ad platform is doing.
-    try {
-      if (metaArmed) sendPurchaseToMeta(c.id, null, { preclaimed: true });
-    } catch (e) {
-      console.error('[meta-capi] ' + c.id + ': ' + ((e && e.message) || e));
+    // Our token, approved, but a type this build does not know as a charge: most
+    // likely money going back (a refund under another name). Not a second charge.
+    return { outcome: 'ignored' };
+  }
+  if (matches.length) {
+    // Enough to diagnose from the Railway log, and nothing about the card.
+    console.error(
+      '[tranzila] index ' +
+        tx.index +
+        ' carries a session token but did not settle: type=' +
+        tx.txnType +
+        ' mode=' +
+        tx.tranmode +
+        ' currency=' +
+        tx.currency +
+        ' amount=' +
+        tx.amountAgorot
+    );
+    return {
+      outcome: 'rejected',
+      alert: {
+        ...base,
+        kind: 'unverified',
+        orders: matches.map((m) => m.collection.order_no || m.collection.id),
+        expected: matches.map((m) => Math.round(Number(m.session.charged_total) * 100)),
+      },
+    };
+  }
+  // Money that may have moved with nothing here to match it against, so it is
+  // reported whatever its type — NOT only a `DEBIT`. verifyTransaction settles
+  // DEBIT alone, but the string a normal iframe charge reports is unconfirmed
+  // until the staging test, so a row typed anything else, or typed nothing, is
+  // exactly the one nobody can account for. Every refund type already returned at
+  // the top of this function, so there is no money-going-back test to repeat
+  // here; production is the only condition left. Keep that early return if these
+  // branches are ever edited — it is what makes this safe.
+  //
+  // This environment's token and no session for it: the collection was deleted,
+  // or the session evicted, while its charge was on its way. Money was taken.
+  if (mine.length) {
+    if (env === 'p') {
+      return { outcome: 'rejected', alert: { ...base, kind: 'orphan' } };
+    }
+    return { outcome: 'ignored' };
+  }
+  if (env === 'p') {
+    return { outcome: 'rejected', alert: { ...base, kind: 'unmatched' } };
+  }
+  return { outcome: 'ignored' };
+}
+
+// One line per row for the owner. Order numbers, indexes and amounts only: no
+// tokens, no card details, no keys.
+function describeTranzilaAlert(item) {
+  if (item.kind === 'sweep_failing') {
+    return (
+      'בדיקת העסקאות מול טרנזילה נכשלת מאז ' +
+      new Date(Number(item.since)).toISOString() +
+      ' (' +
+      (item.error || 'שגיאה') +
+      ') — תשלומים לא יסומנו כשולמים עד שזה יחזור לעבוד.'
+    );
+  }
+  if (item.kind === 'sweep_recovered') {
+    return (
+      'בדיקת העסקאות מול טרנזילה חזרה לעבוד (נכשלה מאז ' +
+      new Date(Number(item.since)).toISOString() +
+      '); העסקאות מהזמן הזה נבדקות עכשיו.'
+    );
+  }
+  const head =
+    'עסקה ' +
+    item.index +
+    (item.date ? ' (' + item.date + ')' : '') +
+    ' · ' +
+    (item.amount != null ? item.amount + ' אגורות' : 'סכום לא ידוע') +
+    ' · ' +
+    (item.type || '-') +
+    '/' +
+    (item.mode || '-');
+  if (item.kind === 'unmatched') {
+    return head + ' — אושרה ולא שייכת לאף הזמנה (האם שדה dugri_token מוגדר במסוף?)';
+  }
+  if (item.kind === 'orphan') {
+    return head + ' — אושרה עבור הזמנה שכבר לא קיימת במערכת (נמחקה?)';
+  }
+  if (item.kind === 'order_changed') {
+    return (
+      head +
+      ' — שולמה עבור הזמנה ' +
+      (item.orders || []).join(', ') +
+      ' שהשתנתה מאז שנפתח חלון התשלום (חלון התשלום: ' +
+      (item.expected || []).join('/') +
+      ' אגורות · ההזמנה עכשיו: ' +
+      (item.now || []).join('/') +
+      ' אגורות), ולכן לא סומנה כשולמה'
+    );
+  }
+  return (
+    head +
+    ' — לא אומתה עבור הזמנה ' +
+    (item.orders || []).join(', ') +
+    ' (צפוי ' +
+    (item.expected || []).join('/') +
+    ' אגורות)'
+  );
+}
+
+// OWNER ALERTS. Everything queued goes in one batch, split into messages of
+// TRANZILA_ALERT_CHUNK lines so each fits WhatsApp. Answers with the items whose
+// message really went out; the sweep marks only those reported, so a message
+// that failed is sent again alone and one that arrived is never repeated. A batch
+// takes one of the TRANZILA_ALERT_RATE_LIMIT hourly slots, and only once
+// something reached the owner — failed attempts cost nothing. With no channel
+// configured at all there is nobody to tell: logged loudly, and counted as
+// delivered so the queue does not grow for ever.
+const tranzilaAlertSends = [];
+function tranzilaAlertCapFull(at) {
+  while (tranzilaAlertSends.length && at - tranzilaAlertSends[0] >= 60 * 60 * 1000) {
+    tranzilaAlertSends.shift();
+  }
+  return tranzilaAlertSends.length >= tzLimit('TRANZILA_ALERT_RATE_LIMIT', 5);
+}
+async function deliverTranzilaAlerts(items) {
+  const at = Date.now();
+  if (tranzilaAlertCapFull(at)) return [];
+  const size = Math.floor(tzLimit('TRANZILA_ALERT_CHUNK', 15));
+  const parts = [];
+  for (let i = 0; i < items.length; i += size) parts.push(items.slice(i, i + size));
+  const delivered = [];
+  for (let i = 0; i < parts.length; i++) {
+    const subject =
+      'טרנזילה: ' +
+      items.length +
+      ' פריטים לבדיקה' +
+      (parts.length > 1 ? ' (' + (i + 1) + '/' + parts.length + ')' : '');
+    const body = parts[i]
+      .map(describeTranzilaAlert)
+      .concat(['לבדוק ב-My Tranzila אם נגבה כסף, ולזכות או לסמן ידנית לפי הצורך.']);
+    let ok = await notify.sendSystemAlert(subject, body).catch(() => false);
+    if (!ok) ok = await alertOwnerViaWhatsApp(subject, body);
+    if (!ok && !notify.isConfigured() && !ownerWaId()) {
+      console.error('[tranzila] OWNER ALERT, no channel configured: ' + body.join(' | '));
+      ok = true;
+    }
+    if (ok) delivered.push(...parts[i]);
+  }
+  if (delivered.length) tranzilaAlertSends.push(at);
+  return delivered;
+}
+
+const tranzilaSweeper = createSweeper({
+  state: {
+    get: () => db.tranzilaSweepState(),
+    save: () => db.saveTranzilaSweepState(),
+  },
+  listRows: (range) => tranzila.listTransactions(range),
+  decide: decideTranzilaRow,
+  deliver: deliverTranzilaAlerts,
+  hasRecentUnpaid: (at) => db.hasRecentUnpaidProviderSession(tranzila.NAME, at - 30 * 60 * 1000),
+  minSpacingMs: tzLimit('TRANZILA_SWEEP_MIN_SPACING_MS', 10 * 1000),
+  overlapMs: tzLimit('TRANZILA_SWEEP_OVERLAP_MS', 60 * 60 * 1000),
+  failAlertAfterMs: tzLimit('TRANZILA_SWEEP_FAIL_ALERT_MS', 15 * 60 * 1000),
+});
+
+app.post('/api/payment/tranzila/notify', (req, res) => {
+  const parsed = tranzila.parseNotify(req.body || {}, req.query || {});
+  // A declined card is reported here too; a plain failure code asks for nothing.
+  // Safe although the field is untrusted: a forged "declined" cannot stop the
+  // periodic sweep from finding a real charge.
+  const failed = parsed.response && parsed.response !== tranzila.SUCCESS_CODE;
+  if (tranzila.isConfigured() && parsed.token && !failed) {
+    const match = tranzilaMatch(parsed.token);
+    // Only a window whose charge could still be on its way asks for a sweep: the
+    // purchase unpaid, the session opened within the TTL. Being "resolved" is not
+    // part of it — the browser's close beacon resolves the session while the
+    // order is still unpaid on this provider, and a buyer who paid and closed the
+    // window is exactly who needs the fast settle. A stale token still ages out
+    // after 20 minutes, so it cannot drive sweeps for ever.
+    if (match && !tranzilaPurchasePaid(match) && db.isPaySessionRecent(match.session)) {
+      tranzilaSweeper.request();
     }
   }
   res.json({ ok: true });
+});
+
+// Tranzila returns the pay window to its success/fail page by POST, where
+// PeleCard used GET. express.static answers GET only, so without this the buyer
+// would be looking at a 404 inside the window they just paid in. Bounce it to the
+// same address as a GET; the page reads nothing but its own ?error flag.
+app.post('/pay-done.html', (req, res) => res.redirect(303, req.originalUrl));
+
+// APPLE PAY DOMAIN VERIFICATION. Apple checks this exact, extension-less address
+// on the domain the buyer pays on before Tranzila's page may show Apple Pay. The
+// file is Tranzila's (the same for every Tranzila merchant, published at
+// api.tranzila.com/assets/apple_pay/merchant_authentication_file.zip) and public.
+// It needs its own route: express.static skips dot-directories, and the SPA
+// fallback below would answer an extension-less path with the homepage.
+const APPLE_PAY_DOMAIN_FILE = path.join(
+  __dirname,
+  'apple-pay',
+  'apple-developer-merchantid-domain-association'
+);
+app.get('/.well-known/apple-developer-merchantid-domain-association', (req, res) => {
+  res.type('text/plain');
+  res.sendFile(APPLE_PAY_DOMAIN_FILE);
 });
 
 // Agent B: template onboarding and settings, in server/routes/catalog.js.
@@ -6268,6 +6794,24 @@ if (require.main === module) {
       /* the cache warms lazily instead */
     }
   }, 0).unref();
+  // The Tranzila sweep: once at boot (rows since the persisted last sweep, so a
+  // deploy gap is read back), then checked every 15 seconds — a sweep every
+  // minute while an unpaid Tranzila session was opened in the last half hour,
+  // every 10 minutes otherwise. Single-flight. Only when Tranzila is configured;
+  // unref()'d and fire-and-forget like the scans below.
+  if (tranzila.isConfigured()) {
+    const logSweep = (e) => console.error('[tranzila] sweep failed: ' + ((e && e.message) || e));
+    setTimeout(() => {
+      tranzilaSweeper.sweep().catch(logSweep);
+    }, 0).unref();
+    const tzTimer = setInterval(
+      () => {
+        tranzilaSweeper.tick().catch(logSweep);
+      },
+      positiveNumber(process.env.TRANZILA_SWEEP_TICK_MS, 15 * 1000)
+    );
+    if (tzTimer.unref) tzTimer.unref();
+  }
   // Hourly reminder scan, only when email is configured. unref() so the timer
   // never keeps the process alive on its own, and the scan is fire-and-forget.
   if (notify.isConfigured()) {
@@ -6299,6 +6843,11 @@ if (require.main === module) {
 }
 
 module.exports = app;
+// The Tranzila sweeper and its alert cap (the times of batches sent in the last
+// hour), for tests: a sweep can be run on demand instead of waiting for the
+// timers (which tests never start).
+module.exports.tranzilaSweeper = tranzilaSweeper;
+module.exports.tranzilaAlertSends = tranzilaAlertSends;
 // Exposed for tests + the scheduler: a single WhatsApp nudge pass, and the
 // paid-order group-open hook. Attached to the app export (which stays the default
 // export) so a test can drive them with injected inputs, hermetically.
