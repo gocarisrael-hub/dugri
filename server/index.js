@@ -1223,6 +1223,13 @@ app.post('/api/collections', (req, res) => {
   // A new lead just STARTED — fire the owner + buyer emails and open the WhatsApp
   // word-collection group now, so words start flowing before/without payment.
   // Idempotent, so the later order/pay step won't notify again.
+  //
+  // THIS READS A `const` DEFINED BELOW (the platformHooks destructure, ~30 lines
+  // down). It is safe for one reason only: this line runs per REQUEST, long after
+  // the module finished evaluating. As a hoisted function declaration it was safe
+  // anywhere; as a const binding it is a temporal-dead-zone tripwire. So: never
+  // hoist this call to module top level, and never move the construction below
+  // it — either one throws at require time, before a single route answers.
   fireStartNotifications(c.id, paymentBaseUrl());
   res.status(201).json({ id: c.id, owner_token: c.owner_token, expires_at: c.expires_at });
 });

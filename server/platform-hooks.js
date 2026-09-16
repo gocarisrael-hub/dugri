@@ -954,31 +954,32 @@ module.exports = function platformHooks({
     return sent;
   }
 
-  // index.js still calls most of these; the route modules are handed some of them
-  // as deps, and the tests reach the rest through the app export.
+  // RETURNED MEANS SOMETHING CALLS IT. Every name below has a live consumer:
+  // index.js destructures it, hands it to a route module as a dep, or re-exports
+  // it for the tests. The rest of this file's functions stay internal — they are
+  // reached through the ones here (sendWaTrigger through openWhatsappGroup,
+  // jerusalemHour through runPaymentReminderScan, and so on).
+  //
+  // Deliberately not "everything, in case someone needs it later": an exported
+  // surface with no caller reads as load-bearing to the next person and gets
+  // preserved through refactors that should have been free. When a later slice
+  // needs one, it adds the line then.
   return {
     resolveProductImagePath,
     resolveProductImageUrl,
-    sendOrderNotifications,
     fireStartNotifications,
     onOrderCreated,
-    sendPaidNotifications,
     onOrderPaid,
     onShippingAdded,
     waIdDigits,
     ilPhoneToWaId,
-    waGroupValues,
-    sendWaTrigger,
-    participantIds,
     buyerLandedInGroup,
     ownerWaId,
     alertOwnerViaWhatsApp,
     openWhatsappGroup,
     handleWaEvent,
-    reminderEmailBudget,
     runReminderListScan,
     runReminderScan,
-    jerusalemHour,
     runPaymentReminderScan,
     REMINDER_SCAN_INTERVAL_MS,
     WA_NUDGE_SCAN_INTERVAL_MS,
