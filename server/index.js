@@ -5536,6 +5536,22 @@ function reportFeeMovedOnSettle(c, moved, { method, transactionId }) {
   notify.sendSystemAlert('שולם, אבל דמי המשלוח השתנו בינתיים', lines).catch(() => {});
 }
 
+// A NOTIFICATION MUST NEVER UNMAKE A SETTLE. The money has cleared and the
+// purchase is already marked paid by the time this runs, so anything that throws
+// on the way to telling the owner would propagate into the provider's callback —
+// answering it with a failure, prompting a retry, and on the Tranzila side
+// failing the whole sweep pass — over a message. `sendSystemAlert` itself never
+// rejects (it catches internally and answers false), so this guards the work
+// AROUND it: the order lookup, the string building, the log line. Same reasoning
+// as the Meta call below, which is wrapped for exactly this.
+function safelyReportFeeMoved(c, moved, meta) {
+  try {
+    reportFeeMovedOnSettle(c, moved, meta);
+  } catch (e) {
+    console.error('[payment] fee-moved notice failed: ' + ((e && e.message) || e));
+  }
+}
+
 function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   const c = match.collection;
   const session = match.session;
@@ -5554,7 +5570,7 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
     // the owner is told the same way she is told about any other change of
     // fulfilment — she has a parcel to send that she did not have this morning.
     onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
-    if (feeMoved) reportFeeMovedOnSettle(c, feeMoved, { method, transactionId });
+    if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
     return true;
   }
   if (c.order.paid) return false;
@@ -5598,7 +5614,7 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   // produces this runs on PeleCard too, and PeleCard is what production charges
   // with, so a notice living only in the Tranzila sweep would miss every real
   // occurrence today.
-  if (feeMoved) reportFeeMovedOnSettle(c, feeMoved, { method, transactionId });
+  if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
   return true;
 }
 

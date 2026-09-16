@@ -185,6 +185,56 @@ describe('POST /api/payment/callback', () => {
     expect(order.paid_approval_no).toBe('86-001-006');
   });
 
+  // A NOTIFICATION MUST NEVER UNMAKE A SETTLE. By the time the notice runs the
+  // money has cleared and the order is already marked paid, so anything throwing
+  // on the way to telling the owner would answer the provider with a failure and
+  // prompt a retry — over a message. A SYNCHRONOUS throw is the case that matters:
+  // `sendSystemAlert` catches its own rejections internally, so the async path is
+  // already safe and only a sync throw could escape.
+  it('still settles when the fee-moved notice itself throws', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('התראה שנכשלת');
+    const addr = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'delivery',
+      address: addr,
+    });
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+    const feeWas = db.getCollection(c.id).order.delivery_fee;
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockImplementation(() => {
+      throw new Error('notify exploded');
+    });
+    settings.set('pricing', 'delivery_fee', feeWas + 20);
+    try {
+      db.adminUpdateOrder(c.id, { address: { ...addr, street: 'הרצל 9' } });
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-boom',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-010',
+        },
+      };
+
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-boom' } });
+      // The provider is answered, and the payment stands.
+      expect(r.status).toBe(200);
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(true);
+      expect(order.charged_total).toBe(charged);
+      expect(order.paid_transaction_id).toBe('tx-boom');
+      expect(alert).toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+      settings.set('pricing', 'delivery_fee', feeWas);
+    }
+  });
+
   // PELECARD IS WHAT PRODUCTION CHARGES WITH, so the fee-moved notice has to
   // reach the owner from this callback too — not only from the Tranzila sweep.
   // The case is reachable on the admin path: an unpaid delivery order with a pay
