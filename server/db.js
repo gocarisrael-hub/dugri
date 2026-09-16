@@ -2104,7 +2104,8 @@ const db = {
     // guard only left the two paths disagreeing: an admin edit kept yesterday's
     // fee while a buyer edit re-priced, so the admin table could show a total the
     // server would never charge. A fee that moves under a settling charge is
-    // reported to the owner instead — the `fee_changed` alert in server/index.js.
+    // reported to the owner instead — `reportFeeMovedOnSettle` in server/index.js,
+    // which both providers' callbacks reach through `settleVerifiedPayment`.
     if (!c.order.paid) {
       const unit =
         next === c.order.version && Number.isInteger(c.order.unit_price)

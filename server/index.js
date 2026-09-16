@@ -5495,63 +5495,7 @@ app.post('/api/payment/callback', async (req, res) => {
 // `match` is db.findPaySession's { collection, session, kind }; the caller has
 // already proven the charge belongs to that session and is for its amount.
 // Idempotent on each purchase's own paid flag, because a provider may call twice.
-// The delivery fee this window quoted, against the one the purchase carries right
-// now. Read BEFORE anything settles, because the shipping path's convergence
-// rewrites `delivery_fee` and `total` as it marks the upgrade paid.
-//
-// The comparison is the FEE, not charged-vs-total: a coupon discounts the game and
-// never the postage (pay/init), so with a 50% code on a 238 ₪ order charged 139 ₪
-// a charged-vs-total reading reports a ~119 ₪ gap when the buyer owes exactly the
-// 20 ₪ the fee moved by. The fee delta IS the shortfall, coupon or not.
-function feeMoveOnSettle(match) {
-  const quoted = match.session && match.session.fee_at_init;
-  // Null means a session written before this field existed: nothing to compare,
-  // so nothing is claimed. Never treat it as 0 — that would report the whole fee
-  // of every pre-existing delivery order as a change.
-  if (quoted == null) return null;
-  const order = match.collection.order;
-  const now =
-    match.kind === 'shipping' ? Number(order.shipping.fee) || 0 : Number(order.delivery_fee) || 0;
-  return Number(quoted) === now ? null : { from: Number(quoted), to: now };
-}
-
-// Money moved and the purchase IS paid, so this is a notice, not a refusal. Sent
-// straight out rather than queued, because it has to reach the owner from BOTH
-// providers' callbacks and only Tranzila has a sweep to queue into.
-function reportFeeMovedOnSettle(c, moved, { method, transactionId }) {
-  const ref = db.orderRef(c);
-  const delta = moved.to - moved.from;
-  console.error(
-    '[payment] ' + ref + ': settled after the delivery fee moved ' + moved.from + ' -> ' + moved.to
-  );
-  const lines = [
-    'הזמנה: ' + ref,
-    'התשלום התקבל וסומן כשולם' + (transactionId ? ' (עסקה ' + transactionId + ')' : '') + '.',
-    'דמי המשלוח השתנו מאז שנפתח חלון התשלום: ' + moved.from + ' ₪ ← ' + moved.to + ' ₪.',
-    delta > 0
-      ? 'חסרים ' + delta + ' ₪ מול המחיר הנוכחי — להשלים או להשאיר כפי שהוא, לפי שיקולך.'
-      : 'נגבו ' + -delta + ' ₪ יותר מהמחיר הנוכחי — לזכות את ההפרש אם מגיע.',
-    'אמצעי תשלום: ' + (method || '—'),
-  ];
-  notify.sendSystemAlert('שולם, אבל דמי המשלוח השתנו בינתיים', lines).catch(() => {});
-}
-
-// A NOTIFICATION MUST NEVER UNMAKE A SETTLE. The money has cleared and the
-// purchase is already marked paid by the time this runs, so anything that throws
-// on the way to telling the owner would propagate into the provider's callback —
-// answering it with a failure, prompting a retry, and on the Tranzila side
-// failing the whole sweep pass — over a message. `sendSystemAlert` itself never
-// rejects (it catches internally and answers false), so this guards the work
-// AROUND it: the order lookup, the string building, the log line. Same reasoning
-// as the Meta call below, which is wrapped for exactly this.
-function safelyReportFeeMoved(c, moved, meta) {
-  try {
-    reportFeeMovedOnSettle(c, moved, meta);
-  } catch (e) {
-    console.error('[payment] fee-moved notice failed: ' + ((e && e.message) || e));
-  }
-}
-
+// The fee-moved notice it fires is defined directly below it.
 function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   const c = match.collection;
   const session = match.session;
@@ -5608,14 +5552,86 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   } catch (e) {
     console.error('[meta-capi] ' + c.id + ': ' + ((e && e.message) || e));
   }
-  // Last, and only on a real unpaid->paid transition: the order is now paid with
-  // a `total` that no longer equals what the card was charged. BOTH providers
-  // reach here, which is the whole point — the admin re-pricing path that
-  // produces this runs on PeleCard too, and PeleCard is what production charges
-  // with, so a notice living only in the Tranzila sweep would miss every real
-  // occurrence today.
+  // Last, and only on a real unpaid->paid transition: the DELIVERY FEE moved
+  // between this window opening and the charge settling, so the order is paid at a
+  // total that is off by that fee delta. Scoped to the fee on purpose — this
+  // checks nothing else, and a total that diverges for another reason (a copy
+  // count edited under an in-flight charge, say) is a separate, pre-existing gap
+  // on both providers, not something this notice claims to cover.
+  //
+  // BOTH providers reach here, which is the whole point: the admin re-pricing path
+  // that produces this runs on PeleCard too, and PeleCard is what production
+  // charges with, so a notice living only in the Tranzila sweep would miss every
+  // real occurrence today.
   if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
   return true;
+}
+
+// The delivery fee this window quoted, against the one the purchase carries right
+// now. Read BEFORE anything settles, because the shipping path's convergence
+// rewrites `delivery_fee` and `total` as it marks the upgrade paid.
+//
+// The comparison is the FEE, not charged-vs-total: a coupon discounts the game and
+// never the postage (pay/init), so with a 50% code on a 238 ₪ order charged 139 ₪
+// a charged-vs-total reading reports a ~119 ₪ gap when the buyer owes exactly the
+// 20 ₪ the fee moved by. The fee delta IS the shortfall, coupon or not.
+function feeMoveOnSettle(match) {
+  const quoted = match.session && match.session.fee_at_init;
+  // Null means a session written before this field existed: nothing to compare,
+  // so nothing is claimed. Never treat it as 0 — that would report the whole fee
+  // of every pre-existing delivery order as a change.
+  if (quoted == null) return null;
+  const order = match.collection.order;
+  const now =
+    match.kind === 'shipping' ? Number(order.shipping.fee) || 0 : Number(order.delivery_fee) || 0;
+  return Number(quoted) === now ? null : { from: Number(quoted), to: now };
+}
+
+// Money moved and the purchase IS paid, so this is a notice, not a refusal. Sent
+// straight out rather than queued, because it has to reach the owner from BOTH
+// providers' callbacks and only Tranzila has a sweep to queue into.
+function reportFeeMovedOnSettle(c, moved, { method, transactionId }) {
+  const ref = db.orderRef(c);
+  const delta = moved.to - moved.from;
+  console.error(
+    '[payment] ' + ref + ': settled after the delivery fee moved ' + moved.from + ' -> ' + moved.to
+  );
+  const lines = [
+    'הזמנה: ' + ref,
+    'התשלום התקבל וסומן כשולם' + (transactionId ? ' (עסקה ' + transactionId + ')' : '') + '.',
+    'דמי המשלוח השתנו מאז שנפתח חלון התשלום: ' + moved.from + ' ₪ ← ' + moved.to + ' ₪.',
+    delta > 0
+      ? 'חסרים ' + delta + ' ₪ מול המחיר הנוכחי — להשלים או להשאיר כפי שהוא, לפי שיקולך.'
+      : 'נגבו ' + -delta + ' ₪ יותר מהמחיר הנוכחי — לזכות את ההפרש אם מגיע.',
+    'אמצעי תשלום: ' + (method || '—'),
+  ];
+  // Email, then WhatsApp — the same escalation every other owner alert in this
+  // file uses. Email-only would have been the quietest possible failure: a Resend
+  // 5xx, or RESEND_API_KEY/NOTIFY_TO unset on this environment, at the exact
+  // moment a moved-fee charge settles, and she is never told, with a console line
+  // as the only trace. This notice has no queue behind it (it is sent, not
+  // enqueued), so the fallback is the only second chance it gets.
+  const subject = 'שולם, אבל דמי המשלוח השתנו בינתיים';
+  notify
+    .sendSystemAlert(subject, lines)
+    .then((ok) => ok || alertOwnerViaWhatsApp(subject, lines))
+    .catch(() => {});
+}
+
+// A NOTIFICATION MUST NEVER UNMAKE A SETTLE. The money has cleared and the
+// purchase is already marked paid by the time this runs, so anything that throws
+// on the way to telling the owner would propagate into the provider's callback —
+// answering it with a failure, prompting a retry, and on the Tranzila side
+// failing the whole sweep pass — over a message. `sendSystemAlert` itself never
+// rejects (it catches internally and answers false), so this guards the work
+// AROUND it: the order lookup, the string building, the log line. Same reasoning
+// as the Meta call above, which is wrapped for exactly this.
+function safelyReportFeeMoved(c, moved, meta) {
+  try {
+    reportFeeMovedOnSettle(c, moved, meta);
+  } catch (e) {
+    console.error('[payment] fee-moved notice failed: ' + ((e && e.message) || e));
+  }
 }
 
 // TRANZILA: SETTLED FROM THE TERMINAL'S OWN ROWS (server/tranzila-sweep.js).
