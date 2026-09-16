@@ -423,6 +423,11 @@ function registerReadyBatchAndHfd(
     applyOrderReady,
     orderReadyEmailArmed,
     orderReadySmsArmed,
+    // The per-order answer from index.js, NOT re-derived here. queueReadySms
+    // gates on this same function at send time, so the dialog and the sender
+    // cannot drift apart — which is the whole point: a second copy of the rule
+    // is what would put them back out of step the next time a condition is added.
+    orderReadySmsWillSend,
   }
 ) {
   // --- the whole בדפוס pile, in one press ---------------------------------------
@@ -473,6 +478,16 @@ function registerReadyBatchAndHfd(
       // counted as "will get a text" would be left off the call-by-hand list,
       // which is the one list this dialog exists to produce.
       has_phone: Boolean(sms.ilMobile(c && c.owner_phone)),
+      // WILL A TEXT BE ATTEMPTED FOR THIS ONE. Answered by the sender's own
+      // gate, so it accounts for every condition at once — self-pickup, the
+      // template being armed, and a mobile the gateway accepts. Reporting the
+      // ingredients separately (has_phone + sms_enabled) left the owner to
+      // multiply them in her head, and after the order-ready text was narrowed
+      // to self-pickup that arithmetic silently stopped being right: a delivery
+      // buyer with a perfectly good mobile is not listed under no_phone and gets
+      // nothing. ATTEMPTED, not delivered — a queued message can still fail, and
+      // a failed one can still have reached her.
+      will_sms: Boolean(orderReadySmsWillSend(c)),
     };
   }
 
@@ -481,6 +496,7 @@ function registerReadyBatchAndHfd(
   app.get('/api/admin/orders/ready-batch', (req, res) => {
     if (!requireAdmin(req, res)) return;
     const rows = batchReadyCandidates().map(batchReadyRow);
+    const smsArmed = orderReadySmsArmed();
     const kinds = { pickup: 0, delivery: 0, pdf: 0, custom: 0, other: 0 };
     for (const r of rows) kinds[r.kind] += 1;
     res.json({
@@ -494,11 +510,26 @@ function registerReadyBatchAndHfd(
       // Named rather than counted: "3 without a phone" sends her hunting; three
       // order numbers tell her which three to call.
       no_phone: rows.filter((r) => !r.has_phone).map((r) => r.order_no),
+      // How many texts this press will ATTEMPT. The one number the dialog was
+      // missing: `sms_enabled` says the template is on, `no_phone` says who has
+      // no mobile, and neither says how many people actually get a message.
+      will_sms: rows.filter((r) => r.will_sms).length,
+      // …and WHO does not, despite our holding a mobile for them — the delivery,
+      // digital and custom orders the order-ready text is not for. Named rather
+      // than counted, for the same reason no_phone is: the owner may want to tell
+      // these people some other way, and a number sends her hunting.
+      // Empty when the text is switched off entirely: then nothing was going to
+      // be attempted for ANYONE, and naming every row would be noise rather than
+      // the call-by-hand list this exists to produce. Exactly the rule
+      // `not_emailed` follows below, for the same reason.
+      no_sms_with_phone: smsArmed
+        ? rows.filter((r) => r.has_phone && !r.will_sms).map((r) => r.order_no)
+        : [],
       // What will ACTUALLY be sent. The dialog is the last thing she reads before
       // an action that cannot be taken back, so both answers come from the same
       // gates the senders themselves use — a switched-off template must not be
       // described as "everyone gets a mail".
-      sms_enabled: orderReadySmsArmed(),
+      sms_enabled: smsArmed,
       email_enabled: orderReadyEmailArmed(),
     });
   });

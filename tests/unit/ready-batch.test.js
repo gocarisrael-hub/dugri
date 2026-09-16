@@ -391,3 +391,90 @@ describe('the mails it sends', () => {
     expect(body.not_emailed).toEqual([]);
   });
 });
+
+// WHAT THE DIALOG PROMISES ABOUT TEXTS.
+//
+// The owner reads this immediately before an action she cannot take back, so the
+// numbers have to be the ones that will actually happen. It used to report the
+// INGREDIENTS — `sms_enabled` (the template is on) and `no_phone` (who has no
+// mobile) — and leave her to multiply them. Once the order-ready text was
+// narrowed to self-pickup (#626) that arithmetic silently stopped being right: a
+// delivery buyer with a perfectly good mobile is absent from `no_phone` and still
+// gets nothing, so the dialog over-promised on every mixed pile.
+//
+// `will_sms` answers from `orderReadySmsWillSend` — the SAME function
+// `queueReadySms` gates on — so these assertions pin the dialog to the sender
+// rather than to a second copy of the rule.
+describe('how many texts the dialog says it will attempt', () => {
+  it('counts only the self-pickup orders, and names the rest that have a mobile', async () => {
+    const pickup = makeOrder({ name: 'איסוף', version: 'pickup' });
+    const delivery = makeOrder({ name: 'משלוח', version: 'delivery' });
+
+    const { body } = await get('/api/admin/orders/ready-batch');
+    expect(body.count).toBe(2);
+    // Both have a good mobile, so the old fields cannot tell these two apart...
+    expect(body.no_phone).toEqual([]);
+    expect(body.sms_enabled).toBe(true);
+    // ...and this is the number that does.
+    expect(body.will_sms).toBe(1);
+    expect(body.no_sms_with_phone).toEqual([db.orderRef(db.getCollection(delivery.id))]);
+    expect(body.orders.find((r) => r.id === pickup.id).will_sms).toBe(true);
+    expect(body.orders.find((r) => r.id === delivery.id).will_sms).toBe(false);
+  });
+
+  // THE CASE THAT MOTIVATED THE CHANGE. She bought self-pickup and upgraded to
+  // delivery afterwards, so the order converges to delivery (db.markShippingPaid)
+  // and the pickup text must not follow her. The dialog has to agree with what
+  // the sender decides AT SEND TIME, not with how the order was created.
+  it('drops a pickup order from the count once it is upgraded to delivery', async () => {
+    const c = makeOrder({ name: 'שודרג', version: 'pickup' });
+    expect((await get('/api/admin/orders/ready-batch')).body.will_sms).toBe(1);
+
+    // The upgrade is only OFFERED on a paid order when delivery is enabled AND
+    // its fee is set: db.shippingUpgrade refuses at fee 0, and this file's
+    // settings carry none. Staged explicitly and asserted, so a future
+    // precondition change fails on the line that caused it rather than silently
+    // no-opping and failing a line later.
+    const feeWas = settings.get('pricing', 'delivery_fee');
+    settings.set('pricing', 'delivery_fee', 39);
+    try {
+      const staged = db.startShippingUpgrade(c.id, c.owner_token, { address: ADDRESS });
+      expect(staged.error).toBeUndefined();
+      expect(db.markShippingPaid(c.id, { method: 'pelecard', charged_total: 39 })).toBe(true);
+      expect(db.getCollection(c.id).order.version).toBe('delivery');
+
+      const { body } = await get('/api/admin/orders/ready-batch');
+      expect(body.will_sms).toBe(0);
+      expect(body.no_sms_with_phone).toEqual([db.orderRef(db.getCollection(c.id))]);
+      // Still in the pile and still getting marked ready — only the text changed.
+      expect(body.count).toBe(1);
+    } finally {
+      // 23 tests share one server and a persistent DATA_DIR: a leaked fee would
+      // let a later test stage an upgrade it never meant to.
+      settings.set('pricing', 'delivery_fee', feeWas);
+    }
+  });
+
+  // Armed is one of the three conditions, so switching the template off must take
+  // the count to zero rather than leaving it to `sms_enabled` alone to imply it.
+  it('attempts none when the text is switched off, even for self-pickup', async () => {
+    makeOrder({ name: 'איסוף', version: 'pickup' });
+    settings.set('sms', 'enabled', false);
+    const { body } = await get('/api/admin/orders/ready-batch');
+    expect(body.sms_enabled).toBe(false);
+    expect(body.will_sms).toBe(0);
+    // Nobody is named: nothing was going to be attempted for anyone, so a list
+    // here would be noise rather than a call-by-hand list.
+    expect(body.no_sms_with_phone).toEqual([]);
+  });
+
+  // A landline is already covered by no_phone; it must not ALSO appear on the
+  // "has a mobile but gets no text" list, or the owner would chase it twice.
+  it('does not double-list a landline as both no_phone and no_sms_with_phone', async () => {
+    const landline = makeOrder({ name: 'קווי', version: 'pickup', phone: '03-1234567' });
+    const { body } = await get('/api/admin/orders/ready-batch');
+    expect(body.no_phone).toEqual([db.orderRef(db.getCollection(landline.id))]);
+    expect(body.no_sms_with_phone).toEqual([]);
+    expect(body.will_sms).toBe(0);
+  });
+});
