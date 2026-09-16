@@ -18,6 +18,17 @@ const PNG_BYTES = Buffer.from(
   'base64'
 );
 
+// A TALL photo, 4 x 12, because the head anchor only decides anything when the
+// photo is taller than it is wide: build.plain_crop centres a square of the short
+// side on SUBJECT_Y of the height. PNG_BYTES above is 1x1, and on a square every
+// anchor gives the same crop — a test using one cannot see the constant arrive at
+// all. At 4x12 the module's own answers are "0 2 4 4" at the default 0.3 and
+// "0 5 4 4" at 0.6.
+const TALL_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAMCAIAAADKwItEAAAAXklEQVR4nA3H0QAAIBBEwYMIIoiFCCKIhQgiiIV4EMF08zdVhQoXKaoGGniQ0Zlo4klmR0hYRJ2FFl5kdTbaeJPdMTI2ceeggw85nYsuvuR2goJD0gGBIXQeeviRxwdYCEsBYbuDdgAAAABJRU5ErkJggg==',
+  'base64'
+);
+
 // Stub the create call so no real collection is written; returns {id, owner_token}
 // the client needs to then upload the pawns.
 async function stubCreate(page) {
@@ -205,6 +216,69 @@ test.describe('optional pawn-photos step', () => {
     // One card, for the design alone — not one per count, photo or card.
     expect(asked).toHaveLength(1);
     expect(asked[0]).toMatch(/^\?theme=[^&]+$/);
+  });
+
+  // A PHOTO PICKED BEFORE THE CARD ARRIVES IS STILL FRAMED THE CARD'S WAY.
+  //
+  // The card is asked for on a debounce and then rendered by Chrome on the server,
+  // so there is a real window — the first seconds of this step — in which a buyer
+  // can choose a photo and the page does not yet know the generator's constants.
+  // It prepared that photo with this module's defaults, which was all it had; what
+  // was missing is that nothing asked again once the card landed. renderPawnSlot
+  // repaints and the only other re-prepare is gated on an EMPTY slot, so the
+  // default framing survived for the life of the page — on the step that exists to
+  // show her what prints. Asserting the default here would have proved nothing
+  // (0.9 is the default), so the card is stubbed with a fill it could not invent.
+  test('a photo picked before the card lands is re-framed when it arrives', async ({ page }) => {
+    await stubCutter(page, { succeeds: false });
+    let releaseCard = () => {};
+    const cardHeld = new Promise((resolve) => {
+      releaseCard = resolve;
+    });
+    await page.route('**/api/pawn-base**', async (route) => {
+      await cardHeld; // the buyer gets there first, as she can
+      await route.fulfill({
+        json: {
+          card: 'data:image/png;base64,' + PNG_BYTES.toString('base64'),
+          slots: [
+            { n: 1, x: 0.178, y: 0.279, w: 0.295, h: 0.212 },
+            { n: 2, x: 0.527, y: 0.279, w: 0.295, h: 0.212 },
+            { n: 3, x: 0.178, y: 0.529, w: 0.295, h: 0.212 },
+            { n: 4, x: 0.527, y: 0.529, w: 0.295, h: 0.212 },
+          ],
+          viewBox: [0, 0, 223.92, 312],
+          filter: '',
+          fallbacks: [],
+          // BOTH tuned away from this module's defaults, or the test cannot tell
+          // a page that re-framed from one that never asked again: at subject_y
+          // 0.3 the re-prepared crop is the same crop, and the assertion below
+          // would be measuring the default it was handed in the first place.
+          disc_fill: 0.6,
+          subject_y: 0.6,
+        },
+      });
+    });
+
+    await toPawnStep(page);
+    const slot0 = page.locator('.pawn-slot[data-idx="0"]');
+    await page
+      .getByTestId('pawn-input-0')
+      .setInputFiles({ name: 'tall.png', mimeType: 'image/png', buffer: TALL_PNG });
+    // Drawn before the card exists, framed by this module's own head anchor:
+    // build.plain_crop on a 4x12 photo at SUBJECT_Y 0.3. This is the window the
+    // bug lived in, and the value it used to keep.
+    const crop = slot0.locator('.pawn-tile svg[data-pawn-crop]');
+    await expect(crop).toHaveAttribute('viewBox', '0 2 4 4');
+
+    releaseCard();
+
+    // …and once the card is here, the photo is framed by the CARD's anchor.
+    //
+    // The crop, not the disc: the circle is recomputed on every repaint, so it
+    // followed the card whether or not the photo was ever re-prepared — measuring
+    // it passed on the broken page and proved nothing. The crop is computed once,
+    // when the photo is prepared, which is exactly what was never asked again.
+    await expect(crop).toHaveAttribute('viewBox', '0 5 4 4', { timeout: 5000 });
   });
 
   test('selecting a file shows a small preview; removing it clears the slot', async ({ page }) => {

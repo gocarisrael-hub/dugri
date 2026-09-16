@@ -6393,7 +6393,17 @@
             },
             card: r.card,
           };
+          // …AND ASK THE MODULE AGAIN FOR EVERY PHOTO ALREADY IN A SLOT. Painting
+          // is not preparing: a photo picked before this answer landed was framed
+          // with the module's defaults, because that is all this page could hand
+          // over at the time, and pawnPrep still holds THAT picture. Nothing else
+          // re-prepares it — the one other call is gated on an EMPTY slot — so the
+          // buyer kept default framing for the life of the page, on the step whose
+          // whole promise is that it shows what prints. Free when the constants
+          // match what was already used (same variant, same cached answer), a real
+          // decode when they do not, which is precisely when it was wrong.
           pawnSlots.forEach((_, i) => renderPawnSlot(i));
+          pawnFiles.forEach((f, i) => f && preparePawnSlot(i, f));
         } catch {
           // Keep the tiles as they are: a card picture that did not come is a
           // plainer preview, never a broken step.
