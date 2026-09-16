@@ -136,7 +136,15 @@ Stale worktrees pile up. Prune periodically:
 1. List candidates: `git worktree list --porcelain`.
 2. A worktree may be removed only if both hold:
    - its branch's PR is merged (`gh pr list --state merged --head <branch>` returns it) and the worktree's HEAD equals that PR's `headRefOid`, so nothing unpushed is lost;
-   - `git -C <path> status --porcelain` prints nothing — **or what it prints is provably rebase debris**. A stalled worktree can hold staged files nobody ever edited: a rebase leaves a copy of its base in the index, timestamped to the second of the rebase in `git reflog`. Don't guess in either direction; both guesses are expensive — discard real work, or keep a worktree forever because git calls it dirty. Discriminate: `git -C <path> diff --cached <rebase base>` empty (bar noise you can account for) means the index is that base, not anyone's work. Check the reflog for a rebase at the files' mtime to confirm. If the diff shows unique content, it IS work: leave the worktree alone and find its driver (see Handover).
+   - `git -C <path> status --porcelain` prints nothing — **or what it prints is provably rebase debris**. A stalled worktree can hold staged files nobody ever edited: a rebase leaves a copy of its base in the index, timestamped to the second of the rebase in `git reflog`. Don't guess in either direction; both guesses are expensive — discard real work, or keep a worktree forever because git calls it dirty. Discriminate by TREE, not by a guessed base — the index is often a commit you would not have thought to compare against:
+
+   ```
+   t=$(git -C <path> write-tree)
+   git -C <path> log --all --format='%H %T' | awk -v t="$t" '$2==t {print $1}'
+   ```
+
+   A match means the staged state IS that commit: nothing is unique, nothing is lost, prune freely. No match means content no commit holds — that is real work: leave the worktree alone and find its driver (see Handover). Don't substitute `diff --cached <the base you assume>`: on `dugri-pdptitle` the assumed base was `ae7367b` while the index was actually `bf875b9`, so that test reported 11,345 deletions and "unique work" for a state fully recoverable from a commit. A filtered search's empty result is evidence about the filter, not about the repository.
+
 3. Print the list of worktrees you are about to remove before removing any.
 4. Remove each with `git worktree remove <path>` (never `--force`) and `git branch -D <branch>`. Then `git worktree prune`.
 
