@@ -210,15 +210,20 @@ describe('the preview, before anything is sent', () => {
 });
 
 describe('the press', () => {
-  it('marks the whole pile ready and queues a text for each', async () => {
+  // THE WHOLE PILE MOVES; ONLY THE PICKUPS ARE TEXTED. The text names the
+  // pickup address and says the game is waiting to be collected, so a delivery
+  // buyer would be sent across town for a box already on its way to her. The
+  // press itself is unchanged: both orders leave בדפוס in the same press.
+  it('marks the whole pile ready and texts only the self-pickup orders', async () => {
     const a = makeOrder({ name: 'א' });
     const b = makeOrder({ name: 'ב', version: 'delivery' });
     const { body } = await post('/api/admin/orders/ready-batch');
     expect(body.marked).toBe(2);
-    expect(body.sms_queued).toBe(2);
+    expect(body.sms_queued).toBe(1);
     expect(db.getCollection(a.id).order.ready_at).toBeTruthy();
     expect(db.getCollection(b.id).order.ready_at).toBeTruthy();
-    expect(pending()).toHaveLength(2);
+    // …and the one text is the pickup buyer's, not whichever came first.
+    expect(pending().map((m) => m.collection_id)).toEqual([a.id]);
   });
 
   // The delivery half of the answer: it becomes ready at the same moment as a
@@ -227,6 +232,17 @@ describe('the press', () => {
     makeOrder({ name: 'משלוח', version: 'delivery' });
     await post('/api/admin/orders/ready-batch');
     expect((await get('/api/admin/orders/ready-batch')).body.count).toBe(0);
+  });
+
+  // A digital sale has nothing to collect, so the pickup text is wrong for it in
+  // the same way it is wrong for a delivery. It still leaves בדפוס with the rest.
+  it('marks a digital order ready without texting it', async () => {
+    const digital = makeOrder({ name: 'דיגיטלי', version: 'pdf' });
+    const { body } = await post('/api/admin/orders/ready-batch');
+    expect(body.marked).toBe(1);
+    expect(body.sms_queued).toBe(0);
+    expect(db.getCollection(digital.id).order.ready_at).toBeTruthy();
+    expect(pending()).toHaveLength(0);
   });
 
   // Booking a courier is a real van and a real charge. It stays a button pressed

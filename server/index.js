@@ -2308,11 +2308,14 @@ app.post('/api/admin/collections/:id/to-print', (req, res) => {
 // when the feature is off, the buyer left no mobile, or the text is empty — an
 // SMS is optional in a way the email is not, so nothing here is ever an error the
 // owner has to clear.
+//
+// Who gets one — self-pickup, armed, a mobile the gateway accepts — is decided by
+// orderReadySmsWillSend, not here, because the ready-batch dialog has to answer
+// the same question before the owner presses anything.
 function queueReadySms(collection) {
   try {
-    if (!settings.get('sms', 'enabled')) return null;
+    if (!orderReadySmsWillSend(collection)) return null;
     const tpl = String(settings.get('sms', 'order_ready') || '');
-    if (!tpl.trim()) return null;
     const base = paymentBaseUrl();
     const link =
       base && collection && collection.id && collection.owner_token
@@ -2450,6 +2453,39 @@ function orderReadySmsArmed() {
   }
 }
 
+// WILL THIS ORDER ACTUALLY BE TEXTED WHEN IT IS MARKED READY? The whole answer,
+// in one place: self-pickup, the feature armed, and a number the gateway will
+// accept. The sender below asks it, and the ready-batch dialog (Agent A's module,
+// which is handed this) counts from it — so the dialog can never promise a text
+// the sender will not send.
+//
+// That shared answer is the point. The three parts used to be assembled in the
+// reader's head from separate fields, and adding self-pickup as a fourth would
+// have meant two copies of the rule in two modules whose only failure mode is
+// disagreeing with each other.
+//
+//  - SELF-PICKUP: the text names the pickup address and says the game is waiting
+//    to be collected. Sent to a delivery buyer it marches her across town for a
+//    box already on its way to her door; a digital order has nothing to collect.
+//    The EMAIL still goes to every kind — it renders the right fulfilment lines
+//    per order — so nobody is left uninformed, and marking ready is untouched.
+//  - READ AT SEND TIME, not at checkout: a buyer who adds shipping after paying
+//    converges to a delivery order (db.markShippingPaid sets version), and she
+//    must not get the pickup text.
+//  - A MOBILE THE GATEWAY ACCEPTS: sms.enqueue drops anything that is not an
+//    Israeli mobile, so asking here changes nothing about what sends — it only
+//    lets the dialog say so in advance instead of promising a text to a landline.
+function orderReadySmsWillSend(collection) {
+  try {
+    const version = String((collection && collection.order && collection.order.version) || '');
+    if (version !== 'pickup') return false;
+    if (!orderReadySmsArmed()) return false;
+    return Boolean(sms.ilMobile(collection && collection.owner_phone));
+  } catch {
+    return false;
+  }
+}
+
 app.post('/api/admin/collections/:id/ready', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const ready = !(req.body && req.body.undo);
@@ -2491,6 +2527,9 @@ commerceRoutes.registerReadyBatchAndHfd(app, {
   applyOrderReady,
   orderReadyEmailArmed,
   orderReadySmsArmed,
+  // The per-order answer, so the dialog counts what will really be sent rather
+  // than re-deriving the rule beside the one in queueReadySms.
+  orderReadySmsWillSend,
 });
 
 // Admin: soft-cancel a collection (body {undo:true} to restore).
@@ -6223,6 +6262,10 @@ module.exports.pawnPhotoFrames = pawnPhotoFrames;
 module.exports.pawnPhotoCutouts = pawnPhotoCutouts;
 module.exports.orderArgs = orderArgs;
 module.exports.cardEstimate = cardEstimate;
+// Whether an order would be texted when marked ready (self-pickup + armed + a
+// mobile). Exported so the rule can be asserted directly, without pressing a
+// button and reading the queue back.
+module.exports.orderReadySmsWillSend = orderReadySmsWillSend;
 module.exports.pawnCardArgs = pawnCardArgs;
 // The two render caches, exported so a test can pin that they are SEPARATE — the
 // property the pawn card's per-order keys depend on (see pawnCardCache).
