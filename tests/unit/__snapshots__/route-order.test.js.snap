@@ -68,6 +68,7 @@ exports[`route registration order > matches the pinned table 1`] = `
   "PUT /api/collections/:id/players",
   "POST /api/collections/:id/pawn-cut",
   "GET /api/collections/:id/pawn-card",
+  "GET /api/pawn-base",
   "GET /api/wordlist-options",
   "GET /api/wordlist-preview",
   "PUT /api/collections/:id/wordlist",

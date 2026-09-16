@@ -1069,9 +1069,9 @@ def apply_photo_view(crop, view):
     The window is what moves, not the picture: ``zoom`` above 1 shrinks the
     window (closer in), and ``dx``/``dy`` slide it across the source in units of
     the window's OWN side, so the same numbers mean the same thing on a 900px
-    photo and a 4000px one. site/js/pawn-frame.js applyView is the identical
-    transform expressed in percent-of-slot, which is why what she lines up on her
-    phone is what the printer cuts.
+    photo and a 4000px one. site/js/pawn-print.js viewCrop is the identical
+    transform, rounding and all, which is why what she lines up on her phone is
+    what the printer cuts.
 
     Always square, because the slot is: the window's x-side wins, so a rounding
     difference between the two axes cannot stretch the face.
@@ -1095,7 +1095,9 @@ def square_photo(path, workdir, index=0, view=None, cutout=True):
     buyer's own original — and it decides how the photo is framed, because THE
     PAGE SHE APPROVED IT ON DECIDES THE SAME WAY. Her collection page measures
     the silhouette when it is showing a cutout and takes the plain square when it
-    is showing an original (site/collect.html ``measureFrame``); this used to
+    is showing an original (``site/js/pawn-print.js`` ``autoCrop``, which both the
+    collection page and the wizard draw through, and which this function's own
+    fork below is held to by ``test_pawn_print_fixtures.py``); this used to
     sniff the file's alpha instead, and an ORIGINAL that happens to carry alpha —
     an already-transparent PNG uploaded by a buyer who then ticked "keep my
     background" — was framed on its silhouette here and on the plain square
@@ -1164,18 +1166,7 @@ def square_photo(path, workdir, index=0, view=None, cutout=True):
                 # the sticker halo is dilated from. Skip it and the slot gets a
                 # full square whose corners the halo traces: a white-edged
                 # rectangle on the card, which is what this path used to print.
-                side = min(w, h)
-                if h > w:
-                    # Portrait: centre the square on the subject rather than on
-                    # the middle of the frame (their torso) or flush with the top
-                    # (which the slot's circle would then clip).
-                    top = int(round(PHOTO_SUBJECT_Y * h - side / 2))
-                    top = max(0, min(top, h - side))
-                    crop = (0, top, side, top + side)
-                else:
-                    # Landscape: people are usually centred left-to-right.
-                    left = (w - side) // 2
-                    crop = (left, 0, left + side, side)
+                crop = plain_crop(w, h)
             # …and then the buyer's own adjustment, if she made one. Applied to
             # whichever square the rules above chose, so "move it a bit left" is
             # relative to a frame she was already looking at rather than to the
@@ -1261,6 +1252,46 @@ def fallback_photos(theme, filled, slots=PHOTO_SLOTS):
     if slots <= PHOTO_SLOTS:
         return pool[:want]
     return [pool[i % len(pool)] for i in range(want)]
+
+
+def card_photo_plan(theme, filled, cards=1, card=0):
+    """One pawn card's four slots, as the deck deals them: None or a shipped pawn.
+
+    None is a slot one of her photos takes; anything else is the pawn printed in a
+    slot she left empty. Cut from the SAME flat list :func:`resolve_photos` builds
+    for the whole deck (her ``filled`` photos, then :func:`fallback_photos` over
+    every slot) — so the second card of an eight-player order with two photos
+    carries pawns 3, 4, 1, 2, as the print does. A card that asked for its own
+    fallbacks restarted the set at pawn 1, and the preview of every card after
+    the first showed the pawns in an order the printer never used.
+    """
+    cards = max(1, int(cards))
+    slots = PHOTO_SLOTS * cards
+    filled = max(0, min(int(filled), slots))
+    card = max(0, min(int(card), cards - 1))
+    flat = [None] * filled + fallback_photos(theme, filled, slots=slots)
+    flat += [None] * (slots - len(flat))
+    return flat[card * PHOTO_SLOTS:(card + 1) * PHOTO_SLOTS]
+
+
+def plain_crop(w, h):
+    """The square a photo is cut from when there is no silhouette to frame by.
+
+    Portrait: a square of the short side, centred on ``PHOTO_SUBJECT_Y`` of the
+    height and clamped inside the photo — where a face usually is, rather than
+    the torso in the middle or the forehead at the top. Landscape: the full
+    height, centred left to right, because people usually are.
+
+    site/js/pawn-print.js ``plainCrop`` is the same rule in the buyer's browser,
+    held to this one by generator/pawn_print_fixtures.py.
+    """
+    side = min(w, h)
+    if h > w:
+        top = int(round(PHOTO_SUBJECT_Y * h - side / 2))
+        top = max(0, min(top, h - side))
+        return (0, top, side, top + side)
+    left = (w - side) // 2
+    return (left, 0, left + side, side)
 
 
 def resolve_photos(theme, photos, workdir=None, views=None, cutouts=None,

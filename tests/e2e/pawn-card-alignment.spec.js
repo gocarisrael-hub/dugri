@@ -99,20 +99,27 @@ async function measure(page) {
       w: img.naturalWidth * s,
       h: img.naturalHeight * s,
     };
-    const slots = [...document.querySelectorAll('.pawn-live-slot')].map((el) => {
-      const r = el.getBoundingClientRect();
-      // The element's own percentages say which fraction of the card it claims
-      // to be at; the rect says where it really is. Comparing the two is the test.
-      const wantX = card.x + (parseFloat(el.style.left) / 100) * card.w;
-      const wantY = card.y + (parseFloat(el.style.top) / 100) * card.h;
-      return {
-        w: r.width,
-        h: r.height,
-        dx: r.x - wantX,
-        dy: r.y - wantY,
-        photo: el.querySelector('img').getBoundingClientRect().width,
-      };
-    });
+    const slots = [...document.querySelectorAll('.pawn-live-slot svg[data-pawn-crop]')].map(
+      (el) => {
+        // The photos here are 1x1, so the plain crop maps each one onto its whole
+        // slot and the image's rect IS the slot's rect on screen.
+        const r = el.querySelector('image').getBoundingClientRect();
+        // The slot's own attributes, in the card's units, say where on the card it
+        // claims to be; the rect says where it really is. Comparing the two is the
+        // test.
+        const vb = el.ownerSVGElement.viewBox.baseVal;
+        const wantX = card.x + ((Number(el.getAttribute('x')) - vb.x) / vb.width) * card.w;
+        const wantY = card.y + ((Number(el.getAttribute('y')) - vb.y) / vb.height) * card.h;
+        const disc = el.closest('.pawn-live-slot').querySelector('mask circle');
+        return {
+          w: r.width,
+          h: r.height,
+          dx: r.x - wantX,
+          dy: r.y - wantY,
+          disc: (Number(disc.getAttribute('r')) * 2) / Number(el.getAttribute('width')),
+        };
+      }
+    );
     return { frame: { w: fr.width, h: fr.height }, card, slots };
   });
 }
@@ -126,7 +133,7 @@ test('every pawn circle is round and sits on its printed cut-line', async ({ pag
   await page.getByTestId('tab-pawns').click();
   // The layer is empty until the card's own picture has decoded — `attached`,
   // not `visible`, because a slot with no photo in it yet has no size.
-  await page.waitForSelector('#pawnLiveSlots .pawn-live-slot', { state: 'attached' });
+  await page.waitForSelector('#pawnLiveSlots .pawn-live-slot image', { state: 'attached' });
   await expect
     .poll(async () => page.locator('#pawnPrevImg').evaluate((i) => i.naturalWidth))
     .toBe(CARD_W);
@@ -146,12 +153,37 @@ test('every pawn circle is round and sits on its printed cut-line', async ({ pag
     //    tenth of the circle is what the owner photographed.
     expect(Math.abs(s.dx), `slot ${i} sits on its ring horizontally`).toBeLessThan(s.w * 0.02);
     expect(Math.abs(s.dy), `slot ${i} sits on its ring vertically`).toBeLessThan(s.h * 0.02);
-    // 4. AND THE PHOTO INSIDE IT IS STILL FRAMED THE WAY THE PRINTER FRAMES IT.
-    //    The photo is drawn LARGER than its circle and clipped by it — the disc
-    //    covers 90% of the square the generator hands over. A stylesheet rule
-    //    that reached these images (`.prev-box img { max-width: 100% }` did, for
-    //    one commit) clamps them to the circle instead, which silently re-crops
-    //    every pawn.
-    expect(s.photo, `slot ${i} photo is not clamped to its circle`).toBeGreaterThan(s.w * 1.05);
+    // 4. AND IT IS CLIPPED WHERE THE PRINTER CLIPS IT: a disc of 90% of the
+    //    square (build.PHOTO_DISC_FILL), inside the dashed cut-line.
+    expect(s.disc, `slot ${i} is clipped to the printed disc`).toBeCloseTo(0.9, 3);
+  }
+});
+
+// …AND IT IS THE PRINTER'S DISC, NOT A COPY OF THE NUMBER. build.PHOTO_DISC_FILL
+// is env-overridable on the generator (DUGRI_PHOTO_DISC_FILL), so the card sends
+// the fill it was drawn with and this page has to clip to THAT. The check above
+// cannot see the difference: it asserts 0.9, which is also the module's own
+// default, so a page that quietly ignored the card's answer passed it — and did.
+// The collection page built its sticker spec out of `viewBox` and `filter` alone
+// and dropped both constants, which is invisible until the day one is tuned and
+// the deck prints a framing the buyer never saw.
+test('the disc follows the fill the card was drawn with, not the page default', async ({
+  page,
+  request,
+}) => {
+  const { id, k } = await orderWithPhotos(request);
+  await page.route('**/pawn-card**', (route) =>
+    route.fulfill({ json: { card: CARD_PNG, slots: SLOTS, disc_fill: 0.6 } })
+  );
+  await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await page.getByTestId('tab-pawns').click();
+  await page.waitForSelector('#pawnLiveSlots .pawn-live-slot image', { state: 'attached' });
+  await expect
+    .poll(async () => page.locator('#pawnPrevImg').evaluate((i) => i.naturalWidth))
+    .toBe(CARD_W);
+  await expect.poll(async () => (await measure(page)).slots.length).toBe(4);
+
+  for (const [i, s] of (await measure(page)).slots.entries()) {
+    expect(s.disc, `slot ${i} is clipped to the card's own fill`).toBeCloseTo(0.6, 3);
   }
 });

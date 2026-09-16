@@ -72,7 +72,7 @@ async function createCollection(page, title = 'Shira') {
 // send: the route caps one request at PAWN_BATCH_MAX (the body is buffered whole)
 // and the total at the deck's player count, so posting five at once is a shape no
 // client produces and is refused with a 400.
-async function attachPhotos(page, id, k, n) {
+async function attachPhotos(page, id, k, n, bytes = PNG_BYTES) {
   const BATCH = 4;
   const boundary = '----dugriFinishPawns';
   let images = [];
@@ -83,7 +83,7 @@ async function attachPhotos(page, id, k, n) {
         Buffer.from(
           `--${boundary}\r\nContent-Disposition: form-data; name="pawn${i - start}"; filename="p${i}.png"\r\nContent-Type: image/png\r\n\r\n`
         ),
-        Buffer.concat([PNG_BYTES, Buffer.from(`finish${i}`)]),
+        Buffer.concat([bytes, Buffer.from(`finish${i}`)]),
         Buffer.from('\r\n')
       );
     }
@@ -96,6 +96,51 @@ async function attachPhotos(page, id, k, n) {
     images = (await res.json()).pawn_images;
   }
   return images;
+}
+
+// A w x h RGB PNG with a gradient in it. The pawn's crop is in whole SOURCE
+// pixels, exactly as the printer's is, so a 1x1 photo cannot show a zoom or a pan
+// moving it; this one can.
+async function gradientPng(w, h) {
+  const { deflateSync } = await import('node:zlib');
+  const table = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let j = 0; j < 8; j++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (buf) => {
+    let c = 0xffffffff;
+    for (const b of buf) c = table[(c ^ b) & 255] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc(body));
+    return Buffer.concat([len, body, sum]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // RGB
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const at = y * (w * 3 + 1) + 1 + x * 3;
+      raw[at] = (x * 6) & 255;
+      raw[at + 1] = (y * 6) & 255;
+      raw[at + 2] = 128;
+    }
+  }
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 // A background-removed cutout for a photo already on the order — the route the
@@ -308,10 +353,15 @@ test('the photo tab says the card above is the finished thing', async ({ page })
 });
 
 test('she sizes a face inside its circle, and the order keeps the number', async ({ page }) => {
+  await stubPawnCard(page);
   const { url, id, k } = await createCollection(page);
-  const [photo] = await attachPhotos(page, id, k, 1);
+  const [photo] = await attachPhotos(page, id, k, 1, await gradientPng(40, 40));
   await page.goto(url);
   await page.getByTestId('tab-pawns').click();
+
+  // An opaque 40x40 photo, framed on the plain square: the whole of it.
+  const crop = page.getByTestId('pawn-thumb').first().locator('svg[data-pawn-crop]');
+  await expect(crop).toHaveAttribute('viewBox', '0 0 40 40');
 
   const zoom = page.getByTestId('pawn-zoom');
   await expect(zoom).toBeVisible();
@@ -320,12 +370,9 @@ test('she sizes a face inside its circle, and the order keeps the number', async
   await expect.poll(async () => (await owned(page, id, k)).pawn_view[photo]?.zoom).toBe(1.8);
 
   // …and the picture on screen moved with it, rather than the number being
-  // filed away somewhere she cannot see.
-  const width = await page
-    .getByTestId('pawn-thumb')
-    .first()
-    .evaluate((img) => img.style.width);
-  expect(parseFloat(width)).toBeGreaterThan(120);
+  // filed away somewhere she cannot see: the window the printer will cut, 40/1.8
+  // = 22.2 px about the centre, rounded the way Python rounds it.
+  await expect(crop).toHaveAttribute('viewBox', '9 9 22 22');
 
   // It survives a reload — the slider is showing the order, not this tab.
   await page.reload();
@@ -334,6 +381,7 @@ test('she sizes a face inside its circle, and the order keeps the number', async
 });
 
 test('she chooses whether the photo keeps its background', async ({ page }) => {
+  await stubPawnCard(page);
   const { url, id, k } = await createCollection(page);
   const [photo] = await attachPhotos(page, id, k, 1);
   const cut = await attachCutout(page, id, k, photo, 'cutout-a');
@@ -341,18 +389,18 @@ test('she chooses whether the photo keeps its background', async ({ page }) => {
   await page.getByTestId('tab-pawns').click();
 
   // With a cutout in hand, the die-cut sticker is what the card prints, so it is
-  // what the circle shows.
+  // what the circle shows — `data-src` names the file the pawn was drawn from.
   const thumb = page.getByTestId('pawn-thumb').first();
-  await expect(thumb).toHaveAttribute('src', cut);
+  await expect(thumb).toHaveAttribute('data-src', cut);
 
   await page.getByTestId('pawn-bg-on').click();
-  await expect(thumb).toHaveAttribute('src', photo);
+  await expect(thumb).toHaveAttribute('data-src', photo);
   await expect.poll(async () => (await owned(page, id, k)).pawn_view[photo]?.bg).toBe(true);
 
   // …and back again, without re-cutting anything: the cutout was never thrown
   // away, which is the point of keeping both files.
   await page.getByTestId('pawn-bg-off').click();
-  await expect(thumb).toHaveAttribute('src', cut);
+  await expect(thumb).toHaveAttribute('data-src', cut);
   await expect.poll(async () => (await owned(page, id, k)).pawn_view[photo]?.bg).toBe(false);
 });
 
@@ -521,13 +569,14 @@ test('a frozen photo still opens full size, and still does not move', async ({ p
   await page.goto(url);
   await page.getByTestId('tab-pawns').click();
 
-  const thumb = page.getByTestId('pawn-thumb').first();
-  const before = await thumb.evaluate((el) => el.style.left);
+  const crop = page.getByTestId('pawn-thumb').first().locator('svg[data-pawn-crop]');
+  await expect(crop).toHaveCount(1);
+  const before = await crop.getAttribute('viewBox');
   // A real drag gesture on a frozen circle: it opens the photo (every press on a
   // closed collection is a tap, because nothing can move) and nothing shifts.
-  await dragBy(page.locator('.pawn-disc').first(), 20, 12);
+  await dragBy(page.locator('.pawn-pad').first(), 20, 12);
   await expect(page.getByTestId('pawn-view')).toBeVisible();
-  expect(await thumb.evaluate((el) => el.style.left)).toBe(before);
+  expect(await crop.getAttribute('viewBox')).toBe(before);
   // …and the order never heard about it.
   await page.waitForTimeout(900); // past the save debounce
   expect((await owned(page, id, k)).pawn_view?.[photo]).toBeUndefined();
@@ -706,7 +755,7 @@ test('the card is drawn here, so it moves with the photo instead of behind it', 
   const asked = [];
   await stubPawnCard(page, asked);
   const { url, id, k } = await createCollection(page);
-  await attachPhotos(page, id, k, 1);
+  await attachPhotos(page, id, k, 1, await gradientPng(40, 40));
   await page.goto(url);
   await page.getByTestId('tab-pawns').click();
   await expect(page.locator('.pawn-live-slot')).toHaveCount(1);
@@ -716,19 +765,16 @@ test('the card is drawn here, so it moves with the photo instead of behind it', 
   await expect.poll(() => asked.length).toBe(1);
   expect(asked[0]).toContain('live=1');
 
-  const slotImg = page.locator('.pawn-live-slot img').first();
-  const before = await slotImg.evaluate((el) => el.style.left);
-  await dragBy(page.locator('.pawn-disc').first(), 20, 12);
+  const cardCrop = page.locator('.pawn-live-slot svg[data-pawn-crop]').first();
+  const rowCrop = page.getByTestId('pawn-thumb').first().locator('svg[data-pawn-crop]');
+  await expect(cardCrop).toHaveCount(1);
+  const before = await cardCrop.getAttribute('viewBox');
+  await dragBy(page.locator('.pawn-pad').first(), 20, 12);
 
-  // The card moved WITH the circle — the same number, because it is the same
+  // The card moved WITH the circle — the same window, because it is the same
   // maths on the same in-flight view — and nothing was asked of the server.
-  await expect.poll(async () => slotImg.evaluate((el) => el.style.left)).not.toBe(before);
-  expect(
-    await page
-      .getByTestId('pawn-thumb')
-      .first()
-      .evaluate((el) => el.style.left)
-  ).toBe(await slotImg.evaluate((el) => el.style.left));
+  await expect.poll(() => cardCrop.getAttribute('viewBox')).not.toBe(before);
+  expect(await rowCrop.getAttribute('viewBox')).toBe(await cardCrop.getAttribute('viewBox'));
   await page.waitForTimeout(900); // past the save debounce
   expect(asked).toHaveLength(1);
 });
@@ -768,7 +814,7 @@ test('the circle says it can be dragged, until it has been', async ({ page }) =>
 
   const badge = page.locator('.pawn-grab');
   await expect(badge).toBeVisible();
-  await dragBy(page.locator('.pawn-disc').first(), 15, 0);
+  await dragBy(page.locator('.pawn-pad').first(), 15, 0);
   // An instruction that stays after it has been followed is noise.
   await expect(badge).toBeHidden();
 });
@@ -825,13 +871,13 @@ test('her photos are dealt four to a card, in the order she sent them', async ({
   // then the fifth on the second card's first disc. None has a cutout, so each
   // disc draws the photo itself.
   for (let i = 0; i < 4; i++) {
-    await expect(boxes.nth(0).locator('.pawn-live-slot img').nth(i)).toHaveAttribute(
-      'src',
+    await expect(boxes.nth(0).locator('.pawn-live-slot').nth(i)).toHaveAttribute(
+      'data-src',
       images[i]
     );
   }
-  await expect(boxes.nth(1).locator('.pawn-live-slot img').first()).toHaveAttribute(
-    'src',
+  await expect(boxes.nth(1).locator('.pawn-live-slot').first()).toHaveAttribute(
+    'data-src',
     images[4]
   );
 });

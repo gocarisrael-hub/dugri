@@ -7,10 +7,10 @@ page's photos tab, by three different pieces of code:
   1. the PRINTED card — ``build.square_photo`` plus the photo-card SVG, rendered
      by the generator. This is the truth; everything else is a promise about it.
   2. the PREVIEW CARD at the top of the tab — a server-rendered BASE card with
-     empty discs, with the photos laid over it in the browser
-     (``paintPawnCard`` in site/collect.html, positioned by ``placePawn``).
-  3. the EDITOR CIRCLE in each row below it — ``.pawn-pad`` / ``.pawn-disc`` /
-     ``.pawn-cut-line``, positioned by the same ``placePawn``.
+     the photos painted over it in the browser (``paintCard`` in
+     site/js/pawn-print.js, which site/collect.html calls).
+  3. the EDITOR TILE in each row below it — the same base card cropped to the
+     photo's slot, with the same photo on it (``paintTile``).
 
 The owner reported, repeatedly and correctly, that the three did not agree: "the
 girl is positioned exactly in the middle here but in here it's more to the left",
@@ -129,12 +129,10 @@ def synthetic_photo(path):
     # so a rendering that centres on the box rather than on the subject, or that
     # frames on width rather than reach, comes out visibly different.
     #
-    # ONE CONNECTED BLOB, and this is load-bearing. Both sides pick the silhouette
-    # nearest the middle of the frame when a cut leaves several, but only the
-    # GENERATOR erases the ones it did not pick — the browser can only choose
-    # where to put the file, which is the known, documented difference at the head
-    # of site/js/pawn-frame.js. A two-blob photo would measure that difference and
-    # report it as the geometry drifting, which it is not.
+    # ONE CONNECTED BLOB. The bystander erase is held to the generator byte for
+    # byte by tests/unit/pawn-print.test.js, on fixtures made for it; this harness
+    # is about where the photo and its sticker LAND, and one blob keeps the
+    # subject findable by its colour.
     d.ellipse([40, 30, 190, 200], fill=SUBJECT_RGB + (255,))
     d.polygon([(20, 330), (60, 170), (170, 170), (215, 330)], fill=SUBJECT_RGB + (255,))
     im.save(path)
@@ -187,7 +185,7 @@ def base_card(theme, drawn, out_dir, title_lines=None):
     import config
     import preview
     import render_page as rp
-    photos = [None] * drawn + buildmod.fallback_photos(theme, drawn)
+    photos = buildmod.card_photo_plan(theme, drawn)
     out = os.path.join(out_dir, "base.png")
     os.makedirs(out_dir, exist_ok=True)
     rp.render_single_card(theme, config.photo_card_path(theme), [],
@@ -209,20 +207,32 @@ def _page_css():
     ])
 
 
-def browser_page(base_png, photo_png, slots, view, card_w, card_h):
+def _tile_margin():
+    """The paper paintTile leaves around a slot, READ FROM THE MODULE.
+
+    The editor pane's crop has to find the slot inside the tile, which means
+    knowing that margin — and a copy of the number here is a third place for it
+    to drift from what the page actually draws.
+    """
+    import re
+    js = _read(os.path.join(SITE, "js", "pawn-print.js"))
+    return float(re.search(r"export const TILE_MARGIN = ([\d.]+);", js).group(1))
+
+
+def browser_page(base_png, photo_png, spec, view, card_w, card_h):
     """The HTML the two BROWSER panes are screenshotted from.
 
-    Both panes are built from the page's own stylesheet and the page's own
-    geometry module — ``liveSlotStyle`` / ``discPhotoStyle`` / ``haloFilter`` /
-    ``pawnCssVars`` out of site/js/pawn-frame.js, which is what collect.html
-    calls. What the harness supplies is the DOM shape and nothing else, and
-    tests/unit/pawn-three-views.test.js pins that the real page builds the same
-    shape out of the same calls.
+    Both panes are painted by the page's own module, site/js/pawn-print.js —
+    ``paintCard`` for the preview card and ``paintTile`` for the editor row, the
+    two calls site/collect.html makes — over the generator's base card, with the
+    photo prepared the way the page prepares it (``preparePhoto``) and the page's
+    own stylesheet sizing both. What the harness supplies is where on the screen
+    the two panes sit, and nothing else.
 
     Everything is absolutely positioned at known pixel coordinates so the crops
     can be taken without asking the browser where anything ended up.
     """
-    module = _read(os.path.join(SITE, "js", "pawn-frame.js"))
+    module = _read(os.path.join(SITE, "js", "pawn-print.js"))
     css = _page_css()
     photo_url = "data:image/png;base64," + _b64(photo_png)
     base_url = "data:image/png;base64," + _b64(base_png)
@@ -235,54 +245,27 @@ def browser_page(base_png, photo_png, slots, view, card_w, card_h):
   #row {{ position: absolute; left: {card_w + 60}px; top: 20px; }}
 {css}
 </style></head><body>
-<div id="card"><img id="cardimg"><div class="pawn-live-slots" id="live"></div></div>
-<div id="row"><div class="pawn-pad" id="pad">
-  <div class="pawn-disc" id="disc"><img id="rowimg"></div>
-  <span class="pawn-cut-line"></span>
-</div></div>
+<div id="card"><img id="cardimg"><div class="pawn-live-slots"><svg class="pawn-live-svg" id="live"></svg></div></div>
+<div id="row"><div class="pawn-pad"><svg class="pawn-tile" id="rowtile"></svg></div></div>
 <script type="module">
 {module}
 
-const SLOTS = {json.dumps(slots)};
+const SPEC = {json.dumps(spec)};
 const VIEW = {json.dumps(view)};
-const PHOTO = {json.dumps(photo_url)};
+const BASE = {json.dumps(base_url)};
+document.getElementById('cardimg').src = BASE;
 
-for (const [k, v] of Object.entries(pawnCssVars())) {{
-  document.documentElement.style.setProperty(k, v);
-}}
-document.getElementById('cardimg').src = {json.dumps(base_url)};
+const photo = await preparePhoto({json.dumps(photo_url)}, {{ cutout: true }});
+const crop = viewCrop(photo.crop, VIEW);
 
-// The frame is measured the way the page measures it — the real frameFromBlob
-// over the real bytes — so the harness cannot accidentally hand the two panes a
-// frame the page would never have computed.
-const frame = await frameFromBlob(await (await fetch(PHOTO)).blob());
-
-function paint(disc, img, slotPx) {{
-  img.src = PHOTO;
-  const s = discPhotoStyle(frame, VIEW);
-  img.style.width = s.width;
-  img.style.height = s.height;
-  img.style.left = s.left;
-  img.style.top = s.top;
-  img.style.objectFit = s.objectFit;
-  disc.classList.add('is-cut');
-  disc.style.setProperty('--pawn-halo', haloFilter(slotPx));
-}}
-
-// PANE 1 — the preview card: the base card with a disc laid over slot 1.
-const live = document.getElementById('live');
-const el = document.createElement('div');
-el.className = 'pawn-live-slot';
-const cardImg = document.createElement('img');
-el.appendChild(cardImg);
-live.appendChild(el);
-Object.assign(el.style, liveSlotStyle(SLOTS[0]));
-paint(el, cardImg, el.getBoundingClientRect().width / DISC_FILL);
-
-// PANE 2 — the editor row.
-const disc = document.getElementById('disc');
-paint(disc, document.getElementById('rowimg'),
-      disc.getBoundingClientRect().width / DISC_FILL);
+// PANE 1 — the preview card: the base card with the photo painted into slot 1.
+paintCard(document.getElementById('live'), {{
+  spec: SPEC, slots: SPEC.slots, idPrefix: 'card', stickers: [{{ photo, crop }}],
+}});
+// PANE 2 — the editor row: the same card cropped to that slot.
+paintTile(document.getElementById('rowtile'), {{
+  spec: SPEC, base: BASE, slot: slotRect(SPEC.slots[0], SPEC.viewBox), id: 'pawn-pad-0', photo, crop,
+}});
 </script></body></html>
 """
 
@@ -424,6 +407,11 @@ def compare(theme=None, view=(1.0, 0.0, 0.0), out_dir=None):
     printed = print_card(theme, photo, pv, out_dir)
     slots = printed["slots"]
     base = base_card(theme, 1, out_dir)
+    # What the live route hands the page with that card (preview.sticker_spec):
+    # the slots, the viewBox and the card's own halo filter.
+    _import_generator()
+    import preview
+    spec = preview.sticker_spec(theme, base)
 
     pim = Image.open(printed["png"])
     bim = Image.open(base)
@@ -437,7 +425,7 @@ def compare(theme=None, view=(1.0, 0.0, 0.0), out_dir=None):
 
     html = os.path.join(out_dir, "harness.html")
     with open(html, "w", encoding="utf-8") as f:
-        f.write(browser_page(base, photo, slots,
+        f.write(browser_page(base, photo, spec,
                              {"zoom": view[0], "dx": view[1], "dy": view[2], "bg": False},
                              card_w, card_h))
     shot = os.path.join(out_dir, "browser.png")
@@ -450,10 +438,14 @@ def compare(theme=None, view=(1.0, 0.0, 0.0), out_dir=None):
             round((20 + (geo["x"] + geo["w"]) * card_w) * s),
             round((20 + (geo["y"] + geo["h"]) * card_h) * s))
     preview_crop = _crop_norm(sim, pbox)
-    # PANE 2 — the pad IS the slot: 116 CSS px at (card_w + 60, 20).
+    # PANE 2 — the tile: 116 CSS px at (card_w + 60, 20), showing the slot with
+    # the module's own tile margin of paper round it, so the slot is its middle.
     pad = 116
-    ebox = (round((card_w + 60) * s), round(20 * s),
-            round((card_w + 60 + pad) * s), round((20 + pad) * s))
+    slot_units = geo["w"] * spec["viewBox"][2]
+    inset = pad * _tile_margin() / (slot_units + 2 * _tile_margin())
+    x0 = card_w + 60
+    ebox = (round((x0 + inset) * s), round((20 + inset) * s),
+            round((x0 + pad - inset) * s), round((20 + pad - inset) * s))
     editor_crop = _crop_norm(sim, ebox)
 
     out = {

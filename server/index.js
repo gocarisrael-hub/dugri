@@ -14,6 +14,9 @@ const { paymentClientIp } = require('./payment-client-ip');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
+// The owner store's own paths (DATA_DIR): one of the two themes layers the pawn
+// card's artwork stamp reads, so an owner edit is a new cache key.
+const templateStore = require('./template-store');
 const redetectJob = require('./redetect-job');
 const playbook = require('./playbook');
 const content = require('./content');
@@ -631,6 +634,43 @@ const pawnCardCache = makePreviewCache({
   ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 5 * 60 * 1000),
 });
 
+// ONE RENDER PER KEY, however many ask for it at once. The cache only fills when
+// a render RESOLVES, so N cold requests for the same card spawned N Chrome runs —
+// four boxes of a sixteen-player order opening the tab together, or two buyers on
+// one design — on a path that is already unhappy at two concurrent. The per-client
+// rate limit does not bound that: the clients are different. They share the
+// in-flight promise instead, and the loser pays nothing.
+const pawnCardInFlight = new Map();
+function pawnCardOnce(key, make) {
+  const running = pawnCardInFlight.get(key);
+  if (running) return running;
+  const started = make().finally(() => pawnCardInFlight.delete(key));
+  pawnCardInFlight.set(key, started);
+  return started;
+}
+
+// WHAT THE CARD IS DRAWN FROM, as a version — the artwork the render reads and
+// the themes layers that carry the knobs (title style, calibration). Without it
+// an artwork swap keeps serving the old picture until the entry ages out, which
+// is exactly the case the owner would report as "I replaced the card and nothing
+// changed". Five stats on a cached path, and a template edit becomes a new key.
+function artworkStamp(theme) {
+  const dir = templates.resolveTemplateDirBySlug(TEMPLATE_ROOT, theme);
+  const files = [templates.themesPathFor(TEMPLATE_ROOT), templateStore.ownerThemesPath()];
+  for (const rel of ['clean/photo.svg', 'clean/2.svg', 'clean/fronts.svg']) {
+    if (dir) files.push(path.join(dir, rel));
+  }
+  return files
+    .map((f) => {
+      try {
+        return f ? fs.statSync(f).mtimeMs : 0;
+      } catch {
+        return 0;
+      }
+    })
+    .join(',');
+}
+
 // The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
 // [] when missing/unparseable so a bad file never crashes a preview request.
 function wordFontOptions() {
@@ -783,6 +823,8 @@ function pawnCardArgs({
   photoCutouts,
   empty = false,
   drawn = 0,
+  cards = 1,
+  card = 0,
   name = '',
   extraFields,
   customTitle,
@@ -804,13 +846,17 @@ function pawnCardArgs({
   // discs are. The browser lays her photos onto it — which is what lets the
   // card move under her finger instead of a second behind it.
   //
-  // `drawn` is how many discs it will cover, and the render fills the REST with
-  // the shipped Dugri pawns, exactly as the printed card tops itself up. Leaving
-  // them bare showed her an empty circle where a pawn prints, under a caption
-  // promising this is exactly what will be printed. It is one more cache
-  // dimension, and a small one: 0..4 per theme, and a card that changes only
-  // when the number of photos does.
-  if (empty) args.push('--no-photos', '--drawn', String(drawn));
+  // `drawn` is how many of her photos the DECK carries and `card` which of its
+  // `cards` this is. The slots her photos take are left bare; the rest get the
+  // shipped Dugri pawns, dealt across the whole deck exactly as the print deals
+  // them (build.card_photo_plan) — so card 2 of an eight-player order with two
+  // photos carries pawns 3, 4, 1, 2, not a fresh 1, 2, 3, 4. Leaving them bare
+  // showed her an empty circle where a pawn prints, under a caption promising
+  // this is exactly what will be printed.
+  if (empty) {
+    args.push('--no-photos', '--drawn', String(drawn), '--cards', String(cards));
+    args.push('--card', String(card));
+  }
   // Photos, frames and cutout markers, emitted by the SAME helper the deck run
   // uses — this preview only earns its place by being the same picture the
   // printer makes, and a preview that framed differently would be the one thing
@@ -826,6 +872,8 @@ function runPawnCard({
   photoCutouts,
   empty = false,
   drawn = 0,
+  cards = 1,
+  card = 0,
   name = '',
   extraFields,
   customTitle,
@@ -853,6 +901,8 @@ function runPawnCard({
       photoCutouts,
       empty,
       drawn,
+      cards,
+      card,
       name,
       extraFields,
       customTitle,
@@ -897,9 +947,23 @@ function runPawnCard({
           return reject(new Error('pawn card render produced no image'));
         }
         const url = 'data:image/png;base64,' + fs.readFileSync(file).toString('base64');
-        const slots = Array.isArray(produced.slots) ? produced.slots : null;
+        const out = { card: url };
+        // The live card's sticker spec rides along (preview.sticker_spec): the
+        // slots, the card's viewBox, the disc and the theme's own halo filter —
+        // everything the page needs to draw her photos onto this card the way the
+        // printer draws them, rather than an imitation of it.
+        if (Array.isArray(produced.slots)) out.slots = produced.slots;
+        if (Array.isArray(produced.viewBox)) out.viewBox = produced.viewBox;
+        if (typeof produced.disc_fill === 'number') out.disc_fill = produced.disc_fill;
+        // BOTH constants, or the page keeps half the generator's framing:
+        // subject_y is what crops a photo with no silhouette (build.plain_crop),
+        // which is EVERY original she keeps the background on. Forwarding one and
+        // not the other is the same silent divergence as forwarding neither.
+        if (typeof produced.subject_y === 'number') out.subject_y = produced.subject_y;
+        if (typeof produced.filter === 'string') out.filter = produced.filter;
+        if (Array.isArray(produced.fallbacks)) out.fallbacks = produced.fallbacks;
         cleanup();
-        resolve(slots ? { card: url, slots } : { card: url });
+        resolve(out);
       } catch (e) {
         cleanup();
         reject(e);
@@ -3389,12 +3453,15 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   // run on the server — the editor moved at the speed of a render before this,
   // which is to say it was always showing the adjustment before last.
   //
-  // `n` is how many discs the page will cover; the render fills the rest with the
-  // shipped Dugri pawns, which is what the printed card does. So this picture
-  // depends on the theme and that COUNT — not on which photos, and not on how she
-  // framed them, either of which would put the render back in the drag loop.
+  // EVERY disc is left bare: the page draws her photos AND the shipped Dugri pawns
+  // into them itself — the pawns dealt across the whole deck by the generator's
+  // own rule (pawn-print.js fallbackDeal, held to build.card_photo_plan), from the
+  // pawn images this answer carries. So the picture depends on the design and the
+  // title alone: not on which photos, how she framed them, how many there are or
+  // how big the deck is. One render serves every one of those, where a picture per
+  // photo count and per card was a Chrome run on every photo she added.
   const live = req.query.live === '1';
-  const drawn = live ? Math.max(0, Math.min(4, Number(req.query.n) || 0)) : 0;
+  const drawn = live ? 4 : 0;
   const photos = live ? [] : pawnPhotoFiles(c);
   const photoFrames = live ? [] : pawnPhotoFrames(c);
   const photoCutouts = live ? [] : pawnPhotoCutouts(c);
@@ -3417,7 +3484,7 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
     title.gender || '',
   ].join('\u0000');
   const cacheKey = live
-    ? 'pawn-base:' + theme + ':' + drawn + ':' + titleKey
+    ? 'pawn-base:' + theme + ':' + artworkStamp(theme) + ':' + titleKey
     : 'pawn-card:' +
       theme +
       ':' +
@@ -3431,22 +3498,75 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const cached = pawnCardCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
-    const out = await runPawnCard({
-      theme,
-      photos,
-      photoFrames,
-      photoCutouts,
-      empty: live,
-      drawn,
-      ...title,
+    const out = await pawnCardOnce(cacheKey, async () => {
+      const made = await runPawnCard({
+        theme,
+        photos,
+        photoFrames,
+        photoCutouts,
+        empty: live,
+        drawn,
+        ...title,
+      });
+      pawnCardCache.set(cacheKey, made);
+      return made;
     });
-    pawnCardCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
     // A render that fails must not read as "you have no photos": the page keeps
     // the strip either way, and says the picture is what is missing.
     console.error('pawn card render failed:', (e && e.message) || e);
     res.status(502).json({ error: 'pawn card render failed' });
+  }
+});
+
+// THE SAME BASE CARD FOR THE WIZARD, before any order exists.
+//
+// The wizard's photo step draws each pawn onto a tile cut from this card — its
+// paper and its dashed cut-line — with her photo, or the shipped pawn the deck
+// deals into that slot, painted on by the page (the pawn images ride along with
+// the card). Nothing of hers goes in and no title (the tiles are the slots alone;
+// the title band is below them), so ONE picture per design serves every buyer at
+// every deck size and photo count, from the pawn-card cache. Public, so it is
+// rate-limited in the preview's own bucket — and here, unlike the preview, the
+// limit is spent by a cache hit too; see the note on the check itself.
+app.get('/api/pawn-base', async (req, res) => {
+  const theme = String(req.query.theme || '').trim();
+  const entry = validate.getTheme(theme);
+  // A design that is not on the shop floor has no wizard to serve, so this says
+  // the same "unknown" about it as about a name nobody ever registered: a public
+  // route that rendered a withdrawn design's card would be a way to read one.
+  // `in_store`, not `visibility` — a design unlocked by an access code IS on sale,
+  // and its buyer reaches this step like any other.
+  if (!entry || !templates.inStore(entry)) return res.status(400).json({ error: 'unknown theme' });
+  // THE LIMIT IS CHECKED BEFORE ANY WORK, INCLUDING THE STAMP — and that is the
+  // one place this route parts company with /api/preview above, deliberately.
+  // The stamp is five synchronous statSync calls, and the cache cannot be read
+  // without it because it is part of the key; leaving it first let an
+  // unauthenticated caller spend the event loop's filesystem budget at whatever
+  // rate it liked, THROTTLED OR NOT. So a refused request now does nothing at all.
+  //
+  // The cost is that a cache HIT spends a token here, where a preview's hit does
+  // not. That is affordable for this route and not for that one: a name is asked
+  // per keystroke, a design's bare card once per buyer per five-minute TTL (the
+  // wizard) and once per deck (the collection page shares one ask), against 60 a
+  // minute. Nothing a buyer can do from the page approaches it.
+  if (!previewRate.ok('preview:' + clientKey(req))) {
+    return res.status(429).json({ error: 'too many requests' });
+  }
+  const cacheKey = 'pawn-base-public:' + theme + ':' + artworkStamp(theme);
+  const cached = pawnCardCache.get(cacheKey);
+  if (cached) return res.json(cached);
+  try {
+    const out = await pawnCardOnce(cacheKey, async () => {
+      const made = await runPawnCard({ theme, empty: true, drawn: 4 });
+      pawnCardCache.set(cacheKey, made);
+      return made;
+    });
+    res.json(out);
+  } catch (e) {
+    console.error('pawn base render failed:', (e && e.message) || e);
+    res.status(502).json({ error: 'pawn base render failed' });
   }
 });
 

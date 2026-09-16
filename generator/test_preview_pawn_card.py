@@ -115,19 +115,44 @@ def test_the_base_card_carries_the_pawns_the_caller_will_not_draw():
         assert printed[2:] == buildmod.fallback_photos("demo", 2)
 
 
-def test_the_slots_the_caller_draws_are_left_bare():
-    # The CLI's own arithmetic: `drawn` slots empty, the rest topped up, and the
-    # list always four long so nothing shifts a pawn onto the wrong disc.
-    src = inspect.getsource(preview.main)
-    assert "[None] * drawn + buildmod.fallback_photos" in src, (
-        "the base card's empty slots must be exactly the ones the caller covers"
-    )
+def test_each_base_card_is_its_own_slice_of_the_deck_s_deal():
+    # The slots the caller covers are left bare and the rest carry the shipped
+    # pawns — dealt across EVERY card of the deck, exactly as resolve_photos deals
+    # the print. Card 2 of an eight-player order with two photos therefore starts
+    # at pawn 3. Each card used to ask for "its own" fallbacks, which restarted the
+    # set at pawn 1 and previewed pawns in slots the printer never put them in.
     with tb.Store():
-        for drawn in range(5):
-            photos = [None] * drawn + buildmod.fallback_photos("demo", drawn)
-            assert len(photos) == 4, photos
-            assert photos[:drawn] == [None] * drawn
-            assert all(p for p in photos[drawn:])
+        for cards in (1, 2, 3, 4):
+            slots = 4 * cards
+            for filled in range(slots + 1):
+                deal = [None] * filled + buildmod.fallback_photos("demo", filled, slots=slots)
+                for card in range(cards):
+                    plan = buildmod.card_photo_plan("demo", filled, cards, card)
+                    assert plan == deal[card * 4:(card + 1) * 4], (cards, filled, card)
+        pool = list(config.photo_fallback_paths("demo"))
+        assert buildmod.card_photo_plan("demo", 2, 2, 1)[:2] == pool[2:4]
+        # Out-of-range asks are clamped to a card that exists, never an error.
+        assert buildmod.card_photo_plan("demo", 99, 1, 7) == [None] * 4
+
+
+def test_the_sticker_spec_hands_over_the_card_s_own_filter():
+    # The browser draws her photos through THIS filter, so the white edge on the
+    # page is the one the print is rendered with — tint and all.
+    with tb.Store() as tmp:
+        import card_assets
+        svg = card_assets.read_svg(config.photo_card_path("demo"))
+        png = os.path.join(tmp, "pawns-empty.png")
+        with open(png[:-4] + ".svg", "w", encoding="utf-8") as f:
+            f.write(svg)
+        spec = preview.sticker_spec("demo", png)
+        assert spec["slots"] == preview.pawn_slots("demo")
+        assert spec["viewBox"] == list(preview.deck_html.view_box(svg))
+        assert spec["disc_fill"] == buildmod.PHOTO_DISC_FILL
+        if 'id="sticker-halo"' in svg:
+            assert spec["filter"].startswith("<filter") and 'id="sticker-halo"' in spec["filter"]
+            assert spec["filter"].endswith("</filter>")
+        else:
+            assert spec["filter"] is None
 
 
 # --- with Chrome -----------------------------------------------------------
