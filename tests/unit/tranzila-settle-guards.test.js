@@ -476,6 +476,32 @@ describe('a fee change while the buyer is paying', () => {
     }
   });
 
+  // MIGRATION. Every session written before `fee_at_init` shipped carries no such
+  // field, and a pay window open across the deploy settles on one of them. Null
+  // means "nothing to compare", so it settles SILENTLY rather than alerting on a
+  // fee it never recorded: without that guard `Number(null)` is 0, and every
+  // pre-existing delivery session would report its whole fee as a change.
+  it('and a session from before the fee was recorded settles silently', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('חלון שנפתח לפני העדכון');
+    const s = await openPayment(c, { version: 'delivery', address });
+    // Exactly what an older stored session looks like.
+    const stored = db.getCollection(c.id).order.pelecard.sessions.slice(-1)[0];
+    delete stored.fee_at_init;
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    settings.set('pricing', 'delivery_fee', FEE + 20);
+    try {
+      charge(s.token, s.charged_total);
+      await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+      settings.set('pricing', 'delivery_fee', FEE);
+    }
+  });
+
   // Every pay/init refreshes the session clock, so a freeze keyed on "a window was
   // opened recently" would have held the old fee for as long as the buyer kept
   // re-opening the modal — indefinitely, past any TTL. Live pricing cannot.

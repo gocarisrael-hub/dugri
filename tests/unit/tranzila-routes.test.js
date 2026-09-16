@@ -665,6 +665,12 @@ describe('delivery through Tranzila', () => {
       expect(order.shipping.paid).toBeFalsy();
       expect(order.version).toBe('pickup');
       const text = alertText(alert);
+      // REFUSED, never settled-with-notice. `fee_at_init` must not soften this
+      // path: for an upgrade the fee IS the key, so a moved fee changes the key
+      // and the row is refused before the fee comparison is ever reached. The
+      // alert therefore says the purchase changed, not that a fee moved — this
+      // needle appears only in the `fee_changed` wording, never in `order_changed`.
+      expect(text).not.toContain('סומנה כשולמה עבור הזמנה');
       expect(text).toContain(String(index));
       expect(text).toContain(db.getCollection(c.id).order_no);
       expect(text).toContain('השתנתה');
