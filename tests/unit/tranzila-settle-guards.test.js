@@ -376,26 +376,50 @@ describe('an admin edit that changes no price', () => {
   });
 });
 
-describe('the buyer re-submitting an order while its pay window is open', () => {
-  it('keeps the fee it was quoted, so the charge on its way still settles', async () => {
-    const settings = require(path.join(serverDir, 'settings.js'));
-    const c = db.createCollection('הקונה מתקן כתובת');
-    const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
-    const s = await openPayment(c, { version: 'delivery', address });
-    const placed = db.getCollection(c.id).order.total;
+// The amount is already checked exactly, against that window's own
+// `charged_total`, so the purchase key only has to answer "is this still the same
+// thing being bought?". A delivery fee that moved either way leaves the purchase
+// alone, so a verified charge must still settle — refusing it would mean the money
+// taken and the order left unpaid. And because `setOrder` keeps pricing from live
+// settings, the checkout screen and the charge stay the same number throughout;
+// holding the stored fee still instead is what would have driven them apart.
+describe('a fee change while the buyer is paying', () => {
+  const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
 
-    // The owner raises the fee while the buyer is mid-payment, and the buyer
-    // fixes a typo in the street — the buyer's own path, not the admin one.
+  it('settles a charge from a window opened before the fee rose', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('דמי משלוח עלו באמצע תשלום');
+    const s = await openPayment(c, { version: 'delivery', address });
+
     settings.set('pricing', 'delivery_fee', FEE + 20);
     try {
+      // The buyer fixes the address with the window still open: the order
+      // re-prices from live settings, exactly as the screen does.
       db.setOrder(c.id, c.owner_token, {
         version: 'delivery',
         address: { ...address, street: 'הרצל 12' },
       });
-      const order = db.getCollection(c.id).order;
-      expect(order.delivery_fee).toBe(FEE);
-      expect(order.total).toBe(placed);
-      expect(order.address.street).toBe('הרצל 12');
+      expect(db.getCollection(c.id).order.delivery_fee).toBe(FEE + 20);
+
+      // The charge from the window opened BEFORE the rise still pays for it.
+      charge(s.token, s.charged_total);
+      await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+    } finally {
+      settings.set('pricing', 'delivery_fee', FEE);
+    }
+  });
+
+  it('and one opened before the fee dropped', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    settings.set('pricing', 'delivery_fee', FEE + 20);
+    try {
+      const c = db.createCollection('דמי משלוח ירדו באמצע תשלום');
+      const s = await openPayment(c, { version: 'delivery', address });
+
+      settings.set('pricing', 'delivery_fee', FEE);
+      db.setOrder(c.id, c.owner_token, { version: 'delivery', address });
+      expect(db.getCollection(c.id).order.delivery_fee).toBe(FEE);
 
       charge(s.token, s.charged_total);
       await app.tranzilaSweeper.sweep();
@@ -405,20 +429,17 @@ describe('the buyer re-submitting an order while its pay window is open', () => 
     }
   });
 
-  // The freeze lasts exactly as long as the window. With none open, an unpaid
-  // order still re-prices from settings — collect.html's renderTotal prices the
-  // same way, so the number on the screen and the number charged stay equal by
-  // construction.
-  it('but with no window open an unpaid order still re-prices from settings', async () => {
+  // Every pay/init refreshes the session clock, so a freeze keyed on "a window was
+  // opened recently" would have held the old fee for as long as the buyer kept
+  // re-opening the modal — indefinitely, past any TTL. Live pricing cannot.
+  it('and re-opening the modal never pins an old price', async () => {
     const settings = require(path.join(serverDir, 'settings.js'));
-    const c = db.createCollection('הזמנה בלי חלון תשלום');
-    const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
-    db.setOrder(c.id, c.owner_token, { version: 'delivery', address });
-    expect(db.getCollection(c.id).order.delivery_fee).toBe(FEE);
+    const c = db.createCollection('פתיחה חוזרת של חלון התשלום');
+    await openPayment(c, { version: 'delivery', address });
 
     settings.set('pricing', 'delivery_fee', FEE + 20);
     try {
-      db.setOrder(c.id, c.owner_token, { version: 'delivery', address });
+      await openPayment(c, { version: 'delivery', address });
       const order = db.getCollection(c.id).order;
       expect(order.delivery_fee).toBe(FEE + 20);
       expect(order.total).toBe(order.unit_price * (order.quantity || 1) + FEE + 20);

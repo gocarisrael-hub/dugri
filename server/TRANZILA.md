@@ -90,8 +90,12 @@ is unsigned and nothing documents it being retried, so it decides nothing.
    - `amount` (agorot) equals the session's `charged_total` exactly,
    - the row carries the session's token,
    - that index has not already paid for another purchase,
-   - the order is still priced as it was when that pay window opened (version,
-     copies, unit price, delivery fee, total; the fee for a shipping upgrade),
+   - it is still the same purchase as when that pay window opened (version,
+     copies, unit price; the fee for a shipping upgrade). Deliberately not the
+     delivery fee or the total: the amount is already checked exactly against the
+     window's own figure, and those two move with live settings, so refusing a
+     verified charge because the owner changed the fee meanwhile would mean the
+     money taken and the order left unpaid,
      stored on the session at pay/init. A charge from a cheaper window the buyer
      closed before changing the order does not pay for the changed order; the
      owner is told instead.

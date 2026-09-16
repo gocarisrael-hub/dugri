@@ -401,38 +401,20 @@ function withoutMetaCtx(order) {
 // made in an old pay window cannot pay for an order the buyer has since changed —
 // a 79 ₪ PDF window closed, the order switched to delivery, and the old charge
 // arriving later. Null for nothing to price.
+// WHAT IS BEING BOUGHT, not what it costs. The amount is already checked exactly,
+// against that session's own `charged_total`, so this only has to answer "is this
+// still the same purchase?". Deliberately NOT the delivery fee or the total: those
+// move with live settings on any re-submit, and refusing a verified charge because
+// the owner changed the fee meanwhile means money taken and the order left unpaid.
+// The case this exists for still fails, because it changes `version`: a 79 ₪ PDF
+// window closed, the order switched to delivery, the old charge arriving later.
 function orderPriceKey(order) {
   if (!order) return null;
-  return [
-    'order',
-    order.version,
-    Number(order.quantity) || 1,
-    Number(order.unit_price),
-    Number(order.delivery_fee) || 0,
-    Number(order.total),
-  ].join('|');
+  return ['order', order.version, Number(order.quantity) || 1, Number(order.unit_price)].join('|');
 }
 function shippingPriceKey(shipping) {
   if (!shipping) return null;
   return ['shipping', Number(shipping.fee)].join('|');
-}
-
-// Is a pay window opened within the last SESSION_TTL still waiting on its charge?
-// Deliberately NOT gated on `resolved`: pay-done's close beacon resolves a
-// session while its charge is still on its way, which on Tranzila is every
-// ordinary successful payment. Used to hold an order's price still while a buyer
-// is paying it.
-function payWindowOpen(order) {
-  const sessions = order && order.pelecard && order.pelecard.sessions;
-  if (!Array.isArray(sessions)) return false;
-  const now = Date.now();
-  return sessions.some(
-    (s) =>
-      s &&
-      Number(s.charged_total) > 0 &&
-      s.initiated_at &&
-      now - Date.parse(s.initiated_at) < SESSION_TTL_MS
-  );
 }
 
 function pushPaySession(
@@ -2219,26 +2201,7 @@ const db = {
       sameAsExisting && Number.isInteger(existing.unit_price)
         ? existing.unit_price
         : versionPrice(version);
-    // The fee is the ONE priced field still read from live settings on a
-    // re-submit — unit_price above is already kept — and that re-read is a false
-    // refusal waiting to happen: an order placed at a 39₪ fee with its pay window
-    // open, the owner raises the fee, the buyer fixes the address or re-opens the
-    // modal, and the stored price moves out from under a charge already on its
-    // way, which is then refused with the money taken (server/tranzila-sweep.js).
-    // So while a pay window from the last SESSION_TTL is still unpaid, the fee it
-    // quoted stands. The same reasoning as adminUpdateOrder's re-pricing guard,
-    // for the buyer's own path.
-    //
-    // Outside that window an unpaid order re-prices from settings exactly as
-    // before, so collect.html's renderTotal and the charge still agree by
-    // construction rather than by coincidence.
-    const quotedFee = Number(existing && existing.delivery_fee);
-    const fee =
-      version !== 'delivery'
-        ? 0
-        : sameAsExisting && quotedFee > 0 && payWindowOpen(existing)
-          ? quotedFee
-          : deliveryFee();
+    const fee = version === 'delivery' ? deliveryFee() : 0;
     c.order = {
       version,
       // Copies of the same game, and the per-copy price behind the total. Kept as
