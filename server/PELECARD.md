@@ -49,6 +49,17 @@ Implemented against PeleCard's official **Iframe/Redirect** (11/2024) and
    get the authoritative status + amount + token. We locate the order by the
    token PeleCard echoes back (`AdditionalDetailsParamX`), confirm status `000`
    and that the charged amount equals the order total, then mark it paid.
+
+   The amount is checked against **that payment window's** own quote, which is not
+   the same question as "is this still the same purchase?". If the order changed
+   while the window was open — copies, version, unit price — the charge still
+   settles, and the owner is told (`purchaseChangedOnSettle` in `server/index.js`).
+   It is not refused, because nothing stands behind this callback to retry it:
+   refusing would leave the buyer charged and the order unpaid. Tranzila refuses
+   in the same situation precisely because its sweep _can_ re-read the row. The
+   reasoning for that difference lives in `server/TRANZILA.md`, beside the
+   shipping-upgrade rule — read it before making the two providers behave alike.
+
 4. The in-iframe `pay-done.html` tells the page to close the modal and refresh.
 
 Because verification re-fetches the transaction from PeleCard with our secret

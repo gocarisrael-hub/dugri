@@ -4216,6 +4216,7 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   const session = match.session;
   // Before any write: convergence and markPaid both move the numbers this reads.
   const feeMoved = feeMoveOnSettle(match);
+  const purchaseChanged = purchaseChangedOnSettle(match);
   if (match.kind === 'shipping') {
     if (c.order.shipping.paid) return false;
     db.markShippingPaid(c.id, {
@@ -4278,7 +4279,16 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   // that produces this runs on PeleCard too, and PeleCard is what production
   // charges with, so a notice living only in the Tranzila sweep would miss every
   // real occurrence today.
-  if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
+  //
+  // A purchase that CHANGED subsumes a fee that moved: both can be true of one
+  // settle (fee 39->59 and copies 1->2 together), and two messages about one
+  // charge is its own noise problem. Fee-only keeps its own wording, which is
+  // sharper than the general one.
+  if (purchaseChanged) {
+    safelyReportSettleMismatch(c, { purchaseChanged, feeMoved }, { method, transactionId });
+  } else if (feeMoved) {
+    safelyReportFeeMoved(c, feeMoved, { method, transactionId });
+  }
   return true;
 }
 
@@ -4300,6 +4310,115 @@ function feeMoveOnSettle(match) {
   const now =
     match.kind === 'shipping' ? Number(order.shipping.fee) || 0 : Number(order.delivery_fee) || 0;
   return Number(quoted) === now ? null : { from: Number(quoted), to: now };
+}
+
+// IS THIS STILL THE SAME PURCHASE the buyer paid for? `price_key` is stored on
+// every session at pay/init (version|copies|unit price) and is what Tranzila's
+// sweep already refuses on. PeleCard verified the charge against that window's
+// AMOUNT alone and never compared the key, so an order edited while the window was
+// open settled fully paid at the old price with nothing reported anywhere.
+//
+// It still SETTLES: the charge was correct for the window it was made in, and
+// refusing would leave money taken and the order unpaid — the failure class #620
+// spent twelve rounds removing, and PeleCard has no sweep to recover it later.
+// Settle, and tell her.
+//
+// NOT on the shipping path: `shippingPriceKey` is ['shipping', fee], so there the
+// key and the fee are the SAME condition and `feeMoveOnSettle` already reports it,
+// in plainer words. Running both would tell her twice about one settle.
+//
+// THE TWO PROVIDERS DIFFER ON PURPOSE. Tranzila REFUSES a changed purchase and
+// this callback SETTLES one, and the reason is not that PeleCard is older: it is
+// that Tranzila has a sweep behind it. The row stays on the terminal, the next
+// sweep reads it again, the owner is alerted — a refusal there is recoverable.
+// Nothing stands behind this callback. Refusing here would not postpone the
+// decision, it would END it: buyer charged, order unpaid, nothing to recover
+// from. The rule is refuse only where something will retry. The full argument
+// lives in server/TRANZILA.md beside the shipping-upgrade rule; replace it there
+// before making the two behave alike.
+//
+// Unreachable from Tranzila by construction — its sweep refuses on this same key
+// BEFORE calling settleVerifiedPayment, so by the time it settles the key matched.
+// That makes this path LATENT, not dead: do not delete it because only one
+// provider can reach it, and if that refusal is ever relaxed it becomes Tranzila's
+// reporting path too.
+function purchaseChangedOnSettle(match) {
+  if (!match || match.kind === 'shipping') return null;
+  const was = match.session && match.session.price_key;
+  // Null means a session written before the key existed: nothing to compare, so
+  // nothing is claimed. Same rule as fee_at_init.
+  if (!was) return null;
+  const order = match.collection.order;
+  const now = db.orderPriceKey(order);
+  if (!now || was === now) return null;
+  return {
+    was,
+    now,
+    charged: Number(match.session.charged_total),
+    total: Number(order.total),
+  };
+}
+
+// What actually changed, in her words rather than ours: the key is an internal
+// string (`order|pickup|3|199`) and showing it would tell her nothing.
+function describePurchaseChange(was, now) {
+  const VERSIONS = {
+    pdf: 'קובץ דיגיטלי',
+    pickup: 'איסוף עצמי',
+    delivery: 'משלוח',
+    custom: 'הזמנה מיוחדת',
+  };
+  const a = String(was).split('|');
+  const b = String(now).split('|');
+  const label = (v) => VERSIONS[v] || v || '—';
+  const out = [];
+  if (a[1] !== b[1]) out.push('סוג ההזמנה: ' + label(a[1]) + ' ← ' + label(b[1]));
+  if (a[2] !== b[2]) out.push('מספר עותקים: ' + a[2] + ' ← ' + b[2]);
+  if (a[3] !== b[3]) out.push('מחיר ליחידה: ' + a[3] + ' ₪ ← ' + b[3] + ' ₪');
+  return out;
+}
+
+function reportSettleMismatch(c, { purchaseChanged, feeMoved }, { method, transactionId }) {
+  const ref = db.orderRef(c);
+  const shortfall = purchaseChanged.total - purchaseChanged.charged;
+  console.error(
+    '[payment] ' +
+      ref +
+      ': settled after the purchase changed ' +
+      purchaseChanged.was +
+      ' -> ' +
+      purchaseChanged.now
+  );
+  const lines = [
+    'הזמנה: ' + ref,
+    'התשלום התקבל וסומן כשולם' + (transactionId ? ' (עסקה ' + transactionId + ')' : '') + '.',
+    'ההזמנה שונתה אחרי שנפתח חלון התשלום, כך שנגבה סכום של הזמנה אחרת:',
+    ...describePurchaseChange(purchaseChanged.was, purchaseChanged.now).map((l) => '  • ' + l),
+  ];
+  if (feeMoved) lines.push('  • דמי המשלוח: ' + feeMoved.from + ' ₪ ← ' + feeMoved.to + ' ₪');
+  lines.push(
+    'נגבה ' + purchaseChanged.charged + ' ₪, וההזמנה עכשיו ' + purchaseChanged.total + ' ₪.'
+  );
+  lines.push(
+    shortfall > 0
+      ? 'חסרים ' + shortfall + ' ₪ — להשלים מול הלקוח/ה או להשאיר כפי שהוא, לפי שיקולך.'
+      : 'נגבו ' + -shortfall + ' ₪ יותר מהמחיר הנוכחי — לזכות את ההפרש אם מגיע.'
+  );
+  lines.push('אמצעי תשלום: ' + (method || '—'));
+  const subject = 'שולם, אבל ההזמנה השתנתה בינתיים';
+  notify
+    .sendSystemAlert(subject, lines)
+    .then((ok) => ok || alertOwnerViaWhatsApp(subject, lines))
+    .catch(() => {});
+}
+
+// Same guard as the fee notice: a notification must never unmake a settle.
+function safelyReportSettleMismatch(c, moved, meta) {
+  try {
+    reportSettleMismatch(c, moved, meta);
+  } catch (e) {
+    console.error('[payment] purchase-changed notice failed: ' + ((e && e.message) || e));
+  }
 }
 
 // Money moved and the purchase IS paid, so this is a notice, not a refusal. Sent

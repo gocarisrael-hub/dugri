@@ -349,6 +349,189 @@ describe('POST /api/payment/callback', () => {
     }
   });
 
+  // THE PURCHASE ITSELF CHANGED under an in-flight charge — she edited the unpaid
+  // order while the buyer's window was open. PeleCard verifies the charge against
+  // THAT window's amount and nothing else, so before this it settled silently: the
+  // order marked fully paid at the old price, no notice anywhere.
+  //
+  // The charge is still correct for the window it was made in, so it settles — the
+  // alternative is money taken and the order left unpaid, which is the failure
+  // class #620 spent twelve rounds removing. It settles AND she is told.
+  it('reports a purchase that changed under an in-flight charge', async () => {
+    const c = db.createCollection('הזמנה ששונתה באמצע');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+    });
+    expect(init.status).toBe(200);
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      db.adminUpdateOrder(c.id, { quantity: 3 });
+      const repriced = db.getCollection(c.id).order;
+      expect(repriced.total).toBe(charged * 3);
+
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-qty',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-012',
+        },
+      };
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-qty' } });
+      expect(r.status).toBe(200);
+
+      // Settles at what was actually charged.
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(true);
+      expect(order.charged_total).toBe(charged);
+
+      // ...and she is TOLD, with both numbers and the shortfall. This is the
+      // assertion that fails today: the settle is silent.
+      expect(alert).toHaveBeenCalled();
+      const text = alert.mock.calls.map(([, lines]) => lines.join('\n')).join('\n');
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      expect(text).toContain(String(charged));
+      expect(text).toContain(String(order.total));
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  // THE NEGATIVE THAT KEEPS THE ALERT WORTH READING. Every ordinary payment
+  // settles with the purchase it was quoted for, so if this fired too the real
+  // ones would be buried in notices about nothing.
+  it('stays silent when the purchase did not change', async () => {
+    const c = db.createCollection('הזמנה רגילה');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+    });
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-plain',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-013',
+        },
+      };
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-plain' } });
+      expect(r.status).toBe(200);
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  // THE ESCALATION, on the notice that carries the most money of the two. Email
+  // answering false is not hypothetical: a Resend 5xx, or RESEND_API_KEY/NOTIFY_TO
+  // unset on this environment, at the exact moment a changed purchase settles.
+  // This notice is sent, not enqueued, so WhatsApp is the only second chance it
+  // gets — and the `.catch()` that stops it unmaking the settle would swallow a
+  // broken escalation without a sound. The fee notice above has this cover; the
+  // expression is identical, so the only thing that makes it true here is a test.
+  it('escalates the purchase-changed notice off email when the send reports failure', async () => {
+    const c = db.createCollection('הזמנה ששונתה והאימייל נפל');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+    });
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(false);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      db.adminUpdateOrder(c.id, { quantity: 4 });
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-qty-fallback',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-014',
+        },
+      };
+      const r = await post('/api/payment/callback', {
+        ResultData: { TransactionId: 'tx-qty-fallback' },
+      });
+      expect(r.status).toBe(200);
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(alert).toHaveBeenCalled();
+
+      // The fallback runs in a .then AFTER the callback answers, so let the
+      // microtask queue drain before asserting on it.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const escalated = logged.mock.calls
+        .map((args) => args.map((a) => String(a)).join(' '))
+        .join('\n');
+      expect(escalated).toContain('OWNER ESCALATION NOT DELIVERED');
+      expect(escalated).toContain('ההזמנה השתנתה');
+    } finally {
+      logged.mockRestore();
+      alert.mockRestore();
+    }
+  });
+
+  // A NOTIFICATION MUST NEVER UNMAKE A SETTLE — the same rule the fee notice is
+  // held to, and the reason this notice is wrapped at all. By the time it runs the
+  // money has cleared and the order is already marked paid, so a SYNCHRONOUS throw
+  // on the way to telling her would answer PeleCard with a failure and invite a
+  // retry, over a message. Only a sync throw can escape: `sendSystemAlert` catches
+  // its own rejections internally.
+  it('still settles when the purchase-changed notice itself throws', async () => {
+    const c = db.createCollection('התראת שינוי שנכשלת');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+    });
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockImplementation(() => {
+      throw new Error('notify exploded');
+    });
+    try {
+      db.adminUpdateOrder(c.id, { quantity: 5 });
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-qty-boom',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-015',
+        },
+      };
+      const r = await post('/api/payment/callback', {
+        ResultData: { TransactionId: 'tx-qty-boom' },
+      });
+      // The provider is answered, and the payment stands.
+      expect(r.status).toBe(200);
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(true);
+      expect(order.charged_total).toBe(charged);
+      expect(order.paid_transaction_id).toBe('tx-qty-boom');
+      expect(alert).toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
   it('does NOT mark paid when SHVA did not approve the charge (ShvaResult != 000)', async () => {
     const c = db.createCollection('לא אושר');
     await post('/api/collections/' + c.id + '/pay/init', {
