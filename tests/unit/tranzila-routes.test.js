@@ -668,9 +668,11 @@ describe('delivery through Tranzila', () => {
       // REFUSED, never settled-with-notice. `fee_at_init` must not soften this
       // path: for an upgrade the fee IS the key, so a moved fee changes the key
       // and the row is refused before the fee comparison is ever reached. The
-      // alert therefore says the purchase changed, not that a fee moved — this
-      // needle appears only in the `fee_changed` wording, never in `order_changed`.
-      expect(text).not.toContain('סומנה כשולמה עבור הזמנה');
+      // settled-with-notice alert comes from settleVerifiedPayment under its own
+      // subject, so that subject must never appear for a refusal.
+      expect(alert.mock.calls.map(([subject]) => subject)).not.toContain(
+        'שולם, אבל דמי המשלוח השתנו בינתיים'
+      );
       expect(text).toContain(String(index));
       expect(text).toContain(db.getCollection(c.id).order_no);
       expect(text).toContain('השתנתה');

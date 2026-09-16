@@ -422,13 +422,18 @@ describe('a fee change while the buyer is paying', () => {
       const order = db.getCollection(c.id).order;
       expect(order.paid).toBe(true);
 
-      // Told once, naming the order, what was charged and what it costs now.
+      // Told once, naming the order and THE FEE MOVE — not charged-vs-total.
+      // With a coupon those two differ by the discount as well as the fee, so a
+      // charged-vs-total notice would state a gap of the whole discount and send
+      // her chasing money nobody owes. The fee delta is the shortfall, coupon or
+      // not, because a coupon discounts the game and never the postage.
       expect(alert).toHaveBeenCalledTimes(1);
       const text = alertText(alert);
       expect(text).toContain(String(index));
       expect(text).toContain(db.getCollection(c.id).order_no);
-      expect(text).toContain(Math.round(s.charged_total * 100) + ' אגורות');
-      expect(text).toContain(Math.round(order.total * 100) + ' אגורות');
+      expect(text).toContain(FEE + ' ₪ ← ' + (FEE + 20) + ' ₪');
+      expect(text).toContain('חסרים 20 ₪');
+      expect(order.total).toBe(order.unit_price * (order.quantity || 1) + FEE + 20);
     } finally {
       alert.mockRestore();
       settings.set('pricing', 'delivery_fee', FEE);
@@ -451,7 +456,12 @@ describe('a fee change while the buyer is paying', () => {
       await app.tranzilaSweeper.sweep();
       expect(db.getCollection(c.id).order.paid).toBe(true);
       expect(alert).toHaveBeenCalledTimes(1);
-      expect(alertText(alert)).toContain(db.getCollection(c.id).order_no);
+      const text = alertText(alert);
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      // The other direction: she was charged MORE than the order now costs, so
+      // the notice must say credit, never collect.
+      expect(text).toContain(FEE + 20 + ' ₪ ← ' + FEE + ' ₪');
+      expect(text).toContain('נגבו 20 ₪ יותר');
     } finally {
       alert.mockRestore();
       settings.set('pricing', 'delivery_fee', FEE);

@@ -185,6 +185,62 @@ describe('POST /api/payment/callback', () => {
     expect(order.paid_approval_no).toBe('86-001-006');
   });
 
+  // PELECARD IS WHAT PRODUCTION CHARGES WITH, so the fee-moved notice has to
+  // reach the owner from this callback too — not only from the Tranzila sweep.
+  // The case is reachable on the admin path: an unpaid delivery order with a pay
+  // modal open, the owner raises the fee and fixes a typo, `adminUpdateOrder`
+  // re-prices, and the in-flight charge then settles at the old amount. Without
+  // the notice the order is marked paid with `total` != `charged_total` and
+  // nobody is told.
+  it('reports a fee that moved under an in-flight charge', async () => {
+    const settings = require(path.join(serverDir, 'settings.js'));
+    const c = db.createCollection('דמי משלוח זזו באמצע');
+    const addr = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'delivery',
+      address: addr,
+    });
+    expect(init.status).toBe(200);
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+    const feeWas = db.getCollection(c.id).order.delivery_fee;
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    settings.set('pricing', 'delivery_fee', feeWas + 20);
+    try {
+      db.adminUpdateOrder(c.id, { address: { ...addr, street: 'הרצל 12' } });
+      expect(db.getCollection(c.id).order.delivery_fee).toBe(feeWas + 20);
+
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-fee',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-009',
+        },
+      };
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-fee' } });
+      expect(r.status).toBe(200);
+
+      // Settles — the charge was correct for the window it was made in.
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(true);
+      expect(order.charged_total).toBe(charged);
+      // ...and she is told, on PeleCard, with the fee move and the shortfall.
+      const subjects = alert.mock.calls.map(([subject]) => subject);
+      expect(subjects).toContain('שולם, אבל דמי המשלוח השתנו בינתיים');
+      const text = alert.mock.calls.map(([, lines]) => lines.join('\n')).join('\n');
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      expect(text).toContain(feeWas + ' ₪ ← ' + (feeWas + 20) + ' ₪');
+    } finally {
+      alert.mockRestore();
+      settings.set('pricing', 'delivery_fee', feeWas);
+    }
+  });
+
   it('does NOT mark paid when SHVA did not approve the charge (ShvaResult != 000)', async () => {
     const c = db.createCollection('לא אושר');
     await post('/api/collections/' + c.id + '/pay/init', {

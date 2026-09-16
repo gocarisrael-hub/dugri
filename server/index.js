@@ -5495,9 +5495,52 @@ app.post('/api/payment/callback', async (req, res) => {
 // `match` is db.findPaySession's { collection, session, kind }; the caller has
 // already proven the charge belongs to that session and is for its amount.
 // Idempotent on each purchase's own paid flag, because a provider may call twice.
+// The delivery fee this window quoted, against the one the purchase carries right
+// now. Read BEFORE anything settles, because the shipping path's convergence
+// rewrites `delivery_fee` and `total` as it marks the upgrade paid.
+//
+// The comparison is the FEE, not charged-vs-total: a coupon discounts the game and
+// never the postage (pay/init), so with a 50% code on a 238 ₪ order charged 139 ₪
+// a charged-vs-total reading reports a ~119 ₪ gap when the buyer owes exactly the
+// 20 ₪ the fee moved by. The fee delta IS the shortfall, coupon or not.
+function feeMoveOnSettle(match) {
+  const quoted = match.session && match.session.fee_at_init;
+  // Null means a session written before this field existed: nothing to compare,
+  // so nothing is claimed. Never treat it as 0 — that would report the whole fee
+  // of every pre-existing delivery order as a change.
+  if (quoted == null) return null;
+  const order = match.collection.order;
+  const now =
+    match.kind === 'shipping' ? Number(order.shipping.fee) || 0 : Number(order.delivery_fee) || 0;
+  return Number(quoted) === now ? null : { from: Number(quoted), to: now };
+}
+
+// Money moved and the purchase IS paid, so this is a notice, not a refusal. Sent
+// straight out rather than queued, because it has to reach the owner from BOTH
+// providers' callbacks and only Tranzila has a sweep to queue into.
+function reportFeeMovedOnSettle(c, moved, { method, transactionId }) {
+  const ref = db.orderRef(c);
+  const delta = moved.to - moved.from;
+  console.error(
+    '[payment] ' + ref + ': settled after the delivery fee moved ' + moved.from + ' -> ' + moved.to
+  );
+  const lines = [
+    'הזמנה: ' + ref,
+    'התשלום התקבל וסומן כשולם' + (transactionId ? ' (עסקה ' + transactionId + ')' : '') + '.',
+    'דמי המשלוח השתנו מאז שנפתח חלון התשלום: ' + moved.from + ' ₪ ← ' + moved.to + ' ₪.',
+    delta > 0
+      ? 'חסרים ' + delta + ' ₪ מול המחיר הנוכחי — להשלים או להשאיר כפי שהוא, לפי שיקולך.'
+      : 'נגבו ' + -delta + ' ₪ יותר מהמחיר הנוכחי — לזכות את ההפרש אם מגיע.',
+    'אמצעי תשלום: ' + (method || '—'),
+  ];
+  notify.sendSystemAlert('שולם, אבל דמי המשלוח השתנו בינתיים', lines).catch(() => {});
+}
+
 function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   const c = match.collection;
   const session = match.session;
+  // Before any write: convergence and markPaid both move the numbers this reads.
+  const feeMoved = feeMoveOnSettle(match);
   if (match.kind === 'shipping') {
     if (c.order.shipping.paid) return false;
     db.markShippingPaid(c.id, {
@@ -5511,6 +5554,7 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
     // the owner is told the same way she is told about any other change of
     // fulfilment — she has a parcel to send that she did not have this morning.
     onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
+    if (feeMoved) reportFeeMovedOnSettle(c, feeMoved, { method, transactionId });
     return true;
   }
   if (c.order.paid) return false;
@@ -5548,6 +5592,13 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
   } catch (e) {
     console.error('[meta-capi] ' + c.id + ': ' + ((e && e.message) || e));
   }
+  // Last, and only on a real unpaid->paid transition: the order is now paid with
+  // a `total` that no longer equals what the card was charged. BOTH providers
+  // reach here, which is the whole point — the admin re-pricing path that
+  // produces this runs on PeleCard too, and PeleCard is what production charges
+  // with, so a notice living only in the Tranzila sweep would miss every real
+  // occurrence today.
+  if (feeMoved) reportFeeMovedOnSettle(c, feeMoved, { method, transactionId });
   return true;
 }
 
@@ -5630,45 +5681,16 @@ function decideTranzilaRow(tx) {
       repriced.push(m);
       continue;
     }
-    // The fee the purchase carries NOW, against what this window quoted. It is
-    // not part of the key on purpose, so it never refuses the charge — but if it
-    // moved, the order is about to be marked paid with a `total` that no longer
-    // equals what the card was charged, and nobody would know. Settle, and tell
-    // her. Unbounded by design: a 39 -> 390 typo settles exactly like a 39 -> 59
-    // rise, and the size of the gap is precisely what she needs to see.
-    const quoted = m.session.fee_at_init;
-    const feeNow =
-      m.kind === 'shipping'
-        ? Number(m.collection.order.shipping.fee)
-        : Number(m.collection.order.delivery_fee) || 0;
-    const feeMoved = quoted != null && Number(quoted) !== feeNow;
-    const totalNow =
-      m.kind === 'shipping'
-        ? Number(m.collection.order.shipping.fee)
-        : Number(m.collection.order.total);
-
+    // A fee that moved under this charge is reported by settleVerifiedPayment,
+    // NOT from here: the same thing happens on PeleCard — which is what production
+    // charges with — so the notice belongs at the one point both providers pass
+    // through. Queueing it here as well would tell her twice.
     settleVerifiedPayment(m, {
       method: tranzila.NAME,
       transactionId: tx.index,
       approvalNo: tx.approvalNo,
     });
-    if (!feeMoved) return { outcome: 'settled' };
-    console.error(
-      '[tranzila] index ' + tx.index + ' settled after the delivery fee moved since its pay window'
-    );
-    return {
-      outcome: 'settled',
-      alert: {
-        amount: tx.amountAgorot,
-        type: tx.txnType,
-        mode: tx.tranmode,
-        date: tx.raw && tx.raw.transaction_date ? String(tx.raw.transaction_date) : null,
-        kind: 'fee_changed',
-        orders: [m.collection.order_no || m.collection.id],
-        expected: [Math.round(Number(m.session.charged_total) * 100)],
-        now: [Math.round(totalNow * 100)],
-      },
-    };
+    return { outcome: 'settled' };
   }
   const base = {
     amount: tx.amountAgorot,
@@ -5798,19 +5820,6 @@ function describeTranzilaAlert(item) {
   }
   if (item.kind === 'orphan') {
     return head + ' — אושרה עבור הזמנה שכבר לא קיימת במערכת (נמחקה?)';
-  }
-  // Money DID move and the order IS paid — this one is a notice, not a refusal.
-  if (item.kind === 'fee_changed') {
-    return (
-      head +
-      ' — שולמה וסומנה כשולמה עבור הזמנה ' +
-      (item.orders || []).join(', ') +
-      ', אבל דמי המשלוח השתנו מאז שנפתח חלון התשלום: נגבה ' +
-      (item.expected || []).join('/') +
-      ' אגורות וההזמנה עכשיו ' +
-      (item.now || []).join('/') +
-      ' אגורות. להשלים או לזכות את ההפרש לפי הצורך.'
-    );
   }
   if (item.kind === 'order_changed') {
     return (
