@@ -2308,9 +2308,23 @@ app.post('/api/admin/collections/:id/to-print', (req, res) => {
 // when the feature is off, the buyer left no mobile, or the text is empty — an
 // SMS is optional in a way the email is not, so nothing here is ever an error the
 // owner has to clear.
+//
+// SELF-PICKUP ONLY. The text names the pickup address and tells the customer her
+// game is waiting to be collected: sent to a delivery buyer it would march her
+// across town for a box that is on its way to her door, and a digital order has
+// nothing to collect at all. The EMAIL still goes to every kind — it renders the
+// right fulfilment lines per order (notify.orderReadyFulfilment) — so nobody is
+// left uninformed by this gate, and marking the order ready is untouched: the
+// row press and the whole-pile press both still move every order out of בדפוס.
+//
+// The version is read from the order at SEND time rather than from what was
+// bought, because they differ: a buyer who adds shipping after paying becomes a
+// delivery order (onShippingAdded), and she must not get the pickup text.
 function queueReadySms(collection) {
   try {
     if (!settings.get('sms', 'enabled')) return null;
+    const version = String((collection && collection.order && collection.order.version) || '');
+    if (version !== 'pickup') return null;
     const tpl = String(settings.get('sms', 'order_ready') || '');
     if (!tpl.trim()) return null;
     const base = paymentBaseUrl();

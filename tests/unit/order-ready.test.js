@@ -371,6 +371,30 @@ describe('the recovery press: מוכן on a row that is already ready', () => {
     sms._reset();
   });
 
+  // SELF-PICKUP ONLY. The text names the pickup address and says the game is
+  // waiting to be collected — a delivery buyer reading it would be sent across
+  // town for a box already on its way to her. Marking ready is untouched, and the
+  // MAIL still goes: it renders the right fulfilment lines per kind, so she is
+  // told her game is done through the channel that can say it correctly.
+  it('queues no text for a delivery order, but still marks it and mails it', async () => {
+    const c = db.createCollection('דנה', { email: 'buyer@example.com', phone: '0521234567' });
+    db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: { street: 'הרצל 5', city: 'תל אביב', postal: '6100000', apartment: '3' },
+    });
+    db.setOrderSentToPrint(c.id, true);
+    const spy = vi.fn(async () => true);
+    notify.sendOrderReady = spy;
+    try {
+      await press(c);
+      expect(db.getCollection(c.id).order.ready_at).toBeTruthy();
+      expect(textsFor(c)).toHaveLength(0);
+      expect(spy).toHaveBeenCalledTimes(1);
+    } finally {
+      delete notify.sendOrderReady;
+    }
+  });
+
   it('sends nothing new while the first text is still waiting for the phone', async () => {
     const c = readyWithPhone();
     await press(c);
