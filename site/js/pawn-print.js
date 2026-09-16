@@ -539,7 +539,7 @@ export function slotRect(frac, viewBox) {
  * pawn `fallback` (an image URL), or nothing. Rebuilt only when what it shows or
  * where it sits changes; a new crop is a single attribute.
  */
-export function paintSticker(g, { id, slot, photo, crop, filterId, fallback }) {
+export function paintSticker(g, { id, slot, photo, crop, filterId, fallback, discFill }) {
   if (!g) return;
   if (!photo && fallback) {
     const key = [
@@ -562,13 +562,16 @@ export function paintSticker(g, { id, slot, photo, crop, filterId, fallback }) {
     g.__pawnKey = null;
     return;
   }
-  const key = [photo.href, id, filterId, slot.x, slot.y, slot.w, slot.h].join('|');
+  // …and the FILL is part of what is drawn, so it is part of the key. Without it
+  // a card that comes back with a different disc_fill — the same photo in the same
+  // slot — takes the crop-only path below and keeps the circle it already had.
+  const key = [photo.href, id, filterId, slot.x, slot.y, slot.w, slot.h, discFill].join('|');
   const inner = g.__pawnKey === key && g.querySelector('svg[data-pawn-crop]');
   if (inner) {
     inner.setAttribute('viewBox', cropViewBox(crop));
     return;
   }
-  g.innerHTML = stickerMarkup({ id, slot, photo, crop, filterId });
+  g.innerHTML = stickerMarkup({ id, slot, photo, crop, filterId, discFill });
   g.__pawnKey = key;
 }
 
@@ -706,18 +709,46 @@ const canvasBlob = (canvas) =>
  * `raw`), and to null only when even that could not be decoded — an empty disc
  * for a photo the deck WILL print is the one answer worse than an approximate one.
  */
+// THE CONSTANTS ARE PART OF WHAT WAS COMPUTED, SO THEY ARE PART OF THE KEY. The
+// card's spec arrives on a debounce, so a photo picked in the first moments of the
+// step is framed with this module's defaults — and keyed as though it were the
+// answer. Nothing re-prepared it when the tuned spec landed: the crop stayed wrong
+// for the life of the page, invisibly, because a default-framed photo looks like a
+// photo. Keyed on both, the tuned spec simply asks a different question.
+const variantKey = (base, cutout, discFill, subjectY) =>
+  (cutout ? 'c:' : 'o:') + base + '|' + (discFill ?? '') + '|' + (subjectY ?? '');
+
+// …and every variant a photo was prepared in, so that forgetting it forgets all
+// of them. A release that only knew one key left the others holding an object URL
+// for the life of the page.
+const preparedVariants = new Map();
+
 export function preparePhoto(src, { cutout, key, discFill, subjectY } = {}) {
-  const k = (cutout ? 'c:' : 'o:') + (key || src);
-  if (!prepared.has(k)) prepared.set(k, decode(src, !!cutout, { discFill, subjectY }));
+  const base = (cutout ? 'c:' : 'o:') + (key || src);
+  const k = variantKey(key || src, cutout, discFill, subjectY);
+  if (!prepared.has(k)) {
+    prepared.set(k, decode(src, !!cutout, { discFill, subjectY }));
+    const seen = preparedVariants.get(base) || new Set();
+    seen.add(k);
+    preparedVariants.set(base, seen);
+  }
   return prepared.get(k);
 }
 
-/** Forget a prepared photo (its object URL is released). */
+/**
+ * Forget a prepared photo — every variant of it — and release the object URLs.
+ * Also what a caller uses to let a FAILED photo be tried again: the promise is
+ * memoised, so without this a second attempt is handed the first one's answer.
+ */
 export function releasePhoto(key, { cutout } = {}) {
-  const k = (cutout ? 'c:' : 'o:') + key;
-  const p = prepared.get(k);
-  prepared.delete(k);
-  if (p) p.then((r) => r && URL.revokeObjectURL(r.href)).catch(() => {});
+  const base = (cutout ? 'c:' : 'o:') + key;
+  const seen = preparedVariants.get(base) || new Set();
+  preparedVariants.delete(base);
+  for (const k of seen) {
+    const p = prepared.get(k);
+    prepared.delete(k);
+    if (p) p.then((r) => r && URL.revokeObjectURL(r.href)).catch(() => {});
+  }
 }
 
 // The decoded picture: an ImageBitmap read the way Pillow reads the file, or —

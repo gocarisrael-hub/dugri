@@ -158,3 +158,32 @@ test('every pawn circle is round and sits on its printed cut-line', async ({ pag
     expect(s.disc, `slot ${i} is clipped to the printed disc`).toBeCloseTo(0.9, 3);
   }
 });
+
+// …AND IT IS THE PRINTER'S DISC, NOT A COPY OF THE NUMBER. build.PHOTO_DISC_FILL
+// is env-overridable on the generator (DUGRI_PHOTO_DISC_FILL), so the card sends
+// the fill it was drawn with and this page has to clip to THAT. The check above
+// cannot see the difference: it asserts 0.9, which is also the module's own
+// default, so a page that quietly ignored the card's answer passed it — and did.
+// The collection page built its sticker spec out of `viewBox` and `filter` alone
+// and dropped both constants, which is invisible until the day one is tuned and
+// the deck prints a framing the buyer never saw.
+test('the disc follows the fill the card was drawn with, not the page default', async ({
+  page,
+  request,
+}) => {
+  const { id, k } = await orderWithPhotos(request);
+  await page.route('**/pawn-card**', (route) =>
+    route.fulfill({ json: { card: CARD_PNG, slots: SLOTS, disc_fill: 0.6 } })
+  );
+  await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await page.getByTestId('tab-pawns').click();
+  await page.waitForSelector('#pawnLiveSlots .pawn-live-slot image', { state: 'attached' });
+  await expect
+    .poll(async () => page.locator('#pawnPrevImg').evaluate((i) => i.naturalWidth))
+    .toBe(CARD_W);
+  await expect.poll(async () => (await measure(page)).slots.length).toBe(4);
+
+  for (const [i, s] of (await measure(page)).slots.entries()) {
+    expect(s.disc, `slot ${i} is clipped to the card's own fill`).toBeCloseTo(0.6, 3);
+  }
+});

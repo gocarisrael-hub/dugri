@@ -3674,7 +3674,13 @@
         loadCustomDesigns,
       } from './js/designs.js';
       // Her pawns drawn as the printer draws them (the wizard's photo step).
-      import { preparePhoto, slotRect, paintTile, fallbackDeal } from './js/pawn-print.js';
+      import {
+        preparePhoto,
+        releasePhoto,
+        slotRect,
+        paintTile,
+        fallbackDeal,
+      } from './js/pawn-print.js';
       import {
         applyPalette,
         applyOriginal,
@@ -6373,10 +6379,12 @@
             key,
             at: Date.now(),
             spec: {
-              viewBox: r.viewBox,
+              // Defaulted the way collect.html defaults it: the card's own units,
+              // so a partial answer still places a tile instead of throwing.
+              viewBox: Array.isArray(r.viewBox) ? r.viewBox : [0, 0, 223.92, 312],
               filter: r.filter || '',
-              slots: r.slots,
-              fallbacks: r.fallbacks || [],
+              slots: Array.isArray(r.slots) && r.slots.length ? r.slots : null,
+              fallbacks: Array.isArray(r.fallbacks) ? r.fallbacks : [],
               // The generator's own constants, not this page's: both are
               // env-overridable there (DUGRI_PHOTO_DISC_FILL, DUGRI_PHOTO_SUBJECT_Y),
               // and a tuned deck must not print one framing and show another.
@@ -6558,15 +6566,24 @@
         slot.classList.toggle('is-filled', Boolean(file));
         slot.classList.toggle('is-cut', Boolean(file && pawnCutouts[idx]));
         slot.classList.toggle('is-pawn', Boolean(photo));
+        // A CARD WITHOUT ITS DISCS IS NOT A CARD TO DRAW ON. `filter` and
+        // `fallbacks` degrade to a default when an answer comes back partial, so
+        // `slots` must too — it was read straight through, and a card missing them
+        // threw inside slotRect (which destructures viewBox) rather than falling
+        // back to the plain tile this page already has for "no card yet".
+        const ready =
+          pawnBase && Array.isArray(pawnBase.spec.slots) && pawnBase.spec.slots.length
+            ? pawnBase
+            : null;
         // A slot past her player count prints nowhere, so no card goes under it.
         const onDeck = idx < pawnPlayers;
-        const base = pawnBase && onDeck ? pawnBase.card : null;
+        const base = ready && onDeck ? ready.card : null;
         slot.classList.toggle('has-card', Boolean(base));
         // …and a slot on the deck with no photo in it prints the pawn the deck
         // deals there, which is what the tile shows under the +.
         let fallback = null;
-        if (pawnBase && onDeck && !file) {
-          const pool = pawnBase.spec.fallbacks;
+        if (ready && onDeck && !file) {
+          const pool = ready.spec.fallbacks;
           const filled = Math.min(pawnPlayers, pawnFiles.filter(Boolean).length);
           const at = fallbackDeal(pool.length, filled, pawnPlayers / 4, Math.floor(idx / 4))[
             idx % 4
@@ -6574,10 +6591,10 @@
           fallback = at == null ? null : pool[at];
         }
         if (tile) {
-          const where = pawnBase
+          const where = ready
             ? {
-                spec: pawnBase.spec,
-                slot: slotRect(pawnBase.spec.slots[idx % 4], pawnBase.spec.viewBox),
+                spec: ready.spec,
+                slot: slotRect(ready.spec.slots[idx % 4], ready.spec.viewBox),
               }
             : { spec: LOOSE_SPEC, slot: LOOSE_SLOT };
           paintTile(tile, {
@@ -6619,6 +6636,9 @@
           blob = null;
         }
         if (seq !== pawnCutSeq[idx] || pawnFiles[idx] !== file) return; // superseded
+        // The cut is what prints from here on, so the original's prepared copy is
+        // dead weight — and it holds an object URL of its own now.
+        if (blob) releasePhoto(blobKey(file), { cutout: false });
         pawnCutouts[idx] = blob;
         pawnCutState[idx] = blob ? 'done' : 'failed';
         renderPawnSlot(idx);
@@ -6660,6 +6680,13 @@
           hidePawnError();
           // Whatever was in this slot is gone — its cutout and its measurement
           // with it, so neither follows the new photo when the grid closes up.
+          // FORGOTTEN IN THE MODULE TOO, or a buyer trying four photos in one slot
+          // leaves four prepared entries and four object URLs behind for the life
+          // of the page. On the common path now: an original mints one as well.
+          const wasFile = pawnFiles[idx];
+          const wasCut = pawnCutouts[idx];
+          if (wasFile) releasePhoto(blobKey(wasFile), { cutout: false });
+          if (wasCut) releasePhoto(blobKey(wasCut), { cutout: true });
           pawnFiles[idx] = file;
           pawnCutouts[idx] = null;
           pawnPrep[idx] = null;
@@ -6678,6 +6705,10 @@
         removeBtn.addEventListener('click', (e) => {
           e.preventDefault();
           e.stopPropagation();
+          const dropped = pawnFiles[idx];
+          const droppedCut = pawnCutouts[idx];
+          if (dropped) releasePhoto(blobKey(dropped), { cutout: false });
+          if (droppedCut) releasePhoto(blobKey(droppedCut), { cutout: true });
           pawnFiles[idx] = null;
           pawnCutouts[idx] = null;
           pawnPrep[idx] = null;

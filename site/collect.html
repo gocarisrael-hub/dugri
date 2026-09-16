@@ -3604,6 +3604,11 @@
         if (known && known.pending) return null;
         const tries = (known && known.tries) || 0;
         if (tries >= 2) return null;
+        // A SECOND ATTEMPT HAS TO BE A SECOND ATTEMPT. preparePhoto memoises the
+        // promise and keeps it after a failure, so asking again handed this back
+        // the first answer — the retry counted, logged and changed nothing, and
+        // the slot stayed dead for the life of the page. Forget it first.
+        if (tries > 0) releasePhoto(printSrc, { cutout });
         pawnReady.set(key, { pending: true, tries: tries + 1 });
         const opts = pawnSpec
           ? { cutout, discFill: pawnSpec.disc_fill, subjectY: pawnSpec.subject_y }
@@ -4445,6 +4450,11 @@
         // finishes, so a cold sixteen-player order started four Chrome runs at
         // once on a path that is unhappy at two. They share this one.
         const asked = api('/pawn-card?live=1&k=' + encodeURIComponent(ownerToken));
+        // Every box handles this rejection itself, but a box with no <img> returns
+        // before it ever awaits — and then nobody does, which the browser reports
+        // as an unhandled rejection. Claimed here so the shared ask always has an
+        // owner; the boxes still see the rejection and still draw their own error.
+        asked.catch(() => {});
         await Promise.all(boxes.map((b, i) => renderOnePawnCard(b, i, seq, asked)));
         if (seq === pawnCardSeq) paintPawnCard();
       }
@@ -4491,6 +4501,13 @@
             pawnSpec = {
               viewBox: Array.isArray(r.viewBox) ? r.viewBox : [0, 0, 223.92, 312],
               filter: r.filter || '',
+              // …AND THE GENERATOR'S OWN CONSTANTS. Carried, not defaulted here:
+              // both are env-overridable on the generator, so a deck tuned there
+              // must move this page with it. Dropping them was invisible — the
+              // module's defaults are the same numbers, so the page looked right
+              // until the day somebody tuned one.
+              disc_fill: r.disc_fill,
+              subject_y: r.subject_y,
             };
           }
           if (r && r.card) pawnBases[card] = r.card;

@@ -955,6 +955,11 @@ function runPawnCard({
         if (Array.isArray(produced.slots)) out.slots = produced.slots;
         if (Array.isArray(produced.viewBox)) out.viewBox = produced.viewBox;
         if (typeof produced.disc_fill === 'number') out.disc_fill = produced.disc_fill;
+        // BOTH constants, or the page keeps half the generator's framing:
+        // subject_y is what crops a photo with no silhouette (build.plain_crop),
+        // which is EVERY original she keeps the background on. Forwarding one and
+        // not the other is the same silent divergence as forwarding neither.
+        if (typeof produced.subject_y === 'number') out.subject_y = produced.subject_y;
         if (typeof produced.filter === 'string') out.filter = produced.filter;
         if (Array.isArray(produced.fallbacks)) out.fallbacks = produced.fallbacks;
         cleanup();
@@ -3523,8 +3528,8 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
 // the card). Nothing of hers goes in and no title (the tiles are the slots alone;
 // the title band is below them), so ONE picture per design serves every buyer at
 // every deck size and photo count, from the pawn-card cache. Public, so it is
-// rate-limited in the preview's own bucket; a cache hit costs nothing and is
-// never counted.
+// rate-limited in the preview's own bucket — and here, unlike the preview, the
+// limit is spent by a cache hit too; see the note on the check itself.
 app.get('/api/pawn-base', async (req, res) => {
   const theme = String(req.query.theme || '').trim();
   const entry = validate.getTheme(theme);
@@ -3534,12 +3539,24 @@ app.get('/api/pawn-base', async (req, res) => {
   // `in_store`, not `visibility` — a design unlocked by an access code IS on sale,
   // and its buyer reaches this step like any other.
   if (!entry || !templates.inStore(entry)) return res.status(400).json({ error: 'unknown theme' });
-  const cacheKey = 'pawn-base-public:' + theme + ':' + artworkStamp(theme);
-  const cached = pawnCardCache.get(cacheKey);
-  if (cached) return res.json(cached);
+  // THE LIMIT IS CHECKED BEFORE ANY WORK, INCLUDING THE STAMP — and that is the
+  // one place this route parts company with /api/preview above, deliberately.
+  // The stamp is five synchronous statSync calls, and the cache cannot be read
+  // without it because it is part of the key; leaving it first let an
+  // unauthenticated caller spend the event loop's filesystem budget at whatever
+  // rate it liked, THROTTLED OR NOT. So a refused request now does nothing at all.
+  //
+  // The cost is that a cache HIT spends a token here, where a preview's hit does
+  // not. That is affordable for this route and not for that one: a name is asked
+  // per keystroke, a design's bare card once per buyer per five-minute TTL (the
+  // wizard) and once per deck (the collection page shares one ask), against 60 a
+  // minute. Nothing a buyer can do from the page approaches it.
   if (!previewRate.ok('preview:' + clientKey(req))) {
     return res.status(429).json({ error: 'too many requests' });
   }
+  const cacheKey = 'pawn-base-public:' + theme + ':' + artworkStamp(theme);
+  const cached = pawnCardCache.get(cacheKey);
+  if (cached) return res.json(cached);
   try {
     const out = await pawnCardOnce(cacheKey, async () => {
       const made = await runPawnCard({ theme, empty: true, drawn: 4 });

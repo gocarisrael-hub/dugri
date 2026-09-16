@@ -65,6 +65,7 @@ process.stdout.write(JSON.stringify({
   slots: [{ n: 1, x: 0, y: 0, w: 0.3, h: 0.2 }],
   viewBox: [0, 0, 223.92, 312],
   disc_fill: 0.9,
+  subject_y: 0.3,
   filter: '<filter id="sticker-halo"><feMorphology radius="1.5"/></filter>',
   fallbacks: ['data:image/svg+xml;base64,PHN2Zy8+', 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4='],
 }));
@@ -163,7 +164,11 @@ describe('the live pawn card is the design with every disc bare', () => {
     // and deals the pawns out of the list the card came with — so all of it has
     // to reach the page, not stop at the route.
     expect(r.body.viewBox).toEqual([0, 0, 223.92, 312]);
+    // BOTH constants, not one. disc_fill was forwarded and subject_y was not, so
+    // the page kept the generator's disc and this module's head anchor — and
+    // every original she keeps the background on is cropped by the anchor.
     expect(r.body.disc_fill).toBe(0.9);
+    expect(r.body.subject_y).toBe(0.3);
     expect(r.body.filter).toContain('id="sticker-halo"');
     expect(r.body.fallbacks).toHaveLength(2);
   });
@@ -172,8 +177,13 @@ describe('the live pawn card is the design with every disc bare', () => {
 // THE WIZARD'S BASE CARD — before any order exists, so there is no owner token
 // and nothing of hers in it: the design alone.
 describe('GET /api/pawn-base', () => {
-  const askBase = async (q) => {
-    const r = await fetch(base + '/api/pawn-base?' + q);
+  // EACH CALLER'S OWN ADDRESS. The limiter buckets on req.ip, and `trust proxy`
+  // is on, so this header IS the caller here. The limit test below spends a whole
+  // bucket; sharing one address, it spent the bucket every other test in this file
+  // draws on, and the next test was throttled instead of rendering — a test that
+  // breaks its neighbour rather than its subject.
+  const askBase = async (q, ip = '198.51.100.1') => {
+    const r = await fetch(base + '/api/pawn-base?' + q, { headers: { 'X-Forwarded-For': ip } });
     return { status: r.status, body: await r.json().catch(() => ({})) };
   };
 
@@ -236,6 +246,33 @@ describe('GET /api/pawn-base', () => {
       askBase('theme=football-boys'),
     ]);
     expect(answers.map((a) => a.status)).toEqual([200, 200, 200, 200]);
+    expect(runs()).toHaveLength(1);
+  });
+
+  // A REFUSED REQUEST DOES NO WORK AT ALL — not even a stat. Reading the cache
+  // needs the artwork stamp, because the stamp is part of the key, and the stamp
+  // is five synchronous statSync calls; with the limiter behind it, an
+  // unauthenticated caller could spend that filesystem budget at any rate it
+  // liked and still be "throttled". The limit is therefore the first thing the
+  // route does after validating the design.
+  //
+  // The trade is deliberate and belongs in a test rather than only in a comment:
+  // a cache HIT spends a token here, unlike /api/preview, because this card is
+  // asked for once per buyer per TTL rather than once per keystroke.
+  it('refuses past the limit without touching the filesystem, cached or not', async () => {
+    // Warm the card first, so every later ask would be a pure cache hit.
+    const MINE = '203.0.113.9';
+    expect((await askBase('theme=birthday-boys-basketball', MINE)).status).toBe(200);
+    expect(runs()).toHaveLength(1);
+    const LIMIT = 60;
+    let refused = 0;
+    for (let i = 0; i < LIMIT + 2; i++) {
+      if ((await askBase('theme=birthday-boys-basketball', MINE)).status === 429) refused++;
+    }
+    // The bucket is spent by the hits themselves, so the tail is refused…
+    expect(refused).toBeGreaterThan(0);
+    // …and not one of them rendered: a 429 costs a Chrome run as little as it
+    // costs a stat.
     expect(runs()).toHaveLength(1);
   });
 

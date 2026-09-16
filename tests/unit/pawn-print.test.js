@@ -11,7 +11,9 @@ import {
   fallbackDeal,
   haloFilterMarkup,
   plainCrop,
+  preparePhoto,
   pyRound,
+  releasePhoto,
   resizeBilinearL,
   slotRect,
   stickerMarkup,
@@ -198,6 +200,45 @@ describe('a tuned generator moves the page with it', () => {
     expect(low.crop).not.toEqual(
       autoCrop(opaque.data, opaque.width, opaque.height, true, { subjectY: 0.3 }).crop
     );
+  });
+});
+
+// THE PREPARED PHOTO IS CACHED UNDER WHAT IT WAS PREPARED WITH.
+//
+// The card's spec arrives on a debounce, so a photo picked in the first moments of
+// the step is framed with this module's defaults. Keyed without the constants,
+// that first answer WAS the answer: the tuned spec landed, nothing re-prepared,
+// and the crop stayed wrong for the life of the page — invisibly, because a
+// default-framed photo looks exactly like a photo. These run in jsdom, where the
+// decode fails and every answer is null; what is being pinned is which QUESTION
+// was asked, which is the part that was wrong.
+describe('a prepared photo remembers which constants prepared it', () => {
+  const src = 'blob:pawn-key-test';
+
+  test('asks again when the generator′s constants arrive', async () => {
+    const before = preparePhoto(src, { cutout: false });
+    // The same question twice is asked once…
+    expect(preparePhoto(src, { cutout: false })).toBe(before);
+    // …and a tuned spec is a different question, not the same one answered.
+    expect(preparePhoto(src, { cutout: false, subjectY: 0.6 })).not.toBe(before);
+    expect(preparePhoto(src, { cutout: false, discFill: 0.6 })).not.toBe(before);
+    // …while the tuned question is itself cached.
+    expect(preparePhoto(src, { cutout: false, subjectY: 0.6 })).toBe(
+      preparePhoto(src, { cutout: false, subjectY: 0.6 })
+    );
+    await Promise.allSettled([before]);
+  });
+
+  test('forgets every variant when the photo is released', async () => {
+    const plain = preparePhoto(src, { cutout: false });
+    const tuned = preparePhoto(src, { cutout: false, subjectY: 0.6 });
+    expect(tuned).not.toBe(plain);
+    // Releasing knows one key; the photo was prepared under two. The variant it
+    // did not know held its object URL until the page was closed.
+    releasePhoto(src, { cutout: false });
+    expect(preparePhoto(src, { cutout: false })).not.toBe(plain);
+    expect(preparePhoto(src, { cutout: false, subjectY: 0.6 })).not.toBe(tuned);
+    await Promise.allSettled([plain, tuned]);
   });
 });
 

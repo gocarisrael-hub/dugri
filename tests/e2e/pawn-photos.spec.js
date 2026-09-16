@@ -123,6 +123,35 @@ test.describe('optional pawn-photos step', () => {
     await expect(page.getByTestId('step-4')).toBeVisible();
   });
 
+  // A CARD THAT COMES BACK WITHOUT ITS DISCS IS NOT A REASON TO LOSE THE STEP.
+  // `filter` and `fallbacks` have always degraded to a default, but `slots` and
+  // `viewBox` were read straight through — and slotRect destructures the viewBox,
+  // so a partial answer threw inside the render and took the whole photo step
+  // with it. It falls back to the plain tile this page already draws before the
+  // card arrives, which is the same answer as "the card has not come yet".
+  test('a card that comes back without its slots still leaves her a usable step', async ({
+    page,
+  }) => {
+    await stubCutter(page, { succeeds: false });
+    await page.route('**/api/pawn-base**', (route) =>
+      route.fulfill({ json: { card: 'data:image/png;base64,' + PNG_BYTES.toString('base64') } })
+    );
+    const errors = [];
+    page.on('pageerror', (e) => errors.push(String(e)));
+    await toPawnStep(page);
+
+    await expect(page.getByTestId('pawn-grid')).toBeVisible();
+    await page
+      .getByTestId('pawn-input-0')
+      .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
+    // The photo is still drawn, and the step still advances.
+    await expect(page.locator('.pawn-slot[data-idx="0"]')).toHaveClass(/is-filled/);
+    await expect(page.locator('.pawn-slot[data-idx="0"] .pawn-tile image')).toHaveCount(1);
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    expect(errors, 'a partial card must not throw').toEqual([]);
+  });
+
   // THE SLOTS ARE THE PRINTED CARD'S. The step asks the generator for its card
   // once — every disc bare, for the design alone — and paints into each empty slot
   // the Dugri pawn the deck deals there, across the WHOLE deck: with eight players
@@ -425,11 +454,22 @@ test.describe('pawn photos: the background cut', () => {
   // instead, on the plain square, which is the fork the generator takes too.
   test('a photo the page cannot prepare is still drawn, never an empty slot', async ({ page }) => {
     await stubCutter(page, { succeeds: true, png: FRAMEABLE_PNG });
-    // Every canvas encode fails, so preparing the cut-out photo cannot produce its
-    // own copy of it — the failure this is about.
+    // MEASURING the photo fails — which is the step that actually has to fail for
+    // this to be a test. Stubbing the canvas ENCODE looked right and proved
+    // nothing: a cut with no bystander to erase never reaches the encoder at all
+    // (decode returns the file's own URL), so the stub sat there unused and the
+    // test passed on the happy path. It would have passed if the slot drew an
+    // empty disc, which is the one outcome it exists to forbid.
     await page.addInitScript(() => {
-      window.HTMLCanvasElement.prototype.toBlob = function (cb) {
-        cb(null);
+      const realContext = window.HTMLCanvasElement.prototype.getContext;
+      window.HTMLCanvasElement.prototype.getContext = function (...args) {
+        const ctx = realContext.apply(this, args);
+        if (ctx && ctx.getImageData) {
+          ctx.getImageData = () => {
+            throw new Error('measuring refused');
+          };
+        }
+        return ctx;
       };
     });
     await toPawnStep(page);

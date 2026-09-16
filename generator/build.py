@@ -1095,7 +1095,9 @@ def square_photo(path, workdir, index=0, view=None, cutout=True):
     buyer's own original — and it decides how the photo is framed, because THE
     PAGE SHE APPROVED IT ON DECIDES THE SAME WAY. Her collection page measures
     the silhouette when it is showing a cutout and takes the plain square when it
-    is showing an original (site/collect.html ``measureFrame``); this used to
+    is showing an original (``site/js/pawn-print.js`` ``autoCrop``, which both the
+    collection page and the wizard draw through, and which this function's own
+    fork below is held to by ``test_pawn_print_fixtures.py``); this used to
     sniff the file's alpha instead, and an ORIGINAL that happens to carry alpha —
     an already-transparent PNG uploaded by a buyer who then ticked "keep my
     background" — was framed on its silhouette here and on the plain square
