@@ -4198,6 +4198,7 @@ app.post('/api/payment/callback', async (req, res) => {
       method: pelecard.NAME,
       transactionId: tx.transactionId,
       approvalNo: tx.approvalNo,
+      voucherNo: tx.voucherNo,
     });
   }
   res.json({ ok: true });
@@ -4211,7 +4212,7 @@ app.post('/api/payment/callback', async (req, res) => {
 // already proven the charge belongs to that session and is for its amount.
 // Idempotent on each purchase's own paid flag, because a provider may call twice.
 // The fee-moved notice it fires is defined directly below it.
-function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
+function settleVerifiedPayment(match, { method, transactionId, approvalNo, voucherNo }) {
   const c = match.collection;
   const session = match.session;
   // Before any write: convergence and markPaid both move the numbers this reads.
@@ -4223,6 +4224,7 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
       method,
       transactionId,
       approvalNo,
+      voucherNo,
       token: session.token,
       charged_total: session.charged_total,
     });
@@ -4242,6 +4244,7 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo }) {
     method,
     transactionId,
     approvalNo,
+    voucherNo,
     token: session.token,
     charged_total: session.charged_total,
     coupon: session.coupon,
@@ -4584,6 +4587,9 @@ function decideTranzilaRow(tx) {
       method: tranzila.NAME,
       transactionId: tx.index,
       approvalNo: tx.approvalNo,
+      // No voucherNo: Tranzila has no voucher concept at all (its approvalNo is
+      // `authorization_number`), so the field stays absent rather than being
+      // filled with something that is not a שובר. Absent is honest.
     });
     return { outcome: 'settled' };
   }

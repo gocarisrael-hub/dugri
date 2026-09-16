@@ -126,7 +126,20 @@ async function getTransaction(transactionId) {
     shvaResult: rd.ShvaResult != null ? String(rd.ShvaResult) : null,
     paramX: echoed != null ? String(echoed) : null,
     debitTotalAgorot: Number.isFinite(debit) ? debit : null,
-    approvalNo: rd.DebitApproveNumber || rd.VoucherId || null,
+    // TWO DIFFERENT IDENTIFIERS, kept apart. This was `DebitApproveNumber ||
+    // VoucherId`, which discarded the voucher whenever an approve number existed
+    // (307 of 312 paid orders) and, when one did not, stored the voucher AS an
+    // approval number — measured, not assumed: a transaction carrying only
+    // VoucherId came back with approvalNo '1001018'. That is worse than losing
+    // it, because nobody could say afterwards which kind of number it was.
+    //
+    // Isracard's ביטול עסקה letters cite מס' שובר (VoucherId), so a chargeback
+    // could not be matched to an order at all; date+amount is not discriminating
+    // (239 ₪ on one day gave 40 candidates). Nothing is lost by dropping the
+    // fallback — what it used to rescue now has its own field. No backfill is
+    // possible, so every order settled before this stays unmatchable.
+    approvalNo: rd.DebitApproveNumber || null,
+    voucherNo: rd.VoucherId || null,
     transactionId: rd.TransactionId || transactionId,
     raw: data,
   };
