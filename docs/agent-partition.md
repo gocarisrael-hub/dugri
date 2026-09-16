@@ -65,7 +65,8 @@ Settings, content editor, WhatsApp/Whapi, SMS, emails/reminders, ads attribution
 - Docs: `docs/sms-gateway.md`, `docs/whatsapp-arming.md`, `RAILWAY_SETUP.md`
 - **`server/routes/platform.js`** (split out of `index.js`): content/settings/features routes, `/api/whatsapp/*` + `/api/admin/whatsapp/*`, `/api/sms/*` + `/api/admin/sms`, `/api/track`, `/api/admin/ads*`, `/api/admin/meta-capi/*`, `/api/admin/message-preview*`, `/api/faq`, `/api/unsubscribe*` + `/api/resubscribe`, `/api/admin/playbook*`, the content/store/template import routes. Edit these there, not in `index.js` (see "Splitting the monolith").
 - **`server/stores/platform.js`** (split out of `db.js`): the words/payment reminder state, the owner reminder-list state, the order-notified claim.
-- Still in `index.js` (slice 1b): the WhatsApp/notification hooks (`onOrderCreated`, `onOrderPaid`, `openWhatsappGroup`, `handleWaEvent`, `runReminderListScan`…), the reminder/nudge scans, the SPA `GET *` catch-all and static serving
+- **`server/platform-hooks.js`** (split out of `index.js`, slice 1b): the notification hooks (`onOrderCreated`, `onOrderPaid`, `onShippingAdded`, `fireStartNotifications`, the product-photo resolvers), the WhatsApp bot machinery (`openWhatsappGroup`, `handleWaEvent`, `sendWaTrigger`, the wa-id normalisers, the owner escalation) and the three reminder scans (`runReminderListScan`, `runReminderScan`, `runPaymentReminderScan`). A factory rather than route registrars — none of it is routes. `index.js` builds it once and calls the returned functions; the route modules are handed the ones they need as deps, and the tests still reach them through the app export. It is built high up, immediately after `ADMIN_KEY` (its last dependency): the inline versions were hoisted function declarations that two `register*` calls read as VALUES from above (`registerOrder` ← `onOrderCreated`; `registerAdsSettingsWhatsapp` ← `handleWaEvent`/`openWhatsappGroup`/`ilPhoneToWaId`/`resolveProductImageUrl`), and a `const` built at the old position hits the temporal dead zone and throws at require time. The same trap sits at the `fireStartNotifications` call in the `POST /api/collections` handler, which reads that `const` from ABOVE it and is safe only because it runs per request; there is a comment there saying so. `REMINDER_SCAN_INTERVAL_MS` and `WA_NUDGE_SCAN_INTERVAL_MS` moved with the scans and are returned, because the `setInterval` timers that read them stay in `index.js` under `require.main`.
+- Still in `index.js` (its own slice): the hashed-asset route, the HTML/static serving and the SPA `GET *` catch-all. Those are routes, so they belong in `server/routes/platform.js`, and they are the most order-critical block in the file (the catch-all must stay last) — deliberately kept out of 1b so the move is reviewed on its own.
 - Still in `db.js`: the Meta Conversions API report state (`claimMetaReport`…`staleMetaReports`). It was going to move with the Commerce slice because its helpers are shared with the payment path — but payment is not in that slice, and every caller outside `db.js` is in `server/routes/platform.js` (D's own module), so it STAYS. Reconsider when `markPaid` moves in slice 3b, rather than assuming.
 - Test/CI harness (D arbitrates): `package.json`, `vitest.config.js`, `playwright.config.js`, `eslint.config.js`, `.github/workflows/*`, `scripts/smoke.mjs`, `scripts/stress/`, `scripts/fetch-fonts.mjs`, `scripts/localize-font-links.mjs`, `tests/e2e/{tpl-fixture,global-setup,feature-flags,server-target}.js`
   - The e2e server's port is derived per checkout (`server-target.js`), so worktrees can run E2E concurrently; `E2E_PORT=<n>` overrides. global-setup FAILS the run if that port answers with another checkout's config.
@@ -108,8 +109,13 @@ blocks in `index.js` / `db.js`.
 
 Planned order:
 
-1. **D — Platform & Comms** (done: routes + reminder store). Chosen first because no open PR touched
-   its code. Slice 1b: D's non-route machinery (WhatsApp/notify hooks, reminder schedulers).
+1. **D — Platform & Comms** (done: routes + reminder store + slice 1b, the non-route machinery in
+   `server/platform-hooks.js`). Chosen first because no open PR touched its code. Left in `index.js`
+   on purpose: the static/SPA serving (routes, order-critical, its own slice), and `/to-print`,
+   `/ready` and `applyOrderReady` — which read as Commerce's rather than D's, and are NOT absorbed
+   here by proximity: they mutate the order record, `applyOrderReady` is already passed INTO
+   `server/routes/commerce.js` for the ready-batch press, and only their side effects (the customer
+   email and the SMS) are D's. Assign them with A's next slice.
 2. **B — Catalog & Design** (done: routes + design-codes store). Left in `index.js` on purpose: the
    calibration routes that sit inside B's templates region (`/typefit`, `/entry`, `/redetect`) are
    C's and move with C's slice. Two comments that describe B routes (the "REMOVE an optional asset"
