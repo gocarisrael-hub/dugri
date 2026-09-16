@@ -345,6 +345,72 @@ describe('POST /api/admin/collections/:id/ready', () => {
   });
 });
 
+// WHO GETS A TEXT, asserted directly instead of through a press and a queue read.
+// The ready-batch dialog is handed this same predicate, so what is pinned here is
+// also what the owner is shown before she presses מוכן on a whole pile — the two
+// cannot drift, which is the reason it is a function and not an inline check.
+describe('orderReadySmsWillSend — who actually gets a text', () => {
+  const ADDRESS = { street: 'הרצל 12', city: 'תל אביב', postal: '6100000', apartment: '3' };
+  function order(version, { phone = '0521234567' } = {}) {
+    const c = db.createCollection('שירה', { email: 'buyer@example.com', phone });
+    db.setOrder(c.id, c.owner_token, {
+      version,
+      address: version === 'delivery' ? ADDRESS : undefined,
+    });
+    return db.getCollection(c.id);
+  }
+
+  beforeEach(() => {
+    settings.set('sms', 'enabled', true);
+    settings.reset('sms', 'order_ready');
+  });
+
+  it('says yes for a self-pickup order with a mobile', () => {
+    expect(app.orderReadySmsWillSend(order('pickup'))).toBe(true);
+  });
+
+  // Neither has a box waiting at התחייה 14: one is on its way to her door, the
+  // other is a file.
+  it('says no for a delivery order and for a digital one', () => {
+    expect(app.orderReadySmsWillSend(order('delivery'))).toBe(false);
+    expect(app.orderReadySmsWillSend(order('pdf'))).toBe(false);
+  });
+
+  // sms.enqueue drops it anyway; saying so here is what lets the dialog name her
+  // as someone to phone by hand instead of counting her as texted.
+  it('says no for a landline', () => {
+    expect(app.orderReadySmsWillSend(order('pickup', { phone: '03-6123456' }))).toBe(false);
+  });
+
+  it('says no when the feature is off, or the template has been emptied', () => {
+    const c = order('pickup');
+    settings.set('sms', 'enabled', false);
+    expect(app.orderReadySmsWillSend(c)).toBe(false);
+    settings.set('sms', 'enabled', true);
+    settings.set('sms', 'order_ready', '   ');
+    expect(app.orderReadySmsWillSend(c)).toBe(false);
+  });
+
+  // THE CASE THAT MOTIVATED THE CHANGE. She checked out as self-pickup and bought
+  // shipping afterwards, so the order converges to delivery (db.markShippingPaid)
+  // and the pickup text must not follow her. This is what "read at send time, not
+  // at checkout" buys.
+  it('says no once a pickup order has been upgraded to delivery', () => {
+    const c = order('pickup');
+    expect(app.orderReadySmsWillSend(c)).toBe(true);
+    db.markPaid(c.id, { charged_total: 199 });
+    // The upgrade is only OFFERED on a paid order when delivery is enabled AND
+    // its fee is set: db.shippingUpgrade refuses at fee 0, and this file's
+    // settings carry none. Staged explicitly rather than assumed, so a future
+    // precondition fails on the line that caused it.
+    settings.set('pricing', 'delivery_fee', 39);
+    const staged = db.startShippingUpgrade(c.id, c.owner_token, { address: ADDRESS });
+    expect(staged.error).toBeUndefined();
+    expect(db.markShippingPaid(c.id, { method: 'pelecard', charged_total: 39 })).toBe(true);
+    expect(app.orderReadySmsWillSend(db.getCollection(c.id))).toBe(false);
+  });
+});
+
 // The other half of the cap in server/sms.js. When the phone takes a message
 // three times without reporting, or the SIM refuses it, the message is failed
 // with a reason and never handed out again — which is right, and which leaves a
