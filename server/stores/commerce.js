@@ -29,6 +29,9 @@ function couponsBlock({
   todayStrIsrael,
 }) {
   return {
+    // Create a coupon. Validates the code shape/uniqueness and the percentage,
+    // then persists it. Returns the stored coupon, or { error } on bad input or a
+    // duplicate code.
     createCoupon({
       code,
       discount_pct,
