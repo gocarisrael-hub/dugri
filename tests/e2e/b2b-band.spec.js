@@ -19,11 +19,12 @@ test('the band names the three things a business orders', async ({ page }) => {
   for (const use of ['מתנה לצוות', 'כנסים וגיבושים', 'משחק ממותג']) {
     await expect(band.getByText(use, { exact: true })).toBeVisible();
   }
-  // The one commitment the band makes, because a business needs it before it can
-  // buy anything. It promises NO minimum quantity and NO turnaround: both were
-  // written here on my guess and taken out on the owner's word — she is the one
-  // who knows what she can hold to, and a promise on a page is a promise.
-  await expect(band).toContainText('חשבונית מס');
+  // The band makes NO commitment, and that is the owner's decision three times
+  // over: a minimum quantity and a turnaround were written here on my guess and
+  // taken out on her word, and the tax-invoice line followed them on 2026-09-16.
+  // She is the one who knows what she can hold to, and a promise on a page is a
+  // promise. Issuing an invoice is unaffected — the page simply stops saying so.
+  await expect(band).not.toContainText('חשבונית');
   await expect(band).not.toContainText('יחידות');
   await expect(band).not.toContainText('יום עבודה');
 });
@@ -50,8 +51,10 @@ test('the click is counted, and counted as its own place', async ({ page }) => {
 
 test('every word of it is owner-editable', async ({ page }) => {
   const band = page.locator('#business');
-  // Heading, sub, three titles, three bodies, the button and the terms line.
-  await expect(band.locator('[data-edit^="index-b2b-"]')).toHaveCount(10);
+  // Heading, sub, three titles, three bodies and the button. The terms line was
+  // the tenth until it was removed; this count is what would catch another one
+  // going missing.
+  await expect(band.locator('[data-edit^="index-b2b-"]')).toHaveCount(9);
 });
 
 test('it sits between the closing CTA and the footer', async ({ page }) => {
