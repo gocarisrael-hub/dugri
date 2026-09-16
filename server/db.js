@@ -419,7 +419,17 @@ function shippingPriceKey(shipping) {
 
 function pushPaySession(
   holder,
-  { paramToken, transactionId, charged_total, coupon, discount_pct, metaCtx, provider, priceKey }
+  {
+    paramToken,
+    transactionId,
+    charged_total,
+    coupon,
+    discount_pct,
+    metaCtx,
+    provider,
+    priceKey,
+    feeAtInit,
+  }
 ) {
   const p = holder || { sessions: [] };
   if (!Array.isArray(p.sessions)) p.sessions = [];
@@ -445,6 +455,13 @@ function pushPaySession(
       provider: provider || 'pelecard',
       // orderPriceKey / shippingPriceKey at pay/init (Tranzila checks it).
       price_key: priceKey || null,
+      // The delivery fee this window quoted. DATA, and deliberately NOT part of
+      // `price_key`: a fee that moved must never refuse a verified charge — that
+      // was the false refusal the key narrowing removed. It is kept so settlement
+      // can notice the move and TELL the owner, because the order is marked paid
+      // with a `total` that no longer equals what the card was charged and nobody
+      // would otherwise know. Null when the purchase carries no fee.
+      fee_at_init: Number.isFinite(Number(feeAtInit)) ? Number(feeAtInit) : null,
       resolved: false,
       // Per-session timestamp: bounds the in-flight window (see TTL) and is the
       // basis for evicting only OLD, RESOLVED sessions when over the cap.
@@ -2079,14 +2096,16 @@ const db = {
     // rewriting it would make the receipt lie. Money owed either way is settled
     // off-system, exactly as with a version change.
     //
-    // ONLY when a priced field actually changes. An address-only fix must not
-    // re-stamp the order from today's settings: a delivery order placed at a 39₪
-    // fee, a later fee rise, then a typo fixed in the street would re-price the
-    // order to 45₪ — and a card charge already made for the old total would stop
-    // matching the pay session's price snapshot (server/tranzila-sweep.js), so a
-    // real payment would be refused with the money already taken.
-    const priceChanged = next !== c.order.version || nextQty !== (c.order.quantity || 1);
-    if (!c.order.paid && priceChanged) {
+    // The SAME rule as the buyer's own path (setOrder): an unpaid order prices
+    // from today's settings on any edit. This once re-priced only when the version
+    // or the copy count changed, to stop an address fix moving a stored total out
+    // from under a charge already on its way — but the delivery fee and the total
+    // no longer take part in the price key, so that refusal cannot happen, and the
+    // guard only left the two paths disagreeing: an admin edit kept yesterday's
+    // fee while a buyer edit re-priced, so the admin table could show a total the
+    // server would never charge. A fee that moves under a settling charge is
+    // reported to the owner instead — the `fee_changed` alert in server/index.js.
+    if (!c.order.paid) {
       const unit =
         next === c.order.version && Number.isInteger(c.order.unit_price)
           ? c.order.unit_price
@@ -2250,6 +2269,7 @@ const db = {
       metaCtx,
       provider,
       priceKey,
+      feeAtInit,
     } = {}
   ) {
     const c = this.getCollection(id);
@@ -2263,6 +2283,7 @@ const db = {
       metaCtx,
       provider,
       priceKey,
+      feeAtInit,
     });
     saveDb();
     return true;
@@ -2347,7 +2368,10 @@ const db = {
   // The upgrade's own PeleCard handshake. Same protocol as the order's, on its
   // own session list — the two charges are different amounts and each callback
   // must verify against its own.
-  recordShippingInit(id, { paramToken, transactionId, charged_total, provider, priceKey } = {}) {
+  recordShippingInit(
+    id,
+    { paramToken, transactionId, charged_total, provider, priceKey, feeAtInit } = {}
+  ) {
     const c = this.getCollection(id);
     if (!c || !c.order || !c.order.shipping) return false;
     c.order.shipping.pelecard = pushPaySession(c.order.shipping.pelecard, {
@@ -2356,6 +2380,7 @@ const db = {
       charged_total,
       provider,
       priceKey,
+      feeAtInit,
       // No coupons on shipping: a discount code buys a game, not postage.
       coupon: null,
       discount_pct: null,

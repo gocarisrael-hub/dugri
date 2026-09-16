@@ -424,13 +424,22 @@ describe('approved rows that do not settle reach the owner', () => {
     }
   });
 
-  it('but a known money-back type with no session stays silent', async () => {
+  // Pointed at an UNPAID purchase on purpose. A refund with no session at all is
+  // silent either way — the `env === 'p'` branches would ignore it regardless —
+  // so that version of this test guarded nothing. On an unpaid purchase the early
+  // return at the top of decideTranzilaRow is load-bearing: without it the row
+  // reaches the unknown-type branch, where `matches.every(paid)` is false, and
+  // alerts the owner about a "second charge" that is really her own refund.
+  it('but a money-back type on an UNPAID purchase stays silent', async () => {
     const alert = spyAlerts();
     try {
+      const c = db.createCollection('זיכוי על הזמנה שלא שולמה');
+      const { session } = await openPayment(c);
       for (const t of ['CREDIT', 'CANCEL', 'REFUTE', 'REVERSAL']) {
-        charge(undefined, 79, { txn_type: t });
+        charge(session.token, 79, { txn_type: t });
       }
       await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(false);
       expect(alert).not.toHaveBeenCalled();
     } finally {
       alert.mockRestore();

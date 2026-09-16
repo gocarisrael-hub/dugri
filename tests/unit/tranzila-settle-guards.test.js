@@ -350,27 +350,35 @@ describe('a refund of a paid order', () => {
   });
 });
 
-describe('an admin edit that changes no price', () => {
-  it('leaves the order priced as it was, so a charge already made still settles', async () => {
+// An admin edit prices exactly like the buyer's own path now. It used to re-price
+// only when the version or the copy count changed, to protect a charge in flight
+// from a moving total — but the fee and the total no longer take part in the price
+// key, so there is nothing to protect, and the guard only left the two paths
+// disagreeing: the admin table could show a total the server would never charge.
+describe('an admin edit while a charge is on its way', () => {
+  it('re-prices like the buyer path, still settles, and tells the owner the fee moved', async () => {
     const settings = require(path.join(serverDir, 'settings.js'));
     const c = db.createCollection('תיקון כתובת');
     const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
     const s = await openPayment(c, { version: 'delivery', address });
-    const placed = db.getCollection(c.id).order.total;
 
-    // The owner raises the delivery fee, then fixes a typo in the street.
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
     settings.set('pricing', 'delivery_fee', FEE + 20);
     try {
       db.adminUpdateOrder(c.id, { address: { ...address, street: 'הרצל 12' } });
       const order = db.getCollection(c.id).order;
-      expect(order.total).toBe(placed);
-      expect(order.delivery_fee).toBe(FEE);
+      expect(order.delivery_fee).toBe(FEE + 20);
       expect(order.address.street).toBe('הרצל 12');
 
+      // The charge the buyer already made is still correct for the window it was
+      // made in, so it settles — and because the order's total no longer equals
+      // what the card was charged, the owner is told.
       charge(s.token, s.charged_total);
       await app.tranzilaSweeper.sweep();
       expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(alertText(alert)).toContain(db.getCollection(c.id).order_no);
     } finally {
+      alert.mockRestore();
       settings.set('pricing', 'delivery_fee', FEE);
     }
   });
@@ -383,14 +391,21 @@ describe('an admin edit that changes no price', () => {
 // taken and the order left unpaid. And because `setOrder` keeps pricing from live
 // settings, the checkout screen and the charge stay the same number throughout;
 // holding the stored fee still instead is what would have driven them apart.
+//
+// SETTLING IS ONLY HALF OF IT. The order is marked paid with a `total` that no
+// longer equals what the card was charged, so the owner has to be told — she is
+// the one who decides whether to collect or refund the difference. The fee each
+// window quoted is kept on its session as data (`fee_at_init`) for exactly this,
+// never in the key, so it informs without ever refusing.
 describe('a fee change while the buyer is paying', () => {
   const address = { street: 'הרצל 1', city: 'תל אביב', postal: '6100000' };
 
-  it('settles a charge from a window opened before the fee rose', async () => {
+  it('settles a charge from a window opened before the fee rose, and reports it', async () => {
     const settings = require(path.join(serverDir, 'settings.js'));
     const c = db.createCollection('דמי משלוח עלו באמצע תשלום');
     const s = await openPayment(c, { version: 'delivery', address });
 
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
     settings.set('pricing', 'delivery_fee', FEE + 20);
     try {
       // The buyer fixes the address with the window still open: the order
@@ -402,17 +417,28 @@ describe('a fee change while the buyer is paying', () => {
       expect(db.getCollection(c.id).order.delivery_fee).toBe(FEE + 20);
 
       // The charge from the window opened BEFORE the rise still pays for it.
-      charge(s.token, s.charged_total);
+      const index = charge(s.token, s.charged_total);
       await app.tranzilaSweeper.sweep();
-      expect(db.getCollection(c.id).order.paid).toBe(true);
+      const order = db.getCollection(c.id).order;
+      expect(order.paid).toBe(true);
+
+      // Told once, naming the order, what was charged and what it costs now.
+      expect(alert).toHaveBeenCalledTimes(1);
+      const text = alertText(alert);
+      expect(text).toContain(String(index));
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      expect(text).toContain(Math.round(s.charged_total * 100) + ' אגורות');
+      expect(text).toContain(Math.round(order.total * 100) + ' אגורות');
     } finally {
+      alert.mockRestore();
       settings.set('pricing', 'delivery_fee', FEE);
     }
   });
 
-  it('and one opened before the fee dropped', async () => {
+  it('and one opened before the fee dropped, also reported', async () => {
     const settings = require(path.join(serverDir, 'settings.js'));
     settings.set('pricing', 'delivery_fee', FEE + 20);
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
     try {
       const c = db.createCollection('דמי משלוח ירדו באמצע תשלום');
       const s = await openPayment(c, { version: 'delivery', address });
@@ -424,8 +450,29 @@ describe('a fee change while the buyer is paying', () => {
       charge(s.token, s.charged_total);
       await app.tranzilaSweeper.sweep();
       expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(alert).toHaveBeenCalledTimes(1);
+      expect(alertText(alert)).toContain(db.getCollection(c.id).order_no);
     } finally {
+      alert.mockRestore();
       settings.set('pricing', 'delivery_fee', FEE);
+    }
+  });
+
+  // The one that keeps the alert worth reading. Every ordinary payment settles
+  // with the fee it was quoted, so if THIS fired too, the real ones would be
+  // buried in a stream of notices about nothing.
+  it('but an unchanged fee settles silently', async () => {
+    const c = db.createCollection('דמי משלוח לא השתנו');
+    const s = await openPayment(c, { version: 'delivery', address });
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      charge(s.token, s.charged_total);
+      await app.tranzilaSweeper.sweep();
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(alert).not.toHaveBeenCalled();
+    } finally {
+      alert.mockRestore();
     }
   });
 

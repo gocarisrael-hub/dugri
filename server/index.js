@@ -5340,6 +5340,9 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       metaCtx: adCtx,
       provider: provider.NAME,
       priceKey: db.orderPriceKey(order),
+      // Not in the key — kept so a settle can tell the owner the fee moved under
+      // it, rather than refusing a charge the buyer made correctly.
+      feeAtInit: Number(order.delivery_fee) || 0,
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
@@ -5415,6 +5418,7 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
       charged_total: charged,
       provider: provider.NAME,
       priceKey: db.shippingPriceKey(shipping),
+      feeAtInit: Number(shipping.fee) || 0,
     });
     res.json({ url, charged });
   } catch {
@@ -5626,12 +5630,45 @@ function decideTranzilaRow(tx) {
       repriced.push(m);
       continue;
     }
+    // The fee the purchase carries NOW, against what this window quoted. It is
+    // not part of the key on purpose, so it never refuses the charge — but if it
+    // moved, the order is about to be marked paid with a `total` that no longer
+    // equals what the card was charged, and nobody would know. Settle, and tell
+    // her. Unbounded by design: a 39 -> 390 typo settles exactly like a 39 -> 59
+    // rise, and the size of the gap is precisely what she needs to see.
+    const quoted = m.session.fee_at_init;
+    const feeNow =
+      m.kind === 'shipping'
+        ? Number(m.collection.order.shipping.fee)
+        : Number(m.collection.order.delivery_fee) || 0;
+    const feeMoved = quoted != null && Number(quoted) !== feeNow;
+    const totalNow =
+      m.kind === 'shipping'
+        ? Number(m.collection.order.shipping.fee)
+        : Number(m.collection.order.total);
+
     settleVerifiedPayment(m, {
       method: tranzila.NAME,
       transactionId: tx.index,
       approvalNo: tx.approvalNo,
     });
-    return { outcome: 'settled' };
+    if (!feeMoved) return { outcome: 'settled' };
+    console.error(
+      '[tranzila] index ' + tx.index + ' settled after the delivery fee moved since its pay window'
+    );
+    return {
+      outcome: 'settled',
+      alert: {
+        amount: tx.amountAgorot,
+        type: tx.txnType,
+        mode: tx.tranmode,
+        date: tx.raw && tx.raw.transaction_date ? String(tx.raw.transaction_date) : null,
+        kind: 'fee_changed',
+        orders: [m.collection.order_no || m.collection.id],
+        expected: [Math.round(Number(m.session.charged_total) * 100)],
+        now: [Math.round(totalNow * 100)],
+      },
+    };
   }
   const base = {
     amount: tx.amountAgorot,
@@ -5704,25 +5741,24 @@ function decideTranzilaRow(tx) {
       },
     };
   }
-  // Money that may have moved with nothing here to match it against. The test is
-  // NOT `=== 'DEBIT'`: verifyTransaction settles DEBIT alone, but the string a
-  // normal iframe charge reports is unconfirmed until the staging test, so a row
-  // typed anything else — or typed nothing — is exactly the one nobody can
-  // account for and must be looked at. Only a type this build knows to be money
-  // going BACK stays silent, the same rule the matched branch above applies.
-  // Without this the two branches below would swallow an unknown-type charge with
-  // no session, which is the same failure as an unknown type on an unpaid
-  // purchase: charged, not settled, not reported.
-  const worthReporting = !tx.txnType || !TRANZILA_REFUND_TYPES.has(tx.txnType);
+  // Money that may have moved with nothing here to match it against, so it is
+  // reported whatever its type — NOT only a `DEBIT`. verifyTransaction settles
+  // DEBIT alone, but the string a normal iframe charge reports is unconfirmed
+  // until the staging test, so a row typed anything else, or typed nothing, is
+  // exactly the one nobody can account for. Every refund type already returned at
+  // the top of this function, so there is no money-going-back test to repeat
+  // here; production is the only condition left. Keep that early return if these
+  // branches are ever edited — it is what makes this safe.
+  //
   // This environment's token and no session for it: the collection was deleted,
   // or the session evicted, while its charge was on its way. Money was taken.
   if (mine.length) {
-    if (worthReporting && env === 'p') {
+    if (env === 'p') {
       return { outcome: 'rejected', alert: { ...base, kind: 'orphan' } };
     }
     return { outcome: 'ignored' };
   }
-  if (worthReporting && env === 'p') {
+  if (env === 'p') {
     return { outcome: 'rejected', alert: { ...base, kind: 'unmatched' } };
   }
   return { outcome: 'ignored' };
@@ -5762,6 +5798,19 @@ function describeTranzilaAlert(item) {
   }
   if (item.kind === 'orphan') {
     return head + ' — אושרה עבור הזמנה שכבר לא קיימת במערכת (נמחקה?)';
+  }
+  // Money DID move and the order IS paid — this one is a notice, not a refusal.
+  if (item.kind === 'fee_changed') {
+    return (
+      head +
+      ' — שולמה וסומנה כשולמה עבור הזמנה ' +
+      (item.orders || []).join(', ') +
+      ', אבל דמי המשלוח השתנו מאז שנפתח חלון התשלום: נגבה ' +
+      (item.expected || []).join('/') +
+      ' אגורות וההזמנה עכשיו ' +
+      (item.now || []).join('/') +
+      ' אגורות. להשלים או לזכות את ההפרש לפי הצורך.'
+    );
   }
   if (item.kind === 'order_changed') {
     return (
