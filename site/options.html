@@ -6308,7 +6308,16 @@
       async function preparePawnSlot(idx, file) {
         const cut = pawnCutouts[idx];
         const src = cut || file;
-        const photo = await preparePhoto(src, { cutout: Boolean(cut), key: blobKey(src) });
+        const spec = pawnBase && pawnBase.spec;
+        const photo = await preparePhoto(src, {
+          cutout: Boolean(cut),
+          key: blobKey(src),
+          // `?.`, not `spec &&`: the latter hands over null before the card has
+          // arrived, and null is not undefined — it reaches the framing maths as a
+          // number and comes out as a NaN window.
+          discFill: spec?.disc_fill,
+          subjectY: spec?.subject_y,
+        });
         const at = pawnFiles.indexOf(file);
         if (at < 0 || pawnCutouts[at] !== cut) return;
         pawnPrep[at] = photo;
@@ -6331,15 +6340,21 @@
         clearTimeout(pawnBaseTimer);
         pawnBaseTimer = setTimeout(refreshPawnBase, 250);
       }
+      // Answers go stale: the owner can replace a design's artwork while a shopper
+      // is still in the wizard, and the card the server would send now is not the
+      // one this page asked for ten minutes ago. Kept only as long as the server's
+      // own cache holds an entry, so a long sit on this step re-asks rather than
+      // drawing on a card that no longer exists.
+      const PAWN_BASE_TTL_MS = 5 * 60 * 1000;
       function fetchPawnBase(q) {
-        if (!pawnBaseAnswers.has(q)) {
-          const ask = fetch('/api/pawn-base?' + q).then((r) =>
-            r.ok ? r.json() : Promise.reject(new Error(String(r.status)))
-          );
-          pawnBaseAnswers.set(q, ask);
-          ask.catch(() => pawnBaseAnswers.delete(q));
-        }
-        return pawnBaseAnswers.get(q);
+        const held = pawnBaseAnswers.get(q);
+        if (held && Date.now() - held.at < PAWN_BASE_TTL_MS) return held.ask;
+        const ask = fetch('/api/pawn-base?' + q).then((r) =>
+          r.ok ? r.json() : Promise.reject(new Error(String(r.status)))
+        );
+        pawnBaseAnswers.set(q, { at: Date.now(), ask });
+        ask.catch(() => pawnBaseAnswers.delete(q));
+        return ask;
       }
       async function refreshPawnBase() {
         // Asked for when the timer FIRES, not when it was set: a buyer who passes
@@ -6349,18 +6364,24 @@
         const theme = currentTheme();
         if (!theme) return;
         const key = theme;
-        if (pawnBase && pawnBase.key === key) return;
+        if (pawnBase && pawnBase.key === key && Date.now() - pawnBase.at < PAWN_BASE_TTL_MS) return;
         const seq = ++pawnBaseSeq;
         try {
           const r = await fetchPawnBase(new URLSearchParams({ theme }).toString());
           if (seq !== pawnBaseSeq) return;
           pawnBase = {
             key,
+            at: Date.now(),
             spec: {
               viewBox: r.viewBox,
               filter: r.filter || '',
               slots: r.slots,
               fallbacks: r.fallbacks || [],
+              // The generator's own constants, not this page's: both are
+              // env-overridable there (DUGRI_PHOTO_DISC_FILL, DUGRI_PHOTO_SUBJECT_Y),
+              // and a tuned deck must not print one framing and show another.
+              disc_fill: r.disc_fill,
+              subject_y: r.subject_y,
             },
             card: r.card,
           };

@@ -10,10 +10,13 @@ import {
   DISC_FILL,
   fallbackDeal,
   haloFilterMarkup,
+  plainCrop,
   pyRound,
   resizeBilinearL,
   slotRect,
   stickerMarkup,
+  SUBJECT_Y,
+  subjectWindow,
   viewCrop,
 } from '../../site/js/pawn-print.js';
 
@@ -138,5 +141,104 @@ describe('the sticker markup', () => {
   test("turns the generator's fractional slot into card units", () => {
     const r = slotRect({ x: 0.2, y: 0.25, w: 0.3, h: 0.2 }, [0, 0, 200, 400]);
     expect(r).toEqual({ x: 40, y: 100, w: 60, h: 80 });
+  });
+});
+
+// THE GENERATOR'S CONSTANTS, NOT THIS MODULE'S. PHOTO_DISC_FILL and
+// PHOTO_SUBJECT_Y are env-overridable on the generator (DUGRI_PHOTO_DISC_FILL,
+// DUGRI_PHOTO_SUBJECT_Y), so a deck tuned there and a site that kept the defaults
+// would print one framing and show another — and now that both sides look
+// plausible, nobody would see it. The card's render sends both
+// (preview.sticker_spec) and every one of these takes them.
+describe('a tuned generator moves the page with it', () => {
+  test('the disc fill decides how big the window is', () => {
+    const box = [100, 100, 300, 300];
+    const tight = subjectWindow(box, null, 400, 400, 0.9);
+    const loose = subjectWindow(box, null, 400, 400, 0.6);
+    // The window is the subject's reach over the fill, so a smaller fill is a
+    // bigger window — the subject drawn smaller inside the same circle.
+    expect(loose[2] - loose[0]).toBeGreaterThan(tight[2] - tight[0]);
+    // Each edge is rounded to a whole source pixel (Python's own rounding), so
+    // the ratio lands within a pixel of 0.9/0.6 rather than exactly on it.
+    expect((loose[2] - loose[0]) / (tight[2] - tight[0])).toBeCloseTo(0.9 / 0.6, 2);
+    // …and it is the default when nobody says otherwise.
+    expect(subjectWindow(box, null, 400, 400)).toEqual(tight);
+  });
+
+  test('the disc fill decides the circle the sticker is clipped to', () => {
+    const slot = { x: 0, y: 0, w: 66, h: 66 };
+    const photo = { href: 'u', width: 10, height: 10 };
+    const crop = [0, 0, 10, 10];
+    const r = (svg) => Number(/<circle [^>]*r="([\d.]+)"/.exec(svg)[1]);
+    expect(
+      r(stickerMarkup({ id: 'a', slot, photo, crop, filterId: 'f', discFill: 0.8 }))
+    ).toBeCloseTo((66 * 0.8) / 2, 4);
+    expect(r(stickerMarkup({ id: 'a', slot, photo, crop, filterId: 'f' }))).toBeCloseTo(
+      (66 * DISC_FILL) / 2,
+      4
+    );
+  });
+
+  test('the head anchor decides where an unframed square is cut', () => {
+    // A portrait with no silhouette: the square is centred on subjectY of the
+    // height, so raising it takes the crop further down the photo.
+    expect(plainCrop(400, 800, 0.3)).toEqual([0, 40, 400, 440]);
+    expect(plainCrop(400, 800, 0.5)).toEqual([0, 200, 400, 600]);
+    expect(plainCrop(400, 800)).toEqual(plainCrop(400, 800, SUBJECT_Y));
+  });
+
+  test('autoCrop carries both through to the crop it answers with', () => {
+    const img = decodePng(readFileSync(path.join(DIR, 'portrait-offcentre.png')));
+    const tuned = autoCrop(img.data, img.width, img.height, true, { discFill: 0.6 });
+    const standard = autoCrop(img.data, img.width, img.height, true);
+    expect(tuned.crop).not.toEqual(standard.crop);
+    // …and for a photo with no silhouette, the head anchor does the same.
+    const opaque = decodePng(readFileSync(path.join(DIR, 'opaque-cutout.png')));
+    const low = autoCrop(opaque.data, opaque.width, opaque.height, true, { subjectY: 0.6 });
+    expect(low.crop).not.toEqual(
+      autoCrop(opaque.data, opaque.width, opaque.height, true, { subjectY: 0.3 }).crop
+    );
+  });
+});
+
+// A CONSTANT THAT HAS NOT ARRIVED IS NOT A CONSTANT OF ZERO. The spec reaches the
+// page asynchronously, so a slot filled in the first moments of the step was
+// framed with `spec && spec.disc_fill` — which is NULL, not undefined, so the
+// default parameter stood aside and the division ran against it. The wizard drew
+// viewBox="-Infinity -Infinity NaN NaN"; a null head anchor was worse still,
+// framing a portrait from its top with nothing visibly wrong. Each is the exact
+// failure this module exists to prevent, on the card captioned "this is how it
+// prints", and no amount of the suite above saw either.
+describe('a constant that never arrived falls back to the generator’s', () => {
+  const box = [100, 100, 300, 300];
+  const want = subjectWindow(box, null, 400, 400, DISC_FILL);
+
+  for (const missing of [null, undefined, NaN, 0, -1, '0.9']) {
+    test(`disc fill: ${String(missing)}`, () => {
+      const got = subjectWindow(box, null, 400, 400, missing);
+      expect(got).toEqual(want);
+      expect(cropViewBox(got)).not.toMatch(/NaN|Infinity/);
+    });
+  }
+
+  for (const missing of [null, undefined, NaN, '0.3']) {
+    test(`head anchor: ${String(missing)}`, () => {
+      expect(plainCrop(400, 800, missing)).toEqual(plainCrop(400, 800, SUBJECT_Y));
+    });
+  }
+
+  // 0 is a real anchor — the top of the photo — and must NOT be read as missing.
+  test('but 0 is a head anchor, not a missing one', () => {
+    expect(plainCrop(400, 800, 0)).toEqual([0, 0, 400, 400]);
+  });
+
+  // …and through the call both pages actually make.
+  test('autoCrop with a spec that has not arrived yet', () => {
+    const img = decodePng(readFileSync(path.join(DIR, 'portrait-offcentre.png')));
+    const blank = autoCrop(img.data, img.width, img.height, true, {
+      discFill: null,
+      subjectY: null,
+    });
+    expect(blank.crop).toEqual(autoCrop(img.data, img.width, img.height, true).crop);
   });
 });

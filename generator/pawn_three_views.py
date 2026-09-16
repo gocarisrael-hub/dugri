@@ -207,9 +207,16 @@ def _page_css():
     ])
 
 
-# The paper pawn-print.js paintTile leaves around a slot, in card units — its
-# default margin, so the editor pane's crop can find the slot inside the tile.
-TILE_MARGIN = 3
+def _tile_margin():
+    """The paper paintTile leaves around a slot, READ FROM THE MODULE.
+
+    The editor pane's crop has to find the slot inside the tile, which means
+    knowing that margin — and a copy of the number here is a third place for it
+    to drift from what the page actually draws.
+    """
+    import re
+    js = _read(os.path.join(SITE, "js", "pawn-print.js"))
+    return float(re.search(r"export const TILE_MARGIN = ([\d.]+);", js).group(1))
 
 
 def browser_page(base_png, photo_png, spec, view, card_w, card_h):
@@ -432,10 +439,10 @@ def compare(theme=None, view=(1.0, 0.0, 0.0), out_dir=None):
             round((20 + (geo["y"] + geo["h"]) * card_h) * s))
     preview_crop = _crop_norm(sim, pbox)
     # PANE 2 — the tile: 116 CSS px at (card_w + 60, 20), showing the slot with
-    # TILE_MARGIN card units of paper round it, so the slot is its middle.
+    # the module's own tile margin of paper round it, so the slot is its middle.
     pad = 116
     slot_units = geo["w"] * spec["viewBox"][2]
-    inset = pad * TILE_MARGIN / (slot_units + 2 * TILE_MARGIN)
+    inset = pad * _tile_margin() / (slot_units + 2 * _tile_margin())
     x0 = card_w + 60
     ebox = (round((x0 + inset) * s), round((20 + inset) * s),
             round((x0 + pad - inset) * s), round((20 + pad - inset) * s))

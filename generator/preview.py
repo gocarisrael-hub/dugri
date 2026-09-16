@@ -94,7 +94,11 @@ def sticker_spec(theme, png_path):
     return {
         "slots": pawn_slots(theme),
         "viewBox": list(deck_html.view_box(svg)),
+        # Both are env-overridable on the generator (DUGRI_PHOTO_DISC_FILL,
+        # DUGRI_PHOTO_SUBJECT_Y), so the page has to be TOLD them: a tuned deck
+        # whose site kept the defaults would print one framing and show another.
         "disc_fill": buildmod.PHOTO_DISC_FILL,
+        "subject_y": buildmod.PHOTO_SUBJECT_Y,
         "filter": halo.group(0) if halo else None,
         # The shipped pawns, in the order the deck deals them, as the very bytes
         # the card embeds (deck_html.image_data_url). The browser deals them into

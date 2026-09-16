@@ -418,6 +418,30 @@ test.describe('pawn photos: the background cut', () => {
     expect(pawns.body).toMatch(/name="cutfail"\r\n\r\npawn0/);
   });
 
+  // A PHOTO THE PAGE CANNOT PREPARE IS STILL DRAWN. Preparing one is a decode, a
+  // measurement and sometimes a re-encode; when that misses, the slot used to show
+  // nothing at all — indistinguishable from a slot she never filled — while the
+  // upload carried the photo and the deck printed it. The file itself is drawn
+  // instead, on the plain square, which is the fork the generator takes too.
+  test('a photo the page cannot prepare is still drawn, never an empty slot', async ({ page }) => {
+    await stubCutter(page, { succeeds: true, png: FRAMEABLE_PNG });
+    // Every canvas encode fails, so preparing the cut-out photo cannot produce its
+    // own copy of it — the failure this is about.
+    await page.addInitScript(() => {
+      window.HTMLCanvasElement.prototype.toBlob = function (cb) {
+        cb(null);
+      };
+    });
+    await toPawnStep(page);
+    const slot0 = page.locator('.pawn-slot[data-idx="0"]');
+    await page
+      .getByTestId('pawn-input-0')
+      .setInputFiles({ name: 'a.png', mimeType: 'image/png', buffer: PNG_BYTES });
+
+    await expect(slot0).toHaveClass(/is-filled/);
+    await expect(slot0.locator('.pawn-tile svg[data-pawn-crop] image')).toHaveCount(1);
+  });
+
   test('re-picking a slot replaces the photo AND its cut', async ({ page }) => {
     // A bad cut is the one defect that survives to 104 printed cards, so the buyer
     // has to be able to retry the slot. The file input covers the whole slot, so

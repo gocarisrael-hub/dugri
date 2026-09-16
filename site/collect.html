@@ -3349,6 +3349,7 @@
       // halo filter, over the generator's picture of the card (js/pawn-print.js).
       import {
         preparePhoto,
+        releasePhoto,
         fallbackDeal,
         viewCrop,
         slotRect,
@@ -3587,19 +3588,33 @@
       const pawnBases = [];
       // The design's shipped pawns, in deal order, as the card embeds them.
       let pawnFallbacks = [];
+      // PENDING AND FAILED ARE NOT THE SAME ANSWER, and storing both as `null`
+      // behind a "have we started?" guard made a failure permanent AND invisible:
+      // the disc drew EMPTY, on the card that says this is exactly how it prints,
+      // while the printer went on printing that photo. A miss is marked and tried
+      // once more; what a photo that cannot be prepared at all LOOKS like is the
+      // module's answer (pawn-print.js `raw`: the file itself, on the plain square
+      // — the fork build.square_photo takes when it cannot frame one either).
       function pawnPrepared(src, view) {
         const printSrc = pawnPrintSrcFor(src, view);
         const cutout = printSrc !== src;
         const key = (cutout ? 'c:' : 'o:') + printSrc;
-        if (!pawnReady.has(key)) {
-          pawnReady.set(key, null);
-          preparePhoto(printSrc, { cutout }).then((p) => {
-            pawnReady.set(key, p);
-            paintPawnPads();
-            paintPawnCard();
-          });
-        }
-        return pawnReady.get(key);
+        const known = pawnReady.get(key);
+        if (known && known.photo !== undefined) return known.photo;
+        if (known && known.pending) return null;
+        const tries = (known && known.tries) || 0;
+        if (tries >= 2) return null;
+        pawnReady.set(key, { pending: true, tries: tries + 1 });
+        const opts = pawnSpec
+          ? { cutout, discFill: pawnSpec.disc_fill, subjectY: pawnSpec.subject_y }
+          : { cutout };
+        preparePhoto(printSrc, opts).then((p) => {
+          if (p) pawnReady.set(key, { photo: p, tries: tries + 1 });
+          else pawnReady.set(key, { tries: tries + 1 });
+          paintPawnPads();
+          paintPawnCard();
+        });
+        return null;
       }
       // ONE PHOTO'S TILE: the generator's picture of the card this photo prints on,
       // cropped to its slot — the paper, the cut-line — with the photo on it as the
@@ -4424,14 +4439,17 @@
           const f = b.querySelector('.prev-fail');
           if (f) f.classList.add('hidden');
         });
-        // Each card is asked for separately — the base card differs only by how
-        // many of ITS discs this page is about to cover, and the server caches on
-        // exactly that, so four cards cost at most four renders and usually one.
-        await Promise.all(boxes.map((b, i) => renderOnePawnCard(b, i, seq)));
+        // ONE ASK FOR THE WHOLE DECK. Every box wants the same picture now (the
+        // card with every disc bare), so four boxes asking in parallel were four
+        // identical requests — and the server's cache only fills when a render
+        // finishes, so a cold sixteen-player order started four Chrome runs at
+        // once on a path that is unhappy at two. They share this one.
+        const asked = api('/pawn-card?live=1&k=' + encodeURIComponent(ownerToken));
+        await Promise.all(boxes.map((b, i) => renderOnePawnCard(b, i, seq, asked)));
         if (seq === pawnCardSeq) paintPawnCard();
       }
 
-      async function renderOnePawnCard(box, card, seq) {
+      async function renderOnePawnCard(box, card, seq, asked) {
         const img = box.querySelector('img');
         const fail = box.querySelector('.prev-fail');
         if (!img) return;
@@ -4442,7 +4460,7 @@
           // as the printed deck deals them (paintOnePawnCard) — so one picture per
           // design and title serves every card and every photo count, and the
           // server renders it once rather than on every photo she adds.
-          const r = await api('/pawn-card?live=1&k=' + encodeURIComponent(ownerToken));
+          const r = await asked;
           if (seq !== pawnCardSeq) return; // a newer render is already on its way
           if (r && r.card) {
             // The discs are positioned as fractions of THE CARD, and the layer
@@ -4946,6 +4964,12 @@
             body: JSON.stringify({ pawn_images: pawnList().filter((p) => p !== src) }),
           });
           state.pawn_images = r.pawn_images;
+          // Her photo has left the order, so the copy this page decoded leaves with
+          // it: an object URL nobody revokes is held for the life of the page.
+          releasePhoto(src, { cutout: false });
+          releasePhoto(pawnCutFor(src) || src, { cutout: true });
+          pawnReady.delete('o:' + src);
+          pawnReady.delete('c:' + (pawnCutFor(src) || src));
           renderPawns();
           // The card is the same picture whatever her photos are (every disc bare),
           // so a photo added or removed is a repaint over it, never a new render.

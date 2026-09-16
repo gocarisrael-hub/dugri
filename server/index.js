@@ -14,6 +14,9 @@ const { paymentClientIp } = require('./payment-client-ip');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
+// The owner store's own paths (DATA_DIR): one of the two themes layers the pawn
+// card's artwork stamp reads, so an owner edit is a new cache key.
+const templateStore = require('./template-store');
 const redetectJob = require('./redetect-job');
 const playbook = require('./playbook');
 const content = require('./content');
@@ -630,6 +633,43 @@ const pawnCardCache = makePreviewCache({
   max: Number(process.env.PAWN_CARD_CACHE_MAX || 60),
   ttlMs: Number(process.env.PREVIEW_CACHE_TTL_MS || 5 * 60 * 1000),
 });
+
+// ONE RENDER PER KEY, however many ask for it at once. The cache only fills when
+// a render RESOLVES, so N cold requests for the same card spawned N Chrome runs —
+// four boxes of a sixteen-player order opening the tab together, or two buyers on
+// one design — on a path that is already unhappy at two concurrent. The per-client
+// rate limit does not bound that: the clients are different. They share the
+// in-flight promise instead, and the loser pays nothing.
+const pawnCardInFlight = new Map();
+function pawnCardOnce(key, make) {
+  const running = pawnCardInFlight.get(key);
+  if (running) return running;
+  const started = make().finally(() => pawnCardInFlight.delete(key));
+  pawnCardInFlight.set(key, started);
+  return started;
+}
+
+// WHAT THE CARD IS DRAWN FROM, as a version — the artwork the render reads and
+// the themes layers that carry the knobs (title style, calibration). Without it
+// an artwork swap keeps serving the old picture until the entry ages out, which
+// is exactly the case the owner would report as "I replaced the card and nothing
+// changed". Five stats on a cached path, and a template edit becomes a new key.
+function artworkStamp(theme) {
+  const dir = templates.resolveTemplateDirBySlug(TEMPLATE_ROOT, theme);
+  const files = [templates.themesPathFor(TEMPLATE_ROOT), templateStore.ownerThemesPath()];
+  for (const rel of ['clean/photo.svg', 'clean/2.svg', 'clean/fronts.svg']) {
+    if (dir) files.push(path.join(dir, rel));
+  }
+  return files
+    .map((f) => {
+      try {
+        return f ? fs.statSync(f).mtimeMs : 0;
+      } catch {
+        return 0;
+      }
+    })
+    .join(',');
+}
 
 // The shared word-font choices ([{label,file}]), read fresh (tiny file). Returns
 // [] when missing/unparseable so a bad file never crashes a preview request.
@@ -3439,7 +3479,7 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
     title.gender || '',
   ].join('\u0000');
   const cacheKey = live
-    ? 'pawn-base:' + theme + ':' + titleKey
+    ? 'pawn-base:' + theme + ':' + artworkStamp(theme) + ':' + titleKey
     : 'pawn-card:' +
       theme +
       ':' +
@@ -3453,16 +3493,19 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
   const cached = pawnCardCache.get(cacheKey);
   if (cached) return res.json(cached);
   try {
-    const out = await runPawnCard({
-      theme,
-      photos,
-      photoFrames,
-      photoCutouts,
-      empty: live,
-      drawn,
-      ...title,
+    const out = await pawnCardOnce(cacheKey, async () => {
+      const made = await runPawnCard({
+        theme,
+        photos,
+        photoFrames,
+        photoCutouts,
+        empty: live,
+        drawn,
+        ...title,
+      });
+      pawnCardCache.set(cacheKey, made);
+      return made;
     });
-    pawnCardCache.set(cacheKey, out);
     res.json(out);
   } catch (e) {
     // A render that fails must not read as "you have no photos": the page keeps
@@ -3484,16 +3527,25 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
 // never counted.
 app.get('/api/pawn-base', async (req, res) => {
   const theme = String(req.query.theme || '').trim();
-  if (!validate.getTheme(theme)) return res.status(400).json({ error: 'unknown theme' });
-  const cacheKey = 'pawn-base-public:' + theme;
+  const entry = validate.getTheme(theme);
+  // A design that is not on the shop floor has no wizard to serve, so this says
+  // the same "unknown" about it as about a name nobody ever registered: a public
+  // route that rendered a withdrawn design's card would be a way to read one.
+  // `in_store`, not `visibility` — a design unlocked by an access code IS on sale,
+  // and its buyer reaches this step like any other.
+  if (!entry || !templates.inStore(entry)) return res.status(400).json({ error: 'unknown theme' });
+  const cacheKey = 'pawn-base-public:' + theme + ':' + artworkStamp(theme);
   const cached = pawnCardCache.get(cacheKey);
   if (cached) return res.json(cached);
   if (!previewRate.ok('preview:' + clientKey(req))) {
     return res.status(429).json({ error: 'too many requests' });
   }
   try {
-    const out = await runPawnCard({ theme, empty: true, drawn: 4 });
-    pawnCardCache.set(cacheKey, out);
+    const out = await pawnCardOnce(cacheKey, async () => {
+      const made = await runPawnCard({ theme, empty: true, drawn: 4 });
+      pawnCardCache.set(cacheKey, made);
+      return made;
+    });
     res.json(out);
   } catch (e) {
     console.error('pawn base render failed:', (e && e.message) || e);

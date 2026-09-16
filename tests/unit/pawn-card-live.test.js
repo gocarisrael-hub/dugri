@@ -202,4 +202,67 @@ describe('GET /api/pawn-base', () => {
     expect((await askBase('theme=nope&players=4')).status).toBe(400);
     expect(runs()).toHaveLength(0);
   });
+
+  // PUBLIC SURFACE. This route answers with a design's artwork to anyone who
+  // names it, so a design the owner has taken off the shop floor must be as
+  // unknown here as a name nobody registered — otherwise a guessed slug is a way
+  // to read one. `in_store`, not `visibility`: a design unlocked with an access
+  // code IS on sale, and its buyer reaches this step like any other.
+  it('refuses a design that is not in the shop, without rendering', async () => {
+    const themesPath = path.join(dataDir, 'templates', 'themes.json');
+    fs.mkdirSync(path.dirname(themesPath), { recursive: true });
+    fs.writeFileSync(
+      themesPath,
+      JSON.stringify({ withdrawn: { calibrated: true, in_store: false } })
+    );
+    try {
+      const r = await askBase('theme=withdrawn');
+      expect(r.status).toBe(400);
+      expect(runs()).toHaveLength(0);
+    } finally {
+      fs.rmSync(themesPath, { force: true });
+    }
+  });
+
+  // ONE RENDER, however many ask at once. The cache only fills when a render
+  // RESOLVES, so four boxes of a sixteen-player order opening the tab together —
+  // or two buyers on one design — used to start that many Chrome runs on a path
+  // that is unhappy at two.
+  it('renders once for callers that arrive together on a cold card', async () => {
+    const answers = await Promise.all([
+      askBase('theme=football-boys'),
+      askBase('theme=football-boys'),
+      askBase('theme=football-boys'),
+      askBase('theme=football-boys'),
+    ]);
+    expect(answers.map((a) => a.status)).toEqual([200, 200, 200, 200]);
+    expect(runs()).toHaveLength(1);
+  });
+
+  // …and the picture is keyed on what it is DRAWN from. An owner who replaces a
+  // design's artwork would otherwise keep being served the old card until the
+  // entry aged out — "I replaced the card and nothing changed".
+  it('re-renders when the design′s artwork changes', async () => {
+    await askBase('theme=grapefruit');
+    expect(runs()).toHaveLength(1);
+    const art = path.join(
+      __dirname,
+      '..',
+      '..',
+      'resources',
+      'canva',
+      'templates',
+      'grapefruit',
+      'clean',
+      'photo.svg'
+    );
+    const was = fs.statSync(art);
+    fs.utimesSync(art, was.atime, new Date(was.mtimeMs + 60000));
+    try {
+      await askBase('theme=grapefruit');
+      expect(runs()).toHaveLength(2);
+    } finally {
+      fs.utimesSync(art, was.atime, was.mtime);
+    }
+  });
 });

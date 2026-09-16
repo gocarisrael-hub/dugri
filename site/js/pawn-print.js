@@ -19,12 +19,28 @@
 //     disc, and a <use> of it through the THEME'S OWN `#sticker-halo` filter,
 //     which the server hands over with the blank card. Chrome renders the print
 //     from that very filter, so the white edge and its shadow are not imitated.
-//   * THE CARD underneath is the generator's render (paper, cut-line, the Dugri
-//     pawns in the slots she has not filled), so nothing about it is redrawn here.
+//   * THE CARD underneath is the generator's render (paper, cut-line), so nothing
+//     about it is redrawn here; the shipped pawns it deals into the slots she left
+//     empty are dealt by `fallbackDeal`, which is build.card_photo_plan.
+//   * THE CONSTANTS are the generator's, handed over with the card
+//     (preview.sticker_spec): `disc_fill` and `subject_y` are env-overridable
+//     there, so a tuned deck would otherwise print one framing and show another.
 //
-// Everything the generator does is repeated except resizing the square to 512 px
-// before it is placed: the browser scales the source straight into the slot. That
-// is a resampling difference, not a geometry one.
+// WHAT IS NOT REPEATED, stated plainly:
+//   * the resize to 512 px before placing (build.PHOTO_SLOT_PX). The browser
+//     scales the source straight into the slot — a resampling difference on fine
+//     detail, never a geometric one.
+//   * COLOUR on a tagged original. Her photo is drawn from the file itself (see
+//     `decode`), so the browser colour-manages a JPEG carrying an ICC profile
+//     where Pillow ignores it. A cutout is our own untagged PNG, so the common
+//     path is unaffected. The alternative was reading and re-encoding every 12MP
+//     photo — 48MB and a full-resolution PNG, on a phone, for a picture drawn
+//     132px across.
+//
+// PIXELS ARE ONLY READ WHERE THEY ARE MEASURED: a cutout is (its alpha is the
+// framing), an original never is (the generator frames it on the plain square
+// too), and new bytes are written only for a cut that kept a bystander, whose
+// alpha the generator erases before it saves.
 
 // build.PHOTO_* — every constant the crop depends on, under the generator's names.
 export const ALPHA_MIN = 24;
@@ -361,19 +377,29 @@ export function subjectReach(box, alpha, w, h) {
   return Math.min(best + REACH_SLACK / scale, corner);
 }
 
+// A CONSTANT THE GENERATOR HANDED OVER, OR OURS WHEN IT DID NOT. The card's spec
+// arrives asynchronously, and `spec && spec.disc_fill` is NULL until it does —
+// which a default parameter does not catch, because null is not undefined. It
+// then reaches the maths below as a number: the window came out
+// "-Infinity -Infinity NaN NaN", and a null head anchor quietly framed a portrait
+// from its top. Both draw a wrong pawn on the card that promises the print.
+const tuned = (v, fallback, min) => (Number.isFinite(v) && v >= min ? v : fallback);
+
 /** build.subject_window: the source square whose disc holds the whole subject. */
-export function subjectWindow(box, alpha, w, h) {
-  const side = (2 * subjectReach(box, alpha, w, h)) / DISC_FILL;
+export function subjectWindow(box, alpha, w, h, discFill = DISC_FILL) {
+  // A disc of no width has no window, so it is a missing number, not a fill.
+  const side = (2 * subjectReach(box, alpha, w, h)) / tuned(discFill, DISC_FILL, Number.MIN_VALUE);
   const left = (box[0] + box[2]) / 2 - side / 2;
   const top = (box[1] + box[3]) / 2 - side / 2;
   return [pyRound(left), pyRound(top), pyRound(left + side), pyRound(top + side)];
 }
 
 /** square_photo's crop when there is no silhouette to frame by. */
-export function plainCrop(w, h) {
+export function plainCrop(w, h, subjectY = SUBJECT_Y) {
   const side = Math.min(w, h);
   if (h > w) {
-    let top = pyRound(SUBJECT_Y * h - side / 2);
+    // …and 0 IS a head anchor (the very top), so only a missing one falls back.
+    let top = pyRound(tuned(subjectY, SUBJECT_Y, 0) * h - side / 2);
     top = Math.max(0, Math.min(top, h - side));
     return [0, top, side, top + side];
   }
@@ -401,11 +427,11 @@ export function viewCrop(crop, view) {
  * `cutout` is the same flag the generator is handed (`--photo-original` is its
  * negation): an original is never measured for a silhouette, even when it has one.
  */
-export function autoCrop(rgba, w, h, cutout) {
+export function autoCrop(rgba, w, h, cutout, { discFill = DISC_FILL, subjectY = SUBJECT_Y } = {}) {
   const found = cutout ? subjectBox(rgba, w, h) : null;
-  if (!found) return { crop: plainCrop(w, h), alpha: null, erased: false };
+  if (!found) return { crop: plainCrop(w, h, subjectY), alpha: null, erased: false };
   return {
-    crop: subjectWindow(found.box, found.alpha, w, h),
+    crop: subjectWindow(found.box, found.alpha, w, h, discFill),
     alpha: found.alpha,
     erased: found.erased,
   };
@@ -430,8 +456,8 @@ export function cropViewBox(crop) {
  * own viewBox units; `photo` is `{ href, width, height }`; `crop` is the square
  * window of the source (see viewCrop).
  */
-export function stickerMarkup({ id, slot, photo, crop, filterId }) {
-  const r = (slot.w * DISC_FILL) / 2;
+export function stickerMarkup({ id, slot, photo, crop, filterId, discFill = DISC_FILL }) {
+  const r = (slot.w * discFill) / 2;
   const cx = slot.x + slot.w / 2;
   const cy = slot.y + slot.h / 2;
   return (
@@ -581,6 +607,7 @@ export function paintCard(svg, { spec, slots, idPrefix, stickers, fallbacks = []
       photo: s && s.photo,
       crop: s && s.crop,
       filterId,
+      discFill: spec.disc_fill,
     });
   });
   // The shipped pawns, one group per slot of the card, painted only where a
@@ -598,9 +625,15 @@ export function paintCard(svg, { spec, slots, idPrefix, stickers, fallbacks = []
       photo: null,
       fallback: (i >= stickers.length && fallbacks[i]) || null,
       filterId,
+      discFill: spec.disc_fill,
     });
   });
 }
+
+// The paper a tile leaves around its slot, in card units. Exported because the
+// comparison harness has to crop the slot out of a tile, and a copy of the number
+// there is a second place for it to drift from what this module draws.
+export const TILE_MARGIN = 3;
 
 /**
  * One slot as a tile: the generator's card cropped to the slot (plus `margin`
@@ -608,7 +641,10 @@ export function paintCard(svg, { spec, slots, idPrefix, stickers, fallbacks = []
  * sticker on it. `base` is the card picture; without it the tile is the sticker
  * alone until it arrives. `src`, the file that prints, is stamped as `data-src`.
  */
-export function paintTile(svg, { spec, base, slot, margin = 3, id, photo, crop, src, fallback }) {
+export function paintTile(
+  svg,
+  { spec, base, slot, margin = TILE_MARGIN, id, photo, crop, src, fallback }
+) {
   if (!svg || !spec) return;
   if (src) svg.setAttribute('data-src', src);
   else svg.removeAttribute('data-src');
@@ -635,11 +671,12 @@ export function paintTile(svg, { spec, base, slot, margin = 3, id, photo, crop, 
     crop,
     filterId,
     fallback,
+    discFill: spec.disc_fill,
   });
 }
 
 /** How much of a tile's width the slot square takes (see paintTile's margin). */
-export function tileSlotShare(slot, margin = 3) {
+export function tileSlotShare(slot, margin = TILE_MARGIN) {
   return slot.w / (slot.w + 2 * margin);
 }
 
@@ -662,12 +699,16 @@ const canvasBlob = (canvas) =>
  * and, for a cutout, exactly the alpha the generator kept.
  *
  * `src` is a URL or a Blob; `key` names it for the cache (defaults to the URL).
- * Resolves to null when the browser cannot decode it; the caller then draws no
- * photo rather than a wrong one.
+ * `discFill` and `subjectY` are the generator's own constants, off the card's
+ * sticker spec; omitted, this module's defaults stand.
+ *
+ * Resolves to the file itself on the plain square when preparing it failed (see
+ * `raw`), and to null only when even that could not be decoded — an empty disc
+ * for a photo the deck WILL print is the one answer worse than an approximate one.
  */
-export function preparePhoto(src, { cutout, key } = {}) {
+export function preparePhoto(src, { cutout, key, discFill, subjectY } = {}) {
   const k = (cutout ? 'c:' : 'o:') + (key || src);
-  if (!prepared.has(k)) prepared.set(k, decode(src, !!cutout));
+  if (!prepared.has(k)) prepared.set(k, decode(src, !!cutout, { discFill, subjectY }));
   return prepared.get(k);
 }
 
@@ -704,28 +745,68 @@ async function picture(blob) {
   }
 }
 
-async function decode(src, cutout) {
+// The file as it is: its own URL, its natural size and the plain square. Used
+// only when preparing a photo failed outright.
+async function raw(src) {
+  try {
+    const url = typeof src === 'string' ? src : URL.createObjectURL(src);
+    const im = document.createElement('img');
+    im.src = url;
+    await im.decode();
+    const w = im.naturalWidth;
+    const h = im.naturalHeight;
+    if (!w || !h) return null;
+    return { href: url, width: w, height: h, crop: plainCrop(w, h) };
+  } catch {
+    return null;
+  }
+}
+
+async function decode(src, cutout, { discFill = DISC_FILL, subjectY = SUBJECT_Y } = {}) {
   let bitmap = null;
   try {
     const blob = typeof src === 'string' ? await fetch(src).then((r) => r.blob()) : src;
     bitmap = await picture(blob);
     const w = bitmap.naturalWidth || bitmap.width;
     const h = bitmap.naturalHeight || bitmap.height;
+    // HER ORIGINAL IS NEVER MEASURED, so its pixels are never read. The generator
+    // frames an original on the plain square — build.square_photo takes that fork
+    // for one — and reading a 12MP photo into an ImageData is 48MB, with a
+    // full-resolution PNG re-encode after it, for a picture drawn 132px across.
+    // A phone has neither to spare and neither buys anything.
+    if (!cutout) {
+      return {
+        href: URL.createObjectURL(blob),
+        width: w,
+        height: h,
+        crop: plainCrop(w, h, subjectY),
+      };
+    }
     const canvas = document.createElement('canvas');
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     ctx.drawImage(bitmap, 0, 0);
     const img = ctx.getImageData(0, 0, w, h);
-    const { crop, alpha, erased } = autoCrop(img.data, w, h, cutout);
-    if (erased) {
-      for (let i = 0; i < w * h; i++) img.data[i * 4 + 3] = alpha[i];
-      ctx.putImageData(img, 0, 0);
+    const { crop, alpha, erased } = autoCrop(img.data, w, h, true, { discFill, subjectY });
+    // …and only a cut that kept a BYSTANDER needs new bytes: the generator erases
+    // the blobs it did not pick before it saves the square, so the page must too.
+    // Every other photo is drawn from the file itself, with no second copy of it
+    // in memory for the life of the page.
+    if (!erased) {
+      return { href: URL.createObjectURL(blob), width: w, height: h, crop };
     }
+    for (let i = 0; i < w * h; i++) img.data[i * 4 + 3] = alpha[i];
+    ctx.putImageData(img, 0, 0);
     const href = URL.createObjectURL(await canvasBlob(canvas));
     return { href, width: w, height: h, crop };
   } catch {
-    return null;
+    // LAST RESORT: draw the file itself, framed on the plain square — the fork the
+    // generator takes when it cannot frame a photo either (build.square_photo
+    // falls through to the original). Whatever went wrong above, the deck is still
+    // going to print this photo, and an empty disc on the card that says "exactly
+    // how it will be printed" is the one answer that is worse than an approximate one.
+    return await raw(src);
   } finally {
     if (bitmap && typeof bitmap.close === 'function') bitmap.close();
   }
