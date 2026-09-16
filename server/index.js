@@ -4312,6 +4312,23 @@ function feeMoveOnSettle(match) {
   return Number(quoted) === now ? null : { from: Number(quoted), to: now };
 }
 
+// WHAT THIS PURCHASE WOULD COST RIGHT NOW, computed the way pay/init computes
+// what to charge (see the `charged` formula in the pay/init handler): the coupon
+// discounts the GAME and never the postage. A change to either belongs in both.
+//
+// This exists because `order.total` is PRE-discount while a session's
+// `charged_total` is POST-discount, so `total - charged` is coupon-blind.
+// feeMoveOnSettle's comment below already spells that trap out — it is why the
+// fee notice reports the fee delta rather than a total difference — and the
+// purchase-changed notice reintroduced it until this was written.
+function expectedChargeNow(order, session) {
+  const fee =
+    Number.isInteger(order.delivery_fee) && order.delivery_fee > 0 ? order.delivery_fee : 0;
+  const gameMoney = Math.max(0, Number(order.total) - fee);
+  const pct = Number(session && session.discount_pct) || 0;
+  return Math.round(gameMoney * (1 - pct / 100)) + fee;
+}
+
 // IS THIS STILL THE SAME PURCHASE the buyer paid for? `price_key` is stored on
 // every session at pay/init (version|copies|unit price) and is what Tranzila's
 // sweep already refuses on. PeleCard verified the charge against that window's
@@ -4356,6 +4373,10 @@ function purchaseChangedOnSettle(match) {
     now,
     charged: Number(match.session.charged_total),
     total: Number(order.total),
+    // What she should be holding for this purchase as it stands now, after the
+    // coupon. `total` is kept only to describe the order, never to subtract from.
+    expectedNow: expectedChargeNow(order, match.session),
+    coupon: match.session.coupon || null,
   };
 }
 
@@ -4380,7 +4401,9 @@ function describePurchaseChange(was, now) {
 
 function reportSettleMismatch(c, { purchaseChanged, feeMoved }, { method, transactionId }) {
   const ref = db.orderRef(c);
-  const shortfall = purchaseChanged.total - purchaseChanged.charged;
+  // expectedNow, NOT total: see expectedChargeNow. On a 50% coupon this is the
+  // difference between telling her 99 and telling her 298.
+  const shortfall = purchaseChanged.expectedNow - purchaseChanged.charged;
   console.error(
     '[payment] ' +
       ref +
@@ -4397,7 +4420,13 @@ function reportSettleMismatch(c, { purchaseChanged, feeMoved }, { method, transa
   ];
   if (feeMoved) lines.push('  • דמי המשלוח: ' + feeMoved.from + ' ₪ ← ' + feeMoved.to + ' ₪');
   lines.push(
-    'נגבה ' + purchaseChanged.charged + ' ₪, וההזמנה עכשיו ' + purchaseChanged.total + ' ₪.'
+    'נגבה ' +
+      purchaseChanged.charged +
+      ' ₪, והמחיר של ההזמנה עכשיו הוא ' +
+      purchaseChanged.expectedNow +
+      ' ₪' +
+      (purchaseChanged.coupon ? ' (אחרי הקופון ' + purchaseChanged.coupon + ')' : '') +
+      '.'
   );
   lines.push(
     shortfall > 0
