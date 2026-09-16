@@ -622,6 +622,53 @@ describe('delivery through Tranzila', () => {
     expect(order.shipping.paid_method).toBe('tranzila');
     expect(order.version).toBe('delivery');
   });
+
+  // The upgrade stays STRICT where the order path is now tolerant, and the
+  // difference is deliberate: for an order the delivery fee is incidental to what
+  // is being bought, but for an upgrade the fee IS the purchase, so its key and
+  // its identity are the same thing. Re-staging re-quotes at the live fee, so a
+  // charge from the old quote is refused and reported rather than settling the
+  // upgrade at a fee the current staging does not reflect.
+  it('a stale upgrade session does not settle a re-staged upgrade, and is reported', async () => {
+    const c = db.createCollection('שדרוג משלוח שתומחר מחדש');
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    db.markPaid(c.id, { method: 'tranzila', transactionId: '2', charged_total: 199 });
+    const address = { street: 'הרצל 12', city: 'תל אביב', postal: '6100000' };
+    const init = { owner_token: c.owner_token, address };
+
+    expect((await post('/api/collections/' + c.id + '/shipping/init', init)).status).toBe(200);
+    const stale = db.getCollection(c.id).order.shipping.pelecard.sessions.slice(-1)[0];
+    expect(stale.charged_total).toBe(FEE);
+
+    const alert = spyAlerts();
+    try {
+      // The owner re-prices shipping, and the buyer re-stages the upgrade — which
+      // re-reads the live fee, so it can never bill yesterday's number.
+      settings.set('pricing', 'delivery_fee', FEE + 20);
+      expect((await post('/api/collections/' + c.id + '/shipping/init', init)).status).toBe(200);
+      expect(db.getCollection(c.id).order.shipping.fee).toBe(FEE + 20);
+
+      // The charge from the FIRST quote arrives late.
+      const index = charge(stale.token, FEE);
+      await notifyFor(stale.token);
+
+      const order = db.getCollection(c.id).order;
+      expect(order.shipping.paid).toBeFalsy();
+      expect(order.version).toBe('pickup');
+      const text = alertText(alert);
+      expect(text).toContain(String(index));
+      expect(text).toContain(db.getCollection(c.id).order_no);
+      expect(text).toContain('השתנתה');
+      // What that window quoted, and what the upgrade costs now — `now` reads
+      // shipping.fee for this kind, not the order total.
+      expect(text).toContain(FEE * 100 + ' אגורות');
+      expect(text).toContain((FEE + 20) * 100 + ' אגורות');
+    } finally {
+      alert.mockRestore();
+      // Shared server across this file: a leaked fee would re-price later tests.
+      settings.set('pricing', 'delivery_fee', FEE);
+    }
+  });
 });
 
 describe('POST /pay-done.html', () => {

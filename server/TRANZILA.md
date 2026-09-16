@@ -90,15 +90,30 @@ is unsigned and nothing documents it being retried, so it decides nothing.
    - `amount` (agorot) equals the session's `charged_total` exactly,
    - the row carries the session's token,
    - that index has not already paid for another purchase,
-   - it is still the same purchase as when that pay window opened (version,
-     copies, unit price; the fee for a shipping upgrade). Deliberately not the
-     delivery fee or the total: the amount is already checked exactly against the
-     window's own figure, and those two move with live settings, so refusing a
-     verified charge because the owner changed the fee meanwhile would mean the
-     money taken and the order left unpaid,
-     stored on the session at pay/init. A charge from a cheaper window the buyer
-     closed before changing the order does not pay for the changed order; the
-     owner is told instead.
+   - it is still the same purchase as when that pay window opened — version,
+     copies and unit price for an order, the fee for a shipping upgrade — stored
+     on the session at pay/init. A charge from a cheaper window the buyer closed
+     before changing the order does not pay for the changed order; the owner is
+     told instead.
+
+   An order's key deliberately excludes the **delivery fee and the total**. The
+   amount is already checked exactly against that window's own `charged_total`, so
+   the key only has to answer "is this still the same purchase?". The fee and the
+   total move with live settings on any re-submit, and refusing a verified charge
+   because the owner changed the fee meanwhile would mean the money taken and the
+   order left unpaid.
+
+   **A shipping upgrade is strict where an order is tolerant, and that is on
+   purpose.** For an order the delivery fee is incidental to what is being bought,
+   so a fee change must not refuse the charge. For an upgrade the fee IS the
+   purchase, so its key and its identity are the same thing: `startShippingUpgrade`
+   re-reads the live fee on a re-stage precisely so it can never bill yesterday's
+   number, and a charge from the old quote is therefore refused and reported
+   rather than settling the upgrade at a fee the current staging does not reflect
+   — which would be harder to explain to the owner than a refusal she is alerted
+   to. The gap only opens when the fee changes AND the buyer re-stages while a
+   charge is in flight. Do not "fix" this inconsistency without replacing that
+   reasoning.
 
    A session closed by the buyer (resolved) still settles: sessions are found by
    token whatever their state and skipped only once their purchase is paid.
