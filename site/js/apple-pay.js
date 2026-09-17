@@ -14,7 +14,7 @@
 //
 // 1. NOTHING LOADS UNTIL A BUYER OPENS THE PAYMENT WINDOW, and then only if the
 //    charge is actually going to Tranzila and this browser could open a sheet at
-//    all. jQuery is 89KB and their script is a third-party fetch; a buyer reading
+//    all. jQuery is 87KB and their script is a third-party fetch; a buyer reading
 //    a word list, or paying by card on Chrome, should pay neither.
 //
 // 2. REAL JQUERY, NOT A SHIM. Their script calls `$n.ajax` and `$n.each`, `$n`
@@ -56,7 +56,18 @@ export function isTranzilaFrame(url) {
 /**
  * Can this browser open an Apple Pay sheet? Chrome, Firefox and every Android
  * browser cannot, and for them the button never appears inside the frame either —
- * so loading 89KB of jQuery for them buys nothing at all.
+ * so loading 87KB of jQuery for them buys nothing at all.
+ *
+ * IT PROMISES ONLY THAT THE API EXISTS, not that this buyer can pay with it:
+ * `ApplePaySession.canMakePayments()` is a further question, and a Safari user
+ * with no card in Wallet passes this gate, loads the library and still gets no
+ * sheet. That is the correct outcome rather than something to guard — she is on a
+ * browser where the wallet CAN work, and the card form is right there underneath —
+ * but the gate should not be read as "this buyer can pay".
+ *
+ * Safe in the direction that matters: the frame only has ApplePaySession because
+ * `allow="payment"` delegates it from this parent, so there is no arrangement
+ * where the frame holds the API and the top-level page does not.
  */
 export function canApplePay() {
   return typeof window !== 'undefined' && typeof window.ApplePaySession !== 'undefined';

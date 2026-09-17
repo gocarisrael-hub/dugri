@@ -7,7 +7,7 @@
 // What is worth testing here is not "does it add a script tag". It is the two
 // places this can go quietly wrong on the money path:
 //
-//   * loading 89KB of jQuery and a third-party script for buyers who can never
+//   * loading 87KB of jQuery and a third-party script for buyers who can never
 //     use either (another provider, or a browser with no Apple Pay), and
 //   * their script's last line, `window.onload = function(){…}` — an ASSIGNMENT
 //     that clobbers whatever the page had, carrying a validate_apple POST that
