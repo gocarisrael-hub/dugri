@@ -4278,6 +4278,97 @@ app.post('/api/payment/callback', async (req, res) => {
   res.json({ ok: true });
 });
 
+// A VERIFIED CHARGE LANDED ON A PURCHASE THAT IS ALREADY PAID. Two things look
+// identical here and are opposites:
+//
+//   • the SAME transaction again — PeleCard re-delivers a callback after a
+//     non-200, and our own transient path answers 502 precisely to invite that.
+//     Normal traffic. Must be completely silent, or the channel becomes noise.
+//   • a DIFFERENT transaction — a second real charge, from a second payment
+//     window the buyer also paid. The money is gone and nothing else records it.
+//
+// The distinction is a comparison against a field that already exists
+// (paid_transaction_id), not new bookkeeping. db.recordExtraCharge stores the
+// charge and returns false if that transaction was already recorded, so the
+// notice is one per CHARGE rather than one per delivery of it.
+//
+// Nothing is written to the purchase itself: the caller returns false either way,
+// and the already-paid guard is the only thing protecting the first charge's
+// identifiers on the order path.
+function reportExtraChargeIfAny(c, match, { method, transactionId, approvalNo, voucherNo }) {
+  const shipping = match.kind === 'shipping';
+  const holder = shipping ? c.order.shipping : c.order;
+  const paidWith = holder && holder.paid_transaction_id;
+  // A retry of the charge that paid: say nothing at all.
+  if (!transactionId || String(paidWith) === String(transactionId)) return;
+  const charged = match.session ? Number(match.session.charged_total) : null;
+  const fresh = db.recordExtraCharge(c.id, {
+    kind: match.kind,
+    method,
+    transactionId,
+    approvalNo,
+    voucherNo,
+    charged_total: charged,
+    paidTransactionId: paidWith || null,
+  });
+  if (!fresh) return; // already told her about this one
+  safelyReportExtraCharge(c, {
+    shipping,
+    charged,
+    method,
+    transactionId,
+    approvalNo,
+    voucherNo,
+    paidWith,
+  });
+}
+
+// She is going to refund from this message, so it carries what a refund needs:
+// which order, how much, which transaction to reverse, and the approval + voucher
+// numbers — the voucher being what a disputes letter actually cites.
+function reportExtraCharge(
+  c,
+  { shipping, charged, method, transactionId, approvalNo, voucherNo, paidWith }
+) {
+  const ref = db.orderRef(c);
+  console.error(
+    '[payment] ' +
+      ref +
+      ': SECOND charge ' +
+      transactionId +
+      ' on an already-paid ' +
+      (shipping ? 'delivery upgrade' : 'order') +
+      ' (paid by ' +
+      paidWith +
+      ')'
+  );
+  const lines = [
+    'הזמנה: ' + ref,
+    (shipping ? 'המשלוח' : 'ההזמנה') + ' כבר שולם, ונגבה חיוב נוסף על אותה רכישה.',
+    'נגבה שוב: ' + (charged == null ? '—' : charged + ' ₪') + '.',
+    'העסקה לזיכוי: ' + transactionId + (approvalNo ? ' (אישור ' + approvalNo + ')' : '') + '.',
+  ];
+  if (voucherNo) lines.push('מס\u05f3 שובר: ' + voucherNo + ' — זה המספר שמכתב ביטול עסקה מצטט.');
+  lines.push('העסקה ששילמה כדין: ' + (paidWith || '—') + ' — לא לגעת בה.');
+  lines.push('אמצעי תשלום: ' + (method || '—'));
+  lines.push('הכסף כבר נגבה מהלקוח/ה, ואין רישום אחר לזכות ממנו — לזכות מול חברת האשראי.');
+  const subject = 'נגבה חיוב כפול על אותה רכישה';
+  notify
+    .sendSystemAlert(subject, lines)
+    .then((ok) => ok || alertOwnerViaWhatsApp(subject, lines))
+    .catch(() => {});
+}
+
+// Same rule as every other notice on this path: telling her must never unmake a
+// settle, or answer the provider with a failure over a message.
+function safelyReportExtraCharge(c, info) {
+  try {
+    reportExtraCharge(c, info);
+  } catch (e) {
+    console.error('[payment] double-charge notice failed: ' + ((e && e.message) || e));
+  }
+}
+
 // Why a verified-looking callback settled nothing. Deliberately NOT one line for
 // every cause: the owner acts on these differently, and a log that cannot be
 // acted on is noise. Ask what this would say if the cause were different — if the
@@ -4364,7 +4455,10 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
   const feeMoved = feeMoveOnSettle(match);
   const purchaseChanged = purchaseChangedOnSettle(match);
   if (match.kind === 'shipping') {
-    if (c.order.shipping.paid) return false;
+    if (c.order.shipping.paid) {
+      reportExtraChargeIfAny(c, match, { method, transactionId, approvalNo, voucherNo });
+      return false;
+    }
     db.markShippingPaid(c.id, {
       method,
       transactionId,
@@ -4380,7 +4474,13 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
     if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
     return true;
   }
-  if (c.order.paid) return false;
+  if (c.order.paid) {
+    // BEFORE the return, and never falling through to markPaid: markPaid has no
+    // already-paid guard, so a second write would replace paid_transaction_id and
+    // with it the approval + voucher numbers a chargeback is answered from.
+    reportExtraChargeIfAny(c, match, { method, transactionId, approvalNo, voucherNo });
+    return false;
+  }
   // metaClaim: the Meta report is claimed inside THIS write. The alternative
   // was a second synchronous whole-store write on the hot path of a charge
   // that has just cleared, for a measurement side-effect.
