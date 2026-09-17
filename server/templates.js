@@ -2880,6 +2880,24 @@ function updateTemplateSettings({ root, key, patch }) {
   if (!entry) return { error: 'template not found', httpStatus: 404 };
   const p = patch && typeof patch === 'object' ? patch : {};
   const changed = {};
+  // THE GEOMETRY THIS PATCH ASKED FOR AND DID NOT GET.
+  //
+  // Narrow on purpose: card_slots alone. A save is otherwise ALL-OR-NOTHING and
+  // stays that way — three suites pin that deliberately (template-type-ceilings,
+  // template-word-alt-scale, template-word-wrap-pitch: "a refusal changes nothing
+  // beside it"), and trading it away is its own change with its own argument, not
+  // a rider on a geometry fix.
+  //
+  // What card_slots needs is different in kind. The bench sends it together with
+  // thirteen other fields in ONE patch (site/admin-bench.html SAVEABLE), and its
+  // boxes are DRAGGED: the move handle allows -0.2..1.2 and the resize handles
+  // have no outer bound, so a box off the card is a thing a hand does. Aborting
+  // there discarded word_pitch, word_size, title_style, back and the ceilings —
+  // every one already validated — and told the owner only about the box.
+  //
+  // Same field name and contract as applyCalibration's `rejected`, which
+  // site/admin-templates.html already reads and renders.
+  const rejected = [];
   if ('display_he' in p) {
     const v = validateDisplayName(p.display_he);
     if (v.error) return { error: v.error, httpStatus: 400 };
@@ -3156,8 +3174,11 @@ function updateTemplateSettings({ root, key, patch }) {
 
   if ('card_slots' in p) {
     const v = validateCardSlots(p.card_slots, entryFrontNumbers(entry));
-    if (v.error) return { error: v.error, httpStatus: 400 };
-    changed.card_slots = v.value;
+    // ONE BAD BOX MUST NOT TAKE THE SAVE WITH IT. Refused here, kept everywhere
+    // else, and NAMED — the previous geometry stands, which is what a refusal
+    // should mean for a measurement the owner has already calibrated.
+    if (v.error) rejected.push('card_slots (' + v.error + ')');
+    else changed.card_slots = v.value;
   }
   // Switching asset layout re-points every SVG path AND changes what a
   // calibration means, so a switch always drops `calibrated` back to false: the
@@ -3264,7 +3285,13 @@ function updateTemplateSettings({ root, key, patch }) {
     }
   }
   if (Object.keys(changed).length === 0) {
-    return { error: 'no valid settings to update', httpStatus: 400 };
+    // NOTHING LANDED, so this is a failed save and must read as one — including a
+    // patch whose only field was the refused geometry.
+    return {
+      error: rejected.length ? rejected.join('; ') : 'no valid settings to update',
+      rejected,
+      httpStatus: 400,
+    };
   }
   // A template may only be flipped calibrated:true when it actually HAS a
   // title_style to render with (from this patch or already on the entry) —
@@ -3324,6 +3351,10 @@ function updateTemplateSettings({ root, key, patch }) {
   return {
     key,
     slug: entry.slug || key,
+    // Empty on a clean save. Non-empty means the geometry was refused while the
+    // rest of the patch landed — a save that half-happened must never read as a
+    // save that happened.
+    rejected,
     settings: {
       display_he: entry.display_he,
       language: entry.language,
