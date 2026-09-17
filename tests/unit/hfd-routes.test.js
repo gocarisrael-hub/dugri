@@ -141,6 +141,46 @@ describe('POST /api/admin/collections/:id/hfd', () => {
     expect(JSON.parse(hfdCalls[0].init.body).shipmentRemarks).toBe('שירה בת 30 · סיישל');
   });
 
+  // ONE ORDER MUST NOT PRINT TWO NAMES — asserted across BOTH routes, because
+  // that is the only way to observe it. The courier's name is read out of the
+  // actual booking request; the pickup one out of the sticker sheet. A second
+  // private resolver in either closure makes these two diverge.
+  //
+  // The theme is deliberately one the themes file does not name, because that is
+  // where the two used to part company: the courier fell through to `c.design`
+  // (the name STAMPED at order time) while the sticker dropped straight to the
+  // raw key — and keys are Latin slugs, so the same box went out with a Hebrew
+  // name on one label and `no-such-theme` on the other.
+  it('names the design the same way on the courier label and the pickup sticker', async () => {
+    const shared = { custom_title: 'אותו עיצוב', design: 'טיול חזרה', theme: 'no-such-theme' };
+
+    // The courier's half: book a parcel and read what HFD was actually sent.
+    const del = seedDelivery('משלוח שם', ADDRESS, shared);
+    await send('POST', withKey('/api/admin/collections/' + del.id + '/hfd'));
+    const courierDesign = JSON.parse(hfdCalls[0].init.body).shipmentRemarks.split(' · ').pop();
+
+    // The sticker's half: the same shape as a self-collection order, driven to
+    // the state that gives it a label (paid, produced, released).
+    const pick = db.createCollection('איסוף שם', {
+      email: 'y@example.com',
+      phone: '0521234567',
+      ...shared,
+    });
+    db.setOrder(pick.id, pick.owner_token, { version: 'pickup' }, { admin: true });
+    db.markPaid(pick.id, { method: 'pelecard' });
+    db.setProduction(pick.id, { state: 'generated', pages: 208 });
+    db.setProductionReleased(pick.id, true);
+    const sticker = app.pickupStickerOrders().find((x) => x.title === 'אותו עיצוב');
+    // Without this the comparison below could pass on two undefineds.
+    expect(sticker).toBeTruthy();
+
+    expect(sticker.design).toBe(courierDesign);
+    // ...and both are the stamped Hebrew name rather than the Latin key, so the
+    // test still fails if the two regress together.
+    expect(sticker.design).toBe('טיול חזרה');
+    expect(sticker.design).not.toBe('no-such-theme');
+  });
+
   it('refuses a SECOND booking — one order, one van', async () => {
     const c = seedDelivery('כפול');
     await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));

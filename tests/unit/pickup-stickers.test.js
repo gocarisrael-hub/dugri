@@ -69,12 +69,18 @@ function order({
   title = 'יובל חוגגת 23',
   buyer = 'אופק אוחיון',
   phone = '0527275047',
+  // The design name STAMPED at order time (db.js keeps it on the collection).
+  // Distinct from `theme`, and the difference is the whole point of the label
+  // tests below: a template renamed or removed since leaves the stamped name as
+  // the only human-readable thing left about this box.
+  design,
 } = {}) {
   const c = db.createCollection('שירה', {
     theme,
     custom_title: title,
     buyer_name: buyer,
     phone,
+    ...(design === undefined ? {} : { design }),
   });
   db.setOrder(
     c.id,
@@ -227,11 +233,37 @@ describe('what each label says', () => {
     expect(s.phone).toBeTruthy();
   });
 
-  it('names an unknown design by its key rather than by nothing', () => {
-    order({ theme: 'no-such-theme', title: 'תבנית לא מוכרת' });
+  // ONE ORDER MUST NOT PRINT TWO NAMES. The courier's sticker (server/hfd.js) and
+  // this one are the same question — "which game is in this box" — answered by two
+  // resolvers that disagree whenever the themes file does not name the theme:
+  // hfdDesignName falls through to `c.design`, the name stamped at order time,
+  // while this path fell straight to the raw key. A box then leaves with סיישל on
+  // the courier label and `trip comeback` on ours, and the theme keys are LATIN
+  // (bachelorette, marriage, posttrip — checked against /api/design-names) so the
+  // pickup label prints Latin text on an otherwise Hebrew sticker.
+  it('names an unnamed design the way the courier label does, not by its raw key', () => {
+    order({ theme: 'no-such-theme', title: 'תבנית לא מוכרת', design: 'טיול חזרה' });
     const s = app.pickupStickerOrders().find((x) => x.title === 'תבנית לא מוכרת');
-    expect(s.design).toBe('no-such-theme');
+    // The stamped name is a real Hebrew label someone chose; the key is not.
+    expect(s.design).toBe('טיול חזרה');
+    expect(s.design).not.toBe('no-such-theme');
   });
+
+  // ...and with NOTHING stamped either, the key still beats an empty line: a label
+  // with an odd-looking design is better than a label with none. This is the
+  // fallback the old test pinned, kept as the LAST step rather than the first.
+  it('still falls back to the key when nothing was ever stamped', () => {
+    order({ theme: 'no-such-theme-2', title: 'בלי שם כלל', design: '' });
+    const s = app.pickupStickerOrders().find((x) => x.title === 'בלי שם כלל');
+    expect(s.design).toBe('no-such-theme-2');
+  });
+
+  // The cross-check that the two labels AGREE lives in hfd-routes.test.js, where
+  // the courier's remark can be read off the actual booking request. It was
+  // written here first as `expect(s.design).toBe(app.designNameForCollection(c))`
+  // — which is a tautology: both sides are the same bound function, so it could
+  // never fail, and it never touched the HFD path at all. A mutation that gave
+  // the sticker its own private resolver left it green.
 
   it('is oldest first, so a sticker can be found in the sheet', () => {
     const all = app.pickupStickerOrders();
