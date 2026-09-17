@@ -254,3 +254,85 @@ describe('verifyTransaction (fail-closed)', () => {
     expect(p.verifyTransaction(ok, {})).toBe(false);
   });
 });
+
+// WHY it refused, not just that it did. The callback answers PeleCard 200 and
+// settles nothing when verification fails, so without a reason the owner's only
+// evidence is an order that never went paid. A card DECLINE is routine and is the
+// answer to "why is this unpaid"; a wrong AMOUNT is not routine at all. One line
+// for both would be the categorical log that gets ignored by the third week.
+describe('verifyFailure (the reason verifyTransaction refused)', () => {
+  let p;
+  beforeEach(() => {
+    p = loadFresh();
+  });
+
+  const ok = { statusCode: '000', shvaResult: '000', debitTotalAgorot: 7900 };
+
+  // BOUND BY CONSTRUCTION. verifyTransaction delegates to verifyFailure, so a
+  // reason exists exactly when verification fails — there is no second copy of
+  // the rules to drift out of step (the failure mode item 16 of the follow-ups
+  // queue exists for, and the one the fee/charge formulas already have).
+  it('names a reason exactly when verifyTransaction refuses', () => {
+    const cases = [
+      [ok, { amountNis: 79 }],
+      [{ ...ok, statusCode: '004' }, { amountNis: 79 }],
+      [{ ...ok, shvaResult: '004' }, { amountNis: 79 }],
+      [{ ...ok, shvaResult: null }, { amountNis: 79 }],
+      [{ ...ok, debitTotalAgorot: 100 }, { amountNis: 79 }],
+      [{ ...ok, debitTotalAgorot: null }, { amountNis: 79 }],
+      [ok, {}],
+      [null, { amountNis: 79 }],
+    ];
+    for (const [tx, expected] of cases) {
+      expect(p.verifyFailure(tx, expected) === null).toBe(p.verifyTransaction(tx, expected));
+    }
+  });
+
+  it('tells a decline apart from a wrong amount', () => {
+    expect(p.verifyFailure({ ...ok, shvaResult: '004' }, { amountNis: 79 })).toBe('declined');
+    expect(p.verifyFailure({ ...ok, debitTotalAgorot: 100 }, { amountNis: 79 })).toBe(
+      'amount_mismatch'
+    );
+    expect(p.verifyFailure({ ...ok, statusCode: '004' }, { amountNis: 79 })).toBe('lookup_status');
+    expect(p.verifyFailure({ ...ok, debitTotalAgorot: null }, { amountNis: 79 })).toBe('no_amount');
+    expect(p.verifyFailure(ok, { amountNis: 79 })).toBe(null);
+  });
+});
+
+// A LOG LINE IS A PLACE A SECRET CAN ESCAPE TO. Every error message on these
+// paths is about to be logged, and getTransaction POSTs the terminal password in
+// its request body — so the guarantee has to hold at the SOURCE, not in the
+// caller's discipline. Checked against a sentinel rather than the fixture's
+// 'secret', which is a word ordinary prose could contain by accident.
+describe('thrown errors carry no credentials', () => {
+  const SENTINEL = 'pw-sentinel-must-never-be-logged';
+
+  beforeEach(() => {
+    process.env.PELECARD_TERMINAL = CREDS.PELECARD_TERMINAL;
+    process.env.PELECARD_USER = CREDS.PELECARD_USER;
+    process.env.PELECARD_PASSWORD = SENTINEL;
+  });
+
+  it('keeps the password out of an http failure, a gateway error and a transport failure', async () => {
+    const p = loadFresh();
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => ({}) })
+    );
+    const httpErr = await p.init({ amountNis: 79, paramToken: 'x', urls: {} }).catch((e) => e);
+    expect(String(httpErr && httpErr.message)).not.toContain(SENTINEL);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(jsonRes({ Error: { ErrCode: 101, ErrMsg: 'bad terminal' } }))
+    );
+    const gatewayErr = await p.init({ amountNis: 79, paramToken: 'x', urls: {} }).catch((e) => e);
+    expect(String(gatewayErr && gatewayErr.message)).not.toContain(SENTINEL);
+    expect(String(gatewayErr && gatewayErr.message)).toContain('101'); // still discriminating
+
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    const txErr = await p.getTransaction('tx-1').catch((e) => e);
+    expect(String(txErr && txErr.message)).not.toContain(SENTINEL);
+  });
+});

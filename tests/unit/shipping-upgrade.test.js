@@ -278,6 +278,39 @@ describe('POST /api/collections/:id/shipping/init', () => {
     expect(r.status).toBe(403);
   });
 
+  // THE UPGRADE FAILS SILENTLY TOO, and it answers the SAME 502 body as the
+  // order's own pay/init — so without naming the stage, the log cannot tell the
+  // owner which of the two purchases did not open. Her order is already PAID
+  // here; what failed is the delivery she tried to add, which is a different
+  // conversation with the customer.
+  it('logs WHY a shipping/init failed, naming the upgrade rather than the order', async () => {
+    const c = paidPickup();
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      nextInit = { Error: { ErrCode: 101, ErrMsg: 'bad terminal' } };
+      const r = await post('/api/collections/' + c.id + '/shipping/init', {
+        owner_token: c.owner_token,
+        address: ADDRESS,
+      });
+      expect(r.status).toBe(502);
+
+      const text = logged.mock.calls.map((a) => a.map(String).join(' ')).join('\n');
+      expect(text).toContain('shipping/init'); // the stage — not just "payment init failed"
+      expect(text).toContain('pelecard');
+      expect(text).toContain('101');
+      expect(text).toContain('bad terminal');
+      expect(text).toContain(String(FEE)); // the amount that did not get charged
+      // Abandoned, not queued: the session is recorded only after init() returns.
+      expect(text).toMatch(/nothing pending|no payment window|לא נפתח/);
+      expect(text).not.toContain(process.env.PELECARD_PASSWORD);
+      // The paid order itself is untouched by a failed upgrade.
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      expect(db.getCollection(c.id).order.version).toBe('pickup');
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it('refuses without a usable address', async () => {
     const c = paidPickup();
     const r = await post('/api/collections/' + c.id + '/shipping/init', {

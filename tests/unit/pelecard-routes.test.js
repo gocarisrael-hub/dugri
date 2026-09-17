@@ -915,6 +915,170 @@ describe('POST /api/payment/callback', () => {
     expect(r.status).toBe(200);
   });
 
+  // A 502 WITH NO LOG IS AN INVISIBLE FAILURE. The buyer sees the modal fail; we
+  // keep nothing. The session is recorded only AFTER init() returns, so a failed
+  // init leaves no token and no session — there is nothing for any sweep to find
+  // later, and this line is the only trace the attempt ever happened.
+  it('logs WHY a pay/init failed, and that nothing is left pending', async () => {
+    const c = db.createCollection('כשל פתיחת תשלום');
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      nextInit = { Error: { ErrCode: 101, ErrMsg: 'bad terminal' } };
+      const r = await post('/api/collections/' + c.id + '/pay/init', {
+        owner_token: c.owner_token,
+        version: 'pdf',
+      });
+      expect(r.status).toBe(502);
+
+      const text = logged.mock.calls.map((a) => a.map(String).join(' ')).join('\n');
+      // The discriminating facts: which order, which provider, which stage, and
+      // the gateway's own reason. "payment init failed" alone tells the next
+      // reader nothing the 502 did not already say.
+      expect(text).toContain(db.orderRef(db.getCollection(c.id)));
+      expect(text).toContain('pelecard');
+      expect(text).toContain('pay/init');
+      expect(text).toContain('101');
+      expect(text).toContain('bad terminal');
+      // ...and that this one is abandoned, not queued for a retry.
+      expect(text).toMatch(/nothing pending|לא נפתח|no payment window/);
+      // Never the credentials.
+      expect(text).not.toContain(process.env.PELECARD_PASSWORD);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  // REFUSED-AND-PENDING, WHICH IS NOT A LOST PAYMENT. The 502 here is deliberate:
+  // it asks PeleCard to call again. A line that reads like money gone would train
+  // the owner to ignore the ones that mean it.
+  it('logs a transient verification failure as pending a retry, not as lost', async () => {
+    const c = db.createCollection('כשל זמני עם לוג');
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      nextGetTx = 'THROW';
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-pend' } });
+      expect(r.status).toBe(502);
+
+      const text = logged.mock.calls.map((a) => a.map(String).join(' ')).join('\n');
+      expect(text).toContain('tx-pend');
+      expect(text).toMatch(/retr|pending|עדיין/);
+      expect(text).not.toContain(process.env.PELECARD_PASSWORD);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  // A DECLINE IS THE ANSWER TO "why is this order unpaid", and it is routine.
+  // It must be logged as a decline, carrying SHVA's own code — not as an error
+  // indistinguishable from a wrong amount.
+  it('logs a declined card as a decline, with the SHVA code', async () => {
+    const c = db.createCollection('סירוב כרטיס');
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const token = tokenOf(c.id);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-declined',
+          ShvaResult: '004',
+          AdditionalDetailsParamX: token,
+          DebitTotal: 7900,
+        },
+      };
+      const r = await post('/api/payment/callback', {
+        ResultData: { TransactionId: 'tx-declined' },
+      });
+      expect(r.status).toBe(200);
+      expect(db.getCollection(c.id).order.paid).toBe(false);
+
+      const text = logged.mock.calls.map((a) => a.map(String).join(' ')).join('\n');
+      expect(text).toContain(db.orderRef(db.getCollection(c.id)));
+      expect(text).toMatch(/declin|סירוב|נדחה/i);
+      expect(text).toContain('004'); // SHVA's own code
+      // The session token is a secret and must never reach a log line.
+      expect(text).not.toContain(token);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  // A WRONG AMOUNT IS NOT A DECLINE. Same silent 200, entirely different meaning:
+  // the charge cleared for a sum that is not what this window quoted. If both read
+  // the same, the log cannot be acted on.
+  it('logs an amount mismatch differently from a decline, with both numbers', async () => {
+    const c = db.createCollection('סכום לא תואם');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const charged = init.body.charged;
+    const token = tokenOf(c.id);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-wrong-sum',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: 100,
+        },
+      };
+      const r = await post('/api/payment/callback', {
+        ResultData: { TransactionId: 'tx-wrong-sum' },
+      });
+      expect(r.status).toBe(200);
+      expect(db.getCollection(c.id).order.paid).toBe(false);
+
+      const text = logged.mock.calls.map((a) => a.map(String).join(' ')).join('\n');
+      expect(text).toMatch(/amount|סכום/i);
+      expect(text).not.toMatch(/declin|סירוב/i); // not the routine one
+      // Assert the FORM the owner reads, not a bare digit: `toContain('1')` would
+      // match an order ref (DG-1027) or a transaction id and pass while proving
+      // nothing about the number in the line.
+      expect(text).toContain(String(charged) + ' ₪'); // what the window quoted
+      expect(text).toContain('1 ₪'); // and what actually cleared (100 agorot)
+      expect(text).not.toContain(token);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
+  // AN ORPHAN CALLBACK: a verified-looking charge whose token matches no session
+  // of ours. Worth a line — it is the shape a forged or foreign callback takes —
+  // but the token itself is a credential and must NOT be in it.
+  it('logs a callback whose token matches no session, without printing the token', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-orphan',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: 'someoneelsetoken',
+          DebitTotal: 7900,
+        },
+      };
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-orphan' } });
+      expect(r.status).toBe(200);
+
+      const text = logged.mock.calls.map((a) => a.map(String).join(' ')).join('\n');
+      expect(text).toContain('tx-orphan');
+      expect(text).toMatch(/no session|לא נמצא|unmatched/i);
+      expect(text).not.toContain('someoneelsetoken');
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it('still creates the order + marks paid even when the notify send rejects', async () => {
     const c = db.createCollection('כשל מייל');
     // Email is configured but the owner send REJECTS. Notifications now fire at
