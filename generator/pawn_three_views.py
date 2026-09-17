@@ -462,7 +462,16 @@ def compare(theme=None, view=(1.0, 0.0, 0.0), out_dir=None):
                              {"zoom": view[0], "dx": view[1], "dy": view[2], "bg": False},
                              card_w, card_h))
     shot = os.path.join(out_dir, "browser.png")
-    shoot(html, shot, card_w + 60 + 160, max(card_h, 200) + 60)
+    # ONE SIZE, BOUND ONCE. The retry below re-shoots the same page, and these
+    # dimensions decide where every pane is cropped from: pbox and ebox are
+    # offsets into THIS shot. Written out at both call sites they agreed only by
+    # coincidence, and a later edit to one of them would have had the retry
+    # measured against a differently-sized render — a harness comparing two
+    # different pictures and saying nothing, which is the failure this module
+    # exists to prevent.
+    shot_w = card_w + 60 + 160
+    shot_h = max(card_h, 200) + 60
+    shoot(html, shot, shot_w, shot_h)
 
     sim = Image.open(shot)
     s = SHOT_SCALE
@@ -511,7 +520,7 @@ def compare(theme=None, view=(1.0, 0.0, 0.0), out_dir=None):
             if os.path.exists(src):
                 os.replace(src, src.replace(".png", "-incomplete.png"))
         print("  (pane came back without its photo; re-shooting once: %s)" % first)
-        shoot(html, shot, card_w + 60 + 160, max(card_h, 200) + 60)
+        shoot(html, shot, shot_w, shot_h)
         sim = Image.open(shot)
         preview_crop = _crop_norm(sim, pbox)
         editor_crop = _crop_norm(sim, ebox)
