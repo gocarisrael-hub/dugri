@@ -115,7 +115,10 @@ test.describe('meta pixel, end to end', () => {
     await page.getByTestId('save-pixel').click();
     await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
 
-    for (const p of ['/admin.html', '/dashboard.html', '/admin-analytics.html']) {
+    // The merged page rather than the old address: /admin-analytics.html answers
+    // 301 now, and a redirect has no body to inspect — asserting "no fbq(" on an
+    // empty body would pass whatever the page contained.
+    for (const p of ['/admin.html', '/dashboard.html', '/admin-ads.html']) {
       expect(await (await request.get(p)).text()).not.toContain('fbq(');
     }
   });

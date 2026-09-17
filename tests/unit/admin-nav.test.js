@@ -43,8 +43,15 @@ function navOf(file) {
 }
 
 describe('the admin nav', () => {
+  // The floor is here to prove this test is worth having: a contract about "every
+  // admin nav" means nothing if it is checking two pages. It dropped from 16 to
+  // 13 when the owner took three entries off the menu — קודי עיצוב, עיצובים and
+  // פלייבוק — and asked for the menu to come off THOSE PAGES too. They are still
+  // live and still reachable by URL; they simply carry no nav now, so they are
+  // not part of this contract. admin-analytics.html left the set in the same
+  // change, merged into admin-ads.html.
   it('is on every admin page (and there are enough of them to be worth this test)', () => {
-    expect(PAGES.length).toBeGreaterThanOrEqual(16);
+    expect(PAGES.length).toBeGreaterThanOrEqual(13);
   });
 
   const reference = navOf(PAGES[0]).map((l) => ({ page: l.page, label: l.label }));
