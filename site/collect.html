@@ -3340,6 +3340,11 @@
         applySale,
         PRICING_FALLBACK,
       } from './js/pricing.js';
+      // Apple Pay's button lives inside the provider's iframe, but the SHEET is
+      // opened by a script on this page. Without it the button renders, passes
+      // its own gate and does nothing when tapped. Loads nothing until a payment
+      // window actually opens on a Tranzila charge (js/apple-pay.js).
+      import { armApplePay } from './js/apple-pay.js';
       // The buyer's adjustment (its range and its default) and where a picture
       // lands inside its box. Static, unlike the CUTTER, which is 18MB of model
       // and is only imported when a photo needs cutting.
@@ -7461,6 +7466,11 @@
         // re-checked here as well: a caller that forgets the flag still cannot
         // arm a watcher that has nothing left to wait for.
         function openPayFrame(url, { watchForPaid = false } = {}) {
+          // The parent half of the wallet flow, before the frame is even asked
+          // for: what has to be in place by the time she TAPS Apple Pay is a
+          // listener on this page. Returns at once and never rejects — a wallet
+          // that will not arm must not disturb the card payment underneath.
+          armApplePay(url);
           frame.src = url;
           modal.classList.remove('hidden');
           // From here until the order is paid (or ten minutes pass), this page
