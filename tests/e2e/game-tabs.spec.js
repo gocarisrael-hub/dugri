@@ -79,8 +79,14 @@ async function createCollection(page, title = 'Shira', { players } = {}) {
   await expect(page.getByTestId('step-pawns')).toBeVisible();
   // How many players her deck is laid out for — one pawn card per four, and one
   // photo per player. It is chosen HERE and travels with the order, so a test that
-  // wants a bigger deck has to press the button a buyer presses.
-  if (players) await page.getByTestId('pawn-count-' + players).click();
+  // wants a bigger deck has to press the button a buyer presses — including the
+  // disclosure the choice now sits behind. A run that does not ask for a count
+  // opens nothing, which is the path a buyer takes when she leaves it alone.
+  if (players) {
+    const toggle = page.getByTestId('pawn-count-toggle');
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+    await page.getByTestId('pawn-count-' + players).click();
+  }
   await page.getByTestId('next-btn').click(); // pawn photos -> contact
   await expect(page.getByTestId('step-4')).toBeVisible();
   await page.fill('#ownerEmail', 'test@example.com');

@@ -107,6 +107,18 @@ async function toPawnStep(page) {
   await expect(page.getByTestId('step-pawns')).toBeVisible();
 }
 
+// THE COUNT LIVES BEHIND A BUTTON NOW — four players is the standard deck, so the
+// 4/8/12/16 choice is revealed rather than shown, and a test that wants a
+// different deck has to open it the way a buyer does.
+//
+// Idempotent on purpose: several tests below press three or four counts in a row,
+// and a blind click would shut the panel again halfway through the loop.
+async function openPawnCount(page) {
+  const toggle = page.getByTestId('pawn-count-toggle');
+  if ((await toggle.getAttribute('aria-expanded')) !== 'true') await toggle.click();
+  await expect(page.getByTestId('pawn-count-panel')).toBeVisible();
+}
+
 test.describe('optional pawn-photos step', () => {
   test('sits between the name and details steps and is skippable with 0 images', async ({
     page,
@@ -197,6 +209,7 @@ test.describe('optional pawn-photos step', () => {
       });
     });
     await toPawnStep(page);
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-8').click();
     for (const i of [0, 1]) {
       await page
@@ -785,6 +798,7 @@ test.describe('pawn photos: how many players', () => {
       [16, 4, 400],
       [4, 1, 412],
     ]) {
+      await openPawnCount(page);
       await page.getByTestId('pawn-count-' + players).click();
       await expect(page.locator(VISIBLE)).toHaveCount(players);
       const budget = page.getByTestId('pawn-budget');
@@ -812,6 +826,7 @@ test.describe('pawn photos: how many players', () => {
       document.querySelector('[data-testid="pawn-cut"]').textContent = own.cut;
     }, OWN);
 
+    await openPawnCount(page);
     for (const n of [12, 16, 4, 8]) await page.getByTestId('pawn-count-' + n).click();
 
     await expect(page.locator('[data-edit="options-photos-title"]')).toHaveText(OWN.title);
@@ -829,6 +844,7 @@ test.describe('pawn photos: how many players', () => {
   test('a photo survives a trip down and back up, and moves to the front', async ({ page }) => {
     await stubCutter(page, { succeeds: false });
     await toPawnStep(page);
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-8').click();
     await page
       .getByTestId('pawn-input-5')
@@ -840,11 +856,13 @@ test.describe('pawn photos: how many players', () => {
     await expect(page.locator('.pawn-slot[data-idx="5"]')).not.toHaveClass(/is-filled/);
 
     // …so dropping to four keeps it, on screen and inside the deck.
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-4').click();
     await expect(page.locator('.pawn-slot[data-idx="0"]')).toHaveClass(/is-filled/);
     await expect(page.locator('.pawn-slot[data-idx="0"]')).toBeVisible();
     await expect(page.getByTestId('pawn-over')).toBeHidden();
 
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-8').click();
     await expect(page.locator('.pawn-slot[data-idx="0"]')).toHaveClass(/is-filled/);
   });
@@ -853,6 +871,7 @@ test.describe('pawn photos: how many players', () => {
   test('photos past the count stay on screen and are announced', async ({ page }) => {
     await stubCutter(page, { succeeds: false });
     await toPawnStep(page);
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-8').click();
     for (const i of [0, 1, 2, 3, 4, 5]) {
       await page
@@ -862,6 +881,7 @@ test.describe('pawn photos: how many players', () => {
     await expect(page.getByTestId('pawn-over')).toBeHidden();
 
     // Six photos on a four-player deck: two do not fit.
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-4').click();
     const over = page.getByTestId('pawn-over');
     await expect(over).toBeVisible();
@@ -872,6 +892,7 @@ test.describe('pawn photos: how many players', () => {
     await expect(page.locator('.pawn-slot.is-over')).toHaveCount(2);
 
     // Removing one takes the count down with it; making room clears the line.
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-8').click();
     await expect(over).toBeHidden();
     await expect(page.locator('.pawn-slot.is-over')).toHaveCount(0);
@@ -883,6 +904,7 @@ test.describe('pawn photos: how many players', () => {
   // `players: 4` having chosen 16, with no cue at all.
   test('the count survives a reload and the Back button', async ({ page }) => {
     await toPawnStep(page);
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-16').click();
     await expect(page.locator(VISIBLE)).toHaveCount(16);
 
@@ -952,6 +974,7 @@ test.describe('pawn photos: how many players', () => {
     });
 
     await toPawnStep(page);
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-16').click();
     await fillSlots(page, 6);
     await throughContact(page);
@@ -1001,6 +1024,7 @@ test.describe('pawn photos: how many players', () => {
       });
     });
     await toPawnStep(page);
+    await openPawnCount(page);
     await page.getByTestId('pawn-count-12').click();
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
@@ -1010,5 +1034,54 @@ test.describe('pawn photos: how many players', () => {
     await page.getByTestId('next-btn').click();
     await page.waitForURL(/collect\.html\?c=test-col&k=test-tok/);
     expect(body).toMatchObject({ players: 12 });
+  });
+
+  // …AND THE BUYER WHO NEVER OPENS IT ORDERS EXACTLY WHAT SHE USED TO.
+  //
+  // The count went behind a disclosure to take a DECISION off the main path, not
+  // to change the outcome of not making it. This is the test that says so, and it
+  // asserts the number in the SUBMITTED BODY rather than anything about the
+  // control: a check on what the page looks like would pass just as happily if the
+  // default never reached the order at all.
+  test('a buyer who never opens the disclosure still orders the standard deck', async ({
+    page,
+  }) => {
+    await stubCreate(page);
+    let body = null;
+    await page.route('**/api/collections', async (route) => {
+      body = JSON.parse(route.request().postData() || '{}');
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'test-col', owner_token: 'test-tok' }),
+      });
+    });
+    await toPawnStep(page);
+    // Nothing is pressed here on purpose — no toggle, no count. This is the whole
+    // point of the test, so it must stay the only path through it.
+    await expect(page.getByTestId('pawn-count-panel')).toBeHidden();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    await page.fill('#ownerEmail', 'a@b.com');
+    await page.fill('#ownerPhone', '0521234567');
+    await page.fill('#buyerNameInput', 'דנה כהן');
+    await page.getByTestId('next-btn').click();
+    await page.waitForURL(/collect\.html\?c=test-col&k=test-tok/);
+
+    // The standard deck, unchanged, in the order itself.
+    expect(body).toMatchObject({ players: 4 });
+  });
+
+  // An untouched control also leaves no trace in the url, so a link she shares
+  // while still in the wizard stays as short as it was before this existed.
+  test('an untouched count leaves the wizard url clean', async ({ page }) => {
+    await stubCreate(page);
+    await toPawnStep(page);
+    expect(new URL(page.url()).searchParams.has('players')).toBe(false);
+    // …and once she does choose, it is carried — so the absence above is the
+    // control staying quiet, not the url having stopped working.
+    await openPawnCount(page);
+    await page.getByTestId('pawn-count-12').click();
+    await expect.poll(() => new URL(page.url()).searchParams.get('players')).toBe('12');
   });
 });
