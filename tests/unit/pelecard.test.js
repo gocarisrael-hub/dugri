@@ -151,6 +151,58 @@ describe('getTransaction', () => {
     expect(body.TransactionId).toBe('tx-77');
   });
 
+  // TWO DIFFERENT IDENTIFIERS, and a disputes letter cites the one we were
+  // throwing away. Isracard's ביטול עסקה letters name a charge by מס' שובר
+  // (VoucherId); `DebitApproveNumber || VoucherId` kept only the approve number
+  // whenever one existed, which is 307 of 312 paid orders — so a chargeback could
+  // not be matched to an order at all, and date+amount is not discriminating
+  // (239 ₪ on one day gave 40 candidates). Backfill is impossible: whatever the
+  // callback did not store is gone. They must be stored separately.
+  it('keeps the voucher number and the approval number apart', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonRes({
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-88',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: 'token123',
+          DebitTotal: '19900',
+          DebitApproveNumber: '86-001-006',
+          VoucherId: '4001003',
+        },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tx = await loadFresh().getTransaction('tx-88');
+    expect(tx.approvalNo).toBe('86-001-006');
+    expect(tx.voucherNo).toBe('4001003');
+  });
+
+  // The other direction: with no approve number, the voucher must NOT be
+  // promoted into the approval field. That promotion is what made the two
+  // indistinguishable after the fact — a stored value nobody could say the
+  // meaning of. Absent is honest; mislabelled is not.
+  it('does not pass a voucher number off as an approval number', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonRes({
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-89',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: 'token123',
+          DebitTotal: '19900',
+          VoucherId: '1001018',
+        },
+      })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const tx = await loadFresh().getTransaction('tx-89');
+    expect(tx.voucherNo).toBe('1001018');
+    expect(tx.approvalNo).toBe(null);
+  });
+
   it('throws when no transactionId is given', async () => {
     await expect(loadFresh().getTransaction('')).rejects.toThrow();
   });

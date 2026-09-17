@@ -654,6 +654,41 @@ describe('POST /api/payment/callback', () => {
     }
   });
 
+  // END TO END, because normalizing the voucher is worth nothing if the settle
+  // drops it on the floor: it has to reach the ORDER, which is what an admin
+  // lookup reads when a ביטול עסקה letter arrives naming מס' שובר. Both
+  // identifiers, side by side, out of one real callback.
+  it('stores the voucher number alongside the approval number on a paid order', async () => {
+    const c = db.createCollection('שובר ואישור');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pickup',
+    });
+    const charged = init.body.total;
+    const token = tokenOf(c.id);
+
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: 'tx-voucher',
+        ShvaResult: '000',
+        AdditionalDetailsParamX: token,
+        DebitTotal: Math.round(charged * 100),
+        DebitApproveNumber: '86-001-016',
+        VoucherId: '4001003',
+      },
+    };
+    const r = await post('/api/payment/callback', {
+      ResultData: { TransactionId: 'tx-voucher' },
+    });
+    expect(r.status).toBe(200);
+
+    const order = db.getCollection(c.id).order;
+    expect(order.paid).toBe(true);
+    expect(order.paid_approval_no).toBe('86-001-016');
+    expect(order.paid_voucher_no).toBe('4001003');
+  });
+
   // THE ESCALATION, on the notice that carries the most money of the two. Email
   // answering false is not hypothetical: a Resend 5xx, or RESEND_API_KEY/NOTIFY_TO
   // unset on this environment, at the exact moment a changed purchase settles.

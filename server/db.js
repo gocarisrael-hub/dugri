@@ -2404,6 +2404,8 @@ const db = {
     if (meta.method) sh.paid_method = meta.method;
     if (meta.transactionId) sh.paid_transaction_id = meta.transactionId;
     if (meta.approvalNo) sh.paid_approval_no = meta.approvalNo;
+    // Same on the upgrade: it is its own charge, so it is its own dispute.
+    if (meta.voucherNo) sh.paid_voucher_no = meta.voucherNo;
     if (meta.charged_total != null) sh.charged_total = Number(meta.charged_total);
     if (meta.token && sh.pelecard && Array.isArray(sh.pelecard.sessions)) {
       const s = sh.pelecard.sessions.find((x) => x.token === meta.token);
@@ -2734,6 +2736,9 @@ const db = {
     if (meta.method) c.order.paid_method = meta.method;
     if (meta.transactionId) c.order.paid_transaction_id = meta.transactionId;
     if (meta.approvalNo) c.order.paid_approval_no = meta.approvalNo;
+    // The voucher number a disputes letter cites, stored separately from the
+    // approve number so a chargeback is a lookup rather than a guess.
+    if (meta.voucherNo) c.order.paid_voucher_no = meta.voucherNo;
     // Record what was actually charged + which coupon on the order for display.
     if (meta.charged_total != null) c.order.charged_total = Number(meta.charged_total);
     if (meta.coupon !== undefined) c.order.coupon = meta.coupon ? normCode(meta.coupon) : null;
