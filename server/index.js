@@ -5379,6 +5379,21 @@ function resolveHtmlFile(urlPath) {
   return fs.existsSync(resolved) ? resolved : null;
 }
 
+// THE ANALYTICS PAGE IS NOW A SECTION OF THE ADS PAGE. The owner asked for one
+// menu entry opening one page with both, so admin-analytics.html is gone — but
+// the address it used to live at is in her bookmarks and in the links she has
+// been sent, so it answers with a redirect rather than the SPA fallback's 404.
+//
+// The QUERY SURVIVES, deliberately: every admin page is opened with ?key=…, and
+// a redirect that dropped it would land her on a page that says "no access key"
+// and looks broken. Registered ABOVE the HTML middleware because that middleware
+// would otherwise try to serve a file that no longer exists and fall through to
+// the catch-all.
+app.get(['/admin-analytics.html', '/admin-analytics'], (req, res) => {
+  const q = req.originalUrl.indexOf('?');
+  res.redirect(301, '/admin-ads.html' + (q === -1 ? '' : req.originalUrl.slice(q)));
+});
+
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   const file = resolveHtmlFile(req.path);

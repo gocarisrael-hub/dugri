@@ -157,13 +157,21 @@ test.describe('admin designs — asset inventory', () => {
     await expect(tpl.locator('.asset', { hasText: 'gallery-front.webp' })).toHaveCount(0);
   });
 
-  test('opens from the orders-management page nav, carrying the key', async ({ page }) => {
-    await page.goto(`/admin.html?key=${KEY}`);
-    const link = page.locator('#nav a[data-page="admin-designs.html"]');
-    await expect(link).toBeVisible();
-    await expect(link).toHaveAttribute('href', /admin-designs\.html\?key=/);
-    await link.click();
+  // THIS USED TO OPEN FROM THE MENU. The owner took עיצובים off the admin menu
+  // and chose for this page to stop carrying a menu of its own, so an address is
+  // the only way in now. What the old test protected is kept — the key travels
+  // and the page comes up authenticated — and the menu click it used to make is
+  // gone, because asserting that again would only re-state the removal.
+  test('opens by address with the key, and no longer carries a menu', async ({ page }) => {
+    await page.goto(`/admin-designs.html?key=${KEY}`);
     await expect(page).toHaveURL(/admin-designs\.html\?key=/);
     await expect(page.locator('#app')).toBeVisible();
+    await expect(page.locator('#nav')).toHaveCount(0);
+  });
+
+  test('the orders-management menu no longer lists it', async ({ page }) => {
+    await page.goto(`/admin.html?key=${KEY}`);
+    await expect(page.locator('#nav')).toBeVisible();
+    await expect(page.locator('#nav a[data-page="admin-designs.html"]')).toHaveCount(0);
   });
 });

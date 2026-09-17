@@ -45,8 +45,11 @@ describe('meta-pixel injection', () => {
     }
   });
 
+  // admin-ads.html stands where admin-analytics.html used to: the pixel settings
+  // are a section of it now, so it is the page that both carries the pixel id
+  // field and must never carry the pixel itself.
   it('never touches an admin page, so the owner is not counted as an audience', () => {
-    for (const page of ['admin.html', 'admin-analytics.html', 'dashboard.html', 'coupons.html']) {
+    for (const page of ['admin.html', 'admin-ads.html', 'dashboard.html', 'coupons.html']) {
       const html = read(page);
       expect(metaPixel.inject(html, ID)).toBe(html);
     }
