@@ -294,8 +294,23 @@ def _is_subject(px, tol=70):
             and abs(b - SUBJECT_RGB[2]) < tol)
 
 
-def measure(crop, bg=None):
+class PaneIncomplete(AssertionError):
+    """A pane came back without its photo, while its card drew normally.
+
+    An AssertionError subclass on purpose: pytest reports it exactly as before
+    and every existing caller keeps working, while ``compare`` can catch THIS
+    and nothing else. The distinction it carries is the whole point — an
+    incomplete render is a transient fact about the renderer under load, and a
+    wrong crop is a fact about the geometry this harness exists to measure.
+    """
+
+
+def measure(crop, bg=None, what=None):
     """What one normalised slot crop contains.
+
+    ``what`` names the pane for the error messages ("preview", "print",
+    "editor"). Optional, because callers outside this module measure synthetic
+    crops of their own where a name would mean nothing.
 
     ``ring`` is the radius of the dashed cut-line, as a fraction of the crop's
     side; ``subject`` is the blob's bounding box in RING RADII from the crop's
@@ -353,9 +368,27 @@ def measure(crop, bg=None):
                 d = math.hypot(x - cx, dy)
                 if d > ring:
                     ring = d
+    if sx1 < 0 and ring > 0:
+        # THE CARD RENDERED AND THE PHOTO DID NOT. Its own failure, because it is
+        # not the one this harness is for: a wrong crop still HAS a subject, just
+        # in the wrong place, so "no subject at all with the ring right where it
+        # belongs" is the renderer handing back an incomplete pane rather than a
+        # geometry regression. Told apart by the ring: a pane that drew nothing at
+        # all reports ring=0 and falls through to the case below.
+        #
+        # Three incidents in one day were read as framing regressions and sent
+        # people to inspect pawn geometry that was fine. The real cause is the
+        # browser pane's photo pipeline (fetch, decode, a 126k-pixel scan in JS)
+        # not finishing before --virtual-time-budget expires, which happens under
+        # parallel load and not otherwise.
+        raise PaneIncomplete(
+            "%s: the card drew but its photo did not — ring=%.1f found, no "
+            "subject pixels anywhere in the crop. This is an incomplete render, "
+            "not a framing regression." % (what or "this crop", ring))
     if sx1 < 0 or ring <= 0:
-        raise AssertionError("nothing found in the crop: subject=%s ring=%s"
-                             % ((sx0, sy0, sx1, sy1), ring))
+        raise AssertionError("nothing found in the crop%s: subject=%s ring=%s"
+                             % (" (%s)" % what if what else "",
+                                (sx0, sy0, sx1, sy1), ring))
     # Everything from here on is in RING RADII from the crop's centre. Pixel
     # indices are treated as pixel CENTRES throughout, which is also how the ring
     # was measured, so the two are on the same footing.
@@ -448,17 +481,52 @@ def compare(theme=None, view=(1.0, 0.0, 0.0), out_dir=None):
             round((x0 + pad - inset) * s), round((20 + pad - inset) * s))
     editor_crop = _crop_norm(sim, ebox)
 
+    # SAVED BEFORE THEY ARE MEASURED. These used to be written after the dict
+    # below, so the one run you actually wanted to look at — the one that raised
+    # while measuring — left nothing behind at all. An incident with no artifact
+    # costs more than the bug: three of them today were diagnosed from a one-line
+    # assertion message because there was no picture to open.
+    def save_crops():
+        for name, crop in (("print", print_crop), ("preview", preview_crop),
+                           ("editor", editor_crop)):
+            crop.save(os.path.join(out_dir, "norm-%s.png" % name))
+
+    save_crops()
+
+    # The browser panes come from ONE screenshot, and under parallel load that
+    # screenshot can be captured with the card drawn and the photo not yet in it
+    # (see PaneIncomplete). That is transient and specific: re-shoot once, keep
+    # the failed artifacts under a name that survives, and measure again. The
+    # PRINT pane is never re-shot — it is a different render through the
+    # generator, it has never been the one that fails, and retrying a real
+    # generator fault would only hide it.
+    print_m = measure(print_crop, what="print")
+    try:
+        preview_m = measure(preview_crop, what="preview")
+        editor_m = measure(editor_crop, what="editor")
+    except PaneIncomplete as first:
+        for name in ("preview", "editor", "browser"):
+            src = os.path.join(out_dir, ("norm-%s.png" % name) if name != "browser"
+                               else "browser.png")
+            if os.path.exists(src):
+                os.replace(src, src.replace(".png", "-incomplete.png"))
+        print("  (pane came back without its photo; re-shooting once: %s)" % first)
+        shoot(html, shot, card_w + 60 + 160, max(card_h, 200) + 60)
+        sim = Image.open(shot)
+        preview_crop = _crop_norm(sim, pbox)
+        editor_crop = _crop_norm(sim, ebox)
+        save_crops()
+        preview_m = measure(preview_crop, what="preview")
+        editor_m = measure(editor_crop, what="editor")
+
     out = {
         "theme": theme,
-        "print": measure(print_crop),
-        "preview": measure(preview_crop),
-        "editor": measure(editor_crop),
+        "print": print_m,
+        "preview": preview_m,
+        "editor": editor_m,
         "dir": out_dir,
         "own_dir": own,
     }
-    for name, crop in (("print", print_crop), ("preview", preview_crop),
-                       ("editor", editor_crop)):
-        crop.save(os.path.join(out_dir, "norm-%s.png" % name))
     _visual_diff(out_dir, print_crop, preview_crop, editor_crop, out)
     return out
 

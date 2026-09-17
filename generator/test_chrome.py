@@ -365,13 +365,30 @@ def test_a_real_render_leaves_no_chrome_behind():
     if not exe:
         print("  (skipped: no Chrome)")
         return
-    pattern = os.path.basename(exe)
-
-    def count():
-        r = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
-        return len([p for p in r.stdout.split() if p.strip()])
-
     with tempfile.TemporaryDirectory() as tmp:
+        # COUNT OUR OWN RENDERS, NOT THE MACHINE'S. This used to pgrep for the
+        # Chrome binary's name, which matches EVERY Chrome on the box: four
+        # pytest-xdist workers each spawn real browsers, so a sibling's render
+        # landing inside this test's before/after window was counted as a leak
+        # here. It failed that way on a PR whose diff could not reach this code,
+        # and the message it printed — "16 Chrome process(es) survived" — reads
+        # exactly like the PID-exhaustion regression this test exists to catch.
+        # A leak detector that cries wolf gets ignored on the day it is right.
+        #
+        # This run's own temp dir is the scope. It reaches Chrome's command line
+        # twice, as --screenshot=<tmp>/oN.png and as the source path, so pgrep -f
+        # sees it; no sibling worker's argv contains it. It also survives the
+        # thing being measured: an orphaned Chrome keeps its argv when it
+        # reparents to init, which is why the scope is the command line and not
+        # the process tree — filtering by ancestry would hide precisely the
+        # orphans this test is looking for.
+        #
+        # `before` is therefore 0 by construction rather than a machine-wide
+        # baseline, which makes the assertion stricter than it was.
+        def count():
+            r = subprocess.run(["pgrep", "-f", tmp], capture_output=True, text=True)
+            return len([p for p in r.stdout.split() if p.strip()])
+
         svg = os.path.join(tmp, "t.svg")
         with open(svg, "w", encoding="utf-8") as f:
             f.write('<svg xmlns="http://www.w3.org/2000/svg" width="200" '
