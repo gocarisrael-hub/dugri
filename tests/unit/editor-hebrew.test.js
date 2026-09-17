@@ -554,6 +554,18 @@ describe('the drawn rows are the rows the file gets (executed)', () => {
       $: (id) => ({ value: id === 'wPitch' ? String(pitch) : '0' }),
       el: (tag, attrs) => ({ tag, attrs, textContent: '' }),
       r4: (n) => Math.round(n * 1e4) / 1e4,
+      // The page's OWN snapFrac, compiled from the page — not a stand-in. The
+      // saved-slot expression below calls it, and this test exists to compare two
+      // live pieces of the page rather than two readings of one helper name, so a
+      // hand-written copy here would defeat the point of the file.
+      snapFrac: (() => {
+        const r4src = html.match(/ {2}const r4 = \(n\) => [^\n]+/);
+        const snapSrc = html.match(
+          / {2}const FRAC_SNAP = [^\n]+\n {2}const snapFrac = \(n\) => \{[\s\S]*?\n {2}\};/
+        );
+        expect(r4src && snapSrc, 'site/admin-bench.html no longer declares snapFrac').toBeTruthy();
+        return eval(`(() => { ${r4src[0]} ${snapSrc[0]} return snapFrac; })()`);
+      })(),
     };
     // rowTop/rowBot are the page's own arrows, so ROW_SHARE really is the thing
     // "גובה השורה" moves — the whole claim of this change.

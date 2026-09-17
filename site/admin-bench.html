@@ -1586,6 +1586,33 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const r2 = (n) => Math.round(n * 100) / 100;
   const r4 = (n) => Math.round(n * 10000) / 10000;
+  // A SAVED FRACTION, ROUNDED THE WAY EVERY OTHER NUMBER HERE IS — and snapped
+  // onto 0 or 1 when it lands within one rounding step of the edge.
+  //
+  // The API takes fractions in 0..1 and refuses anything outside, which is right:
+  // a box off the card is geometry that cannot print. But the drag works in
+  // floats and this rounds to four places, so an edge dropped exactly on the
+  // card's border can arrive as 1.00003 — refused for a difference no one can
+  // see or intend. That much is a rounding artefact and is snapped.
+  //
+  // ANYTHING FURTHER OUT IS LEFT ALONE, deliberately. The move handle allows
+  // -0.2..1.2 and the resize handles have no outer bound at all, so a box really
+  // can be dragged well off the card — and quietly pulling it back to the edge
+  // would store a rectangle she never drew, then show it back to her as though
+  // she had. That one is for the API to refuse by name (it now refuses the box
+  // and keeps the rest of the save), not for this to paper over.
+  const FRAC_SNAP = 1e-4;
+  const snapFrac = (n) => {
+    // `+ 0` normalises NEGATIVE ZERO. r4(-0.00003) is -0, which is a legal
+    // fraction the API accepts, but it serialises and reads back as an oddity in
+    // a file people inspect by hand — and `-0 < 0` is false, so it slips past the
+    // snap below and stays -0. Cosmetic, not a defect; fixed because a stored
+    // number should not be surprising.
+    const v = r4(n) + 0;
+    if (v < 0 && v >= -FRAC_SNAP) return 0;
+    if (v > 1 && v <= 1 + FRAC_SNAP) return 1;
+    return v === 0 ? 0 : v;
+  };
 
   const SAMPLES = {
     he: ['מסיבה', 'ריקודים', 'צחוקים', 'חברים'],
@@ -4238,19 +4265,19 @@
       },
       card_slots: {
         words: rowSlots().map((r) => ({
-          x0: r4(S.band.x0),
-          y0: r4(r.y0 / CH),
-          x1: r4(S.band.x1),
-          y1: r4(r.y1 / CH),
+          x0: snapFrac(S.band.x0),
+          y0: snapFrac(r.y0 / CH),
+          x1: snapFrac(S.band.x1),
+          y1: snapFrac(r.y1 / CH),
         })),
         titles: Object.fromEntries(
           FRONTS.map((k) => [
             k,
             {
-              x0: r4(S.titles[k].x0),
-              y0: r4(S.titles[k].y0),
-              x1: r4(S.titles[k].x1),
-              y1: r4(S.titles[k].y1),
+              x0: snapFrac(S.titles[k].x0),
+              y0: snapFrac(S.titles[k].y0),
+              x1: snapFrac(S.titles[k].x1),
+              y1: snapFrac(S.titles[k].y1),
             },
           ])
         ),
@@ -4931,7 +4958,19 @@
       const body = await r.json().catch(() => ({}));
       // A refusal is reported with the field that caused it, never swallowed —
       // a silent save is how a number ends up only in this browser.
-      btn.textContent = r.ok ? 'נשמר ✓' : 'לא נשמר: ' + (body.error || r.status);
+      //
+      // AND A PARTIAL SAVE IS NOT A SAVE. The API applies every field that
+      // validates and names the rest in `rejected`, so a 200 can still mean "one
+      // of these did not land" — a box dragged off the card, say, while the
+      // spacing beside it saved fine. Announcing ✓ over that would be the same
+      // silence this whole change exists to remove, so the refused fields are
+      // named here in the words admin-templates.html already uses for them.
+      const refused = Array.isArray(body.rejected) ? body.rejected : [];
+      btn.textContent = !r.ok
+        ? 'לא נשמר: ' + (body.error || r.status)
+        : refused.length
+          ? 'נשמר חלקית - נדחה כלא תקין (נשמר הערך הקודם): ' + refused.join(' | ')
+          : 'נשמר ✓';
       if (r.ok) {
         LIVE =
           (await apiJSON('/api/admin/templates/' + encodeURIComponent(TPL.key) + '/entry')).entry ||
