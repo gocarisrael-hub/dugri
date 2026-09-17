@@ -2929,15 +2929,41 @@
 
              Asked HERE, before the collection exists, so her word ceiling is right
              from the first word rather than moved under her later. -->
-        <div class="pawn-count-row">
-          <span class="pawn-count-label" data-edit="options-photos-count-label">כמה שחקנים?</span>
-          <div
-            class="pawn-count"
-            id="pawnCount"
-            data-testid="pawn-count"
-            role="group"
-            aria-label="מספר שחקנים"
-          ></div>
+        <!-- BEHIND A BUTTON, because almost nobody needs it. Four players is the
+             standard deck and the default, and a buyer who never opens this gets
+             exactly that — the disclosure removes a DECISION from the main path,
+             not the outcome of not making it.
+
+             What opening it reveals is the choice AND its cost in the same place:
+             the note below the buttons is #pawnBudgetNote, moved here from under
+             the grid, and it is still written by renderPawnCount from pawnPlan().
+             The ceiling line (#pawnBudgetMain) stays where it was, on screen for
+             everyone, because that is the number she needs in order to know how
+             many words to prepare — it is information she already relies on, not
+             a decision she has to make. -->
+        <button
+          type="button"
+          class="pawn-count-toggle"
+          id="pawnCountToggle"
+          data-testid="pawn-count-toggle"
+          aria-expanded="false"
+          aria-controls="pawnCountPanel"
+          data-edit="options-photos-count-toggle"
+        >
+          רוצים יותר חיילים? לחצו כאן
+        </button>
+        <div class="pawn-count-panel" id="pawnCountPanel" data-testid="pawn-count-panel" hidden>
+          <div class="pawn-count-row">
+            <span class="pawn-count-label" data-edit="options-photos-count-label">כמה שחקנים?</span>
+            <div
+              class="pawn-count"
+              id="pawnCount"
+              data-testid="pawn-count"
+              role="group"
+              aria-label="מספר שחקנים"
+            ></div>
+          </div>
+          <p class="pawn-budget-note" id="pawnBudgetNote"></p>
         </div>
         <div class="pawn-grid" id="pawnGrid" data-testid="pawn-grid">
           <!-- Four slots in the markup; the rest are cloned from the first when she
@@ -3050,7 +3076,10 @@
              it costs her in words. -->
         <div class="pawn-budget" data-testid="pawn-budget">
           <p class="pawn-budget-main" id="pawnBudgetMain"></p>
-          <p class="pawn-budget-note" id="pawnBudgetNote"></p>
+          <!-- The COST line that used to sit here is now inside the count
+               disclosure above (#pawnBudgetNote), next to the choice it is about.
+               What stays is the ceiling, which every buyer needs whether or not
+               she ever opens that button. -->
         </div>
         <!-- MORE PHOTOS THAN PAWNS. She filled eight slots and then asked for a
              four-player deck: the extra photos are still hers and still on screen
@@ -3233,6 +3262,37 @@
             font-size: 13.5px;
             line-height: 1.45;
             color: var(--muted);
+          }
+          /* THE DISCLOSURE. Collapsed by default, which also hands the photo slots
+             back the ~30px the count row used to spend above the grid — the height
+             budget this step is fought over (see the note above, and
+             tests/e2e/wizard-noscroll.spec.js). A full-width real <button>, so it
+             is reachable by keyboard and announced with its aria-expanded state. */
+          .pawn-count-toggle {
+            appearance: none;
+            display: block;
+            width: 100%;
+            border: 1px dashed var(--line);
+            background: transparent;
+            color: var(--muted);
+            font: inherit;
+            font-size: 13.5px;
+            padding: 7px 10px;
+            margin: 0 0 8px;
+            cursor: pointer;
+            text-align: center;
+          }
+          .pawn-count-toggle:hover {
+            color: var(--ink);
+            border-color: var(--ink);
+          }
+          .pawn-count-panel {
+            margin: 0 0 8px;
+          }
+          /* The cost line is centred here the way it was inside .pawn-budget,
+             which it no longer sits in. */
+          .pawn-count-panel .pawn-budget-note {
+            text-align: center;
           }
           /* MORE PHOTOS THAN PAWNS — the slot is still on screen, and says so.
              Hiding a filled slot is what let four finished cutouts leave with the
@@ -6469,6 +6529,22 @@
       // instead, which has no editor tag and never did.
       const pawnCountEl = document.getElementById('pawnCount');
       const pawnOverEl = document.getElementById('pawnOver');
+      const pawnCountToggle = document.getElementById('pawnCountToggle');
+      const pawnCountPanel = document.getElementById('pawnCountPanel');
+      // OPEN OR SHUT, SAID ONCE. The button's aria-expanded and the panel's hidden
+      // are two halves of one fact, and a screen reader believes the first while a
+      // sighted buyer sees the second — so they are never written apart. Every
+      // caller goes through here: the click below, and the init after the restore.
+      function setPawnCountOpen(open) {
+        if (!pawnCountToggle || !pawnCountPanel) return;
+        pawnCountToggle.setAttribute('aria-expanded', String(Boolean(open)));
+        pawnCountPanel.hidden = !open;
+      }
+      if (pawnCountToggle) {
+        pawnCountToggle.addEventListener('click', () => {
+          setPawnCountOpen(pawnCountToggle.getAttribute('aria-expanded') !== 'true');
+        });
+      }
       function renderPawnCount() {
         const plan = pawnPlan(pawnPlayers);
 
@@ -7441,6 +7517,12 @@
       // first paint so the step is never shown with a budget line that has not
       // been written yet.
       renderPawnCount();
+      // …and the count disclosure starts OPEN for a buyer who already chose a
+      // bigger deck. Both restore routes (?players= and the saved selection) have
+      // run by now, so this is the one place that knows. Collapsing it on her
+      // would hide a choice she has already made behind a button that invites her
+      // to make it — the control would be lying about the state of her order.
+      setPawnCountOpen(pawnPlayers !== PLAYER_COUNTS[0]);
       goStep(initialStep, { fromPop: true });
     </script>
   </body>
