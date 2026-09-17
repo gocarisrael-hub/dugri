@@ -2397,10 +2397,10 @@ function queueReadySms(collection) {
 }
 
 // Agent A: the sticker sheet and the physical stock, in
-// server/routes/commerce.js. stickerBatch/pickupStickerOrders/stickerEntries
-// are re-exported below for the unit tests; stockDesigns is used by
-// applyOrderReady.
-const { stickerBatch, pickupStickerOrders, stickerEntries, stockDesigns } =
+// server/routes/commerce.js. stickerBatch/pickupStickerOrders/stickerEntries and
+// designNameForCollection are re-exported below for the unit tests; stockDesigns
+// is used by applyOrderReady.
+const { stickerBatch, pickupStickerOrders, stickerEntries, stockDesigns, designNameForCollection } =
   commerceRoutes.registerStickersAndStock(app, {
     requireAdmin,
     express,
@@ -5695,6 +5695,10 @@ module.exports.buyerLandedInGroup = buyerLandedInGroup;
 module.exports.pickupStickerOrders = pickupStickerOrders;
 module.exports.stickerBatch = stickerBatch;
 module.exports.stickerEntries = stickerEntries;
+// WHICH GAME IS IN THIS BOX — the one resolver both labels print from, ours and
+// the courier's. Exposed so a test can assert the two agree directly, rather than
+// inferring it from two rendered stickers.
+module.exports.designNameForCollection = designNameForCollection;
 module.exports.pawnPhotoFiles = pawnPhotoFiles;
 module.exports.pawnPhotoFrames = pawnPhotoFrames;
 module.exports.pawnPhotoCutouts = pawnPhotoCutouts;

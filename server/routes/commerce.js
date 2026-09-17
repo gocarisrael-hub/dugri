@@ -19,6 +19,44 @@
 
 // The self-collection sticker sheet (/api/admin/stickers, /api/admin/pickup-stickers)
 // and the physical stock (/api/admin/stock).
+// WHICH GAME IS IN THIS BOX — the one answer BOTH labels print, ours and the
+// courier's.
+//
+// There were two of these: one inside registerStickersAndStock for the
+// self-collection sticker, one inside registerReadyBatchAndHfd for HFD's. Same
+// question, two implementations, nothing binding them — so they disagreed exactly
+// when the themes file does not name the theme: the courier label fell through to
+// `c.design` (the name STAMPED at order time) while the sticker dropped straight
+// to the raw key. Theme keys are Latin slugs (`bachelorette`, `trip comeback`), so
+// that box went out with סיישל on one label and `trip comeback` on the other.
+//
+// It lives at MODULE scope rather than being injected: both registers are
+// Commerce's own and both already hold `templates` + `TEMPLATE_ROOT`, so there is
+// nothing to plumb. (Contrast `orderReadySmsWillSend`, which is injected because
+// it crosses a domain boundary — D's gate into A's dialog.)
+//
+// Three steps, in this order, through the shared helper /api/design-names and the
+// storefront already use:
+//   1. the themes file's current `display_he` — a rename propagates here;
+//   2. else the name stamped on the order — stale, but a human wrote it;
+//   3. else the theme key — an odd-looking label beats a blank one.
+//
+// Takes the COLLECTION, not a theme key, because step 2 needs `c.design`.
+// Delegating also inherits ownTheme's guard, so a theme called `__proto__` or
+// `constructor` resolves to nothing rather than to Object's own properties, which
+// the hand-rolled `themes[key]` lookups did not.
+function designNameForCollection(templates, TEMPLATE_ROOT, c) {
+  if (!c) return '';
+  const theme = c.theme || null;
+  try {
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT)) || {};
+    return templates.displayNameForDesign(themes, { theme, name: c.design, id: theme });
+  } catch {
+    // No themes file at all: the stamped name still ships, then the key.
+    return String((c && c.design) || theme || '');
+  }
+}
+
 function registerStickersAndStock(
   app,
   {
@@ -42,21 +80,9 @@ function registerStickersAndStock(
   // the owner has been typing that sheet by hand every night: open a document,
   // type eleven names, print. This is that sheet, from the orders.
 
-  // The design's Hebrew name — what goes on the label, because "which of these two
-  // boxes is the Paris one" is a question about a picture and not about a theme
-  // key. Falls back to the key rather than to nothing: a label with no design is
-  // worse than a label with an odd-looking one.
-  function designNameFor(theme) {
-    const key = String(theme || '');
-    if (!key) return '';
-    try {
-      const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT)) || {};
-      const entry = themes[key];
-      return (entry && String(entry.display_he || '').trim()) || key;
-    } catch {
-      return key;
-    }
-  }
+  // Bound to this register's injected templates/TEMPLATE_ROOT. The rule itself is
+  // at module scope so the courier label calls the SAME one.
+  const designNameFor = (c) => designNameForCollection(templates, TEMPLATE_ROOT, c);
 
   // The orders a sticker is printed for TONIGHT: exactly the owner's
   // "הופקו — לשליחה לדפוס" pile, narrowed to self-collection.
@@ -140,7 +166,7 @@ function registerStickersAndStock(
             // when the order never captured one: an empty line is honest, and the
             // phone underneath still identifies them.
             buyer_name: (c.buyer_name || '').trim(),
-            design: designNameFor(c.theme),
+            design: designNameFor(c),
             phone: (c.owner_phone || '').trim(),
           },
         };
@@ -407,7 +433,13 @@ function registerStickersAndStock(
     res.json(db.stockSnapshot(designs));
   });
 
-  return { stickerBatch, pickupStickerOrders, stickerEntries, stockDesigns };
+  return {
+    stickerBatch,
+    pickupStickerOrders,
+    stickerEntries,
+    stockDesigns,
+    designNameForCollection: designNameFor,
+  };
 }
 
 // The ready-batch press and the HFD courier routes.
@@ -592,21 +624,17 @@ function registerReadyBatchAndHfd(
     'address required': 'להזמנה חסרה כתובת מלאה (רחוב, עיר).',
   };
 
-  // The design's CURRENT public name, for the sticker — the same string
-  // /api/design-names serves and the storefront shows (themes.json `display_he`),
-  // resolved from the order's generator theme. NOT `c.design`, which is the name
-  // stamped on the order when it was placed: a template rename leaves every older
-  // order carrying a label the shop no longer uses. Falls back to the stamped name
-  // if themes.json can't be read at all.
-  function hfdDesignName(c) {
-    try {
-      const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
-      const theme = (c.order && c.order.theme) || c.theme || null;
-      return templates.displayNameForDesign(themes, { theme, name: c.design, id: theme });
-    } catch {
-      return (c && c.design) || '';
-    }
-  }
+  // The courier sticker's design name is the SAME question the self-collection
+  // sticker asks, so it is the same function: see designNameForCollection above.
+  // It used to be a second implementation here, and the two disagreed for any
+  // theme the themes file does not name.
+  //
+  // Note on what was dropped: this read `(c.order && c.order.theme) || c.theme`.
+  // Nothing in the repo ever assigns `order.theme` (`git grep 'order\.theme\s*='`
+  // is empty) and no stored order carries it — 0 of 330 checked read-only in
+  // production — so that branch was vestigial and is gone rather than carried
+  // forward into the shared resolver. `site/admin.html` still reads it the same
+  // defensive way; harmless, and not this PR's business.
 
   // Admin: is the courier integration armed? The admin page asks once at load and
   // hides the whole control when it isn't, rather than offering a button that can
@@ -640,7 +668,9 @@ function registerReadyBatchAndHfd(
       });
     }
 
-    const r = await hfd.createShipment(c, { designName: hfdDesignName(c) });
+    const r = await hfd.createShipment(c, {
+      designName: designNameForCollection(templates, TEMPLATE_ROOT, c),
+    });
     if (!r.ok) {
       if (HFD_LOCAL_ERRORS[r.error]) {
         return res.status(400).json({ error: r.error, message: HFD_LOCAL_ERRORS[r.error] });
