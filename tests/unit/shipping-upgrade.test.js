@@ -378,6 +378,81 @@ describe('one callback, two kinds of purchase', () => {
     expect(order.version).toBe('delivery');
   });
 
+  // A SECOND REAL CHARGE ON AN ALREADY-PAID UPGRADE. The route refuses a new
+  // shipping/init once the upgrade is bought (409, tested above), so the only way
+  // here is two windows opened BEFORE either settles — the same shape as the
+  // order's double charge, and reachable for the same reason.
+  //
+  // Unlike the order path, the RECORD is already safe: markShippingPaid guards on
+  // `shipping.paid` and returns false, so the second write never lands and
+  // paid_transaction_id survives. markPaid has no such guard. So what is missing
+  // here is only the alert — she is charged twice for postage and told nothing.
+  it('reports a SECOND charge on an already-paid delivery upgrade', async () => {
+    const c = paidPickup('חיוב כפול משלוח');
+    // Two upgrade windows, both opened while the upgrade is still unpaid.
+    await post('/api/collections/' + c.id + '/shipping/init', {
+      owner_token: c.owner_token,
+      address: ADDRESS,
+    });
+    const tokA = shipToken(c.id);
+    await post('/api/collections/' + c.id + '/shipping/init', {
+      owner_token: c.owner_token,
+      address: ADDRESS,
+    });
+    const tokB = shipToken(c.id);
+    expect(tokB).not.toBe(tokA);
+
+    const notify = require(path.join(serverDir, 'notify.js'));
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'ship-first',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: tokA,
+          DebitTotal: FEE * 100,
+          DebitApproveNumber: '86-001-010',
+          VoucherId: '4000001',
+        },
+      };
+      await post('/api/payment/callback', { ResultData: { TransactionId: 'ship-first' } });
+      expect(db.getCollection(c.id).order.shipping.paid).toBe(true);
+      alert.mockClear();
+
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'ship-second',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: tokB,
+          DebitTotal: FEE * 100,
+          DebitApproveNumber: '86-001-011',
+          VoucherId: '4000002',
+        },
+      };
+      const r = await post('/api/payment/callback', {
+        ResultData: { TransactionId: 'ship-second' },
+      });
+      expect(r.status).toBe(200);
+
+      // The first charge's record is untouched (markShippingPaid's own guard).
+      const sh = db.getCollection(c.id).order.shipping;
+      expect(sh.paid_transaction_id).toBe('ship-first');
+      expect(sh.paid_approval_no).toBe('86-001-010');
+
+      // ...and she is told once, with what a refund needs.
+      expect(alert).toHaveBeenCalledTimes(1);
+      const text = alert.mock.calls[0][1].join('\n');
+      expect(text).toContain(db.orderRef(db.getCollection(c.id)));
+      expect(text).toContain(FEE + ' ₪');
+      expect(text).toContain('ship-second');
+      expect(text).toContain('86-001-011');
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
   it('a charge for the wrong amount is refused, exactly like an order charge', async () => {
     const c = paidPickup();
     await post('/api/collections/' + c.id + '/shipping/init', {

@@ -185,6 +185,182 @@ describe('POST /api/payment/callback', () => {
     expect(order.paid_approval_no).toBe('86-001-006');
   });
 
+  // A SECOND REAL CHARGE ON A PAID ORDER. Two payment windows can be open at
+  // once (pay/init accumulates sessions), so a buyer who pays in both is charged
+  // twice. `settleVerifiedPayment` returned false for an already-paid order and
+  // said nothing: the money was taken and there was no record to refund from.
+  //
+  // It must NOT fall through to markPaid. markPaid has no paid-guard — verified
+  // by running it — so a second write replaces paid_transaction_id, and with it
+  // the approval and voucher numbers #630 stores for exactly this kind of
+  // question. Reporting has to happen before the early return, and still return
+  // without writing.
+  it('reports a SECOND charge on an already-paid order, without overwriting the first', async () => {
+    const c = db.createCollection('חיוב כפול');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const charged = init.body.charged;
+    // A second window on the SAME order: this is what makes a double charge
+    // possible at all.
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const [tokA, tokB] = db.getCollection(c.id).order.pelecard.sessions.map((s) => s.token);
+    expect(tokB).toBeTruthy();
+    expect(tokB).not.toBe(tokA);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      // First charge settles normally.
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-first',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: tokA,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-001',
+          VoucherId: '4001003',
+        },
+      };
+      await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-first' } });
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      alert.mockClear();
+
+      // Second window, DIFFERENT transaction, same order. Money moved again.
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-second',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: tokB,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-002',
+          VoucherId: '9999999',
+        },
+      };
+      const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-second' } });
+      expect(r.status).toBe(200);
+
+      // THE RECORD SHE REFUNDS FROM IS INTACT — the first charge's identifiers.
+      const order = db.getCollection(c.id).order;
+      expect(order.paid_transaction_id).toBe('tx-first');
+      expect(order.paid_approval_no).toBe('86-001-001');
+      expect(order.paid_voucher_no).toBe('4001003');
+
+      // ...and she is told once, with everything a refund needs.
+      expect(alert).toHaveBeenCalledTimes(1);
+      const [, lines] = alert.mock.calls[0];
+      const text = lines.join('\n');
+      expect(text).toContain(db.orderRef(db.getCollection(c.id)));
+      expect(text).toContain(charged + ' ₪'); // the FORM she reads, not a bare number
+      expect(text).toContain('tx-second'); // the charge to refund
+      expect(text).toContain('tx-first'); // the one that legitimately paid
+      expect(text).toContain('86-001-002'); // approval no of the second
+      expect(text).toContain('9999999'); // and its voucher, for the disputes letter
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  // THE SILENT CASE, and the one that decides whether the channel is worth
+  // anything. PeleCard re-delivers a callback after a non-200 — our own transient
+  // path answers 502 precisely to invite that — so the SAME transaction arriving
+  // twice is normal traffic. Alerting on it would train her to ignore the alert
+  // that means a buyer was charged twice.
+  it('stays completely silent when the SAME transaction is delivered again', async () => {
+    const c = db.createCollection('אותה עסקה שוב');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const charged = init.body.charged;
+    const token = tokenOf(c.id);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-retry',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: token,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-003',
+        },
+      };
+      await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-retry' } });
+      expect(db.getCollection(c.id).order.paid).toBe(true);
+      alert.mockClear();
+
+      // The very same callback again — a retry, not a second charge.
+      const again = await post('/api/payment/callback', {
+        ResultData: { TransactionId: 'tx-retry' },
+      });
+      expect(again.status).toBe(200);
+      expect(alert).not.toHaveBeenCalled();
+      // And nothing about the settled order moved.
+      expect(db.getCollection(c.id).order.paid_transaction_id).toBe('tx-retry');
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  // ONE ALERT PER EXTRA CHARGE, not one per delivery of it. PeleCard retries the
+  // SECOND callback too, and without a dedupe we would have fixed the first retry
+  // problem and left the second.
+  it('alerts once even when the second charge’s callback is itself re-delivered', async () => {
+    const c = db.createCollection('חיוב כפול חוזר');
+    const init = await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const charged = init.body.charged;
+    await post('/api/collections/' + c.id + '/pay/init', {
+      owner_token: c.owner_token,
+      version: 'pdf',
+    });
+    const [tokA, tokB] = db.getCollection(c.id).order.pelecard.sessions.map((s) => s.token);
+
+    const alert = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+    try {
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-a',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: tokA,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-004',
+        },
+      };
+      await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-a' } });
+      alert.mockClear();
+
+      nextGetTx = {
+        StatusCode: '000',
+        ResultData: {
+          TransactionId: 'tx-b',
+          ShvaResult: '000',
+          AdditionalDetailsParamX: tokB,
+          DebitTotal: Math.round(charged * 100),
+          DebitApproveNumber: '86-001-005',
+        },
+      };
+      await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-b' } });
+      await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-b' } });
+      await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-b' } });
+
+      // Three deliveries of one extra charge is still one thing that happened.
+      expect(alert).toHaveBeenCalledTimes(1);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
   // EMAIL IS NOT THE ONLY CHANNEL. This notice is sent, not enqueued, so if the
   // email send fails — a Resend 5xx, or RESEND_API_KEY/NOTIFY_TO unset on this
   // environment — the fallback is its only second chance. Every other owner

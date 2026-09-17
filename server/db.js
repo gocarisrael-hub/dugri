@@ -2468,6 +2468,46 @@ const db = {
     });
   },
 
+  // A SECOND REAL CHARGE against a purchase that is already paid. One charge pays
+  // for one purchase (see isTransactionUsed above); when a second one clears
+  // anyway — two payment windows open at once, and the buyer paid in both — the
+  // money is gone and there is nothing anywhere to refund FROM. This is that
+  // record, and it doubles as the alert's dedupe: PeleCard re-delivers a callback,
+  // so the same extra charge arrives more than once and must be told about once.
+  //
+  // Returns true only the FIRST time a given transaction is recorded. A repeat
+  // returns false, which is what keeps the notice to one per charge rather than
+  // one per delivery.
+  //
+  // Deliberately NOT written by markPaid: markPaid has no already-paid guard, so
+  // letting a second charge through it would overwrite paid_transaction_id and
+  // with it the approval and voucher numbers a chargeback is answered from.
+  recordExtraCharge(id, meta = {}) {
+    const c = this.getCollection(id);
+    if (!c || !c.order) return false;
+    const txId = meta.transactionId == null ? '' : String(meta.transactionId);
+    if (!txId) return false;
+    const holder = meta.kind === 'shipping' ? c.order.shipping : c.order;
+    if (!holder) return false;
+    if (!Array.isArray(holder.extra_charges)) holder.extra_charges = [];
+    if (holder.extra_charges.some((x) => String(x.transaction_id) === txId)) return false;
+    holder.extra_charges.push({
+      transaction_id: txId,
+      method: meta.method || null,
+      // What the card was actually hit for, so she can refund the right sum.
+      charged_total: meta.charged_total == null ? null : Number(meta.charged_total),
+      // Both identifiers, separately, for the same reason markPaid keeps them so:
+      // a disputes letter cites the voucher, not the approve number.
+      approval_no: meta.approvalNo || null,
+      voucher_no: meta.voucherNo || null,
+      // The charge that legitimately paid, so the pair can be told apart later.
+      alongside_transaction_id: meta.paidTransactionId || null,
+      at: nowIso(),
+    });
+    saveDb();
+    return true;
+  },
+
   // Abandon every in-flight pay session on an order: the buyer CLOSED the payment
   // window, so no charge can still land from it. Without this the session stays
   // "in flight" for the whole TTL and deadlocks the free/coupon path — the buyer
