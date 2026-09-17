@@ -115,6 +115,25 @@ is unsigned and nothing documents it being retried, so it decides nothing.
    charge is in flight. Do not "fix" this inconsistency without replacing that
    reasoning.
 
+   **Tranzila REFUSES on a changed purchase; PeleCard SETTLES and reports. That
+   difference is principled, not an oversight.** Tranzila can refuse safely
+   _because the sweep is behind it_: the row stays on the terminal, the next sweep
+   reads it again, and the owner is alerted — a refusal is recoverable. PeleCard's
+   callback has nothing behind it. There is no sweep to re-read the charge, so
+   refusing there does not postpone the decision, it ends it: the buyer is charged
+   and the order stays unpaid, with no record to recover from. That is the exact
+   failure class this provider work spent twelve review rounds eliminating, and it
+   would be reintroduced in the one place nothing can clean it up.
+
+   So on the PeleCard callback the charge settles — it was correct for the window
+   it was made in — and `settleVerifiedPayment` reports the mismatch to the owner
+   instead (`purchaseChangedOnSettle`). The rule is: **refuse only where something
+   will retry.** Today this is latent rather than live, because the sweep refuses
+   on the key before `settleVerifiedPayment` is ever called, so no Tranzila charge
+   reaches that reporting path. Do not make PeleCard refuse for symmetry without
+   first giving it a sweep, and do not delete the reporting path as dead code
+   because only one provider can reach it.
+
    A session closed by the buyer (resolved) still settles: sessions are found by
    token whatever their state and skipped only once their purchase is paid.
 
