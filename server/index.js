@@ -4061,6 +4061,24 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
+    // A 502 WITH NO LOG IS AN INVISIBLE FAILURE, and this one leaves nothing
+    // behind to find later: the pay session is recorded only AFTER init()
+    // returns, so there is no token and no session for any sweep to pick up.
+    // This line is the only trace the buyer ever tried. Which order, which
+    // provider, which stage, and the gateway's own reason — 'payment init
+    // failed' only repeats the 502. The provider's message is safe to print:
+    // pelecard.js throws 'pelecard http <status>' or the gateway's own ErrMsg,
+    // tranzila.js likewise, and neither ever puts a key or password in one.
+    console.error(
+      '[payment] ' +
+        db.orderRef(c) +
+        ': ' +
+        provider.NAME +
+        ' pay/init failed for ' +
+        charged +
+        ' \u20aa \u2014 no payment window opened, nothing pending: ' +
+        ((e && e.message) || e)
+    );
     res.status(502).json({ error: 'payment init failed' });
   }
 });
@@ -4136,7 +4154,20 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
       feeAtInit: Number(shipping.fee) || 0,
     });
     res.json({ url, charged });
-  } catch {
+  } catch (e) {
+    // The SAME 502 body as the order's own pay/init, so without naming the stage
+    // the log cannot say WHICH purchase failed. Her order is already paid here;
+    // what did not open is the delivery she was adding to it.
+    console.error(
+      '[payment] ' +
+        db.orderRef(c) +
+        ': ' +
+        provider.NAME +
+        ' shipping/init failed for ' +
+        charged +
+        ' \u20aa \u2014 the delivery upgrade did not open, nothing pending: ' +
+        ((e && e.message) || e)
+    );
     res.status(502).json({ error: 'payment init failed' });
   }
 });
@@ -4174,6 +4205,17 @@ app.post('/api/payment/callback', async (req, res) => {
   } catch (e) {
     // Transient error verifying with PeleCard: return non-200 so PeleCard
     // retries the callback once (markPaid is idempotent).
+    //
+    // REFUSED-AND-PENDING, NOT LOST. The 502 is deliberate and the charge may
+    // still settle on the retry, so this must not read like money gone — a line
+    // that cries wolf on every transient is ignored by the third week, including
+    // on the day it means something.
+    console.error(
+      '[payment] pelecard callback: could not fetch transaction ' +
+        transactionId +
+        ' \u2014 answering 502 so PeleCard retries, the charge is still pending: ' +
+        ((e && e.message) || e)
+    );
     return res.status(502).json({ error: 'verification failed' });
   }
 
@@ -4188,11 +4230,11 @@ app.post('/api/payment/callback', async (req, res) => {
   // "is it already paid?" guard is a different flag for each and the shipping
   // charge is a different (smaller) amount than the order's.
   const match = db.findPaySession(tx.paramX);
+  const session = match && match.session;
   if (
-    match &&
-    match.session &&
-    (match.session.provider || 'pelecard') === pelecard.NAME &&
-    pelecard.verifyTransaction(tx, { amountNis: match.session.charged_total })
+    session &&
+    (session.provider || 'pelecard') === pelecard.NAME &&
+    pelecard.verifyTransaction(tx, { amountNis: session.charged_total })
   ) {
     settleVerifiedPayment(match, {
       method: pelecard.NAME,
@@ -4200,9 +4242,85 @@ app.post('/api/payment/callback', async (req, res) => {
       approvalNo: tx.approvalNo,
       voucherNo: tx.voucherNo,
     });
+  } else {
+    // NOTHING SETTLED AND PELECARD IS ANSWERED 200, so nothing retries and
+    // nothing is recorded. This was the silent one: the owner's first evidence
+    // was an order that simply never went paid.
+    reportUnsettledCallback(match, tx);
   }
   res.json({ ok: true });
 });
+
+// Why a verified-looking callback settled nothing. Deliberately NOT one line for
+// every cause: the owner acts on these differently, and a log that cannot be
+// acted on is noise. Ask what this would say if the cause were different — if the
+// answer is 'the same thing', it is not a log line.
+//
+// THE SESSION TOKEN NEVER APPEARS HERE. It is a credential; for an unmatched
+// callback the transaction id is the discriminating fact, and it is already what
+// the owner's other payment notices carry.
+function reportUnsettledCallback(match, tx) {
+  const session = match && match.session;
+  const ref = match && match.collection ? db.orderRef(match.collection) + ': ' : '';
+  const head = '[payment] ' + ref + 'pelecard callback settled nothing \u2014 ';
+  if (!session) {
+    console.error(
+      head +
+        'no session matched transaction ' +
+        tx.transactionId +
+        '. A charge belonging to no open payment window of ours: a foreign or ' +
+        'forged callback, or a session from another environment.'
+    );
+    return;
+  }
+  if ((session.provider || 'pelecard') !== pelecard.NAME) {
+    console.error(
+      head +
+        'transaction ' +
+        tx.transactionId +
+        " belongs to a session opened on '" +
+        session.provider +
+        "', not pelecard. Nothing is wrong with the charge; the wrong callback saw it."
+    );
+    return;
+  }
+  const reason = pelecard.verifyFailure(tx, { amountNis: session.charged_total });
+  if (reason === 'declined') {
+    console.error(
+      head +
+        'the card was DECLINED by SHVA (code ' +
+        tx.shvaResult +
+        ') on transaction ' +
+        tx.transactionId +
+        '. Routine \u2014 the buyer was told, the order stays unpaid, and this is ' +
+        'the answer when she asks why.'
+    );
+    return;
+  }
+  if (reason === 'amount_mismatch') {
+    console.error(
+      head +
+        'the amount does not match: this window quoted ' +
+        session.charged_total +
+        ' \u20aa but transaction ' +
+        tx.transactionId +
+        ' cleared ' +
+        Number(tx.debitTotalAgorot) / 100 +
+        ' \u20aa. NOT routine \u2014 money moved for a sum we never asked for.'
+    );
+    return;
+  }
+  console.error(
+    head +
+      'verification refused (' +
+      reason +
+      ') on transaction ' +
+      tx.transactionId +
+      ', retrieval status ' +
+      tx.statusCode +
+      '.'
+  );
+}
 
 // A VERIFIED charge lands. Shared by both providers' callbacks, so what a paid
 // order means — receipts, the coupon count, Meta's copy of the sale, a shipping

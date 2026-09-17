@@ -168,11 +168,31 @@ function parseCallback(body = {}) {
 // transaction for an order of `amountNis`. FAIL-CLOSED: the retrieval must
 // succeed (StatusCode 000), the charge must be approved by SHVA (ShvaResult
 // 000), and the charged amount (agorot) must equal the order total.
+// WHY a transaction did not verify, or null when it did.
+//
+// `verifyTransaction` DELEGATES to this, so the two can never disagree: a reason
+// exists exactly when verification fails. Re-deriving the reason at the callback
+// instead would be a second copy of these rules, which is the silent-divergence
+// shape the follow-ups queue already tracks for the charge formula. One place, or
+// it becomes two answers.
+//
+// The distinction the caller acts on: 'declined' is ROUTINE — SHVA refused the
+// card, the buyer knows, and it is the answer when the owner asks why an order
+// never went paid. 'amount_mismatch' is not routine: money cleared for a sum this
+// window never quoted. Reporting both the same way teaches her to ignore the one
+// that matters.
+function verifyFailure(tx, expected = {}) {
+  if (!tx || String(tx.statusCode) !== SUCCESS_STATUS) return 'lookup_status';
+  if (String(tx.shvaResult) !== SUCCESS_STATUS) return 'declined';
+  if (expected.amountNis == null || tx.debitTotalAgorot == null) return 'no_amount';
+  if (tx.debitTotalAgorot !== Math.round(Number(expected.amountNis) * 100)) {
+    return 'amount_mismatch';
+  }
+  return null;
+}
+
 function verifyTransaction(tx, expected = {}) {
-  if (!tx || String(tx.statusCode) !== SUCCESS_STATUS) return false;
-  if (String(tx.shvaResult) !== SUCCESS_STATUS) return false;
-  if (expected.amountNis == null || tx.debitTotalAgorot == null) return false;
-  return tx.debitTotalAgorot === Math.round(Number(expected.amountNis) * 100);
+  return verifyFailure(tx, expected) === null;
 }
 
 module.exports = {
@@ -182,6 +202,7 @@ module.exports = {
   getTransaction,
   parseCallback,
   verifyTransaction,
+  verifyFailure,
   transactionIdFromUrl,
   SUCCESS_STATUS,
   BASE_URL,
