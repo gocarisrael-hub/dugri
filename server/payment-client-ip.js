@@ -28,8 +28,17 @@
 // hop count, and Cloudflare's ranges below, are checked once per environment
 // before Tranzila goes live (TRANZILA_LOG_CLIENT_IP=1 in server/index.js).
 //
-// The global `trust proxy` setting and the older limiters that use req.ip are
-// deliberately untouched here; that is a separate change.
+// It is 1 in BOTH environments and is not a per-environment setting: Railway
+// appends exactly one entry whether the visitor arrives directly (staging) or
+// through Cloudflare (production, where that one appended entry is a Cloudflare
+// edge, and the range-check below then takes the visitor from CF-Connecting-IP).
+// Change it only if the number of proxies between the visitor and this process
+// changes — see "A variable that must NOT differ" in RAILWAY_SETUP.md.
+//
+// The global `trust proxy` setting is deliberately untouched. The site's other
+// IP-keyed limiters no longer read req.ip: clientKey() in server/index.js derives
+// through this function, so there is one derivation of the client address rather
+// than two that can drift apart.
 
 // Cloudflare's published edge ranges (https://www.cloudflare.com/ips/).
 const CLOUDFLARE_RANGES = [

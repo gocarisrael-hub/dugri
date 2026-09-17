@@ -1419,9 +1419,36 @@ function couponRateOk(key) {
   }
   return true;
 }
-// The client key for coupon-oracle rate limiting: the real client IP.
+// The client key every IP-keyed limiter counts by — preview, coupon validation,
+// design-code validation and /api/track — in a form the client cannot choose.
+//
+// It used to be req.ip, and that was bypassable. `trust proxy` is true, so
+// Express reads req.ip as the LEFTMOST X-Forwarded-For entry; proxies APPEND, so
+// the left is whatever the caller wrote and our own proxy's entry is on the
+// right. A caller sending a fresh X-Forwarded-For per request therefore got a
+// fresh bucket per request, and every limit here counted to sixty over and over.
+// tests/unit/client-ip-limits.test.js is that bug, written down.
+//
+// paymentClientIp is the derivation the payment path already uses (PAY_INIT and
+// shipping/init, since #620): count PAYMENT_PROXY_HOPS entries from the RIGHT,
+// believe CF-Connecting-IP only when the hop that handed us the request is
+// really a Cloudflare edge, key an IPv6 client by its /64. One derivation for
+// both, rather than a second scheme that can disagree with it.
+//
+// THE OPPOSITE MISTAKE IS WORSE THAN THE BUG: trusting one hop too many buckets
+// every visitor together, and then one person hitting a limit locks out the
+// whole site. That is why the hop count is configuration per environment
+// (production is behind Cloudflare, staging is direct to Railway) and why the
+// test file asserts both directions — spoofed headers share a bucket, and two
+// genuinely different clients do not.
+//
+// NOT CHANGED HERE: clientIpForMeta in server/routes/platform.js, which decides
+// the address handed to an ad platform. It is already spoof-resistant in the way
+// that matters there (CF-Connecting-IP or nothing at all), and changing which
+// address gets recorded would change what the attribution data MEANS with
+// nothing failing. Deliberately left alone; see the PR.
 function clientKey(req) {
-  return req.ip || req.socket?.remoteAddress || 'unknown';
+  return paymentClientIp(req);
 }
 app.get('/api/admin/collections', (req, res) => {
   if (!requireAdmin(req, res)) return;
