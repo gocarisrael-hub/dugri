@@ -23,7 +23,7 @@ export const PRICING_FALLBACK = {
     delivery: { enabled: false, price: 199 },
     custom: { enabled: false, price: 599 },
   },
-  // Shipping, charged ONCE per order however many copies it holds. 0 in the
+  // Shipping for ONE box (an order pays it once per box it ships in). 0 in the
   // fallback: a guessed fee would be a guessed CHARGE, and the checkout must
   // never show a number the server did not send.
   delivery_fee: 0,

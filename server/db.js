@@ -90,8 +90,8 @@ try {
 // Every orderable version, and WHICH settings key carries its per-copy price.
 //
 // pickup and delivery deliberately share `pickup_price`: they are the same
-// printed deck, and delivery is that deck PLUS shipping (delivery_fee, added once
-// per order) — not a second product. Giving delivery its own price key let the
+// printed deck, and delivery is that deck PLUS shipping (delivery_fee, per box —
+// see deliveryFeeFor) — not a second product. Giving delivery its own price key let the
 // two drift apart, and made "the delivery price" ambiguous about whether it
 // already contained postage. One product price, one shipping price, and the
 // delivered price is their sum.
@@ -223,8 +223,9 @@ function effectivePricing() {
     // and the client decides what to paint from `sale.on` alone.
     sale: saleInfo(),
     versions,
-    // Charged once per order, not per copy (see deliveryFee). The checkout needs
-    // it to show the same arithmetic the server is about to perform.
+    // The fee for ONE box (see deliveryFee / deliveryFeeFor): an order pays it
+    // once per box it ships in. The checkout needs it to show the same
+    // arithmetic the server is about to perform.
     delivery_fee: deliveryFee(),
     // Where delivery takes longer, as a HEADLINE only — how many localities and
     // how long. Deliberately NOT the towns themselves: /api/pricing is fetched by
@@ -279,8 +280,8 @@ function deliveryExceptions() {
 
 // --- copies -------------------------------------------------------------------
 // An order may contain several copies of the SAME game: identical decks printed
-// from one word list. Each copy is charged the full per-version price; shipping
-// is charged ONCE, because every copy travels in the same parcel.
+// from one word list. Each copy is charged the full per-version price. How the
+// shipping is charged depends on how the copies travel — see "boxes" below.
 //
 // There is deliberately NO business cap on copies (the owner asked for none).
 // This bound is input validation, not policy: it stops a slipped keypress — 555
@@ -294,8 +295,9 @@ const MAX_COPIES = Number(process.env.MAX_COPIES || 999);
 // order did before this existed.
 const CARD_ORDERS = ['random', 'personal-first', 'by-script', 'exact'];
 
-// The one-time shipping fee. Only a NON-NEGATIVE integer is honoured; anything
+// The shipping fee for ONE box. Only a NON-NEGATIVE integer is honoured; anything
 // else falls back to 0, so a corrupt override can never inflate a charge.
+// What an order pays for shipping is this times its box count — see deliveryFeeFor.
 function deliveryFee() {
   try {
     const v = settings.get('pricing', 'delivery_fee');
@@ -554,15 +556,59 @@ function sanitizeQuantity(q) {
   return Math.min(i, MAX_COPIES);
 }
 
+// --- boxes --------------------------------------------------------------------
+// A multi-copy PRINTED order (pickup or delivery) goes out either as one box per
+// copy — the default, because copies are usually gifts for different people — or
+// with every copy in ONE box, which the buyer ticks at checkout. The choice is
+// `order.one_box`:
+//
+//   false     — one box per copy: N stickers, N HFD packages, and (for delivery)
+//               the per-box fee N times.
+//   true      — one box: one sticker, one package, the fee once.
+//   ABSENT    — an order placed before the choice existed. Those were all sold as
+//               one parcel with the fee charged once, and they keep exactly that:
+//               an absent field means one box, and nothing re-prices them.
+//
+// A single copy is one box whatever the flag says, and a digital or custom order
+// has no box at all — the flag is stored but means nothing there.
+const BOX_VERSIONS = ['pickup', 'delivery'];
+
+// The flag as stored: a real boolean, or undefined for "not stated". Anything else
+// a client sends ('yes', 1, null) is "not stated" rather than a guess.
+function sanitizeOneBox(v) {
+  return typeof v === 'boolean' ? v : undefined;
+}
+
+// How many boxes `quantity` copies travel in. Only an explicit `false` splits
+// them, so an order that predates the flag stays one box.
+function boxesFor(quantity, oneBox) {
+  return oneBox === false ? sanitizeQuantity(quantity) : 1;
+}
+
+// How many boxes this ORDER goes out in: the stickers and the HFD package count
+// both read this. 0 for an order with nothing physical to pack.
+function orderBoxes(order) {
+  if (!order || !BOX_VERSIONS.includes(order.version)) return 0;
+  return boxesFor(order.quantity || 1, order.one_box);
+}
+
+// THE shipping charge for an order: the per-box fee times the box count, for a
+// delivery; 0 for anything else. Every place that prices shipping goes through
+// this, so the checkout, the pay window, the admin edit and the post-payment
+// upgrade cannot disagree about it.
+function deliveryFeeFor(version, quantity, oneBox) {
+  return version === 'delivery' ? deliveryFee() * boxesFor(quantity, oneBox) : 0;
+}
+
 // THE authoritative charge for an order. The browser never sends a total — it
-// sends at most a version and a copy count, and this recomputes from settings.
-// `unitPrice` overrides the settings price for an order that carries its own
-// quoted per-copy price (an admin custom quote must keep the price it was quoted
-// at, even if settings move afterwards).
-function orderTotal(version, quantity, unitPrice) {
+// sends at most a version, a copy count and the box choice, and this recomputes
+// from settings. `unitPrice` overrides the settings price for an order that
+// carries its own quoted per-copy price (an admin custom quote must keep the
+// price it was quoted at, even if settings move afterwards). `oneBox` omitted
+// means one box — the fee once, which is what every caller before boxes meant.
+function orderTotal(version, quantity, unitPrice, oneBox) {
   const unit = Number.isInteger(unitPrice) && unitPrice >= 1 ? unitPrice : versionPrice(version);
-  const fee = version === 'delivery' ? deliveryFee() : 0;
-  return unit * sanitizeQuantity(quantity) + fee;
+  return unit * sanitizeQuantity(quantity) + deliveryFeeFor(version, quantity, oneBox);
 }
 
 // --- free word quota ---------------------------------------------------------
@@ -2077,7 +2123,7 @@ const db = {
   // a non-delivery order.
   // Returns the updated order, or {error} — 'not found' (no collection), 'no
   // order' (nothing ordered yet), 'bad version', 'address required'.
-  adminUpdateOrder(id, { version, address, quantity } = {}) {
+  adminUpdateOrder(id, { version, address, quantity, one_box } = {}) {
     const c = this.getCollection(id);
     if (!c) return { error: 'not found' };
     if (!c.order) return { error: 'no order' };
@@ -2091,6 +2137,9 @@ const db = {
       if (!addr) return { error: 'address required' };
     }
     const nextQty = sanitizeQuantity(quantity == null ? c.order.quantity || 1 : quantity);
+    // The box choice follows the same rule as the copy count: absent means "leave
+    // it", and an order that never had one keeps not having one (one box).
+    const nextOneBox = one_box === undefined ? c.order.one_box : sanitizeOneBox(one_box);
     // An UNPAID order re-prices on any change to what is being bought — version,
     // copy count, or (for delivery) whether the one-time shipping fee applies. A
     // PAID order's total is history: it is what the card was actually charged, and
@@ -2114,9 +2163,15 @@ const db = {
           : versionPrice(next);
       c.order.quantity = nextQty;
       c.order.unit_price = unit;
-      c.order.delivery_fee = next === 'delivery' ? deliveryFee() : 0;
-      c.order.total = orderTotal(next, nextQty, unit);
+      c.order.delivery_fee = deliveryFeeFor(next, nextQty, nextOneBox);
+      c.order.total = orderTotal(next, nextQty, unit, nextOneBox);
     }
+    // Like the version, the box choice is FULFILMENT and is editable on a paid
+    // order too — it decides how many stickers print and how many packages HFD
+    // is booked for. The money is not re-charged: a paid order's fee and total
+    // stay what the card was charged, and any difference is settled off-system.
+    if (nextOneBox === undefined) delete c.order.one_box;
+    else c.order.one_box = nextOneBox;
     c.order.version = next;
     c.order.address = addr;
     saveDb();
@@ -2146,7 +2201,7 @@ const db = {
   //   BYPASSES the public version-enable gate + the version-lock, so the owner can
   //   hand-create a custom (599₪) order even while `custom` is hidden from public
   //   buyers. Public routes (/order, /pay/init) never pass it.
-  setOrder(id, ownerToken, { version, address, quantity } = {}, opts = {}) {
+  setOrder(id, ownerToken, { version, address, quantity, one_box } = {}, opts = {}) {
     const admin = !!(opts && opts.admin);
     const c = this.getCollection(id);
     if (!c || c.owner_token !== ownerToken) return { error: 'forbidden' };
@@ -2222,7 +2277,18 @@ const db = {
       sameAsExisting && Number.isInteger(existing.unit_price)
         ? existing.unit_price
         : versionPrice(version);
-    const fee = version === 'delivery' ? deliveryFee() : 0;
+    // The box choice (see "boxes" above). Stated by the client → that. Not stated
+    // on a re-submit → whatever the order already had, INCLUDING nothing: an order
+    // placed before the choice existed stays one box with the fee once, rather
+    // than being re-priced to one box per copy because someone fixed an address.
+    // Not stated on a brand-new order → one box per copy, the default.
+    const oneBox =
+      sanitizeOneBox(one_box) !== undefined
+        ? sanitizeOneBox(one_box)
+        : existing
+          ? existing.one_box
+          : false;
+    const fee = deliveryFeeFor(version, copies, oneBox);
     c.order = {
       version,
       // Copies of the same game, and the per-copy price behind the total. Kept as
@@ -2230,8 +2296,12 @@ const db = {
       // sum the buyer has to take on trust.
       quantity: copies,
       unit_price: unitPrice,
-      // Shipping, charged ONCE for the whole order (0 for pickup).
+      // Shipping for the whole order: the per-box fee times the box count (0 for
+      // pickup). See deliveryFeeFor.
       delivery_fee: fee,
+      // Whether every copy goes in one box. Left OFF the record when undefined, so
+      // an order that predates the choice reads exactly as it did.
+      ...(oneBox === undefined ? {} : { one_box: oneBox }),
       // The authoritative charge. Always recomputed here — never accepted from a
       // client — so a tampered payload cannot buy five decks at the price of one.
       // Summed from the SAME unit/fee stored above rather than via orderTotal(),
@@ -2313,7 +2383,10 @@ const db = {
     if (!c) return null;
     const order = c.order || null;
     const cur = (order && order.shipping) || null;
-    const fee = deliveryFee();
+    // Priced like checkout would have priced it: per box, for the boxes this order
+    // goes out in — a paid pickup of three separate boxes becomes three parcels.
+    const boxes = order ? boxesFor(order.quantity || 1, order.one_box) : 1;
+    const fee = deliveryFee() * boxes;
     const paid = !!(cur && cur.paid);
     let reason = null;
     if (paid) reason = 'paid';
@@ -2331,6 +2404,7 @@ const db = {
       offered: !reason,
       reason,
       fee,
+      boxes,
       paid,
       address: (cur && cur.address) || null,
       charged_total: cur && cur.charged_total != null ? cur.charged_total : null,
@@ -3166,6 +3240,10 @@ module.exports.deliveryFee = deliveryFee;
 module.exports.deliveryExceptions = deliveryExceptions;
 module.exports.sanitizeQuantity = sanitizeQuantity;
 module.exports.orderTotal = orderTotal;
+// The box choice: how many boxes an order ships in and what that does to its fee.
+module.exports.boxesFor = boxesFor;
+module.exports.orderBoxes = orderBoxes;
+module.exports.deliveryFeeFor = deliveryFeeFor;
 module.exports.MAX_COPIES = MAX_COPIES;
 module.exports.DECK_WORDS = DECK_WORDS;
 module.exports.DECK_CARDS = DECK_CARDS;

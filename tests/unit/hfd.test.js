@@ -120,6 +120,32 @@ describe('buildShipment — our order in HFD’s fields', () => {
     });
   });
 
+  // ONE SHIPMENT, A PACKAGE PER BOX. Copies the buyer sent in separate boxes are
+  // that many packages on one booking; all in one box — or an order from before
+  // the choice existed — is one.
+  it('books one package per box when the copies go in separate boxes', () => {
+    const { payload } = hfd.buildShipment(order({ order: { quantity: 3, one_box: false } }));
+    expect(payload.packsHaloch).toBe('3');
+  });
+
+  it('books ONE package when every copy is in one box', () => {
+    const { payload } = hfd.buildShipment(order({ order: { quantity: 3, one_box: true } }));
+    expect(payload.packsHaloch).toBe('1');
+  });
+
+  it('books ONE package for an order from before the box choice', () => {
+    // The fixture's order carries quantity 2 and no one_box at all.
+    expect(order().order.one_box).toBeUndefined();
+    expect(hfd.buildShipment(order()).payload.packsHaloch).toBe('1');
+  });
+
+  it('never books more packages than a copy count can be, nor fewer than one', () => {
+    expect(hfd.packsFor({ quantity: 1e9, one_box: false })).toBe(999);
+    expect(hfd.packsFor({ quantity: 0, one_box: false })).toBe(1);
+    expect(hfd.packsFor({ quantity: 'x', one_box: false })).toBe(1);
+    expect(hfd.packsFor(null)).toBe(1);
+  });
+
   it('carries the postal code, flat and floor in the remark the courier reads', () => {
     const { payload } = hfd.buildShipment(order());
     expect(payload.addressRemarks).toBe('הרצל 5, מיקוד 6100000, דירה 3, קומה 2');

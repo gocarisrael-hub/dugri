@@ -1018,6 +1018,10 @@ function publicView(c, { owner = false } = {}) {
           quantity: order.quantity || 1,
           unit_price: Number.isInteger(order.unit_price) ? order.unit_price : order.total,
           delivery_fee: order.delivery_fee || 0,
+          // The box choice, null for an order that predates it (one box), and
+          // how many boxes that makes — the checkout prices its tick from these.
+          one_box: typeof order.one_box === 'boolean' ? order.one_box : null,
+          boxes: db.orderBoxes(order),
           paid: !!order.paid,
           locked,
           ...(owner && order.version === 'delivery' && order.address
@@ -3655,6 +3659,8 @@ app.get('/api/collections/:id/summary', async (req, res) => {
           quantity: order.quantity || 1,
           unit_price: Number.isInteger(order.unit_price) ? order.unit_price : order.total,
           delivery_fee: order.delivery_fee || 0,
+          // How many boxes the copies ship in, so "39 × 3 משלוח" can be spelled out.
+          boxes: db.orderBoxes(order),
           charged: order.paid && order.charged_total != null ? order.charged_total : null,
           coupon: order.paid ? order.coupon || null : null,
           paid: !!order.paid,
@@ -3964,6 +3970,9 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     version: b.version,
     address: b.address,
     quantity: b.quantity,
+    // All copies in one box (true) or a box each (false). Like `quantity` it is a
+    // REQUEST: setOrder turns it into the fee, from settings.
+    one_box: b.one_box,
   });
   if (order && order.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   if (order && order.error) return res.status(400).json({ error: order.error });

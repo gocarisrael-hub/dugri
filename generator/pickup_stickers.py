@@ -14,6 +14,12 @@ ONE STICKER, four lines of it:
     שם מלא:  <buyer>     ← who is collecting
     עיצוב:   <design>    ← which game, when two boxes look alike
     טלפון:   <phone>     ← the one thing needed to chase a no-show
+    קופסה:   2/3         ← only when the order's copies went out in separate boxes
+
+ONE STICKER PER BOX. An order whose copies were packed separately arrives here
+as one entry per box, each carrying ``box: "k/N"`` (server/routes/commerce.js,
+stickerEntries), so the three boxes of one order can be matched up on the shelf
+and none is handed over short. A single box carries no mark at all.
 
 ONE TO A PAGE, AND THE PAGE IS THE LABEL — 105x74 mm, the size of the label
 itself, so the PDF prints straight onto the label stock at 100% with nothing to
@@ -148,6 +154,7 @@ def cell_html(sticker):
         + _row("שם מלא:", sticker.get("buyer_name"))
         + _row("עיצוב:", sticker.get("design"))
         + _row("טלפון:", sticker.get("phone"))
+        + _row("קופסה:", sticker.get("box"))
         + "</div></div>"
     )
 

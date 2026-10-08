@@ -2,8 +2,9 @@ import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 
 // Ordering several copies of the same deck from the checkout. Pricing is stubbed
-// so the arithmetic is pinned to known numbers: ₪199 a copy, ₪39 shipping charged
-// ONCE for the whole order.
+// so the arithmetic is pinned to known numbers: ₪199 a copy, ₪39 shipping per box.
+// Copies go in a box each by default; the "all in one box" tick has its own spec,
+// order-boxes.spec.js.
 const UNIT = 199;
 const FEE = 39;
 
@@ -94,7 +95,7 @@ test('copies: the total multiplies, and one copy shows no arithmetic to explain'
   await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 2));
 });
 
-test('copies: delivery charges shipping once, however many copies', async ({ page }) => {
+test('copies: delivery charges shipping per box — once per copy by default', async ({ page }) => {
   await createCollection(page, 'Shipping');
   // Delivery is a tick on the printed game, not a version of its own.
   await page.locator('input[name="payVersion"][value="pickup"]').check();
@@ -104,9 +105,13 @@ test('copies: delivery charges shipping once, however many copies', async ({ pag
 
   for (let i = 0; i < 4; i += 1) await page.getByTestId('qty-plus').click();
   await expect(page.getByTestId('qty-val')).toHaveText('5');
-  // The owner's own example: 199 x 5 + 39 = 1034. Shipping is NOT multiplied.
-  await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 5 + FEE));
+  // Five copies, a box each: 199 x 5 + 39 x 5.
+  await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 5 + FEE * 5));
   await expect(page.getByTestId('pay-math')).toContainText(String(FEE));
+  await expect(page.getByTestId('pay-math')).toContainText('5 קופסאות');
+  // All in one box: the owner's original example, 199 x 5 + 39 = 1034.
+  await page.getByTestId('one-box-toggle').check();
+  await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 5 + FEE));
 
   // Switching to pickup drops the fee entirely, keeping the count.
   await page.locator('input[name="payVersion"][value="pickup"]').check();

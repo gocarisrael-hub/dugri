@@ -240,6 +240,9 @@ describe('charge path reads settings (db.setOrder + /order route)', () => {
       quantity: 1,
       unit_price: 79,
       delivery_fee: 0,
+      // The box choice travels too; a digital order has no box to pack.
+      one_box: false,
+      boxes: 0,
     });
   });
 

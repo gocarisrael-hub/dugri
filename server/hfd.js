@@ -122,6 +122,20 @@ function addressRemarks(addr) {
   return parts.filter(Boolean).join(', ');
 }
 
+// How many boxes a delivery order goes out in — the SAME rule as db.orderBoxes
+// (server/db.js, "boxes"), restated here because this module is pure and must not
+// load the store. tests/unit/hfd.test.js holds the two to the same answers.
+// Only an explicit `one_box: false` splits the copies; absent (an order from
+// before the choice) or true is one box. Bounded like a copy count is, so a
+// corrupt quantity can never book a thousand packages.
+const MAX_PACKS = 999;
+function packsFor(order) {
+  if (!order || order.one_box !== false) return 1;
+  const n = Math.floor(Number(order.quantity));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, MAX_PACKS);
+}
+
 // Map a collection to the create-shipment body. PURE and exported so the mapping
 // is testable without a network — the shape of this object is the whole
 // integration.
@@ -170,11 +184,14 @@ function buildShipment(c, opts = {}) {
       // Our order number, so a call to HFD about a parcel can be traced back to
       // a row in the admin without guessing from the honoree's name.
       referenceNum1: String(c.order_no || c.id || ''),
-      // The parcel is one box however many decks are in it; the price is not
-      // collected on delivery (the customer paid us online), so it is 0 rather
-      // than the order total — a non-zero productsPrice is what HFD reads as
-      // cash to collect.
-      packsHaloch: '1',
+      // How many PACKAGES this one shipment is: one per box. Copies the buyer
+      // asked to send as separate boxes are N packages on ONE shipment — one
+      // booking, one tracking number, a sticker per box. All copies in one box,
+      // a single copy, or an order placed before the choice existed is one.
+      packsHaloch: String(packsFor(order)),
+      // The price is not collected on delivery (the customer paid us online), so
+      // it is 0 rather than the order total — a non-zero productsPrice is what
+      // HFD reads as cash to collect.
       productsPrice: 0,
     },
   };
@@ -301,6 +318,7 @@ module.exports = {
   isConfigured,
   status,
   buildShipment,
+  packsFor,
   gameRemark,
   normalizePhone,
   splitStreet,

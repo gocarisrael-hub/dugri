@@ -155,6 +155,10 @@ function registerStickersAndStock(
           kind: c.order.version === 'delivery' ? 'delivery' : 'pickup',
           // The courier's shipment, when there is one to fetch a label for.
           shipment_number: live ? String(rec.shipment_number) : null,
+          // How many boxes this order goes out in (db.orderBoxes): one label per
+          // box. 1 for a single copy, for all copies in one box, and for every
+          // order placed before the box choice existed.
+          boxes: Math.max(1, db.orderBoxes(c.order)),
           // What OUR label says. Built for every entry, not just the pickups: it
           // is also how a skipped delivery order is named back to the owner.
           label: {
@@ -284,12 +288,23 @@ function registerStickersAndStock(
   // courier's as the file already fetched to disk, both in the order they should
   // print. A delivery whose label did not come down drops out here — the caller
   // counts what is missing and the page names it.
+  //
+  // ONE LABEL PER BOX. A self-collection order whose copies go out in separate
+  // boxes gets a label for each, marked `1/3`, `2/3`, `3/3`, so the boxes of one
+  // order can be matched up on the shelf and none is handed over short. One box
+  // gets one label with no mark, exactly as before. A delivery is ONE file however
+  // many boxes: the shipment is booked with that many packages (server/hfd.js,
+  // packsHaloch) and HFD's label for it is expected to carry a sticker per package.
   function stickerEntries(printable, files) {
     return printable
-      .map((e) => {
-        if (e.kind === 'pickup') return e.label;
+      .flatMap((e) => {
+        if (e.kind === 'pickup') {
+          const n = Math.max(1, Number(e.boxes) || 1);
+          if (n === 1) return [e.label];
+          return Array.from({ length: n }, (_, i) => ({ ...e.label, box: i + 1 + '/' + n }));
+        }
         const file = files.get(e.id);
-        return file ? { pdf: file } : null;
+        return file ? [{ pdf: file }] : [];
       })
       .filter(Boolean);
   }
@@ -897,6 +912,8 @@ function registerOrder(app, { db, onOrderCreated, paymentBaseUrl }) {
       // Copies of the same deck. setOrder sanitises it and recomputes the total —
       // the client's number never reaches the charge unmultiplied by our own price.
       quantity: b.quantity,
+      // One box for every copy, or a box each — decides the delivery fee.
+      one_box: b.one_box,
     });
     if (r && r.error === 'forbidden') return res.status(403).json({ error: 'forbidden' });
     if (r && r.error) return res.status(400).json({ error: r.error });
@@ -908,6 +925,8 @@ function registerOrder(app, { db, onOrderCreated, paymentBaseUrl }) {
       quantity: r.quantity,
       unit_price: r.unit_price,
       delivery_fee: r.delivery_fee,
+      one_box: typeof r.one_box === 'boolean' ? r.one_box : null,
+      boxes: db.orderBoxes(r),
     });
   });
 }
