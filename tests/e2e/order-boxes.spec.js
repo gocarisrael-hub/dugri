@@ -61,8 +61,16 @@ test.beforeEach(async ({ page }) => {
     const resp = await route.fetch();
     const body = await resp.json();
     body.card_enabled = true;
+    // Present an order from before the box choice existed (see the last test).
+    if (legacyView && body.order) body.order.one_box = null;
     return route.fulfill({ json: body });
   });
+});
+
+// Set by the test that needs the page to see an order with no box choice.
+let legacyView = false;
+test.afterEach(() => {
+  legacyView = false;
 });
 
 async function createCollection(page, name) {
@@ -186,4 +194,47 @@ test('the choice travels to the server, which stores it and prices from it', asy
     delivery_fee: fee * 3,
     total: unit * 3 + fee * 3,
   });
+});
+
+// AN ORDER FROM BEFORE THE CHOICE keeps the fee it was priced at. Its copies are
+// PACKED a box each (stickers, HFD), so the tick shows unticked — but until the
+// buyer touches it, the fee previews ONCE and pay/init is sent no choice, so the
+// server leaves the order as it was rather than re-pricing it per box.
+test('an order from before the choice: fee once, and no choice is sent', async ({ page }) => {
+  const { id, k } = await createCollection(page, 'Legacy boxes');
+  const placed = await page.request.post(`/api/collections/${id}/order`, {
+    data: { owner_token: k, version: 'pickup', quantity: 3 },
+  });
+  expect(placed.ok()).toBeTruthy();
+  legacyView = true;
+  await page.reload();
+  await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
+  await page.getByTestId('tab-pay').click();
+  await page.locator('#payPanel > summary').click();
+  await expect(page.getByTestId('qty-val')).toHaveText('3');
+
+  await page.locator('input[name="payVersion"][value="pickup"]').check();
+  await page.locator('#shipToggle').check();
+  await expect(page.getByTestId('one-box')).toBeVisible();
+  await expect(page.getByTestId('one-box-toggle')).not.toBeChecked();
+  await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 3 + FEE));
+  await expect(page.getByTestId('one-box-note')).toHaveText('');
+
+  await page.fill('#addrStreet', 'הרצל 12');
+  await page.fill('#addrCity', 'תל אביב');
+  await page.fill('#addrPostal', '6100000');
+  let sent = null;
+  await page.route('**/api/collections/*/pay/init', (route) => {
+    sent = route.request().postDataJSON();
+    return route.fulfill({ status: 503, json: { error: 'card payment not configured' } });
+  });
+  await page.locator('#cardPayBtn').click();
+  await expect.poll(() => sent).not.toBeNull();
+  expect(sent.quantity).toBe(3);
+  expect('one_box' in sent).toBe(false);
+
+  // Touching the tick is a real choice, and from then on it is priced and sent.
+  await page.getByTestId('one-box-toggle').check();
+  await page.getByTestId('one-box-toggle').uncheck();
+  await expect(page.locator('#payTotal')).toHaveText(String(UNIT * 3 + FEE * 3));
 });

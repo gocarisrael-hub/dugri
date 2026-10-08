@@ -295,6 +295,16 @@ const MAX_COPIES = Number(process.env.MAX_COPIES || 999);
 // order did before this existed.
 const CARD_ORDERS = ['random', 'personal-first', 'by-script', 'exact'];
 
+// An order's HFD shipment records, one per box, as a list — whichever shape the
+// order was written in. An order booked before shipments were per box carries a
+// single `order.hfd`; that is box 1 of a one-item list.
+function hfdShipments(order) {
+  if (!order) return [];
+  if (Array.isArray(order.hfd_shipments)) return order.hfd_shipments;
+  if (order.hfd && typeof order.hfd === 'object') return [{ ...order.hfd, box: 1 }];
+  return [];
+}
+
 // The shipping fee for ONE box. Only a NON-NEGATIVE integer is honoured; anything
 // else falls back to 0, so a corrupt override can never inflate a charge.
 // What an order pays for shipping is this times its box count — see deliveryFeeFor.
@@ -562,12 +572,15 @@ function sanitizeQuantity(q) {
 // with every copy in ONE box, which the buyer ticks at checkout. The choice is
 // `order.one_box`:
 //
-//   false     — one box per copy: N stickers, N HFD packages, and (for delivery)
+//   false     — one box per copy: N stickers, N HFD shipments, and (for delivery)
 //               the per-box fee N times.
-//   true      — one box: one sticker, one package, the fee once.
-//   ABSENT    — an order placed before the choice existed. Those were all sold as
-//               one parcel with the fee charged once, and they keep exactly that:
-//               an absent field means one box, and nothing re-prices them.
+//   true      — one box: one sticker, one shipment, the fee once.
+//   ABSENT    — an order placed before the choice existed. TWO rules, on purpose
+//               (the owner's decision): its FULFILMENT is a box per copy — N
+//               stickers, N shipments, because N decks do not fit one label — but
+//               its MONEY is what it was sold at, the fee once. Nothing re-prices
+//               it. So there are two counts below, and each caller uses the one
+//               it means: boxesFor for the fee, orderBoxes for the labels.
 //
 // A single copy is one box whatever the flag says, and a digital or custom order
 // has no box at all — the flag is stored but means nothing there.
@@ -579,17 +592,18 @@ function sanitizeOneBox(v) {
   return typeof v === 'boolean' ? v : undefined;
 }
 
-// How many boxes `quantity` copies travel in. Only an explicit `false` splits
-// them, so an order that predates the flag stays one box.
+// How many boxes the SHIPPING FEE is charged for. Only an explicit `false`
+// multiplies it, so an order that predates the flag keeps the fee it was sold at.
 function boxesFor(quantity, oneBox) {
   return oneBox === false ? sanitizeQuantity(quantity) : 1;
 }
 
-// How many boxes this ORDER goes out in: the stickers and the HFD package count
-// both read this. 0 for an order with nothing physical to pack.
+// How many boxes this order is PACKED in: the stickers and the HFD shipments both
+// read this. Only an explicit `true` puts the copies together — an order from
+// before the choice is a box per copy (see above). 0 when nothing is physical.
 function orderBoxes(order) {
   if (!order || !BOX_VERSIONS.includes(order.version)) return 0;
-  return boxesFor(order.quantity || 1, order.one_box);
+  return order.one_box === true ? 1 : sanitizeQuantity(order.quantity || 1);
 }
 
 // THE shipping charge for an order: the per-box fee times the box count, for a
@@ -2167,7 +2181,7 @@ const db = {
       c.order.total = orderTotal(next, nextQty, unit, nextOneBox);
     }
     // Like the version, the box choice is FULFILMENT and is editable on a paid
-    // order too — it decides how many stickers print and how many packages HFD
+    // order too — it decides how many stickers print and how many shipments HFD
     // is booked for. The money is not re-charged: a paid order's fee and total
     // stay what the card was charged, and any difference is settled off-system.
     if (nextOneBox === undefined) delete c.order.one_box;
@@ -2759,26 +2773,48 @@ const db = {
     return _db.collections.filter((c) => c.order && c.order.ready_at).length;
   },
 
-  // The HFD parcel booked for a delivery order (server/hfd.js). Stored on the
-  // order because it IS part of the order: the shipment number is what the owner
-  // quotes to the courier, and the rand number is the customer's tracking link.
+  // The HFD parcels booked for a delivery order (server/hfd.js). Stored on the
+  // order because they ARE part of the order: the shipment number is what the
+  // owner quotes to the courier, and the rand number is the customer's tracking
+  // link.
+  //
+  // ONE SHIPMENT PER BOX. Copies packed separately are separate HFD deliveries —
+  // each its own booking, number, label and tracking — so the order keeps a LIST,
+  // `order.hfd_shipments`, one record per box ({ box: k, shipment_number, ... }).
+  // `order.hfd` is kept as box 1's record: it is the shape every order booked
+  // before the list existed carries, and hfdShipments() reads such an order as a
+  // one-item list, so nothing written before this needs migrating.
   //
   // A patch, not a replace, so cancelling keeps the number that was cancelled —
   // an order's shipping history is evidence, and "there is no shipment" and
-  // "shipment 123 was cancelled" are different facts. Pass null to clear it
-  // outright (nothing does today; it exists so a mis-book is recoverable).
-  // Returns the stored record, or null when there is no such order.
-  setHfdShipment(id, patch) {
+  // "shipment 123 was cancelled" are different facts. Pass null to clear every
+  // box outright (nothing does today; it exists so a mis-book is recoverable).
+  // Returns the stored record for that box, or null when there is no such order.
+  setHfdShipment(id, patch, box = 1) {
     const c = this.getCollection(id);
     if (!c || !c.order) return null;
     if (patch === null) {
       c.order.hfd = null;
+      delete c.order.hfd_shipments;
       saveDb();
       return null;
     }
-    c.order.hfd = { ...(c.order.hfd || {}), ...(patch || {}) };
+    const k = Number.isInteger(box) && box >= 1 ? box : 1;
+    const list = hfdShipments(c.order).map((r) => ({ ...r }));
+    const i = list.findIndex((r) => r.box === k);
+    const rec = { ...(i >= 0 ? list[i] : {}), ...(patch || {}), box: k };
+    if (i >= 0) list[i] = rec;
+    else list.push(rec);
+    list.sort((a, b) => a.box - b.box);
+    c.order.hfd_shipments = list;
+    c.order.hfd = list.find((r) => r.box === 1) || null;
     saveDb();
-    return c.order.hfd;
+    return rec;
+  },
+
+  // Every box's shipment record, oldest-shape orders included. See hfdShipments.
+  hfdShipments(order) {
+    return hfdShipments(order);
   },
 
   // Mark an existing order as paid. Used by the PeleCard callback and the
@@ -3243,6 +3279,7 @@ module.exports.orderTotal = orderTotal;
 // The box choice: how many boxes an order ships in and what that does to its fee.
 module.exports.boxesFor = boxesFor;
 module.exports.orderBoxes = orderBoxes;
+module.exports.hfdShipments = hfdShipments;
 module.exports.deliveryFeeFor = deliveryFeeFor;
 module.exports.MAX_COPIES = MAX_COPIES;
 module.exports.DECK_WORDS = DECK_WORDS;

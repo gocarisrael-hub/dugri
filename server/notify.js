@@ -466,11 +466,12 @@ function amountLines(order, options, label) {
 // ordinary single-copy order (and for orders placed before copies existed, which
 // carry no quantity) so nothing changes on the receipts that dominate.
 //
-// The box count is the rule in server/db.js ("boxes"): only an explicit
-// `one_box: false` splits the copies, one box each; true, or an order from before
-// the choice, is one box. It is printed for every multi-copy PRINTED order, so
-// the owner packing it and the buyer reading the receipt both see how the parcel
-// goes out — and why the shipping is what it is.
+// The box count is the PACKING rule in server/db.js (orderBoxes): only an
+// explicit `one_box: true` puts the copies in one box; false, or an order from
+// before the choice, is a box per copy. It is printed for every multi-copy
+// PRINTED order, so the owner packing it and the buyer reading the receipt both
+// see how the parcels go out. The shipping line beside it is whatever was
+// actually charged — for an order from before the choice, the fee once.
 function copyLines(order) {
   const qty = order && Number.isInteger(order.quantity) ? order.quantity : 1;
   if (qty <= 1) return [];
@@ -480,7 +481,7 @@ function copyLines(order) {
     out.push(f.unitPrice + ': ' + order.unit_price + ' ' + f.currency);
   }
   if (order.version === 'pickup' || order.version === 'delivery') {
-    const boxes = order.one_box === false ? qty : 1;
+    const boxes = order.one_box === true ? 1 : qty;
     out.push((f.boxes || 'קופסאות') + ': ' + boxes);
   }
   if (Number.isInteger(order.delivery_fee) && order.delivery_fee > 0) {

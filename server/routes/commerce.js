@@ -148,17 +148,27 @@ function registerStickersAndStock(
       })
       .sort((a, b) => String(a.created_at || '').localeCompare(String(b.created_at || '')))
       .map((c) => {
-        const rec = (c.order && c.order.hfd) || null;
-        const live = rec && rec.shipment_number && !rec.cancelled_at;
+        // How many boxes this order goes out in (db.orderBoxes): one label per
+        // box. 1 for a single copy or for all copies in one box; an order placed
+        // before the box choice existed is a box per copy.
+        const boxes = Math.max(1, db.orderBoxes(c.order));
+        // The courier's shipments still standing, one per box — a box's label is
+        // fetched by its own shipment number. A cancelled one has no label.
+        const shipments = db
+          .hfdShipments(c.order)
+          .filter((r) => r && r.shipment_number && !r.cancelled_at)
+          .map((r) => ({ box: r.box || 1, shipment_number: String(r.shipment_number) }));
         return {
           id: c.id,
           kind: c.order.version === 'delivery' ? 'delivery' : 'pickup',
-          // The courier's shipment, when there is one to fetch a label for.
-          shipment_number: live ? String(rec.shipment_number) : null,
-          // How many boxes this order goes out in (db.orderBoxes): one label per
-          // box. 1 for a single copy, for all copies in one box, and for every
-          // order placed before the box choice existed.
-          boxes: Math.max(1, db.orderBoxes(c.order)),
+          // The first courier shipment, when there is one to fetch a label for
+          // (the whole list is `shipments`).
+          shipment_number: shipments.length ? shipments[0].shipment_number : null,
+          shipments,
+          // Boxes of a delivery with no shipment booked yet — named back to the
+          // owner with the unbooked ones, since their labels cannot print.
+          missing_boxes: c.order.version === 'delivery' ? Math.max(0, boxes - shipments.length) : 0,
+          boxes,
           // What OUR label says. Built for every entry, not just the pickups: it
           // is also how a skipped delivery order is named back to the owner.
           label: {
@@ -240,8 +250,12 @@ function registerStickersAndStock(
   // A label that does not come down is NOT fatal: the rest of the pile still
   // prints, and the owner is told which parcels to fetch by hand. Losing twenty
   // labels because HFD hiccuped on one is the failure worth avoiding here.
+  // The map is keyed by SHIPMENT NUMBER, not by order: an order whose copies
+  // went out in separate boxes has a shipment — and a label — per box.
   async function fetchCourierLabels(entries, outDir) {
-    const wanted = entries.filter((e) => e.kind === 'delivery' && e.shipment_number);
+    const wanted = entries
+      .filter((e) => e.kind === 'delivery')
+      .flatMap((e) => courierShipments(e).map((s) => ({ e, number: s.shipment_number })));
     const files = new Map();
     const failed = [];
     let next = 0;
@@ -249,30 +263,30 @@ function registerStickersAndStock(
       for (;;) {
         const i = next++;
         if (i >= wanted.length) return;
-        const e = wanted[i];
+        const { e, number } = wanted[i];
         let r;
         try {
-          r = await hfd.fetchLabel(e.shipment_number);
+          r = await hfd.fetchLabel(number);
         } catch (err) {
           r = { ok: false, error: (err && err.message) || String(err) };
         }
         if (!r.ok) {
-          console.error('hfd label failed for', e.shipment_number, '-', r.error);
+          console.error('hfd label failed for', number, '-', r.error);
           failed.push({
             order_no: e.label.order_no,
-            shipment_number: e.shipment_number,
+            shipment_number: number,
             message: r.error,
           });
           continue;
         }
-        const file = path.join(outDir, 'hfd-' + e.shipment_number + '.pdf');
+        const file = path.join(outDir, 'hfd-' + number + '.pdf');
         try {
           fs.writeFileSync(file, r.pdf);
-          files.set(e.id, file);
+          files.set(number, file);
         } catch (err) {
           failed.push({
             order_no: e.label.order_no,
-            shipment_number: e.shipment_number,
+            shipment_number: number,
             message: (err && err.message) || String(err),
           });
         }
@@ -292,21 +306,28 @@ function registerStickersAndStock(
   // ONE LABEL PER BOX. A self-collection order whose copies go out in separate
   // boxes gets a label for each, marked `1/3`, `2/3`, `3/3`, so the boxes of one
   // order can be matched up on the shelf and none is handed over short. One box
-  // gets one label with no mark, exactly as before. A delivery is ONE file however
-  // many boxes: the shipment is booked with that many packages (server/hfd.js,
-  // packsHaloch) and HFD's label for it is expected to carry a sticker per package.
+  // gets one label with no mark, exactly as before. A delivery in separate boxes
+  // is a separate HFD booking per box, so it is one courier label per shipment,
+  // in box order (`files` is keyed by shipment number).
   function stickerEntries(printable, files) {
-    return printable
-      .flatMap((e) => {
-        if (e.kind === 'pickup') {
-          const n = Math.max(1, Number(e.boxes) || 1);
-          if (n === 1) return [e.label];
-          return Array.from({ length: n }, (_, i) => ({ ...e.label, box: i + 1 + '/' + n }));
-        }
-        const file = files.get(e.id);
-        return file ? [{ pdf: file }] : [];
-      })
-      .filter(Boolean);
+    return printable.flatMap((e) => {
+      if (e.kind === 'pickup') {
+        const n = Math.max(1, Number(e.boxes) || 1);
+        if (n === 1) return [e.label];
+        return Array.from({ length: n }, (_, i) => ({ ...e.label, box: i + 1 + '/' + n }));
+      }
+      return courierShipments(e)
+        .map((sh) => files.get(sh.shipment_number))
+        .filter(Boolean)
+        .map((file) => ({ pdf: file }));
+    });
+  }
+
+  // A delivery entry's live shipments. An entry built without the list (one
+  // shipment, the shape before boxes) is read as its single number.
+  function courierShipments(e) {
+    if (Array.isArray(e.shipments)) return e.shipments;
+    return e.shipment_number ? [{ box: 1, shipment_number: String(e.shipment_number) }] : [];
   }
 
   // Admin: tonight's stickers, as ONE PDF to print.
@@ -331,7 +352,11 @@ function registerStickersAndStock(
     // What we can actually print: every collection label, and every delivery that
     // has a shipment to fetch a label for.
     const printable = batch.filter((e) => e.kind === 'pickup' || e.shipment_number);
-    const unbooked = batch.filter((e) => e.kind === 'delivery' && !e.shipment_number);
+    // A delivery with ANY box not yet booked is named here: its booked boxes'
+    // labels still print, the rest need one more press of שלח ל-HFD.
+    const unbooked = batch.filter(
+      (e) => e.kind === 'delivery' && (!e.shipment_number || e.missing_boxes > 0)
+    );
     if (!printable.length) {
       // Not an error page: "there are none tonight" is a normal night, and it
       // should read as one rather than as something that failed. An evening whose
@@ -659,9 +684,37 @@ function registerReadyBatchAndHfd(
     res.json(hfd.status());
   });
 
-  // Admin: book this delivery order's parcel. Deliberately manual — a shipment is
-  // a van and a charge, so it happens when the owner presses, never on a state
+  // Is this shipment record a van that is still coming?
+  const liveShipment = (r) => !!(r && r.shipment_number && !r.cancelled_at);
+
+  // What every HFD route answers with: box 1's record as `hfd` (the shape the
+  // page and every caller read before shipments were per box), and the whole
+  // list, one record per box, as `shipments`, with how many boxes there are.
+  function hfdState(id) {
+    const c = db.getCollection(id);
+    const order = (c && c.order) || null;
+    return {
+      hfd: (order && order.hfd) || null,
+      shipments: db.hfdShipments(order),
+      boxes: Math.max(1, db.orderBoxes(order)),
+    };
+  }
+
+  // One booking at a time per order. The page keeps its button dead while a
+  // press is in flight, but two tabs are two buttons; a second van for the same
+  // box is a real charge, so the server refuses the overlap itself.
+  const hfdBooking = new Set();
+
+  // Admin: book this delivery order's parcels. Deliberately manual — a shipment
+  // is a van and a charge, so it happens when the owner presses, never on a state
   // change.
+  //
+  // ONE BOOKING PER BOX. Copies packed separately (db.orderBoxes — a box per copy
+  // unless the buyer chose one box, and for every order from before that choice)
+  // are separate HFD deliveries, each with its own number, label and tracking.
+  // The press books exactly the boxes that have NO live shipment: a retry after a
+  // refusal half-way, or after one box was cancelled, books only what is missing
+  // and never a second van for a box that already has one.
   app.post('/api/admin/collections/:id/hfd', async (req, res) => {
     if (!requireAdmin(req, res)) return;
     const c = db.getCollection(req.params.id);
@@ -672,53 +725,103 @@ function registerReadyBatchAndHfd(
         message: 'HFD לא מוגדרת — חסרים HFD_TOKEN / HFD_CLIENT_NUMBER.',
       });
     }
-    // A second press must not book a second van. The already-booked shipment is
-    // returned with the refusal so the page can just show it.
-    const existing = c.order && c.order.hfd;
-    if (existing && existing.shipment_number && !existing.cancelled_at) {
+    const boxes = Math.max(1, db.orderBoxes(c.order));
+    const list = db.hfdShipments(c.order);
+    const missing = [];
+    for (let k = 1; k <= boxes; k += 1) {
+      if (!list.some((r) => (r.box || 1) === k && liveShipment(r))) missing.push(k);
+    }
+    // A second press must not book a second van. The already-booked shipments
+    // are returned with the refusal so the page can just show them.
+    if (!missing.length) {
+      const numbers = list.filter(liveShipment).map((r) => r.shipment_number);
       return res.status(409).json({
         error: 'already booked',
-        message: 'כבר נוצר משלוח להזמנה הזו (' + existing.shipment_number + ').',
-        hfd: existing,
+        message: 'כבר נוצר משלוח להזמנה הזו (' + numbers.join(', ') + ').',
+        ...hfdState(c.id),
       });
     }
-
-    const r = await hfd.createShipment(c, {
-      designName: designNameForCollection(templates, TEMPLATE_ROOT, c),
-    });
-    if (!r.ok) {
-      if (HFD_LOCAL_ERRORS[r.error]) {
-        return res.status(400).json({ error: r.error, message: HFD_LOCAL_ERRORS[r.error] });
+    if (hfdBooking.has(c.id)) {
+      return res.status(409).json({
+        error: 'busy',
+        message: 'המשלוח להזמנה הזו כבר נשלח ל-HFD, רגע…',
+        ...hfdState(c.id),
+      });
+    }
+    hfdBooking.add(c.id);
+    try {
+      const designName = designNameForCollection(templates, TEMPLATE_ROOT, c);
+      const booked = [];
+      for (const box of missing) {
+        const r = await hfd.createShipment(c, { designName, box, boxes });
+        if (!r.ok) {
+          // Our own data is wrong (not a delivery, no address): nothing went to
+          // HFD for this box, and the same is true of every other box.
+          if (HFD_LOCAL_ERRORS[r.error]) {
+            return res.status(400).json({
+              error: r.error,
+              message: HFD_LOCAL_ERRORS[r.error],
+              ...hfdState(c.id),
+            });
+          }
+          // HFD refused. Remember why, on THAT box: the owner comes back to this
+          // row later, and "it didn't work" with no reason is what sends her to
+          // the phone. Stop here rather than hammer the courier with the same
+          // request for the next box; the next press books what is still missing.
+          console.error('hfd create refused for', c.id, 'box', box + '/' + boxes, '-', r.error);
+          db.setHfdShipment(c.id, { error: r.error, error_at: new Date().toISOString() }, box);
+          const message =
+            boxes > 1 && booked.length
+              ? r.error + ' (נפתחו ' + booked.length + ' מתוך ' + boxes + ' משלוחים)'
+              : r.error;
+          return res.status(502).json({
+            error: 'hfd refused',
+            message,
+            booked,
+            ...hfdState(c.id),
+          });
+        }
+        db.setHfdShipment(
+          c.id,
+          {
+            shipment_number: r.shipmentNumber,
+            rand_number: r.randNumber,
+            tracking_url: hfd.trackingUrl(r.randNumber),
+            sent_at: new Date().toISOString(),
+            cancelled_at: null,
+            error: null,
+            error_at: null,
+          },
+          box
+        );
+        booked.push(box);
       }
-      // HFD refused. Remember why: the owner comes back to this row later, and
-      // "it didn't work" with no reason is what sends her to the phone.
-      console.error('hfd create refused for', c.id, '-', r.error);
-      const record = db.setHfdShipment(c.id, {
-        error: r.error,
-        error_at: new Date().toISOString(),
-      });
-      return res.status(502).json({ error: 'hfd refused', message: r.error, hfd: record });
+      res.json({ ok: true, booked, ...hfdState(c.id) });
+    } finally {
+      hfdBooking.delete(c.id);
     }
-
-    const record = db.setHfdShipment(c.id, {
-      shipment_number: r.shipmentNumber,
-      rand_number: r.randNumber,
-      tracking_url: hfd.trackingUrl(r.randNumber),
-      sent_at: new Date().toISOString(),
-      cancelled_at: null,
-      error: null,
-      error_at: null,
-    });
-    res.json({ ok: true, hfd: record });
   });
 
-  // Admin: the parcel's sticker, proxied so the token never reaches the browser.
-  // Inline, because the owner prints it straight from the tab.
+  // The record a label or cancel request means: `?box=k` names one box; without
+  // it, the first live shipment (or, for history, the first record at all).
+  function pickShipment(order, boxParam) {
+    const list = db.hfdShipments(order);
+    if (boxParam != null && boxParam !== '') {
+      const k = Number(boxParam);
+      return list.find((r) => (r.box || 1) === k) || null;
+    }
+    return list.find(liveShipment) || list[0] || null;
+  }
+
+  // Admin: a parcel's sticker, proxied so the token never reaches the browser.
+  // Inline, because the owner prints it straight from the tab. `?box=k` for one
+  // box of an order sent as several.
   app.get('/api/admin/collections/:id/hfd/label', async (req, res) => {
     if (!requireAdmin(req, res)) return;
     const c = db.getCollection(req.params.id);
     if (!c) return res.status(404).json({ error: 'not found' });
-    const number = c.order && c.order.hfd && c.order.hfd.shipment_number;
+    const rec = pickShipment(c.order, req.query.box);
+    const number = rec && rec.shipment_number;
     if (!number) return res.status(404).json({ error: 'no shipment' });
     const r = await hfd.fetchLabel(number);
     if (!r.ok) return res.status(502).json({ error: 'hfd label failed', message: r.error });
@@ -727,26 +830,42 @@ function registerReadyBatchAndHfd(
     res.send(r.pdf);
   });
 
-  // Admin: cancel the booked parcel. The number is KEPT (marked cancelled) — an
-  // order's shipping history is evidence, and a cleared field cannot say that a
-  // van was once ordered and stood down.
+  // Admin: cancel the booked parcels — every live one, or `?box=k` for one. The
+  // numbers are KEPT (marked cancelled) — an order's shipping history is
+  // evidence, and a cleared field cannot say that a van was once ordered and
+  // stood down.
   app.delete('/api/admin/collections/:id/hfd', async (req, res) => {
     if (!requireAdmin(req, res)) return;
     const c = db.getCollection(req.params.id);
     if (!c) return res.status(404).json({ error: 'not found' });
-    const record = c.order && c.order.hfd;
-    if (!record || !record.shipment_number) return res.status(404).json({ error: 'no shipment' });
-    if (record.cancelled_at) return res.json({ ok: true, hfd: record });
-    const r = await hfd.cancelShipment(record.shipment_number);
-    if (!r.ok) {
-      // LOGGED, not only returned. A refusal the owner reports as "it says it
-      // failed" is unanswerable without HFD's own words for it, and this is the
-      // only place they exist.
-      console.error('hfd cancel refused for', record.shipment_number, '-', r.error);
-      return res.status(502).json({ error: 'hfd refused', message: r.error, hfd: record });
+    const list = db.hfdShipments(c.order);
+    let targets;
+    if (req.query.box != null && req.query.box !== '') {
+      const one = pickShipment(c.order, req.query.box);
+      targets = one ? [one] : [];
+    } else {
+      targets = list.filter(liveShipment);
+      // Nothing live: answer with the history, as a single cancelled one did.
+      if (!targets.length && list.some((r) => r.shipment_number)) {
+        return res.json({ ok: true, ...hfdState(c.id) });
+      }
     }
-    const next = db.setHfdShipment(c.id, { cancelled_at: new Date().toISOString() });
-    res.json({ ok: true, hfd: next });
+    if (!targets.length || !targets.some((r) => r.shipment_number)) {
+      return res.status(404).json({ error: 'no shipment' });
+    }
+    for (const rec of targets) {
+      if (!rec.shipment_number || rec.cancelled_at) continue;
+      const r = await hfd.cancelShipment(rec.shipment_number);
+      if (!r.ok) {
+        // LOGGED, not only returned. A refusal the owner reports as "it says it
+        // failed" is unanswerable without HFD's own words for it, and this is the
+        // only place they exist. Boxes cancelled before it stay cancelled.
+        console.error('hfd cancel refused for', rec.shipment_number, '-', r.error);
+        return res.status(502).json({ error: 'hfd refused', message: r.error, ...hfdState(c.id) });
+      }
+      db.setHfdShipment(c.id, { cancelled_at: new Date().toISOString() }, rec.box || 1);
+    }
+    res.json({ ok: true, ...hfdState(c.id) });
   });
 }
 

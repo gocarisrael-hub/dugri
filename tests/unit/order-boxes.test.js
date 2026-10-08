@@ -2,15 +2,16 @@
 // HOW SEVERAL PRINTED COPIES TRAVEL: a box each, or all in one box.
 //
 // The owner's rule: copies of a printed game go out one box per copy by default —
-// a sticker per box, an HFD package per box, and (for delivery) the shipping fee
+// a sticker per box, an HFD booking per box, and (for delivery) the shipping fee
 // per box. The buyer may tick "all copies in one box", and then it is one box,
-// one sticker, one package and one fee. An order placed BEFORE the choice existed
-// carries no `one_box` at all and keeps exactly what it was sold as: one box, the
-// fee once — nothing re-prices it.
+// one sticker, one booking and one fee. An order placed BEFORE the choice existed
+// carries no `one_box` at all: its FULFILMENT is a box per copy (N stickers, N
+// bookings), but its MONEY is what it was sold at — the fee once, nothing
+// re-prices it.
 //
-// Every place that prices shipping goes through db.deliveryFeeFor, and every
-// place that counts boxes through db.orderBoxes (hfd.packsFor restates the rule
-// for a module that must not load the store, and is held to it here).
+// Every place that prices shipping goes through db.deliveryFeeFor (boxesFor);
+// every place that counts boxes to pack goes through db.orderBoxes. The HFD
+// bookings themselves are held in hfd-routes.test.js.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -114,19 +115,12 @@ describe('the rule itself', () => {
   it('only a printed order has boxes', () => {
     expect(db.orderBoxes({ version: 'pickup', quantity: 3, one_box: false })).toBe(3);
     expect(db.orderBoxes({ version: 'delivery', quantity: 3, one_box: true })).toBe(1);
-    expect(db.orderBoxes({ version: 'delivery', quantity: 3 })).toBe(1);
+    // An order from before the choice is PACKED a box per copy…
+    expect(db.orderBoxes({ version: 'delivery', quantity: 3 })).toBe(3);
+    // …while its fee stays once (boxesFor, above).
+    expect(db.boxesFor(3, undefined)).toBe(1);
     expect(db.orderBoxes({ version: 'pdf', quantity: 3, one_box: false })).toBe(0);
     expect(db.orderBoxes(null)).toBe(0);
-  });
-
-  it('HFD counts packages by the SAME rule as the store counts boxes', () => {
-    const hfd = require(path.join(serverDir, 'hfd.js'));
-    for (const quantity of [1, 2, 3, 7]) {
-      for (const one_box of [true, false, undefined]) {
-        const o = { version: 'delivery', quantity, ...(one_box === undefined ? {} : { one_box }) };
-        expect(hfd.packsFor(o)).toBe(db.orderBoxes(o));
-      }
-    }
   });
 });
 
@@ -272,7 +266,8 @@ describe('the order routes and the public view', () => {
     expect(v.order).toMatchObject({ one_box: false, boxes: 2 });
     legacy(c);
     v = await realFetch(base + '/api/collections/' + c.id).then((r) => r.json());
-    expect(v.order).toMatchObject({ one_box: null, boxes: 1 });
+    // No stated choice, packed a box per copy.
+    expect(v.order).toMatchObject({ one_box: null, boxes: 2 });
   });
 });
 
@@ -346,6 +341,21 @@ describe('the receipt says how it is packed', () => {
     expect(msg.text).toContain('דמי משלוח: ' + FEE * 3);
   });
 
+  it('an order from before the choice: a box per copy, the fee it paid', () => {
+    const notify = require(path.join(serverDir, 'notify.js'));
+    const c = db.createCollection('קבלה ותיקה', { email: 'buyer@example.com' });
+    db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: ADDRESS,
+      quantity: 3,
+      one_box: true,
+    });
+    legacy(c);
+    const msg = notify.buildPaidMessage(db.getCollection(c.id), 'https://dugri.example', {});
+    expect(msg.text).toContain('קופסאות: 3');
+    expect(msg.text).toContain('דמי משלוח: ' + FEE);
+  });
+
   it('a pickup in separate boxes says so too — there is no fee, but there are boxes', () => {
     const notify = require(path.join(serverDir, 'notify.js'));
     const c = db.createCollection('קבלה איסוף', { email: 'buyer@example.com' });
@@ -379,14 +389,6 @@ describe('stickers: one per box', () => {
     ]);
   });
 
-  it('a delivery is one courier file however many boxes — HFD prints a sticker per package', () => {
-    const entries = app.stickerEntries(
-      [{ id: 'd1', kind: 'delivery', boxes: 3, shipment_number: '1', label: {} }],
-      new Map([['d1', '/tmp/hfd-1.pdf']])
-    );
-    expect(entries).toEqual([{ pdf: '/tmp/hfd-1.pdf' }]);
-  });
-
   it('the batch counts each real order’s boxes', () => {
     function produced(quantity, oneBox, title) {
       const c = db.createCollection('שירה', { custom_title: title });
@@ -407,6 +409,7 @@ describe('stickers: one per box', () => {
     const byTitle = (t) => app.stickerBatch().find((e) => e.label.title === t);
     expect(byTitle('שלוש נפרדות').boxes).toBe(3);
     expect(byTitle('שלוש ביחד').boxes).toBe(1);
-    expect(byTitle('ותיקה').boxes).toBe(1);
+    // From before the choice: a label per copy (its fee was charged once).
+    expect(byTitle('ותיקה').boxes).toBe(3);
   });
 });

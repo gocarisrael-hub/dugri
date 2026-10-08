@@ -6889,10 +6889,14 @@
         // Whether every copy goes in ONE box. Off by default: each copy gets its
         // own box (and, for delivery, its own shipping fee). Adopted from a placed
         // order until the buyer touches the tick, for the same reason as
-        // copiesTouched. An order placed before the choice existed reads as one
-        // box, which is how it was sold.
+        // copiesTouched.
         let oneBox = false;
         let oneBoxTouched = false;
+        let legacyBoxes = false;
+        // An order placed before the choice existed (one_box null). It is PACKED a
+        // box per copy, but its fee was priced once and nothing re-prices it — so
+        // until the buyer touches the tick, the fee previews once, no note is
+        // shown, and pay/init is sent no choice (the server then keeps it as is).
         // The shipping fee for ONE box, as /api/pricing publishes it. 0 whenever
         // pricing failed to load (never invent a charge).
         function deliveryFee() {
@@ -6900,7 +6904,7 @@
         }
         // How many boxes the copies go out in — db.boxesFor on the server.
         function boxCount() {
-          return oneBox ? 1 : copies;
+          return oneBox || (legacyBoxes && !oneBoxTouched) ? 1 : copies;
         }
         // The order's shipping: per-box fee × boxes for a delivery, else 0. The
         // SAME arithmetic as db.deliveryFeeFor; a change to either belongs in both.
@@ -6919,6 +6923,7 @@
           const note = $('#oneBoxNote');
           note.textContent = '';
           if (!show || v !== 'delivery' || !deliveryFee()) return;
+          if (legacyBoxes && !oneBoxTouched) return;
           if (oneBox) {
             note.appendChild(document.createTextNode('משלוח אחד: '));
             note.appendChild(amountNode(deliveryFee()));
@@ -7117,7 +7122,9 @@
             } else {
               el.appendChild(amountNode(fee));
               el.appendChild(
-                document.createTextNode(copies > 1 ? ' משלוח (קופסה אחת)' : ' משלוח (פעם אחת)')
+                document.createTextNode(
+                  copies > 1 && oneBox ? ' משלוח (קופסה אחת)' : ' משלוח (פעם אחת)'
+                )
               );
             }
           }
@@ -7206,7 +7213,8 @@
           // The box choice, adopted the same way. null is an order from before the
           // choice existed: it was sold as one box, so it reads as one box.
           if (!oneBoxTouched && state && state.order && !state.order.paid) {
-            oneBox = state.order.one_box !== false;
+            legacyBoxes = state.order.one_box == null;
+            oneBox = state.order.one_box === true;
           }
 
           // 1. LOCKED — show only the order's version at its stored total.
@@ -7743,8 +7751,10 @@
             version,
             address,
             quantity: copies,
-            one_box: oneBox,
           };
+          // Not sent for an untouched order from before the choice: the server
+          // then keeps it exactly as it was priced.
+          if (!(legacyBoxes && !oneBoxTouched)) payload.one_box = oneBox;
           if (appliedCoupon) payload.coupon = appliedCoupon.code;
           // The ad that brought her, and the page she is paying from. This is the
           // LAST moment the browser gets to say either: from here the sale is

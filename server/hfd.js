@@ -122,20 +122,6 @@ function addressRemarks(addr) {
   return parts.filter(Boolean).join(', ');
 }
 
-// How many boxes a delivery order goes out in — the SAME rule as db.orderBoxes
-// (server/db.js, "boxes"), restated here because this module is pure and must not
-// load the store. tests/unit/hfd.test.js holds the two to the same answers.
-// Only an explicit `one_box: false` splits the copies; absent (an order from
-// before the choice) or true is one box. Bounded like a copy count is, so a
-// corrupt quantity can never book a thousand packages.
-const MAX_PACKS = 999;
-function packsFor(order) {
-  if (!order || order.one_box !== false) return 1;
-  const n = Math.floor(Number(order.quantity));
-  if (!Number.isFinite(n) || n < 1) return 1;
-  return Math.min(n, MAX_PACKS);
-}
-
 // Map a collection to the create-shipment body. PURE and exported so the mapping
 // is testable without a network — the shape of this object is the whole
 // integration.
@@ -146,6 +132,13 @@ function packsFor(order) {
 //
 // `opts.designName` — the design's current public name, resolved by the caller
 // (see gameRemark). Omitted, the order's stamped name is used.
+//
+// `opts.box` / `opts.boxes` — WHICH box of how many this booking is. Copies the
+// buyer sent in separate boxes are separate HFD deliveries, one booking per box
+// (the caller books each; see the HFD routes in server/routes/commerce.js), and
+// each booking says "קופסה k/N" on its sticker and "k/N" after our order number,
+// so the boxes of one order can be told apart at the courier and on the phone.
+// One box — or no opts — books exactly what it always did.
 function buildShipment(c, opts = {}) {
   const order = c && c.order;
   if (!order) return { error: 'no order' };
@@ -154,6 +147,10 @@ function buildShipment(c, opts = {}) {
   if (!addr || !addr.street || !addr.city) return { error: 'address required' };
 
   const { streetName, houseNum } = splitStreet(addr.street);
+  const boxes = Number.isInteger(opts.boxes) && opts.boxes > 1 ? opts.boxes : 1;
+  const box = boxes > 1 && Number.isInteger(opts.box) && opts.box >= 1 ? opts.box : 1;
+  const boxTag = boxes > 1 ? box + '/' + boxes : '';
+  const remark = gameRemark(c, opts.designName);
   const nameTo = String(c.buyer_name || c.honoree_name || '').trim();
 
   return {
@@ -180,15 +177,16 @@ function buildShipment(c, opts = {}) {
       email: (c.owner_email && String(c.owner_email).trim()) || '',
       addressRemarks: addressRemarks(addr),
       // Printed on the sticker: which game is in this box.
-      shipmentRemarks: gameRemark(c, opts.designName),
+      // Prefixed, not suffixed, with the box: the design name stays the LAST
+      // part of the line, where the sticker check reads it.
+      shipmentRemarks: boxTag ? 'קופסה ' + boxTag + ' · ' + remark : remark,
       // Our order number, so a call to HFD about a parcel can be traced back to
       // a row in the admin without guessing from the honoree's name.
-      referenceNum1: String(c.order_no || c.id || ''),
-      // How many PACKAGES this one shipment is: one per box. Copies the buyer
-      // asked to send as separate boxes are N packages on ONE shipment — one
-      // booking, one tracking number, a sticker per box. All copies in one box,
-      // a single copy, or an order placed before the choice existed is one.
-      packsHaloch: String(packsFor(order)),
+      referenceNum1: String(c.order_no || c.id || '') + (boxTag ? ' ' + boxTag : ''),
+      // One package per booking: a box that travels alone. Several boxes are
+      // several bookings, never one booking of several packages (the owner's
+      // choice — each box gets its own number, label and tracking).
+      packsHaloch: '1',
       // The price is not collected on delivery (the customer paid us online), so
       // it is 0 rather than the order total — a non-zero productsPrice is what
       // HFD reads as cash to collect.
@@ -256,7 +254,11 @@ function failureMessage(res, data) {
 // service with no credentials is distinguishable from one HFD refused.
 async function createShipment(c, opts = {}) {
   if (!isConfigured()) return { ok: false, skipped: true, error: 'hfd not configured' };
-  const built = buildShipment(c, { designName: opts.designName });
+  const built = buildShipment(c, {
+    designName: opts.designName,
+    box: opts.box,
+    boxes: opts.boxes,
+  });
   if (built.error) return { ok: false, error: built.error };
 
   const res = await request('POST', '/shipments/create', { body: built.payload, ...opts });
@@ -318,7 +320,6 @@ module.exports = {
   isConfigured,
   status,
   buildShipment,
-  packsFor,
   gameRemark,
   normalizePhone,
   splitStreet,
