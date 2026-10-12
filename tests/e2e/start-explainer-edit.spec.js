@@ -86,6 +86,43 @@ test('an edit inside the sheet is saved to the shared bucket, not to the page', 
   });
 });
 
+// The WhatsApp label is a LINK, like the continue button: in edit mode a click on it
+// must place a caret, not open a chat — and what she types lands in the shared bucket.
+test('the WhatsApp label edits in place and saves to the shared bucket', async ({ page }) => {
+  await stubContent(page);
+  let resolveBody;
+  const bodyPromise = new Promise((resolve) => (resolveBody = resolve));
+  await page.route('**/api/admin/content*', (route) => {
+    if (route.request().method() === 'POST') resolveBody(route.request().postDataJSON());
+    return route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto('/index.html?edit=1&key=dugri-admin&explainer=1');
+  await expect(page.getByText('מצב עריכה')).toBeVisible();
+  const wa = page.getByTestId('start-explainer-whatsapp');
+  await expect(wa).toBeVisible();
+  await expect(wa).toHaveAttribute('contenteditable', /plaintext-only|true/);
+
+  let popups = 0;
+  page.context().on('page', () => (popups += 1));
+  await wa.click();
+  await expect(wa).toBeFocused();
+  await wa.evaluate((el) => {
+    el.textContent = 'רגע, יש לי שאלה';
+  });
+  await wa.evaluate((el) => el.blur());
+
+  expect(await bodyPromise).toEqual({
+    page: SCOPE,
+    key: 'start-explainer-whatsapp',
+    text: 'רגע, יש לי שאלה',
+  });
+  expect(popups, 'the click opened WhatsApp instead of editing').toBe(0);
+  // The edit kept the link a link — href and new-tab intact.
+  await expect(wa).toHaveAttribute('href', /^https:\/\/wa\.me\/972552441334\?text=/);
+  await expect(wa).toHaveAttribute('target', '_blank');
+});
+
 test("the page's own copy still saves to the page", async ({ page }) => {
   // The scope must not swallow everything else on the page it is opened from.
   await stubContent(page);
@@ -113,8 +150,8 @@ test('every string in the sheet is editable, and each has its own key', async ({
   await expect(overlay).toBeVisible();
 
   // Each visible run of text carries a data-edit key: title, subtitle, the four
-  // step titles + texts, the soft-launch note, the button. There is no longer a
-  // WhatsApp line — step 4 stopped asking buyers to add our number to a group.
+  // step titles + texts, the soft-launch note, the button, the ask-us WhatsApp link.
+  // (Step 4's old "add our number to your group" line is gone for good.)
   const { keys, untagged } = await overlay.evaluate((root) => {
     const keys = [...root.querySelectorAll('[data-edit]')].map((el) =>
       el.getAttribute('data-edit')
@@ -135,6 +172,7 @@ test('every string in the sheet is editable, and each has its own key', async ({
       'start-explainer-title',
       'start-explainer-sub',
       'start-explainer-continue',
+      'start-explainer-whatsapp',
       'start-explainer-step1-title',
       'start-explainer-step1-text',
       'start-explainer-step1-note',

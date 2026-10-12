@@ -78,6 +78,22 @@
   // how many shoppers see the briefing, and how many of them go on into the wizard.
   var EV_OPEN = 'order_explainer_opened';
   var EV_CONTINUE = 'order_explainer_continue';
+  var EV_WHATSAPP = 'order_explainer_whatsapp';
+
+  // "Ask us before you order" — a chat with the site's support number, the same one
+  // the wizard's help button (options.html), proof.js and pay-success.html open. The
+  // BUYER starts the chat; nothing here adds anyone to anything. (The group offer
+  // that once lived on step 4 is what got the business number banned — #429 — and it
+  // stays gone; the unit test pins that.)
+  var WA_NUMBER = '972552441334';
+  var WA_TEXT = 'היי, יש לי שאלה לפני ההזמנה 🙂';
+  var WA_HREF = 'https://wa.me/' + WA_NUMBER + '?text=' + encodeURIComponent(WA_TEXT);
+  // The WhatsApp glyph — the same path as options.html's .wa-help-ico — as a CSS
+  // mask, so it is painted in the link's own ink (black, per the brand) and is not
+  // a DOM child the content editor could overwrite (see buildOverlay).
+  var WA_ICON =
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E" +
+    "%3Cpath d='M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91C21.96 6.45 17.5 2 12.04 2zm0 18.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.19 8.19 0 0 1-1.26-4.38c0-4.54 3.7-8.24 8.24-8.24 2.2 0 4.27.86 5.82 2.42a8.18 8.18 0 0 1 2.41 5.83c0 4.54-3.7 8.23-8.24 8.23zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.24-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.24.25-.41.08-.16.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.43-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.67.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.02 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.47-.07 1.47-.6 1.68-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28z'/%3E%3C/svg%3E\")";
 
   // Local mirror of analytics.js's track(): that module is ESM and this file is a
   // classic script loaded on pages (products.html) that import no modules. Same
@@ -92,6 +108,7 @@
   var TITLE = 'ככה בונים את המשחק - 4 שלבים';
   var SUB = 'לפני שמתחילים, הנה כל מה שמחכה לכם בדרך. זה לוקח כמה דקות.';
   var CONTINUE = 'יאללה, מתחילים ›';
+  var WA_LABEL = 'שאלה? כתבו לנו בוואטסאפ';
   var STEPS = [
     {
       key: 'step1',
@@ -219,6 +236,26 @@
     x.textContent = '×';
     inner.appendChild(x);
 
+    // WhatsApp — secondary, so it sits in the top band across from the X, never in
+    // the CTA row. That band already exists (the sheet's top padding is there to
+    // clear the X), so the link costs the one-page fit nothing.
+    //
+    // The data-edit is on the ANCHOR itself, the same pattern as the continue
+    // button: editor.js swallows a click on an editable link (caret, not navigation)
+    // only when the [data-edit] node IS the link, and it overwrites that node's
+    // textContent — which is why the icon is a ::before mask, not an <svg> child an
+    // edit would wipe.
+    var wa = el('a', 'sx-wa', {
+      href: WA_HREF,
+      target: '_blank',
+      rel: 'noopener',
+      'data-edit': 'start-explainer-whatsapp',
+      'data-sx-whatsapp': '',
+      'data-testid': 'start-explainer-whatsapp',
+    });
+    wa.textContent = WA_LABEL;
+    inner.appendChild(wa);
+
     var head = el('div', 'sx-head');
     var h2 = el('h2', null, { id: 'sxTitle', 'data-edit': 'start-explainer-title' });
     h2.textContent = TITLE;
@@ -310,6 +347,22 @@
       'background:transparent;border:1px solid var(--line,#e6e6e6);',
       'border-radius:var(--radius,0);color:var(--ink,#141414);cursor:pointer;padding:0;}',
       '.sx-x:hover{background:var(--sage-tint,#f0f0f0);}',
+      /* WhatsApp — top-RIGHT (the inline start), mirroring the X across the band the
+         sheet's top padding already reserves. Its own font-size is 0.9 sheet-em, so
+         every em below is divided by 0.9: it spans the X's 0.7..3.78 sheet-em
+         exactly (0.78em + 3.42em), and max-width keeps the side padding and the X's
+         3.78 sheet-em plus a gap clear, so a longer label the owner types ends in an
+         ellipsis instead of running under the X. */
+      '.sx-wa{position:absolute;right:22px;top:0.78em;',
+      'top:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 0.78em);',
+      'font-size:0.9em;height:3.42em;line-height:3.42em;max-width:calc(100% - 22px - 5em);',
+      'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;',
+      'color:var(--ink,#141414);text-decoration:none;font-weight:300;}',
+      '.sx-wa::before{content:"";display:inline-block;width:1.3em;height:1.3em;',
+      'vertical-align:-0.32em;margin-inline-end:0.4em;background-color:currentColor;',
+      '-webkit-mask:' + WA_ICON + ' center/contain no-repeat;',
+      'mask:' + WA_ICON + ' center/contain no-repeat;}',
+      '.sx-wa:hover{text-decoration:underline;text-underline-offset:0.2em;}',
       '.sx-head h2{font-family:var(--display,sans-serif);font-weight:var(--h-weight,300);',
       'letter-spacing:var(--h-spacing,0.1em);font-size:1.7em;',
       'line-height:1.28;color:var(--ink,#141414);}',
@@ -425,6 +478,10 @@
         if (e.target === overlay) close();
       });
       goBtn.addEventListener('click', onContinue);
+      // The sheet stays open behind the new tab, so the buyer comes back to it.
+      overlay.querySelector('[data-sx-whatsapp]').addEventListener('click', function () {
+        track(EV_WHATSAPP, { cta: (lastTrigger && lastTrigger.dataset.gaCta) || 'unknown' });
+      });
       // Keyboard handling sits on the DOCUMENT, not the overlay: after a backdrop
       // click focus can land on <body>, and a listener bound to the overlay would
       // never see the Escape. Guarded by is-open so it is inert when closed.
@@ -600,6 +657,7 @@
     resolveContinueHref: resolveContinueHref,
     focusablesIn: focusablesIn,
     nextFocusIndex: nextFocusIndex,
+    WA_HREF: WA_HREF,
     buildOverlay: buildOverlay,
     injectStyles: injectStyles,
     start: start,
