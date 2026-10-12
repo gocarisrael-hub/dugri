@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · r2-c · תור</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@100;300;400;800&display=swap" rel="stylesheet" />
+<style>
+  :root { --ink: #0d0d0d; --cw: min(47vw, 250px); }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; overflow-x: clip; }
+  body { background: #fff; color: var(--ink); font: 400 16px/1.45 Heebo, system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+  img { display: block; max-width: 100%; user-select: none; -webkit-user-drag: none; }
+  button { font: inherit; color: inherit; }
+  .tok { border-bottom: 1.5px dashed #c99a00; background: #fff6c8; color: var(--ink); padding: 0 3px; font-weight: 800; direction: ltr; unicode-bidi: isolate; }
+
+  header { display: flex; align-items: center; justify-content: space-between; padding: max(12px, env(safe-area-inset-top)) 16px 0; }
+  header .id { display: flex; align-items: center; gap: 8px; font-weight: 800; }
+  header .id img { width: 34px; height: 34px; border-radius: 50%; }
+  header a { color: var(--ink); font-weight: 800; font-size: 14px; }
+
+  .play { position: relative; min-height: 100svh; display: flex; flex-direction: column; }
+  .lead { font-weight: 300; font-size: clamp(25px, 7.2vw, 44px); line-height: 1.12; letter-spacing: -.01em; margin: 18px 16px 0; max-width: 17ch; }
+  .lead b { font-weight: 800; }
+
+  .switch { display: flex; gap: 18px; margin: 14px 16px 0; font-size: 15px; }
+  .switch button { background: none; border: 0; padding: 4px 0; cursor: pointer; font-weight: 300; border-bottom: 2px solid transparent; }
+  .switch button[aria-pressed="true"] { font-weight: 800; border-color: var(--ink); }
+
+  .tablezone { position: relative; flex: 1; min-height: calc(var(--cw) * 1.445 + 30px); max-height: calc(var(--cw) * 1.445 + 90px); display: grid; place-items: center; }
+  .clock { position: absolute; top: 0; left: 10px; font-weight: 100; font-size: clamp(150px, 54vw, 300px); line-height: .8; letter-spacing: -.04em; font-variant-numeric: tabular-nums; direction: ltr; pointer-events: none; }
+  .clock.low { font-weight: 300; color: #e8133c; }
+  .deck { position: relative; width: var(--cw); aspect-ratio: 400 / 578; }
+  .deck .c { position: absolute; inset: 0; touch-action: none; cursor: grab; will-change: transform; }
+  .deck .c .in { position: absolute; inset: 0; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.25, 1.3, .45, 1); }
+  .deck .c.up .in { transform: rotateY(180deg); }
+  .deck .c img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 6.5% / 4.5%; box-shadow: 0 1px 1px rgba(0,0,0,.18), 0 10px 22px -12px rgba(0,0,0,.45); }
+  .deck .c img.f { transform: rotateY(180deg); }
+  .stamp { position: absolute; top: 18px; font-weight: 800; font-size: 20px; padding: 4px 10px; border: 3px solid; opacity: 0; pointer-events: none; z-index: 2; }
+  .stamp.yes { left: 14px; color: #0a8f3c; transform: rotate(-12deg); }
+  .stamp.no { right: 14px; color: #e8133c; transform: rotate(12deg); }
+
+  .controls { display: flex; gap: 8px; padding: 0 16px; margin-top: 8px; }
+  .controls button { flex: 1; min-height: 52px; border: 1.5px solid var(--ink); background: #fff; font-weight: 800; font-size: 17px; cursor: pointer; }
+  .controls .go { background: var(--ink); color: #fff; }
+  .controls button:focus-visible, .switch button:focus-visible, .pick button:focus-visible { outline: 3px solid #e8133c; outline-offset: 2px; }
+  .hint { text-align: center; font-size: 13px; margin: 6px 16px 0; min-height: 1.4em; }
+
+  .track { position: relative; margin: 30px 0 0; }
+  .track img.strip { width: 100%; height: auto; }
+  .pawn { position: absolute; top: 50%; left: 0; width: 9.5%; aspect-ratio: 1; transform: translate(-50%, -50%); transition: left .45s cubic-bezier(.3, 1.5, .5, 1); filter: drop-shadow(0 4px 4px rgba(0,0,0,.35)); }
+  .score { position: absolute; top: -26px; right: 16px; font-size: 14px; font-weight: 800; }
+
+  .rest { padding: 34px 16px 120px; max-width: 980px; margin: 0 auto; }
+  .rest h2 { font-weight: 300; font-size: clamp(26px, 7vw, 44px); line-height: 1.1; margin: 0 0 14px; }
+  .pick { display: flex; gap: 12px; overflow-x: auto; padding: 6px 2px 14px; scroll-snap-type: x mandatory; }
+  .pick button { flex: 0 0 auto; width: 31vw; max-width: 150px; border: 0; padding: 0; background: none; cursor: pointer; scroll-snap-align: start; text-align: right; }
+  .pick button img { border-radius: 6.5% / 4.5%; box-shadow: 0 8px 16px -10px rgba(0,0,0,.5); }
+  .pick button span { display: block; font-size: 14px; margin-top: 6px; }
+  .pick button[aria-pressed="true"] span { font-weight: 800; text-decoration: underline; text-underline-offset: 4px; }
+  .facts { font-size: 17px; max-width: 36ch; margin: 18px 0 0; }
+  .order { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .order a { display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 20px; text-decoration: none; font-weight: 800; font-size: 17px; background: var(--ink); color: #fff; }
+  .order a.wa, .end a.wa { background: #25d366; }
+  .order svg, .end svg { width: 22px; height: 22px; fill: #fff; }
+  footer { margin-top: 40px; font-size: 13px; color: #444; }
+  footer a { color: inherit; }
+
+  /* end of turn */
+  .end { position: fixed; inset: 0; z-index: 60; background: #fff; display: flex; flex-direction: column; padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); transform: translateY(102%); transition: transform .6s cubic-bezier(.2, 1, .3, 1); visibility: hidden; }
+  .end.on { transform: none; visibility: visible; }
+  .end h3 { font-weight: 300; font-size: clamp(30px, 9vw, 56px); line-height: 1.05; margin: 6px 0 12px; }
+  .end h3 b { font-weight: 800; }
+  .end video { flex: 1; min-height: 0; width: 100%; object-fit: cover; background: #eee; }
+  .end p { margin: 12px 0 0; font-size: 17px; }
+  .end .order { margin-top: 12px; }
+  .end .again { background: #fff !important; color: var(--ink) !important; border: 1.5px solid var(--ink); }
+
+  @media (min-width: 900px) {
+    :root { --cw: 270px; }
+    .play { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto 1fr auto auto auto; column-gap: 40px; padding: 0 5vw; min-height: 100vh; }
+    header { grid-column: 1 / -1; padding-inline: 0; }
+    .lead { grid-column: 1; grid-row: 2; margin: 60px 0 0; font-size: 58px; }
+    .switch { grid-column: 1; grid-row: 3; margin: 20px 0 0; align-self: start; }
+    .tablezone { grid-column: 2; grid-row: 2 / 5; min-height: 520px; margin-top: 50px; }
+    .controls { grid-column: 2; grid-row: 5; padding: 0; }
+    .hint { grid-column: 2; grid-row: 6; }
+    .track { grid-column: 1; grid-row: 4; align-self: start; margin-top: 70px; }
+    .clock { font-size: 300px; left: -10px; }
+    .end { inset: 6vh 20vw; box-shadow: 0 30px 80px -30px rgba(0,0,0,.5); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .deck .c .in, .pawn, .end { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <main class="play">
+    <header>
+      <span class="id"><img src="../../site/assets/logo.png" alt="" />דוגרי</span>
+      <a href="#order">להזמנה · <span class="tok">{price}</span></a>
+    </header>
+    <p class="lead">משחק מסיבה שכל הקלפים בו על אדם אחד. נסו תור.</p>
+    <div class="switch" role="group" aria-label="איזו חפיסה">
+      <button type="button" data-deck="bachelorette" aria-pressed="true">רווקות</button>
+      <button type="button" data-deck="kids" aria-pressed="false">יום הולדת</button>
+    </div>
+    <div class="tablezone">
+      <div class="clock" id="clock" aria-live="off">60</div>
+      <div class="deck" id="deck" aria-label="חפיסת קלפים"></div>
+    </div>
+    <div class="controls" id="controls">
+      <button type="button" class="go" id="start">התחילו תור · 60 שניות</button>
+    </div>
+    <p class="hint" id="hint">מתארים את המילה בלי להגיד אותה. הקבוצה מנחשת.</p>
+    <div class="track" aria-hidden="true">
+      <span class="score" id="score">ניחשתם 0</span>
+      <img class="strip" src="cards/board-strip.webp" alt="" />
+      <img class="pawn" id="pawn" src="cards/pawn-logo.webp" alt="" />
+    </div>
+  </main>
+
+  <section class="rest" id="order">
+    <h2>זאת הייתה חפיסה של מישהי אחרת. את שלכם כותבים אתם.</h2>
+    <div class="pick" id="pick" role="group" aria-label="עיצובים">
+      <button type="button" data-deck="bachelorette" aria-pressed="true"><img src="cards/bachelorette-b1.webp" alt="" /><span>פריז</span></button>
+      <button type="button" data-deck="kids" aria-pressed="false"><img src="cards/kids-b1.webp" alt="" /><span>ברוקלין</span></button>
+      <button type="button" data-deck="birthday" aria-pressed="false"><img src="cards/birthday-b1.webp" alt="" /><span>קליפורניה</span></button>
+      <button type="button" data-deck="japanese" aria-pressed="false"><img src="cards/japanese-b1.webp" alt="" /><span>טוקיו</span></button>
+      <button type="button" data-deck="marriage" aria-pressed="false"><img src="cards/marriage-b1.webp" alt="" /><span>סנטוריני</span></button>
+      <button type="button" data-deck="posttrip" aria-pressed="false"><img src="cards/posttrip-b1.webp" alt="" /><span>סיישל</span></button>
+    </div>
+    <p class="facts">בוחרים עיצוב, כותבים כותרת, ושולחים לחברים קישור אחד: כל אחד מוסיף מילים מהטלפון. תוך <span class="tok">{lead_days}</span> ימי עסקים החפיסה והלוח מודפסים.</p>
+    <div class="order">
+      <a href="#">להזמנה · <span class="tok">{price}</span></a>
+      <a class="wa" href="https://wa.me/972552441334" aria-label="שאלה? כתבו לנו בוואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.5-3.9-4.7-4.1-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1.1c.2-.3.4-.2.6-.1l2 1c.3.1.5.2.5.3.1.1.1.6-.1 1.2Z"/></svg>וואטסאפ</a>
+    </div>
+    <footer>דוגרי · הדר ועלמה · <a href="#">תקנון</a> · <a href="#">איסוף עצמי</a></footer>
+  </section>
+
+  <div class="end" id="end" role="dialog" aria-modal="true" aria-labelledby="endt">
+    <h3 id="endt">נגמר הזמן. <b id="endn">ניחשתם 0.</b></h3>
+    <video id="vid" muted playsinline loop preload="none" poster="media/laugh.jpg"><source src="media/laugh.mp4" type="video/mp4" /></video>
+    <p>ככה זה נראה כשכל מילה היא על הכלה.</p>
+    <div class="order">
+      <a href="#order" id="endorder">להזמנה · <span class="tok">{price}</span></a>
+      <a class="wa" href="https://wa.me/972552441334" aria-label="וואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.5-3.9-4.7-4.1-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1.1c.2-.3.4-.2.6-.1l2 1c.3.1.5.2.5.3.1.1.1.6-.1 1.2Z"/></svg></a>
+      <a href="#" class="again" id="again">עוד תור</a>
+    </div>
+  </div>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const deckEl = document.getElementById('deck'), clock = document.getElementById('clock');
+  const controls = document.getElementById('controls'), hint = document.getElementById('hint');
+  const pawn = document.getElementById('pawn'), score = document.getElementById('score');
+  const end = document.getElementById('end'), vid = document.getElementById('vid');
+  // centres of the real board's first row, as a fraction of the strip width
+  const STEPS = [164, 408, 613, 822, 1018, 1234, 1433, 1640, 1840, 2050].map((x) => x / 2200 * 100);
+  const LINE = { bachelorette: 'על הכלה', kids: 'על בעל השמחה', birthday: 'על בעלת השמחה', japanese: 'על בעל השמחה', marriage: 'על הזוג', posttrip: 'על מי שחזר' };
+
+  let deck = 'bachelorette', order = [], running = false, t0 = 0, got = 0, raf = 0, top = null;
+
+  function build() {
+    deckEl.innerHTML = '';
+    order = [1, 2, 3, 4, 5, 6, 7, 8].sort(() => Math.random() - .5);
+    // a pile: real backs underneath, every card has its real front on the other side
+    order.forEach((n, i) => {
+      const c = document.createElement('div');
+      c.className = 'c';
+      const j = (order.length - i);
+      c.style.transform = `translate(${j * 1.2}px, ${j * 1.6}px) rotate(${(i % 3 - 1) * 1.3}deg)`;
+      c.innerHTML = `<div class="in"><img class="b" src="cards/${deck}-b1.webp" alt=""><img class="f" src="cards/${deck}-f${n}.webp" alt=""></div>
+        <span class="stamp yes">ניחשו</span><span class="stamp no">דילוג</span>`;
+      deckEl.appendChild(c);
+    });
+    top = null;
+  }
+  function setDeck(d) {
+    deck = d;
+    document.querySelectorAll('[data-deck]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.deck === d)));
+    stop(); reset(); build();
+  }
+  function reset() { got = 0; pawn.style.left = STEPS[0] + '%'; score.textContent = 'ניחשתם 0'; clock.textContent = '60'; clock.classList.remove('low'); showStart(); }
+  function showStart() {
+    controls.innerHTML = '<button type="button" class="go" id="start">התחילו תור · 60 שניות</button>';
+    document.getElementById('start').onclick = start;
+    hint.textContent = 'מתארים את המילה בלי להגיד אותה. הקבוצה מנחשת.';
+  }
+  function start() {
+    if (!deckEl.querySelector('.c:not(.gone)')) build();
+    running = true; t0 = performance.now();
+    controls.innerHTML = '<button type="button" id="no">דילוג</button><button type="button" class="go" id="yes">ניחשו</button>';
+    document.getElementById('yes').onclick = () => top && fling(top, 1);
+    document.getElementById('no').onclick = () => top && fling(top, -1);
+    hint.textContent = 'החליקו את הקלף: ימינה ניחשו, שמאלה דילוג.';
+    deal();
+    const tick = () => {
+      if (!running) return;
+      const left = Math.max(0, 60 - Math.floor((performance.now() - t0) / 1000));
+      clock.textContent = String(left);
+      clock.classList.toggle('low', left <= 10);
+      if (left === 0) return finish();
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+  }
+  function stop() { running = false; cancelAnimationFrame(raf); end.classList.remove('on'); vid.pause(); }
+  function deal() {
+    top = [...deckEl.children].filter((x) => !x.classList.contains('gone')).pop();
+    if (!top) return finish();
+    top.style.transform = 'translate(0,0) rotate(0deg)';
+    requestAnimationFrame(() => top.classList.add('up'));
+    drag(top);
+  }
+  function finish() {
+    running = false; cancelAnimationFrame(raf);
+    document.getElementById('endn').textContent = `ניחשתם ${got}.`;
+    end.querySelector('p').textContent = `ככה זה נראה כשכל מילה היא ${LINE[deck]}.`;
+    end.classList.add('on');
+    vid.play().catch(() => {});
+  }
+
+  // swipe physics: the card follows the finger, tilts with it, and is thrown or springs back
+  function drag(c) {
+    let sx = 0, sy = 0, x = 0, y = 0, held = false, hist = [];
+    const yes = c.querySelector('.yes'), no = c.querySelector('.no');
+    const paint = () => {
+      c.style.transform = `translate(${x}px, ${y}px) rotate(${x * 0.06}deg)`;
+      yes.style.opacity = Math.max(0, Math.min(1, x / 90)); no.style.opacity = Math.max(0, Math.min(1, -x / 90));
+    };
+    c.onpointerdown = (e) => { if (!running || c !== top) return; held = true; c.setPointerCapture(e.pointerId); sx = e.clientX - x; sy = e.clientY - y; hist = [{ x: e.clientX, t: performance.now() }]; };
+    c.onpointermove = (e) => { if (!held) return; x = e.clientX - sx; y = (e.clientY - sy) * .4; hist.push({ x: e.clientX, t: performance.now() }); if (hist.length > 5) hist.shift(); paint(); };
+    c.onpointerup = c.onpointercancel = () => {
+      if (!held) return; held = false;
+      const a = hist[0], b = hist[hist.length - 1], v = (b.x - a.x) / Math.max(16, b.t - a.t);
+      if (Math.abs(x) > 100 || Math.abs(v) > .6) fling(c, Math.sign(x || v), v, x, y);
+      else springBack();
+    };
+    function springBack() {
+      if (reduce) { x = y = 0; paint(); return; }
+      let vx = 0, vy = 0;
+      const step = () => {
+        vx = (vx - x * .16) * .72; vy = (vy - y * .16) * .72; x += vx; y += vy; paint();
+        if (Math.abs(x) + Math.abs(y) + Math.abs(vx) > .3 && !held) requestAnimationFrame(step); else if (!held) { x = y = 0; paint(); }
+      };
+      requestAnimationFrame(step);
+    }
+    c._state = () => ({ x, y });
+    c._set = (nx, ny) => { x = nx; y = ny; paint(); };
+  }
+  function fling(c, dir, v = 0, x0, y0) {
+    if (c !== top) return;
+    top = null; c.classList.add('gone'); c.style.pointerEvents = 'none';
+    if (dir > 0) { got++; score.textContent = `ניחשתם ${got}`; pawn.style.left = STEPS[Math.min(got, STEPS.length - 1)] + '%'; }
+    const st = c._state ? c._state() : { x: 0, y: 0 };
+    let x = x0 ?? st.x, y = y0 ?? st.y, vx = dir * Math.max(22, Math.abs(v) * 16.67), vy = -4 - Math.random() * 3, r = x * .06, vr = dir * 2.4;
+    const W = innerWidth;
+    if (reduce) { c.remove(); return deal(); }
+    const step = () => {
+      vy += .55; x += vx; y += vy; r += vr;
+      c.style.transform = `translate(${x}px, ${y}px) rotate(${r}deg)`;
+      if (Math.abs(x) < W * 1.2) requestAnimationFrame(step); else c.remove();
+    };
+    requestAnimationFrame(step);
+    setTimeout(() => running && deal(), 140);
+  }
+
+  document.querySelectorAll('[data-deck]').forEach((b) => b.addEventListener('click', () => {
+    setDeck(b.dataset.deck);
+    if (b.closest('#pick')) document.querySelector('.play').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' });
+  }));
+  document.getElementById('again').onclick = (e) => { e.preventDefault(); stop(); reset(); build(); };
+  document.getElementById('endorder').onclick = () => { stop(); };
+  build(); reset();
+  window.__turn = { finish, get got() { return got; }, get running() { return running; } };
+})();
+</script>
+</body>
+</html>
