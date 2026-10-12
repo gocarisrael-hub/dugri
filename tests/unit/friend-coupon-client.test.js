@@ -105,7 +105,7 @@ describe('the bar and the on-screen keyboard', () => {
   it('steps aside while the visual viewport shrinks, and comes back after', async () => {
     vi.stubGlobal('localStorage', memoryStorage());
     vi.stubGlobal('requestAnimationFrame', (fn) => fn());
-    const vv = new EventTarget();
+    const vv = new window.EventTarget();
     vv.height = 844;
     vi.stubGlobal('visualViewport', vv);
     window.visualViewport = vv;
