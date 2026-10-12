@@ -178,6 +178,24 @@ describe('buildOverlay — the briefing markup', () => {
     expect(a.closest('.sx-cta')).toBeNull();
   });
 
+  it("styles it as the site's green WhatsApp button (css/wa-help.css values)", () => {
+    sx.injectStyles(document);
+    const css = document.getElementById('dugri-start-explainer-styles').textContent;
+    const rule = css.match(/\.sx-wa\{[^}]*\}/)[0];
+    expect(rule).toContain('background:#25d366');
+    expect(rule).toContain('color:#fff');
+    expect(rule).toContain('border-radius:0');
+    expect(rule).toContain('font-weight:800');
+    expect(css).toMatch(/\.sx-wa::before\{[^}]*background-color:currentColor/);
+  });
+
+  it('lifts the continue button off the bottom edge with the sticky row own padding', () => {
+    const css = document.getElementById('dugri-start-explainer-styles').textContent;
+    const cta = css.match(/\.sx-cta\{[^}]*\}/)[0];
+    expect(cta).toContain('position:sticky');
+    expect(cta).toMatch(/padding-bottom:calc\(var\(--sx-safe-b[^;]*\+ 2\.6em\)/);
+  });
+
   it('tags every text node with an owner-editable key', () => {
     const keys = [...overlay.querySelectorAll('[data-edit]')].map((el) =>
       el.getAttribute('data-edit')
