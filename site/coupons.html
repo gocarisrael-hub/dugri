@@ -205,6 +205,46 @@
         color: #6b645b;
         font-size: 12.5px;
       }
+      /* Friend coupons: one summary row that opens the full list. */
+      .fc-settings {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: flex-end;
+        margin-bottom: 14px;
+      }
+      .fc-settings .field input[type='number'] {
+        width: 100px;
+      }
+      .fc-check {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        font-size: 13.5px;
+        font-weight: 700;
+        padding-bottom: 8px;
+      }
+      #fcSummary tbody tr {
+        cursor: pointer;
+      }
+      #fcSummary tbody tr:hover td {
+        background: #faf7f2;
+      }
+      .fc-search {
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid #e4ddd0;
+        border-radius: 9px;
+        padding: 8px 10px;
+        width: min(320px, 100%);
+        margin: 14px 0 10px;
+      }
+      .fc-list {
+        overflow-x: auto;
+      }
+      .fc-list td {
+        font-size: 13px;
+      }
     </style>
     <script src="js/editor.js" defer></script>
     <script src="js/admin-role.js" defer></script>
@@ -273,6 +313,61 @@
           <button type="submit" id="submitBtn">צור קופון</button>
         </form>
         <div class="err" id="err"></div>
+      </div>
+
+      <!-- Friend coupons (personal codes for people who add words). ONE summary
+           row, not one line per code: there will be hundreds. The row opens the
+           searchable list. Owner key only — the rows are people's emails. -->
+      <div class="panel" id="friendPanel" hidden data-testid="friend-panel">
+        <h2>קופוני חברים</h2>
+        <form class="fc-settings" id="fcSettings">
+          <label class="fc-check"
+            ><input type="checkbox" id="fcEnabled" /> להציע קופון למי שמוסיפים מילים</label
+          >
+          <div class="field">
+            <label for="fcPercent">אחוז הנחה</label>
+            <input id="fcPercent" type="number" min="1" max="100" step="1" />
+          </div>
+          <div class="field">
+            <label for="fcDays">תוקף (ימים)</label>
+            <input id="fcDays" type="number" min="1" max="3650" step="1" />
+          </div>
+          <button type="submit" id="fcSave">שמירה</button>
+          <span class="muted" id="fcSaved"></span>
+        </form>
+        <div class="muted" style="margin-bottom: 10px">
+          שינוי האחוז או התוקף חל על קופונים חדשים בלבד. קוד שכבר נשלח שומר על התנאים שאיתם יצא.
+        </div>
+        <table id="fcSummary">
+          <thead>
+            <tr>
+              <th>קמפיין</th>
+              <th>הונפקו</th>
+              <th>נוצלו</th>
+              <th>המרה</th>
+              <th>הכנסות (₪)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-testid="friend-summary-row" tabindex="0">
+              <td id="fcCampaign">קופוני חברים</td>
+              <td id="fcIssued">0</td>
+              <td id="fcUsed">0</td>
+              <td id="fcConv">0%</td>
+              <td id="fcRevenue">0</td>
+            </tr>
+          </tbody>
+        </table>
+        <div id="fcListWrap" hidden>
+          <input
+            class="fc-search"
+            id="fcSearch"
+            type="search"
+            placeholder="חיפוש לפי מייל או קוד"
+            data-testid="friend-search"
+          />
+          <div class="fc-list" id="fcList"></div>
+        </div>
       </div>
 
       <div id="content"></div>
@@ -677,6 +772,172 @@
         }
       });
 
+      // --- Friend coupons --------------------------------------------------------
+      const friendPanel = document.getElementById('friendPanel');
+      const fcListWrap = document.getElementById('fcListWrap');
+      const fcSearch = document.getElementById('fcSearch');
+      const fcList = document.getElementById('fcList');
+      const fcDate = (iso) =>
+        iso
+          ? new Date(iso).toLocaleDateString('he-IL', {
+              day: '2-digit',
+              month: '2-digit',
+              year: '2-digit',
+              timeZone: 'Asia/Jerusalem',
+            })
+          : '—';
+
+      function renderFriendSummary(sm) {
+        document.getElementById('fcCampaign').textContent = 'קופוני חברים, ' + sm.percent + '%';
+        document.getElementById('fcIssued').textContent = sm.issued;
+        document.getElementById('fcUsed').textContent = sm.used;
+        document.getElementById('fcConv').textContent = Math.round(sm.conversion * 1000) / 10 + '%';
+        document.getElementById('fcRevenue').textContent = Number(sm.revenue).toLocaleString(
+          'he-IL'
+        );
+      }
+
+      function renderFriendList(rows) {
+        if (!rows.length) {
+          fcList.innerHTML = '<div class="muted">אין קופונים.</div>';
+          return;
+        }
+        const table = document.createElement('table');
+        table.innerHTML =
+          '<thead><tr><th>מייל</th><th>קוד</th><th>נוצר</th><th>נוצל</th><th>הזמנה</th><th>הסכמה לדיוור</th><th>מייל</th><th>תמיכה</th></tr></thead>';
+        const tb = document.createElement('tbody');
+        for (const r of rows) {
+          const tr = document.createElement('tr');
+          tr.dataset.testid = 'friend-row';
+          const cell = (text, cls) => {
+            const td = document.createElement('td');
+            if (cls) td.className = cls;
+            td.textContent = text;
+            tr.appendChild(td);
+            return td;
+          };
+          cell(r.email);
+          cell(r.code, 'code');
+          cell(fcDate(r.created_at));
+          cell(r.used_at ? fcDate(r.used_at) + (r.used_manually ? ' (ידני)' : '') : '—');
+          const tdOrder = cell('');
+          if (r.order_link) {
+            const a = document.createElement('a');
+            a.href = r.order_link;
+            a.target = '_blank';
+            a.rel = 'noopener';
+            a.textContent = r.order_no || 'הזמנה';
+            tdOrder.appendChild(a);
+          } else tdOrder.textContent = '—';
+          cell(r.marketing_consent ? 'כן · ' + fcDate(r.consent_at) : 'לא');
+          cell(
+            r.email_failed_at && !r.email_sent_at
+              ? 'לא נשלח'
+              : r.email_sent_at
+                ? 'נשלח (' + (r.email_sends || 1) + ')'
+                : '—'
+          );
+          const tdAct = cell('');
+          if (!r.used_at) {
+            const resend = document.createElement('button');
+            resend.className = 'ghost';
+            resend.textContent = 'שליחה חוזרת';
+            resend.onclick = async () => {
+              resend.disabled = true;
+              const res = await fetch(withKey('/api/admin/friend-coupons/' + r.id + '/resend'), {
+                method: 'POST',
+              }).catch(() => null);
+              const data = res && res.ok ? await res.json() : null;
+              resend.textContent = data && data.emailed ? 'נשלח ✓' : 'השליחה נכשלה';
+              loadFriends();
+            };
+            const mark = document.createElement('button');
+            mark.className = 'danger';
+            mark.textContent = 'סימון כנוצל';
+            mark.style.marginInlineStart = '6px';
+            mark.onclick = async () => {
+              if (!confirm('לסמן את ' + r.code + ' כנוצל? אי אפשר לבטל.')) return;
+              mark.disabled = true;
+              await fetch(withKey('/api/admin/friend-coupons/' + r.id + '/mark-used'), {
+                method: 'POST',
+              }).catch(() => null);
+              loadFriends();
+            };
+            tdAct.append(resend, mark);
+          } else tdAct.textContent = '—';
+          tb.appendChild(tr);
+        }
+        table.appendChild(tb);
+        fcList.innerHTML = '';
+        fcList.appendChild(table);
+      }
+
+      async function loadFriends() {
+        try {
+          const q = fcSearch.value.trim();
+          const r = await fetch(
+            withKey('/api/admin/friend-coupons' + (q ? '?q=' + encodeURIComponent(q) : ''))
+          );
+          if (!r.ok) return;
+          const data = await r.json();
+          friendPanel.hidden = false;
+          renderFriendSummary(data.summary);
+          if (!fcSettingsLoaded) {
+            document.getElementById('fcEnabled').checked = data.summary.enabled;
+            document.getElementById('fcPercent').value = data.summary.percent;
+            fcSettingsLoaded = true;
+            loadFriendDays();
+          }
+          if (!fcListWrap.hidden) renderFriendList(data.coupons);
+        } catch {
+          /* the panel stays hidden; the rest of the page is unaffected */
+        }
+      }
+      let fcSettingsLoaded = false;
+      async function loadFriendDays() {
+        try {
+          const r = await fetch(withKey('/api/admin/settings'));
+          const s = await r.json();
+          document.getElementById('fcDays').value = s.effective.friend_coupon.expiry_days;
+        } catch {
+          /* leave blank */
+        }
+      }
+      const summaryRow = document.querySelector('[data-testid="friend-summary-row"]');
+      const toggleList = () => {
+        fcListWrap.hidden = !fcListWrap.hidden;
+        if (!fcListWrap.hidden) loadFriends();
+      };
+      summaryRow.addEventListener('click', toggleList);
+      summaryRow.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') toggleList();
+      });
+      let fcSearchTimer = null;
+      fcSearch.addEventListener('input', () => {
+        clearTimeout(fcSearchTimer);
+        fcSearchTimer = setTimeout(loadFriends, 250);
+      });
+      document.getElementById('fcSettings').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const saved = document.getElementById('fcSaved');
+        const put = (k, value) =>
+          fetch(withKey('/api/admin/settings'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section: 'friend_coupon', key: k, value }),
+          });
+        const results = await Promise.all([
+          put('enabled', document.getElementById('fcEnabled').checked),
+          put('percent', Number(document.getElementById('fcPercent').value)),
+          put('expiry_days', Number(document.getElementById('fcDays').value)),
+        ]).catch(() => []);
+        saved.textContent =
+          results.length && results.every((r) => r.ok)
+            ? 'נשמר ✓'
+            : 'השמירה נכשלה — בדקו את המספרים';
+        loadFriends();
+      });
+
       async function load() {
         if (!key) {
           sub.textContent = '';
@@ -697,6 +958,7 @@
           sub.textContent = coupons.length + ' קופונים';
           createPanel.hidden = false;
           render(coupons);
+          loadFriends();
         } catch {
           sub.textContent = '';
           content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';

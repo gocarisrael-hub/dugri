@@ -18,6 +18,9 @@ const platformStore = require('./stores/platform');
 // Agent B's store blocks (server/stores/catalog.js), spread into `db` below.
 const catalogStore = require('./stores/catalog');
 const commerceStore = require('./stores/commerce');
+// The friend coupon's pure rules (code format, email, dates, admin sums), handed
+// to commerceStore.friendCouponsBlock below. Requires nothing but node's crypto.
+const friendCouponRules = require('./friend-coupons');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
@@ -52,6 +55,9 @@ const DEFAULTS = {
   // existed, which is exactly why DEFAULTS is spread UNDER the parsed JSON.
   held_words: [],
   coupons: [],
+  // Friend coupons — personal single-use codes for people who add words. Kept
+  // apart from `coupons` (see friendCouponsBlock in server/stores/commerce.js).
+  friend_coupons: [],
   design_codes: [],
   order_seq: 0,
   // Physical stock — see the block near stockSnapshot. Absent in every file
@@ -2863,6 +2869,28 @@ const db = {
     // Written on the ONE path both money events pass through (the card callback
     // and the free-coupon path both land in markPaid), so no route can create a
     // paid partner sale that carries no terms.
+    // A FRIEND code is single-use, and it is spent HERE — in the same
+    // synchronous step that marks the order paid, saved by the one saveDb below —
+    // so a payment that fails or is abandoned (and so never reaches markPaid)
+    // leaves it unused. consumeFriendCoupon carries the double-use guard: a
+    // second order that paid with a code another order already consumed was
+    // still charged (the money moved before we heard about it), so it stays
+    // paid, but the code is not spent twice and the clash is put on the order
+    // and in the log for the owner to see.
+    if (meta.coupon !== undefined && c.order.coupon) {
+      const spent = this.consumeFriendCoupon(c.order.coupon, c.id);
+      if (spent === 'conflict') {
+        c.order.friend_coupon_conflict = { code: c.order.coupon, at: nowIso() };
+        console.error(
+          '[friend-coupon] ' +
+            orderRef(c) +
+            ': paid with ' +
+            c.order.coupon +
+            ', which another order had already used. The charge stands; the code ' +
+            'was not spent twice.'
+        );
+      }
+    }
     if (c.order.coupon) {
       const cp = this.getCouponByCode(c.order.coupon);
       if (cp && cp.commission_type) {
@@ -3240,6 +3268,15 @@ const db = {
     uid,
     nowIso,
     todayStrIsrael,
+  }),
+  // Agent A: the friend coupons, in server/stores/commerce.js.
+  ...commerceStore.friendCouponsBlock({
+    _db,
+    saveDb,
+    uid,
+    nowIso,
+    normCode,
+    rules: friendCouponRules,
   }),
   // Agent D: reminder + order-notified state, in server/stores/platform.js.
   ...platformStore({ _db, saveDb, nowIso, reminders, effectiveStatus, REMINDER_AFTER_MS }),

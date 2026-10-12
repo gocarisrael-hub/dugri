@@ -413,6 +413,39 @@ const REGISTRY = {
         words: 'נשאר רק שלב אחד: הוסיפו את 70+ המילים על בעל/ת השמחה.',
       },
     },
+    // The FRIEND COUPON mail (Agent A): sent to someone who added words through a
+    // shared collect link and asked for their personal code. {celebrant_name} is
+    // the honoree of the game they wrote in ("החוגגים" when there is none),
+    // {expiry_date} is DD.MM.YYYY in Israel time, {link} the landing link that
+    // carries the code. The code box, the button and the sign-off are the
+    // `friend_coupon_parts` labels below, so this body is only the opening words.
+    friend_coupon: {
+      kind: 'email',
+      tokens: ['celebrant_name', 'code', 'percent', 'expiry_date', 'link'],
+      default: {
+        enabled: true,
+        subject: 'הקופון שלכם מדוגרי',
+        body:
+          'היי,\n\n' +
+          'תודה שהוספתם מילים למשחק של {celebrant_name}. אנחנו כבר מחכים לפרצוף כשהן יעלו על השולחן.\n\n' +
+          'ועכשיו תורכם. יש גם אצלכם מישהו שמגיע לו משחק בלי פילטרים?',
+      },
+    },
+    // The rest of the friend coupon mail, around the code box: what sits above
+    // the code, the terms line under it, the button and its note, and the two
+    // sign-off lines. {percent} and {expiry_date} are filled in the terms line.
+    friend_coupon_parts: {
+      kind: 'map',
+      tokens: ['percent', 'expiry_date'],
+      default: {
+        code_label: 'הקוד האישי שלכם:',
+        terms: '{percent}% הנחה על המשחק הראשון שלכם. לשימוש אחד, בתוקף עד {expiry_date}.',
+        button: 'בונים את המשחק',
+        button_note: 'דרך הכפתור ההנחה כבר בפנים, בלי להקליד כלום',
+        sign1: 'דוגרי',
+        sign2: 'המתנה הכי אישית ומקורית שאפשר לתת',
+      },
+    },
     // The shared two-line plain-text sign-off. (The branded HTML shell keeps its
     // own hardcoded footer — renderEmailHtml is intentionally left untouched.)
     footer: {
@@ -630,6 +663,18 @@ const REGISTRY = {
     // Business days to those localities. min 1 (a 0-day exception is not an
     // exception), max 90 (a slip of the keypad must not promise a quarter-year).
     remote_eta_days: { kind: 'count', min: 1, max: 90, tokens: [], default: 11 },
+  },
+  // --- The friend coupon (Agent A) -------------------------------------------
+  // A friend who adds words through a shared collect link is offered a personal
+  // single-use code by email (server/friend-coupons.js). Edited from the coupons
+  // page. `percent` and `expiry_days` are COPIED onto each row when it is issued,
+  // so changing them affects new codes only — a code already in someone's inbox
+  // keeps the terms it was sent with. Turning `enabled` off hides the offer on
+  // the collect page and refuses new codes; codes already issued keep working.
+  friend_coupon: {
+    enabled: { kind: 'flag', tokens: [], default: true },
+    percent: { kind: 'count', min: 1, max: 100, tokens: [], default: 5 },
+    expiry_days: { kind: 'count', min: 1, max: 3650, tokens: [], default: 90 },
   },
   // --- Owner-managed reminder list (email + WhatsApp) -----------------------
   // A flexible replacement for the fixed wa daily/quiet triggers: ONE key holding

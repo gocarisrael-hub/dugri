@@ -90,7 +90,7 @@ test('coupons: create, list with 0 uses, toggle inactive, delete', async ({ page
   // fails on a change that has nothing to do with what it is testing, and says
   // nothing about what broke.
   const usesAt = await page
-    .locator('thead th')
+    .locator('#content thead th')
     .allInnerTexts()
     .then((h) => h.indexOf('שימושים'));
   expect(usesAt).toBeGreaterThan(-1);
@@ -124,7 +124,7 @@ test('coupons: a redemption cap shows as "used / cap" and is editable in place',
   // The uses cell by its HEADING, like the test above — the count now reads
   // against the cap, which is the whole point of setting one.
   const usesAt = await page
-    .locator('thead th')
+    .locator('#content thead th')
     .allInnerTexts()
     .then((h) => h.indexOf('שימושים'));
   await expect(row.locator('td').nth(usesAt)).toHaveText('0 / 3');

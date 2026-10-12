@@ -50,8 +50,10 @@
         color: var(--ink);
         line-height: 1.55;
         /* The 60px tail is the page's own breathing room; the bar's measured
-           height is added on top so the last card is never stuck behind it. */
-        padding: 0 0 calc(60px + var(--pay-bar-h, 0px));
+           height is added on top so the last card is never stuck behind it. The
+           friend coupon bar (js/friend-bar.js) publishes its own height the same
+           way; the two never show together (owner vs. friend). */
+        padding: 0 0 calc(60px + var(--pay-bar-h, 0px) + var(--friend-bar-h, 0px));
       }
       .wrap {
         max-width: 680px;
@@ -3370,6 +3372,10 @@
         batchNiqqudMessage,
       } from './js/niqqud.js';
       import { track } from './js/analytics.js';
+      // The friend coupon (Agent A): the bar + sheet a friend sees after adding a
+      // word, and the code a buyer carried in from the coupon email's link.
+      import { initFriendBar } from './js/friend-bar.js';
+      import { carriedCoupon, clearCarriedCoupon } from './js/friend-coupon.js';
       // Which ad this browser arrived on, handed to pay/init so the server can
       // tell Meta which click the sale belongs to — the sale is reported from
       // the payment callback now, where no browser exists. NOT a pure read: with
@@ -3409,6 +3415,11 @@
       const id = params.get('c');
       const ownerToken = params.get('k') || null;
       const isOwner = !!ownerToken;
+      // The friend coupon offer (Agent A, js/friend-bar.js): a bar that comes up
+      // after a FRIEND's first word. A no-op for the owner — and calling it with
+      // her token is what lets her own browser recognise the plain shared link
+      // later, so she is never offered a coupon on her own party.
+      const friendBar = initFriendBar({ collectionId: id, isOwner });
 
       const $ = (s) => document.querySelector(s);
       let state = null; // last fetched collection
@@ -5812,6 +5823,7 @@
             blocked,
             held: (res && res.held) || 0,
           });
+          if (added > 0) friendBar.wordAdded();
           if (blocked) {
             // NAME THE LOSS, and do it in a dialog the buyer has to dismiss — not
             // in a toast that fades after 1.8s. This is the moment a 150-word paste
@@ -7429,6 +7441,8 @@
           // for. Named apart from 'expired' on purpose: nothing about the date is
           // wrong, so "פג תוקף" would send her to check the calendar.
           used_up: 'הקופון נוצל במלואו',
+          // A personal friend code is single-use: once a paid order has spent it.
+          used: 'הקופון הזה כבר נוצל',
         };
         function setCouponMsg(text, kind) {
           couponMsg.textContent = text || '';
@@ -7470,6 +7484,11 @@
               track('coupon_applied', { discount_pct: r.discount_pct });
             } else {
               setCouponMsg(COUPON_REASONS[r.reason] || 'קוד לא קיים', 'err');
+              // A carried-in code that no longer works (spent, expired) is dropped,
+              // so it is not tried again on every visit; the order goes on without.
+              if (code.toUpperCase() === String(carriedCoupon() || '').toUpperCase()) {
+                clearCarriedCoupon();
+              }
             }
           } catch (e) {
             if (e.status === 429) setCouponMsg('יותר מדי ניסיונות, נסו עוד רגע', 'err');
@@ -7485,6 +7504,18 @@
             couponApply.click();
           }
         });
+        // A code carried in from the coupon email's link (?coupon=, stored for
+        // this visit by js/friend-coupon.js) is filled in and applied for her —
+        // "the discount is already inside" is what the email promised. It goes
+        // through the same preview as a typed code, so a spent or expired one
+        // shows the same error and the order simply continues without it.
+        {
+          const carried = carriedCoupon();
+          if (carried && !isPaid() && !appliedCoupon) {
+            couponInput.value = carried;
+            couponApply.click();
+          }
+        }
 
         function collectAddress() {
           return {
@@ -7808,10 +7839,13 @@
               // it and pressing pay, and "no longer valid" would read as our bug
               // on a code that was fine a minute ago — so the refusal names that
               // case when the server sends it.
+              const why = err.body && err.body.reason;
               payErr.textContent =
-                err.body && err.body.reason === 'used_up'
+                why === 'used_up'
                   ? 'הקופון נוצל במלואו'
-                  : 'הקופון אינו תקף יותר';
+                  : why === 'used'
+                    ? 'הקופון הזה כבר נוצל'
+                    : 'הקופון אינו תקף יותר';
               clearCoupon();
             } else if (err.status === 409) {
               // already paid / an open payment window — the server sends a Hebrew
@@ -7900,7 +7934,7 @@
            hard-coded offset would put the help button under it. 0 when there is
            no bar, which is every contributor and every paid order. The owner's
            rule: the WhatsApp button is available always. */
-        --wa-help-bottom: calc(16px + var(--pay-bar-h, 0px));
+        --wa-help-bottom: calc(16px + var(--pay-bar-h, 0px) + var(--friend-bar-h, 0px));
       }
     </style>
     <a

@@ -32,6 +32,8 @@ const settings = require('./settings');
 const { interpolate } = settings;
 // The "stop emailing me" list + the signed link that gets an address onto it.
 const unsub = require('./unsubscribe');
+// The friend coupon's pure rules: its landing link and its date format.
+const friendCoupons = require('./friend-coupons');
 
 const RESEND_API_URL = 'https://api.resend.com/emails';
 // Abort a stalled Resend request instead of hanging the (fire-and-forget) send
@@ -1400,9 +1402,125 @@ async function sendReminderEmail(collection, rawText, baseUrl) {
   }
 }
 
+// --- The friend coupon mail (Agent A) ----------------------------------------
+// Sent to a FRIEND — someone who added words through a shared collect link and
+// asked for a personal code — not to a buyer, so it is not in the order flow
+// and carries no order details. Its own look, from the approved mockup: a white
+// card, the code in a dashed sand-coloured box, one black button, sharp corners,
+// light headings (the site's current black-and-white brand, not the pink shell
+// the order mails use). Table layout and inline styles for the same reason as
+// renderEmailHtml: that is what mail clients actually render.
+//
+// The words are owner-editable (settings email.friend_coupon for the opening,
+// email.friend_coupon_parts for the rest); the link is built from the
+// deployment's own origin by server/friend-coupons.js, never a typed domain.
+const FC_SAND = '#b7a389'; // --accent in site/css/tokens.css
+const FC_SAND_TINT = '#f6f1e8';
+const FC_INK = '#141414'; // --ink
+const FC_MUTED = '#6b6b6b';
+
+// `coupon` is the stored row ({ code, discount_percent, expires_at }), and
+// `collection` the party the friend wrote in (for {celebrant_name}).
+function buildFriendCoupon(coupon, collection, baseUrl) {
+  const fc = friendCoupons;
+  const tpl = emailTpl('friend_coupon');
+  const parts = _store.get('email', 'friend_coupon_parts');
+  const name = collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
+  const link = fc.landingLink(baseUrl, coupon.code);
+  const values = {
+    celebrant_name: name || 'החוגגים',
+    code: coupon.code,
+    percent: coupon.discount_percent,
+    expiry_date: fc.formatIsraelDate(coupon.expires_at),
+    link: link || '',
+  };
+  const subject = interpolate(tpl.subject, values);
+  const intro = interpolate(tpl.body, values).split('\n');
+  const terms = interpolate(parts.terms, values);
+
+  const text = [...intro, '', parts.code_label + ' ' + coupon.code, terms];
+  if (link) text.push('', parts.button + ': ' + link, parts.button_note);
+  text.push('', parts.sign1, parts.sign2);
+
+  const p = (line) =>
+    line === ''
+      ? '<tr><td style="height:10px;line-height:10px;font-size:10px;">&nbsp;</td></tr>'
+      : `<tr><td style="padding:0 32px;text-align:right;font-size:16px;line-height:1.7;color:${FC_INK};">${escapeHtml(
+          line
+        )}</td></tr>`;
+  const button = link
+    ? `<tr><td style="padding:22px 32px 6px;text-align:center;">
+            <a href="${escapeHtml(link)}" style="display:inline-block;background:${FC_INK};color:#ffffff;text-decoration:none;font-size:16px;font-weight:400;padding:14px 36px;border-radius:0;">${escapeHtml(
+              parts.button
+            )}</a>
+          </td></tr>
+          <tr><td style="padding:4px 32px 0;text-align:center;font-size:13px;line-height:1.6;color:${FC_MUTED};">${escapeHtml(
+            parts.button_note
+          )}</td></tr>`
+    : '';
+  const html = `<!DOCTYPE html>
+<html dir="rtl" lang="he">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${escapeHtml(subject)}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f4f4f4;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="560" cellpadding="0" cellspacing="0" dir="rtl" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #e6e6e6;border-radius:0;font-family:'Heebo',Arial,Helvetica,sans-serif;">
+            <tr><td style="height:28px;line-height:28px;font-size:28px;">&nbsp;</td></tr>
+            ${intro.map(p).join('')}
+            <tr><td style="height:18px;line-height:18px;font-size:18px;">&nbsp;</td></tr>
+            <tr><td style="padding:0 32px;text-align:center;font-size:14px;color:${FC_MUTED};">${escapeHtml(
+              parts.code_label
+            )}</td></tr>
+            <tr><td style="padding:8px 32px 0;" align="center">
+              <div style="display:inline-block;border:2px dashed ${FC_SAND};background:${FC_SAND_TINT};padding:14px 28px;font-size:26px;font-weight:400;letter-spacing:3px;color:${FC_INK};direction:ltr;font-family:'Heebo',Arial,Helvetica,sans-serif;">${escapeHtml(
+                coupon.code
+              )}</div>
+            </td></tr>
+            <tr><td style="padding:12px 32px 0;text-align:center;font-size:15px;line-height:1.6;color:${FC_INK};">${escapeHtml(
+              terms
+            )}</td></tr>
+            ${button}
+            <tr><td style="height:24px;line-height:24px;font-size:24px;">&nbsp;</td></tr>
+            <tr>
+              <td style="padding:18px 32px 24px;border-top:1px solid #e6e6e6;text-align:center;font-size:14px;line-height:1.6;color:${FC_MUTED};">
+                <span style="color:${FC_INK};font-weight:300;font-size:18px;">${escapeHtml(
+                  parts.sign1
+                )}</span><br />${escapeHtml(parts.sign2)}
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>`;
+  return { subject, text: text.join('\n'), html };
+}
+
+// Email one friend their code. Gated on the owner's switch for this mail like
+// every other template. Never throws; true only when Resend accepted it — the
+// caller records a false so the admin can see the send failed and retry it.
+async function sendFriendCoupon(to, coupon, collection, baseUrl) {
+  try {
+    if (!settings.emailEnabled('friend_coupon')) return false;
+    if (!to) return false;
+    return await send({ ...buildFriendCoupon(coupon, collection, baseUrl), to });
+  } catch (e) {
+    console.warn('[notify] sendFriendCoupon failed:', e && e.message ? e.message : e);
+    return false;
+  }
+}
+
 module.exports = {
   isConfigured,
   withSettings,
+  buildFriendCoupon,
+  sendFriendCoupon,
   renderEmailHtml,
   buildPaidMessage,
   buildCustomOrderAlert,

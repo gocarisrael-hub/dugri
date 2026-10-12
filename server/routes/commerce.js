@@ -1020,6 +1020,128 @@ function registerCouponValidate(app, { db, couponRateOk, clientKey }) {
   });
 }
 
+// The friend coupon: the public offer + issue endpoints the collect page calls,
+// and the owner's admin list (server/friend-coupons.js has the rules).
+function registerFriendCoupons(
+  app,
+  { db, requireAdmin, notify, settings, clientKey, makeRateLimiter, paymentBaseUrl }
+) {
+  // FIVE PER CLIENT PER HOUR. The endpoint is public (anyone holding a collect
+  // link can call it) and each call can send a mail from our domain, so the
+  // budget is what stops it being a free way to mail strangers. Keyed by
+  // clientKey — server/payment-client-ip.js, never req.ip, which the client
+  // writes. FRIEND_COUPON_RATE_LIMIT exists for the E2E server only, where every
+  // test in every worker is the same 127.0.0.1.
+  const issueRate = makeRateLimiter({
+    limit: Number(process.env.FRIEND_COUPON_RATE_LIMIT) || 5,
+    windowMs: 60 * 60 * 1000,
+    maxKeys: 10000,
+  });
+
+  const offer = () => ({
+    enabled: settings.get('friend_coupon', 'enabled') !== false,
+    percent: settings.get('friend_coupon', 'percent'),
+  });
+
+  // Send (or resend) one row's code and record what happened. A failed send
+  // never fails the caller: the row is kept, the code still goes back to the
+  // screen, the log says so, and the admin's "send again" is the retry.
+  async function mailCode(row) {
+    const c = db.getCollection(row.collection_id);
+    let ok = false;
+    try {
+      ok = await notify.sendFriendCoupon(row.email, row, c, paymentBaseUrl());
+    } catch {
+      ok = false;
+    }
+    if (!ok) {
+      // The code, not the address: the log is not a place for personal data.
+      console.warn('[friend-coupon] email not sent for ' + row.code + ' (retry from the admin)');
+    }
+    db.recordFriendCouponEmail(row.id, ok);
+    return ok;
+  }
+
+  // Public: is the offer on, and at what percent. The collect page reads this
+  // before it shows the bar, so the copy says the number the owner set.
+  app.get('/api/friend-coupon', (req, res) => {
+    res.json(offer());
+  });
+
+  // Public: issue a code for this email, from this collection. Body:
+  // { email, collection_id, marketing_consent }.
+  //
+  // A NEW email gets a new code, which comes back in the answer so the screen
+  // can show it even if the mail never arrives. An email that ALREADY has one
+  // gets that same code resent to its inbox — and NOT shown here: whoever is
+  // typing may not own the address, and the code is that person's.
+  app.post('/api/friend-coupon', async (req, res) => {
+    if (!issueRate.ok('friend:' + clientKey(req))) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    const o = offer();
+    if (!o.enabled) return res.status(403).json({ error: 'disabled' });
+    const b = req.body || {};
+    const r = db.issueFriendCoupon({
+      email: b.email,
+      collectionId: typeof b.collection_id === 'string' ? b.collection_id : null,
+      marketingConsent: b.marketing_consent === true,
+      percent: o.percent,
+      expiryDays: settings.get('friend_coupon', 'expiry_days'),
+    });
+    if (r.error === 'bad_email') return res.status(400).json({ error: 'bad_email' });
+    if (r.error === 'no_collection') return res.status(404).json({ error: 'no_collection' });
+    const row = r.coupon;
+    if (!r.created && row.used_at) {
+      return res.json({ ok: true, created: false, used: true, emailed: false });
+    }
+    const emailed = await mailCode(row);
+    if (!r.created) {
+      return res.json({ ok: true, created: false, emailed, percent: row.discount_percent });
+    }
+    res.json({ ok: true, created: true, emailed, code: row.code, percent: row.discount_percent });
+  });
+
+  // Admin: the summary row and the list behind it, newest first, searchable by
+  // email or code (?q=). Owner key only — requireAdmin keeps the staff key out
+  // (its allow-list does not include this path), because every row is a
+  // person's email address.
+  app.get('/api/admin/friend-coupons', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const coupons = db.listFriendCoupons({ q: req.query.q }).map((row) => {
+      const c = row.order_id ? db.getCollection(row.order_id) : null;
+      return {
+        ...row,
+        order_no: c ? db.orderRef(c) : null,
+        order_link: c ? '/collect.html?c=' + c.id + '&k=' + c.owner_token : null,
+      };
+    });
+    res.json({ summary: { ...db.friendCouponSummary(), ...offer() }, coupons });
+  });
+
+  // Admin: mark a code used by hand (customer support). 409 when already used.
+  app.post('/api/admin/friend-coupons/:id/mark-used', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const r = db.markFriendCouponUsed(req.params.id);
+    if (!r) return res.status(404).json({ error: 'not found' });
+    if (r.error) return res.status(409).json({ error: r.error });
+    res.json({ coupon: r });
+  });
+
+  // Admin: send the SAME code again — the friend lost the mail, or the first
+  // send failed. Deliberately not a new code: the old one may already be in a
+  // screenshot or half-way through a checkout, and invalidating it under her
+  // would turn a support request into a broken payment. 409 once it is used.
+  app.post('/api/admin/friend-coupons/:id/resend', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const row = db.getFriendCouponById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'not found' });
+    if (row.used_at) return res.status(409).json({ error: 'already_used' });
+    const emailed = await mailCode(row);
+    res.json({ emailed, coupon: db.getFriendCouponById(row.id) });
+  });
+}
+
 // Setting the order (version + price + optional delivery address).
 function registerOrder(app, { db, onOrderCreated, paymentBaseUrl }) {
   // Owner-only: set the order (version + price + optional delivery address).
@@ -1102,6 +1224,7 @@ module.exports = {
   registerReadyBatchAndHfd,
   registerCoupons,
   registerCouponValidate,
+  registerFriendCoupons,
   registerOrder,
   registerStatsOrders,
   registerPricing,

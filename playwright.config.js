@@ -92,6 +92,9 @@ export default defineConfig({
       // limit is protecting a public endpoint and only the test client is
       // unrealistic.
       TRACK_RATE_LIMIT: '100000',
+      // Same reason for the friend coupon's issue endpoint (5 per client per hour
+      // in production): every E2E test is the one client 127.0.0.1.
+      FRIEND_COUPON_RATE_LIMIT: '100000',
       TEMPLATE_ROOT: FIXTURE_ROOT,
     },
     port: PORT,
