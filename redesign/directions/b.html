@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · כיוון B · שקט</title>
+<!-- Direction B, made with minimalist-skill: warm monochrome, editorial serif against Heebo,
+     1px hairlines, flat bento, muted pastel spots. Readable as an evolution of today's brand.
+     Static mockup. Tokens in {curly braces} are live values from the admin, not copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Frank+Ruhl+Libre:wght@400;500;700&family=Heebo:wght@300;400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --canvas: #fbfbfa;
+    --surface: #ffffff;
+    --ink: #111111;
+    --ink-2: #2f3437;
+    --mute: #6b6a67;
+    --line: #eaeaea;
+    --red-bg: #fdebec; --red: #9f2f2d;
+    --blue-bg: #e1f3fe; --blue: #1f6c9f;
+    --yel-bg: #fbf3db; --yel: #956400;
+    --wa: #25d366; --wa-ink: #08321a;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    --serif: 'Frank Ruhl Libre', 'Times New Roman', serif;
+    --sans: 'Heebo', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--ink-2); font-family: var(--sans); font-weight: 300; font-size: 17px; line-height: 1.6; overflow-x: clip; }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; }
+  .tok { font-family: var(--mono); font-size: .8em; background: var(--yel-bg); color: var(--yel); padding: .05em .4em; border-radius: 4px; border: 1px dashed #d8bb6a; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+  .wrap { width: min(100% - 32px, 1080px); margin-inline: auto; }
+  section { padding-block: 88px; }
+  h1, h2, h3 { font-family: var(--serif); font-weight: 500; color: var(--ink); margin: 0; letter-spacing: -0.02em; line-height: 1.08; }
+  h2 { font-size: clamp(36px, 9vw, 64px); }
+  .sub { color: var(--mute); margin: 12px 0 0; max-width: 46ch; }
+  .badge { display: inline-block; font-family: var(--sans); font-weight: 500; font-size: 12px; letter-spacing: .05em; padding: 3px 10px; border-radius: 999px; }
+  .badge.red { background: var(--red-bg); color: var(--red); }
+  .badge.blue { background: var(--blue-bg); color: var(--blue); }
+
+  /* ambient light, fixed layer */
+  .ambient { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  .ambient::before { content: ""; position: absolute; width: 80vmax; height: 80vmax; top: -30vmax; right: -20vmax; border-radius: 50%; background: radial-gradient(circle, rgba(253, 235, 236, .9), rgba(253,235,236,0) 60%); opacity: .55; animation: amb 26s var(--ease) infinite alternate; }
+  @keyframes amb { to { transform: translate(-18vmax, 20vmax); } }
+  main, header.top, footer { position: relative; z-index: 1; }
+
+  /* header */
+  header.top { border-bottom: 1px solid var(--line); background: rgba(251,251,250,.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); position: sticky; top: 0; z-index: 10; }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--serif); font-size: 22px; font-weight: 700; color: var(--ink); }
+  .logo img { width: 34px; height: 34px; }
+  .nav { display: none; gap: 28px; font-size: 15px; }
+  .nav a { text-decoration: none; color: var(--mute); }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 52px; padding: 0 26px; background: var(--ink); color: #fff; text-decoration: none; border-radius: 4px; font-weight: 400; font-size: 17px; white-space: nowrap; transition: background .2s, transform .2s var(--ease); }
+  .btn:hover { background: #333; }
+  .btn:active { transform: scale(.98); }
+  .btn.sm { min-height: 40px; padding: 0 16px; font-size: 15px; }
+  .btn.wa { background: var(--wa); color: var(--wa-ink); font-weight: 500; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+  .arrow { display: inline-block; transition: transform .25s var(--ease); }
+  .btn:hover .arrow { transform: translateX(-4px); }
+
+  /* hero */
+  .hero { padding-block: 56px 72px; display: grid; gap: 44px; }
+  .hero h1 { font-size: clamp(54px, 15vw, 116px); line-height: 1; letter-spacing: -0.035em; }
+  .hero h1 span { display: block; color: var(--mute); font-weight: 400; }
+  .hero p { font-size: 19px; margin: 20px 0 30px; max-width: 30ch; color: var(--ink-2); }
+  .deck { position: relative; aspect-ratio: 5/6; max-width: 420px; width: 100%; margin-inline: auto; }
+  .card { position: absolute; inset: 8% 16%; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; display: grid; place-items: center; text-align: center; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,.03); }
+  .card.back1 { rotate: -7deg; translate: -6% 2%; background: var(--red-bg); border-color: #f4d4d6; }
+  .card.back2 { rotate: 5deg; translate: 7% 1%; background: var(--blue-bg); border-color: #cbe6f7; }
+  .card .meta { position: absolute; top: 18px; inset-inline: 20px; display: flex; justify-content: space-between; font-family: var(--sans); font-weight: 500; font-size: 13px; color: var(--mute); }
+  .card .foot { position: absolute; bottom: 18px; inset-inline: 20px; font-size: 13px; color: var(--mute); border-top: 1px solid var(--line); padding-top: 10px; }
+  .word { font-family: var(--serif); font-size: clamp(34px, 9vw, 50px); color: var(--ink); line-height: 1.1; position: relative; height: 2.3em; width: 100%; }
+  .word span { position: absolute; inset: 0; display: grid; place-items: center; opacity: 0; transform: translateY(14px); transition: opacity .6s var(--ease), transform .6s var(--ease); }
+  .word span.on { opacity: 1; transform: none; }
+  .word span.out { opacity: 0; transform: translateY(-14px); }
+
+  /* how: asymmetric bento */
+  .bento { display: grid; gap: 14px; margin-top: 40px; }
+  .cell { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 28px; position: relative; overflow: hidden; transition: box-shadow .2s; }
+  .cell:hover { box-shadow: 0 2px 8px rgba(0,0,0,.04); }
+  .cell h3 { font-size: 30px; }
+  .cell p { margin: 8px 0 0; color: var(--mute); }
+  .cell .n { font-family: var(--mono); font-size: 13px; color: var(--mute); display: block; margin-bottom: 18px; }
+  .cell.pick img { margin: 18px -28px -28px; width: calc(100% + 56px); max-width: none; aspect-ratio: 3/1.5; object-fit: cover; object-position: center 40%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .chips span { border: 1px solid var(--line); border-radius: 6px; padding: 6px 12px; font-size: 15px; background: var(--canvas); }
+  .chips span small { color: var(--mute); font-size: 12px; margin-inline-start: 6px; }
+  .cell.ship { background: var(--yel-bg); border-color: #f0e3bb; }
+
+  /* occasions */
+  .occ { display: grid; gap: 14px; margin-top: 40px; }
+  .occ a { text-decoration: none; display: grid; grid-template-rows: auto 1fr; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+  .occ .pic { aspect-ratio: 3/2; overflow: hidden; }
+  .occ .pic img { width: 100%; height: 100%; object-fit: cover; transition: transform 1.2s var(--ease); }
+  .occ a:hover .pic img { transform: scale(1.04); }
+  .occ .txt { padding: 26px 28px 30px; }
+  .occ h3 { font-size: clamp(32px, 7vw, 46px); margin-top: 14px; }
+  .occ p { color: var(--mute); margin: 8px 0 0; }
+  .occ .red .pic { background: var(--red-bg); }
+  .occ .blue .pic { background: var(--blue-bg); }
+
+  /* designs */
+  .grid6 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 40px; }
+  .d { text-decoration: none; }
+  .d .im { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #fff; }
+  .d img { aspect-ratio: 3/2; width: 100%; object-fit: cover; transition: transform .8s var(--ease); }
+  .d:hover img { transform: scale(1.05); }
+  .d .row { display: flex; justify-content: space-between; align-items: baseline; padding-top: 10px; }
+  .d b { font-family: var(--serif); font-weight: 500; font-size: 22px; color: var(--ink); }
+
+  /* proof */
+  .proof { border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  blockquote { margin: 0; font-family: var(--serif); font-size: clamp(32px, 8vw, 58px); line-height: 1.15; color: var(--ink); letter-spacing: -0.02em; max-width: 18ch; }
+  cite { display: block; margin-top: 18px; font-style: normal; color: var(--mute); font-size: 15px; }
+  .proofrow { display: grid; gap: 40px; }
+  .stat { font-family: var(--serif); font-size: 64px; color: var(--ink); line-height: 1; }
+  .stat + p { margin: 8px 0 0; color: var(--mute); }
+  .shots { display: flex; gap: 10px; margin-top: 26px; }
+  .proofrow > * { min-width: 0; }
+  .shots img { min-width: 0; flex: 1 1 0; width: 50%; border: 1px solid var(--line); border-radius: 8px; }
+
+  /* faq */
+  .faq { margin-top: 30px; border-top: 1px solid var(--line); }
+  .faq details { border-bottom: 1px solid var(--line); }
+  .faq summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; gap: 16px; padding: 22px 0; font-size: 20px; font-weight: 400; color: var(--ink); }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after { content: "+"; font-family: var(--mono); font-size: 22px; color: var(--mute); }
+  .faq details[open] summary::after { content: "-"; }
+  .faq p { margin: 0 0 22px; color: var(--mute); max-width: 56ch; }
+  .more { display: inline-block; margin-top: 22px; color: var(--ink); }
+
+  footer { border-top: 1px solid var(--line); padding-block: 56px 72px; }
+  .foot { display: grid; gap: 28px; }
+  .foot h2 { font-size: clamp(32px, 8vw, 52px); }
+  .links { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 15px; color: var(--mute); }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .rv { opacity: 0; transform: translateY(12px); transition: opacity .6s var(--ease), transform .6s var(--ease); transition-delay: calc(var(--i, 0) * 80ms); }
+    .rv.in { opacity: 1; transform: none; }
+    .deck .card.front { animation: bob 6s var(--ease) infinite alternate; }
+    @keyframes bob { to { transform: translateY(-8px) rotate(-1deg); } }
+  }
+  @media (prefers-reduced-motion: reduce) { .ambient::before { animation: none; } .word span { transition: none; } }
+
+  @media (min-width: 900px) {
+    section { padding-block: 128px; }
+    .nav { display: flex; }
+    .hero { grid-template-columns: 1.2fr 1fr; align-items: center; padding-block: 88px 112px; min-height: calc(100dvh - 64px); }
+    .bento { grid-template-columns: 1.3fr 1fr; grid-template-rows: auto auto; }
+    .bento .pick { grid-row: span 2; }
+    .occ { grid-template-columns: 1fr 1fr; }
+    .grid6 { grid-template-columns: repeat(3, 1fr); gap: 28px 20px; }
+    .proofrow { grid-template-columns: 1.6fr 1fr; align-items: end; }
+    .faqgrid { display: grid; grid-template-columns: 1fr 1.6fr; gap: 64px; }
+    .faq { margin-top: 0; }
+    .foot { grid-template-columns: 1fr auto; align-items: end; }
+  }
+</style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"></div>
+  <header class="top">
+    <div class="wrap">
+      <a class="logo" href="#"><img src="../../site/assets/logo.png" alt="" />דוגרי</a>
+      <nav class="nav" aria-label="ראשי"><a href="#how">איך זה עובד</a><a href="#designs">עיצובים</a><a href="#proof">לקוחות</a><a href="#faq">שאלות</a></nav>
+      <a class="btn sm" href="#designs">להזמנה</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero wrap" style="padding-top:56px">
+      <div>
+        <h1 class="rv">המתנה<span>היא המילים.</span></h1>
+        <p class="rv" style="--i:1">משחק ניחוש מילים בקבוצות, שכולו על אדם אחד. החברים כותבים, אנחנו מדפיסים.</p>
+        <a class="btn rv" style="--i:2" href="#designs">בונים את המשחק <span class="arrow">&larr;</span></a>
+      </div>
+      <div class="deck rv" style="--i:2" aria-label="קלף לדוגמה מתחלף">
+        <div class="card back1"></div>
+        <div class="card back2"></div>
+        <div class="card front">
+          <div class="meta"><span>60 שניות</span><span>דוגרי</span></div>
+          <div class="word" id="word">
+            <span class="on">הפיאט הצהובה</span><span>שירה בקריוקי</span><span>המרק של שישי</span><span>הדייט מהים</span><span>"עוד פרוסה?"</span>
+          </div>
+          <div class="foot">תארו בלי להגיד את המילה</div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how" style="padding-top:24px">
+      <div class="wrap">
+        <h2 class="rv">איך זה עובד</h2>
+        <div class="bento">
+          <div class="cell pick rv"><span class="n">01</span><h3>בוחרים עיצוב</h3><p>כל עיצוב מתאים לכל חגיגה. את הכותרת אתם כותבים.</p><img src="../../site/assets/hero-2.jpg" alt="לוח המשחק וחפיסת הקלפים" /></div>
+          <div class="cell rv" style="--i:1"><span class="n">02</span><h3>אוספים מילים</h3><p>לינק אחד לקבוצה, כל אחד מוסיף מהטלפון. עד 412 מילים, ממליצים על 70 לפחות.</p>
+            <div class="chips"><span>הפיאט הצהובה<small>מיכל</small></span><span>טיול לאילת<small>דנה</small></span><span>הגיטרה<small>אבא</small></span></div></div>
+          <div class="cell ship rv" style="--i:2"><span class="n">03</span><h3>מקבלים משחק מודפס</h3><p>חפיסה ולוח, תוך <span class="tok">{lead_days}</span> ימי עסקים. איסוף בתל אביב או שליח.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="occasions" style="padding-top:0">
+      <div class="wrap">
+        <h2 class="rv">מסיבה על אדם אחד</h2>
+        <p class="sub rv">שתי החגיגות שהכי מזמינים להן. ויש עוד הרבה.</p>
+        <div class="occ">
+          <a class="red rv" href="#designs"><div class="pic"><img src="../../site/assets/hero-1.jpg" alt="המשחק במסיבת רווקות" /></div>
+            <div class="txt"><span class="badge red">רווקות</span><h3>לכלה, מהחברות</h3><p>כל הסיפורים שרק אתן מכירות.</p></div></a>
+          <a class="blue rv" style="--i:1" href="#designs"><div class="pic"><img src="../../site/assets/designs/birthday/store.webp" alt="המשחק בעיצוב קליפורניה" style="object-fit:contain;padding:6%" /></div>
+            <div class="txt"><span class="badge blue">יום הולדת</span><h3>לאמא, לאבא, לסבתא</h3><p>שבעים שנה של זיכרונות, על שולחן אחד.</p></div></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="designs" style="padding-top:0">
+      <div class="wrap">
+        <h2 class="rv">העיצובים</h2>
+        <p class="sub rv">כל עיצוב מתאים לכל חגיגה. <span class="tok">{price}</span> ₪</p>
+        <div class="grid6">
+          <a class="d rv" href="#"><div class="im"><img src="../../site/assets/designs/bachelorette/store.webp" alt="" /></div><div class="row"><b>פריז</b><span class="tok">{price}</span></div></a>
+          <a class="d rv" style="--i:1" href="#"><div class="im"><img src="../../site/assets/designs/birthday/store.webp" alt="" /></div><div class="row"><b>קליפורניה</b><span class="tok">{price}</span></div></a>
+          <a class="d rv" style="--i:2" href="#"><div class="im"><img src="../../site/assets/designs/marriage/store.webp" alt="" /></div><div class="row"><b>סנטוריני</b><span class="tok">{price}</span></div></a>
+          <a class="d rv" href="#"><div class="im"><img src="../../site/assets/designs/japanese/store.webp" alt="" /></div><div class="row"><b>טוקיו</b><span class="tok">{price}</span></div></a>
+          <a class="d rv" style="--i:1" href="#"><div class="im"><img src="../../site/assets/designs/posttrip/store.webp" alt="" /></div><div class="row"><b>סיישל</b><span class="tok">{price}</span></div></a>
+          <a class="d rv" style="--i:2" href="#"><div class="im"><img src="../../site/assets/designs/kids/store.webp" alt="" /></div><div class="row"><b>ברוקלין</b><span class="tok">{price}</span></div></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="proof" class="proof">
+      <div class="wrap proofrow">
+        <div class="rv">
+          <blockquote>”ברמה שלא הפסקנו לצחוק שעה וחצי”</blockquote>
+          <cite>מתוך הודעת וואטסאפ של לקוחה, אחרי מסיבת רווקות</cite>
+        </div>
+        <div class="rv" style="--i:1">
+          <div class="stat"><span class="tok" style="font-size:.45em">{orders_count}</span></div>
+          <p>חגיגות עד היום</p>
+          <div class="shots"><img src="../../site/assets/testimonials/review-2.jpg" alt="הודעת וואטסאפ מלקוחה" /><img src="../../site/assets/testimonials/review-4.jpg" alt="הודעת וואטסאפ מלקוחה" /></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="wrap faqgrid">
+        <div><h2 class="rv">שאלות</h2><a class="more" href="#">לכל השאלות</a></div>
+        <div class="faq">
+          <details class="rv"><summary>כמה מילים צריך?</summary><p>עד 412. אנחנו ממליצים על 70 לפחות, כדי שהמשחק ירגיש באמת אישי.</p></details>
+          <details class="rv" style="--i:1"><summary>מתי המשחק מוכן?</summary><p><span class="tok">{lead_days}</span> ימי עסקים מהרגע ששולחים את המילים להפקה.</p></details>
+          <details class="rv" style="--i:2"><summary>איפה מקבלים אותו?</summary><p>איסוף מבית הדפוס בתל אביב, או שליח עד הבית.</p></details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <div>
+        <h2>שאלה? הדר ועלמה כאן.</h2>
+        <div class="links" style="margin-top:16px"><a href="#">תקנון</a><a href="#">איסוף עצמי</a><a href="#">טיימר למשחק</a><a href="#">דוגרי לעסקים</a></div>
+      </div>
+      <a class="btn wa" href="https://wa.me/972552441334">דברו איתנו בוואטסאפ</a>
+    </div>
+  </footer>
+
+<script>
+  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.15 });
+  document.querySelectorAll('.rv').forEach((el) => io.observe(el));
+  // The hero card cycles fictional words: the one moving idea in a quiet page.
+  const words = [...document.querySelectorAll('#word span')];
+  let i = 0;
+  if (!rm) setInterval(() => {
+    const cur = words[i]; i = (i + 1) % words.length; const nxt = words[i];
+    cur.classList.remove('on'); cur.classList.add('out');
+    setTimeout(() => cur.classList.remove('out'), 600);
+    nxt.classList.add('on');
+  }, 2400);
+</script>
+</body>
+</html>

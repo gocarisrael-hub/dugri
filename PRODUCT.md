@@ -28,6 +28,8 @@ D1 DECISION, occasions (measured from every production collection; method and ca
 
 Lead with bachelorettes and with birthdays of parents and grandparents, side by side; family games third. Anniversaries, retirements and farewells belong in the "any occasion" range, not in the lead.
 
+D2 DECISION, homepage lead (owner, 2026-10-12): **the homepage leads with both occasions equally, framed as "a party about one person"**, with a bachelorette and a parent's or grandparent's birthday as the two main examples. Data: birthdays about 43% of recent paid orders (27% for parents and grandparents, 60+), bachelorettes 32% and rising. Anniversaries (about 5%) are not featured.
+
 ## Product Purpose
 
 Dugri (דוגרי) turns the words, inside jokes, people and places of one person's life into a custom team word-guessing party game: a personalised card deck and a game board, designed and printed for that one celebration.

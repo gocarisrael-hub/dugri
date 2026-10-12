@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · כיוון C · הלוח</title>
+<!-- Direction C, original idea (taste-skill guidance only): the page is the game.
+     Poster-scale condensed Hebrew, the board's numbered circles as the graphic system,
+     a live card with a 60-second clock in the hero, a pawn that walks the page.
+     Static mockup. Tokens in {curly braces} are live values from the admin, not copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Karantina:wght@400;700&family=Assistant:wght@400;600;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #f7f7f4;
+    --white: #ffffff;
+    --ink: #141414;
+    --ink-2: #48474a;
+    --blue: #2433ff;   /* the one accent: board-ink cobalt */
+    --blue-ink: #ffffff;
+    --pink: #ffb8d4;   /* only as the bachelorette panel ground, from the Paris deck */
+    --wa: #25d366; --wa-ink: #08321a;
+    --pop: cubic-bezier(0.2, 0.9, 0.25, 1.15);
+    --out: cubic-bezier(0.16, 1, 0.3, 1);
+    --display: 'Karantina', 'Assistant', sans-serif;
+    --sans: 'Assistant', system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 18px; line-height: 1.5; overflow-x: clip; }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; }
+  .tok { font-family: ui-monospace, Menlo, monospace; font-size: .78em; font-weight: 400; letter-spacing: 0; background: #fff3a8; color: #5a4a00; padding: .05em .4em; border: 1.5px dashed #c9a800; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+  .wrap { width: min(100% - 32px, 1320px); margin-inline: auto; }
+  .disp { font-family: var(--display); font-weight: 700; line-height: .82; letter-spacing: 0; margin: 0; }
+
+  /* top bar */
+  .bar { position: sticky; top: 0; z-index: 20; background: var(--paper); border-bottom: 2px solid var(--ink); }
+  .bar .wrap { height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; font-family: var(--display); font-weight: 700; font-size: 40px; line-height: 1; }
+  .brand img { width: 36px; height: 36px; }
+  .bar nav { display: none; gap: 28px; font-weight: 600; font-size: 16px; }
+  .bar nav a { text-decoration: none; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 12px; min-height: 56px; padding: 0 26px; background: var(--blue); color: var(--blue-ink); text-decoration: none; font-weight: 800; font-size: 19px; white-space: nowrap; border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink); transition: transform .25s var(--pop), box-shadow .25s var(--pop); }
+  .btn:hover { transform: translate(2px, -3px); box-shadow: 6px 7px 0 var(--ink); }
+  .btn:active { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--ink); }
+  .btn.sm { min-height: 42px; font-size: 16px; padding: 0 16px; box-shadow: 3px 3px 0 var(--ink); }
+  .btn.wa { background: var(--wa); color: var(--wa-ink); }
+
+  /* HERO */
+  .hero { position: relative; padding-block: 22px 36px; overflow: hidden; }
+  .hero h1 { font-size: clamp(92px, 26vw, 330px); }
+  .hero h1 .l { display: block; }
+  .hero h1 .l2 { color: var(--blue); }
+  .hero__row { display: grid; gap: 22px; margin-top: 14px; }
+  .hero__sub { font-size: 20px; font-weight: 600; max-width: 24ch; margin: 0 0 20px; }
+  .gamecard { position: absolute; z-index: 2; width: clamp(118px, 30vw, 330px); aspect-ratio: 5/7; top: 40px; inset-inline-end: 3%; rotate: -8deg;
+    background: var(--white); border: 2.5px solid var(--ink); border-radius: 18px; box-shadow: 8px 8px 0 var(--ink); display: grid; grid-template-rows: auto 1fr auto; padding: 14px; }
+  .gamecard__top { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-weight: 800; font-size: clamp(10px, 2.6vw, 14px); line-height: 1.1; }
+  .gamecard__top i { font-style: normal; flex: none; width: 26px; height: 26px; border-radius: 50%; background: var(--blue); color: #fff; display: grid; place-items: center; font-size: 13px; }
+  .gamecard__word { position: relative; display: grid; place-items: center; text-align: center; }
+  .gamecard__word span { position: absolute; font-family: var(--display); font-weight: 700; font-size: clamp(28px, 7.4vw, 82px); line-height: .9; padding-inline: 4px; opacity: 0; transform: translateY(30px) rotate(-4deg); transition: opacity .35s var(--out), transform .5s var(--pop); }
+  .gamecard__word span.on { opacity: 1; transform: none; }
+  .gamecard__word span.out { opacity: 0; transform: translateY(-30px) rotate(4deg); }
+  .clock { display: flex; align-items: center; gap: 8px; font-weight: 800; font-size: 14px; }
+  .clock__bar { flex: 1; height: 8px; background: var(--blue); transform-origin: right; animation: tick 60s linear infinite; }
+  @keyframes tick { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+  .sticker { position: absolute; z-index: 3; font-weight: 800; font-size: 15px; padding: 8px 14px; background: var(--white); border: 2px solid var(--ink); border-radius: 999px; rotate: -8deg; white-space: nowrap; }
+
+  /* MARQUEE (the one) */
+  .band { background: var(--blue); color: #fff; border-block: 2px solid var(--ink); rotate: -2.5deg; margin-block: 20px; width: 110%; margin-inline-start: -5%; overflow: hidden; }
+  .band__track { display: flex; width: max-content; animation: slide 22s linear infinite; }
+  .band__track span { font-family: var(--display); font-weight: 700; font-size: 52px; line-height: 1; padding: 12px 0; display: inline-flex; align-items: center; gap: 22px; padding-inline-end: 22px; white-space: nowrap; }
+  .band__track span::after { content: ""; width: 22px; height: 22px; border-radius: 50%; background: #fff; flex: none; }
+  @keyframes slide { to { transform: translateX(50%); } }
+
+  .bandclip { overflow: hidden; padding-block: 18px; }
+  /* HOW: the board path */
+  section { padding-block: 72px; }
+  h2.disp { font-size: clamp(76px, 22vw, 190px); }
+  .path { position: relative; margin-top: 30px; display: grid; gap: 34px; padding-inline-start: 92px; }
+  .path::before { content: ""; position: absolute; inset-inline-start: 34px; top: 30px; bottom: 30px; border-inline-start: 4px dashed var(--ink); }
+  .stop { position: relative; }
+  .stop .dot { position: absolute; inset-inline-start: -92px; top: -4px; width: 72px; height: 72px; border-radius: 50%; border: 2.5px solid var(--ink); background: var(--white); display: grid; place-items: center; font-family: var(--display); font-weight: 700; font-size: 46px; line-height: 1; }
+  .stop:nth-child(2) .dot { background: var(--blue); color: #fff; }
+  .stop h3 { margin: 0; font-family: var(--display); font-size: 62px; line-height: .9; }
+  .stop p { margin: 6px 0 0; color: var(--ink-2); max-width: 32ch; }
+  .pawn { position: absolute; inset-inline-start: 22px; top: 0; width: 30px; height: 44px; z-index: 2; }
+  .pawn::before { content: ""; position: absolute; top: 0; inset-inline: 7px; height: 16px; border-radius: 50%; background: var(--blue); border: 2px solid var(--ink); }
+  .pawn::after { content: ""; position: absolute; bottom: 0; inset-inline: 0; height: 30px; border-radius: 50% 50% 6px 6px; background: var(--blue); border: 2px solid var(--ink); }
+
+  /* OCCASIONS: two equal posters */
+  .occ { display: grid; gap: 18px; margin-top: 30px; }
+  .poster { position: relative; display: block; text-decoration: none; border: 2.5px solid var(--ink); box-shadow: 8px 8px 0 var(--ink); padding: 24px; min-height: 600px; overflow: hidden; isolation: isolate; transition: transform .35s var(--pop), box-shadow .35s var(--pop); }
+  .poster:hover { transform: translate(-3px, -4px) rotate(-.6deg); box-shadow: 11px 12px 0 var(--ink); }
+  .poster.p1 { background: var(--pink); }
+  .poster.p2 { background: var(--white); }
+  .poster .big { font-size: clamp(92px, 27vw, 200px); }
+  .poster .p2big { color: var(--blue); }
+  .poster p { font-weight: 600; font-size: 19px; margin: 12px 0 0; max-width: 22ch; }
+  .poster img { position: absolute; z-index: -1; width: 60%; bottom: -8%; inset-inline-end: -6%; rotate: -10deg; border: 2.5px solid var(--ink); border-radius: 14px; transition: transform .6s var(--pop); }
+  .poster:hover img { transform: rotate(4deg) scale(1.04); }
+  .poster .wordtags { position: absolute; bottom: 22px; inset-inline-start: 22px; display: grid; gap: 8px; justify-items: start; }
+  .poster .wordtags span { background: var(--white); border: 2px solid var(--ink); font-weight: 800; padding: 6px 12px; border-radius: 999px; font-size: 15px; }
+  .poster .wordtags span:nth-child(2) { rotate: -4deg; } .poster .wordtags span:nth-child(3) { rotate: 3deg; }
+
+  /* COLLECTION: a hand of cards */
+  .hand { display: grid; grid-auto-flow: column; grid-auto-columns: 68vw; gap: 14px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 40px 16px 50px; margin-inline: -16px; scrollbar-width: none; }
+  .hand::-webkit-scrollbar { display: none; }
+  .dc { scroll-snap-align: center; text-decoration: none; background: var(--white); border: 2.5px solid var(--ink); border-radius: 16px; box-shadow: 6px 6px 0 var(--ink); padding: 10px 10px 14px; transition: transform .4s var(--pop); }
+  .dc img { aspect-ratio: 1/1; object-fit: cover; width: 100%; border-radius: 9px; background: #fff; }
+  .dc .nm { display: flex; justify-content: space-between; align-items: end; padding: 10px 6px 0; }
+  .dc b { font-family: var(--display); font-size: 54px; line-height: .8; }
+  .dc:nth-child(odd) { rotate: -3deg; } .dc:nth-child(even) { rotate: 2.5deg; }
+  .dc:hover { transform: translateY(-14px) rotate(3deg) scale(1.03); }
+
+  /* PROOF */
+  .proof { display: grid; gap: 26px; align-items: center; }
+  .proof .num { font-size: clamp(120px, 40vw, 320px); color: var(--blue); }
+  .proof > * { min-width: 0; }
+  .proof .num .tok { font-size: .2em; }
+  .wall { padding-inline: 10px; }
+  .proof .lbl { font-family: var(--display); font-size: 58px; line-height: .9; margin: 0; }
+  .wall { position: relative; display: grid; gap: 16px; }
+  .wall img { border: 2.5px solid var(--ink); box-shadow: 6px 6px 0 var(--ink); background: #fff; }
+  .wall img:nth-child(1) { rotate: -2deg; } .wall img:nth-child(2) { rotate: 2deg; width: 88%; justify-self: end; }
+
+  /* FAQ */
+  .qs { display: grid; gap: 12px; margin-top: 28px; }
+  .qs details { border: 2.5px solid var(--ink); background: var(--white); }
+  .qs summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 16px 18px; font-weight: 800; font-size: 20px; }
+  .qs summary::-webkit-details-marker { display: none; }
+  .qs summary::after { content: "+"; flex: none; width: 40px; height: 40px; border-radius: 50%; border: 2px solid var(--ink); display: grid; place-items: center; font-size: 22px; transition: transform .3s var(--pop); }
+  .qs details[open] summary::after { transform: rotate(45deg); background: var(--blue); color: #fff; }
+  .qs p { margin: 0; padding: 0 18px 18px; color: var(--ink-2); }
+
+  footer { border-top: 2.5px solid var(--ink); padding-block: 40px 56px; margin-top: 40px; }
+  .foot { display: grid; gap: 22px; }
+  .foot .disp { font-size: clamp(64px, 18vw, 150px); }
+  .links { display: flex; flex-wrap: wrap; gap: 8px 20px; font-weight: 600; }
+
+  /* entrance */
+  .rise { opacity: 0; transform: translateY(60px); transition: opacity .6s var(--out), transform .8s var(--pop); }
+  .rise.in { opacity: 1; transform: none; }
+  .hero h1 .l { animation: up .9s var(--pop) both; }
+  .hero h1 .l2 { animation-delay: .08s; } .hero h1 .l3 { animation-delay: .16s; }
+  @keyframes up { from { transform: translateY(70%); opacity: 0; } }
+  .gamecard { animation: deal 1s var(--pop) .35s both; }
+  @keyframes deal { from { transform: translate(-60%, 40%) rotate(-30deg); opacity: 0; } }
+
+  /* pawn walks the path with scroll (scroll-driven; static where unsupported) */
+  @supports (animation-timeline: view()) {
+    .pawn { animation: walk linear both; animation-timeline: view(); animation-range: entry 60% exit 20%; }
+  }
+  @keyframes walk { from { transform: translateY(0); } to { transform: translateY(var(--walk, 520px)); } }
+
+  @media (min-width: 900px) {
+    section { padding-block: 120px; }
+    .bar nav { display: flex; }
+    .hero { padding-top: 28px; }
+    .hero h1 { font-size: 236px; }
+    .hero h1 .l3 { display: inline; }
+    .hero__row { grid-template-columns: auto auto; justify-content: start; gap: 48px; align-items: end; }
+    .gamecard { top: 40px; inset-inline-end: 9%; width: 330px; }
+    .path { grid-template-columns: repeat(3, 1fr); padding-inline-start: 0; padding-top: 110px; gap: 40px; }
+    .path::before { inset-inline: 36px 36px; top: 36px; bottom: auto; border-inline-start: 0; border-top: 4px dashed var(--ink); }
+    .stop .dot { inset-inline-start: 0; top: -110px; }
+    .pawn { top: 6px; inset-inline-start: 22px; }
+    @keyframes walk { from { transform: translateX(0); } to { transform: translateX(var(--walkx, -800px)); } }
+    .occ { grid-template-columns: 1fr 1fr; }
+    .poster { min-height: 620px; padding: 36px; }
+    .poster .big { font-size: 150px; }
+    .poster img { width: 52%; }
+    .hand { grid-auto-columns: calc((min(100vw - 32px, 1320px) - 70px) / 6); justify-content: center; padding-inline: 0; margin-inline: 0; grid-auto-flow: column; overflow: visible; }
+    .proof { grid-template-columns: 1.2fr 1fr; }
+    .qgrid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 50px; align-items: start; }
+    .qs { margin-top: 0; }
+    .foot { grid-template-columns: 1fr auto; align-items: end; }
+  }
+  @media (min-width: 900px) { .dc b { font-size: 40px; } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .rise { opacity: 1; transform: none; }
+    .gamecard__word span:first-child { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header class="bar">
+    <div class="wrap">
+      <a class="brand" href="#"><img src="../../site/assets/logo.png" alt="" />דוגרי</a>
+      <nav aria-label="ראשי"><a href="#how">איך משחקים</a><a href="#designs">הקולקציה</a><a href="#proof">מה אמרו</a><a href="#faq">שאלות</a></nav>
+      <a class="btn sm" href="#designs">להזמנה</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" style="padding-top:22px">
+      <div class="wrap">
+        <h1 class="disp"><span class="l">מסיבה</span><span class="l l2">על אדם</span><span class="l l3">אחד.</span></h1>
+        <div class="hero__row">
+          <p class="hero__sub">משחק מילים בקבוצות, מודפס, שכל המילים בו עליו. או עליה.</p>
+          <div><a class="btn" href="#designs">בונים את המשחק &larr;</a></div>
+        </div>
+      </div>
+      <div class="gamecard" aria-label="קלף לדוגמה: תארו את המילה בלי להגיד אותה">
+        <div class="gamecard__top"><span>תארו בלי להגיד</span><i>60</i></div>
+        <div class="gamecard__word" id="word"><span class="on">סבתא בקריוקי</span><span>הדייט מהים</span><span>הפיאט הצהובה</span><span>"עוד פרוסה?"</span><span>טיול לרודוס</span></div>
+        <div class="clock"><span>0:60</span><span class="clock__bar"></span></div>
+      </div>
+    </section>
+
+    <div class="bandclip noclipcheck"><div class="band" aria-hidden="true"><div class="band__track">
+      <span>מתחלקים לקבוצות</span><span>מתארים בלי להגיד</span><span>60 שניות</span><span>כל המילים עליה</span>
+      <span>מתחלקים לקבוצות</span><span>מתארים בלי להגיד</span><span>60 שניות</span><span>כל המילים עליה</span>
+    </div></div></div>
+
+    <section id="how">
+      <div class="wrap">
+        <h2 class="disp rise">ככה זה הולך</h2>
+        <div class="path">
+          <span class="pawn" aria-hidden="true"></span>
+          <div class="stop rise"><span class="dot">1</span><h3>בוחרים עיצוב</h3><p>כל עיצוב לכל חגיגה. את הכותרת אתם כותבים.</p></div>
+          <div class="stop rise"><span class="dot">2</span><h3>החברים כותבים</h3><p>לינק אחד בוואטסאפ, כל אחד מוסיף מילים. עד 412, ממליצים על 70 לפחות.</p></div>
+          <div class="stop rise"><span class="dot">3</span><h3>משחקים</h3><p>חפיסה ולוח מודפסים, תוך <span class="tok">{lead_days}</span> ימי עסקים.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="occasions" style="padding-top:0">
+      <div class="wrap occ">
+        <a class="poster p1 rise" href="#designs">
+          <h2 class="disp big">רווקות</h2>
+          <p>לכלה, מהחברות. כל מה שקרה בטיול נשאר על הקלפים.</p>
+          <img src="../../site/assets/hero-1.jpg" alt="המשחק על שולחן במסיבת רווקות" />
+          <div class="wordtags"><span>הדייט מהים</span><span>שירה בקריוקי</span><span>טיול לרודוס</span></div>
+        </a>
+        <a class="poster p2 rise" href="#designs">
+          <h2 class="disp big p2big">סבתא בת 80</h2>
+          <p>יום הולדת לאמא, לאבא, לסבא. כל המשפחה סביב שולחן אחד.</p>
+          <img src="../../site/assets/hero-3.jpg" alt="המשחק בעיצוב כחול על שמיכת פיקניק" />
+          <div class="wordtags"><span>המרק של שישי</span><span>הפיאט הצהובה</span><span>"עוד פרוסה?"</span></div>
+        </a>
+      </div>
+    </section>
+
+    <section id="designs" style="padding-top:0">
+      <div class="wrap">
+        <h2 class="disp rise">הקולקציה</h2>
+        <p class="rise" style="font-weight:600;margin:10px 0 0">כל עיצוב מתאים לכל חגיגה. <span class="tok">{price}</span> ₪</p>
+        <div class="hand">
+          <a class="dc" href="#"><img src="../../site/assets/designs/bachelorette/store.webp" alt="" /><div class="nm"><b>פריז</b><span class="tok">{price}</span></div></a>
+          <a class="dc" href="#"><img src="../../site/assets/designs/birthday/store.webp" alt="" /><div class="nm"><b>קליפורניה</b><span class="tok">{price}</span></div></a>
+          <a class="dc" href="#"><img src="../../site/assets/designs/japanese/store.webp" alt="" /><div class="nm"><b>טוקיו</b><span class="tok">{price}</span></div></a>
+          <a class="dc" href="#"><img src="../../site/assets/designs/marriage/store.webp" alt="" /><div class="nm"><b>סנטוריני</b><span class="tok">{price}</span></div></a>
+          <a class="dc" href="#"><img src="../../site/assets/designs/posttrip/store.webp" alt="" /><div class="nm"><b>סיישל</b><span class="tok">{price}</span></div></a>
+          <a class="dc" href="#"><img src="../../site/assets/designs/kids/store.webp" alt="" /><div class="nm"><b>ברוקלין</b><span class="tok">{price}</span></div></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="proof" style="padding-top:0">
+      <div class="wrap proof">
+        <div class="rise">
+          <div class="disp num"><span class="tok">{orders_count}</span></div>
+          <p class="lbl">חגיגות. אף אחת לא הייתה שקטה.</p>
+        </div>
+        <div class="wall rise">
+          <img src="../../site/assets/testimonials/review-1.jpg" alt="הודעת וואטסאפ מלקוחה: דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו" />
+          <img src="../../site/assets/testimonials/review-4.jpg" alt="הודעת וואטסאפ מלקוחה: אמא שלי הייתה בהלם מכמה שזה אישי" />
+        </div>
+      </div>
+    </section>
+
+    <section id="faq" style="padding-top:0">
+      <div class="wrap qgrid">
+        <h2 class="disp rise">שאלות?</h2>
+        <div class="qs">
+          <details class="rise"><summary>כמה מילים צריך?</summary><p>עד 412. אנחנו ממליצים על 70 לפחות, כדי שהמשחק ירגיש באמת אישי.</p></details>
+          <details class="rise"><summary>מתי המשחק מוכן?</summary><p><span class="tok">{lead_days}</span> ימי עסקים מהרגע ששולחים את המילים להפקה.</p></details>
+          <details class="rise"><summary>איפה מקבלים אותו?</summary><p>איסוף מבית הדפוס בתל אביב, או שליח עד הבית.</p></details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <div>
+        <p class="disp">הדר ועלמה כאן.</p>
+        <div class="links" style="margin-top:14px"><a href="#">תקנון</a><a href="#">איסוף עצמי</a><a href="#">טיימר למשחק</a><a href="#">דוגרי לעסקים</a></div>
+      </div>
+      <a class="btn wa" href="https://wa.me/972552441334">דברו איתנו בוואטסאפ</a>
+    </div>
+  </footer>
+
+<script>
+  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.12 });
+  document.querySelectorAll('.rise').forEach((el, i) => { el.style.transitionDelay = (i % 3) * 70 + 'ms'; io.observe(el); });
+  // Hero card: a new word every 2.2s, like a turn of the real game.
+  const w = [...document.querySelectorAll('#word span')]; let i = 0;
+  if (!rm) setInterval(() => { const a = w[i]; i = (i + 1) % w.length; a.classList.replace('on', 'out'); setTimeout(() => a.classList.remove('out'), 500); w[i].classList.add('on'); }, 2200);
+  // The pawn's walk length = the dashed path's length on this layout.
+  const path = document.querySelector('.path'), pawn = document.querySelector('.pawn');
+  const fit = () => { pawn.style.setProperty('--walk', (path.offsetHeight - 70) + 'px'); pawn.style.setProperty('--walkx', -(path.offsetWidth - 80) + 'px'); };
+  fit(); addEventListener('resize', fit);
+</script>
+</body>
+</html>

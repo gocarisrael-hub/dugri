@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · כיוון A · רך</title>
+<!-- Direction A, made with soft-skill: "Soft Structuralism" vibe + "Z-Axis Cascade" layout.
+     Static mockup. Tokens in {curly braces} are live values from the admin, not copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ground: #eceef2;
+    --paper: #f8f9fb;
+    --ink: #17181c;
+    --ink-2: #4a4d57;
+    --accent: #e0127a; /* the logo's pink, the only accent */
+    --accent-soft: #fde3f0;
+    --wa: #25d366;
+    --wa-ink: #08321a;
+    --shell: rgba(23, 24, 28, 0.045);
+    --hair: rgba(23, 24, 28, 0.07);
+    --shadow: 0 30px 60px -28px rgba(60, 64, 82, 0.28), 0 8px 18px -10px rgba(60, 64, 82, 0.14);
+    --spring: cubic-bezier(0.32, 0.72, 0, 1);
+    --r: 2rem;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: radial-gradient(120% 60% at 80% 0%, #ffffff 0%, var(--ground) 60%) fixed, var(--ground);
+    color: var(--ink);
+    font-family: 'Rubik', system-ui, sans-serif;
+    font-size: 17px;
+    line-height: 1.55;
+    overflow-x: clip;
+  }
+  img { max-width: 100%; display: block; }
+  a { color: inherit; }
+  .tok { font-family: ui-monospace, Menlo, monospace; font-size: 0.82em; letter-spacing: 0; background: #fff6c2; color: #5a4a00; padding: 0.05em 0.4em; border-radius: 0.4em; border: 1px dashed #c9a800; white-space: nowrap; direction: ltr; unicode-bidi: isolate; }
+
+  /* ---------- floating island nav ---------- */
+  .nav {
+    position: fixed; z-index: 30; inset-inline: 0; top: max(14px, env(safe-area-inset-top));
+    margin-inline: auto; width: min(92vw, 860px);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 8px 8px 8px; border-radius: 999px;
+    background: rgba(255, 255, 255, 0.72); backdrop-filter: blur(18px) saturate(160%); -webkit-backdrop-filter: blur(18px) saturate(160%);
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.7), 0 10px 30px -14px rgba(60,64,82,.35);
+  }
+  .nav__logo { display: flex; align-items: center; gap: 10px; text-decoration: none; padding-inline-start: 6px; font-weight: 800; font-size: 18px; }
+  .nav__logo img { width: 38px; height: 38px; }
+  .nav__links { display: none; gap: 26px; font-size: 15px; color: var(--ink-2); }
+  .nav__links a { text-decoration: none; }
+  .burger { width: 44px; height: 44px; border-radius: 999px; border: 0; background: var(--shell); position: relative; cursor: pointer; }
+  .burger span { position: absolute; inset-inline: 13px; height: 1.6px; background: var(--ink); border-radius: 2px; transition: transform .5s var(--spring); }
+  .burger span:first-child { top: 18px; } .burger span:last-child { top: 25px; }
+  .nav.open .burger span:first-child { transform: translateY(3.5px) rotate(45deg); }
+  .nav.open .burger span:last-child { transform: translateY(-3.5px) rotate(-45deg); }
+  .menu { position: fixed; inset: 0; z-index: 25; background: rgba(248,249,251,.86); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px);
+    display: grid; place-content: center; gap: 18px; text-align: center; opacity: 0; pointer-events: none; transition: opacity .5s var(--spring); }
+  .menu a { font-size: 34px; font-weight: 700; text-decoration: none; transform: translateY(40px); opacity: 0; transition: transform .7s var(--spring), opacity .7s var(--spring); }
+  .menu.open { opacity: 1; pointer-events: auto; }
+  .menu.open a { transform: none; opacity: 1; }
+  .menu.open a:nth-child(2) { transition-delay: .05s } .menu.open a:nth-child(3) { transition-delay: .1s } .menu.open a:nth-child(4) { transition-delay: .15s }
+
+  /* ---------- buttons: pill with nested icon island ---------- */
+  .btn {
+    display: inline-flex; align-items: center; gap: 14px; text-decoration: none; white-space: nowrap;
+    padding: 8px 24px 8px 8px; padding-inline: 26px 8px; min-height: 58px; border-radius: 999px;
+    background: var(--ink); color: #fff; font-weight: 500; font-size: 17px;
+    transition: transform .5s var(--spring);
+  }
+  .btn__ico { width: 42px; height: 42px; border-radius: 999px; background: var(--accent); display: grid; place-items: center; transition: transform .5s var(--spring); }
+  .btn__ico svg { width: 18px; height: 18px; }
+  .btn:hover .btn__ico { transform: translateX(-4px) translateY(-1px) scale(1.06); }
+  .btn:active { transform: scale(0.98); }
+  .btn--light { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1px var(--hair); }
+  .btn--light .btn__ico { background: var(--ink); color: #fff; }
+  .btn--wa { background: var(--wa); color: var(--wa-ink); font-weight: 700; }
+  .btn--wa .btn__ico { background: rgba(8,50,26,.12); }
+
+  /* ---------- double-bezel ---------- */
+  .shell { background: var(--shell); padding: 7px; border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--hair); }
+  .core { background: var(--paper); border-radius: calc(var(--r) - 7px); box-shadow: inset 0 1px 1px rgba(255,255,255,.9), var(--shadow); overflow: hidden; }
+
+  .wrap { width: min(100% - 32px, 1240px); margin-inline: auto; }
+  section { padding-block: 72px; }
+  h1, h2, h3 { margin: 0; line-height: 1.05; letter-spacing: -0.01em; }
+  h2 { font-size: clamp(34px, 8.5vw, 72px); font-weight: 800; }
+  .lede { color: var(--ink-2); max-width: 44ch; margin: 14px 0 0; }
+  .tag { justify-self: start; display: inline-block; font-size: 13px; font-weight: 500; padding: 5px 12px; border-radius: 999px; background: var(--accent-soft); color: #8a0848; margin-bottom: 18px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding-top: 112px; padding-bottom: 8px; display: grid; align-content: center; gap: 28px; }
+  .hero h1 { font-size: clamp(44px, 12.5vw, 112px); font-weight: 800; line-height: .98; }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero .lede { font-size: 18px; }
+  .hero__cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 26px; }
+  .stack { position: relative; height: clamp(330px, 92vw, 560px); }
+  .stack .shell { position: absolute; width: clamp(170px, 46vw, 290px); }
+  .stack .core img { aspect-ratio: 718/1040; width: 100%; object-fit: cover; }
+  .stack .c1 { inset-inline-end: 4%; top: 6%; --rot: -8deg; z-index: 1; }
+  .stack .c2 { inset-inline-start: 6%; top: 0; --rot: 6deg; z-index: 2; }
+  .stack .c3 { inset-inline-start: 26%; top: 22%; --rot: -2deg; z-index: 3; }
+  .stack .shell { rotate: var(--rot); }
+  .float { animation: drift 7s var(--spring) infinite alternate; }
+  .c2 .float, .c2.float { animation-duration: 8.5s; }
+  .chip { position: absolute; z-index: 4; padding: 10px 16px; border-radius: 999px; background: #fff; font-weight: 500; font-size: 15px; box-shadow: var(--shadow); white-space: nowrap; }
+  .chip b { color: var(--accent); font-weight: 700; }
+  .chip.k1 { bottom: 6%; inset-inline-end: 0; } .chip.k2 { top: 2%; inset-inline-end: 34%; }
+  @keyframes drift { from { translate: 0 0; } to { translate: 0 -14px; } }
+
+  /* ---------- how: z-axis cascade ---------- */
+  .how__list { display: grid; gap: 22px; margin-top: 44px; }
+  .step .core { padding: 28px 26px 30px; min-height: 210px; display: grid; align-content: space-between; gap: 22px; }
+  .step h3 { font-size: 28px; font-weight: 700; }
+  .step p { margin: 8px 0 0; color: var(--ink-2); }
+  .step__n { width: 54px; height: 54px; border-radius: 999px; display: grid; place-items: center; font-weight: 800; font-size: 22px; background: var(--ink); color: #fff; }
+  .step:nth-child(2) .step__n { background: var(--accent); }
+  .step:nth-child(3) .step__n { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1.5px var(--ink); }
+
+  /* ---------- occasions ---------- */
+  .occ { display: grid; gap: 22px; margin-top: 44px; }
+  .occ .core { position: relative; min-height: 460px; display: grid; align-content: end; padding: 26px; isolation: isolate; }
+  .occ__img { position: absolute; inset: 0; z-index: -1; }
+  .occ__img img { width: 100%; height: 100%; object-fit: cover; }
+  .occ__img::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to top, rgba(248,249,251,1) 18%, rgba(248,249,251,0) 62%); }
+  .occ h3 { font-size: clamp(32px, 7vw, 52px); font-weight: 800; }
+  .occ p { margin: 6px 0 16px; color: var(--ink-2); }
+  .words { display: flex; flex-wrap: wrap; gap: 8px; }
+  .words span { padding: 8px 14px; border-radius: 999px; background: #fff; font-size: 15px; box-shadow: inset 0 0 0 1px var(--hair); }
+  .occ--b .core { background: #fff4f9; }
+  .occ--b .occ__img { inset: 4% auto auto 8%; width: 84%; rotate: -7deg; }
+  .occ--b .occ__img::after { display: none; }
+  .occ--b .occ__img img { border-radius: 1.2rem; box-shadow: var(--shadow); height: auto; }
+
+  /* ---------- designs rail ---------- */
+  .rail { display: grid; grid-auto-flow: column; grid-auto-columns: min(74vw, 330px); gap: 18px; overflow-x: auto; scroll-snap-type: x mandatory; padding: 40px 16px 30px; margin-inline: -16px; scrollbar-width: none; }
+  .rail::-webkit-scrollbar { display: none; }
+  .design { scroll-snap-align: start; text-decoration: none; transition: transform .6s var(--spring); }
+  .design:hover { transform: translateY(-8px) rotate(-1deg); }
+  .design .core img { aspect-ratio: 3/2; object-fit: cover; width: 100%; background: #fff; }
+  .design__meta { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px 18px; }
+  .design__meta b { font-size: 22px; }
+  .rail-note { color: var(--ink-2); margin: 0; }
+
+  /* ---------- proof ---------- */
+  .proof { display: grid; gap: 30px; }
+  .count { font-size: clamp(80px, 26vw, 220px); font-weight: 800; line-height: .9; color: var(--accent); }
+  .count + p { font-size: 22px; font-weight: 500; margin: 6px 0 0; }
+  .quotes { position: relative; display: grid; gap: 18px; }
+  .quotes .shell:nth-child(1) { rotate: -2deg; }
+  .quotes .shell:nth-child(2) { rotate: 1.5deg; }
+
+  /* ---------- faq ---------- */
+  .faq { display: grid; gap: 12px; margin-top: 36px; }
+  .faq details .core { padding: 0; }
+  .faq summary { list-style: none; cursor: pointer; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 22px 24px; font-weight: 500; font-size: 19px; }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary i { width: 34px; height: 34px; flex: none; border-radius: 999px; background: var(--shell); display: grid; place-items: center; font-style: normal; transition: transform .5s var(--spring); }
+  .faq details[open] summary i { transform: rotate(45deg); }
+  .faq details p { margin: 0; padding: 0 24px 22px; color: var(--ink-2); }
+
+  /* ---------- footer ---------- */
+  footer { padding-block: 40px 64px; }
+  footer .core { padding: 36px 26px; display: grid; gap: 26px; }
+  footer h2 { font-size: clamp(30px, 7vw, 56px); }
+  .foot-links { display: flex; flex-wrap: wrap; gap: 10px 22px; color: var(--ink-2); font-size: 15px; }
+
+  /* ---------- reveal ---------- */
+  .rv { opacity: 0; transform: translateY(56px); transition: opacity 1s var(--spring), transform 1s var(--spring); }
+  .rv.in { opacity: 1; transform: none; }
+  .rv.d1 { transition-delay: .08s } .rv.d2 { transition-delay: .16s } .rv.d3 { transition-delay: .24s }
+
+  /* ---------- desktop ---------- */
+  @media (min-width: 900px) {
+    section { padding-block: 140px; }
+    .nav__links { display: flex; }
+    .burger { display: none; }
+    .hero h1 { font-size: 92px; } .hero { min-height: 100dvh; grid-template-columns: 1.35fr 1fr; align-items: center; padding-top: 120px; }
+    .stack { height: 600px; }
+    .how__list { grid-template-columns: repeat(3, 1fr); gap: 0; }
+    .how__list .step:nth-child(1) { rotate: -3deg; translate: 0 30px; z-index: 1; }
+    .how__list .step:nth-child(2) { rotate: 1.5deg; margin-inline: -24px; z-index: 2; }
+    .how__list .step:nth-child(3) { rotate: -1deg; translate: 0 50px; z-index: 3; }
+    .how__list .step .core { min-height: 300px; }
+    .occ { grid-template-columns: 1fr 1fr; }
+    .occ .core { min-height: 600px; padding: 40px; }
+    .proof { grid-template-columns: 1fr 1.1fr; align-items: center; }
+    .quotes .shell:nth-child(2) { margin-inline-start: 60px; margin-top: -20px; }
+    .faq-grid { display: grid; grid-template-columns: .8fr 1.2fr; gap: 60px; align-items: start; }
+    .faq { margin-top: 0; }
+    footer .core { grid-template-columns: 1fr auto; align-items: center; padding: 56px; }
+    .rail { padding-inline: 0; margin-inline: 0; grid-auto-columns: 340px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+    .rv { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+  <nav class="nav" aria-label="ראשי">
+    <a class="nav__logo" href="#top"><img src="../../site/assets/logo.png" alt="" />דוגרי</a>
+    <div class="nav__links"><a href="#how">איך זה עובד</a><a href="#designs">העיצובים</a><a href="#proof">מה אומרים</a><a href="#faq">שאלות</a></div>
+    <a class="btn btn--light" href="#designs" style="min-height:44px;padding-inline:18px 6px;gap:10px;font-size:15px">
+      להזמנה<span class="btn__ico" style="width:32px;height:32px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m6-6-6 6 6 6"/></svg></span>
+    </a>
+    <button class="burger" aria-label="תפריט" aria-expanded="false"><span></span><span></span></button>
+  </nav>
+  <div class="menu" aria-hidden="true"><a href="#how">איך זה עובד</a><a href="#designs">העיצובים</a><a href="#proof">מה אומרים</a><a href="#faq">שאלות</a></div>
+
+  <main id="top">
+    <header class="hero wrap">
+      <div>
+        <h1 class="rv">משחק מסיבה שכולו <em>עליה.</em></h1>
+        <p class="lede rv d1">החברים שולחים מילים, אנחנו מדפיסים חפיסה ולוח. שעה וחצי של צחוק על אדם אחד.</p>
+        <div class="hero__cta rv d2">
+          <a class="btn" href="#designs">בונים את המשחק<span class="btn__ico"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2"><path d="M19 12H5m6-6-6 6 6 6"/></svg></span></a>
+        </div>
+      </div>
+      <div class="stack" aria-hidden="true">
+        <div class="shell c1 rv d1"><div class="core float"><img src="../../site/assets/card-back.png" alt="" /></div></div>
+        <div class="shell c2 rv d2"><div class="core float" style="animation-delay:-2s"><img src="../../site/assets/card-real.png" alt="" /></div></div>
+        <div class="shell c3 rv d3"><div class="core float" style="animation-delay:-4s"><img src="../../site/assets/card-front.png" alt="" /></div></div>
+        <span class="chip k1 rv d3">רווקות · <b>יום הולדת 70</b></span>
+        <span class="chip k2 rv d3">עליו. או עליה.</span>
+      </div>
+    </header>
+
+    <section id="how">
+      <div class="wrap">
+        <h2 class="rv">שלושה צעדים, בטלפון.</h2>
+        <div class="how__list">
+          <article class="shell step rv"><div class="core"><span class="step__n">1</span><div><h3>בוחרים עיצוב</h3><p>כל עיצוב מתאים לכל חגיגה. את הכותרת אתם כותבים.</p></div></div></article>
+          <article class="shell step rv d1"><div class="core"><span class="step__n">2</span><div><h3>אוספים מילים</h3><p>שולחים לינק אחד לקבוצה. כל אחד מוסיף מהטלפון. עד 412 מילים, ממליצים על 70 לפחות.</p></div></div></article>
+          <article class="shell step rv d2"><div class="core"><span class="step__n">3</span><div><h3>מקבלים משחק מודפס</h3><p>חפיסה ולוח, מוכנים תוך <span class="tok">{lead_days}</span> ימי עסקים.</p></div></div></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="occasions" style="padding-top:40px">
+      <div class="wrap">
+        <h2 class="rv">מסיבה על אדם אחד.</h2>
+        <div class="occ">
+          <a class="shell occ--a rv" href="#designs" style="text-decoration:none"><div class="core">
+            <div class="occ__img"><img src="../../site/assets/hero-1.jpg" alt="לוח וקלפים ורודים על שולחן במסיבת רווקות" /></div>
+            <span class="tag">רווקות</span>
+            <h3>לכלה, מהחברות.</h3>
+            <p>כל הסיפורים שרק אתן מכירות, על קלפים.</p>
+            <div class="words"><span>הדייט מהים</span><span>שירה בקריוקי</span><span>הטיול לרודוס</span></div>
+          </div></a>
+          <a class="shell occ--b rv d1" href="#designs" style="text-decoration:none"><div class="core">
+            <div class="occ__img"><img src="../../site/assets/designs/birthday/store.webp" alt="המשחק בעיצוב קליפורניה" /></div>
+            <span class="tag">יום הולדת</span>
+            <h3>לאמא, לאבא, לסבתא.</h3>
+            <p>שבעים שנה של זיכרונות, ששוחקים בהם כל הנכדים.</p>
+            <div class="words"><span>המרק של שישי</span><span>הפיאט הצהובה</span><span>"עוד פרוסה?"</span></div>
+          </div></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="designs" style="padding-top:40px">
+      <div class="wrap">
+        <h2 class="rv">בוחרים עיצוב.</h2>
+        <p class="lede rv d1">כל עיצוב מתאים לכל חגיגה. מחיר: <span class="tok">{price}</span> ₪</p>
+        <div class="rail">
+          <a class="design shell rv" href="#"><div class="core"><img src="../../site/assets/designs/bachelorette/store.webp" alt="" /><div class="design__meta"><b>פריז</b><span class="tok">{price}</span></div></div></a>
+          <a class="design shell rv d1" href="#"><div class="core"><img src="../../site/assets/designs/birthday/store.webp" alt="" /><div class="design__meta"><b>קליפורניה</b><span class="tok">{price}</span></div></div></a>
+          <a class="design shell rv d2" href="#"><div class="core"><img src="../../site/assets/designs/marriage/store.webp" alt="" /><div class="design__meta"><b>סנטוריני</b><span class="tok">{price}</span></div></div></a>
+          <a class="design shell rv d3" href="#"><div class="core"><img src="../../site/assets/designs/japanese/store.webp" alt="" /><div class="design__meta"><b>טוקיו</b><span class="tok">{price}</span></div></div></a>
+          <a class="design shell" href="#"><div class="core"><img src="../../site/assets/designs/posttrip/store.webp" alt="" /><div class="design__meta"><b>סיישל</b><span class="tok">{price}</span></div></div></a>
+          <a class="design shell" href="#"><div class="core"><img src="../../site/assets/designs/kids/store.webp" alt="" /><div class="design__meta"><b>ברוקלין</b><span class="tok">{price}</span></div></div></a>
+        </div>
+      </div>
+    </section>
+
+    <section id="proof" style="padding-top:40px">
+      <div class="wrap proof">
+        <div class="rv">
+          <div class="count"><span class="tok" style="font-size:.32em">{orders_count}</span></div>
+          <p>חגיגות עד היום. ואף אחת לא שקטה.</p>
+        </div>
+        <div class="quotes">
+          <div class="shell rv"><div class="core"><img src="../../site/assets/testimonials/review-1.jpg" alt="הודעת וואטסאפ מלקוחה: דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו" /></div></div>
+          <div class="shell rv d1"><div class="core"><img src="../../site/assets/testimonials/review-4.jpg" alt="הודעת וואטסאפ מלקוחה: אמא שלי הייתה בהלם מכמה שזה אישי" /></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq" style="padding-top:40px">
+      <div class="wrap faq-grid">
+        <h2 class="rv">שאלות קצרות.</h2>
+        <div class="faq">
+          <div class="shell rv"><details class="core"><summary>כמה מילים צריך?<i>+</i></summary><p>עד 412. אנחנו ממליצים על 70 לפחות, כדי שהמשחק ירגיש באמת אישי.</p></details></div>
+          <div class="shell rv d1"><details class="core"><summary>מתי המשחק מוכן?<i>+</i></summary><p><span class="tok">{lead_days}</span> ימי עסקים מהרגע ששולחים את המילים להפקה.</p></details></div>
+          <div class="shell rv d2"><details class="core"><summary>איפה מקבלים אותו?<i>+</i></summary><p>איסוף מבית הדפוס בתל אביב, או שליח עד הבית.</p></details></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap">
+    <div class="shell rv"><div class="core">
+      <div>
+        <h2>שאלה? כתבו להדר ועלמה.</h2>
+        <div class="foot-links" style="margin-top:18px"><a href="#">תקנון</a><a href="#">איסוף עצמי</a><a href="#">טיימר למשחק</a><a href="#">דוגרי לעסקים</a></div>
+      </div>
+      <a class="btn btn--wa" href="https://wa.me/972552441334">דברו איתנו בוואטסאפ<span class="btn__ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m6-6-6 6 6 6"/></svg></span></a>
+    </div></div>
+  </footer>
+
+<script>
+  // Reveal on enter: IntersectionObserver, transform + opacity only.
+  const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { threshold: 0.12 });
+  document.querySelectorAll('.rv').forEach((el) => io.observe(el));
+  // Hamburger morph + staggered menu.
+  const nav = document.querySelector('.nav'), menu = document.querySelector('.menu'), burger = document.querySelector('.burger');
+  burger.addEventListener('click', () => { const o = nav.classList.toggle('open'); menu.classList.toggle('open', o); burger.setAttribute('aria-expanded', o); menu.setAttribute('aria-hidden', !o); });
+  menu.addEventListener('click', () => burger.click());
+  // Pointer parallax on the hero stack (desktop only, reduced-motion aware).
+  const rm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!rm && matchMedia('(pointer: fine)').matches) {
+    const cards = [...document.querySelectorAll('.stack .shell')];
+    addEventListener('pointermove', (e) => {
+      const x = e.clientX / innerWidth - 0.5, y = e.clientY / innerHeight - 0.5;
+      cards.forEach((c, i) => { c.style.translate = `${x * (10 + i * 10)}px ${y * (8 + i * 8)}px`; });
+    }, { passive: true });
+  }
+</script>
+</body>
+</html>
