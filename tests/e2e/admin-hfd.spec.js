@@ -26,7 +26,7 @@ async function armHfd(page, configured) {
 
 // Make ONE seeded row look like a delivery order, optionally with a booked
 // shipment on it.
-async function markRowDelivery(page, honoreeName, hfd) {
+async function markRowDelivery(page, honoreeName, hfd, extra = {}) {
   await page.route('**/api/admin/collections*', async (route) => {
     const resp = await route.fetch();
     const body = await resp.json();
@@ -38,6 +38,7 @@ async function markRowDelivery(page, honoreeName, hfd) {
         paid: true,
         address: { street: 'הרצל 5', city: 'תל אביב', postal: '6100000' },
         hfd: hfd || null,
+        ...extra,
       };
     }
     return route.fulfill({ json: body });
@@ -120,4 +121,35 @@ test('a refused booking keeps HFD’s reason on the row', async ({ page, request
   const row = page.locator('tbody tr', { hasText: name });
   await expect(row.getByText('HFD סירבה: עיר לא מוכרת')).toBeVisible();
   await expect(row.getByRole('button', { name: 'שלח ל-HFD' })).toBeVisible();
+});
+
+// Copies in separate boxes are separate HFD deliveries: a line per box, each with
+// its own sticker link, and the send button books only the box still missing.
+test('an order in separate boxes lists a shipment per box and books the missing one', async ({
+  page,
+  request,
+}) => {
+  const name = uniq('קופסאות');
+  await seed(request, { name, email: 'boxes@example.com', phone: '0521234567' });
+  await armHfd(page, true);
+  const rec = (box, n) => ({
+    box,
+    shipment_number: n,
+    rand_number: 'r-' + n,
+    tracking_url: 'https://run.hfd.co.il/info/r-' + n,
+    sent_at: new Date().toISOString(),
+  });
+  await markRowDelivery(page, name, rec(1, '501'), {
+    quantity: 3,
+    one_box: false,
+    hfd_shipments: [rec(1, '501'), rec(2, '502')],
+  });
+
+  await page.goto(`/admin.html?key=${KEY}`);
+  const row = page.locator('tbody tr', { hasText: name });
+  await expect(row.getByText('HFD 501 (1/3)')).toBeVisible();
+  await expect(row.getByText('HFD 502 (2/3)')).toBeVisible();
+  await expect(row.locator('a[href*="/hfd/label?key="][href$="&box=2"]')).toHaveCount(1);
+  await expect(row.getByRole('button', { name: 'שלח ל-HFD (קופסה חסרה)' })).toBeVisible();
+  await expect(row.getByRole('button', { name: 'בטל את כל המשלוחים' })).toBeVisible();
 });

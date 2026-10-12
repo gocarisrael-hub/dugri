@@ -120,6 +120,37 @@ describe('buildShipment — our order in HFD’s fields', () => {
     });
   });
 
+  // A BOOKING PER BOX. Copies the buyer sent in separate boxes are separate HFD
+  // deliveries — the routes book one per box — so every booking is ONE package,
+  // and the box it carries is written where the courier and the owner read it.
+  it('a box of several says which box it is, on the sticker and after the order number', () => {
+    const { payload } = hfd.buildShipment(order({ order: { quantity: 3, one_box: false } }), {
+      box: 2,
+      boxes: 3,
+    });
+    expect(payload.packsHaloch).toBe('1');
+    expect(payload.shipmentRemarks.startsWith('קופסה 2/3 · ')).toBe(true);
+    expect(payload.referenceNum1).toBe('DG-1042 2/3');
+  });
+
+  it('a single box books exactly what it always did — one package, no box mark', () => {
+    for (const opts of [{}, { box: 1, boxes: 1 }]) {
+      const { payload } = hfd.buildShipment(order(), opts);
+      expect(payload.packsHaloch).toBe('1');
+      expect(payload.shipmentRemarks).not.toContain('קופסה');
+      expect(payload.referenceNum1).toBe('DG-1042');
+    }
+  });
+
+  it('createShipment passes the box through to the booking', async () => {
+    const f = fakeFetch(jsonRes({ shipmentNumber: 555, randNumber: 'r' }));
+    const r = await hfd.createShipment(order(), { box: 3, boxes: 3, fetchImpl: f });
+    expect(r.ok).toBe(true);
+    const body = f.calls[0].body;
+    expect(body.referenceNum1).toBe('DG-1042 3/3');
+    expect(body.packsHaloch).toBe('1');
+  });
+
   it('carries the postal code, flat and floor in the remark the courier reads', () => {
     const { payload } = hfd.buildShipment(order());
     expect(payload.addressRemarks).toBe('הרצל 5, מיקוד 6100000, דירה 3, קומה 2');

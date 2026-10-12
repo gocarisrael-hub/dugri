@@ -116,6 +116,27 @@ def test_a_missing_fact_leaves_no_empty_row():
     assert "טלפון:" in cell
 
 
+def test_a_box_of_a_split_order_says_which_box_it_is():
+    # Copies sent as separate boxes get a label each, marked k/N, so the boxes of
+    # one order can be matched up on the shelf and none is handed over short.
+    cell = ps.cell_html({**ONE, "box": "2/3"})
+    assert "קופסה:" in cell
+    assert "2/3" in cell
+
+
+def test_a_single_box_carries_no_box_line():
+    # One box (one copy, all copies together, or an order from before the choice)
+    # prints exactly the label it always did.
+    assert "קופסה:" not in ps.cell_html(ONE)
+
+
+def test_three_boxes_render_three_labels_in_order():
+    boxes = [{**ONE, "box": f"{k}/3"} for k in (1, 2, 3)]
+    html = ps.sheet_html(boxes)
+    assert html.count('class="page"') == 3
+    assert html.index("1/3") < html.index("2/3") < html.index("3/3")
+
+
 def test_an_empty_slot_is_an_empty_cell_and_not_a_missing_one():
     assert ps.cell_html(None) == '<div class="cell"></div>'
 

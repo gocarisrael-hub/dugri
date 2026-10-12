@@ -462,9 +462,16 @@ function amountLines(order, options, label) {
 }
 
 // The copies breakdown for an order-detail block: how many decks, the per-copy
-// price, and the one-time shipping fee. Returns [] for an ordinary single-copy
-// order (and for orders placed before copies existed, which carry no quantity) so
-// nothing changes on the receipts that dominate.
+// price, how many boxes they are packed in, and the shipping. Returns [] for an
+// ordinary single-copy order (and for orders placed before copies existed, which
+// carry no quantity) so nothing changes on the receipts that dominate.
+//
+// The box count is the PACKING rule in server/db.js (orderBoxes): only an
+// explicit `one_box: true` puts the copies in one box; false, or an order from
+// before the choice, is a box per copy. It is printed for every multi-copy
+// PRINTED order, so the owner packing it and the buyer reading the receipt both
+// see how the parcels go out. The shipping line beside it is whatever was
+// actually charged — for an order from before the choice, the fee once.
 function copyLines(order) {
   const qty = order && Number.isInteger(order.quantity) ? order.quantity : 1;
   if (qty <= 1) return [];
@@ -472,6 +479,10 @@ function copyLines(order) {
   const out = [f.copies + ': ' + qty];
   if (Number.isInteger(order.unit_price)) {
     out.push(f.unitPrice + ': ' + order.unit_price + ' ' + f.currency);
+  }
+  if (order.version === 'pickup' || order.version === 'delivery') {
+    const boxes = order.one_box === true ? 1 : qty;
+    out.push((f.boxes || 'קופסאות') + ': ' + boxes);
   }
   if (Number.isInteger(order.delivery_fee) && order.delivery_fee > 0) {
     out.push(f.shipping + ': ' + order.delivery_fee + ' ' + f.currency);

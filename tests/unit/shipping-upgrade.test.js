@@ -426,3 +426,55 @@ describe('one callback, two kinds of purchase', () => {
     expect(order.shipping).toBeUndefined();
   });
 });
+
+// COPIES IN SEPARATE BOXES ARE SEPARATE PARCELS — also when delivery is bought
+// after the fact. A paid pickup of three copies, each in its own box, becomes a
+// delivery of three parcels, priced exactly as the checkout would have priced it:
+// the per-box fee three times. All in one box, or an order from before the box
+// choice existed, is one parcel and one fee, as before.
+describe('the upgrade is priced per box', () => {
+  function paidPickupOf(copies, oneBox, name) {
+    const c = db.createCollection(name);
+    db.setOrder(c.id, c.owner_token, {
+      version: 'pickup',
+      quantity: copies,
+      ...(oneBox === undefined ? {} : { one_box: oneBox }),
+    });
+    db.markPaid(c.id, {
+      method: 'pelecard',
+      transactionId: 'tx-base',
+      charged_total: 199 * copies,
+    });
+    return c;
+  }
+
+  it('three copies in separate boxes: three fees, offered, staged and charged', async () => {
+    const c = paidPickupOf(3, false, 'שלוש קופסאות');
+    expect(db.shippingUpgrade(c.id)).toMatchObject({ offered: true, fee: FEE * 3, boxes: 3 });
+    const r = await post('/api/collections/' + c.id + '/shipping/init', {
+      owner_token: c.owner_token,
+      address: ADDRESS,
+    });
+    expect(r.status).toBe(200);
+    expect(r.body.charged).toBe(FEE * 3);
+    const sh = db.getCollection(c.id).order.shipping;
+    expect(sh.fee).toBe(FEE * 3);
+    expect(sh.pelecard.sessions[0].charged_total).toBe(FEE * 3);
+    // …and once it lands, the order carries the same fee a checkout tick would have.
+    db.markShippingPaid(c.id, { charged_total: FEE * 3 });
+    const order = db.getCollection(c.id).order;
+    expect(order.delivery_fee).toBe(FEE * 3);
+    expect(order.total).toBe(199 * 3 + FEE * 3);
+  });
+
+  it('three copies in ONE box: one fee', () => {
+    const c = paidPickupOf(3, true, 'קופסה אחת');
+    expect(db.shippingUpgrade(c.id)).toMatchObject({ fee: FEE, boxes: 1 });
+  });
+
+  it('an order from before the box choice: one fee, as it was sold', () => {
+    const c = paidPickupOf(3, undefined, 'הזמנה ותיקה');
+    delete db.getCollection(c.id).order.one_box;
+    expect(db.shippingUpgrade(c.id)).toMatchObject({ fee: FEE, boxes: 1 });
+  });
+});

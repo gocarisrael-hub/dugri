@@ -350,7 +350,8 @@ describe('the batch handed to the renderer', () => {
   it('keeps table order, ours as fields and HFD’s as the file', () => {
     const entries = app.stickerEntries(
       [pickup(1), delivery(2), pickup(3)],
-      new Map([['d2', '/tmp/hfd-95314642.pdf']])
+      // Keyed by SHIPMENT NUMBER: an order in separate boxes has one per box.
+      new Map([['95314642', '/tmp/hfd-95314642.pdf']])
     );
     expect(entries).toEqual([
       { title: 'איסוף 1' },

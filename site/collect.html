@@ -1724,6 +1724,32 @@
       .qty-row.hidden {
         display: none;
       }
+      /* The box choice hangs off the stepper above it: same frame, no gap, so it
+         reads as part of "how many copies" rather than a new question. */
+      .box-opt {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        border: 1px solid var(--accent);
+        border-top: 0;
+        background: var(--surface);
+        padding: 10px 12px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .box-opt.hidden {
+        display: none;
+      }
+      .box-opt input {
+        margin-top: 2px;
+        accent-color: var(--ink);
+      }
+      .box-note {
+        display: block;
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
       .qty-label {
         font-size: 13px;
         font-weight: 700;
@@ -2479,6 +2505,9 @@
             >נוסיף משלוח עד הבית להזמנה ששילמתם עליה, ונשלח אותו אליכם ברגע שהמשחק מוכן.</span
           >
         </p>
+        <!-- Copies packed in separate boxes ship as that many parcels, so the fee
+             above is the per-box fee times the boxes (db.shippingUpgrade). -->
+        <p class="muted hidden" id="shipAddBoxes" data-testid="ship-add-boxes"></p>
         <div class="addr-form" id="shipAddrForm">
           <div class="addr-head" data-edit="collect-shipadd-addr-head">כתובת למשלוח</div>
           <div class="addr-grid">
@@ -2977,8 +3006,9 @@
           <!-- The delivery add-on. Sits OUTSIDE the radiogroup (it is not a version
                choice, it is a yes/no on top of the printed game) and is shown only
                while the printed game is the selection — a PDF has nothing to
-               ship. Its price is the shipping fee alone, charged ONCE per order
-               however many copies travel in the parcel. -->
+               ship. Its price is the shipping alone: the per-box fee, times the
+               number of boxes when several copies go out in separate boxes
+               (see #oneBoxOpt). -->
           <label class="pay-addon hidden" id="shipOpt" data-testid="ship-toggle">
             <input type="checkbox" id="shipToggle" />
             <span class="opt-body">
@@ -3121,6 +3151,18 @@
             </button>
           </span>
         </div>
+        <!-- How several printed copies travel. Shown only for 2+ copies of a
+             printed game. Unticked (the default) every copy gets its own box, its
+             own label and — for delivery — its own shipping fee; ticked, they all
+             go in one box and the fee is charged once. The server prices this the
+             same way (db.deliveryFeeFor); the note only previews it. -->
+        <label class="box-opt hidden" id="oneBoxOpt" data-testid="one-box">
+          <input type="checkbox" id="oneBoxToggle" data-testid="one-box-toggle" />
+          <span class="box-body">
+            <span data-edit="collect-one-box-label">לשלוח את כל העותקים בקופסה אחת</span>
+            <span class="box-note" id="oneBoxNote" data-testid="one-box-note"></span>
+          </span>
+        </label>
 
         <div class="pay-total">
           לתשלום: <span class="pay-now amt"><span id="payTotal">79</span> ₪</span
@@ -4806,6 +4848,14 @@
         card.classList.toggle('hidden', !offer);
         done.classList.toggle('hidden', !paid);
         if (offer) $('#shipAddFee').textContent = up.fee;
+        const boxesNote = $('#shipAddBoxes');
+        if (boxesNote) {
+          const many = !!(offer && up.boxes > 1);
+          boxesNote.classList.toggle('hidden', !many);
+          boxesNote.textContent = many
+            ? 'כל עותק נשלח בקופסה משלו, ולכן המשלוח נגבה ' + up.boxes + ' פעמים.'
+            : '';
+        }
         if (paid) {
           const a = up.address || {};
           $('#shipDoneAddr').textContent = [
@@ -6777,6 +6827,11 @@
         openPayPanelRef = () => openPayPanel('start');
         $('#qtyMinus').addEventListener('click', () => setCopies(copies - 1, true));
         $('#qtyPlus').addEventListener('click', () => setCopies(copies + 1, true));
+        $('#oneBoxToggle').addEventListener('change', (e) => {
+          oneBoxTouched = true;
+          oneBox = !!e.target.checked;
+          renderTotal();
+        });
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
         const optsBox = $('#payOpts');
         const addressForm = $('#addressForm');
@@ -6831,14 +6886,52 @@
         // the old count. Same idea as `wordEditOpen` guarding the word editor: a
         // local edit wins until it has been sent.
         let copiesTouched = false;
-        // Shipping is charged ONCE per order, not per copy: every deck goes in the
-        // same parcel to the same address. 0 for pickup, and 0 whenever pricing
-        // failed to load (never invent a charge).
+        // Whether every copy goes in ONE box. Off by default: each copy gets its
+        // own box (and, for delivery, its own shipping fee). Adopted from a placed
+        // order until the buyer touches the tick, for the same reason as
+        // copiesTouched.
+        let oneBox = false;
+        let oneBoxTouched = false;
+        let legacyBoxes = false;
+        // An order placed before the choice existed (one_box null). It is PACKED a
+        // box per copy, but its fee was priced once and nothing re-prices it — so
+        // until the buyer touches the tick, the fee previews once, no note is
+        // shown, and pay/init is sent no choice (the server then keeps it as is).
+        // The shipping fee for ONE box, as /api/pricing publishes it. 0 whenever
+        // pricing failed to load (never invent a charge).
         function deliveryFee() {
           return Number.isInteger(pricing.delivery_fee) ? pricing.delivery_fee : 0;
         }
+        // How many boxes the copies go out in — db.boxesFor on the server.
+        function boxCount() {
+          return oneBox || (legacyBoxes && !oneBoxTouched) ? 1 : copies;
+        }
+        // The order's shipping: per-box fee × boxes for a delivery, else 0. The
+        // SAME arithmetic as db.deliveryFeeFor; a change to either belongs in both.
         function feeFor(v) {
-          return v === 'delivery' ? deliveryFee() : 0;
+          return v === 'delivery' ? deliveryFee() * boxCount() : 0;
+        }
+        // The box tick: offered for 2+ copies of a printed game, never on a locked
+        // order (that is bought exactly as placed). For delivery its note says what
+        // the choice costs; for pickup it only decides the labels.
+        function syncBoxOption(v) {
+          const opt = $('#oneBoxOpt');
+          if (!opt) return;
+          const show = !lockVersion && copies > 1 && (v === 'pickup' || v === 'delivery');
+          opt.classList.toggle('hidden', !show);
+          $('#oneBoxToggle').checked = oneBox;
+          const note = $('#oneBoxNote');
+          note.textContent = '';
+          if (!show || v !== 'delivery' || !deliveryFee()) return;
+          if (legacyBoxes && !oneBoxTouched) return;
+          if (oneBox) {
+            note.appendChild(document.createTextNode('משלוח אחד: '));
+            note.appendChild(amountNode(deliveryFee()));
+          } else {
+            note.appendChild(document.createTextNode('כל עותק בקופסה משלו: '));
+            note.appendChild(amountNode(deliveryFee()));
+            note.appendChild(document.createTextNode(' משלוח × ' + copies));
+          }
         }
 
         // Show, price and (where the choice isn't the buyer's) fix the shipping
@@ -6884,7 +6977,7 @@
           box.disabled = !canCollect;
           if (!canCollect && canShip) box.checked = true;
           if (!canShip) box.checked = false;
-          if (price) setAmount(price, deliveryFee());
+          if (price) setAmount(price, feeFor('delivery'));
         }
 
         // The shipping money inside the total for version `v` — the part a coupon
@@ -6942,10 +7035,15 @@
           // and adding shipping would show a number the server will never charge —
           // a 3-copy order stored at 1797 rendering as 5391. Display it as-is.
           // Otherwise: the SAME arithmetic the server performs — per-copy price x
-          // copies, plus ONE shipping fee for the order. If these two ever disagree
+          // copies, plus the per-box shipping fee x boxes. If these two ever disagree
           // the buyer is shown one number and charged another, so a change to
           // either belongs in both.
           const locked = !!lockVersion;
+          syncBoxOption(v);
+          // The tick's own price follows the box count, so "שלחו לי עד הבית" quotes
+          // what ticking it actually adds.
+          const shipPrice = document.getElementById('shipPrice');
+          if (shipPrice && !locked) setAmount(shipPrice, feeFor('delivery'));
           const unit = priceFor(v);
           const fee = locked ? 0 : feeFor(v);
           const base = locked ? unit : unit * copies + fee;
@@ -7015,8 +7113,20 @@
           if (copies > 1) el.appendChild(document.createTextNode(' × ' + copies + ' עותקים'));
           if (fee) {
             el.appendChild(document.createTextNode(' + '));
-            el.appendChild(amountNode(fee));
-            el.appendChild(document.createTextNode(' משלוח (פעם אחת)'));
+            const boxes = boxCount();
+            if (boxes > 1) {
+              // Per-box fee × boxes, so the multiplied shipping is as visible as
+              // the multiplied price.
+              el.appendChild(amountNode(fee / boxes));
+              el.appendChild(document.createTextNode(' משלוח × ' + boxes + ' קופסאות'));
+            } else {
+              el.appendChild(amountNode(fee));
+              el.appendChild(
+                document.createTextNode(
+                  copies > 1 && oneBox ? ' משלוח (קופסה אחת)' : ' משלוח (פעם אחת)'
+                )
+              );
+            }
           }
           el.classList.remove('hidden');
         }
@@ -7099,6 +7209,12 @@
           ) {
             const stored = Math.max(1, state.order.quantity);
             if (stored !== copies) setCopies(stored);
+          }
+          // The box choice, adopted the same way. null is an order from before the
+          // choice existed: it was sold as one box, so it reads as one box.
+          if (!oneBoxTouched && state && state.order && !state.order.paid) {
+            legacyBoxes = state.order.one_box == null;
+            oneBox = state.order.one_box === true;
           }
 
           // 1. LOCKED — show only the order's version at its stored total.
@@ -7629,7 +7745,16 @@
           // `quantity` is a REQUEST, not a price: the server recomputes the total
           // from its own per-copy price, so a tampered count still cannot buy five
           // decks for the price of one.
-          const payload = { owner_token: ownerToken, version, address, quantity: copies };
+          // `one_box` likewise: the server turns it into the shipping fee itself.
+          const payload = {
+            owner_token: ownerToken,
+            version,
+            address,
+            quantity: copies,
+          };
+          // Not sent for an untouched order from before the choice: the server
+          // then keeps it exactly as it was priced.
+          if (!(legacyBoxes && !oneBoxTouched)) payload.one_box = oneBox;
           if (appliedCoupon) payload.coupon = appliedCoupon.code;
           // The ad that brought her, and the page she is paying from. This is the
           // LAST moment the browser gets to say either: from here the sale is

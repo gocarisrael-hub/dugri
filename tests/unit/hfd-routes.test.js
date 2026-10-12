@@ -312,3 +312,178 @@ describe('GET /api/admin/hfd/status', () => {
     expect(r.status).toBe(403);
   });
 });
+
+// COPIES IN SEPARATE BOXES ARE SEPARATE HFD DELIVERIES — one booking per box,
+// each with its own number, label and tracking. An order from before the box
+// choice existed is a box per copy too (the owner's rule for fulfilment; its money
+// is untouched). All in one box is one booking, as before.
+describe('one HFD booking per box', () => {
+  function seedCopies(name, quantity, oneBox) {
+    const c = db.createCollection(name, { email: 'x@example.com', phone: '0521234567' });
+    db.setOrder(
+      c.id,
+      c.owner_token,
+      {
+        version: 'delivery',
+        address: ADDRESS,
+        quantity,
+        ...(oneBox === undefined ? {} : { one_box: oneBox }),
+      },
+      { admin: true }
+    );
+    return db.getCollection(c.id);
+  }
+  // A fresh shipment number per booking, so the boxes can be told apart.
+  function numbered() {
+    let n = 500;
+    hfdAnswer = (url) =>
+      url.endsWith('/shipments/create')
+        ? json({ shipmentNumber: ++n, randNumber: 'r-' + n })
+        : json({ status: 'OK' });
+  }
+  const sentBodies = () =>
+    hfdCalls.filter((c) => c.url.endsWith('/shipments/create')).map((c) => JSON.parse(c.init.body));
+
+  it('three separate boxes: three bookings, each one package, each marked k/3', async () => {
+    numbered();
+    const c = seedCopies('שלוש קופסאות', 3, false);
+    const r = await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(r.status).toBe(200);
+    expect(r.body.boxes).toBe(3);
+    expect(r.body.booked).toEqual([1, 2, 3]);
+    expect(r.body.shipments.map((s) => [s.box, s.shipment_number])).toEqual([
+      [1, '501'],
+      [2, '502'],
+      [3, '503'],
+    ]);
+    const bodies = sentBodies();
+    expect(bodies.map((b) => b.packsHaloch)).toEqual(['1', '1', '1']);
+    expect(bodies.map((b) => b.referenceNum1.split(' ').pop())).toEqual(['1/3', '2/3', '3/3']);
+    expect(bodies[1].shipmentRemarks.startsWith('קופסה 2/3')).toBe(true);
+    // Box 1 is still where a reader of the one-shipment shape finds it.
+    expect(db.getCollection(c.id).order.hfd.shipment_number).toBe('501');
+  });
+
+  it('all in one box: one booking, no box mark', async () => {
+    numbered();
+    const c = seedCopies('קופסה אחת', 3, true);
+    const r = await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(r.body.booked).toEqual([1]);
+    expect(sentBodies()).toHaveLength(1);
+    expect(sentBodies()[0].referenceNum1).not.toContain('/');
+  });
+
+  it('an order from before the box choice: a booking per copy', async () => {
+    numbered();
+    const c = seedCopies('ותיקה', 2, false);
+    delete db.getCollection(c.id).order.one_box;
+    const r = await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(r.body.booked).toEqual([1, 2]);
+    // …and its money is what it was sold at: setOrder priced it, nothing re-prices.
+  });
+
+  it('a refusal half-way keeps what was booked, and the retry books ONLY the rest', async () => {
+    let n = 700;
+    let calls = 0;
+    hfdAnswer = () => {
+      calls += 1;
+      return calls === 2
+        ? json({ errorMessage: 'עומס' })
+        : json({ shipmentNumber: ++n, randNumber: 'r-' + n });
+    };
+    const c = seedCopies('חצי', 3, false);
+    const first = await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(first.status).toBe(502);
+    expect(first.body.booked).toEqual([1]);
+    expect(first.body.shipments.find((s) => s.box === 2).error).toBe('עומס');
+
+    hfdCalls = [];
+    const retry = await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(retry.status).toBe(200);
+    expect(retry.body.booked).toEqual([2, 3]);
+    // Box 1 was never booked twice.
+    expect(sentBodies().map((b) => b.referenceNum1.split(' ').pop())).toEqual(['2/3', '3/3']);
+    const live = retry.body.shipments.filter((s) => s.shipment_number && !s.cancelled_at);
+    expect(live).toHaveLength(3);
+
+    hfdCalls = [];
+    const again = await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(again.status).toBe(409);
+    expect(hfdCalls).toHaveLength(0);
+  });
+
+  it('one box cancelled is the one box re-booked', async () => {
+    numbered();
+    const c = seedCopies('ביטול קופסה', 2, false);
+    await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    const del = await send('DELETE', withKey('/api/admin/collections/' + c.id + '/hfd?box=2'));
+    expect(del.status).toBe(200);
+    expect(del.body.shipments.find((s) => s.box === 1).cancelled_at).toBeFalsy();
+    expect(del.body.shipments.find((s) => s.box === 2).cancelled_at).toBeTruthy();
+    hfdCalls = [];
+    const r = await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(r.body.booked).toEqual([2]);
+  });
+
+  it('cancelling without a box stands every van down', async () => {
+    numbered();
+    const c = seedCopies('ביטול הכל', 2, false);
+    await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    const del = await send('DELETE', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(del.status).toBe(200);
+    expect(del.body.shipments.every((s) => s.cancelled_at)).toBe(true);
+  });
+
+  it('each box’s label is fetched by its own number', async () => {
+    numbered();
+    const c = seedCopies('מדבקות', 2, false);
+    await send('POST', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    hfdAnswer = (url) => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/pdf' },
+      arrayBuffer: async () => Buffer.from('%PDF-1.4 ' + url.split('/').at(-2)),
+    });
+    const res = await realFetch(
+      base + withKey('/api/admin/collections/' + c.id + '/hfd/label?box=2')
+    );
+    expect(res.status).toBe(200);
+    expect(Buffer.from(await res.arrayBuffer()).toString()).toBe('%PDF-1.4 502');
+  });
+
+  it('an order booked before shipments were per box still reads, cancels and re-books', async () => {
+    const c = seedDelivery('צורה ישנה');
+    // The stored shape every order booked before this change carries.
+    db.getCollection(c.id).order.hfd = { shipment_number: '424242', rand_number: 'r-old' };
+    expect(db.hfdShipments(db.getCollection(c.id).order)).toEqual([
+      { shipment_number: '424242', rand_number: 'r-old', box: 1 },
+    ]);
+    hfdAnswer = () => json({ status: 'OK' });
+    const del = await send('DELETE', withKey('/api/admin/collections/' + c.id + '/hfd'));
+    expect(del.status).toBe(200);
+    expect(del.body.hfd).toMatchObject({ shipment_number: '424242' });
+    expect(del.body.hfd.cancelled_at).toBeTruthy();
+  });
+
+  it('the sticker batch fetches a courier label per box', () => {
+    const entries = app.stickerEntries(
+      [
+        {
+          id: 'd',
+          kind: 'delivery',
+          shipment_number: '501',
+          shipments: [
+            { box: 1, shipment_number: '501' },
+            { box: 2, shipment_number: '502' },
+          ],
+          label: {},
+        },
+      ],
+      new Map([
+        ['501', '/tmp/hfd-501.pdf'],
+        ['502', '/tmp/hfd-502.pdf'],
+      ])
+    );
+    expect(entries).toEqual([{ pdf: '/tmp/hfd-501.pdf' }, { pdf: '/tmp/hfd-502.pdf' }]);
+  });
+});

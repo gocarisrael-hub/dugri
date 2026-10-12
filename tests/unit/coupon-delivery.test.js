@@ -97,7 +97,7 @@ async function coupon(code, pct) {
   expect([201, 400]).toContain(r.status);
 }
 
-async function payWith(version, code, quantity = 1) {
+async function payWith(version, code, quantity = 1, oneBox) {
   const c = db.createCollection('קופון ' + version + Math.random());
   const r = await post('/api/collections/' + c.id + '/pay/init', {
     owner_token: c.owner_token,
@@ -105,6 +105,7 @@ async function payWith(version, code, quantity = 1) {
     address: version === 'delivery' ? ADDRESS : undefined,
     quantity,
     coupon: code,
+    ...(oneBox === undefined ? {} : { one_box: oneBox }),
   });
   return { r, order: db.getCollection(c.id).order };
 }
@@ -123,11 +124,24 @@ describe('a coupon on a delivery order', () => {
     expect(r.body.charged).not.toBe(Math.round(order.total * 0.5));
   });
 
-  it('keeps the fee whole across several copies — it is charged once, and never discounted', async () => {
+  it('keeps the fee whole across several copies in ONE box — charged once, never discounted', async () => {
+    await coupon('HALFGAME', 50);
+    const { r, order } = await payWith('delivery', 'HALFGAME', 3, true);
+    expect(order.quantity).toBe(3);
+    expect(order.delivery_fee).toBe(FEE);
+    const expected = Math.round(order.unit_price * 3 * 0.5) + FEE;
+    expect(r.body.charged).toBe(expected);
+    expect(lastInitTotal).toBe(expected * 100);
+  });
+
+  it('keeps every box’s fee whole when the copies go in separate boxes', async () => {
+    // The default for several copies: a box each, a fee each. The coupon still
+    // comes off the game money only — all three fees are charged in full.
     await coupon('HALFGAME', 50);
     const { r, order } = await payWith('delivery', 'HALFGAME', 3);
-    expect(order.quantity).toBe(3);
-    const expected = Math.round(order.unit_price * 3 * 0.5) + FEE;
+    expect(order.one_box).toBe(false);
+    expect(order.delivery_fee).toBe(FEE * 3);
+    const expected = Math.round(order.unit_price * 3 * 0.5) + FEE * 3;
     expect(r.body.charged).toBe(expected);
     expect(lastInitTotal).toBe(expected * 100);
   });

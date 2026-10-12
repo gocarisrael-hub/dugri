@@ -1,7 +1,9 @@
 // @vitest-environment node
 // Ordering several copies of the SAME game. Each copy is charged the full
-// per-version price; shipping is charged ONCE per order, because every copy
-// travels in one parcel to one address.
+// per-version price. Shipping is charged per BOX: once when the buyer ticks
+// "all copies in one box", once per copy when they go in separate boxes (the
+// default for a new order), and once for an order placed before the choice.
+// The box choice itself has its own file: order-boxes.test.js.
 //
 // The rule that matters most here: the browser never sets the price. It asks for
 // a version and a copy count, and the server recomputes the total from its own
@@ -140,6 +142,7 @@ describe('setOrder stores the copies and the arithmetic', () => {
       version: 'delivery',
       address: ADDRESS,
       quantity: 5,
+      one_box: true,
     });
     expect(o).toMatchObject({ quantity: 5, unit_price: 199, delivery_fee: 39, total: 1034 });
   });
@@ -159,7 +162,9 @@ describe('setOrder stores the copies and the arithmetic', () => {
       address: { ...ADDRESS, street: 'אלנבי 2' },
     });
     expect(again.quantity).toBe(4);
-    expect(again.total).toBe(199 * 4 + 39);
+    // …and the box choice with it: still a box each, so still four fees.
+    expect(again.one_box).toBe(false);
+    expect(again.total).toBe(199 * 4 + 39 * 4);
   });
 
   it('re-prices when the count changes', () => {
@@ -207,9 +212,21 @@ describe("the total is the SERVER's, never the client's", () => {
 describe('the public view carries the breakdown', () => {
   it('exposes quantity, unit price and fee so the checkout can show its sum', async () => {
     const c = db.createCollection('שירה');
-    db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS, quantity: 3 });
+    db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: ADDRESS,
+      quantity: 3,
+      one_box: true,
+    });
     const v = (await get('/api/collections/' + c.id)).body;
-    expect(v.order).toMatchObject({ quantity: 3, unit_price: 199, delivery_fee: 39, total: 636 });
+    expect(v.order).toMatchObject({
+      quantity: 3,
+      unit_price: 199,
+      delivery_fee: 39,
+      total: 636,
+      one_box: true,
+      boxes: 1,
+    });
   });
 
   it('reports one copy for an order placed before copies existed', async () => {
@@ -259,10 +276,16 @@ describe('the receipt emails name the copies', () => {
   it('spells out copies, per-copy price and the one-time shipping', () => {
     const notify = require(path.join(serverDir, 'notify.js'));
     const c = db.createCollection('שירה', { email: 'buyer@example.com' });
-    db.setOrder(c.id, c.owner_token, { version: 'delivery', address: ADDRESS, quantity: 5 });
+    db.setOrder(c.id, c.owner_token, {
+      version: 'delivery',
+      address: ADDRESS,
+      quantity: 5,
+      one_box: true,
+    });
     const msg = notify.buildPaidMessage(db.getCollection(c.id), 'https://dugri.example', {});
     expect(msg.text).toContain('מספר עותקים: 5');
     expect(msg.text).toContain('מחיר לעותק: 199');
+    expect(msg.text).toContain('קופסאות: 1');
     expect(msg.text).toContain('דמי משלוח: 39');
     expect(msg.text).toContain('1034');
   });
@@ -284,11 +307,12 @@ describe('the receipt emails name the copies', () => {
 // the two implementations shows up as a failure rather than as a buyer being
 // charged more than they agreed to.
 // ---------------------------------------------------------------------------
-function displayed({ version, copies, locked, lockedTotal, unitFromPricing, fee }) {
+function displayed({ version, copies, locked, lockedTotal, unitFromPricing, fee, oneBox }) {
   // A locked order shows its stored total as-is; anything else is
-  // per-copy x copies + one shipping fee.
+  // per-copy x copies + the per-box fee x boxes (collect.html feeFor/boxCount).
   if (locked) return lockedTotal;
-  return unitFromPricing * copies + (version === 'delivery' ? fee : 0);
+  const boxes = oneBox ? 1 : copies;
+  return unitFromPricing * copies + (version === 'delivery' ? fee * boxes : 0);
 }
 
 describe('charged === displayed', () => {
@@ -340,6 +364,8 @@ describe('charged === displayed', () => {
     delete stored.unit_price;
     delete stored.delivery_fee;
     delete stored.quantity;
+    // …nor a box choice: that came later still.
+    delete stored.one_box;
 
     const grown = db.setOrder(c.id, c.owner_token, {
       version: 'delivery',
@@ -347,9 +373,11 @@ describe('charged === displayed', () => {
       quantity: 3,
     });
     // An unpaid order prices from settings: 199 x 3 + 39 — shipping once for the
-    // parcel, never three times.
+    // parcel, never three times. An order from before the box choice was sold as
+    // one parcel, and growing it does not quietly split it into three.
     expect(grown.total).toBe(199 * 3 + 39);
     expect(grown.delivery_fee).toBe(39);
+    expect(grown.one_box).toBeUndefined();
   });
 
   it('an UNPAID order placed at an older price re-prices from settings', () => {
@@ -399,6 +427,7 @@ describe('a coupon discounts the ORDER once, not each copy', () => {
       version: 'delivery',
       address: ADDRESS,
       quantity: 3,
+      one_box: true,
     });
     expect(o.total).toBe(636);
     const charged = Math.round(o.total * (1 - 10 / 100));

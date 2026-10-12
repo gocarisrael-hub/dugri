@@ -330,7 +330,8 @@ const REGISTRY = {
         buyerColor: '· צבע', // buyer confirmation: "· צבע: <color>"
         copies: 'מספר עותקים', // order-detail: "מספר עותקים: <n>" (omitted when 1)
         unitPrice: 'מחיר לעותק', // order-detail: "מחיר לעותק: <n> ₪" (multi-copy only)
-        shipping: 'דמי משלוח', // order-detail: charged once per order, not per copy
+        shipping: 'דמי משלוח', // order-detail: the order's whole shipping charge (per box × boxes)
+        boxes: 'קופסאות', // order-detail: "קופסאות: <n>" — how a multi-copy printed order is packed
         buyerCopies: '· מספר עותקים', // buyer confirmation/receipt line
         orderId: 'מספר הזמנה', // owner order-detail: "מספר הזמנה: <id>"
         adminOrder: 'ניהול ההזמנה', // owner order-detail: link to the admin orders panel

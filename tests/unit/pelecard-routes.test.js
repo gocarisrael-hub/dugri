@@ -575,6 +575,9 @@ describe('POST /api/payment/callback', () => {
       owner_token: c.owner_token,
       version: 'delivery',
       address: addr,
+      // One box, so the copy count moving 1 -> 2 leaves the fee to the settings
+      // change alone — the fee delta this test reads is then exactly the +20.
+      one_box: true,
     });
     expect(init.status).toBe(200);
     const charged = init.body.total;
