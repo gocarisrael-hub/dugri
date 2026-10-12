@@ -8,6 +8,11 @@
 // campaign that produced a visit is recorded on every one of them, and on no
 // admin screen.
 import { sendEvent } from './attribution.js';
+// The friend coupon's landing note (Agent A): a visit from the coupon email
+// (?coupon=CODE) remembers the code for checkout and says it is active. Imported
+// here for the same reason as attribution — this module is on exactly the
+// buyer-facing pages, so one line covers all of them.
+import './friend-coupon.js';
 
 // The seam for pay-success.html, which owns the purchase moment and runs as a
 // CLASSIC script (it cannot import). The wizard is a module and imports

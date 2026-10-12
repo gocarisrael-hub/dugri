@@ -208,10 +208,17 @@ function couponsBlock({
     },
 
     // Validate a code for use at checkout. Returns { valid:true, coupon } or
-    // { valid:false, reason } with reason in 'not_found'|'inactive'|'expired'.
+    // { valid:false, reason } with reason in 'not_found'|'inactive'|'expired'|
+    // 'used_up', or — for a friend code — 'used'.
+    //
+    // A code that is not an owner coupon is then looked up among the FRIEND
+    // coupons (friendCouponsBlock below) — owner coupons first, always — so the
+    // checkout, its preview and pay/init take a friend code through this one
+    // door, with no second path to keep in step. Friend codes carry a dash and
+    // owner codes cannot, so the order only matters in principle.
     validateCoupon(code) {
       const c = this.getCouponByCode(code);
-      if (!c) return { valid: false, reason: 'not_found' };
+      if (!c) return this.validateFriendCoupon(code);
       if (!c.active) return { valid: false, reason: 'inactive' };
       // valid_until is inclusive: expired only once today (Israel) is after it.
       if (c.valid_until && todayStrIsrael() > c.valid_until) {
@@ -299,6 +306,172 @@ function couponsBlock({
       c.uses = (c.uses || 0) + 1;
       saveDb();
       return true;
+    },
+  };
+}
+
+// The friend coupons: personal single-use codes a friend gets for adding words
+// (server/friend-coupons.js has the rules and the why). A third factory rather
+// than more methods in couponsBlock, because nothing here edits an owner coupon
+// and the two lists must never be confused for one another.
+//
+// LOOKUPS ARE LINEAR SCANS over `_db.friend_coupons`, on purpose. At this
+// shop's scale (hundreds of rows, a few thousand at most) a scan is
+// microseconds, and an index would be a second copy of the truth to keep in step
+// with every write, every store import and every reload. If the list ever runs
+// to six figures, add a Map keyed by code and email here — nowhere else reads
+// the array.
+function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
+  const rows = () => {
+    if (!Array.isArray(_db.friend_coupons)) _db.friend_coupons = [];
+    return _db.friend_coupons;
+  };
+  return {
+    getFriendCouponByEmail(email) {
+      const e = rules.normEmail(email);
+      if (!e) return null;
+      return rows().find((r) => r.email === e) || null;
+    },
+
+    getFriendCouponByCode(code) {
+      const c = normCode(code);
+      if (!c) return null;
+      return rows().find((r) => r.code === c) || null;
+    },
+
+    getFriendCouponById(id) {
+      return rows().find((r) => r.id === id) || null;
+    },
+
+    // Issue a coupon for this email, or hand back the one it already has.
+    //
+    // ONE COUPON PER EMAIL, EVER: a second request — from another party, a week
+    // later, with the box ticked this time — returns the SAME row untouched
+    // (created: false), and the caller resends that code. Consent is not
+    // upgraded on a repeat: the row records what was agreed when it was made,
+    // and a marketing list built from a later, unrelated click is not consent.
+    //
+    // `percent` and `expiryDays` are passed in (the route reads them from the
+    // live settings) and COPIED onto the row, so a later change to the setting
+    // never re-prices a code already in someone's inbox.
+    //
+    // Returns { coupon, created } or { error } — 'bad_email', 'no_collection'.
+    issueFriendCoupon({ email, collectionId, marketingConsent, percent, expiryDays } = {}) {
+      if (!rules.isValidEmail(email)) return { error: 'bad_email' };
+      if (!collectionId || !this.getCollection(collectionId)) return { error: 'no_collection' };
+      const e = rules.normEmail(email);
+      const existing = this.getFriendCouponByEmail(e);
+      if (existing) return { coupon: existing, created: false };
+      const createdAt = nowIso();
+      const consent = marketingConsent === true;
+      const row = {
+        id: uid(),
+        email: e,
+        code: rules.makeCode(e, percent, { taken: (code) => !!this.getFriendCouponByCode(code) }),
+        collection_id: collectionId,
+        discount_percent: percent,
+        // Separate from getting the coupon, unticked by default, and only ever
+        // true when the box was ticked (a strict === true: "true", 1 and "on" are
+        // not consent). consent_at is when it was given, null when it was not.
+        marketing_consent: consent,
+        consent_at: consent ? createdAt : null,
+        created_at: createdAt,
+        expires_at: rules.expiresAtFor(createdAt, expiryDays),
+        used_at: null,
+        order_id: null,
+        // The email trail, so a failed send is visible and retryable from the
+        // admin ("שליחה חוזרת" is the retry).
+        email_sent_at: null,
+        email_failed_at: null,
+        email_sends: 0,
+      };
+      rows().push(row);
+      saveDb();
+      return { coupon: row, created: true };
+    },
+
+    // What happened to the last attempt to email this row's code.
+    recordFriendCouponEmail(id, ok) {
+      const r = this.getFriendCouponById(id);
+      if (!r) return null;
+      if (ok) {
+        r.email_sent_at = nowIso();
+        r.email_failed_at = null;
+        r.email_sends = (r.email_sends || 0) + 1;
+      } else {
+        r.email_failed_at = nowIso();
+      }
+      saveDb();
+      return r;
+    },
+
+    // Is this a live friend code? Same answer shape as validateCoupon, so the
+    // checkout and pay/init treat it exactly like an owner coupon:
+    // { valid: true, coupon: { code, discount_pct, friend: true } } or
+    // { valid: false, reason } with reason 'not_found' | 'used' | 'expired'.
+    validateFriendCoupon(code, now = Date.now()) {
+      const r = this.getFriendCouponByCode(code);
+      if (!r) return { valid: false, reason: 'not_found' };
+      if (r.used_at) return { valid: false, reason: 'used' };
+      if (!(Date.parse(r.expires_at) > now)) return { valid: false, reason: 'expired' };
+      return {
+        valid: true,
+        coupon: { code: r.code, discount_pct: r.discount_percent, friend: true },
+      };
+    },
+
+    // Spend a friend code on a paid order. Called ONLY from markPaid, inside the
+    // same synchronous step that sets order.paid and before ITS saveDb — so the
+    // order turning paid and the code turning used are one write, and a failed or
+    // abandoned payment (which never reaches markPaid) leaves the code untouched.
+    //
+    // THE DOUBLE-USE GUARD. The JSON store runs in one Node process, so this
+    // check-then-set cannot interleave with another one: two buyers who both
+    // opened a payment window with the same code are settled one after the other,
+    // and only the FIRST finds used_at empty. The second has already been charged
+    // the discounted price by then (the provider settled it before telling us),
+    // so it is not refused — the money moved — but it does NOT consume the code
+    // again, and it comes back as 'conflict' for the caller to put on record.
+    //
+    // Returns 'consumed', 'conflict', 'already' (this same order, a replayed
+    // settle) or null (not a friend code). Does not save: markPaid does.
+    consumeFriendCoupon(code, orderId) {
+      const r = this.getFriendCouponByCode(code);
+      if (!r) return null;
+      if (r.used_at) return r.order_id === orderId ? 'already' : 'conflict';
+      r.used_at = nowIso();
+      r.order_id = orderId;
+      return 'consumed';
+    },
+
+    // Admin: mark a code used by hand — a customer support fix (she paid by bank
+    // transfer with it, say). No order is attached; `used_manually` says why the
+    // order column is empty. Returns the row, null for an unknown id, or
+    // { error: 'already_used' }.
+    markFriendCouponUsed(id) {
+      const r = this.getFriendCouponById(id);
+      if (!r) return null;
+      if (r.used_at) return { error: 'already_used' };
+      r.used_at = nowIso();
+      r.order_id = null;
+      r.used_manually = true;
+      saveDb();
+      return r;
+    },
+
+    // Every row, newest first, optionally narrowed by a case-insensitive
+    // substring of the email or the code.
+    listFriendCoupons({ q } = {}) {
+      const needle = String(q == null ? '' : q)
+        .trim()
+        .toLowerCase();
+      return rows()
+        .filter((r) => !needle || r.email.includes(needle) || r.code.toLowerCase().includes(needle))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+    },
+
+    friendCouponSummary() {
+      return rules.summarize(rows(), _db.collections);
     },
   };
 }
@@ -490,4 +663,4 @@ function stockBlock({
   };
 }
 
-module.exports = { couponsBlock, stockBlock };
+module.exports = { couponsBlock, friendCouponsBlock, stockBlock };

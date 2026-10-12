@@ -2670,6 +2670,17 @@ catalogRoutes.registerDesignCodes(app, {
 // Agent A: the checkout's coupon preview, in server/routes/commerce.js.
 commerceRoutes.registerCouponValidate(app, { db, couponRateOk, clientKey });
 
+// Agent A: the friend coupon (offer, issue, admin list), in server/routes/commerce.js.
+commerceRoutes.registerFriendCoupons(app, {
+  db,
+  requireAdmin,
+  notify,
+  settings,
+  clientKey,
+  makeRateLimiter,
+  paymentBaseUrl,
+});
+
 // OWNER-SCOPED pawn-images upload: attach optional customer photos ("פיונים") to
 // a collection — one per player, so up to db.playersFor(c), which is 4 for the
 // standard deck and 16 for the largest. Owner-token gated via ?k= (a query param,

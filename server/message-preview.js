@@ -168,6 +168,22 @@ const EMAIL_KINDS = [
       n.buildOrderReady({ ...c, order: { ...(c.order || {}), version: 'delivery' } }, base),
   },
   {
+    // The friend coupon (Agent A): sent to someone who added words through a
+    // shared link, not to a buyer — but it reads to the owner as a customer
+    // mail, so it is listed with them. A fixed sample code and date, so the
+    // preview never shows a real friend's code.
+    id: 'friend_coupon',
+    label: 'קופון חבר (למי שהוסיפו מילים)',
+    audience: 'buyer',
+    settingsKey: 'friend_coupon',
+    build: (n, c, base) =>
+      n.buildFriendCoupon(
+        { code: 'NOA5-K7Q2', discount_percent: 5, expires_at: '2027-01-10T10:00:00.000Z' },
+        c,
+        base
+      ),
+  },
+  {
     id: 'owner_order_created',
     label: 'הזמנה חדשה (לבעלת העסק)',
     audience: 'owner',

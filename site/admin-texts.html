@@ -672,6 +672,8 @@
         'email.delivery_info': 'פרטי משלוח',
         'email.pickup_info': 'פרטי איסוף עצמי',
         'email.footer': 'חתימת המייל',
+        'email.friend_coupon': 'קופון חבר (למי שהוסיפו מילים)',
+        'email.friend_coupon_parts': 'קופון חבר — הקוד, הכפתור והחתימה',
       };
       function labelFor(section, k) {
         return LABELS[section + '.' + k] || k;
@@ -721,6 +723,10 @@
         'email.delivery_info': 'טקסט (לא הודעה) — פרטי המשלוח במייל האישור (להזמנת משלוח).',
         'email.pickup_info': 'טקסט (לא הודעה) — פרטי האיסוף העצמי במייל האישור.',
         'email.footer': 'טקסט (לא הודעה) — שורות החתימה בתחתית המיילים.',
+        'email.friend_coupon':
+          'למי שהוסיף/ה מילים דרך קישור משותף וביקש/ה קופון — נשלח מיד עם הקוד האישי. האחוז ומשך התוקף נקבעים בעמוד הקופונים.',
+        'email.friend_coupon_parts':
+          'טקסט (לא הודעה) — מה שמסביב לקוד במייל קופון החבר: הכותרת מעל הקוד, שורת התנאים, הכפתור וההערה שמתחתיו, ושורות החתימה.',
       };
       function whenHtml(section, k) {
         const t = WHEN[section + '.' + k];
@@ -757,6 +763,13 @@
         address_label: 'תווית כתובת',
         ready: 'הודעה כשמוכן',
         address: 'כתובת בית הדפוס',
+        // friend_coupon_parts
+        code_label: 'מעל הקוד',
+        terms: 'שורת התנאים',
+        button: 'כפתור',
+        button_note: 'הערה מתחת לכפתור',
+        sign1: 'חתימה — שורה 1',
+        sign2: 'חתימה — שורה 2',
         // footer
         line1: 'שורה ראשונה',
         line2: 'שורה שנייה',
