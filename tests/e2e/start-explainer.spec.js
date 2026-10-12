@@ -218,7 +218,11 @@ test.describe('the 4-step explainer on the product page', () => {
     return page.evaluate(() => {
       const o = document.getElementById('startExplainer');
       const cta = o.querySelector('.sx-go').getBoundingClientRect();
+      const wa = o.querySelector('.sx-wa').getBoundingClientRect();
+      const x = o.querySelector('.sx-x').getBoundingClientRect();
       return {
+        waClearOfX: wa.left >= x.right,
+        waOnScreen: wa.top >= -1 && wa.right <= window.innerWidth + 1 && wa.width > 20,
         // The SHEET's own content height. Read off the overlay it would also count
         // the entry animation's 9px translateY as overflow (see animationsSettled).
         need: o.querySelector('.sx-inner').scrollHeight,
@@ -256,6 +260,9 @@ test.describe('the 4-step explainer on the product page', () => {
         m.ctaBottom,
         `CTA bottom is ${m.ctaBottom - m.vh}px below the fold at ${w}x${h}`
       ).toBeLessThanOrEqual(m.vh + 1);
+      // The ask-us link is on the first screen too, and never under the X.
+      expect(m.waOnScreen, `WhatsApp link off screen at ${w}x${h}`).toBe(true);
+      expect(m.waClearOfX, `WhatsApp link runs under the X at ${w}x${h}`).toBe(true);
     });
   }
 
@@ -334,6 +341,53 @@ test.describe('the 4-step explainer on the product page', () => {
     // The X is up in its own corner, well clear of the CTA (the whole head sits
     // between them) — not a crowded two-button row on a phone.
     expect(cta.y).toBeGreaterThan(x.y + x.height);
+  });
+
+  // Ask-us link: a chat with the support number, opened by the BUYER in a new tab,
+  // and the briefing is still there when they come back — it never blocks the buy.
+  test('the WhatsApp link opens a chat with us in a new tab and leaves the sheet open', async ({
+    page,
+    context,
+  }) => {
+    await page.getByTestId('pdp-buy').click();
+    const wa = page.getByTestId('start-explainer-whatsapp');
+    await expect(wa).toBeVisible();
+    await expect(wa).toHaveText('שאלה? כתבו לנו בוואטסאפ');
+    const href = await wa.getAttribute('href');
+    const url = new URL(href);
+    expect(url.origin + url.pathname).toBe('https://wa.me/972552441334');
+    expect(url.searchParams.get('text')).toBe('היי, יש לי שאלה לפני ההזמנה 🙂');
+    await expect(wa).toHaveAttribute('target', '_blank');
+    await expect(wa).toHaveAttribute('rel', /noopener/);
+
+    // Click it for real, with wa.me stubbed so the test never leaves the machine.
+    await context.route('https://wa.me/**', (r) => r.fulfill({ body: 'wa' }));
+    const [popup] = await Promise.all([context.waitForEvent('page'), wa.click()]);
+    expect(popup.url()).toContain('wa.me/972552441334');
+    await popup.close();
+    await expect(page.getByTestId(OVERLAY)).toBeVisible();
+    await expect(page).toHaveURL(/product\.html/);
+  });
+
+  // Secondary means out of the way: in the top band with the X, clear of the title,
+  // the X and the continue button, and not adding a line to the sheet.
+  test('the WhatsApp link sits in the top band, clear of everything else', async ({ page }) => {
+    await page.getByTestId('pdp-buy').click();
+    await animationsSettled(page);
+    const box = (id) => page.getByTestId(id).boundingBox();
+    const wa = await box('start-explainer-whatsapp');
+    const x = await box(CLOSE);
+    const cta = await box(CONTINUE);
+    const title = await page.locator('#sxTitle').boundingBox();
+    const overlaps = (a, b) =>
+      a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    expect(overlaps(wa, x), 'the WhatsApp link overlaps the X').toBe(false);
+    expect(overlaps(wa, title), 'the WhatsApp link overlaps the title').toBe(false);
+    expect(overlaps(wa, cta), 'the WhatsApp link overlaps the CTA').toBe(false);
+    expect(wa.y + wa.height).toBeLessThanOrEqual(title.y + 1);
+    // Same band as the X, on the opposite side (right, the inline start in RTL).
+    expect(Math.abs(wa.y + wa.height / 2 - (x.y + x.height / 2))).toBeLessThanOrEqual(2);
+    expect(wa.x).toBeGreaterThan(x.x + x.width);
   });
 
   test('the X closes it and returns focus to the trigger', async ({ page }) => {

@@ -149,6 +149,33 @@ describe('buildOverlay — the briefing markup', () => {
     const text = overlay.textContent;
     expect(text).not.toContain('054-657-7715');
     expect(text).not.toContain('להוסיף אותנו');
+    // The ask-us link that came later is a chat the BUYER opens, on the support
+    // number — never the old group number in any form.
+    const hrefs = [...overlay.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'));
+    expect(hrefs.some((h) => h.includes('546577715'))).toBe(false);
+  });
+
+  it('offers a WhatsApp chat with the support number, in a new tab', () => {
+    const wa = overlay.querySelectorAll('[data-testid="start-explainer-whatsapp"]');
+    expect(wa).toHaveLength(1);
+    const a = wa[0];
+    expect(a.tagName).toBe('A');
+    const url = new URL(a.getAttribute('href'));
+    expect(url.origin + url.pathname).toBe('https://wa.me/972552441334');
+    expect(url.searchParams.get('text')).toBe('היי, יש לי שאלה לפני ההזמנה 🙂');
+    expect(sx.WA_HREF).toBe(a.getAttribute('href'));
+    expect(a.getAttribute('target')).toBe('_blank');
+    expect(a.getAttribute('rel')).toContain('noopener');
+    // Its label is owner-editable, and the key is on the ANCHOR: editor.js only
+    // turns a click into a caret (instead of navigating) when the [data-edit] node
+    // is the link itself.
+    expect(a.getAttribute('data-edit')).toBe('start-explainer-whatsapp');
+    expect(a.textContent).toBe('שאלה? כתבו לנו בוואטסאפ');
+    // No child elements: the editor overwrites textContent, so an <svg> child would
+    // be wiped by the first edit. The icon is CSS.
+    expect(a.children).toHaveLength(0);
+    // Secondary: it is NOT in the CTA row, which stays the last block of the sheet.
+    expect(a.closest('.sx-cta')).toBeNull();
   });
 
   it('tags every text node with an owner-editable key', () => {
@@ -158,6 +185,7 @@ describe('buildOverlay — the briefing markup', () => {
     expect(keys).toContain('start-explainer-title');
     expect(keys).toContain('start-explainer-sub');
     expect(keys).toContain('start-explainer-continue');
+    expect(keys).toContain('start-explainer-whatsapp');
     for (const step of ['step1', 'step2', 'step3', 'step4']) {
       expect(keys).toContain(`start-explainer-${step}-title`);
       expect(keys).toContain(`start-explainer-${step}-text`);
