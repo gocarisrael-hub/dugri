@@ -263,6 +263,11 @@ test.describe('the 4-step explainer on the product page', () => {
       // The ask-us link is on the first screen too, and never under the X.
       expect(m.waOnScreen, `WhatsApp link off screen at ${w}x${h}`).toBe(true);
       expect(m.waClearOfX, `WhatsApp link runs under the X at ${w}x${h}`).toBe(true);
+      // …and the button floats ABOVE the screen's foot, not flush on it (owner's
+      // call) — parked or pinned by sticky alike.
+      expect(m.vh - m.ctaBottom, `CTA sits on the bottom edge at ${w}x${h}`).toBeGreaterThanOrEqual(
+        16
+      );
     });
   }
 
@@ -295,6 +300,12 @@ test.describe('the 4-step explainer on the product page', () => {
         m.need,
         `the briefing needs ${m.need}px but the screen has ${m.have}px at ${w}x${h}`
       ).toBeLessThanOrEqual(m.have + 2);
+      // The lift is on top of the home indicator, not eaten by it.
+      const inset = (safe && safe.bottom) || 0;
+      expect(
+        m.vh - m.ctaBottom,
+        `CTA is ${m.vh - m.ctaBottom}px off the foot at ${w}x${h}, inset ${inset}px`
+      ).toBeGreaterThanOrEqual(inset + 16);
     });
   }
 
@@ -320,7 +331,24 @@ test.describe('the 4-step explainer on the product page', () => {
       return { top: Math.round(cta.top), bottom: Math.round(cta.bottom), vh: window.innerHeight };
     });
     expect(after.top).toBeGreaterThanOrEqual(-1);
-    expect(after.bottom).toBeLessThanOrEqual(after.vh + 1);
+    // Pinned, it still floats clear of the edge: the gap is the sticky CTA's own
+    // padding, so it does not scroll away with the sheet.
+    expect(after.vh - after.bottom).toBeGreaterThanOrEqual(16);
+  });
+
+  // The cookie pill is fixed at the bottom-left, above the sheet. On an iPhone 14
+  // the button used to run under it; lifted, the button ends above the pill.
+  test('the continue button clears the cookie pill on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.getByTestId('pdp-buy').click();
+    await animationsSettled(page);
+    const pill = page.locator('#cookieNotice');
+    await expect(pill, 'no cookie pill — this test would prove nothing').toBeVisible();
+    const p = await pill.boundingBox();
+    const go = await page.getByTestId(CONTINUE).boundingBox();
+    expect(go.y + go.height, 'the cookie pill overlaps the continue button').toBeLessThanOrEqual(
+      p.y
+    );
   });
 
   test('the CTA and the X are separate, non-overlapping targets', async ({ page }) => {
@@ -371,6 +399,38 @@ test.describe('the 4-step explainer on the product page', () => {
 
   // Secondary means out of the way: in the top band with the X, clear of the title,
   // the X and the continue button, and not adding a line to the sheet.
+  // The SAME green WhatsApp button as the rest of the site (css/wa-help.css):
+  // #25d366, white glyph and label, square corners — not a thin black text link.
+  test('the WhatsApp link is the green WhatsApp button, like every other page', async ({
+    page,
+  }) => {
+    await page.getByTestId('pdp-buy').click();
+    const wa = page.getByTestId('start-explainer-whatsapp');
+    await expect(wa).toBeVisible();
+    const st = await wa.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const ico = getComputedStyle(el, '::before');
+      return {
+        bg: cs.backgroundColor,
+        color: cs.color,
+        radius: cs.borderTopLeftRadius,
+        weight: cs.fontWeight,
+        icoBg: ico.backgroundColor,
+        icoW: parseFloat(ico.width),
+        icoMask: ico.maskImage || ico.webkitMaskImage,
+      };
+    });
+    expect(st.bg).toBe('rgb(37, 211, 102)');
+    expect(st.color).toBe('rgb(255, 255, 255)');
+    expect(st.icoBg, 'the glyph is painted white').toBe('rgb(255, 255, 255)');
+    expect(st.icoMask).toContain('data:image/svg+xml');
+    expect(st.icoW).toBeGreaterThan(14);
+    expect(st.radius).toBe('0px');
+    expect(st.weight).toBe('800');
+    // The label is shown, not icon-only: in this band it covers nothing.
+    await expect(wa).toHaveText('שאלה? כתבו לנו בוואטסאפ');
+  });
+
   test('the WhatsApp link sits in the top band, clear of everything else', async ({ page }) => {
     await page.getByTestId('pdp-buy').click();
     await animationsSettled(page);

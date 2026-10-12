@@ -331,9 +331,8 @@
          phone by setting --sx-safe-b / --sx-safe-t. */
       '.sx-inner{position:relative;box-sizing:border-box;min-height:100vh;min-height:100dvh;',
       'max-width:640px;margin:0 auto;font-size:14px;font-size:clamp(11px,1.75dvh,15.5px);',
-      'padding:3.9em 22px 1.2em;',
-      'padding:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 3.9em) 22px',
-      ' calc(var(--sx-safe-b,env(safe-area-inset-bottom,0px)) + 1.2em);',
+      'padding:3.9em 22px 0;',
+      'padding:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 3.9em) 22px 0;',
       'display:flex;flex-direction:column;gap:1.1em;text-align:right;}',
       /* X — top-LEFT in RTL (the far corner from the text), below any notch.
          MIND THE UNIT: top/left/width/height on this element resolve `em` against
@@ -347,22 +346,34 @@
       'background:transparent;border:1px solid var(--line,#e6e6e6);',
       'border-radius:var(--radius,0);color:var(--ink,#141414);cursor:pointer;padding:0;}',
       '.sx-x:hover{background:var(--sage-tint,#f0f0f0);}',
-      /* WhatsApp — top-RIGHT (the inline start), mirroring the X across the band the
-         sheet's top padding already reserves. Its own font-size is 0.9 sheet-em, so
-         every em below is divided by 0.9: it spans the X's 0.7..3.78 sheet-em
-         exactly (0.78em + 3.42em), and max-width keeps the side padding and the X's
-         3.78 sheet-em plus a gap clear, so a longer label the owner types ends in an
-         ellipsis instead of running under the X. */
-      '.sx-wa{position:absolute;right:22px;top:0.78em;',
-      'top:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 0.78em);',
-      'font-size:0.9em;height:3.42em;line-height:3.42em;max-width:calc(100% - 22px - 5em);',
+      /* WhatsApp — the SAME green button as every other page (css/wa-help.css:
+         .wa-help / .wa-help--docked / .wa-help-ico), mirrored here because this sheet
+         is injected onto pages that do not load that stylesheet. Same #25d366, white
+         glyph, square corners, 800 weight, and the docked variant's flat look (no
+         lift, no shadow, brightness on hover) — it sits in a band, not floating.
+         Its values are wa-help's px ones in EM, so they land exactly on them at the
+         sheet's 15px base (13.5px label = 0.9em) and shrink with the fitted sheet:
+         padding 8/12px = 0.59/0.89em, glyph 20px = 1.48em, gap 6px = 0.44em.
+         Unlike the wizard's phone variant the label stays on a phone: this band is
+         empty, so a label covers nothing here.
+         PLACEMENT: top-RIGHT (the inline start), centred on the X across the band the
+         sheet's top padding reserves. Own font-size is 0.9 sheet-em, so the X's
+         centre (2.24 sheet-em) is 2.49em here and the 2.66em-tall button starts at
+         1.16em. max-width keeps the side padding, the X (3.78 sheet-em) and a gap
+         clear, so a longer label the owner types ends in an ellipsis instead of
+         running under the X. Block + line-height (not flex) so that ellipsis works. */
+      '.sx-wa{position:absolute;right:22px;top:1.16em;',
+      'top:calc(var(--sx-safe-t,env(safe-area-inset-top,0px)) + 1.16em);',
+      'box-sizing:border-box;font-size:0.9em;height:2.66em;line-height:2.66em;',
+      'padding:0 0.89em;max-width:calc(100% - 22px - 5em);',
       'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;',
-      'color:var(--ink,#141414);text-decoration:none;font-weight:300;}',
-      '.sx-wa::before{content:"";display:inline-block;width:1.3em;height:1.3em;',
-      'vertical-align:-0.32em;margin-inline-end:0.4em;background-color:currentColor;',
+      'background:#25d366;color:#fff;border-radius:0;text-decoration:none;font-weight:800;}',
+      '.sx-wa::before{content:"";display:inline-block;width:1.48em;height:1.48em;',
+      'vertical-align:-0.42em;margin-inline-end:0.44em;background-color:currentColor;',
       '-webkit-mask:' + WA_ICON + ' center/contain no-repeat;',
       'mask:' + WA_ICON + ' center/contain no-repeat;}',
-      '.sx-wa:hover{text-decoration:underline;text-underline-offset:0.2em;}',
+      '.sx-wa:hover{filter:brightness(0.94);}',
+      '.sx-wa:focus-visible{outline:3px solid #141414;outline-offset:2px;}',
       '.sx-head h2{font-family:var(--display,sans-serif);font-weight:var(--h-weight,300);',
       'letter-spacing:var(--h-spacing,0.1em);font-size:1.7em;',
       'line-height:1.28;color:var(--ink,#141414);}',
@@ -400,9 +411,16 @@
          reader at 200% text. Without the sticky, the single bottom button is simply
          below the fold on those screens and the sheet opens with no visible way
          forward, which is the whole reason a second copy used to sit above the steps.
-         The background is opaque because the steps scroll underneath it. */
+         The background is opaque because the steps scroll underneath it.
+         LIFTED OFF THE EDGE (owner's call): the space under the button is the CTA's
+         OWN bottom padding — the sheet's bottom padding moved here — so the button
+         floats ~2.6em above the screen's foot in BOTH states: parked at the foot of a
+         sheet that fits, and pinned by sticky over one that scrolls (where a sheet
+         padding would have scrolled away and left it flush on the edge). The home
+         indicator's inset is added on top, so on an iPhone it clears that too. */
       '.sx-cta{margin-top:auto;position:sticky;bottom:0;background:var(--bg,#fff);',
-      'padding-top:0.6em;}',
+      'padding-top:0.6em;padding-bottom:2.6em;',
+      'padding-bottom:calc(var(--sx-safe-b,env(safe-area-inset-bottom,0px)) + 2.6em);}',
       '.sx-go{display:block;width:100%;box-sizing:border-box;text-align:center;',
       'background:var(--sage,#141414);color:#fff;text-decoration:none;',
       'padding:0.95em 26px;border-radius:var(--radius,0);font-size:1.15em;',
