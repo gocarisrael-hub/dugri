@@ -14,7 +14,7 @@ How to read it: each page has (a) content that must survive, (b) behaviour and t
 - **`hidden` attribute vs CSS `display`.** proof, pay-success, wordlists and collect toggle visibility with `hidden`; collect also uses a `.hidden` class, and an element needs both cleared to show. A new `display:` rule un-hides things. Add `[hidden]{display:none!important}` in the new base CSS and keep the `.hidden` rules.
 - **Prices and versions** come only from `/api/pricing` (server/settings.js `pricing.*`, edited in `site/admin-pricing.html`). Price hooks: `.amt`, `.was`, `[data-price-now]`, `[data-price-was]`, `[data-sale-label]`, `#saleBanner[data-sale-banner]`, `html[data-sale]` rules in tokens.css.
 - **WhatsApp numbers** 972552441334 (support) and 972546577715 (business) are asserted by `tests/e2e/wa-numbers.spec.js` and appear hardcoded in several pages and scripts.
-- **Fixed URLs.** `/pickup` and `unsubscribe.html?e&t` are in emails already sent; `pay-done.html` (and `?error`) is registered with the payment provider; `collect.html?c&k`, `proof.html?c&t` and `partner.html?t` are sent to customers; `/timer.html` is linked from every menu and possibly printed on boards (not verifiable from the repo, see the timer section).
+- **Fixed URLs.** `/pickup` and `unsubscribe.html?e&t` are in emails already sent; `pay-done.html` (and `?error`) is registered with the payment provider; `collect.html?c&k`, `proof.html?c&t` and `partner.html?t` are sent to customers; `/timer.html` is linked from every menu and printed as a QR code on every board (confirmed by the owner at gate D1): it must keep working forever.
 
 ## Screenshot notes
 
@@ -301,16 +301,16 @@ Not on main. Lives on branch `feat/friend-coupon` (commit 073167e, NOT merged in
 
 ### Drop candidates (with evidence)
 
-1. how.html as a page, or at least its body copy: describes a self-print PDF ("אתם מדפיסים", "PDF מוכן", "הכל כלול בקובץ אחד - ב-199 ₪") while pricing has pdf disabled and pickup enabled; not linked from home/store/product/footer, only from options.html nav, pickup.html menu and admin pickers. If kept, rewrite to the printed-deck/pickup flow and move it onto the shared header.
+1. **D1: DROP, with redirects** (see "Gate D1 decisions"). how.html as a page, or at least its body copy: describes a self-print PDF ("אתם מדפיסים", "PDF מוכן", "הכל כלול בקובץ אחד - ב-199 ₪") while pricing has pdf disabled and pickup enabled; not linked from home/store/product/footer, only from options.html nav, pickup.html menu and admin pickers. If kept, rewrite to the printed-deck/pickup flow and move it onto the shared header.
 2. how.html dead nav anchors `index.html#gallery` ("הצצה") and `index.html#proof` (same in options.html nav): neither id exists on index.
-3. how.html confetti/sparkle script (`#confetti` absent) and ~25 dead CSS blocks (.audience, .occasions, .vclips, .launch-offer, .urgency, .guarantee, .trust, .plan-promise, .addons, .faq, .gphoto, .tagline, .brand-logo).
-4. CONFIG `pay()` / tranzilaTerminal / successUrl / plans / `window.dugriSetPlanSum` on index and how: dead since server-side card payment.
-5. Hardcoded prices in HTML: product.html `79 ₪`/`129 ₪`, how.html `199 ₪`/`239 ₪` x3 and literal "199" in `how-delivery-note`; product.js own seed 199/239 (use PRICING_FALLBACK).
+3. **D1: drop.** how.html confetti/sparkle script (`#confetti` absent) and ~25 dead CSS blocks (.audience, .occasions, .vclips, .launch-offer, .urgency, .guarantee, .trust, .plan-promise, .addons, .faq, .gphoto, .tagline, .brand-logo).
+4. **D1: drop.** CONFIG `pay()` / tranzilaTerminal / successUrl / plans / `window.dugriSetPlanSum` on index and how: dead since server-side card payment.
+5. **D1: fix, every price from the admin** (full list in "Gate D1 decisions"). Hardcoded prices in HTML: product.html `79 ₪`/`129 ₪`, how.html `199 ₪`/`239 ₪` x3 and literal "199" in `how-delivery-note`; product.js own seed 199/239 (use PRICING_FALLBACK).
 6. Marquee 8x duplicated spans (keep keys; generate copies in JS/CSS instead).
-7. Footer duplicated in 4 pages, header duplicated in 3 (plus legacy nav on how/options): candidates for one injected partial, keeping page-prefixed keys.
-8. js/demo-banner.js (no-op).
+7. **D1: build once, reuse everywhere.** Footer duplicated in 4 pages, header duplicated in 3 (plus legacy nav on how/options): candidates for one injected partial, keeping page-prefixed keys.
+8. **D1: drop.** js/demo-banner.js (no-op).
 9. Inconsistent menu: products/product menus lack index's "להזמנה" explainer entry; products loads start-explainer.js only for its error fallback.
-10. Stale copy to reconcile (owner decision, not code): word counts (FAQ 100-400 / how 70 / collect 70-412 / product "ללא הגבלת מילים"), "מוכנים להדפסה" in meta/about, "הוראות הדפסה וגזירה" on PDP, explainer step1 "עדיין בהרצה" note.
+10. **D1: decided** (word count 70 recommended / 412 maximum, from the server; see "Gate D1 decisions"). Stale copy to reconcile: word counts (FAQ 100-400 / how 70 / collect 70-412 / product "ללא הגבלת מילים"), "מוכנים להדפסה" in meta/about, "הוראות הדפסה וגזירה" on PDP, explainer step1 "עדיין בהרצה" note.
 
 ### Top must-keep items
 
@@ -811,7 +811,7 @@ Unit tests: deck-proof-toggle, proof-routes, proof-cache (server side).
 - How users reach it:
   - The nav menu link "טיימר" on index (data-edit index-nav-timer), product, products, how and options.
   - scripts/smoke.mjs checks /timer.html for the marker 'טיימר'.
-- **QR on printed boards: NOT FOUND.** The generator has no QR code, URL or "timer" string (grep of generator/\*.py, server, resources), and the FAQ only mentions "הטיימר". If boards carry a QR, it lives in Canva artwork on the Railway volume (unverifiable from the repo). Treat `/timer.html` as a permanent URL anyway: it is in nav menus and may be bookmarked or printed.
+- **QR on printed boards: CONFIRMED (owner, gate D1).** Boards print a QR code to `/timer.html`. The generator has no QR code, URL or "timer" string (grep of generator/\*.py, server, resources), so the QR lives in the Canva board artwork on the Railway volume. Boards already in people's homes point at this URL: it is permanent and must keep working forever (no rename, no redirect chain that could break, no auth).
 - **Offline:** there is no service worker or cache. "Works offline-ish" is only true once the page is loaded; it needs no network after load (except optional GA).
 
 **(c) Dynamic data.** None.
@@ -952,7 +952,7 @@ Plus unit unsubscribe.test.js.
 4. **The pickup facts and their order.** The wait callout ABOVE the address; the address with entrance and floor; a 7-row hours table (Thu 15:30); the 3 bring items; the 3 route steps plus the photo. All `pickup-*` testids and 37 data-edit keys. Must stay in sync with collect.html (pickup-facts.test). `/pickup` is the email URL, so the filename is fixed.
 5. **The terms legal body verbatim.** 26 `main section#sec-N`, the TOC nav `aria-label="תוכן עניינים"`, the "עודכן לאחרונה" date, the §25 business identity, no `[` anywhere in the body, and #sec-11 must stay unobscured when jumped to.
 6. **Unsubscribe.** The `?e&t` URL from the emails, the state-reporting flow (status first), `#title/#body/#stop/#undo` and the `.what` text that lists everything that stops, plus the re-subscribe path.
-7. **Timer.** The `timer-count/toggle/reset` testids and IDs, the `.hidden` reset utility, `.done` and `.bump`, `.btn` with touch-action manipulation, a ≤0.16s colour transition and hover inside `@media (hover:hover)`, no `svg.hourglass` and no `#stage`, the `/timer.html` URL (nav plus possibly printed), and the `./js/timer.js` `tick` import.
+7. **Timer.** The `timer-count/toggle/reset` testids and IDs, the `.hidden` reset utility, `.done` and `.bump`, `.btn` with touch-action manipulation, a ≤0.16s colour transition and hover inside `@media (hover:hover)`, no `svg.hourglass` and no `#stage`, the `/timer.html` URL (nav, and printed as a QR on every board: permanent), and the `./js/timer.js` `tick` import.
 8. **The wordlists DOM contract.** `main#lists` holds only `section#list-i` > `h2`, `p.count[data-all]`, `div.words > span`; `section.empty{display:none}`; `.hit`; `#q #found #toc #msg`; the exact count and found strings; and the footer link `footer-wordlists` in the same footer row as `footer-terms` and `footer-pickup` on the four storefront pages.
 
 ### Drop candidates (styling only, with evidence)
@@ -983,15 +983,92 @@ Plus unit unsubscribe.test.js.
 
 ### What could be dropped (evidence in the sections above)
 
-- **`how.html` as it stands.** It describes the old print-it-yourself PDF product ("PDF מוכן, מתאים לכל בית דפוס", "מינימום 70", "הכל כלול בקובץ אחד - ב-199 ₪"), while live pricing has the PDF version off and pickup and delivery on. It is not linked from home, the shop, the product page or the footer; only from the options nav, the pickup menu and admin pickers. Its "הצצה" / "המלצות" links point at `index.html#gallery` and `#proof`, which do not exist. Production carries a "48 שעות" override that contradicts "4 ימי עסקים" elsewhere. Rewrite it for the printed game or fold its steps into the home page. Decision for the owner.
-- **Dead code on index and how:** the unused `pay()` / Tranzila CONFIG block, the confetti script on how (its target element does not exist), about 25 dead CSS blocks on how, and `js/demo-banner.js` (a no-op).
-- **Hardcoded prices** in markup: `product.html` 79/129, `how.html` 199/239, and the literal 199 inside the editable `how-delivery-note`.
-- **Duplicated chrome:** the header is copied into three pages and the footer into four (plus a legacy nav on how and options). One shared partial is a redesign candidate, keeping the page-prefixed edit keys.
+The owner's decision at gate D1 leads each item; the full build list is in "Gate D1 decisions" below.
+
+- **DROP. `how.html` as it stands.** It describes the old print-it-yourself PDF product ("PDF מוכן, מתאים לכל בית דפוס", "מינימום 70", "הכל כלול בקובץ אחד - ב-199 ₪"), while live pricing has the PDF version off and pickup and delivery on. It is not linked from home, the shop, the product page or the footer; only from the options nav, the pickup menu and admin pickers. Its "הצצה" / "המלצות" links point at `index.html#gallery` and `#proof`, which do not exist. Production carries a "48 שעות" override that contradicts "4 ימי עסקים" elsewhere. D1: remove the page; redirect `/how.html` and `/how` to the home page's how-it-works section and repoint every link to it.
+- **DROP. Dead code on index and how:** the unused `pay()` / Tranzila CONFIG block, the confetti script on how (its target element does not exist), about 25 dead CSS blocks on how, and `js/demo-banner.js` (a no-op).
+- **CHANGE: every price from the admin.** Hardcoded prices in markup: `product.html` 79/129, `how.html` 199/239, and the literal 199 inside the editable `how-delivery-note`.
+- **CHANGE: build once, reuse everywhere. Duplicated chrome:** the header is copied into three pages and the footer into four (plus a legacy nav on how and options). D1: one shared header and one shared footer for every page, keeping the page-prefixed edit keys.
 - **The home marquee's eight copies** of the same spans: keep the keys, generate the repeats.
-- **Leftover styling with no test or hook:** timer's pink and gold gradients, glow and sheen; the sage `theme-color` (`#8ca287`) on timer and pay-done; proof's private palette and dark-mode block; unsubscribe's hardcoded warm palette; tokens named `--sage` / `--blush` that are both black.
+- **CHANGE (replaced by the new design system). Leftover styling with no test or hook:** timer's pink and gold gradients, glow and sheen; the sage `theme-color` (`#8ca287`) on timer and pay-done; proof's private palette and dark-mode block; unsubscribe's hardcoded warm palette; tokens named `--sage` / `--blush` that are both black.
 - **Dead logic on options/collect, listed for awareness only** (removing it is a code change, not part of a restyle): the gender and extra-field stubs, the `[data-extra-field]` lookup, unused imports `extraFieldsForDesign` / `languageForDesign`, `?plan=` written but never read, and collect's `APPLY` / `SYNCSHIP` console logs.
-- **Not droppable although it looks inert:** `partner.html` (the affiliate earnings report, reached only from the admin coupons page via a `?t=` token link; it is an Operate page, not a storefront page), `editor.js` on pay-done, `analytics.js` on terms / wordlists / timer, and the dormant flags `color_picking`, `font_choice`, `name_preview` plus the pdf / delivery / custom versions (built, switched off by default, may be switched on from the admin).
+- **KEEP. Not droppable although it looks inert:** `partner.html` (D1: kept; the private earnings report for partner bloggers, reached only from the admin coupons page via a `?t=` token link, no customer data; an Operate page, not a storefront page), `/timer.html` (printed as a QR on every board), `editor.js` on pay-done, `analytics.js` on terms / wordlists / timer, and the dormant flags `color_picking`, `font_choice`, `name_preview` plus the pdf / delivery / custom versions (built, switched off by default, may be switched on from the admin). D1: the custom version stays off permanently and the redesign does not design for it, but its code paths and flag stay and must keep working off.
 
 ### Upcoming, not on main
 
 - **Friend-coupon bar** (`origin/feat/friend-coupon`, commit 073167e, no PR yet): for visits with `?coupon=CODE`, `analytics.js` would put a fixed bar on buyer pages, set `--friend-bar-h` and auto-fill the coupon on `collect.html`. The redesign must leave room for a fixed bar and keep the coupon field hooks.
+
+## Gate D1 decisions (owner, 2026-10-12)
+
+Answers to the questions this survey raised, and the build items they create. File and line references are against `4d9744e`.
+
+### Occasions
+
+Lead with bachelorettes and with birthdays of parents and grandparents; family games third; anniversaries are small (4–5% of paid orders). Measured from every production collection: `redesign/occasions.md`.
+
+### Prices: every price from the admin (required)
+
+No price may be written into a page. Each one renders from `/api/pricing` (`server/settings.js` `pricing.*`, edited in `site/admin-pricing.html`), and the markup carries an empty or neutral placeholder until it resolves. Hardcoded today (customer pages; `site/admin*` excluded):
+
+- `site/product.html:1001-1002`: `#pdpPriceNow` `79 ₪`, `#pdpPriceWas` `129 ₪` (old PDF prices, overwritten on boot).
+- `site/js/product.js:43-44`: its own seed `PRICE = 199`, `WAS = 239` instead of `PRICING_FALLBACK`.
+- `site/options.html:2023-2024`: `#planPrice` `199`, `#planWasAmt` `239 ₪`.
+- `site/collect.html:2932` pdf `79 ₪`, `:2951` pickup `199 ₪`, `:2996` custom `599 ₪`, `:3017` `#shipPrice` delivery fee `40 ₪` (all overwritten by JS, but painted first).
+- `site/how.html:1449-1450`, `:1549-1550`, `:1652-1653`: `199 ₪` / `239 ₪` three times, and the literal "ב-199 ₪" in the editable `how-delivery-note` (`:1536`), which no script updates. Goes away with the page.
+- `site/js/pricing.js` `PRICING_FALLBACK` (199/239; versions 79/199/199/599): the one sanctioned client-side fallback. Keep it as the last resort when `/api/pricing` fails, but never paint it as if it were the live price.
+
+The server side has prices only in comments; customer email defaults in `server/settings.js` quote none.
+
+### Word count: 70 recommended, 412 maximum, from the server (required)
+
+The maximum is 412 words (the standard 4-player deck; fewer with more players). 70 is the recommended minimum, "our opinion of a good, real personal gift". The site says it the same way everywhere and reads both numbers from the server.
+
+- Today 412 is `DECK_WORDS` in `server/db.js` (from the `DECK_CARDS`/`PER_CARD`/`PLAYERS_MIN` constants; served per collection as `deck_words`), with no public endpoint for the storefront. 70 is not a setting anywhere.
+- Build item: add the recommended minimum as an admin setting (default 70), serve it with the standard deck maximum on a public endpoint (for example `/api/pricing`), and render every mention from it, with a token in owner-editable copy.
+
+Hardcoded today:
+
+- `site/collect.html:3440` `DEFAULT_MAX_WORDS = 412`, `:3442` `WORD_GOAL = 70` (the counter strings at `:5378-5412` are built from them), and the step copy "מינימום 70" at `:2844`.
+- `site/index.html:1716` FAQ fallback "מינימום 100, ועד 400" and its seed `server/faq.js:56` (wrong on both numbers; the live text is whatever the owner saved in admin-faq).
+- `site/product.html:1043` `buy-note-rest` "ללא הגבלת מילים" (contradicts the 412 ceiling).
+- `site/terms.html:371` "412 מילים בחפיסה הסטנדרטית" and `site/wordlists.html:243` "עד 412 מילים".
+- `server/settings.js:413` email `next_step.words` default "70+ המילים" (owner-editable text, number written in).
+- `site/how.html:1468` "מינימום 70" (goes away with the page).
+- Outside the repo: the `dugri-brand` skill says 100 to 400.
+
+### Lead time: a promise, and an admin setting (required)
+
+"4 business days" for self-pickup is a promise the owner must be able to change. Build item: **add an admin setting for the production lead time and read it everywhere the promise appears.** Delivery gets the same treatment (the site says 8 business days, the terms say 7). `tests/unit/production-times.test.js` pins the numbers across surfaces today; it becomes a test that every surface renders the setting. Places it appears:
+
+- `site/index.html:21` meta description, `:1224` about body ("והכל מגיע תוך 4 ימי עסקים"), `:1724` FAQ fallback.
+- `server/faq.js:64` FAQ seed (and the owner's saved FAQ in admin-faq).
+- `site/product.html:1043` `buy-note-rest` "מוכן תוך 4 ימי עסקים".
+- `site/collect.html:2954` `collect-ver-pickup-note` "כ-4 ימי עסקים", `:3019` `collect-ship-note` "כ-8 ימי עסקים", and the cutoff line `:3191` (`collect-pay-cutoff`, "אחרי 16:00 - נספרת מיום העסקים הבא").
+- `server/settings.js:363` delivery email `eta` "כ-8 ימי עסקים", `:376` pickup email `eta` "כ-4 ימי עסקים".
+- `site/terms.html:517` pickup "כ-4 ימי עסקים", `:526` delivery "עד 7 ימי עסקים" (legal text; a change needs the owner's sign-off on the wording).
+- `server/playbook.js:100` (internal ops recipe: 4 / 8).
+- `site/how.html:21` and `:1485` (go away with the page; production also carries a "48 שעות" override there).
+- Already a setting: the remote-towns delivery days (`collect.html:6725`, from the delivery exceptions in the admin).
+
+Owner-edited overrides in the content store (`collect-ver-pickup-note`, `collect-ship-note`, `buy-note-rest`, the FAQ) hold their own copy of the number; the setting needs a token those texts can carry, or the overrides go on quoting the old figure.
+
+### how.html: drop it, redirect it (required)
+
+Remove `site/how.html`. Add a permanent server-side redirect for `/how.html` and `/how` to the home page's how-it-works section (`/#how` once the redesigned home has one; until then `/#about`), so old links, ads and bookmarks never 404. Repoint every link: the options nav (`site/options.html:2011`, `options-nav-how`), the pickup menu (`site/pickup.html:285`), the admin ad-landing picker (`site/admin-ads.html:672`), the admin new-game CTA placeholder (`site/admin-newgame.html:420`; also check the saved production value), and the content editor's page list (`site/js/editor.js:67`). Its tests go with it or move: `tests/e2e/how-price.spec.js` and the how.html entries in the unit tests (`site-editability`, `analytics-coverage`, `production-times`, `price-row-css`, `promo*`, `content-*`, `editor`, `attribution-client`).
+
+### Custom-design version: off permanently
+
+The redesign does not design for it. Keep the code paths, the `custom` radio in collect and the `custom_enabled` flag, working in the off position.
+
+### Names: Hadar & Alma
+
+The site is signed "הדר ועלמה"; the Dugri team is Hadar and Alma. Replace the other signatures in customer-facing copy: `site/index.html:1684` `index-story-sign` default "הצוות של דוגרי" (production already overrides it to "הדר ועלמה"), the branded email footer in `server/notify.js:227` ("צוות דוגרי", hardcoded) and the plain-text email footer default `server/settings.js:423` (`line2: 'צוות דוגרי'`, owner-editable).
+
+### Accessibility: IS 5568 (WCAG 2.1 AA), now
+
+A hard requirement for every page in the redesign, the restyle-only order pages included, checked before each page ships.
+
+### Keep
+
+- `partner.html`: the private earnings report for partner bloggers, a `?t=` token link with no customer data. Unchanged, outside every nav and sitemap.
+- `/timer.html`: printed as a QR on every board. Permanent.

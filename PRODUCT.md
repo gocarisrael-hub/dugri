@@ -2,7 +2,7 @@
 
 <!-- impeccable:product-schema 1 -->
 
-Written by `/impeccable init` on 2026-10-12 for the site redesign (REDESIGN_PLAN.md, gate D1). No owner interview took place: every fact below was inferred from the repository (CLAUDE.md, live site copy, `server/settings.js`, `docs/`, the `dugri-brand` skill) and the redesign brief. Anything the repo could not settle is marked **OPEN QUESTION** for the owner to answer at gate D1.
+Written by `/impeccable init` on 2026-10-12 for the site redesign (REDESIGN_PLAN.md, gate D1). No owner interview took place: every fact below was inferred from the repository (CLAUDE.md, live site copy, `server/settings.js`, `docs/`, the `dugri-brand` skill) and the redesign brief. The questions the repo could not settle were answered by the owner at gate D1 (2026-10-12); each answer is recorded below as **D1 DECISION** where the question stood.
 
 ## Platform
 
@@ -10,16 +10,23 @@ web (mobile web first; Hebrew, right-to-left)
 
 ## Users
 
-**Primary: the organiser.** Mostly a woman planning a celebration around one person: a bachelorette (רווקות), a round birthday, an anniversary, a retirement or a farewell. She usually arrives on her phone from a WhatsApp link or an Instagram post, often in a few spare minutes, sometimes close to the event date. Her job: find a gift that is personal and gets the whole room laughing, order it, gather the words, and have it ready in time.
+**Primary: the organiser.** Mostly a woman planning a celebration around one person: a bachelorette (רווקות), a birthday (very often a parent's or grandparent's round birthday), a family get-together, an anniversary, a retirement or a farewell. She usually arrives on her phone from a WhatsApp link or an Instagram post, often in a few spare minutes, sometimes close to the event date. Her job: find a gift that is personal and gets the whole room laughing, order it, gather the words, and have it ready in time.
 
 **Secondary audiences (all real, all served by existing pages):**
 
 - **Contributors.** Friends and family the organiser shares a collection link with. They add words on `collect.html` without ever having been to the shop. Low commitment; they need the link to explain itself.
 - **Players at the party.** They meet the product as a printed board and cards, plus the 60-second timer page (`timer.html`) reached from a QR code printed on the board.
 - **Businesses.** Companies and event planners ordering several copies (team gift, conference ice-breaker, a branded game). Today this is a WhatsApp conversation, not a checkout.
-- **Partners.** Creators/affiliates with a partner coupon who check their sales on a private report link (`partner.html`).
+- **Partners.** Creators/affiliates (partner bloggers) with a partner coupon who check their earnings on a private report link (`partner.html?t=<token>`; no customer data). Kept as is at D1, outside the storefront nav.
 
-OPEN QUESTION: the split between occasions (how much of the business is bachelorettes versus birthdays, anniversaries and the rest) is not in the repo. The redesign should know which occasion to lead with.
+D1 DECISION, occasions (measured from every production collection; method and caveats in `redesign/occasions.md`). The owner's gut was bachelorettes first, then parents' and grandparents' birthdays, then anniversaries. The data agrees on the first two and not the third:
+
+- **Birthdays as a whole are the largest occasion** (41% of paid orders), but they split by age; the biggest band is 60+.
+- **Bachelorettes lead as a single occasion**: 23% of paid orders overall, 32% in September and October, when the event is known for every order.
+- **Parents' and grandparents' birthdays are a close second**: 20% of paid orders overall, 27% in September and October.
+- Then family / holiday games (7–8%). **Anniversaries are small** (4–5%), level with retirement, farewell and army-release decks.
+
+Lead with bachelorettes and with birthdays of parents and grandparents, side by side; family games third. Anniversaries, retirements and farewells belong in the "any occasion" range, not in the lead.
 
 ## Product Purpose
 
@@ -49,7 +56,7 @@ Positioning line in use: "דוגרי, המתנה הכי אישית ומקורי�
 - **Time pressure.** Orders are tied to an event date. Production time and the cut-off ("the clock starts when the word list is sent, not when you pay") matter to her more than features.
 - **Collaborative collection.** One organiser, many contributors, one shared link. Contributors may never see the shop.
 - **Physical fulfilment.** Self-pickup from the Galor print shop in Tel Aviv (address, hours and what to bring are on `pickup.html`), and courier delivery via HFD. Which of these are offered at any moment is an admin switch.
-- **At the party.** The timer page runs on someone's phone in a loud room, reached from the printed QR code. Its URL is printed on boards that already exist.
+- **At the party.** The timer page runs on someone's phone in a loud room, reached from the QR code printed on every board. Boards already in people's homes point at `/timer.html`, so that URL is permanent and must keep working forever (confirmed at D1).
 - **Owner self-serve.** The owner edits prices, sale mode, enabled versions, FAQ, emails, WhatsApp/SMS texts, the home "new game" block and most site copy herself, from the admin and the inline content editor (`?edit=1`). The redesign must keep every one of those levers working.
 
 ## Capabilities and Constraints
@@ -59,20 +66,25 @@ Positioning line in use: "דוגרי, המתנה הכי אישית ומקורי�
 - **Designs (board themes)** are a catalogue managed in the admin; names reach the site via `/api/design-names` and images via `/content-uploads` and `/design-img`. The list changes.
 - **Order flow is frozen in behaviour.** `options.html`, `collect.html`, `proof.html`, `pickup.html`, `pay-success.html`, `pay-done.html`, `timer.html` and `wordlists.html` may be restyled only. Flow, fields, logic, IDs and selectors stay; the E2E suite pins them. See `redesign/inventory.md`.
 - **Payment** is a card payment iframe (PeleCard in production; Tranzila exists as a second provider on staging). Apple Pay needs a script on our page and per-domain registration; it is not active on the production domain.
-- **Free word gate.** A collection may gather a limited number of words before payment, set in the admin.
+- **Free word gate.** A collection may gather a limited number of words before payment, set in the admin (`pricing.free_word_limit`).
 - **Seed pools.** Short word lists are topped up from seed pools; the buyer chooses which pool. Pools and their names are admin-managed.
 - **Dormant features (built, flag-off by default):** colour picking, font choice, live name preview. The redesign must leave room for them, not delete them.
 - **Analytics and attribution.** GA, a Meta pixel (when configured) and the site's own ad-attribution tracking run behind a cookie notice. Hooks (`data-ga`, `/api/track`) must survive.
 - **Performance.** Storefront images were measured very heavy on production; most visitors are on phones over mobile data.
 - **Terminology.** The product is "the game" (המשחק), made of a deck (חפיסה / קלפים) and a board (לוח). The person celebrated is "בעל/ת השמחה". A design is "עיצוב". Words are gathered in "איסוף המילים".
 
-OPEN QUESTION: how many words a buyer should send. The home FAQ says a minimum of 100 and up to 400; `how.html` says a minimum of 70; the brand skill says 100 to 400; the collect page shows its own minimum and ceiling. Which figure is the promise, and should the site state one at all, or only read it from the server?
+D1 DECISION, word count. The maximum is **412** words (the standard 4-player deck; fewer with more players, since each pawn card replaces a word card). **70** is the recommended minimum: "our opinion of a good, real personal gift". The site says this one way everywhere, and the numbers come from the server, never from page copy.
 
-OPEN QUESTION: the production lead time. The site says "4 business days from sending the words" in several places as fixed copy. Is that a standing promise, or should it become an admin-editable value like prices?
+- Today the maximum is computed in `server/db.js` (`DECK_WORDS` from `DECK_CARDS`/`PER_CARD`/`PLAYERS_MIN`, per collection via `deckWordsFor` → `deck_words`), but the storefront has no endpoint that serves it, and the 70 is not a setting at all: it is `WORD_GOAL = 70` in `site/collect.html`.
+- Required build item: serve the recommended minimum (a new admin setting, default 70) and the standard deck maximum (from `DECK_WORDS`) through a public endpoint such as `/api/pricing`, and render every word-count mention from it. The places that hardcode a figure today are listed in `redesign/inventory.md`, "Gate D1 decisions".
 
-OPEN QUESTION: `how.html` still describes the old model (a PDF the buyer prints herself). Is a print-at-home PDF version coming back (the `pdf` version exists in pricing, currently off), or should that page be rewritten or dropped?
+D1 DECISION, lead time. "4 business days" for self-pickup **is a promise**, and the owner must be able to change it. Required build item: **add an admin setting for the production lead time and read it everywhere the promise appears** (site copy, FAQ, checkout options, confirmation emails, terms). Delivery (today "8 business days", and "7" in the terms) gets the same treatment. Every place it appears today is listed in `redesign/inventory.md`, "Gate D1 decisions".
 
-OPEN QUESTION: is the custom-design version (a design made just for the buyer, `custom` in pricing, currently off) part of the redesign's storefront, or out of scope?
+D1 DECISION, `how.html`: **drop it.** It describes the old print-at-home PDF and is not linked from the main site buttons. Remove the page and redirect `/how.html` and `/how` permanently to the home page's how-it-works section (`/#how` once the redesigned home has it; until then `/#about`), so old links and saved bookmarks never 404. Repoint every internal link to it (the options nav, the pickup menu, the admin ad-landing and new-game pickers, the content editor's page list).
+
+D1 DECISION, custom-design version: **stays off permanently.** The redesign does not design for it. Its code paths and the `custom_enabled` flag stay, and must keep working in the off position.
+
+D1 DECISION, cleanup. **Every price comes from the admin** (`/api/pricing`); each price hardcoded in a page today is a fix item. **Dead code is dropped** (the `pay()`/Tranzila CONFIG on index and how, how's confetti, the dead CSS blocks, `js/demo-banner.js`). **Leftover styling is replaced** by the new design system. **The header and footer are built once and reused on every page.** `partner.html` and `/timer.html` stay. Lists and file references: `redesign/inventory.md`, "Gate D1 decisions".
 
 ## Brand Commitments
 
@@ -86,7 +98,7 @@ These are commitments recorded in the `dugri-brand` skill and project memory. Ga
 - **Redesign brief (owner, REDESIGN_PLAN.md):** a total change, light only (no dark designs), graphic and eye-catching, "nothing seen before", little text and few photos, things that shift and move, must not look AI-generated. Reference: the SKYLRK collection site.
 - **Domain.** dugri-israel.co.il. Links are built from `PUBLIC_BASE_URL`. The old dugri.co.il is dead.
 
-OPEN QUESTION: the owner's name and the founders' story. The live home page signs the story "הדר ועלמה"; the repo source signs it "הצוות של דוגרי"; the runbook names the owner Nevo. Which names may the redesign show?
+D1 DECISION, names. The site is signed **"הדר ועלמה"**: the Dugri team is Hadar and Alma. Customer-facing copy uses Hadar and Alma wherever a signature or a "we" needs a name, replacing "הצוות של דוגרי" / "צוות דוגרי" (the home story default, the email sign-offs) and any other name.
 
 ## Evidence on Hand
 
@@ -116,4 +128,4 @@ Privacy: every deck is made of a customer's private jokes and life details. Real
 - Contributors include older relatives (parents, grandparents) adding words on a phone: readable sizes and obvious controls matter on `collect.html`.
 - Respect `prefers-reduced-motion` for any motion the brief asks for.
 
-OPEN QUESTION: no formal accessibility standard (for example WCAG 2.1 AA / Israeli Standard 5568) is recorded in the repo. Israeli law generally expects one for commercial sites; confirm the target level.
+D1 DECISION, accessibility: **Israeli Standard IS 5568 (WCAG 2.1 level AA) is a hard requirement for every page of the redesign, now**, not a later pass. Every page ships meeting it: contrast, keyboard operation and visible focus, labelled controls, text alternatives, zoom and reflow to 320px, no motion that cannot be stopped, correct Hebrew `lang`/`dir` with marked-up mixed-direction runs.
