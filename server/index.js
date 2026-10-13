@@ -5559,6 +5559,64 @@ app.get(['/admin-analytics.html', '/admin-analytics'], (req, res) => {
   res.redirect(301, '/admin-ads.html' + (q === -1 ? '' : req.originalUrl.slice(q)));
 });
 
+// SEARCH AND AI VISIBILITY (server/seo.js): robots.txt, sitemap.xml, llms.txt,
+// and the canonical / noindex / JSON-LD tags injected into every page below.
+// Indexable only on the production domain (seo.isIndexableHost) — staging and
+// the *.up.railway.app names answer "Disallow: /" and carry noindex, so Google
+// keeps one copy of the shop. The price and FAQ are read per request, the same
+// sources /api/pricing and /api/faq answer from, so the structured data follows
+// an admin edit with no deploy.
+const seo = require('./seo');
+function seoLive() {
+  let price = null;
+  let faqItems = [];
+  try {
+    price = db.effectivePricing().store.now;
+  } catch {
+    /* no price is better than a wrong one in an Offer */
+  }
+  try {
+    faqItems = faq.publicFaq(settings.get('faq', 'list'));
+  } catch {
+    /* the FAQ block is simply left out */
+  }
+  return { price, faq: faqItems };
+}
+// Off production, the header form of noindex too, so a crawler that only reads
+// headers is told as well.
+function seoHeadFor(req, res, html, file, fallback) {
+  const indexable = seo.isIndexableHost(req.hostname);
+  if (!indexable) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  return seo.headTags({
+    file: file ? path.basename(file) : 'index.html',
+    query: req.query || {},
+    fallback,
+    indexable,
+    html,
+    ...seoLive(),
+  });
+}
+app.get('/robots.txt', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('txt').send(seo.robotsTxt({ indexable: seo.isIndexableHost(req.hostname) }));
+});
+app.get('/sitemap.xml', async (req, res) => {
+  let designIds = [];
+  try {
+    const mod = await import(pathToFileURL(path.join(SITE_DIR, 'js', 'designs.js')).href);
+    designIds = (mod.PUBLIC_DESIGNS || []).map((d) => d && d.id).filter(Boolean);
+  } catch {
+    /* static pages only */
+  }
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('application/xml').send(seo.sitemapXml({ designIds }));
+});
+app.get('/llms.txt', (req, res) => {
+  if (!seo.isIndexableHost(req.hostname)) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.type('text/plain; charset=utf-8').send(seo.llmsTxt(seoLive()));
+});
+
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   const file = resolveHtmlFile(req.path);
@@ -5569,6 +5627,7 @@ app.use((req, res, next) => {
   } catch {
     return next();
   }
+  html = seo.inject(html, seoHeadFor(req, res, html, file, false));
   res.setHeader('Cache-Control', 'no-cache');
   res.type('html');
   // Two injections, both cheap string work on an already-in-memory page: the
@@ -5618,7 +5677,8 @@ app.get('*', (req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   // Inject the import map here too, so the SPA fallback carries hashed module urls
   // just like a directly-served page.
-  const html = fs.readFileSync(path.join(SITE_DIR, 'index.html'), 'utf8');
+  const raw = fs.readFileSync(path.join(SITE_DIR, 'index.html'), 'utf8');
+  const html = seo.inject(raw, seoHeadFor(req, res, raw, null, true));
   res.type('html');
   // …and the pixel, for the same reason. These extension-less paths are exactly
   // the ones an ad links to (/sale, a vanity path in a bio, a mistyped link), so
