@@ -134,6 +134,28 @@ describe('seo module (pure)', () => {
     expect(t).not.toContain('אליאס');
   });
 
+  // Google cuts a description at ~155-160 characters and SEO scanners flag one
+  // that is missing, under ~50 or over 160. Every page in the sitemap has one.
+  it('every public page has a meta description Google shows in full', () => {
+    const siteDir = path.join(__dirname, '..', '..', 'site');
+    for (const { file } of seo.PUBLIC_PAGES) {
+      const html = fs.readFileSync(path.join(siteDir, file), 'utf8');
+      const m = html.match(/<meta\s+name="description"\s+content="([^"]*)"/);
+      expect(m, `${file} has no meta description`).toBeTruthy();
+      expect(m[1].length, `${file} description length`).toBeGreaterThanOrEqual(50);
+      expect(m[1].length, `${file} description length`).toBeLessThanOrEqual(160);
+    }
+  });
+
+  // The hero photos are the first images a crawler sees on the home page; an
+  // empty alt left them unnamed for search and for image results.
+  it('the home hero photos are described', () => {
+    const html = fs.readFileSync(path.join(__dirname, '..', '..', 'site', 'index.html'), 'utf8');
+    const heroes = html.match(/<img\s+class="hero-slide__bg"[^>]*>/g) || [];
+    expect(heroes).toHaveLength(3);
+    for (const tag of heroes) expect(tag).toMatch(/alt="[^"]{10,}"/);
+  });
+
   it('inject puts the tags inside <head>', () => {
     const out = seo.inject('<html><head><title>x</title></head><body></body></html>', '<a1 />');
     expect(out.indexOf('<a1 />')).toBeLessThan(out.indexOf('</head>'));
