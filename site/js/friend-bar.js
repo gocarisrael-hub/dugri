@@ -13,6 +13,11 @@
 //     so every friend arrives with ?k= too, and a ?k= rule hid the bar from all
 //     of them. She opening it on a second device sees the offer; that is the
 //     price of telling her apart from the people she invited.
+//   - the shop's own staff. The orders page (admin.html) calls markStaff() once
+//     its key is accepted, and from then on this browser is never offered the
+//     coupon on any party. Not a marker in the link: the managing link the
+//     orders page copies is the one sent on to the customer, and from her to
+//     her friends.
 //   - anyone who dismissed it (×) or already got a code, on this browser, for
 //     good (DONE_KEY). Blocked storage only means it may come back next visit.
 //   - everyone, while the owner has switched the offer off (GET /api/friend-coupon).
@@ -32,6 +37,7 @@ const DONE_KEY = 'dugri:friendbar:done';
 // visit, so every friend who opened the shared link carries it and would stay
 // hidden on that party for good. A new key starts everyone clean.
 const OWNED_PREFIX = 'dugri:made:';
+const STAFF_KEY = 'dugri:friendbar:staff';
 
 // The same rule the server applies (server/friend-coupons.js isValidEmail).
 export function isValidEmail(s) {
@@ -104,6 +110,12 @@ export function markOwned(collectionId) {
   if (collectionId) store(() => localStorage.setItem(OWNED_PREFIX + collectionId, '1'));
 }
 
+// This browser belongs to the shop (the admin key was just accepted): never
+// offer it a friend coupon, on any party.
+export function markStaff() {
+  store(() => localStorage.setItem(STAFF_KEY, '1'));
+}
+
 // Wire the offer for one collection. Returns { wordAdded() }, which the page
 // calls after every successful add; the first one (on a friend's browser, with
 // the offer on) brings the bar up. Every other case returns a no-op.
@@ -112,6 +124,7 @@ export function initFriendBar({ collectionId, fetchImpl } = {}) {
   if (!collectionId) return noop;
   if (store(() => localStorage.getItem(OWNED_PREFIX + collectionId), null)) return noop;
   if (store(() => localStorage.getItem(DONE_KEY), null)) return noop;
+  if (store(() => localStorage.getItem(STAFF_KEY), null)) return noop;
 
   const doFetch = fetchImpl || ((...a) => fetch(...a));
   let offer = null; // { enabled, percent } once asked

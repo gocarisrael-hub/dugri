@@ -128,6 +128,40 @@ test.describe('the bar on a friend’s collect link', () => {
     await ctx.close();
   });
 
+  // The orders page copies the customer's managing link, and the owner opens
+  // it there herself to add a word for the customer. That browser is the
+  // shop's, not a friend's. The link it copies is the one the customer then
+  // shares, so the link itself must keep working for friends.
+  test('is never offered on the shop’s browser, while the same link still works for a friend', async ({
+    page,
+    browser,
+    request,
+  }) => {
+    const { id, k } = await makeParty(request);
+    await page.goto('/admin.html?key=dugri-admin');
+    await expect
+      .poll(() => page.evaluate(() => localStorage.getItem('dugri:friendbar:staff')))
+      .toBe('1');
+
+    await page.goto(`/collect.html?c=${id}&k=${k}`);
+    await addWord(page, uniq('admin'));
+    await page.waitForTimeout(600);
+    await expect(bar(page)).toHaveCount(0);
+
+    const ctx = await browser.newContext();
+    const friend = await ctx.newPage();
+    await friend.goto(`/collect.html?c=${id}&k=${k}`);
+    await addWord(friend, uniq('friend'));
+    await expect(bar(friend)).toHaveCount(1);
+    await ctx.close();
+  });
+
+  test('a wrong admin key does not mark the browser', async ({ page }) => {
+    await page.goto('/admin.html?key=not-the-key');
+    await expect(page.locator('.msg')).toContainText('מפתח גישה שגוי');
+    expect(await page.evaluate(() => localStorage.getItem('dugri:friendbar:staff'))).toBe(null);
+  });
+
   test('is never offered on the browser that made the order, whatever link it opens', async ({
     page,
   }) => {
