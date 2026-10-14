@@ -529,6 +529,32 @@
         align-items: center;
         gap: 6px;
       }
+      .sortwrap input[type='search'] {
+        font: inherit;
+        font-size: 13px;
+        border: 1px solid #e4ddd0;
+        border-radius: 9px;
+        padding: 5px 8px;
+        width: 15em;
+        max-width: 100%;
+      }
+      .ref-note {
+        font-size: 13px;
+        margin: 6px 0;
+      }
+      .pay-charge + .pay-charge {
+        margin-top: 10px;
+      }
+      .pay-head {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .pay-lab {
+        color: #6b645b;
+      }
+      .pay-note {
+        margin-top: 4px;
+      }
       .sortwrap select {
         font: inherit;
         font-size: 13px;
@@ -885,6 +911,19 @@
           >
             ✅ הכל מוכן (<span id="batchReadyCount">0</span>)
           </button>
+          <!-- FIND AN ORDER BY THE NUMBER SOMEONE QUOTES. A chargeback letter or a
+               customer cites an approval number, a voucher or a transaction id —
+               never our order id. Exact match, across every order regardless of
+               the chips above (see js/payment-refs.js). -->
+          <label class="sortwrap"
+            >חיפוש לפי מספר תשלום:
+            <input
+              type="search"
+              id="refq"
+              data-testid="ref-search"
+              placeholder="אישור / שובר / מזהה עסקה"
+              autocomplete="off"
+          /></label>
           <label class="sortwrap"
             >מיון:
             <select id="sort">
@@ -902,6 +941,7 @@
            there, and it is also where an active filter is stated in words on every
            screen, so a narrowed table can never look like a table that lost rows. -->
       <div class="colfilters" id="colfilters" hidden></div>
+      <div class="ref-note" id="refNote" data-testid="ref-note" hidden></div>
       <!-- The press build's colour pass, on/off. It lives on THIS page rather
            than in a settings screen because this is where the press button is:
            the switch that decides what that button produces has to be readable
@@ -1048,6 +1088,14 @@
           <div class="muted" id="e-order-none" hidden>טרם בוצעה הזמנה — אין מה לערוך כאן.</div>
         </fieldset>
 
+        <!-- Read-only: the numbers a card company or a customer quotes back, each
+             with its name, for a chargeback or a "did this go through?". Filled
+             from js/payment-refs.js; hidden on an unpaid order. -->
+        <fieldset id="e-pay" data-testid="e-pay" hidden>
+          <legend>פרטי תשלום</legend>
+          <div id="e-pay-body"></div>
+        </fieldset>
+
         <fieldset>
           <!-- HOW MANY the order may hold is the DECK's number (one photo per
                player, 4 to 16), not a fixed four — so the legend does not name one.
@@ -1074,6 +1122,7 @@
       // dialog writes back exactly the values a customer's own pick would store
       // (the Hebrew design/colour NAME, plus the design's generator theme).
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
+      import { paymentCharges, findByPaymentRef } from './js/payment-refs.js';
 
       const key = new URLSearchParams(location.search).get('key') || '';
       // Carry the admin key across the three linked admin pages.
@@ -1087,6 +1136,8 @@
       const tabsEl = document.getElementById('tabs');
       const stageTabsEl = document.getElementById('tabs-stage');
       const sortSelect = document.getElementById('sort');
+      const refInput = document.getElementById('refq');
+      const refNote = document.getElementById('refNote');
 
       // THE PRINT SHOP COPY is not something to press a button for any more.
       // "צור PDF" builds it along with the deck (generator/press_marks.py), so
@@ -1798,6 +1849,53 @@
         el('e-address').hidden = el('e-version').value !== 'delivery';
       }
 
+      // The dialog's read-only payment block: one row per settled charge, every
+      // number under its own name. textContent only, like the table.
+      function renderPaymentRefs(c) {
+        const box = el('e-pay');
+        const body = el('e-pay-body');
+        body.textContent = '';
+        const charges = paymentCharges(c);
+        box.hidden = !charges.length;
+        for (const ch of charges) {
+          const sec = document.createElement('div');
+          sec.className = 'pay-charge';
+          sec.dataset.testid = 'pay-charge-' + ch.kind;
+          const head = document.createElement('div');
+          head.className = 'pay-head';
+          head.textContent = [
+            ch.label,
+            ch.methodLabel,
+            ch.amount != null ? ch.amount + ' ₪' : null,
+            ch.paidAt ? new Date(ch.paidAt).toLocaleString('he-IL') : null,
+          ]
+            .filter(Boolean)
+            .join(' · ');
+          sec.appendChild(head);
+          for (const r of ch.refs) {
+            const line = document.createElement('div');
+            line.className = 'pay-ref';
+            line.dataset.testid = 'pay-ref-' + ch.kind + '-' + r.key;
+            const lab = document.createElement('span');
+            lab.className = 'pay-lab';
+            lab.textContent = r.label + ':';
+            const val = document.createElement('bdi');
+            val.className = 'pay-val';
+            val.textContent = r.value;
+            line.append(lab, ' ', val);
+            sec.appendChild(line);
+          }
+          if (ch.note) {
+            const note = document.createElement('div');
+            note.className = 'muted pay-note';
+            note.dataset.testid = 'pay-note-' + ch.kind;
+            note.textContent = ch.note;
+            sec.appendChild(note);
+          }
+          body.appendChild(sec);
+        }
+      }
+
       async function openEdit(c) {
         editing = c;
         editPhotos = Array.isArray(c.pawn_images) ? [...c.pawn_images] : [];
@@ -1864,6 +1962,7 @@
         fillSelect(el('e-card-order'), CARD_ORDERS, c.card_order || '');
         renderExtraInputs(el('e-theme').value, c.extra_fields || {});
 
+        renderPaymentRefs(c);
         const order = c.order || null;
         el('e-order-none').hidden = !!order;
         for (const id of [
@@ -3505,7 +3604,13 @@
         renderStickerBtn();
         renderBatchReadyBtn();
         renderColFilterBar();
-        const rows = rowsFor(null);
+        // A payment-number search looks across EVERY order, past the chips: the
+        // number in a disputes letter says nothing about which stage the order is
+        // at, and "not found" under a forgotten chip would be a false answer.
+        const refQuery = refInput.value.trim();
+        const hits = refQuery ? findByPaymentRef(allCols, refQuery) : null;
+        const rows = hits ? [...new Set(hits.map((h) => h.collection))] : rowsFor(null);
+        renderRefNote(hits);
         // What the pair actually narrowed to. Without it a combination with no
         // rows reads as "the orders are gone" rather than "none are at this step".
         sub.textContent =
@@ -3530,7 +3635,36 @@
         }
       }
 
+      // What a payment-number search matched, named: the voucher and the approval
+      // number look identical, so "found" alone would not say which one it was.
+      function renderRefNote(hits) {
+        refNote.hidden = !hits;
+        if (!hits) return;
+        if (!hits.length) {
+          refNote.textContent =
+            'לא נמצאה הזמנה עם המספר הזה. בתשלומי פלאקארד ישנים השובר לא נשמר — נסו את מספר האישור.';
+          return;
+        }
+        refNote.textContent =
+          'נמצא לפי ' +
+          hits
+            .map(
+              (h) =>
+                h.ref.label +
+                ' של ' +
+                h.charge.label +
+                ' (' +
+                ((h.collection.custom_title || '').split('\n')[0] ||
+                  h.collection.honoree_name ||
+                  '') +
+                ')'
+            )
+            .join(', ') +
+          '. המסננים למעלה לא חלים בזמן חיפוש.';
+      }
+
       function hideControls() {
+        refNote.hidden = true;
         statsEl.textContent = '';
         controlsEl.hidden = true;
         closeMenu();
@@ -3761,6 +3895,7 @@
           : '';
       }
 
+      refInput.addEventListener('input', () => renderAll());
       sortSelect.onchange = () => {
         sortBy = sortSelect.value;
         renderAll();
