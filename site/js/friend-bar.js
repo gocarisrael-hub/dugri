@@ -323,19 +323,23 @@ export function initFriendBar({ collectionId, fetchImpl } = {}) {
     x.textContent = '×';
     x.addEventListener('click', closeSheet);
     const wrap = el('div', { 'data-testid': 'friend-confirm' });
-    // The mail did not go out (Resend down, the address unsubscribed): the code
-    // was made all the same, so it goes on the screen rather than nowhere.
+    // The mail did not go out (Resend down, the address unsubscribed). A NEW code
+    // goes on the screen rather than nowhere. A RESEND carries no code — the
+    // address may not be the typist's — so it must not claim "on its way" either.
     const failed = body.created && body.emailed === false;
-    wrap.append(
-      el('h2', { id: 'friendSheetTitle' }, failed ? 'הנה הקופון שלכם' : 'הקופון בדרך'),
-      el(
-        'p',
-        {},
-        failed
-          ? 'לא הצלחנו לשלוח את המייל כרגע, אז הנה הקוד. ' + pct + '% הנחה, לשימוש אחד.'
-          : 'שלחנו קוד אישי אל ' + email + '. ' + pct + '% הנחה, לשימוש אחד.'
-      )
-    );
+    const resendFailed = !body.created && body.emailed === false;
+    const title = failed ? 'הנה הקופון שלכם' : resendFailed ? 'המייל לא נשלח' : 'הקופון בדרך';
+    const p = el('p', {});
+    if (failed) {
+      p.textContent = 'לא הצלחנו לשלוח את המייל כרגע, אז הנה הקוד. ' + pct + '% הנחה, לשימוש אחד.';
+    } else if (resendFailed) {
+      p.textContent =
+        'לכתובת הזו כבר יש קופון, אבל לא הצלחנו לשלוח אותו שוב כרגע. נסו שוב בעוד כמה דקות.';
+    } else {
+      // <bdi>: the LTR address must not drag the period to the wrong side in RTL.
+      p.append('שלחנו קוד אישי אל ', el('bdi', {}, email), '. ' + pct + '% הנחה, לשימוש אחד.');
+    }
+    wrap.append(el('h2', { id: 'friendSheetTitle' }, title), p);
     if (body.code)
       wrap.append(el('div', { class: 'fs-code', 'data-testid': 'friend-code' }, body.code));
     const back = el('button', { type: 'button', class: 'fs-go' }, 'חזרה להוספת מילים');

@@ -248,6 +248,31 @@ test.describe('the sheet', () => {
     await expect(confirm.locator('h2')).toHaveText('הקופון בדרך');
     await expect(confirm).toContainText('שלחנו קוד אישי אל dana@example.com. 5% הנחה, לשימוש אחד.');
     await expect(page.getByTestId('friend-code')).toHaveText('DANA5-K7Q2');
+    // The address is isolated so its LTR run can't move the period in RTL.
+    await expect(confirm.locator('bdi')).toHaveText('dana@example.com');
+  });
+
+  test('a repeat email whose resend fails is told so, not "on its way"', async ({
+    page,
+    request,
+  }) => {
+    const { id } = await makeParty(request);
+    await page.route('**/api/friend-coupon', (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      // The server's answer for an address that already has a code: no code
+      // in the body (it is that person's), and the resend did not go out.
+      return route.fulfill({ json: { ok: true, created: false, emailed: false, percent: 5 } });
+    });
+    await page.goto(`/collect.html?c=${id}`);
+    await addWord(page, uniq('word'));
+    await page.getByTestId('friend-bar-go').click();
+    await page.getByTestId('friend-email').fill('dana@example.com');
+    await page.getByTestId('friend-send').click();
+    const confirm = page.getByTestId('friend-confirm');
+    await expect(confirm.locator('h2')).toHaveText('המייל לא נשלח');
+    await expect(confirm).not.toContainText('הקופון בדרך');
+    await expect(confirm).not.toContainText('שלחנו');
+    await expect(page.getByTestId('friend-code')).toHaveCount(0);
   });
 });
 
