@@ -76,12 +76,17 @@ async function stageBatchApi(page, { preview, pressed, pressResult }) {
   });
 }
 
+// Three orders: DG-9001 self-pickup with no mobile, DG-9003 self-pickup with
+// one (the only text attempted), DG-9002 a delivery with a good mobile, which the
+// order-ready text is not for.
 const PREVIEW = {
-  count: 2,
-  pickup: 1,
+  count: 3,
+  pickup: 2,
   delivery: 1,
-  kinds: { pickup: 1, delivery: 1, pdf: 0, custom: 0, other: 0 },
+  kinds: { pickup: 2, delivery: 1, pdf: 0, custom: 0, other: 0 },
   no_phone: ['DG-9001'],
+  will_sms: 1,
+  no_sms_with_phone: ['DG-9002'],
   sms_enabled: true,
   email_enabled: true,
   orders: [],
@@ -185,10 +190,15 @@ test.describe('marking the whole בדפוס pile ready', () => {
     await expect.poll(() => asked).toContain('2');
     expect(asked).toContain('באיסוף עצמי');
     expect(asked).toContain('במשלוח');
-    expect(asked).toContain('מייל ו-SMS');
+    expect(asked).toContain('כל אחת תקבל מייל');
+    // The texts are COUNTED, as an attempt: one of three, not "everyone".
+    expect(asked).toContain('ננסה לשלוח SMS ל-1 מתוך 3');
+    expect(asked).not.toContain('SMS לכל אחת');
     // The orders that will hear nothing are NAMED — three order numbers tell her
     // which three to phone; a count sends her hunting through the table.
     expect(asked).toContain('DG-9001');
+    // …and so is the delivery with a good mobile that still gets no text.
+    expect(asked).toMatch(/בלי SMS כי זה לא איסוף עצמי[^\n]*DG-9002/);
     expect(asked).toContain('אי אפשר לבטל');
 
     // Dismissed means nothing happened. A confirm that fires anyway is worse
@@ -301,5 +311,68 @@ test.describe('marking the whole בדפוס pile ready', () => {
     await expect.poll(() => asked).toContain('1 דיגיטליות');
     expect(asked).toContain('1 באיסוף עצמי');
     expect(asked).not.toContain('2 באיסוף עצמי');
+  });
+
+  // Every order in the pile is self-pickup with a mobile: then "each one" is true.
+  test('an all-pickup pile with phones is promised a text attempt for each', async ({ page }) => {
+    const pressed = { count: 0 };
+    await stagePile(page);
+    await stageBatchApi(page, {
+      preview: {
+        ...PREVIEW,
+        count: 2,
+        pickup: 2,
+        delivery: 0,
+        kinds: { pickup: 2, delivery: 0, pdf: 0, custom: 0, other: 0 },
+        no_phone: [],
+        will_sms: 2,
+        no_sms_with_phone: [],
+      },
+      pressed,
+    });
+    await openOnPrinting(page);
+
+    let asked = '';
+    page.on('dialog', (d) => {
+      asked = d.message();
+      d.dismiss();
+    });
+    await page.getByTestId('batch-ready').click();
+    await expect.poll(() => asked).toContain('ננסה לשלוח SMS לכל אחת');
+    expect(asked).not.toContain('בלי SMS');
+  });
+
+  // Mail off and a pile of deliveries: SMS is "on", but not one text will be
+  // attempted, so nobody hears anything and the dialog must say exactly that.
+  test('mail off and no pickup in the pile: it says nobody will hear anything', async ({
+    page,
+  }) => {
+    const pressed = { count: 0 };
+    await stagePile(page);
+    await stageBatchApi(page, {
+      preview: {
+        ...PREVIEW,
+        email_enabled: false,
+        count: 1,
+        pickup: 0,
+        delivery: 1,
+        kinds: { pickup: 0, delivery: 1, pdf: 0, custom: 0, other: 0 },
+        no_phone: [],
+        will_sms: 0,
+        no_sms_with_phone: ['DG-9002'],
+      },
+      pressed,
+    });
+    await openOnPrinting(page);
+
+    let asked = '';
+    page.on('dialog', (d) => {
+      asked = d.message();
+      d.dismiss();
+    });
+    await page.getByTestId('batch-ready').click();
+    await expect.poll(() => asked).toContain('לא יישלחו מיילים ולא הודעות SMS');
+    expect(asked).toContain('לא יקבלו כלום');
+    expect(asked).not.toContain('אי אפשר לבטל');
   });
 });
