@@ -296,4 +296,30 @@ function createSweeper({
   return { sweep, request, tick, whenIdle };
 }
 
-module.exports = { createSweeper, positiveNumber, israelDate };
+// THE LAST LINE OF AN ALERT MESSAGE, chosen by what the message holds. The old
+// single footer ("check My Tranzila whether money was taken, and refund or mark
+// it by hand") is right for every kind where a charge did NOT settle, and
+// nonsense under a health notice: on a recovery nothing is wrong, and while the
+// sweep is failing there is no row to look up yet. Any money kind in the message
+// wins, because one row that needs a refund is the line she must not miss.
+const SWEEP_STATUS_KINDS = new Set(['sweep_failing', 'sweep_recovered']);
+const FOOTER_MONEY = 'לבדוק ב-My Tranzila אם נגבה כסף, ולזכות או לסמן ידנית לפי הצורך.';
+const FOOTER_FAILING =
+  'אין כאן עסקה לבדוק או לזכות. כשהבדיקה תחזור לעבוד, תשלומים מהזמן הזה ייבדקו ויסומנו מעצמם; אם זה נמשך, לבדוק שהמסוף והמפתחות של טרנזילה תקינים.';
+const FOOTER_RECOVERED = 'אין צורך לעשות דבר.';
+function alertFooter(items) {
+  const kinds = (items || []).map((i) => i && i.kind);
+  if (kinds.some((k) => !SWEEP_STATUS_KINDS.has(k))) return FOOTER_MONEY;
+  if (kinds.includes('sweep_failing')) return FOOTER_FAILING;
+  return FOOTER_RECOVERED;
+}
+
+module.exports = {
+  createSweeper,
+  positiveNumber,
+  israelDate,
+  alertFooter,
+  FOOTER_MONEY,
+  FOOTER_FAILING,
+  FOOTER_RECOVERED,
+};

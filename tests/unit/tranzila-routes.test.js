@@ -42,6 +42,7 @@ let app;
 let db;
 let settings;
 let notify;
+let sweepMod;
 let server;
 let base;
 
@@ -78,6 +79,7 @@ beforeAll(async () => {
   db = require(path.join(serverDir, 'db.js'));
   app = require(path.join(serverDir, 'index.js'));
   notify = require(path.join(serverDir, 'notify.js'));
+  sweepMod = require(path.join(serverDir, 'tranzila-sweep.js'));
 
   vi.stubGlobal(
     'fetch',
@@ -725,5 +727,57 @@ describe('GET /.well-known/apple-developer-merchantid-domain-association', () =>
     const body = await res.text();
     expect(body).toBe(expected);
     expect(body).not.toMatch(/<html/i);
+  });
+});
+
+// The last line of an alert message. "Check My Tranzila whether money was taken,
+// and refund" is right for a charge that did not settle and nonsense under a
+// health notice, where there is nothing to look up or refund.
+describe('the closing line of an owner alert fits what it reports', () => {
+  const lastLines = (spy) => spy.mock.calls.map(([, lines]) => lines[lines.length - 1]);
+  const queue = (...items) => db.tranzilaSweepState().alert_queue.push(...items);
+  const at = Date.now();
+
+  it('a recovery notice alone says there is nothing to do', async () => {
+    const alert = spyAlerts();
+    try {
+      queue({ kind: 'sweep_recovered', index: 'sweep-recovered-t1', since: at, queued_at: at });
+      await app.tranzilaSweeper.sweep();
+      expect(lastLines(alert)).toEqual([sweepMod.FOOTER_RECOVERED]);
+      expect(alertText(alert)).not.toContain('My Tranzila');
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('a failing notice alone says there is no charge to refund', async () => {
+    const alert = spyAlerts();
+    try {
+      queue({
+        kind: 'sweep_failing',
+        index: 'sweep-failing-t2',
+        since: at,
+        error: 'HTTP 500',
+        queued_at: at,
+      });
+      await app.tranzilaSweeper.sweep();
+      expect(lastLines(alert)).toEqual([sweepMod.FOOTER_FAILING]);
+    } finally {
+      alert.mockRestore();
+    }
+  });
+
+  it('a money row in the same message keeps the refund line', async () => {
+    const alert = spyAlerts();
+    try {
+      queue(
+        { kind: 'sweep_recovered', index: 'sweep-recovered-t3', since: at, queued_at: at },
+        { kind: 'unmatched', index: '99301', amount: 7900, type: 'DEBIT', mode: 'A', queued_at: at }
+      );
+      await app.tranzilaSweeper.sweep();
+      expect(lastLines(alert)).toEqual([sweepMod.FOOTER_MONEY]);
+    } finally {
+      alert.mockRestore();
+    }
   });
 });
