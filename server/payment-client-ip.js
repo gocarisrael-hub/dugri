@@ -4,11 +4,10 @@
 // req.ip will not do: with app.set('trust proxy', true) it is the LEFTMOST
 // X-Forwarded-For entry, which is whatever the client sent. Proxies APPEND to
 // that header, so the entries a client can forge are on the left and the ones
-// our own proxies wrote are counted from the right. On Railway there is one such
-// hop, so the rightmost entry is the address Railway's edge received the request
-// from: the client itself, or — when the site's domain sends it through
-// Cloudflare first — a Cloudflare edge. In that case, and only then,
-// CF-Connecting-IP is believed: Cloudflare sets it and overwrites any value a
+// our own proxies wrote are counted from the right: PAYMENT_PROXY_HOPS of them
+// (below), so the entry we land on is the address the first proxy of ours
+// received the request from. When that address is a Cloudflare edge, and only
+// then, CF-Connecting-IP is believed: Cloudflare sets it and overwrites any value a
 // client sent, and a request can only reach Railway FROM a Cloudflare address by
 // really passing through Cloudflare. A client that talks to the Railway host
 // directly with a CF-Connecting-IP of its own choosing is keyed by its real
@@ -28,12 +27,12 @@
 // hop count, and Cloudflare's ranges below, are checked once per environment
 // before Tranzila goes live (TRANZILA_LOG_CLIENT_IP=1 in server/index.js).
 //
-// It is 1 in BOTH environments and is not a per-environment setting: Railway
-// appends exactly one entry whether the visitor arrives directly (staging) or
-// through Cloudflare (production, where that one appended entry is a Cloudflare
-// edge, and the range-check below then takes the visitor from CF-Connecting-IP).
-// Change it only if the number of proxies between the visitor and this process
-// changes — see "A variable that must NOT differ" in RAILWAY_SETUP.md.
+// It differs per environment and was measured, not reasoned out: production is
+// 2 (X-Forwarded-For arrives as "<visitor>, <CDN77 address>", with no
+// CF-Connecting-IP, so the Cloudflare branch below does not fire there today);
+// staging is the default 1 (Railway, nothing in front). Re-measure whenever the
+// proxies in front of an environment may have changed — see "A variable that
+// DOES differ" in RAILWAY_SETUP.md.
 //
 // The global `trust proxy` setting is deliberately untouched. The site's other
 // IP-keyed limiters no longer read req.ip: clientKey() in server/index.js derives

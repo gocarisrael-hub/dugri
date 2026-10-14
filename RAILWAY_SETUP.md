@@ -120,7 +120,7 @@ with production. Set these on the staging environment specifically:
 - **`PUBLIC_BASE_URL`** — the **staging domain** (so any payment return/callback
   URLs, if a sandbox terminal is used, point back at staging — never production).
 
-### A variable that must NOT differ: `PAYMENT_PROXY_HOPS`
+### A variable that DOES differ: `PAYMENT_PROXY_HOPS`
 
 `PAYMENT_PROXY_HOPS` (default `1`) is how many proxy entries to count from the
 **right** of `X-Forwarded-For` to find the visitor. Proxies **append**, so the
@@ -130,19 +130,25 @@ address this picks out, so the value is load-bearing in both directions: too hig
 and one caller rotates the header for an unlimited budget, too low and **every**
 visitor shares one bucket, so one person hitting a limit locks out the whole site.
 
-Leave it at **`1` in both staging and production.** It is deliberately the same in
-both — not an oversight to tidy up — because Railway appends exactly one entry
-either way:
+It is set per environment, from a measurement, not by reasoning about the setup:
 
-- **staging** is reached directly, so the entry Railway appends is the visitor;
-- **production** is fronted by Cloudflare, so the entry Railway appends is a
-  Cloudflare edge address — which is what lets the range-check confirm the request
-  really came through Cloudflare and take the visitor from `CF-Connecting-IP`
-  instead (the Meta CAPI section below relies on the same reasoning).
+- **production: `2`.** Measured 2026-10-05 when production switched to Tranzila.
+  The header arrived as `<visitor>, <CDN77 address>` (152.233.13.x, AS60068, not a
+  Cloudflare range) with no `CF-Connecting-IP`, so with `1` every buyer was keyed
+  as the same CDN77 address. With `2` the key is the visitor's own address.
+- **staging: unset (`1`).** Staging is served by Railway directly, with no proxy
+  in front of it.
 
-Revisit it only if the number of proxies **between the visitor and this process**
-changes — another load balancer or proxy placed in front of Railway. It is not a
-knob to tune per environment. `0` ignores `X-Forwarded-For` entirely, which is
+The Cloudflare range-check in `server/payment-client-ip.js` therefore does not
+fire on production today: the entry it inspects is the visitor, not a Cloudflare
+edge, and no `CF-Connecting-IP` arrives.
+
+**Re-measure** whenever the proxies in front of an environment may have changed
+(a CDN or DNS change, a Railway edge change): set `TRANZILA_LOG_CLIENT_IP=1`, open
+one payment, and read the `[tranzila] client key …` line in that environment's log
+(see `server/TRANZILA.md`, "Before going live"). The key must be your own address.
+If it is not, set `PAYMENT_PROXY_HOPS` to the number of entries after yours, then
+remove `TRANZILA_LOG_CLIENT_IP`. `0` ignores `X-Forwarded-For` entirely, which is
 right only for a local run, where the socket peer is the client.
 
 ### Keeping staging data clean

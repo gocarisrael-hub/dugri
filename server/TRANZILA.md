@@ -31,7 +31,7 @@ delivery orders, and the delivery upgrade on a paid order (shipping/init).
 | `TRANZILA_HTTP_TIMEOUT_MS`       | _optional_, 10000: every call to Tranzila is aborted after this                            |
 | `PAY_INIT_RATE_LIMIT_IP`         | _optional_, 60 Tranzila pay/inits per client per 10 minutes                                |
 | `PAY_INIT_RATE_LIMIT_COLLECTION` | _optional_, 20 Tranzila pay/inits per collection per 10 minutes                            |
-| `PAYMENT_PROXY_HOPS`             | _optional_, 1: proxies appending to X-Forwarded-For (Railway)                              |
+| `PAYMENT_PROXY_HOPS`             | _optional_, production 2, staging 1 (measured; see RAILWAY_SETUP.md)                       |
 | `TRANZILA_LOG_CLIENT_IP`         | _optional_, `1` only for the go-live check below, then remove                              |
 | `TRANZILA_SWEEP_TICK_MS`         | _optional_, 15000: how often the periodic sweep checks whether it is due                   |
 
