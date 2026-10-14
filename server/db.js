@@ -813,13 +813,47 @@ function releaseHeld(id) {
   return { moved, removed: mine.length };
 }
 
+// No data file → a new, empty store. A data file that exists but cannot be read
+// or parsed → REFUSE TO BOOT. This used to start an empty store instead, and the
+// first save (a page view's order-number backfill, a new collection) then renamed
+// that emptiness over the real file: every order and every word, gone, on a volume
+// with no backups. Throwing keeps the file exactly where it is; the process exits,
+// Railway restarts it, and it refuses again until someone looks.
+//
+// A copy is kept aside first (dugri-data.unreadable-<hash>.json), so the bytes
+// survive even if someone then deletes the bad file to get the site up. Named by a
+// hash of the content, so a restart loop does not fill the volume with copies.
 function loadDb() {
+  if (!fs.existsSync(DB_FILE)) return { ...DEFAULTS };
+  let raw;
+  let parsed;
   try {
-    if (!fs.existsSync(DB_FILE)) return { ...DEFAULTS };
-    return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(DB_FILE, 'utf8')) };
-  } catch {
-    return { ...DEFAULTS };
+    raw = fs.readFileSync(DB_FILE);
+    parsed = JSON.parse(raw.toString('utf8'));
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('the top level is not an object');
+    }
+  } catch (err) {
+    let aside = null;
+    if (raw) {
+      const hash = crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16);
+      aside = path.join(DATA_DIR, `dugri-data.unreadable-${hash}.json`);
+      try {
+        if (!fs.existsSync(aside)) fs.copyFileSync(DB_FILE, aside);
+      } catch (copyErr) {
+        aside = `(copy failed: ${copyErr.message})`;
+      }
+    }
+    const msg =
+      `[db] REFUSING TO BOOT: ${DB_FILE} exists but cannot be read (${err.message}). ` +
+      `Nothing was written over it.` +
+      (aside ? ` A copy is at ${aside}.` : '') +
+      ` Repair or restore the file, or move it away to start an EMPTY store on purpose ` +
+      `(RAILWAY_SETUP.md, "Data file will not load").`;
+    console.error(msg);
+    throw new Error(msg);
   }
+  return { ...DEFAULTS, ...parsed };
 }
 
 let _db = loadDb();
