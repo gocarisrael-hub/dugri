@@ -1167,8 +1167,23 @@ function arrivalFromBody(arrival) {
   });
 }
 
+// Creating a collection is unauthenticated and was unlimited: every call writes
+// a new order into the JSON-file DB and hands back an owner_token, which is also
+// a fresh pay/init budget. A buyer makes one, or a few if she starts over, so 20
+// an hour per client (clientKey, the address our own proxy saw) never meets a
+// real person, and a script stops after 20. Checked FIRST, so a flood of
+// malformed requests is bounded too.
+const collectionCreateRate = makeRateLimiter({
+  limit: positiveNumber(process.env.COLLECTION_CREATE_RATE_LIMIT, 20),
+  windowMs: 60 * 60 * 1000,
+  maxKeys: 10000,
+});
+
 // Create a collection -> returns the secret owner_token (only time it's sent).
 app.post('/api/collections', (req, res) => {
+  if (!collectionCreateRate.ok(clientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
   const b = req.body || {};
   // THE TITLE is the order's only free-text input now ("no name no gender only
   // free text title"): it is what prints on the cards and the board. The name is
