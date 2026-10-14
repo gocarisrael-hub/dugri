@@ -334,10 +334,140 @@ describe('alertFooter', () => {
     expect(alertFooter([{ kind: 'sweep_recovered' }, { kind: 'sweep_failing' }])).toBe(
       FOOTER_FAILING
     );
-    for (const k of ['unmatched', 'orphan', 'order_changed', 'unverified', undefined]) {
+    for (const k of [
+      'unmatched',
+      'orphan',
+      'order_changed',
+      'unverified',
+      'stale_unpaid',
+      undefined,
+    ]) {
       expect(alertFooter([{ kind: 'sweep_recovered' }, { kind: k }])).toBe(FOOTER_MONEY);
     }
     expect(FOOTER_MONEY).toContain('My Tranzila');
     expect(FOOTER_RECOVERED).not.toContain('לזכות');
+  });
+});
+
+describe('pay windows that aged out with nothing settled', () => {
+  // A fake store of unpaid sessions: the sweeper asks for (from, to] windows.
+  function staleHarness(over = {}) {
+    const sessions = [];
+    const staleUnpaid = vi.fn((from, to) =>
+      sessions.filter((x) => {
+        const t = Date.parse(x.initiated_at);
+        return t > from && t <= to;
+      })
+    );
+    const h = harness({ staleUnpaid, ...over });
+    const open = (order, at) => sessions.push({ order, initiated_at: new Date(at).toISOString() });
+    const stale = () =>
+      h.deps.deliver.mock.calls
+        .flatMap(([items]) => items)
+        .filter((i) => i.kind === 'stale_unpaid');
+    return { ...h, open, stale, staleUnpaid };
+  }
+
+  it('reports nothing from before it first ran', async () => {
+    const { s, open, stale } = staleHarness();
+    open('D-1', T0 - 5 * HOUR);
+    await s.sweep(T0);
+    await s.sweep(T0 + 10 * MIN);
+    expect(stale()).toEqual([]);
+  });
+
+  it('one alert once a window is 30 minutes old and unpaid, naming the order, not before', async () => {
+    const { s, open, stale } = staleHarness();
+    await s.sweep(T0);
+    open('D-7', T0 + MIN);
+    await s.sweep(T0 + 30 * MIN);
+    expect(stale()).toEqual([]);
+    await s.sweep(T0 + 32 * MIN);
+    expect(stale()).toHaveLength(1);
+    expect(stale()[0]).toMatchObject({ count: 1, orders: ['D-7'], since: T0 + MIN });
+    // Not again on the next pass.
+    await s.sweep(T0 + 40 * MIN);
+    expect(stale()).toHaveLength(1);
+  });
+
+  it('a settled charge proves the reports work: earlier windows end the streak and are not reported', async () => {
+    const { s, deps, open, stale, st } = staleHarness();
+    await s.sweep(T0);
+    open('D-1', T0 + MIN);
+    deps.listRows.mockResolvedValueOnce([{ index: '5' }]);
+    deps.decide.mockReturnValueOnce({ outcome: 'settled' });
+    await s.sweep(T0 + 5 * MIN);
+    await s.sweep(T0 + 40 * MIN);
+    expect(stale()).toEqual([]);
+    expect(st.stale).toBeUndefined();
+    // A window opened after that settle still counts.
+    open('D-2', T0 + 41 * MIN);
+    await s.sweep(T0 + 75 * MIN);
+    expect(stale().map((i) => i.orders)).toEqual([['D-2']]);
+  });
+
+  it('a settle ends a streak already reported; the next one alerts afresh', async () => {
+    const { s, deps, open, stale } = staleHarness();
+    await s.sweep(T0);
+    open('D-1', T0 + MIN);
+    await s.sweep(T0 + 35 * MIN);
+    deps.listRows.mockResolvedValueOnce([{ index: '5' }]);
+    deps.decide.mockReturnValueOnce({ outcome: 'settled' });
+    await s.sweep(T0 + 36 * MIN);
+    open('D-2', T0 + 37 * MIN);
+    await s.sweep(T0 + 70 * MIN);
+    expect(stale().map((i) => i.orders)).toEqual([['D-1'], ['D-2']]);
+  });
+
+  it('a growing streak repeats at most once a day, and only when it grew', async () => {
+    const { s, open, stale } = staleHarness();
+    await s.sweep(T0);
+    open('D-1', T0 + MIN);
+    await s.sweep(T0 + 35 * MIN);
+    open('D-2', T0 + HOUR);
+    open('D-3', T0 + 2 * HOUR);
+    await s.sweep(T0 + 3 * HOUR);
+    expect(stale()).toHaveLength(1);
+    await s.sweep(T0 + 25 * HOUR);
+    expect(stale()).toHaveLength(2);
+    expect(stale()[1]).toMatchObject({ count: 3, orders: ['D-1', 'D-2', 'D-3'], since: T0 + MIN });
+    // A day later with nothing new: silence.
+    await s.sweep(T0 + 50 * HOUR);
+    expect(stale()).toHaveLength(2);
+  });
+
+  it('counts a purchase once however many passes see it', async () => {
+    const { s, open, stale, st } = staleHarness();
+    await s.sweep(T0);
+    open('D-1', T0 + MIN);
+    await s.sweep(T0 + 35 * MIN);
+    // A restart with an older watermark re-reads the same window.
+    st.stale_checked_until = T0 - 30 * MIN;
+    open('D-2', T0 + 2 * MIN);
+    await s.sweep(T0 + 25 * HOUR);
+    expect(stale()[1]).toMatchObject({ count: 2, orders: ['D-1', 'D-2'] });
+  });
+
+  it('is not checked on a pass that could not read the terminal', async () => {
+    const { s, deps, open, staleUnpaid, stale } = staleHarness();
+    await s.sweep(T0);
+    open('D-1', T0 + MIN);
+    deps.listRows.mockRejectedValueOnce(new Error('down'));
+    await expect(s.sweep(T0 + 35 * MIN)).rejects.toThrow('down');
+    expect(staleUnpaid).toHaveBeenCalledTimes(0);
+    await s.sweep(T0 + 36 * MIN);
+    expect(stale()).toHaveLength(1);
+  });
+
+  it('writes the store when the streak moves, and leaves quiet passes throttled', async () => {
+    const { s, deps, open } = staleHarness({ st: { last_saved_at: T0 - MIN } });
+    await s.sweep(T0); // sets the watermark: written
+    expect(deps.state.save).toHaveBeenCalledTimes(1);
+    deps.state.save.mockClear();
+    await s.sweep(T0 + MIN); // quiet
+    expect(deps.state.save).not.toHaveBeenCalled();
+    open('D-1', T0 + 2 * MIN);
+    await s.sweep(T0 + 33 * MIN);
+    expect(deps.state.save).toHaveBeenCalled();
   });
 });

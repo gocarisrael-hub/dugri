@@ -2709,6 +2709,36 @@ const db = {
     });
   },
 
+  // The purchases still unpaid whose NEWEST session on this provider was opened
+  // in (fromMs, toMs]: one entry each. A purchase with a later window still open
+  // is left for the window that holds its newest session. For the sweep's
+  // stale-session alert (server/tranzila-sweep.js). `resolved` is not consulted,
+  // for the reason given above isPaySessionRecent. A delivery fee paid on its own
+  // is its own purchase, marked as such.
+  unpaidProviderSessionsBetween(provider, fromMs, toMs) {
+    const newestIn = (holder) => {
+      if (!holder || !Array.isArray(holder.sessions)) return null;
+      let best = null;
+      for (const s of holder.sessions) {
+        if (!s || s.provider !== provider || !s.initiated_at) continue;
+        if (!best || Date.parse(s.initiated_at) > Date.parse(best)) best = s.initiated_at;
+      }
+      const t = best ? Date.parse(best) : NaN;
+      return t > fromMs && t <= toMs ? best : null;
+    };
+    const out = [];
+    for (const c of _db.collections) {
+      const o = c && c.order;
+      if (!o) continue;
+      const ref = String(c.order_no || c.id);
+      const own = !o.paid && newestIn(o.pelecard);
+      if (own) out.push({ order: ref, initiated_at: own });
+      const ship = o.shipping && !o.shipping.paid && newestIn(o.shipping.pelecard);
+      if (ship) out.push({ order: ref + ' (משלוח)', initiated_at: ship });
+    }
+    return out;
+  },
+
   // Admin: flip an order between "still here" and SENT TO THE PRINT SHOP. The
   // first of the two hand-pressed production steps: the PDF is generated (that
   // is `order.production`, which the generator sets by itself), the owner mails

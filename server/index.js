@@ -4870,6 +4870,21 @@ function describeTranzilaAlert(item) {
       '); העסקאות מהזמן הזה נבדקות עכשיו.'
     );
   }
+  // Both readings, said plainly: from here an abandoned checkout and a charge
+  // the reports never showed look the same.
+  if (item.kind === 'stale_unpaid') {
+    const orders = item.orders || [];
+    return (
+      (item.count === 1 ? 'הזמנה אחת פתחה' : item.count + ' הזמנות פתחו') +
+      ' חלון תשלום בטרנזילה מאז ' +
+      new Date(Number(item.since)).toISOString() +
+      (item.count === 1 ? ' ולא סומנה כשולמת' : ' ולא סומנו כשולמות') +
+      ', ומאז לא נקלט בטרנזילה אף תשלום (' +
+      (item.count > orders.length ? 'האחרונות: ' : '') +
+      orders.join(', ') +
+      '). ייתכן שהלקוחות פשוט לא סיימו לשלם — וייתכן שהם שילמו והדוחות של טרנזילה לא מראים את זה (מסוף אחר, או שדה dugri_token שלא מוגדר במסוף).'
+    );
+  }
   const head =
     'עסקה ' +
     item.index +
@@ -4962,6 +4977,11 @@ const tranzilaSweeper = createSweeper({
   decide: decideTranzilaRow,
   deliver: deliverTranzilaAlerts,
   hasRecentUnpaid: (at) => db.hasRecentUnpaidProviderSession(tranzila.NAME, at - 30 * 60 * 1000),
+  // Production only, like the unmatched-row alert: staging's windows are test
+  // checkouts, abandoned on purpose.
+  staleUnpaid: (from, to) =>
+    tranzila.envTag() === 'p' ? db.unpaidProviderSessionsBetween(tranzila.NAME, from, to) : [],
+  staleRepeatMs: tzLimit('TRANZILA_STALE_REPEAT_MS', 24 * 60 * 60 * 1000),
   minSpacingMs: tzLimit('TRANZILA_SWEEP_MIN_SPACING_MS', 10 * 1000),
   overlapMs: tzLimit('TRANZILA_SWEEP_OVERLAP_MS', 60 * 60 * 1000),
   failAlertAfterMs: tzLimit('TRANZILA_SWEEP_FAIL_ALERT_MS', 15 * 60 * 1000),

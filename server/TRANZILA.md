@@ -27,6 +27,7 @@ delivery orders, and the delivery upgrade on a paid order (shipping/init).
 | `TRANZILA_SWEEP_OVERLAP_MS`      | _optional_, 3600000: how far before the last sweep the next reads                          |
 | `TRANZILA_SWEEP_FAIL_ALERT_MS`   | _optional_, 900000: alert once sweeps have failed this long                                |
 | `TRANZILA_ALERT_RATE_LIMIT`      | _optional_, 5 alert batches an hour                                                        |
+| `TRANZILA_STALE_REPEAT_MS`       | _optional_, 86400000: the unpaid-window alert repeats at most this often                   |
 | `TRANZILA_ALERT_CHUNK`           | _optional_, 15 lines per alert message                                                     |
 | `TRANZILA_HTTP_TIMEOUT_MS`       | _optional_, 10000: every call to Tranzila is aborted after this                            |
 | `PAY_INIT_RATE_LIMIT_IP`         | _optional_, 60 Tranzila pay/inits per client per 10 minutes                                |
@@ -185,6 +186,13 @@ in silence.
 - sweeps that have failed for `TRANZILA_SWEEP_FAIL_ALERT_MS` (Reports API down,
   timeouts, the page limit), repeated at most every 3 hours while it goes on, and
   a short note once a sweep works again.
+- production only: pay windows whose purchase is still unpaid 30 minutes after
+  they opened, when no charge has settled since. A silently empty report, the
+  wrong terminal or a dropped `dugri_token` field leave no row to alert on, only
+  windows that never settle; so does a buyer who walked away, and the message
+  says it can be either. It is a streak, not one alert per window: a charge that
+  settles proves the reports work and ends it. One alert when it starts, then at
+  most once per `TRANZILA_STALE_REPEAT_MS`, and only if more windows aged out.
 
 Alerts wait in a persisted queue and a transaction is marked reported only once
 an alert has really gone out, so a restart or a full hourly cap loses nothing

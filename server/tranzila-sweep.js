@@ -47,6 +47,10 @@ function createSweeper({
   decide, // (tx) => { outcome: 'settled' | 'used' | 'ignored' | 'rejected', alert? }
   deliver, // async (items) => the items that really reached the owner (or true for all)
   hasRecentUnpaid, // (atMs) => an unpaid Tranzila session was opened recently
+  // (fromMs, toMs) => [{ order, initiated_at }]: purchases still unpaid whose
+  // Tranzila session was opened in (fromMs, toMs]. Optional; absent, the
+  // stale-session alert is off.
+  staleUnpaid = null,
   // How far before the last sweep the next one reads again: report lag, clock
   // skew between us and Tranzila, and the Israel-date boundary (the Reports query
   // is by date) must all fit inside it.
@@ -62,6 +66,12 @@ function createSweeper({
   idleEveryMs = 10 * MIN,
   saveEveryMs = 10 * MIN,
   keepAlertedMs = 90 * DAY,
+  // A session this old with its purchase still unpaid will not settle: the
+  // session TTL (20 minutes) plus room for report lag.
+  staleAfterMs = 30 * MIN,
+  // The stale-session alert repeats at most this often, and only when more
+  // sessions have aged out since the last one.
+  staleRepeatMs = DAY,
   now = Date.now,
   setTimer = (fn, ms) => {
     const t = setTimeout(fn, ms);
@@ -157,6 +167,77 @@ function createSweeper({
     safeSave();
   }
 
+  // PAY WINDOWS THAT AGED OUT WITH NOTHING SETTLED. A silently empty report, the
+  // wrong terminal or a dugri_token field the terminal drops all look exactly
+  // like a quiet night: no row, so no row alert. What they do leave is pay
+  // windows that open and never settle. An ordinary abandoned checkout leaves the
+  // same trace, so this is a streak, not a per-session alert: it counts only
+  // windows opened after the last charge this sweep settled (a settle proves the
+  // reports work, and ends the streak), alerts once, then at most once per
+  // staleRepeatMs while it grows. The message must say it can mean either.
+  // Runs only after a pass that read the terminal: while sweeps fail,
+  // sweep_failing is the alert.
+  // Answers whether it changed anything worth writing at once.
+  function noteStale(st, at, settled) {
+    let changed = false;
+    if (settled) {
+      st.last_settled_at = at;
+      delete st.stale;
+      changed = true;
+    }
+    if (typeof staleUnpaid !== 'function') return changed;
+    const until = at - staleAfterMs;
+    // First run: start from now, so history from before this existed is not
+    // reported. The watermark moving is not by itself worth a write: after a
+    // restart an older one re-reads a window, and the streak's order list
+    // absorbs the repeats.
+    if (!st.stale_checked_until) {
+      st.stale_checked_until = until;
+      return true;
+    }
+    const from = Number(st.stale_checked_until);
+    if (until <= from) return changed;
+    st.stale_checked_until = until;
+    const settledAt = Number(st.last_settled_at) || 0;
+    const fresh = (staleUnpaid(from, until) || []).filter(
+      (s) => s && Date.parse(s.initiated_at) > settledAt
+    );
+    if (fresh.length) {
+      const streak = st.stale || { since: null, orders: [], count: 0 };
+      for (const s of fresh) {
+        const order = String(s.order);
+        if (streak.orders.includes(order)) continue;
+        streak.orders.push(order);
+        streak.count += 1;
+        const t = Date.parse(s.initiated_at);
+        if (!streak.since || t < streak.since) streak.since = t;
+        changed = true;
+      }
+      // Kept only to spot a repeat; the count goes on regardless.
+      if (streak.orders.length > 200) streak.orders = streak.orders.slice(-200);
+      st.stale = streak;
+    }
+    const streak = st.stale;
+    if (
+      streak &&
+      streak.count > (Number(streak.alerted_count) || 0) &&
+      (!streak.alerted_at || at - Number(streak.alerted_at) >= staleRepeatMs)
+    ) {
+      streak.alerted_at = at;
+      streak.alerted_count = streak.count;
+      st.alert_queue.push({
+        kind: 'stale_unpaid',
+        index: 'stale-unpaid-' + at,
+        since: streak.since,
+        count: streak.count,
+        orders: streak.orders.slice(-10),
+        queued_at: at,
+      });
+      changed = true;
+    }
+    return changed;
+  }
+
   async function run(at) {
     lastStartedAt = at;
     const st = stateNow();
@@ -202,11 +283,13 @@ function createSweeper({
           throw rowError;
         }
         st.last_swept_at = at;
+        const staleChanged = noteStale(st, at, settled);
         // A quiet sweep writes the store at most every saveEveryMs: last_swept_at
         // is a lower bound, and the overlap covers what an older value misses.
         if (
           settled ||
           queued ||
+          staleChanged ||
           !st.last_saved_at ||
           at - Number(st.last_saved_at) >= saveEveryMs
         ) {
