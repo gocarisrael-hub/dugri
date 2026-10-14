@@ -191,7 +191,7 @@ describe('paid (PeleCard) order emails — no regression', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: 7900,
-        DebitApproveNumber: '86-001-006',
+        DebitApproveNumber: '8601006',
       },
     };
     const cb = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
@@ -230,7 +230,7 @@ describe('paid (PeleCard) order emails — no regression', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: 4000,
-        DebitApproveNumber: '86-001-007',
+        DebitApproveNumber: '8601007',
       },
     };
     const cb = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });

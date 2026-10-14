@@ -172,7 +172,7 @@ describe('POST /api/payment/callback', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: 7900,
-        DebitApproveNumber: '86-001-006',
+        DebitApproveNumber: '8601006',
       },
     };
 
@@ -182,7 +182,7 @@ describe('POST /api/payment/callback', () => {
     expect(order.paid).toBe(true);
     expect(order.paid_method).toBe('pelecard');
     expect(order.paid_transaction_id).toBe('tx-1');
-    expect(order.paid_approval_no).toBe('86-001-006');
+    expect(order.paid_approval_no).toBe('8601006');
   });
 
   // EMAIL IS NOT THE ONLY CHANNEL. This notice is sent, not enqueued, so if the
@@ -218,7 +218,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-011',
+          DebitApproveNumber: '8601011',
         },
       };
       const r = await post('/api/payment/callback', {
@@ -275,7 +275,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-010',
+          DebitApproveNumber: '8601010',
         },
       };
 
@@ -327,7 +327,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-009',
+          DebitApproveNumber: '8601009',
         },
       };
       const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-fee' } });
@@ -380,7 +380,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-012',
+          DebitApproveNumber: '8601012',
         },
       };
       const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-qty' } });
@@ -428,7 +428,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-013',
+          DebitApproveNumber: '8601013',
         },
       };
       const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-plain' } });
@@ -474,7 +474,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-017',
+          DebitApproveNumber: '8601017',
         },
       };
       const r = await post('/api/payment/callback', {
@@ -540,7 +540,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-020',
+          DebitApproveNumber: '8601020',
         },
       };
       const r = await post('/api/payment/callback', {
@@ -595,7 +595,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-018',
+          DebitApproveNumber: '8601018',
         },
       };
       const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-both' } });
@@ -643,7 +643,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-019',
+          DebitApproveNumber: '8601019',
         },
       };
       const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-nokey' } });
@@ -677,7 +677,7 @@ describe('POST /api/payment/callback', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: Math.round(charged * 100),
-        DebitApproveNumber: '86-001-016',
+        DebitApproveNumber: '8601016',
         VoucherId: '4001003',
       },
     };
@@ -688,7 +688,7 @@ describe('POST /api/payment/callback', () => {
 
     const order = db.getCollection(c.id).order;
     expect(order.paid).toBe(true);
-    expect(order.paid_approval_no).toBe('86-001-016');
+    expect(order.paid_approval_no).toBe('8601016');
     expect(order.paid_voucher_no).toBe('4001003');
   });
 
@@ -719,7 +719,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-014',
+          DebitApproveNumber: '8601014',
         },
       };
       const r = await post('/api/payment/callback', {
@@ -770,7 +770,7 @@ describe('POST /api/payment/callback', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: token,
           DebitTotal: Math.round(charged * 100),
-          DebitApproveNumber: '86-001-015',
+          DebitApproveNumber: '8601015',
         },
       };
       const r = await post('/api/payment/callback', {

@@ -130,7 +130,7 @@ describe('getTransaction', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: 'token123',
           DebitTotal: '7900',
-          DebitApproveNumber: '86-001-006',
+          DebitApproveNumber: '8601006',
         },
       })
     );
@@ -141,7 +141,7 @@ describe('getTransaction', () => {
     expect(tx.shvaResult).toBe('000');
     expect(tx.paramX).toBe('token123');
     expect(tx.debitTotalAgorot).toBe(7900);
-    expect(tx.approvalNo).toBe('86-001-006');
+    expect(tx.approvalNo).toBe('8601006');
     expect(tx.transactionId).toBe('tx-77');
 
     const [url, opts] = fetchMock.mock.calls[0];
@@ -167,7 +167,7 @@ describe('getTransaction', () => {
           ShvaResult: '000',
           AdditionalDetailsParamX: 'token123',
           DebitTotal: '19900',
-          DebitApproveNumber: '86-001-006',
+          DebitApproveNumber: '8601006',
           VoucherId: '4001003',
         },
       })
@@ -175,7 +175,7 @@ describe('getTransaction', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const tx = await loadFresh().getTransaction('tx-88');
-    expect(tx.approvalNo).toBe('86-001-006');
+    expect(tx.approvalNo).toBe('8601006');
     expect(tx.voucherNo).toBe('4001003');
   });
 

@@ -303,7 +303,7 @@ describe('pay/init with a coupon', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: 4000, // discounted agorot
-        DebitApproveNumber: '86-001-006',
+        DebitApproveNumber: '8601006',
       },
     };
     const cb = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
@@ -370,7 +370,7 @@ describe('pay/init with a coupon', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: 4000,
-        DebitApproveNumber: '86-001-006',
+        DebitApproveNumber: '8601006',
       },
     };
     await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
@@ -453,7 +453,7 @@ describe('pay/init with a coupon', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: firstToken,
         DebitTotal: 4000,
-        DebitApproveNumber: '86-777-000',
+        DebitApproveNumber: '8677000',
       },
     };
     const cb = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
