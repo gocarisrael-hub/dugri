@@ -10,7 +10,7 @@ const db = require('./db');
 const pelecard = require('./pelecard');
 const tranzila = require('./tranzila');
 const { createSweeper, positiveNumber } = require('./tranzila-sweep');
-const { paymentClientIp } = require('./payment-client-ip');
+const { paymentClientIp, trustedClientIp } = require('./payment-client-ip');
 const notify = require('./notify');
 const validate = require('./validate');
 const templates = require('./templates');
@@ -1447,11 +1447,8 @@ function couponRateOk(key) {
 // RAILWAY_SETUP.md), and why the test file asserts both directions — spoofed
 // headers share a bucket, and two genuinely different clients do not.
 //
-// NOT CHANGED HERE: clientIpForMeta in server/routes/platform.js, which decides
-// the address handed to an ad platform. It is already spoof-resistant in the way
-// that matters there (CF-Connecting-IP or nothing at all), and changing which
-// address gets recorded would change what the attribution data MEANS with
-// nothing failing. Deliberately left alone; see the PR.
+// clientIpForMeta in server/routes/platform.js hands the same derivation to the
+// ad platform, as the whole address (trustedClientIp) rather than this key.
 function clientKey(req) {
   return paymentClientIp(req);
 }
@@ -5467,6 +5464,7 @@ const { metaCapiArmed, metaAdContext, sendPurchaseToMeta, isGroupWebhook, webhoo
     requireAdmin,
     paymentBaseUrl,
     clientKey,
+    clientIp: trustedClientIp,
     makeRateLimiter,
     db,
     settings,

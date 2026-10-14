@@ -208,28 +208,58 @@ describe('the sale is reported without the buyer’s browser', () => {
   // THE ADDRESS WE HAND AN AD PLATFORM MUST NOT BE ONE THE CALLER CHOSE.
   //
   // `trust proxy` is on, so req.ip is the leftmost X-Forwarded-For entry, and
-  // Cloudflare APPENDS to that header rather than replacing it — so whatever a
-  // client writes there arrives ahead of the address Cloudflare actually saw. A
-  // buyer (or a bot) could pick the IP attached to their own purchase.
-  it('sends the address Cloudflare saw, in its bare form', async () => {
-    await completePayment(await startPayment({ cfIp: '203.0.113.7' }));
+  // proxies APPEND to that header rather than replacing it — so whatever a client
+  // writes there arrives ahead of the address our own proxy saw. The address
+  // comes from the entry PAYMENT_PROXY_HOPS from the right instead (default 1:
+  // the one Railway appends), the same derivation every rate limit counts by.
+  it('sends the address our own proxy saw', async () => {
+    await completePayment(await startPayment({ ip: '203.0.113.7' }));
     await settle();
     expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
   });
 
   it('refuses an address the client wrote into X-Forwarded-For', async () => {
-    // Exactly the request a spoofer makes: a forwarded-for of their choosing and
-    // no CF-Connecting-IP, because that one is Cloudflare's to set.
-    await completePayment(await startPayment({ ip: '198.51.100.9' }));
+    // Exactly the request a spoofer makes: a forwarded-for of their choosing,
+    // with our proxy's own entry appended after it.
+    await completePayment(await startPayment({ ip: '198.51.100.9, 203.0.113.7' }));
     await settle();
-    expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
     expect(JSON.stringify(sent[0].body)).not.toContain('198.51.100.9');
   });
 
-  it('believes Cloudflare over the client when both are present', async () => {
-    await completePayment(await startPayment({ ip: '198.51.100.9', cfIp: '203.0.113.7' }));
+  // PRODUCTION'S SHAPE (measured 2026-10-05): "<visitor>, <CDN77 address>" with
+  // no CF-Connecting-IP, and PAYMENT_PROXY_HOPS=2. The old rule (CF-Connecting-IP
+  // or nothing) sent no address at all for every production sale.
+  it('sends the visitor on production, two hops and no CF-Connecting-IP', async () => {
+    process.env.PAYMENT_PROXY_HOPS = '2';
+    try {
+      await completePayment(
+        await startPayment({ ip: '198.51.100.9, 203.0.113.7, 152.233.13.160' })
+      );
+    } finally {
+      delete process.env.PAYMENT_PROXY_HOPS;
+    }
     await settle();
     expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
+    expect(JSON.stringify(sent[0].body)).not.toContain('198.51.100.9');
+    expect(JSON.stringify(sent[0].body)).not.toContain('152.233.13.160');
+  });
+
+  it('believes CF-Connecting-IP when the hop really is a Cloudflare edge', async () => {
+    await completePayment(
+      await startPayment({ ip: '198.51.100.9, 162.158.1.1', cfIp: '203.0.113.7' })
+    );
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBe('203.0.113.7');
+  });
+
+  it('ignores a CF-Connecting-IP that did not come through Cloudflare', async () => {
+    // A caller going straight to the Railway host with a Cloudflare header of its
+    // own choosing: the hop that handed us the request is not a Cloudflare edge.
+    await completePayment(await startPayment({ ip: '198.51.100.20', cfIp: '203.0.113.7' }));
+    await settle();
+    expect(sent[0].body.data[0].user_data.client_ip_address).toBe('198.51.100.20');
+    expect(JSON.stringify(sent[0].body)).not.toContain('203.0.113.7');
   });
 
   // An office NAT, a VPN concentrator, a container network. Matching on one of
@@ -253,10 +283,10 @@ describe('the sale is reported without the buyer’s browser', () => {
       '256.0.0.1',
     ]) {
       sent = [];
-      // A public address in the header the CLIENT controls, so a fallback to it
-      // would be visible — nothing may be sent, not the private one and not the
-      // one the caller would like us to believe.
-      await completePayment(await startPayment({ cfIp: priv, ip: '203.0.113.7' }));
+      // A public address in the part of the header the CLIENT controls, so a
+      // fallback to it would be visible — nothing may be sent, not the private one
+      // and not the one the caller would like us to believe.
+      await completePayment(await startPayment({ ip: '203.0.113.7, ' + priv }));
       await settle();
       expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
       expect(JSON.stringify(sent[0].body)).not.toContain('203.0.113.7');
@@ -264,7 +294,7 @@ describe('the sale is reported without the buyer’s browser', () => {
   });
 
   // IPv6 is nobody's address in more shapes than ::1. Each of these, arriving as
-  // the Cloudflare header, must be dropped; the public ones must still go through.
+  // our proxy's entry, must be dropped; the public ones must still go through.
   it.each([
     ['::1', 'loopback'],
     ['0:0:0:0:0:0:0:1', 'loopback, uncompressed'],
@@ -297,7 +327,7 @@ describe('the sale is reported without the buyer’s browser', () => {
     ['::ffff:0:a00:1', 'v4-translated private, hex form'],
   ])('drops the non-public IPv6 address %s (%s)', async (priv) => {
     sent = [];
-    await completePayment(await startPayment({ cfIp: priv, ip: '203.0.113.7' }));
+    await completePayment(await startPayment({ ip: '203.0.113.7, ' + priv }));
     await settle();
     expect(sent[0].body.data[0].user_data.client_ip_address).toBeUndefined();
     expect(JSON.stringify(sent[0].body)).not.toContain('203.0.113.7');
@@ -312,7 +342,7 @@ describe('the sale is reported without the buyer’s browser', () => {
     ['::1:0:0:1', '::1:0:0:1'], // outside ::/96, not v4-compatible
   ])('still sends the public address %s', async (pub, expected) => {
     sent = [];
-    await completePayment(await startPayment({ cfIp: pub }));
+    await completePayment(await startPayment({ ip: pub }));
     await settle();
     expect(sent[0].body.data[0].user_data.client_ip_address).toBe(expected);
   });

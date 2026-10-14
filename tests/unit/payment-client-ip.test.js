@@ -10,7 +10,7 @@ import path from 'node:path';
 // client counts as its whole /64.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const { paymentClientIp, isCloudflare, normalizeIp, limitKey } = require(
+const { paymentClientIp, trustedClientIp, isCloudflare, normalizeIp, limitKey } = require(
   path.join(__dirname, '..', '..', 'server', 'payment-client-ip.js')
 );
 
@@ -110,5 +110,36 @@ describe('isCloudflare / normalizeIp / limitKey', () => {
 
   it('leaves an IPv4 as it is', () => {
     expect(limitKey('203.0.113.9')).toBe('203.0.113.9');
+  });
+});
+
+// The same derivation, handed on rather than counted by (the Meta Conversions
+// API report): the whole address, not a /64, and '' rather than a placeholder.
+describe('trustedClientIp', () => {
+  it('picks the same entry as the limiter key', () => {
+    const r = req({ 'x-forwarded-for': '9.9.9.9, 203.0.113.9, 152.233.13.160' });
+    expect(trustedClientIp(r, 2)).toBe('203.0.113.9');
+    expect(paymentClientIp(r, 2)).toBe('203.0.113.9');
+  });
+
+  it('keeps an IPv6 client whole, where the limiter key is its /64', () => {
+    const r = req({ 'x-forwarded-for': '2a03:2880:f10c:83:face:b00c::25de' });
+    expect(trustedClientIp(r, 1)).toBe('2a03:2880:f10c:83:face:b00c::25de');
+    expect(paymentClientIp(r, 1)).toBe('2a032880f10c0083::/64');
+  });
+
+  it('believes CF-Connecting-IP only behind a Cloudflare edge', () => {
+    const cf = { 'cf-connecting-ip': '203.0.113.7' };
+    expect(trustedClientIp(req({ ...cf, 'x-forwarded-for': '162.158.1.1' }), 1)).toBe(
+      '203.0.113.7'
+    );
+    expect(trustedClientIp(req({ ...cf, 'x-forwarded-for': '198.51.100.20' }), 1)).toBe(
+      '198.51.100.20'
+    );
+  });
+
+  it("is '' when there is no address at all", () => {
+    expect(trustedClientIp({ headers: {}, socket: {} }, 1)).toBe('');
+    expect(paymentClientIp({ headers: {}, socket: {} }, 1)).toBe('unknown');
   });
 });

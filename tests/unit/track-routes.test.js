@@ -308,3 +308,45 @@ describe('the ledger survives a shutdown', () => {
     expect(saved.some((e) => e.v === 'v-shutdown')).toBe(true);
   });
 });
+
+// META_LOG_CLIENT_IP=1 is the one-off check of what reaches production on an
+// ordinary route. It logs visitors' addresses, so it must stay silent without it.
+describe('the client-ip measurement log', () => {
+  async function trackWith(headers) {
+    await fetch(base + '/api/track', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ kind: 'visit', landing: AD }),
+    });
+  }
+
+  it('logs nothing unless META_LOG_CLIENT_IP=1', async () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await trackWith({ 'X-Forwarded-For': '198.51.100.9, 203.0.113.7' });
+      expect(log.mock.calls.flat().join(' ')).not.toContain('[meta] client ip');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('logs the address Meta would get and the headers it came from', async () => {
+    process.env.META_LOG_CLIENT_IP = '1';
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await trackWith({
+        'X-Forwarded-For': '198.51.100.9, 203.0.113.7',
+        'CF-Connecting-IP': '192.0.2.44',
+        'True-Client-IP': '192.0.2.45',
+      });
+      const line = log.mock.calls.flat().find((l) => String(l).startsWith('[meta] client ip'));
+      expect(line).toBe(
+        '[meta] client ip "203.0.113.7" x-forwarded-for="198.51.100.9, 203.0.113.7"' +
+          ' cf-connecting-ip="192.0.2.44" true-client-ip="192.0.2.45"'
+      );
+    } finally {
+      log.mockRestore();
+      delete process.env.META_LOG_CLIENT_IP;
+    }
+  });
+});

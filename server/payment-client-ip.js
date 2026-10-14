@@ -11,8 +11,8 @@
 // client sent, and a request can only reach Railway FROM a Cloudflare address by
 // really passing through Cloudflare. A client that talks to the Railway host
 // directly with a CF-Connecting-IP of its own choosing is keyed by its real
-// address instead. (The same reasoning as clientIpForMeta in
-// server/routes/platform.js, which cannot range-check because it keys off req.ip.)
+// address instead. The Meta Conversions API report takes its buyer address from
+// here too (trustedClientIp, below).
 //
 // Hops are counted on the RAW list, before anything is parsed, so an entry that
 // does not parse cannot shift the count onto one the client wrote; if the entry
@@ -167,4 +167,19 @@ function paymentClientIp(req, hops = trustedHops()) {
   return limitKey(clientAddress(req, hops)) || 'unknown';
 }
 
-module.exports = { paymentClientIp, isCloudflare, normalizeIp, limitKey, CLOUDFLARE_RANGES };
+// The same trusted address as a plain address rather than a limiter key: an IPv6
+// client whole, not its /64, and '' (not 'unknown') when there is none. For a
+// caller that hands the address on rather than counting by it — the Meta
+// Conversions API report (clientIpForMeta in server/routes/platform.js).
+function trustedClientIp(req, hops = trustedHops()) {
+  return clientAddress(req, hops);
+}
+
+module.exports = {
+  paymentClientIp,
+  trustedClientIp,
+  isCloudflare,
+  normalizeIp,
+  limitKey,
+  CLOUDFLARE_RANGES,
+};
