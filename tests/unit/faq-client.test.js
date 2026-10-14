@@ -15,6 +15,7 @@ import {
   isValidFaq,
   isSafeUrl,
   paragraphsOf,
+  trackFaqOpens,
 } from '../../site/js/faq.js';
 
 const GOOD = {
@@ -209,5 +210,62 @@ describe('the small pure helpers', () => {
     expect(paragraphsOf('  א  \n\n\n  ב  ')).toEqual(['א', 'ב']);
     expect(paragraphsOf('')).toEqual([]);
     expect(paragraphsOf(null)).toEqual([]);
+  });
+});
+
+describe('faq_open in GA', () => {
+  afterEach(() => {
+    delete global.fetch;
+  });
+
+  // jsdom fires `toggle` asynchronously after `open` changes, as browsers do.
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+
+  it('opening a question sends it once with its place; closing sends nothing', async () => {
+    const container = shippedDom();
+    renderFaq(container, GOOD.items);
+    const send = vi.fn();
+    trackFaqOpens(container, send);
+    const second = container.querySelectorAll('details')[1];
+    second.open = true;
+    await settle();
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith('faq_open', { question: 'שאלה שנייה', position: 2 });
+    second.open = false;
+    await settle();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('covers the shipped questions too, and cuts the question at 100 characters', async () => {
+    const container = shippedDom();
+    const send = vi.fn();
+    trackFaqOpens(container, send);
+    container.querySelector('details').open = true;
+    await settle();
+    expect(send).toHaveBeenCalledWith('faq_open', {
+      question: 'שאלה שנשלחה עם העמוד',
+      position: 1,
+    });
+    const long = 'א'.repeat(150);
+    renderFaq(container, [{ q: long, a: 'ת' }]);
+    container.querySelector('details').open = true;
+    await settle();
+    expect(send).toHaveBeenLastCalledWith('faq_open', { question: 'א'.repeat(100), position: 1 });
+  });
+
+  it('initFaq wires it once, even when the fetch fails and the shipped list stays', async () => {
+    stub({}, { ok: false });
+    const container = shippedDom();
+    await initFaq(container, 50);
+    await initFaq(container, 50);
+    window.gtag = vi.fn();
+    container.querySelector('details').open = true;
+    await settle();
+    expect(window.gtag).toHaveBeenCalledTimes(1);
+    expect(window.gtag).toHaveBeenCalledWith('event', 'faq_open', {
+      question: 'שאלה שנשלחה עם העמוד',
+      position: 1,
+    });
+    delete window.gtag;
   });
 });
