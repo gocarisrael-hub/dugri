@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · r5-b · צבעי דוגרי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;800;900&display=swap" rel="stylesheet" />
+<style>
+  /* THEME:START (the only block that differs between r3-a and r3-b) */
+  :root {
+    --world: 'צבעי דוגרי';
+    --f-hero: #ffffff;
+    --f-who: #f4efe6;    /* the site's sand wash (tokens.css --section) */
+    --f-how: #ffffff;
+    --f-designs: #ece3d5; /* the site's beige accent tint (tokens.css --accent-tint) */
+    --f-foot: #ffffff;
+    --tile: #ffffff;
+    --sticker-hot: #ea4795; /* the pink of the logo, sampled from logo-pink-original.png */
+    --spark: #ea4795;
+    --tab-on: #ea4795;
+    --pawn-stop: #ece3d5;
+  }
+  /* THEME:END */
+
+  :root {
+    --ink: #000;
+    --paper: #fff;
+    --line: 3px;
+    --sh: -4px 4px 0 var(--ink);      /* hard offset shadow, thrown toward the reading start (RTL) */
+    --sh-sm: -3px 3px 0 var(--ink);
+    --display: 'Rubik', system-ui, sans-serif;
+    --cw: min(56vw, 232px);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; overflow-x: clip; }
+  body { background: var(--f-hero); color: var(--ink); font: 400 17px/1.5 var(--display); -webkit-tap-highlight-color: transparent; }
+  img { display: block; max-width: 100%; user-select: none; -webkit-user-drag: none; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+
+  /* the shared language: outlines, stickers, pills, sparkles */
+  .sticker { display: inline-block; background: var(--tile); border: 2.5px solid var(--ink); box-shadow: var(--sh-sm); padding: 7px 12px 8px; font: 800 14px/1.1 var(--display); letter-spacing: .04em; transform: rotate(var(--t, -2deg)); }
+  .sticker.hot { background: var(--sticker-hot); }
+  .pill { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: var(--ink); color: #fff; text-decoration: none; border: 0; border-radius: 999px; font: 800 16px/1 var(--display); letter-spacing: .08em; padding: 16px 26px; cursor: pointer; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1); }
+  .pill:active { transform: scale(.96); }
+  .pill.ghost { background: var(--paper); color: var(--ink); border: 2.5px solid var(--ink); padding: 10px 16px; font-size: 14px; letter-spacing: .04em; box-shadow: var(--sh-sm); }
+  .pill.ghost:active { transform: translate(-2px, 2px); box-shadow: -1px 1px 0 var(--ink); }
+  .tok { display: inline-block; background: var(--paper); border: 2px dashed var(--ink); padding: 0 6px; font-weight: 800; direction: ltr; unicode-bidi: isolate; letter-spacing: 0; }
+  .pill .tok { background: transparent; border-color: #fff; color: #fff; }
+  .spark { position: absolute; width: var(--s, 34px); height: var(--s, 34px); pointer-events: none; }
+  .spark { fill: var(--spark); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; overflow: visible; } /* inherited into the <use> shadow tree */
+
+  section { position: relative; border-top: var(--line) solid var(--ink); padding: 44px 16px 52px; overflow: clip; }
+  h1, h2 { font-family: var(--display); font-weight: 900; margin: 0; line-height: .98; letter-spacing: -.01em; }
+  h1 { font-size: clamp(40px, 11.6vw, 76px); }
+  h2 { font-size: clamp(32px, 9vw, 58px); }
+  .lede { font-size: 17px; margin: 12px 0 0; max-width: 32ch; }
+
+  /* header */
+  header { display: flex; align-items: center; justify-content: space-between; padding: max(10px, env(safe-area-inset-top)) 16px 0; }
+  header .logo { width: 86px; height: auto; margin: -6px -6px -10px 0; }
+  header .pill { padding: 12px 18px; font-size: 14px; }
+
+  /* hero */
+  .hero { border-top: 0; padding-top: 14px; padding-bottom: 36px; background: var(--f-hero); text-align: center; }
+  .hero .sticker { margin-bottom: 14px; }
+  .hero .lede { margin-inline: auto; }
+  .tabs { display: inline-flex; gap: 0; margin: 22px auto 0; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--paper); box-shadow: var(--sh-sm); padding: 3px; }
+  .tabs button { border: 0; background: none; font: 800 14px/1 var(--display); letter-spacing: .03em; padding: 11px 15px; border-radius: 999px; cursor: pointer; color: var(--ink); }
+  .tabs button[aria-pressed='true'] { background: var(--tab-on); box-shadow: inset 0 0 0 2px var(--ink); }
+
+  /* the deck on one side, a loose landing zone on the other; a flick throws the card across */
+  :root { --cw: min(34vw, 160px); }
+  .stage { position: relative; width: 100%; max-width: 460px; margin: 22px auto 0; height: calc(var(--cw) * 1.445 + 150px); touch-action: manipulation; }
+  .zone { position: absolute; top: 8px; bottom: 8px; left: -4px; width: calc(100% - var(--cw) - 34px); border: 2.5px dashed var(--ink); border-radius: 26px; opacity: .3; pointer-events: none; }
+  .card { position: absolute; top: 0; left: 0; width: var(--cw); aspect-ratio: 400 / 578; perspective: 900px; will-change: transform, opacity; touch-action: none; }
+  .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .46s cubic-bezier(.3, 1.35, .45, 1); }
+  .card.up .in { transform: rotateY(180deg); }
+  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); }
+  .card img.f { transform: rotateY(180deg); box-shadow: 4px 4px 0 var(--ink); }
+  .card.top { cursor: grab; }
+  .card.held { cursor: grabbing; }
+  .card.held img.f, .card.air img.f { box-shadow: 12px 12px 0 var(--ink); }
+  .card.held img.b { box-shadow: -12px 12px 0 var(--ink); }
+  .stage .hint { position: absolute; right: 4px; bottom: 22px; --t: 4deg; white-space: nowrap; z-index: 900; pointer-events: none; font-size: 13px; transition: opacity .3s; }
+  .stage .name { position: absolute; left: 10px; bottom: 0; z-index: 900; pointer-events: none; }
+  .stage .name .sticker { font-size: 13px; padding: 5px 10px; --t: -4deg; }
+  .stage.touched .hint { opacity: 0; }
+  .stage.flip-side .zone { left: auto; right: -4px; }
+  .stage.flip-side .hint { right: auto; left: 4px; }
+  .stage.flip-side .name { left: auto; right: 10px; }
+  .deck-ctl { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 18px; }
+  .count { font: 800 14px/1 var(--display); min-width: 4.5ch; }
+  .hero .cta { margin-top: 26px; }
+  .hero .spark.a { top: 120px; right: 14px; --s: 30px; }
+  .hero .spark.b { top: 330px; left: 12px; --s: 40px; }
+  .hero .spark.c { bottom: 120px; right: 22px; --s: 22px; }
+
+  /* who */
+  .who { background: var(--f-who); }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 24px; }
+  .tile { display: block; text-align: start; background: var(--tile); border: var(--line) solid var(--ink); box-shadow: var(--sh); padding: 12px 12px 14px; cursor: pointer; font: inherit; color: inherit; border-radius: 18px; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1), box-shadow .15s; }
+  .tile:active { transform: translate(-3px, 3px); box-shadow: -1px 1px 0 var(--ink); }
+  .tile img { width: 70%; margin: 4px auto 12px; transform: rotate(var(--t, -4deg)); border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; }
+  .tile b { display: block; font: 900 20px/1.05 var(--display); }
+  .tile span { display: block; font-size: 14px; margin-top: 6px; line-height: 1.35; }
+  .tile u { display: inline-block; margin-top: 10px; font: 800 13px/1 var(--display); text-decoration: none; border-bottom: 2.5px solid var(--ink); padding-bottom: 2px; }
+  .also { margin: 22px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 15px; }
+  .also .sticker { --t: 0deg; box-shadow: none; padding: 5px 10px; font-size: 13px; border-radius: 999px; }
+
+  /* how: the pawn walks the steps */
+  .how { background: var(--f-how); }
+  .rule { display: flex; align-items: center; gap: 14px; margin-top: 22px; background: var(--paper); border: var(--line) solid var(--ink); border-radius: 18px; box-shadow: var(--sh); padding: 14px; }
+  .rule .clock { flex: none; width: 76px; height: 76px; border-radius: 50%; border: var(--line) solid var(--ink); background: var(--sticker-hot); display: grid; place-items: center; font: 900 30px/1 var(--display); direction: ltr; }
+  .rule .clock { cursor: pointer; color: var(--ink); padding: 0; }
+  .rule .clock b { font: inherit; }
+  .rule .clock.low { background: var(--ink); color: #fff; }
+  .rule .clock small { display: block; font-size: 11px; font-weight: 800; letter-spacing: .06em; margin-top: -10px; }
+  .rule p { margin: 0; font-size: 16px; }
+  .track { position: relative; margin-top: 30px; padding-inline-start: 74px; }
+  .track::before { content: ''; position: absolute; top: 30px; bottom: 30px; inset-inline-start: 28px; border-inline-start: 4px dashed var(--ink); }
+  .stop { position: relative; display: block; width: 100%; text-align: start; background: none; border: 0; font: inherit; color: inherit; padding: 0; margin: 0 0 18px; cursor: pointer; }
+  .stop::before { content: ''; position: absolute; inset-inline-start: -64px; top: 6px; width: 44px; height: 44px; border-radius: 50%; border: var(--line) solid var(--ink); background: var(--pawn-stop); box-shadow: var(--sh-sm); }
+  .stop .box { display: block; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 14px; padding: 12px 14px; transition: background .2s, transform .2s cubic-bezier(.3, 1.4, .5, 1); }
+  .stop[aria-current='step'] .box { background: var(--sticker-hot); transform: rotate(-1.2deg); }
+  .stop b { display: block; font: 900 19px/1.15 var(--display); }
+  .stop .box > span { display: block; font-size: 15px; margin-top: 4px; }
+  .pawn { position: absolute; inset-inline-start: 4px; top: 0; width: 52px; height: 52px; border-radius: 50%; border: var(--line) solid var(--ink); box-shadow: var(--sh-sm); z-index: 2; pointer-events: none; transition: transform .6s cubic-bezier(.3, 1.3, .45, 1); }
+
+  /* designs: a scroll strip that leans with your swipe and takes on each design's colour */
+  .designs { background: var(--f-designs); text-align: center; padding-inline: 0; color: var(--on, var(--ink)); transition: color .3s; }
+  .designs > h2, .designs > .lede { position: relative; margin-inline: 16px; }
+  .designs > .lede { margin-inline: auto; padding-inline: 16px; }
+  .designs.dark { --on: #fff; }
+  .bgs { position: absolute; inset: 0; pointer-events: none; }
+  .bgs i { position: absolute; inset: 0; opacity: 0; will-change: opacity; }
+  .strip { position: relative; display: flex; gap: 0; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 34px calc(50% - var(--dw) / 2) 22px; --dw: min(58vw, 250px); perspective: 900px; overscroll-behavior-x: contain; }
+  .strip::-webkit-scrollbar { display: none; }
+  .dz { flex: none; width: var(--dw); scroll-snap-align: center; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .dz .tilt { will-change: transform; transform-origin: 50% 85%; }
+  .dz img { width: 100%; aspect-ratio: 400 / 578; border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); }
+  .dz .sticker { margin-top: 14px; font-size: 14px; color: var(--ink); }
+  .strip-hint { position: relative; font: 800 13px/1 var(--display); letter-spacing: .04em; }
+  .order { position: relative; margin-top: 30px; display: grid; justify-items: center; gap: 14px; padding-inline: 16px; }
+  .order .pill { font-size: 18px; padding: 19px 30px; }
+  .order .price { font: 900 22px/1 var(--display); }
+  .order .tok { color: var(--ink); }
+  .wa-line { font-size: 15px; font-weight: 500; }
+  .designs .spark { z-index: 1; }
+  .designs .spark.a { top: 28px; left: 20px; }
+  .designs .spark.b { bottom: 40px; right: 18px; --s: 26px; }
+
+  /* the flood: a tap fills the whole screen with that design's colour and fans out its real fronts */
+  .flood { position: fixed; inset: 0; z-index: 900; background: var(--fc); color: var(--fon); clip-path: circle(0 at var(--fx) var(--fy)); visibility: hidden; touch-action: none; display: grid; grid-template-rows: 1fr auto; overflow: hidden; }
+  .flood.open { visibility: visible; }
+  .flood .x { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 14px; z-index: 5; width: 48px; height: 48px; border-radius: 50%; border: 2.5px solid var(--ink); background: #fff; color: var(--ink); font: 900 22px/1 var(--display); box-shadow: var(--sh-sm); cursor: pointer; }
+  .fan { position: relative; }
+  .fan img { position: absolute; left: 50%; top: 50%; width: min(34vw, 170px); aspect-ratio: 400 / 578; margin: calc(min(34vw, 170px) * -0.7225) 0 0 calc(min(34vw, 170px) * -0.5); border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh-sm); will-change: transform, opacity; }
+  .fan img:not(.lead) { transform-origin: 50% 165%; }
+  .fan img.lead { width: min(46vw, 230px); margin: calc(min(46vw, 230px) * -0.7225) 0 0 calc(min(46vw, 230px) * -0.5); box-shadow: var(--sh); z-index: 3; }
+  .flood .info { display: grid; justify-items: center; gap: 12px; padding: 0 16px max(28px, env(safe-area-inset-bottom)); text-align: center; }
+  .flood h3 { margin: 0; font: 900 clamp(38px, 11vw, 64px)/1 var(--display); }
+  .flood .info p { margin: 0; font-size: 16px; }
+  .flood .pill { background: var(--ink); color: #fff; }
+  .flood .info .tok { color: var(--ink); }
+  .flood .swipe { font: 800 12px/1 var(--display); letter-spacing: .06em; opacity: .8; }
+
+  footer { border-top: var(--line) solid var(--ink); background: var(--f-foot); padding: 22px 16px 34px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  footer img { width: 54px; }
+
+  @media (min-width: 900px) {
+    :root { --cw: 200px; }
+    section, header { padding-inline: max(16px, calc(50vw - 520px)); }
+    .designs { padding-inline: 0; }
+    .strip { --dw: 260px; }
+    .duo { grid-template-columns: 1fr 1fr; max-width: 760px; }
+    .track { max-width: 560px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .pawn, .stop .box { transition: none; }
+    /* a static grid instead of the leaning strip */
+    .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; overflow: visible; padding: 26px 16px 0; --dw: auto; perspective: none; }
+    .dz { width: auto; }
+    .dz .sticker { font-size: 12px; padding: 4px 7px; }
+    .strip-hint, .bgs { display: none; }
+  }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true"><symbol id="spark" viewBox="0 0 40 40"><path d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z" /></symbol></svg>
+
+  <header>
+    <img class="logo" src="../../site/assets/logo-pink-original.png" alt="דוגרי" />
+    <a class="pill" href="#order">להזמנה</a>
+  </header>
+
+  <section class="hero" id="top" aria-labelledby="h1">
+    <svg class="spark a" aria-hidden="true"><use href="#spark" /></svg>
+    <svg class="spark b" aria-hidden="true"><use href="#spark" /></svg>
+    <svg class="spark c" aria-hidden="true"><use href="#spark" /></svg>
+    <span class="sticker hot" style="--t: -3deg">המתנה הכי אישית</span>
+    <h1 id="h1">משחק מסיבה<br />על אדם אחד.</h1>
+    <p class="lede">כל מילה בקלפים היא עליה. או עליו. אתם אוספים את המילים, אנחנו מדפיסים חפיסה ולוח.</p>
+
+    <div class="tabs" role="group" aria-label="איזו חפיסה להראות">
+      <button type="button" data-deck="bachelorette" aria-pressed="true">רווקות</button>
+      <button type="button" data-deck="birthday" aria-pressed="false">יום הולדת 70 לאבא</button>
+    </div>
+
+    <div class="stage" id="stage" role="group" aria-roledescription="חפיסת קלפים" aria-label="חפיסה הפוכה בצד. לחיצה הופכת את הקלף העליון, החלקה זורקת אותו לצד השני.">
+      <div class="zone" aria-hidden="true"></div>
+      <span class="sticker hint" aria-hidden="true">לחצו להפוך. החליקו לזרוק.</span>
+      <div class="name" id="name" aria-live="polite"></div>
+    </div>
+    <div class="deck-ctl">
+      <button class="pill ghost" type="button" id="dealBtn">להפוך קלף</button>
+      <span class="count" id="count">נשארו 12</span>
+      <button class="pill ghost" type="button" id="shuffleBtn">לערבב</button>
+    </div>
+    <div class="cta"><a class="pill" href="#order">בונים את המשחק · <span class="tok">{price}</span></a></div>
+  </section>
+
+  <section class="who" aria-labelledby="h-who">
+    <h2 id="h-who">מסיבה אחת.<br />בעל שמחה אחד.</h2>
+    <p class="lede">שתי המסיבות שהכי מזמינים אליהן את דוגרי:</p>
+    <div class="duo">
+      <button class="tile" type="button" data-deck="bachelorette">
+        <img src="cards/bachelorette-b1.webp" alt="" style="--t: -5deg" />
+        <b>רווקות</b>
+        <span>החברות יודעות הכל. עכשיו זה על השולחן.</span>
+        <u>לחפיסה ←</u>
+      </button>
+      <button class="tile" type="button" data-deck="birthday">
+        <img src="cards/birthday-b1.webp" alt="" style="--t: 4deg" />
+        <b>יום הולדת עגול</b>
+        <span>60 לאמא, 70 לאבא, 85 לסבתא. כל המשפחה משחקת.</span>
+        <u>לחפיסה ←</u>
+      </button>
+    </div>
+    <p class="also">וגם:
+      <span class="sticker">יום נישואין</span><span class="sticker">פרישה</span><span class="sticker">פרידה</span><span class="sticker">שחרור</span>
+    </p>
+  </section>
+
+  <section class="how" aria-labelledby="h-how">
+    <h2 id="h-how">ככה זה עובד.</h2>
+    <div class="rule">
+      <button class="clock" type="button" id="clock" aria-label="להפעיל שעון של 60 שניות"><b>60</b><small>לחצו</small></button>
+      <p>מתחלקים לקבוצות. מושכים קלף ומתארים את המילה בלי להגיד אותה. הקבוצה מנחשת כמה שיותר עד שהזמן נגמר.</p>
+    </div>
+    <div class="track" id="track">
+      <img class="pawn" id="pawn" src="cards/pawn-logo.webp" alt="" />
+      <button class="stop" type="button" aria-current="step"><span class="box"><b>בוחרים עיצוב</b><span>וכותבים כותרת משלכם לחפיסה.</span></span></button>
+      <button class="stop" type="button"><span class="box"><b>כולם שולחים מילים</b><span>קישור אחד בוואטסאפ, וכל אחד מוסיף מהטלפון.</span></span></button>
+      <button class="stop" type="button"><span class="box"><b>המשחק מודפס</b><span>תוך <span class="tok">{lead_days}</span> ימי עסקים: חפיסה ולוח, לאיסוף או עד הבית.</span></span></button>
+    </div>
+  </section>
+
+  <section class="designs" id="order" aria-labelledby="h-designs">
+    <div class="bgs" id="bgs" aria-hidden="true"></div>
+    <svg class="spark a" aria-hidden="true"><use href="#spark" /></svg>
+    <svg class="spark b" aria-hidden="true"><use href="#spark" /></svg>
+    <h2 id="h-designs">שישה עיצובים.<br />הכותרת שלכם.</h2>
+    <p class="lede">כל עיצוב מתאים לכל מסיבה. החליקו ביניהם, ולחצו על אחד כדי לראות את כל הקלפים שלו.</p>
+    <div class="strip" id="strip" aria-label="העיצובים"></div>
+    <div class="strip-hint" aria-hidden="true">← החליקו →</div>
+    <div class="order">
+      <a class="pill" href="#">בונים את המשחק ←</a>
+      <span class="price">חפיסה ולוח: <span class="tok">{price}</span></span>
+      <a class="wa-line" href="https://wa.me/972552441334">שאלה? כתבו לנו בוואטסאפ</a>
+    </div>
+  </section>
+
+  <div class="flood" id="flood" role="dialog" aria-modal="true" aria-labelledby="floodName">
+    <button class="x" type="button" id="floodX" aria-label="סגירה">✕</button>
+    <div class="fan" id="fan"></div>
+    <div class="info">
+      <h3 id="floodName"></h3>
+      <p>חפיסה ולוח בעיצוב הזה, עם הכותרת והמילים שלכם: <span class="tok">{price}</span></p>
+      <a class="pill" href="#" id="floodOrder">בונים את המשחק ←</a>
+      <span class="swipe" aria-hidden="true">החליקו למטה כדי לחזור</span>
+    </div>
+  </div>
+
+  <footer><span>דוגרי · הדר ועלמה · <a href="#">תקנון</a> · <a href="#">איסוף עצמי</a></span><img src="../../site/assets/logo-pink-original.png" alt="" /></footer>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const C = 'cards/';
+  // the six real designs, with each one's main colour sampled from its real card
+  const D = {
+    bachelorette: { name: 'פריז', c: '#fc789c' },
+    birthday: { name: 'קליפורניה', c: '#9ce4fc' },
+    marriage: { name: 'סנטוריני', c: '#0048a8' },
+    japanese: { name: 'טוקיו', c: '#181818' },
+    posttrip: { name: 'סיישל', c: '#90d8e4' },
+    kids: { name: 'ברוקלין', c: '#1878fc' },
+  };
+  const KEYS = Object.keys(D);
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const lum = ([r, g, b]) => { const f = (v) => ((v /= 255) <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
+  const darkBg = (h) => (lum(hex(h)) + .05) / .05 < 4.5; // black text would fail AA on it
+
+  /* ---------- hero: the deck on one side; flip the top card, throw it across to the other ---------- */
+  const SIDE = new URLSearchParams(location.search).get('side') === 'left' ? 'left' : 'right'; // RTL inline start = right
+  const stage = document.getElementById('stage');
+  if (SIDE === 'left') stage.classList.add('flip-side');
+  const nameEl = document.getElementById('name');
+  const countEl = document.getElementById('count');
+  const MAX_PILE = 7;
+  let deck = [], pile = [], busy = false, lastKey = null, zTop = 100;
+  const recent = {};
+
+  // geometry in stage pixels; for side=left everything is mirrored
+  function geo() {
+    const W = stage.offsetWidth, H = stage.offsetHeight, cw = stage.querySelector('.card')?.offsetWidth || W * .34, ch = cw * 1.445;
+    const deckX = W - cw - 12, deckY = (H - ch) / 2 - 10;
+    const zone = { x0: -10, x1: Math.max(10, W - cw * 2 - 40), y0: 6, y1: H - ch - 8 };
+    return { W, H, cw, ch, deckX, deckY, zone };
+  }
+  const mx = (x, cw) => (SIDE === 'left' ? stage.offsetWidth - cw - x : x);
+  const cwNow = () => (stage.querySelector('.card') || {}).offsetWidth || 0;
+  const T = (c) => `translate3d(${mx(c.x, cwNow())}px, ${c.y}px, 0) rotate(${SIDE === 'left' ? -c.r : c.r}deg) scale(${c.s || 1})`;
+  const draw = (c) => { c.el.style.transform = T(c); };
+
+  function sequence(first) {
+    for (let tries = 0; tries < 500; tries++) {
+      const seq = [...shuffle(KEYS), ...shuffle(KEYS)];
+      if (first) { const i = seq.indexOf(first); [seq[0], seq[i]] = [seq[i], seq[0]]; }
+      if (seq.every((k, i) => !i || k !== seq[i - 1]) && (first || seq[0] !== lastKey)) return seq.reverse();
+    }
+    return KEYS.concat(KEYS);
+  }
+  function front(k) {
+    const r = (recent[k] = recent[k] || []);
+    const opts = [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => !r.includes(n));
+    const n = opts[(Math.random() * opts.length) | 0];
+    r.push(n); if (r.length > 5) r.shift();
+    return n;
+  }
+  function makeCard(k) {
+    const el = document.createElement('div');
+    el.className = 'card';
+    el.innerHTML = `<div class="in"><img class="b" src="${C}${k}-b1.webp" alt=""><img class="f" src="${C}${k}-f${front(k)}.webp" alt=""></div>`;
+    stage.appendChild(el);
+    const c = { el, k, x: 0, y: 0, r: 0, s: 1, ox: rnd(-3, 3), oy: rnd(-3, 3), or: rnd(-4, 4) };
+    bind(c);
+    return c;
+  }
+  function layoutDeck() {
+    const g = geo();
+    deck.forEach((c, i) => {
+      c.x = g.deckX + c.ox - i * .5; c.y = g.deckY + c.oy - i * 1.1; c.r = c.or; c.s = 1;
+      c.el.style.zIndex = String(10 + i);
+      c.el.classList.toggle('top', i === deck.length - 1);
+      c.el.style.pointerEvents = i === deck.length - 1 ? 'auto' : 'none';
+      draw(c);
+    });
+    countEl.textContent = `נשארו ${deck.length}`;
+  }
+  function build(first) {
+    [...deck, ...pile].forEach((c) => c.el.remove());
+    pile = [];
+    deck = sequence(first).map(makeCard);
+    layoutDeck(); nameEl.textContent = '';
+  }
+  function showName(c) {
+    nameEl.innerHTML = `<span class="sticker hot">${D[c.k].name}</span>`;
+    if (!reduce) nameEl.firstChild.animate([{ transform: 'rotate(-4deg) scale(.5)' }, { transform: 'rotate(-4deg) scale(1.15)' }, { transform: 'rotate(-4deg) scale(1)' }], { duration: 320, easing: 'ease-out' });
+  }
+  const topCard = () => deck[deck.length - 1];
+
+  function flipUp(c) {
+    if (c.el.classList.contains('up')) return;
+    stage.classList.add('touched');
+    c.el.classList.add('up');
+    c.el.querySelector('.f').alt = `קלף מהעיצוב ${D[c.k].name}`;
+    lastKey = c.k;
+    if (reduce) c.el.animate([{ opacity: .4 }, { opacity: 1 }], { duration: 200 });
+    else c.el.animate([{ transform: T(c) }, { transform: T({ ...c, y: c.y - 26, r: c.r - 6, s: 1.07 }), offset: .4 }, { transform: T(c) }], { duration: 460, easing: 'cubic-bezier(.3, .8, .4, 1)' });
+  }
+
+  // the throw: an arc across the screen with gravity, spin, and a slide when it lands
+  function throwCard(c, vx = -24, vy = -6, spinHint = 0) {
+    deck.splice(deck.indexOf(c), 1);
+    c.el.classList.remove('top'); c.el.style.pointerEvents = 'none';
+    if (!c.el.classList.contains('up')) flipUp(c);
+    const g = geo();
+    const speed = Math.hypot(vx, vy);
+    // where it lands: anywhere in the loose zone, nudged by where you flicked it
+    const tx = Math.min(g.zone.x1, Math.max(g.zone.x0, rnd(g.zone.x0, g.zone.x1) + Math.max(-30, Math.min(30, vx * .4))));
+    const ty = Math.min(g.zone.y1, Math.max(g.zone.y0, rnd(g.zone.y0, g.zone.y1) + Math.max(-40, Math.min(40, vy * 2))));
+    const turns = speed > 30 || Math.random() < .18 ? (spinHint >= 0 ? 360 : -360) : 0;
+    const tr = rnd(-34, 34);
+    c.el.style.zIndex = String(++zTop + 1000);
+    deck.length && layoutDeck(); countEl.textContent = `נשארו ${deck.length}`;
+    const land = () => {
+      c.el.style.zIndex = String(++zTop);
+      c.el.classList.remove('air');
+      pile.push(c);
+      showName(c);
+      // older cards slide out of the zone and fade, so at most MAX_PILE stay on the table
+      while (pile.length > MAX_PILE) {
+        const old = pile.shift();
+        if (reduce) old.el.remove();
+        else old.el.animate([{ transform: T(old), opacity: 1 }, { transform: T({ ...old, x: old.x - 40, y: old.y + 30, r: old.r - 12 }), opacity: 0 }], { duration: 420, easing: 'ease-in', fill: 'forwards' }).onfinish = () => old.el.remove();
+      }
+      if (!deck.length) setTimeout(gather, reduce ? 300 : 700);
+    };
+    if (reduce) { Object.assign(c, { x: tx, y: ty, r: tr, s: 1 }); draw(c); c.el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 }); land(); return; }
+    c.el.classList.add('air');
+    const x0 = c.x, y0 = c.y, r0 = c.r;
+    const dur = Math.max(480, Math.min(820, 900 - speed * 9));
+    const h = Math.max(50, Math.min(150, 50 + speed * 2.6 - vy * 2)); // a harder flick throws higher
+    const t0 = performance.now();
+    let px = x0, py = y0;
+    const fly = (t) => {
+      const u = Math.min(1, (t - t0) / dur);
+      const e = 1 - (1 - u) * (1 - u) * .35 - .65 * (1 - u) ** 3; // fast out of the hand, slowing as it comes down
+      px = c.x; py = c.y;
+      c.x = x0 + (tx - x0) * e;
+      c.y = y0 + (ty - y0) * u - h * 4 * u * (1 - u); // gravity: a parabola
+      c.r = r0 + (tr + turns - r0) * (1 - (1 - u) ** 2);
+      c.s = 1 + .14 * 4 * u * (1 - u);
+      draw(c);
+      if (u < 1) return requestAnimationFrame(fly);
+      // inertia: it slides on a little after touching down
+      let sx = (c.x - px) * .6, sy = (c.y - py) * .25, sr = (Math.random() - .5) * 4, n = 0;
+      c.r = tr + turns; c.s = 1;
+      const slide = () => {
+        c.x += sx; c.y += sy; c.r += sr; sx *= .8; sy *= .8; sr *= .8; n++;
+        c.x = Math.max(g.zone.x0 - 14, Math.min(g.zone.x1 + 14, c.x)); draw(c);
+        if (n < 16) requestAnimationFrame(slide); else { c.r = ((c.r % 360) + 540) % 360 - 180; draw(c); land(); }
+      };
+      requestAnimationFrame(slide);
+    };
+    requestAnimationFrame(fly);
+  }
+
+  // tap flips the top card; a second tap or a flick throws it; a short drag springs back
+  function bind(c) {
+    let sx, sy, t0, bx, by, br, samples, held = false, flippedNow = false;
+    c.el.addEventListener('pointerdown', (e) => {
+      if (topCard() !== c || busy) return;
+      e.preventDefault(); c.el.setPointerCapture(e.pointerId); held = true;
+      flippedNow = false;
+      c.el.classList.add('held'); sx = e.clientX; sy = e.clientY; t0 = performance.now(); bx = c.x; by = c.y; br = c.r;
+      samples = [{ x: sx, y: sy, t: t0 }];
+    });
+    c.el.addEventListener('pointermove', (e) => {
+      if (!held) return;
+      let dx = e.clientX - sx, dy = e.clientY - sy;
+      if (!flippedNow && Math.hypot(dx, dy) > 12 && !c.el.classList.contains('up')) { flippedNow = true; flipUp(c); } // dragging deals it face up
+      if (SIDE === 'left') dx = -dx;
+      c.x = bx + dx; c.y = by + dy; c.r = br + (reduce ? 0 : dx * .06); c.s = 1.04; draw(c);
+      samples.push({ x: e.clientX, y: e.clientY, t: performance.now() }); if (samples.length > 6) samples.shift();
+    });
+    const up = (e) => {
+      if (!held) return; held = false; c.el.classList.remove('held'); c.s = 1;
+      const dx = e.clientX - sx, dy = e.clientY - sy, dist = Math.hypot(dx, dy);
+      if (dist < 8 && performance.now() - t0 < 350) {
+        draw(c);
+        if (c.el.classList.contains('up')) throwCard(c); else flipUp(c);
+        return;
+      }
+      const a = samples[0], b = samples[samples.length - 1], dt = Math.max(16, b.t - a.t);
+      let vx = (b.x - a.x) / dt * 16.67, vy = (b.y - a.y) / dt * 16.67;
+      if (SIDE === 'left') vx = -vx;
+      const fast = performance.now() - b.t < 90 && Math.hypot(vx, vy) > 10;
+      if (dist > 100 || fast) return throwCard(c, Math.min(-12, vx), vy, -vx);
+      // springs back onto the deck
+      if (reduce) { layoutDeck(); return; }
+      let vx2 = 0, vy2 = 0;
+      const g = geo(), hx = g.deckX + c.ox - (deck.length - 1) * .5, hy = g.deckY + c.oy - (deck.length - 1) * 1.1;
+      const spring = () => {
+        vx2 = (vx2 + (hx - c.x) * .16) * .72; vy2 = (vy2 + (hy - c.y) * .16) * .72;
+        c.x += vx2; c.y += vy2; c.r += (c.or - c.r) * .2; draw(c);
+        if (!held && Math.abs(hx - c.x) + Math.abs(hy - c.y) + Math.abs(vx2) > .3) requestAnimationFrame(spring); else if (!held) layoutDeck();
+      };
+      requestAnimationFrame(spring);
+    };
+    c.el.addEventListener('pointerup', up); c.el.addEventListener('pointercancel', up);
+  }
+
+  // the deck runs out: the pile sweeps back to its side, face down, and is riffled
+  async function gather(first) {
+    if (busy) return;
+    busy = true;
+    const g = geo();
+    const all = [...pile, ...deck];
+    if (reduce) { build(first); busy = false; return; }
+    await Promise.all(all.map((c, i) => {
+      c.el.classList.remove('up');
+      const to = { x: g.deckX, y: g.deckY, r: rnd(-4, 4), s: 1 };
+      const mid = { x: (c.x + to.x) / 2, y: Math.min(c.y, to.y) - 50, r: c.r + 30, s: 1.05 };
+      return c.el.animate([{ transform: T(c) }, { transform: T(mid) }, { transform: T(to) }], { duration: 520, delay: i * 50, easing: 'cubic-bezier(.4, .1, .3, 1)', fill: 'forwards' }).finished.then(() => Object.assign(c, to));
+    }));
+    await Promise.all(all.map((c, i) => {
+      const side = i % 2 ? 1 : -1;
+      return c.el.animate([{ transform: T(c) }, { transform: T({ ...c, x: c.x + side * 30, y: c.y - 8, r: side * 8 }), offset: .45 }, { transform: T(c) }], { duration: 480, delay: i * 25, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' }).finished;
+    }));
+    build(first);
+    busy = false;
+  }
+
+  document.getElementById('dealBtn').addEventListener('click', () => {
+    const c = topCard(); if (!c || busy) return;
+    if (c.el.classList.contains('up')) throwCard(c); else flipUp(c);
+  });
+  document.getElementById('shuffleBtn').addEventListener('click', () => gather());
+  stage.tabIndex = 0;
+  stage.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); document.getElementById('dealBtn').click(); } });
+
+  function choose(name, scroll) {
+    document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.deck === name)));
+    gather(name);
+    if (scroll) stage.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+  }
+  document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => choose(b.dataset.deck)));
+  document.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => choose(b.dataset.deck, true)));
+
+  /* ---------- how: the clock really runs ---------- */
+  const clockBtn = document.getElementById('clock');
+  let clockRaf = 0;
+  clockBtn.addEventListener('click', () => {
+    cancelAnimationFrame(clockRaf);
+    const t0 = performance.now(), num = clockBtn.querySelector('b');
+    const tick = (t) => {
+      const left = Math.max(0, 60 - Math.floor((t - t0) / 1000));
+      num.textContent = String(left);
+      clockBtn.classList.toggle('low', left <= 10);
+      if (left > 0) clockRaf = requestAnimationFrame(tick);
+    };
+    clockRaf = requestAnimationFrame(tick);
+  });
+
+  /* ---------- designs: the strip leans with swipe speed, the section takes on the centred design's colour ---------- */
+  const sec = document.querySelector('.designs');
+  const strip = document.getElementById('strip');
+  const bgs = document.getElementById('bgs');
+  strip.innerHTML = KEYS.map((k) => `<button class="dz" type="button" data-k="${k}" aria-label="${D[k].name}: לראות את כל הקלפים"><div class="tilt"><img src="${C}${k}-f1.webp" alt=""></div><span class="sticker" style="--t:${rnd(-4, 4).toFixed(1)}deg">${D[k].name}</span></button>`).join('');
+  bgs.innerHTML = KEYS.map((k) => `<i style="background:${D[k].c}"></i>`).join('');
+  const items = [...strip.children], layers = [...bgs.children];
+  let lastSL = strip.scrollLeft, lastT = performance.now(), target = 0, lean = 0, leanV = 0, looping = false;
+
+  function paint() {
+    if (reduce) return; // a static grid on the section's own colour
+    const sr = strip.getBoundingClientRect(), mid = sr.left + sr.width / 2;
+    const span = items[0].offsetWidth || 1;
+    let best = 0, bestD = 1e9;
+    items.forEach((el, i) => {
+      const r = el.getBoundingClientRect(), d = (r.left + r.width / 2 - mid) / span; // -1..1 = one card away
+      if (Math.abs(d) < Math.abs(bestD)) { bestD = d; best = i; }
+      const ad = Math.min(1.4, Math.abs(d));
+      if (!reduce) el.firstChild.style.transform = `translateY(${ad * 18}px) rotateY(${(-lean * 1.4 - d * 14).toFixed(2)}deg) rotateZ(${(lean * .7 + d * 6).toFixed(2)}deg) scale(${(1 - ad * .16).toFixed(3)})`;
+      layers[i].style.opacity = String(Math.max(0, 1 - Math.abs(d)).toFixed(3)); // neighbours cross-fade = colour morph
+    });
+    sec.classList.toggle('dark', darkBg(D[KEYS[best]].c));
+  }
+  function loop() {
+    // spring toward the lean the swipe asks for; settling past upright gives the little overshoot
+    target *= .86;
+    leanV += (target - lean) * .18; leanV *= .72; lean += leanV;
+    paint();
+    if (Math.abs(lean) + Math.abs(leanV) + Math.abs(target) > .02) requestAnimationFrame(loop);
+    else { lean = 0; paint(); looping = false; }
+  }
+  strip.addEventListener('scroll', () => {
+    const t = performance.now(), v = (strip.scrollLeft - lastSL) / Math.max(8, t - lastT);
+    lastSL = strip.scrollLeft; lastT = t;
+    if (reduce) { paint(); return; }
+    target = Math.max(-22, Math.min(22, v * 9));
+    if (!looping) { looping = true; requestAnimationFrame(loop); }
+  }, { passive: true });
+
+  /* ---------- the flood: tap a design, its colour fills the screen and its real fronts fan out ---------- */
+  const flood = document.getElementById('flood'), fan = document.getElementById('fan');
+  let openFrom = null, fanCards = [];
+  function openDesign(btn, x, y) {
+    const k = btn.dataset.k, d = D[k];
+    openFrom = btn;
+    flood.style.setProperty('--fc', d.c);
+    flood.style.setProperty('--fon', darkBg(d.c) ? '#fff' : '#000');
+    flood.style.setProperty('--fx', x + 'px'); flood.style.setProperty('--fy', y + 'px');
+    document.getElementById('floodName').textContent = d.name;
+    const fronts = [2, 3, 4, 5, 6, 7, 8];
+    fan.innerHTML = fronts.map((n) => `<img src="${C}${k}-f${n}.webp" alt="">`).join('') + `<img class="lead" src="${C}${k}-f1.webp" alt="קלף מהעיצוב ${d.name}">`;
+    fanCards = [...fan.children];
+    flood.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    if (reduce) {
+      flood.style.clipPath = 'none';
+      flood.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
+      fanCards.forEach((c, i) => { c.style.transform = fanPose(i, fanCards.length); });
+    } else {
+      flood.animate([{ clipPath: `circle(0px at ${x}px ${y}px)` }, { clipPath: `circle(${R}px at ${x}px ${y}px)` }], { duration: 520, easing: 'cubic-bezier(.6, 0, .25, 1)', fill: 'forwards' });
+      // the tapped card flies from its place in the strip to the centre of the fan
+      const hero = fanCards[fanCards.length - 1], from = btn.querySelector('img').getBoundingClientRect();
+      requestAnimationFrame(() => {
+        const to = hero.getBoundingClientRect();
+        const dx = from.left + from.width / 2 - (to.left + to.width / 2), dy = from.top + from.height / 2 - (to.top + to.height / 2);
+        hero.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width})` }, { transform: 'translate(0, -24px) scale(1.06) rotate(-3deg)', offset: .7 }, { transform: fanPose(fanCards.length - 1, fanCards.length) }], { duration: 640, easing: 'cubic-bezier(.3, .8, .3, 1)', fill: 'both' });
+        fanCards.slice(0, -1).forEach((c, i) => c.animate([{ transform: 'translate(0, 10px) rotate(0deg) scale(.6)', opacity: 0 }, { transform: fanPose(i, fanCards.length), opacity: 1 }], { duration: 560, delay: 260 + i * 40, easing: 'cubic-bezier(.3, 1.45, .45, 1)', fill: 'both' }));
+      });
+    }
+    document.getElementById('floodX').focus({ preventScroll: true });
+  }
+  // a hand of cards: an even arc, each card nudged a little off its slot
+  function fanPose(i, n) {
+    if (i === n - 1) return 'translate(0, 34px) rotate(-2deg)';
+    const t = i / (n - 2) - .5, a = t * 104 + (i % 2 ? 3.5 : -3.5);
+    return `translate(${(i % 3 - 1) * 5}px, ${-26 + (i % 2) * 10}px) rotate(${a.toFixed(1)}deg)`;
+  }
+  function closeDesign() {
+    if (!flood.classList.contains('open')) return;
+    const r = openFrom.querySelector('img').getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const done = () => { flood.classList.remove('open'); flood.style.clipPath = ''; flood.getAnimations().forEach((a) => a.cancel()); fan.innerHTML = ''; document.body.style.overflow = ''; openFrom.focus({ preventScroll: true }); };
+    if (reduce) { flood.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180 }).onfinish = done; return; }
+    fanCards.slice(0, -1).forEach((c, i) => c.animate([{ transform: fanPose(i, fanCards.length), opacity: 1 }, { transform: 'translate(0, 10px) scale(.6)', opacity: 0 }], { duration: 300, delay: (fanCards.length - 2 - i) * 22, easing: 'cubic-bezier(.5, 0, .7, .4)', fill: 'forwards' }));
+    const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    const hero = fanCards[fanCards.length - 1], to = hero.getBoundingClientRect();
+    hero.animate([{ transform: fanPose(fanCards.length - 1, fanCards.length) }, { transform: `translate(${x - (to.left + to.width / 2)}px, ${y - (to.top + to.height / 2)}px) scale(${r.width / to.width})` }], { duration: 480, delay: 120, easing: 'cubic-bezier(.5, 0, .2, 1)', fill: 'forwards' });
+    flood.animate([{ clipPath: `circle(${R}px at ${x}px ${y}px)` }, { clipPath: `circle(0px at ${x}px ${y}px)` }], { duration: 520, delay: 150, easing: 'cubic-bezier(.6, 0, .3, 1)', fill: 'forwards' }).onfinish = done;
+  }
+  strip.addEventListener('click', (e) => {
+    const btn = e.target.closest('.dz'); if (!btn) return;
+    const r = btn.querySelector('img').getBoundingClientRect();
+    openDesign(btn, e.clientX || r.left + r.width / 2, e.clientY || r.top + r.height / 2);
+  });
+  document.getElementById('floodX').addEventListener('click', closeDesign);
+  // tap outside the cards and the order pill, or swipe down, to close
+  let fy0 = null;
+  flood.addEventListener('pointerdown', (e) => { fy0 = e.clientY; });
+  flood.addEventListener('pointerup', (e) => {
+    const dy = fy0 == null ? 0 : e.clientY - fy0; fy0 = null;
+    if (dy > 70) return closeDesign();
+    if (Math.abs(dy) < 8 && !e.target.closest('.fan img, .pill, .x, .tok')) closeDesign();
+  });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDesign(); });
+  document.getElementById('floodOrder').addEventListener('click', (e) => e.stopPropagation());
+
+  /* ---------- how: the pawn walks to the step you tap ---------- */
+  const stops = [...document.querySelectorAll('.stop')];
+  const pawn = document.getElementById('pawn');
+  function walk(i) {
+    stops.forEach((s, k) => (k === i ? s.setAttribute('aria-current', 'step') : s.removeAttribute('aria-current')));
+    const y = stops[i].offsetTop + 2;
+    if (reduce) { pawn.style.transform = `translateY(${y}px)`; return; }
+    const from = pawn.style.transform || 'translateY(0px)';
+    pawn.animate([{ transform: from }, { transform: `translateY(${(parseFloat(from.slice(11)) + y) / 2 - 26}px) scale(1.15)` }, { transform: `translateY(${y}px)` }],
+      { duration: 520, easing: 'cubic-bezier(.3, .9, .4, 1)' });
+    pawn.style.transform = `translateY(${y}px)`;
+  }
+  stops.forEach((s, i) => s.addEventListener('click', () => walk(i)));
+
+  build('bachelorette');
+  addEventListener('load', () => { walk(0); layoutDeck(); paint(); });
+  addEventListener('resize', () => { if (!busy) { layoutDeck(); pile.forEach(draw); } paint(); });
+  window.__r5 = { topCard, flipUp, throwCard, gather, state: () => ({ deck: deck.length, pile: pile.map((c) => c.k), shown: stage.querySelectorAll('.card').length - deck.length, busy, last: lastKey }), openDesign, closeDesign };
+})();
+</script>
+</body>
+</html>
