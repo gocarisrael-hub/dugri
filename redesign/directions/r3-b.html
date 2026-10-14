@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · r3-b · צבעי דוגרי</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;800;900&display=swap" rel="stylesheet" />
+<style>
+  /* THEME:START (the only block that differs between r3-a and r3-b) */
+  :root {
+    --world: 'צבעי דוגרי';
+    --f-hero: #ffffff;
+    --f-who: #f4efe6;    /* the site's sand wash (tokens.css --section) */
+    --f-how: #ffffff;
+    --f-designs: #ece3d5; /* the site's beige accent tint (tokens.css --accent-tint) */
+    --f-foot: #ffffff;
+    --tile: #ffffff;
+    --sticker-hot: #ea4795; /* the pink of the logo, sampled from logo-pink-original.png */
+    --spark: #ea4795;
+    --tab-on: #ea4795;
+    --pawn-stop: #ece3d5;
+  }
+  /* THEME:END */
+
+  :root {
+    --ink: #000;
+    --paper: #fff;
+    --line: 3px;
+    --sh: -4px 4px 0 var(--ink);      /* hard offset shadow, thrown toward the reading start (RTL) */
+    --sh-sm: -3px 3px 0 var(--ink);
+    --display: 'Rubik', system-ui, sans-serif;
+    --cw: min(56vw, 232px);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; overflow-x: clip; }
+  body { background: var(--f-hero); color: var(--ink); font: 400 17px/1.5 var(--display); -webkit-tap-highlight-color: transparent; }
+  img { display: block; max-width: 100%; user-select: none; -webkit-user-drag: none; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+
+  /* the shared language: outlines, stickers, pills, sparkles */
+  .sticker { display: inline-block; background: var(--tile); border: 2.5px solid var(--ink); box-shadow: var(--sh-sm); padding: 7px 12px 8px; font: 800 14px/1.1 var(--display); letter-spacing: .04em; transform: rotate(var(--t, -2deg)); }
+  .sticker.hot { background: var(--sticker-hot); }
+  .pill { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: var(--ink); color: #fff; text-decoration: none; border: 0; border-radius: 999px; font: 800 16px/1 var(--display); letter-spacing: .08em; padding: 16px 26px; cursor: pointer; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1); }
+  .pill:active { transform: scale(.96); }
+  .pill.ghost { background: var(--paper); color: var(--ink); border: 2.5px solid var(--ink); padding: 10px 16px; font-size: 14px; letter-spacing: .04em; box-shadow: var(--sh-sm); }
+  .pill.ghost:active { transform: translate(-2px, 2px); box-shadow: -1px 1px 0 var(--ink); }
+  .tok { display: inline-block; background: var(--paper); border: 2px dashed var(--ink); padding: 0 6px; font-weight: 800; direction: ltr; unicode-bidi: isolate; letter-spacing: 0; }
+  .pill .tok { background: transparent; border-color: #fff; color: #fff; }
+  .spark { position: absolute; width: var(--s, 34px); height: var(--s, 34px); pointer-events: none; }
+  .spark { fill: var(--spark); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; overflow: visible; } /* inherited into the <use> shadow tree */
+
+  section { position: relative; border-top: var(--line) solid var(--ink); padding: 44px 16px 52px; overflow: clip; }
+  h1, h2 { font-family: var(--display); font-weight: 900; margin: 0; line-height: .98; letter-spacing: -.01em; }
+  h1 { font-size: clamp(40px, 11.6vw, 76px); }
+  h2 { font-size: clamp(32px, 9vw, 58px); }
+  .lede { font-size: 17px; margin: 12px 0 0; max-width: 32ch; }
+
+  /* header */
+  header { display: flex; align-items: center; justify-content: space-between; padding: max(10px, env(safe-area-inset-top)) 16px 0; }
+  header .logo { width: 86px; height: auto; margin: -6px -6px -10px 0; }
+  header .pill { padding: 12px 18px; font-size: 14px; }
+
+  /* hero */
+  .hero { border-top: 0; padding-top: 14px; padding-bottom: 36px; background: var(--f-hero); text-align: center; }
+  .hero .sticker { margin-bottom: 14px; }
+  .hero .lede { margin-inline: auto; }
+  .tabs { display: inline-flex; gap: 0; margin: 22px auto 0; border: 2.5px solid var(--ink); border-radius: 999px; background: var(--paper); box-shadow: var(--sh-sm); padding: 3px; }
+  .tabs button { border: 0; background: none; font: 800 14px/1 var(--display); letter-spacing: .03em; padding: 11px 15px; border-radius: 999px; cursor: pointer; color: var(--ink); }
+  .tabs button[aria-pressed='true'] { background: var(--tab-on); box-shadow: inset 0 0 0 2px var(--ink); }
+
+  /* the deck: real cards, one clean stack */
+  .deck-wrap { position: relative; width: var(--cw); margin: 26px auto 0; }
+  .deck { position: relative; width: 100%; aspect-ratio: 400 / 578; touch-action: none; }
+  .card { position: absolute; inset: 0; will-change: transform; transition: transform .5s cubic-bezier(.3, 1.2, .4, 1); cursor: grab; }
+  .card.held, .card.flying { transition: none; }
+  .card.held { cursor: grabbing; }
+  .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .55s cubic-bezier(.3, 1.25, .45, 1); }
+  .card.flipped .in { transform: rotateY(180deg); }
+  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; }
+  .card img.b { transform: rotateY(180deg); }
+  .card .face-shadow { position: absolute; inset: 0; border-radius: 6.5% / 4.5%; box-shadow: var(--sh); }
+  .card.held .face-shadow { box-shadow: -9px 10px 0 var(--ink); transition: box-shadow .15s; }
+  .deck-wrap .hint { position: absolute; top: -16px; left: -34px; --t: -9deg; white-space: nowrap; z-index: 200; pointer-events: none; font-size: 13px; transition: opacity .3s; }
+  .deck-wrap.touched .hint { opacity: 0; }
+  .deck-ctl { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 26px; }
+  .count { font: 800 14px/1 var(--display); min-width: 4.5ch; direction: ltr; }
+  .hero .cta { margin-top: 26px; }
+  .hero .spark.a { top: 120px; right: 14px; --s: 30px; }
+  .hero .spark.b { top: 330px; left: 12px; --s: 40px; }
+  .hero .spark.c { bottom: 120px; right: 22px; --s: 22px; }
+
+  /* who */
+  .who { background: var(--f-who); }
+  .duo { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 24px; }
+  .tile { display: block; text-align: start; background: var(--tile); border: var(--line) solid var(--ink); box-shadow: var(--sh); padding: 12px 12px 14px; cursor: pointer; font: inherit; color: inherit; border-radius: 18px; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1), box-shadow .15s; }
+  .tile:active { transform: translate(-3px, 3px); box-shadow: -1px 1px 0 var(--ink); }
+  .tile img { width: 70%; margin: 4px auto 12px; transform: rotate(var(--t, -4deg)); border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; }
+  .tile b { display: block; font: 900 20px/1.05 var(--display); }
+  .tile span { display: block; font-size: 14px; margin-top: 6px; line-height: 1.35; }
+  .tile u { display: inline-block; margin-top: 10px; font: 800 13px/1 var(--display); text-decoration: none; border-bottom: 2.5px solid var(--ink); padding-bottom: 2px; }
+  .also { margin: 22px 0 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 15px; }
+  .also .sticker { --t: 0deg; box-shadow: none; padding: 5px 10px; font-size: 13px; border-radius: 999px; }
+
+  /* how: the pawn walks the steps */
+  .how { background: var(--f-how); }
+  .rule { display: flex; align-items: center; gap: 14px; margin-top: 22px; background: var(--paper); border: var(--line) solid var(--ink); border-radius: 18px; box-shadow: var(--sh); padding: 14px; }
+  .rule .clock { flex: none; width: 76px; height: 76px; border-radius: 50%; border: var(--line) solid var(--ink); background: var(--sticker-hot); display: grid; place-items: center; font: 900 30px/1 var(--display); direction: ltr; }
+  .rule .clock small { display: block; font-size: 11px; font-weight: 800; letter-spacing: .06em; margin-top: -10px; }
+  .rule p { margin: 0; font-size: 16px; }
+  .track { position: relative; margin-top: 30px; padding-inline-start: 74px; }
+  .track::before { content: ''; position: absolute; top: 30px; bottom: 30px; inset-inline-start: 28px; border-inline-start: 4px dashed var(--ink); }
+  .stop { position: relative; display: block; width: 100%; text-align: start; background: none; border: 0; font: inherit; color: inherit; padding: 0; margin: 0 0 18px; cursor: pointer; }
+  .stop::before { content: ''; position: absolute; inset-inline-start: -64px; top: 6px; width: 44px; height: 44px; border-radius: 50%; border: var(--line) solid var(--ink); background: var(--pawn-stop); box-shadow: var(--sh-sm); }
+  .stop .box { display: block; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 14px; padding: 12px 14px; transition: background .2s, transform .2s cubic-bezier(.3, 1.4, .5, 1); }
+  .stop[aria-current='step'] .box { background: var(--sticker-hot); transform: rotate(-1.2deg); }
+  .stop b { display: block; font: 900 19px/1.15 var(--display); }
+  .stop .box > span { display: block; font-size: 15px; margin-top: 4px; }
+  .pawn { position: absolute; inset-inline-start: 4px; top: 0; width: 52px; height: 52px; border-radius: 50%; border: var(--line) solid var(--ink); box-shadow: var(--sh-sm); z-index: 2; pointer-events: none; transition: transform .6s cubic-bezier(.3, 1.3, .45, 1); }
+
+  /* designs */
+  .designs { background: var(--f-designs); text-align: center; }
+  .designs .lede { margin-inline: auto; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; margin: 26px 0 0; }
+  .flip { border: 0; background: none; padding: 0; cursor: pointer; font: inherit; color: inherit; }
+  .flip .in { position: relative; aspect-ratio: 400 / 578; transform-style: preserve-3d; transition: transform .55s cubic-bezier(.3, 1.25, .45, 1); }
+  .flip.on .in { transform: rotateY(180deg); }
+  .flip img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh-sm); }
+  .flip img.f { transform: rotateY(180deg); }
+  .flip .sticker { margin-top: 10px; font-size: 13px; padding: 5px 9px; --t: var(--tt, -2deg); }
+  .order { margin-top: 40px; display: grid; justify-items: center; gap: 14px; }
+  .order .pill { font-size: 18px; padding: 19px 30px; }
+  .order .price { font: 900 22px/1 var(--display); }
+  .wa-line { font-size: 15px; font-weight: 500; }
+  .designs .spark.a { top: 28px; left: 20px; }
+  .designs .spark.b { bottom: 40px; right: 18px; --s: 26px; }
+
+  footer { border-top: var(--line) solid var(--ink); background: var(--f-foot); padding: 22px 16px 34px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  footer img { width: 54px; }
+
+  @media (min-width: 900px) {
+    :root { --cw: 270px; }
+    section, header { padding-inline: max(16px, calc(50vw - 520px)); }
+    .duo { grid-template-columns: 1fr 1fr; max-width: 760px; }
+    .grid { grid-template-columns: repeat(6, 1fr); }
+    .track { max-width: 560px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .card, .card .in, .flip .in, .pawn, .stop .box { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true"><symbol id="spark" viewBox="0 0 40 40"><path d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z" /></symbol></svg>
+
+  <header>
+    <img class="logo" src="../../site/assets/logo-pink-original.png" alt="דוגרי" />
+    <a class="pill" href="#order">להזמנה</a>
+  </header>
+
+  <section class="hero" id="top" aria-labelledby="h1">
+    <svg class="spark a" aria-hidden="true"><use href="#spark" /></svg>
+    <svg class="spark b" aria-hidden="true"><use href="#spark" /></svg>
+    <svg class="spark c" aria-hidden="true"><use href="#spark" /></svg>
+    <span class="sticker hot" style="--t: -3deg">המתנה הכי אישית</span>
+    <h1 id="h1">משחק מסיבה<br />על אדם אחד.</h1>
+    <p class="lede">כל מילה בקלפים היא עליה. או עליו. אתם אוספים את המילים, אנחנו מדפיסים חפיסה ולוח.</p>
+
+    <div class="tabs" role="group" aria-label="איזו חפיסה להראות">
+      <button type="button" data-deck="bachelorette" aria-pressed="true">רווקות</button>
+      <button type="button" data-deck="birthday" aria-pressed="false">יום הולדת 70 לאבא</button>
+    </div>
+
+    <div class="deck-wrap" id="deckWrap">
+      <span class="sticker hint" aria-hidden="true">גררו. זרקו. הפכו.</span>
+      <div class="deck" id="deck" role="group" aria-roledescription="חפיסת קלפים" aria-label="חפיסת קלפים אמיתית" tabindex="0"></div>
+    </div>
+    <div class="deck-ctl">
+      <button class="pill ghost" type="button" id="flipBtn">להפוך</button>
+      <span class="count" id="count" aria-live="polite">1 / 8</span>
+      <button class="pill ghost" type="button" id="nextBtn">הקלף הבא</button>
+    </div>
+    <div class="cta"><a class="pill" href="#order">בונים את המשחק · <span class="tok">{price}</span></a></div>
+  </section>
+
+  <section class="who" aria-labelledby="h-who">
+    <h2 id="h-who">מסיבה אחת.<br />בעל שמחה אחד.</h2>
+    <p class="lede">שתי המסיבות שהכי מזמינים אליהן את דוגרי:</p>
+    <div class="duo">
+      <button class="tile" type="button" data-deck="bachelorette">
+        <img src="cards/bachelorette-b1.webp" alt="" style="--t: -5deg" />
+        <b>רווקות</b>
+        <span>החברות יודעות הכל. עכשיו זה על השולחן.</span>
+        <u>לחפיסה ←</u>
+      </button>
+      <button class="tile" type="button" data-deck="birthday">
+        <img src="cards/birthday-b1.webp" alt="" style="--t: 4deg" />
+        <b>יום הולדת עגול</b>
+        <span>60 לאמא, 70 לאבא, 85 לסבתא. כל המשפחה משחקת.</span>
+        <u>לחפיסה ←</u>
+      </button>
+    </div>
+    <p class="also">וגם:
+      <span class="sticker">יום נישואין</span><span class="sticker">פרישה</span><span class="sticker">פרידה</span><span class="sticker">שחרור</span>
+    </p>
+  </section>
+
+  <section class="how" aria-labelledby="h-how">
+    <h2 id="h-how">ככה זה עובד.</h2>
+    <div class="rule">
+      <div class="clock" aria-hidden="true">60<small>שניות</small></div>
+      <p>מתחלקים לקבוצות. מושכים קלף ומתארים את המילה בלי להגיד אותה. הקבוצה מנחשת כמה שיותר עד שהזמן נגמר.</p>
+    </div>
+    <div class="track" id="track">
+      <img class="pawn" id="pawn" src="cards/pawn-logo.webp" alt="" />
+      <button class="stop" type="button" aria-current="step"><span class="box"><b>בוחרים עיצוב</b><span>וכותבים כותרת משלכם לחפיסה.</span></span></button>
+      <button class="stop" type="button"><span class="box"><b>כולם שולחים מילים</b><span>קישור אחד בוואטסאפ, וכל אחד מוסיף מהטלפון.</span></span></button>
+      <button class="stop" type="button"><span class="box"><b>המשחק מודפס</b><span>תוך <span class="tok">{lead_days}</span> ימי עסקים: חפיסה ולוח, לאיסוף או עד הבית.</span></span></button>
+    </div>
+  </section>
+
+  <section class="designs" id="order" aria-labelledby="h-designs">
+    <svg class="spark a" aria-hidden="true"><use href="#spark" /></svg>
+    <svg class="spark b" aria-hidden="true"><use href="#spark" /></svg>
+    <h2 id="h-designs">שישה עיצובים.<br />הכותרת שלכם.</h2>
+    <p class="lede">כל עיצוב מתאים לכל מסיבה. לחצו על קלף כדי להפוך אותו.</p>
+    <div class="grid" id="grid"></div>
+    <div class="order">
+      <a class="pill" href="#">בונים את המשחק ←</a>
+      <span class="price">חפיסה ולוח: <span class="tok">{price}</span></span>
+      <a class="wa-line" href="https://wa.me/972552441334">שאלה? כתבו לנו בוואטסאפ</a>
+    </div>
+  </section>
+
+  <footer><span>דוגרי · הדר ועלמה · <a href="#">תקנון</a> · <a href="#">איסוף עצמי</a></span><img src="../../site/assets/logo-pink-original.png" alt="" /></footer>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const C = 'cards/';
+  const DECKS = {
+    bachelorette: { back: 'bachelorette-b1', fronts: [1, 2, 3, 4, 5, 6, 7, 8].map((n) => 'bachelorette-f' + n) },
+    birthday: { back: 'birthday-b1', fronts: [2, 1, 3, 4, 5, 6, 7, 8].map((n) => 'birthday-f' + n) },
+  };
+  // resting place of the k-th card in the stack: small, ordered offsets, not a pile
+  const REST = [[0, 0, -1.5], [-4, 6, 2.2], [3, 11, -3], [-2, 15, 3.6], [0, 18, -1]];
+  const rest = (k) => REST[Math.min(k, REST.length - 1)];
+
+  const deckEl = document.getElementById('deck');
+  const wrap = document.getElementById('deckWrap');
+  const countEl = document.getElementById('count');
+  let order = [];      // card objects, order[0] is the top card
+  let total = 0;
+
+  function build(name) {
+    deckEl.textContent = '';
+    const d = DECKS[name];
+    order = d.fronts.map((f, i) => {
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.dataset.i = i + 1;
+      el.innerHTML = `<div class="in"><div class="face-shadow"></div><img class="f" src="${C}${f}.webp" alt="קלף אמיתי מהחפיסה"><img class="b" src="${C}${d.back}.webp" alt="גב הקלף"></div>`;
+      deckEl.appendChild(el);
+      const o = { el, x: 0, y: 0, r: 0, s: 1 };
+      bind(o);
+      return o;
+    });
+    total = order.length;
+    layout(true);
+  }
+  function draw(o) { o.el.style.transform = `translate3d(${o.x}px, ${o.y}px, 0) rotate(${o.r}deg) scale(${o.s})`; }
+  function layout(instant) {
+    order.forEach((o, k) => {
+      const [x, y, r] = rest(k);
+      o.x = x; o.y = y; o.r = r; o.s = 1;
+      o.el.style.zIndex = String(100 - k);
+      o.el.style.pointerEvents = k === 0 ? 'auto' : 'none';
+      o.el.style.visibility = k < REST.length + 1 ? 'visible' : 'hidden';
+      if (instant) { o.el.style.transition = 'none'; draw(o); o.el.offsetWidth; o.el.style.transition = ''; } else draw(o);
+    });
+    countEl.textContent = `${order[0].el.dataset.i} / ${total}`;
+  }
+  function touched() { wrap.classList.add('touched'); }
+  function flipTop() { touched(); order[0].el.classList.toggle('flipped'); }
+
+  // pull the top card off and tuck it under the stack
+  function toBottom(o) {
+    order.push(order.shift());
+    o.el.style.zIndex = '1';
+    layout(false);
+  }
+
+  // drag with torque, tap to flip, throw to send to the bottom
+  function bind(o) {
+    let sx, sy, t0, grabDx, grabDy, samples;
+    o.el.addEventListener('pointerdown', (e) => {
+      if (order[0] !== o) return;
+      e.preventDefault();
+      o.el.setPointerCapture(e.pointerId);
+      o.held = true; touched();
+      o.el.classList.add('held');
+      o.s = reduce ? 1 : 1.04; draw(o);
+      sx = e.clientX; sy = e.clientY; t0 = performance.now();
+      const b = deckEl.getBoundingClientRect();
+      grabDx = e.clientX - (b.left + b.width / 2); grabDy = e.clientY - (b.top + b.height / 2);
+      samples = [{ x: e.clientX, y: e.clientY, t: t0 }];
+      o.bx = o.x; o.by = o.y; o.br = o.r;
+    });
+    o.el.addEventListener('pointermove', (e) => {
+      if (!o.held) return;
+      const dx = e.clientX - sx, dy = e.clientY - sy;
+      o.x = o.bx + dx; o.y = o.by + dy;
+      // pulling a card by its corner turns it, like a real one
+      o.r = o.br + (reduce ? 0 : (grabDx * dy - grabDy * dx) * 0.0016);
+      draw(o);
+      samples.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+      if (samples.length > 6) samples.shift();
+    });
+    const up = (e) => {
+      if (!o.held) return;
+      o.held = false; o.el.classList.remove('held'); o.s = 1;
+      const dx = e.clientX - sx, dy = e.clientY - sy, dist = Math.hypot(dx, dy);
+      if (dist < 7 && performance.now() - t0 < 350) { o.el.classList.toggle('flipped'); layout(false); return; }
+      const a = samples[0], b = samples[samples.length - 1], dt = Math.max(16, b.t - a.t);
+      let vx = (b.x - a.x) / dt * 16.67, vy = (b.y - a.y) / dt * 16.67;
+      const fresh = performance.now() - b.t < 90;
+      if (dist < 80 && !(fresh && Math.hypot(vx, vy) > 9)) { layout(false); return; } // springs back
+      if (reduce) { toBottom(o); return; }
+      if (!fresh || Math.hypot(vx, vy) < 12) { const k = 18 / Math.max(1, dist); vx = dx * k; vy = dy * k; }
+      fly(o, vx, vy, Math.max(-16, Math.min(16, (grabDx * vy - grabDy * vx) * 0.0022)));
+    };
+    o.el.addEventListener('pointerup', up);
+    o.el.addEventListener('pointercancel', up);
+  }
+
+  function fly(o, vx, vy, vr) {
+    o.el.classList.add('flying');
+    const w = deckEl.offsetWidth, h = deckEl.offsetHeight;
+    let prev = performance.now(), n = 0;
+    const step = (t) => {
+      const k = Math.min(3, (t - prev) / 16.67); prev = t; n += k;
+      o.x += vx * k; o.y += vy * k; o.r += vr * k;
+      vx *= Math.pow(.97, k); vy *= Math.pow(.97, k); vr *= Math.pow(.95, k);
+      draw(o);
+      if (Math.abs(o.x) > w * .95 || Math.abs(o.y) > h * .75 || n > 32) {
+        o.el.classList.remove('flying');
+        toBottom(o);
+      } else requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  }
+
+  // buttons and keyboard do the same things as the finger
+  document.getElementById('flipBtn').addEventListener('click', flipTop);
+  document.getElementById('nextBtn').addEventListener('click', () => {
+    touched();
+    const o = order[0];
+    if (reduce) toBottom(o); else fly(o, -17, -5, -9);
+  });
+  deckEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flipTop(); }
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); document.getElementById('nextBtn').click(); }
+  });
+
+  // occasion: rebuild the deck, the rest of the page points at it
+  function choose(name, scroll) {
+    document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.deck === name)));
+    build(name);
+    if (!reduce) {
+      order.slice(0, 5).forEach((o, k) => o.el.animate(
+        [{ transform: `translate3d(0, -60px, 0) rotate(${k % 2 ? 8 : -8}deg)`, opacity: 0 }, { transform: o.el.style.transform, opacity: 1 }],
+        { duration: 380, delay: (4 - k) * 45, easing: 'cubic-bezier(.3, 1.3, .45, 1)', fill: 'backwards' }));
+    }
+    if (scroll) wrap.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+  }
+  document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => choose(b.dataset.deck)));
+  document.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => choose(b.dataset.deck, true)));
+
+  // the pawn walks to the step you tap
+  const stops = [...document.querySelectorAll('.stop')];
+  const pawn = document.getElementById('pawn');
+  function walk(i) {
+    stops.forEach((s, k) => (k === i ? s.setAttribute('aria-current', 'step') : s.removeAttribute('aria-current')));
+    const y = stops[i].offsetTop + 2;
+    if (reduce) { pawn.style.transform = `translateY(${y}px)`; return; }
+    const from = pawn.style.transform || 'translateY(0px)';
+    pawn.animate([{ transform: from }, { transform: `translateY(${(parseFloat(from.slice(11)) + y) / 2 - 26}px) scale(1.15)` }, { transform: `translateY(${y}px)` }],
+      { duration: 520, easing: 'cubic-bezier(.3, .9, .4, 1)' });
+    pawn.style.transform = `translateY(${y}px)`;
+  }
+  stops.forEach((s, i) => s.addEventListener('click', () => walk(i)));
+
+  // the six real designs: back up, tap for a front
+  const DESIGNS = [['bachelorette', 'פריז'], ['birthday', 'קליפורניה'], ['marriage', 'סנטוריני'], ['japanese', 'טוקיו'], ['posttrip', 'סיישל'], ['kids', 'ברוקלין']];
+  document.getElementById('grid').innerHTML = DESIGNS.map(([k, n], i) =>
+    `<button class="flip" type="button" aria-pressed="false" aria-label="${n}: להפוך את הקלף" style="--tt: ${i % 2 ? 3 : -3}deg"><div class="in"><img class="b" src="${C}${k}-b1.webp" alt=""><img class="f" src="${C}${k}-f1.webp" alt=""></div><span class="sticker">${n}</span></button>`).join('');
+  document.querySelectorAll('.flip').forEach((b) => b.addEventListener('click', () => {
+    b.classList.toggle('on'); b.setAttribute('aria-pressed', String(b.classList.contains('on')));
+  }));
+
+  build('bachelorette');
+  addEventListener('load', () => walk(0));
+  window.__r3 = { order, choose, walk };
+})();
+</script>
+</body>
+</html>
