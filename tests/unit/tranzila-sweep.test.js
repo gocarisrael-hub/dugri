@@ -323,3 +323,21 @@ describe('scheduling', () => {
     expect(deps.listRows).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('alertFooter', () => {
+  const { alertFooter, FOOTER_MONEY, FOOTER_FAILING, FOOTER_RECOVERED } = require(
+    path.join(__dirname, '..', '..', 'server', 'tranzila-sweep.js')
+  );
+  it('picks the line by what the message holds, and a money kind always wins', () => {
+    expect(alertFooter([{ kind: 'sweep_recovered' }])).toBe(FOOTER_RECOVERED);
+    expect(alertFooter([{ kind: 'sweep_failing' }])).toBe(FOOTER_FAILING);
+    expect(alertFooter([{ kind: 'sweep_recovered' }, { kind: 'sweep_failing' }])).toBe(
+      FOOTER_FAILING
+    );
+    for (const k of ['unmatched', 'orphan', 'order_changed', 'unverified', undefined]) {
+      expect(alertFooter([{ kind: 'sweep_recovered' }, { kind: k }])).toBe(FOOTER_MONEY);
+    }
+    expect(FOOTER_MONEY).toContain('My Tranzila');
+    expect(FOOTER_RECOVERED).not.toContain('לזכות');
+  });
+});

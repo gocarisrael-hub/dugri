@@ -9,7 +9,7 @@ const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
 const tranzila = require('./tranzila');
-const { createSweeper, positiveNumber } = require('./tranzila-sweep');
+const { createSweeper, positiveNumber, alertFooter } = require('./tranzila-sweep');
 const { paymentClientIp, trustedClientIp } = require('./payment-client-ip');
 const notify = require('./notify');
 const validate = require('./validate');
@@ -4937,7 +4937,9 @@ async function deliverTranzilaAlerts(items) {
       (parts.length > 1 ? ' (' + (i + 1) + '/' + parts.length + ')' : '');
     const body = parts[i]
       .map(describeTranzilaAlert)
-      .concat(['לבדוק ב-My Tranzila אם נגבה כסף, ולזכות או לסמן ידנית לפי הצורך.']);
+      // Per message, not per batch: a split batch can put the money rows and a
+      // health notice in different messages, and each needs its own last line.
+      .concat([alertFooter(parts[i])]);
     let ok = await notify.sendSystemAlert(subject, body).catch(() => false);
     if (!ok) ok = await alertOwnerViaWhatsApp(subject, body);
     if (!ok && !notify.isConfigured() && !ownerWaId()) {
