@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { ALL_ON, stubFeatures } from './feature-flags.js';
 
 // THE FRIEND COUPON, as the people involved meet it: a friend adds a word on a
 // shared collect link and is offered a personal code; the email's link lands a
@@ -35,6 +36,15 @@ async function addWord(page, word) {
 }
 
 const bar = (page) => page.getByTestId('friend-bar');
+
+// A 1x1 PNG, so the wizard's name step opens without the Python render.
+const PNG =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+
+// The word-list menu is shared server state another spec fills while it runs;
+// answer it per page so the wizard walk here never meets it.
+const noPoolMenu = (page) =>
+  page.route('**/api/wordlist-options', (route) => route.fulfill({ json: { options: [] } }));
 
 test.describe('the bar on a friend’s collect link', () => {
   test('appears only after the first word, with the approved copy, clear of the input', async ({
@@ -89,17 +99,71 @@ test.describe('the bar on a friend’s collect link', () => {
     await expect(bar(page)).toHaveCount(0);
   });
 
-  test('is never offered to the owner — not on her managing link, not on the shared one', async ({
-    page,
+  // THE LINK FRIENDS REALLY GET. There is one share link and it is the managing
+  // one (collect.html friendsUrl): the WhatsApp invite and the copy box both
+  // carry ?k=. The first version hid the bar from anyone on a ?k= link, so on
+  // production it reached nobody, while every test here opened the bare ?c=.
+  test('a friend on the shared link, which carries the owner key, gets it', async ({
+    browser,
     request,
   }) => {
     const { id, k } = await makeParty(request);
-    await page.goto(`/collect.html?c=${id}&k=${k}`);
+    const owner = await browser.newPage();
+    await owner.goto(`/collect.html?c=${id}&k=${k}`);
+    const shared = await owner.locator('#friendsLink').inputValue();
+    expect(shared).toContain(`k=${k}`);
+    const waHref = decodeURIComponent(
+      await owner.getByTestId('share-whatsapp').getAttribute('href')
+    );
+    expect(waHref).toContain(shared);
+    await owner.close();
+
+    // A friend: her own phone, a fresh profile, the link exactly as sent.
+    const ctx = await browser.newContext();
+    const friend = await ctx.newPage();
+    await friend.goto(new URL(shared).pathname + new URL(shared).search);
+    await addWord(friend, uniq('word'));
+    await expect(bar(friend)).toHaveCount(1);
+    await expect(bar(friend)).toContainText('אהבתם?');
+    await ctx.close();
+  });
+
+  test('is never offered on the browser that made the order, whatever link it opens', async ({
+    page,
+  }) => {
+    // The wizard steps this walks are behind flags the e2e server keeps off.
+    await stubFeatures(page, ALL_ON);
+    await noPoolMenu(page);
+    await page.route('**/api/preview', (route) =>
+      route.fulfill({
+        json: {
+          card: PNG,
+          back: PNG,
+          board: PNG,
+          warning: null,
+          word_font: null,
+          word_font_options: [],
+        },
+      })
+    );
+    await page.goto('/options.html');
+    await page.getByTestId('next-btn').click();
+    await page.getByTestId('next-btn').click();
+    await page.fill('#customTitleInput', 'Shira');
+    await page.getByTestId('next-btn').click();
+    await page.getByTestId('next-btn').click();
+    await page.fill('#ownerEmail', 'test@example.com');
+    await page.fill('#ownerPhone', '0521234567');
+    await page.fill('#buyerNameInput', 'דנה כהן');
+    await page.getByTestId('next-btn').click();
+    await page.waitForURL(/collect\.html\?c=.+&k=.+/);
+    const id = new URL(page.url()).searchParams.get('c');
+
     await addWord(page, uniq('mine'));
     await page.waitForTimeout(600);
     await expect(bar(page)).toHaveCount(0);
 
-    // The plain link she shares, opened on her own phone.
+    // The plain link, opened on her own phone.
     await page.goto(`/collect.html?c=${id}`);
     await addWord(page, uniq('mine2'));
     await page.waitForTimeout(600);

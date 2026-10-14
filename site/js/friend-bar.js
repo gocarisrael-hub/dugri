@@ -7,9 +7,12 @@
 // (POST /api/friend-coupon, server/routes/commerce.js).
 //
 // Who never sees it:
-//   - the collection's owner. On her managing link (?k=) that is obvious; on the
-//     plain link she shares, this browser remembers it opened the managing link
-//     before (OWNED_PREFIX), which covers "she tapped her own WhatsApp link".
+//   - the collection's owner, recognised as THE BROWSER THAT CREATED IT: the
+//     wizard calls markOwned() the moment the order exists (options.html). Not
+//     by ?k=: the link she shares IS the managing link (collect.html friendsUrl),
+//     so every friend arrives with ?k= too, and a ?k= rule hid the bar from all
+//     of them. She opening it on a second device sees the offer; that is the
+//     price of telling her apart from the people she invited.
 //   - anyone who dismissed it (×) or already got a code, on this browser, for
 //     good (DONE_KEY). Blocked storage only means it may come back next visit.
 //   - everyone, while the owner has switched the offer off (GET /api/friend-coupon).
@@ -25,7 +28,10 @@
 // own global `button` rules are specific enough to win over a bare class.
 
 const DONE_KEY = 'dugri:friendbar:done';
-const OWNED_PREFIX = 'dugri:owned:';
+// Not the 'dugri:owned:' the first version wrote: that one was set by any ?k=
+// visit, so every friend who opened the shared link carries it and would stay
+// hidden on that party for good. A new key starts everyone clean.
+const OWNED_PREFIX = 'dugri:made:';
 
 // The same rule the server applies (server/friend-coupons.js isValidEmail).
 export function isValidEmail(s) {
@@ -92,16 +98,18 @@ function el(tag, attrs = {}, text) {
   return n;
 }
 
+// This browser just created the collection: it is the owner's, here and on
+// every later visit, whatever link she opens it with.
+export function markOwned(collectionId) {
+  if (collectionId) store(() => localStorage.setItem(OWNED_PREFIX + collectionId, '1'));
+}
+
 // Wire the offer for one collection. Returns { wordAdded() }, which the page
 // calls after every successful add; the first one (on a friend's browser, with
 // the offer on) brings the bar up. Every other case returns a no-op.
-export function initFriendBar({ collectionId, isOwner, fetchImpl } = {}) {
+export function initFriendBar({ collectionId, fetchImpl } = {}) {
   const noop = { wordAdded() {} };
   if (!collectionId) return noop;
-  if (isOwner) {
-    store(() => localStorage.setItem(OWNED_PREFIX + collectionId, '1'));
-    return noop;
-  }
   if (store(() => localStorage.getItem(OWNED_PREFIX + collectionId), null)) return noop;
   if (store(() => localStorage.getItem(DONE_KEY), null)) return noop;
 

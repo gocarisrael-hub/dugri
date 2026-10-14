@@ -112,7 +112,7 @@ describe('the bar and the on-screen keyboard', () => {
     vi.resetModules();
     const { initFriendBar } = await import('../../site/js/friend-bar.js');
     const fetchImpl = async () => ({ ok: true, json: async () => ({ enabled: true, percent: 5 }) });
-    const fb = initFriendBar({ collectionId: 'c1', isOwner: false, fetchImpl });
+    const fb = initFriendBar({ collectionId: 'c1', fetchImpl });
     await fb.wordAdded();
     const bar = document.getElementById('friendBar');
     expect(bar.classList.contains('fb-in')).toBe(true);
@@ -126,14 +126,35 @@ describe('the bar and the on-screen keyboard', () => {
     delete window.visualViewport;
   });
 
-  it('is a no-op for the owner, and remembers her for the plain link', async () => {
+  it('is a no-op on the browser that made the order, and only there', async () => {
     vi.stubGlobal('localStorage', memoryStorage());
+    vi.stubGlobal('requestAnimationFrame', (fn) => fn());
     vi.resetModules();
-    const { initFriendBar } = await import('../../site/js/friend-bar.js');
-    const fetchImpl = vi.fn();
-    await initFriendBar({ collectionId: 'c2', isOwner: true, fetchImpl }).wordAdded();
-    await initFriendBar({ collectionId: 'c2', isOwner: false, fetchImpl }).wordAdded();
+    const { initFriendBar, markOwned } = await import('../../site/js/friend-bar.js');
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ enabled: true, percent: 5 }),
+    }));
+    markOwned('c2');
+    await initFriendBar({ collectionId: 'c2', fetchImpl }).wordAdded();
     expect(fetchImpl).not.toHaveBeenCalled();
     expect(document.getElementById('friendBar')).toBe(null);
+    // Another party on the same browser is a friend's.
+    await initFriendBar({ collectionId: 'c3', fetchImpl }).wordAdded();
+    expect(document.getElementById('friendBar')).not.toBe(null);
+    document.getElementById('friendBar').remove();
+  });
+
+  it('ignores the marker the first version left on every ?k= visitor', async () => {
+    const ls = memoryStorage();
+    ls.setItem('dugri:owned:c4', '1');
+    vi.stubGlobal('localStorage', ls);
+    vi.stubGlobal('requestAnimationFrame', (fn) => fn());
+    vi.resetModules();
+    const { initFriendBar } = await import('../../site/js/friend-bar.js');
+    const fetchImpl = async () => ({ ok: true, json: async () => ({ enabled: true, percent: 5 }) });
+    await initFriendBar({ collectionId: 'c4', fetchImpl }).wordAdded();
+    expect(document.getElementById('friendBar')).not.toBe(null);
+    document.getElementById('friendBar').remove();
   });
 });
