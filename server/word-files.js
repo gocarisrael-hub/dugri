@@ -4,12 +4,12 @@
 // so one word costs a rewrite of every other buyer's words. The plan moves them
 // into one file per collection under DATA_DIR/words/, in two steps:
 //
-//   1a (this module, read side only): the store can READ this layout. It still
-//      writes the single file with words in it, so nothing on disk changes yet.
-//   1b: the boot split and the word writes. The main file then drops `words` /
-//      `held_words` and carries WORDS_LAYOUT_KEY = 'files' instead.
+//   1a (pickWordSource / readWordsDir): the store can READ this layout.
+//   1b (writeCollection / splitWordsOut, used by db.js): the boot split and the
+//      word writes. The main file drops `words` / `held_words` and carries
+//      WORDS_LAYOUT_KEY = 'files' instead.
 //
-// 1a ships and sits on production first so that redeploying the previous image
+// 1a shipped and sat on production first so that redeploying the previous image
 // after 1b lands on a build that can read what 1b wrote.
 //
 // WHICH SOURCE WINS (pickWordSource):
@@ -17,8 +17,8 @@
 //     what a 1a build writes after reading the files: it saves its words back
 //     into the main file and drops the marker, so after a rollback to 1a the main
 //     file is newer than the word files, which are left behind untouched and
-//     stale. 1b's split must therefore treat such a main file as the truth and
-//     overwrite (and prune) the word files from it.
+//     stale. So splitWordsOut treats such a main file as the truth: it
+//     overwrites every word file from it and deletes the ones it did not write.
 //   - The marker and no `words` → the word files. A missing directory or an
 //     unreadable file THROWS. Booting with those collections empty would look
 //     like a buyer's words were deleted, and the first save would write that
@@ -126,6 +126,77 @@ function mergeById(fromFiles, fromMain) {
   return out.concat([...main.values()]);
 }
 
+// Collection ids are crypto.randomUUID() (db.js uid). Anything else is refused
+// rather than turned into a path.
+const SAFE_ID = /^[A-Za-z0-9_-]+$/;
+function fileFor(dataDir, id) {
+  if (typeof id !== 'string' || !SAFE_ID.test(id)) {
+    throw new Error(`collection id ${JSON.stringify(id)} cannot name a word file`);
+  }
+  return path.join(wordsDir(dataDir), `${id}.json`);
+}
+
+// One collection's words to disk: temp file + rename, the same guarantee as the
+// main file (a reader sees the old file or the new one, never half of one). The
+// temp name is fixed per collection, so a leftover from a crash is overwritten by
+// that collection's next write; readWordsDir never reads it.
+function writeCollection(dataDir, id, words, heldWords) {
+  const file = fileFor(dataDir, id);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(`${file}.tmp`, encode(id, words, heldWords), 'utf8');
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+function removeCollection(dataDir, id) {
+  try {
+    fs.unlinkSync(fileFor(dataDir, id));
+  } catch (e) {
+    if (e.code !== 'ENOENT') throw e;
+  }
+}
+
+// Words grouped by collection, each group in the store's own order.
+function groupByCollection(words, heldWords) {
+  const by = new Map();
+  const slot = (id) => {
+    if (!by.has(id)) by.set(id, { words: [], held_words: [] });
+    return by.get(id);
+  };
+  for (const w of words) slot(w.collection_id).words.push(w);
+  for (const w of heldWords) slot(w.collection_id).held_words.push(w);
+  return by;
+}
+
+// THE BOOT SPLIT. Runs when the main file still carries `words` (the old layout,
+// or a build rolled back to 1a wrote them back). Every step before the last
+// leaves the main file as it was, words included, and the main file with words
+// always wins on the next boot, so a process killed at any point re-runs the
+// split from scratch and loses nothing:
+//   1. back up the main file (throws on failure: no backup, no split);
+//   2. write every collection's word file, overwriting stale ones;
+//   3. delete word files this split did not write (stale, from before a rollback);
+//   4. read the directory back and compare it, collection by collection, with
+//      what is in memory; any difference throws;
+//   5. saveMain(): the main file without words, with the marker. The commit point.
+function splitWordsOut({ dataDir, words, heldWords, backup, saveMain }) {
+  backup();
+  fs.mkdirSync(wordsDir(dataDir), { recursive: true });
+  const by = groupByCollection(words, heldWords);
+  for (const [id, g] of by) writeCollection(dataDir, id, g.words, g.held_words);
+  for (const name of fs.readdirSync(wordsDir(dataDir))) {
+    const id = name.endsWith('.json') ? name.slice(0, -'.json'.length) : null;
+    if (id !== null && !by.has(id)) fs.unlinkSync(path.join(wordsDir(dataDir), name));
+  }
+  const read = readWordsDir(dataDir);
+  const back = groupByCollection(read.words, read.held_words);
+  const same =
+    back.size === by.size &&
+    [...by].every(([id, g]) => back.has(id) && JSON.stringify(back.get(id)) === JSON.stringify(g));
+  if (!same) throw new Error('word files read back different from the data file; split aborted');
+  saveMain();
+  return { collections: by.size, words: words.length, held_words: heldWords.length };
+}
+
 module.exports = {
   WORDS_DIR_NAME,
   WORDS_LAYOUT_KEY,
@@ -135,4 +206,8 @@ module.exports = {
   decode,
   readWordsDir,
   pickWordSource,
+  writeCollection,
+  removeCollection,
+  groupByCollection,
+  splitWordsOut,
 };

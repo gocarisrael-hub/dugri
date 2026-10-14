@@ -11,8 +11,8 @@ import fs from 'node:fs';
 // file otherwise. The fixture is a store written by the single-file build through
 // db.js itself (paid and unpaid orders, held words, an edit, a delete, a deleted
 // collection, a coupon); these tests lay it out the way phase 1b writes it and
-// check both layouts read back the same, and that this build rolled back onto a
-// split volume loses nothing.
+// check both layouts read back the same. Phase 1b's own tests (the split, the
+// word writes, rollback to 1a) are in word-files-split.test.js.
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
@@ -134,43 +134,6 @@ describe('phase 1a reads both layouts', () => {
     );
     fs.copyFileSync(FIXTURE, mainFile(dir));
     expect(snapshot(freshDb(dir), ids)).toEqual(fixtureWords);
-  });
-});
-
-// Rollback: 1b has split the volume, and this build (1a) is redeployed.
-describe('rolling back onto a split volume', () => {
-  it('keeps every word written after the rollback, and resurrects none it deleted', () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-words-rollback-'));
-    splitLayout(dir);
-    const staleFiles = fs
-      .readdirSync(wordFiles.wordsDir(dir))
-      .map((n) => fs.readFileSync(path.join(wordFiles.wordsDir(dir), n), 'utf8'));
-
-    const db = freshDb(dir);
-    const paid = db.getCollection(ids[0]);
-    const gone = db.listWords(ids[0])[0];
-    expect(db.deleteWord(ids[0], gone.id, paid.owner_token)).toBe(true);
-    db.addWords(ids[0], ['נמל חיפה'], 'דנה');
-
-    // 1a saves the single-file layout: words back in, marker gone.
-    const main = readMain(dir);
-    expect(main).not.toHaveProperty(wordFiles.WORDS_LAYOUT_KEY);
-    expect(main.words.filter((w) => w.collection_id === ids[0]).map((w) => w.text)).not.toContain(
-      gone.text
-    );
-    // The word files are left exactly as they were.
-    expect(
-      fs
-        .readdirSync(wordFiles.wordsDir(dir))
-        .map((n) => fs.readFileSync(path.join(wordFiles.wordsDir(dir), n), 'utf8'))
-    ).toEqual(staleFiles);
-
-    // Next boot reads the main file, not the stale word files.
-    const again = freshDb(dir);
-    const texts = again.listWords(ids[0]).map((w) => w.text);
-    expect(texts).toContain('נמל חיפה');
-    expect(texts).not.toContain(gone.text);
-    expect(snapshot(again, ids.slice(1))).toEqual(fixtureWords.slice(1));
   });
 });
 

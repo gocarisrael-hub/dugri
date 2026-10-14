@@ -87,7 +87,7 @@ promoted to production by an explicit second click.
    inherits the service and its variables.
 2. Attach a **separate Volume** to the staging service, mounted at `/data`, and
    set **`DATA_DIR=/data`** on staging. This MUST be its own volume — staging and
-   production must never share a data file (`dugri-data.json`).
+   production must never share a data file (`dugri-data.json`, `words/`).
 3. Set the staging-only variables (see below), then generate a **staging domain**
    (Settings → Networking → Generate Domain).
 4. Add a repo **variable** **`STAGING_BASE_URL`** = that staging domain
@@ -188,8 +188,10 @@ container. After connecting the repo:
 
 1. Railway builds the `Dockerfile` (node:20-alpine) and runs `node server/index.js`.
 2. Add a **Volume** to the service, mounted at `/data`.
-3. Add an env var **`DATA_DIR=/data`** so the JSON store (`dugri-data.json`)
-   persists across redeploys. (`$PORT` is provided by Railway automatically.)
+3. Add an env var **`DATA_DIR=/data`** so the JSON store persists across
+   redeploys: `dugri-data.json` (orders, coupons, everything but words) and
+   `words/<collection id>.json` (each order's words, see `server/word-files.js`).
+   A copy or restore of the store is both, together. (`$PORT` is provided by Railway automatically.)
 
 Without the volume + `DATA_DIR`, collected words are lost on every redeploy.
 

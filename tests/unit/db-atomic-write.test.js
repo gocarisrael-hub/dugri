@@ -78,7 +78,11 @@ describe('the compact data file', () => {
     for (const key of Object.keys(old)) expect(disk).toHaveProperty(key);
     expect(disk.collections.map((x) => x.id)).toEqual([c.id, d.id]);
     expect(disk.collections[0]).toEqual({ ...old.collections[0] });
-    expect(disk.words).toEqual(old.words);
+    // Words live in per-collection files now (server/word-files.js), compact too.
+    // The indented OLD layout, words inside, is the fixture of word-files-split.test.js.
+    const wordsRaw = fs.readFileSync(path.join(dir, 'words', `${c.id}.json`), 'utf8');
+    expect(wordsRaw).not.toContain('\n');
+    expect(JSON.parse(wordsRaw).words.map((w) => w.text)).toEqual(['ים', 'קפה של בוקר']);
   });
 
   // A process killed in the middle of a save — a redeploy, an OOM — at each of
