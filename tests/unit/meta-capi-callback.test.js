@@ -173,7 +173,7 @@ async function completePayment(c) {
       ShvaResult: '000',
       AdditionalDetailsParamX: token,
       DebitTotal: 7900,
-      DebitApproveNumber: '86-001-006',
+      DebitApproveNumber: '8601006',
     },
   };
   // PeleCard's own server calling us. No cookies, no user agent, no browser.
@@ -446,7 +446,7 @@ describe('the sale is reported without the buyer’s browser', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: 7900,
-        DebitApproveNumber: '86-001-006',
+        DebitApproveNumber: '8601006',
       },
     };
     const r = await post('/api/payment/callback', { transactionId: 'tx-1' });

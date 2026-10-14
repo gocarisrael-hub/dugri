@@ -367,7 +367,7 @@ describe('one callback, two kinds of purchase', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: shipToken(c.id),
         DebitTotal: FEE * 100,
-        DebitApproveNumber: '86-001-009',
+        DebitApproveNumber: '8601009',
       },
     };
     const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'ship-tx' } });
@@ -415,7 +415,7 @@ describe('one callback, two kinds of purchase', () => {
         ShvaResult: '000',
         AdditionalDetailsParamX: token,
         DebitTotal: db.getCollection(c.id).order.total * 100,
-        DebitApproveNumber: '86-001-001',
+        DebitApproveNumber: '8601001',
       },
     };
     const r = await post('/api/payment/callback', { ResultData: { TransactionId: 'tx-1' } });
