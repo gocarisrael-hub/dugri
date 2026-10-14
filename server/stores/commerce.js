@@ -262,11 +262,10 @@ function couponsBlock({
           paid_at: o.paid_at || null,
           charged_total: charged,
           customer_saved: saved,
-          quantity: o.quantity || 1,
-          rate: snap ? { type: snap.type, value: snap.value } : null,
           // Copies are what makes a 90 ₪ line under a 30 ₪ rate add up, so the
           // number travels with the row rather than leaving her to guess.
-
+          quantity: o.quantity || 1,
+          rate: snap ? { type: snap.type, value: snap.value } : null,
           amount: snap ? round2(snap.amount) : 0,
         });
       }
