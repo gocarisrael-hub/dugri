@@ -3762,6 +3762,7 @@
       import { sendEvent, currentTouch } from './js/attribution.js';
       import { initCarousel } from './js/carousel.js';
       import { initPinchZoom } from './js/pinch-zoom.js';
+      import { markOwned } from './js/friend-bar.js';
       import {
         loadDesignImages,
         deckFor,
@@ -7020,6 +7021,10 @@
           }
           if (!r.ok) throw new Error(data.error || 'failed');
           track('collection_created', { has_email: !!email, has_phone: !!phone });
+          // This browser made the order, so it is the owner's: the friend coupon
+          // bar is never offered here. Friends arrive on the very same ?k= link,
+          // so this is the only thing that tells her apart (js/friend-bar.js).
+          markOwned(data.id);
           // Upload any optional pawn photos now that we have {id, owner_token}.
           // Fail-soft: a pawn-upload failure must NEVER block the order — the
           // pictures are a nice-to-have, so we log and continue to the redirect.

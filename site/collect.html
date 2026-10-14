@@ -3416,10 +3416,11 @@
       const ownerToken = params.get('k') || null;
       const isOwner = !!ownerToken;
       // The friend coupon offer (Agent A, js/friend-bar.js): a bar that comes up
-      // after a FRIEND's first word. A no-op for the owner — and calling it with
-      // her token is what lets her own browser recognise the plain shared link
-      // later, so she is never offered a coupon on her own party.
-      const friendBar = initFriendBar({ collectionId: id, isOwner });
+      // after a FRIEND's first word. Not keyed to isOwner: friends hold the same
+      // ?k= link she does (friendsUrl), so the owner is recognised as the browser
+      // that created the order (markOwned, options.html) and the bar knows that
+      // on its own.
+      const friendBar = initFriendBar({ collectionId: id });
 
       const $ = (s) => document.querySelector(s);
       let state = null; // last fetched collection
