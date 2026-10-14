@@ -166,4 +166,44 @@ describe('a restart', () => {
       sent.mockRestore();
     }
   });
+
+  it('the hourly alert cap survives a restart: a crash loop cannot repeat alerts past it', async () => {
+    process.env.TRANZILA_ALERT_RATE_LIMIT = '2';
+    try {
+      let { db, app, notify } = await boot();
+      // The store is shared with the tests above, whose sends now persist too.
+      app.tranzilaAlertSends.length = 0;
+      const sent = vi.spyOn(notify, 'sendSystemAlert').mockResolvedValue(true);
+      const cfg = vi.spyOn(notify, 'isConfigured').mockReturnValue(true);
+      // Two batches go out, each for a charge that did not verify: the cap is full.
+      for (const index of [82001, 82002]) {
+        const { token } = await open(db, 'תקרה ' + index);
+        report[index] = row(index, token, { amount: 100 });
+        await app.tranzilaSweeper.sweep();
+      }
+      expect(sent).toHaveBeenCalledTimes(2);
+      expect(app.tranzilaAlertSends).toHaveLength(2);
+      sent.mockRestore();
+      cfg.mockRestore();
+
+      const next = await boot();
+      db = next.db;
+      expect(next.app.tranzilaAlertSends).toHaveLength(2);
+      const again = vi.spyOn(next.notify, 'sendSystemAlert').mockResolvedValue(true);
+      const cfg2 = vi.spyOn(next.notify, 'isConfigured').mockReturnValue(true);
+      try {
+        const { token } = await open(db, 'אחרי האתחול');
+        report[82003] = row(82003, token, { amount: 100 });
+        await next.app.tranzilaSweeper.sweep();
+        // Held, not lost: still queued for when the hour has passed.
+        expect(again).not.toHaveBeenCalled();
+        expect(db.tranzilaSweepState().alert_queue.map((q) => q.index)).toContain('82003');
+      } finally {
+        again.mockRestore();
+        cfg2.mockRestore();
+      }
+    } finally {
+      delete process.env.TRANZILA_ALERT_RATE_LIMIT;
+    }
+  });
 });

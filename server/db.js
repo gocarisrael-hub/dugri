@@ -2692,8 +2692,9 @@ const db = {
 
   // TRANZILA SWEEP STATE (server/tranzila-sweep.js): when the terminal's rows
   // were last read, which transaction indexes the owner has already been told
-  // about, and the alerts not yet delivered. One small object, persisted, so a
-  // restart neither re-reads months of rows, re-alerts, nor loses an alert.
+  // about, the alerts not yet delivered, and when alert batches went out in the
+  // last hour (the hourly cap). One small object, persisted, so a restart neither
+  // re-reads months of rows, re-alerts, loses an alert, nor resets the cap.
   // Absent from every store written before it existed; created on first use.
   tranzilaSweepState() {
     if (!_db.tranzila_sweep || typeof _db.tranzila_sweep !== 'object') _db.tranzila_sweep = {};
