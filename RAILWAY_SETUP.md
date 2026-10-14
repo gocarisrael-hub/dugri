@@ -193,6 +193,21 @@ container. After connecting the repo:
 
 Without the volume + `DATA_DIR`, collected words are lost on every redeploy.
 
+### Data file will not load
+
+If `/data/dugri-data.json` exists but cannot be read or parsed, the server
+**refuses to boot**: the deploy crashes and restarts in a loop, and the log
+starts with `[db] REFUSING TO BOOT`. That is deliberate. An empty store started
+over the file would overwrite every order and word on its first save.
+
+Before anything else, a copy of the bad file is written to
+`/data/dugri-data.unreadable-<hash>.json`. To recover:
+
+1. Restore `dugri-data.json` from a volume backup if there is one, or repair the
+   JSON by hand. The copy stays as a fallback.
+2. Only if the data is truly gone, move `dugri-data.json` away. The next boot
+   starts an empty store.
+
 ## Admin orders page
 
 The private orders page is at `/admin.html?key=YOUR_ADMIN_KEY`. Set a strong
