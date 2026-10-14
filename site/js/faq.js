@@ -17,6 +17,8 @@
 // server is the security boundary; this is the second lock on the same door, for
 // the case where the stored data predates a validator change.
 
+import { track } from './analytics.js';
+
 // Is this a usable payload? An array of items each carrying a non-empty question
 // and answer. An empty array IS valid (see above) — it means "hide the section".
 export function isValidFaq(payload) {
@@ -121,10 +123,36 @@ export function renderFaq(container, items) {
   return items.length;
 }
 
+// GA: which questions people actually open. One listener on the CONTAINER, so
+// it covers the shipped questions and the owner's list that replaces them,
+// whichever is on screen. `toggle` does not bubble, hence the capture phase.
+// Fires on open only; closing a question says nothing about interest. Sends the
+// question as written (owner text, never visitor data) and its 1-based place,
+// through track(), so it takes the same consent path as every other event.
+export function trackFaqOpens(container, send = track) {
+  if (!container || container.dataset.faqTracked) return;
+  container.dataset.faqTracked = '1';
+  container.addEventListener(
+    'toggle',
+    (e) => {
+      const details = e.target;
+      if (!details || details.tagName !== 'DETAILS' || !details.open) return;
+      const all = Array.from(container.querySelectorAll('details'));
+      const summary = details.querySelector('summary');
+      send('faq_open', {
+        question: (summary ? summary.textContent : '').trim().slice(0, 100),
+        position: all.indexOf(details) + 1,
+      });
+    },
+    true
+  );
+}
+
 // Page bootstrap: swap the shipped questions for the owner's list, or leave the
 // page untouched. Safe to call when the container isn't on this page.
 export async function initFaq(container, timeoutMs) {
   if (!container) return { ok: false, rendered: 0 };
+  trackFaqOpens(container);
   const { items, ok } = await fetchFaq(timeoutMs);
   // ok:false → we never heard back. The shipped markup is the best content we
   // have, so it stays. This is the whole point of keeping it in the HTML.
