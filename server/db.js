@@ -832,8 +832,20 @@ function saveDb() {
   // A fixed temp name (not per-pid) means the next save overwrites any leftover
   // from a crash in the write→rename window, so orphan temps can't accumulate.
   // Safe because saveDb is synchronous and the service runs a single process.
+  //
+  // COMPACT, not indented. The whole store is rewritten on every save and the
+  // server is frozen while it happens, so every byte is paid on every word and
+  // every order: indentation was ~20% of the file and of the time (33 → 27 MB,
+  // 85 → 73 ms at 1,000 orders of 100 words; 1,073 → 799 ms at 10,000 — see the
+  // PR that made this change). loadDb is JSON.parse, which reads the old indented
+  // file and this one alike; the first save after a deploy rewrites it compact.
+  //
+  // Synchronous on purpose: when a mutator returns, its write has reached the
+  // file, so a route that answers after it never acknowledges something a
+  // restart would lose. There is no fsync — survives a crashed or redeployed
+  // process, not a lost machine — exactly as before this change.
   const tmp = `${DB_FILE}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(_db, null, 2), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify(_db), 'utf8');
   fs.renameSync(tmp, DB_FILE);
 }
 
