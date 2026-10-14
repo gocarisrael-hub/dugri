@@ -21,6 +21,12 @@ const commerceStore = require('./stores/commerce');
 // The friend coupon's pure rules (code format, email, dates, admin sums), handed
 // to commerceStore.friendCouponsBlock below. Requires nothing but node's crypto.
 const friendCouponRules = require('./friend-coupons');
+// Reads words from per-collection files when the data file says they are there
+// (docs/storage-plan.md, phase 1a). Requires only fs and path.
+const wordFiles = require('./word-files');
+// The same backup the staging import takes before replacing a store; the boot
+// split takes one of the data file before it drops the words from it.
+const { backupFile } = require('./store-backup');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
@@ -791,6 +797,7 @@ function releaseHeld(id) {
   // that saved only on `moved` would leave the emptied bucket unpersisted — the
   // held block would come back from disk on the next restart.
   if (!mine.length) return { moved: 0, removed: 0 };
+  touchWords(id);
   const existing = new Set(_db.words.filter((w) => w.collection_id === id).map((w) => w.norm));
   let moved = 0;
   for (const w of mine) {
@@ -812,6 +819,11 @@ function releaseHeld(id) {
   _db.held_words = _db.held_words.filter((w) => w.collection_id !== id);
   return { moved, removed: mine.length };
 }
+
+// Set by loadDb: the main file on disk still carries the words (the old single-file
+// layout, or a build rolled back to 1a wrote them back), so the boot split below
+// must run before anything saves.
+let _mainHasWords = false;
 
 // No data file → a new, empty store. A data file that exists but cannot be read
 // or parsed → REFUSE TO BOOT. This used to start an empty store instead, and the
@@ -853,13 +865,76 @@ function loadDb() {
     console.error(msg);
     throw new Error(msg);
   }
-  return { ...DEFAULTS, ...parsed };
+  _mainHasWords = 'words' in parsed || 'held_words' in parsed;
+  // Words may live in per-collection files instead (server/word-files.js). This
+  // is OUTSIDE the catch on purpose: a word file that cannot be read stops the
+  // boot with its own error, never starting those collections empty.
+  return { ...DEFAULTS, ...wordFiles.pickWordSource(parsed, DATA_DIR) };
 }
 
 let _db = loadDb();
 
+// --- word files (docs/storage-plan.md, phase 1b) --------------------------------
+// Words and held words are kept in memory exactly as before (`_db.words`,
+// `_db.held_words`), but on disk each collection's live in DATA_DIR/words/<id>.json
+// and the main file carries neither. A save rewrites the main file (orders,
+// coupons, everything else) and ONLY the word files of collections whose words
+// changed, so adding a word no longer rewrites every other buyer's words.
+//
+// THE RULE FOR ANY CODE THAT CHANGES `_db.words` OR `_db.held_words`: call
+// touchWords(collectionId) before saveDb(), or the change never reaches disk. The
+// five places that do it today: releaseHeld, addWords, deleteWord, editWord,
+// deleteCollection. saveDb also catches a change in the TOTAL count with nothing
+// touched and rewrites every word file (see below), but it cannot see an
+// in-place edit, so the rule stands.
+const _dirtyWords = new Set();
+function touchWords(id) {
+  _dirtyWords.add(id);
+}
+let _savedWordTotal = _db.words.length + _db.held_words.length;
+
 function saveDb() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.mkdirSync(wordFiles.wordsDir(DATA_DIR), { recursive: true });
+  // Safety net for a mutator that forgot touchWords: words were added or removed
+  // and nothing says where, so write every collection's file. Slow, correct, loud.
+  const total = _db.words.length + _db.held_words.length;
+  if (total !== _savedWordTotal && !_dirtyWords.size) {
+    console.error('[db] word count changed with no touchWords(); rewriting every word file');
+    for (const c of _db.collections) touchWords(c.id);
+    for (const w of _db.words) touchWords(w.collection_id);
+    for (const w of _db.held_words) touchWords(w.collection_id);
+  }
+  // Word files FIRST, then the main file. A crash between the two leaves a word
+  // on disk whose collection's other changes from the same call (a timestamp)
+  // are not; never the reverse, where the main file would claim words that are
+  // not on disk. A collection that no longer exists has its file removed AFTER
+  // the main file stops listing it; a crash in between leaves an orphan file,
+  // which the next boot removes (pruneOrphanWordFiles).
+  // One pass over the words, whatever the number of touched collections.
+  const gone = [];
+  if (_dirtyWords.size) {
+    const live = new Set(_db.collections.map((c) => c.id));
+    const by = wordFiles.groupByCollection(
+      _db.words.filter((w) => _dirtyWords.has(w.collection_id)),
+      _db.held_words.filter((w) => _dirtyWords.has(w.collection_id))
+    );
+    for (const id of _dirtyWords) {
+      if (!live.has(id)) {
+        gone.push(id);
+        continue;
+      }
+      const g = by.get(id) || { words: [], held_words: [] };
+      wordFiles.writeCollection(DATA_DIR, id, g.words, g.held_words);
+    }
+  }
+  writeMainFile();
+  for (const id of gone) wordFiles.removeCollection(DATA_DIR, id);
+  _dirtyWords.clear();
+  _savedWordTotal = total;
+}
+
+function writeMainFile() {
   // Write to a temp file then rename over the real one. rename() on the same
   // filesystem is atomic, so a crash mid-write can never leave a truncated or
   // corrupt data file — readers always see either the old file or the new one.
@@ -867,21 +942,57 @@ function saveDb() {
   // from a crash in the write→rename window, so orphan temps can't accumulate.
   // Safe because saveDb is synchronous and the service runs a single process.
   //
-  // COMPACT, not indented. The whole store is rewritten on every save and the
-  // server is frozen while it happens, so every byte is paid on every word and
-  // every order: indentation was ~20% of the file and of the time (33 → 27 MB,
-  // 85 → 73 ms at 1,000 orders of 100 words; 1,073 → 799 ms at 10,000 — see the
-  // PR that made this change). loadDb is JSON.parse, which reads the old indented
-  // file and this one alike; the first save after a deploy rewrites it compact.
+  // COMPACT, not indented. This file is rewritten whole on every save and the
+  // server is frozen while it happens, so every byte is paid on every save
+  // (indentation was ~20% of it). loadDb is JSON.parse, which reads the old
+  // indented file and this one alike.
   //
-  // Synchronous on purpose: when a mutator returns, its write has reached the
-  // file, so a route that answers after it never acknowledges something a
-  // restart would lose. There is no fsync — survives a crashed or redeployed
-  // process, not a lost machine — exactly as before this change.
+  // Without `words` / `held_words`, which were 96% of it: those are in the word
+  // files (saveDb, above), and the marker tells every build from 1a on to read
+  // them there. Measured at 1,000 orders of 100 words: 80 → ~4 ms per save
+  // (docs/storage-plan.md).
+  //
+  // Synchronous on purpose, word files included: when a mutator returns, its
+  // write has reached the files, so a route that answers after it never
+  // acknowledges something a restart would lose. There is no fsync — survives a
+  // crashed or redeployed process, not a lost machine (the storage plan adds it next).
+  const { words: _words, held_words: _held, ...rest } = _db;
   const tmp = `${DB_FILE}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(_db), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ ...rest, [wordFiles.WORDS_LAYOUT_KEY]: 'files' }), 'utf8');
   fs.renameSync(tmp, DB_FILE);
 }
+
+// The boot split (word-files.js splitWordsOut), before any other boot step can
+// save. Throws, and so stops the boot, if the word files do not read back equal
+// to the data file; the data file is untouched in that case.
+if (_mainHasWords) {
+  const r = wordFiles.splitWordsOut({
+    dataDir: DATA_DIR,
+    words: _db.words,
+    heldWords: _db.held_words,
+    backup: () => backupFile(DB_FILE),
+    saveMain: writeMainFile,
+  });
+  _savedWordTotal = _db.words.length + _db.held_words.length;
+  console.log(
+    `[db] words moved out of the data file: ${r.words} words, ${r.held_words} held, ${r.collections} collections`
+  );
+}
+
+// A word file whose collection is not in the data file: left by a crash between
+// deleteCollection's main-file write and its unlink. Its words are dropped from
+// memory too, so the next save cannot bring them back.
+(function pruneOrphanWordFiles() {
+  const live = new Set(_db.collections.map((c) => c.id));
+  const orphans = new Set(
+    [..._db.words, ..._db.held_words].map((w) => w.collection_id).filter((id) => !live.has(id))
+  );
+  if (!orphans.size) return;
+  _db.words = _db.words.filter((w) => !orphans.has(w.collection_id));
+  _db.held_words = _db.held_words.filter((w) => !orphans.has(w.collection_id));
+  for (const id of orphans) wordFiles.removeCollection(DATA_DIR, id);
+  _savedWordTotal = _db.words.length + _db.held_words.length;
+})();
 
 // Claim the next order number, advancing the stored counter. Callers must save.
 function nextOrderNo() {
@@ -1438,6 +1549,7 @@ const db = {
     const c = this.getCollection(id);
     if (!c) return null;
     if (effectiveStatus(c) !== 'open') return { closed: true, added: 0, skipped: 0, blocked: 0 };
+    touchWords(id);
 
     // A collection that is no longer under the quota (paid, exempt, or the gate
     // switched off since the words were parked) releases anything it is holding
@@ -1639,6 +1751,7 @@ const db = {
     const before = _db.words.length;
     _db.words = _db.words.filter((w) => !(w.id === wordId && w.collection_id === id));
     if (_db.words.length === before) return false;
+    touchWords(id);
     saveDb();
     return true;
   },
@@ -1685,6 +1798,7 @@ const db = {
     if (w.text === clean && w.norm === n) return w; // no change — idempotent
     w.text = clean;
     w.norm = n;
+    touchWords(id);
     saveDb();
     return w;
   },
@@ -2029,6 +2143,7 @@ const db = {
     if (_db.collections.length === before) return false;
     _db.words = _db.words.filter((w) => w.collection_id !== id);
     _db.held_words = _db.held_words.filter((w) => w.collection_id !== id);
+    touchWords(id);
     saveDb();
     return true;
   },

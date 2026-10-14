@@ -274,10 +274,12 @@ describe('words the quota refuses are held, not dropped', () => {
     settings.set('pricing', 'lock_after_free_limit', false);
     db.addWords(c.id, ['שלוש']);
     expect(db.countHeldWords(c.id)).toBe(0);
+    // Held words are on disk in the collection's own word file (server/word-files.js).
     const onDisk = JSON.parse(
-      fs.readFileSync(path.join(process.env.DATA_DIR, 'dugri-data.json'), 'utf8')
+      fs.readFileSync(path.join(process.env.DATA_DIR, 'words', `${c.id}.json`), 'utf8')
     );
-    expect((onDisk.held_words || []).filter((w) => w.collection_id === c.id)).toEqual([]);
+    expect(onDisk.held_words).toEqual([]);
+    expect(onDisk.words.map((w) => w.text)).toContain('שלוש');
   });
 
   it('counts a re-pasted held word as a duplicate, not as a fresh rejection', () => {
