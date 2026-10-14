@@ -4946,12 +4946,20 @@ function describeTranzilaAlert(item) {
 // something reached the owner — failed attempts cost nothing. With no channel
 // configured at all there is nobody to tell: logged loudly, and counted as
 // delivered so the queue does not grow for ever.
-const tranzilaAlertSends = [];
+//
+// The send times live in the persisted sweep state, not in memory, so a crash
+// loop cannot reset the hourly cap and repeat an alert on every boot. No write
+// of its own: a send is always followed by the sweep's save of what it marked
+// delivered.
+function tranzilaAlertSends() {
+  const st = db.tranzilaSweepState();
+  if (!Array.isArray(st.alert_sends)) st.alert_sends = [];
+  return st.alert_sends;
+}
 function tranzilaAlertCapFull(at) {
-  while (tranzilaAlertSends.length && at - tranzilaAlertSends[0] >= 60 * 60 * 1000) {
-    tranzilaAlertSends.shift();
-  }
-  return tranzilaAlertSends.length >= tzLimit('TRANZILA_ALERT_RATE_LIMIT', 5);
+  const sends = tranzilaAlertSends();
+  while (sends.length && at - Number(sends[0]) >= 60 * 60 * 1000) sends.shift();
+  return sends.length >= tzLimit('TRANZILA_ALERT_RATE_LIMIT', 5);
 }
 async function deliverTranzilaAlerts(items) {
   const at = Date.now();
@@ -4979,7 +4987,7 @@ async function deliverTranzilaAlerts(items) {
     }
     if (ok) delivered.push(...parts[i]);
   }
-  if (delivered.length) tranzilaAlertSends.push(at);
+  if (delivered.length) tranzilaAlertSends().push(at);
   return delivered;
 }
 
@@ -5816,7 +5824,10 @@ module.exports = app;
 // hour), for tests: a sweep can be run on demand instead of waiting for the
 // timers (which tests never start).
 module.exports.tranzilaSweeper = tranzilaSweeper;
-module.exports.tranzilaAlertSends = tranzilaAlertSends;
+Object.defineProperty(module.exports, 'tranzilaAlertSends', {
+  get: tranzilaAlertSends,
+  enumerable: true,
+});
 // Exposed for tests + the scheduler: a single WhatsApp nudge pass, and the
 // paid-order group-open hook. Attached to the app export (which stays the default
 // export) so a test can drive them with injected inputs, hermetically.
