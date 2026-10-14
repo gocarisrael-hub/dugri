@@ -1,6 +1,7 @@
 # Storage plan: getting off the single JSON file
 
-Status: PROPOSAL for the owner to decide. No code has changed. Written 2026-10-14 by Agent D.
+Status: APPROVED by the owner on 2026-10-15: option (a), in the phased order below. Phase 0 is the
+owner's; Agent D builds 1a and 1b as separate PRs. Written 2026-10-14 by Agent D.
 
 ## The problem, measured
 
