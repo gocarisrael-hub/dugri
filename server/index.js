@@ -1439,12 +1439,13 @@ function couponRateOk(key) {
 // really a Cloudflare edge, key an IPv6 client by its /64. One derivation for
 // both, rather than a second scheme that can disagree with it.
 //
-// THE OPPOSITE MISTAKE IS WORSE THAN THE BUG: trusting one hop too many buckets
-// every visitor together, and then one person hitting a limit locks out the
-// whole site. That is why the hop count is configuration per environment
-// (production is behind Cloudflare, staging is direct to Railway) and why the
-// test file asserts both directions — spoofed headers share a bucket, and two
-// genuinely different clients do not.
+// THE OPPOSITE MISTAKE IS WORSE THAN THE BUG: counting one hop too few keys every
+// visitor as our own proxy's address, and then one person hitting a limit locks
+// out the whole site (production at 1 would have; the go-live check caught it).
+// That is why the hop count is configuration per environment, measured rather
+// than reasoned (production 2, staging 1; see "A variable that DOES differ" in
+// RAILWAY_SETUP.md), and why the test file asserts both directions — spoofed
+// headers share a bucket, and two genuinely different clients do not.
 //
 // NOT CHANGED HERE: clientIpForMeta in server/routes/platform.js, which decides
 // the address handed to an ad platform. It is already spoof-resistant in the way
