@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-<title>דוגרי · r5-b · צבעי דוגרי</title>
+<title>דוגרי · r5 · החפיסה על השולחן</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;800;900&display=swap" rel="stylesheet" />
 <style>
-  /* THEME:START (the only block that differs between r3-a and r3-b) */
+  /* THEME (r4-b, the Dugri colours) */
   :root {
     --world: 'צבעי דוגרי';
     --f-hero: #ffffff;
@@ -22,7 +22,6 @@
     --tab-on: #ea4795;
     --pawn-stop: #ece3d5;
   }
-  /* THEME:END */
 
   :root {
     --ink: #000;
@@ -72,32 +71,29 @@
   .tabs button { border: 0; background: none; font: 800 14px/1 var(--display); letter-spacing: .03em; padding: 11px 15px; border-radius: 999px; cursor: pointer; color: var(--ink); }
   .tabs button[aria-pressed='true'] { background: var(--tab-on); box-shadow: inset 0 0 0 2px var(--ink); }
 
-  /* the deck on one side, a loose landing zone on the other; a flick throws the card across */
-  :root { --cw: min(34vw, 160px); }
-  .stage { position: relative; width: 100%; max-width: 460px; margin: 22px auto 0; height: calc(var(--cw) * 1.445 + 150px); touch-action: manipulation; }
-  .zone { position: absolute; top: 8px; bottom: 8px; left: -4px; width: calc(100% - var(--cw) - 34px); border: 2.5px dashed var(--ink); border-radius: 26px; opacity: .3; pointer-events: none; }
-  .card { position: absolute; top: 0; left: 0; width: var(--cw); aspect-ratio: 400 / 578; perspective: 900px; will-change: transform, opacity; touch-action: none; }
-  .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .46s cubic-bezier(.3, 1.35, .45, 1); }
-  .card.up .in { transform: rotateY(180deg); }
-  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); }
-  .card img.f { transform: rotateY(180deg); box-shadow: 4px 4px 0 var(--ink); }
-  .card.top { cursor: grab; }
+  /* the table: a face-down deck in a fixed spot deals real cards out with a throw; any card can be picked up, spun, thrown and flipped */
+  :root { --cw: min(32vw, 168px); }
+  .stage { position: relative; width: 100vw; margin: 22px calc(50% - 50vw) 0; height: calc(var(--cw) * 1.445 * 2 + 54px); touch-action: pan-y; }
+  .slot { position: absolute; border: 2.5px dashed var(--ink); border-radius: 12px; opacity: .45; pointer-events: none; }
+  .deck { position: absolute; width: var(--cw); aspect-ratio: 400 / 578; border: 0; padding: 0; background: none; cursor: pointer; z-index: 5; }
+  .deck img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); }
+  .deck img:nth-child(1) { transform: translate(-6px, 6px) rotate(-3deg); }
+  .deck img:nth-child(2) { transform: translate(-3px, 3px) rotate(1.6deg); }
+  .deck:active img:last-child { transform: translate(-1px, 1px); box-shadow: var(--sh-sm); }
+  .deck:focus-visible { outline: 3px solid var(--ink); outline-offset: 10px; border-radius: 10px; }
+  .card { position: absolute; top: 0; left: 0; width: var(--cw); aspect-ratio: 400 / 578; z-index: 10; cursor: grab; touch-action: none; will-change: transform; --o: 4px; }
+  .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .55s cubic-bezier(.3, 1.25, .45, 1); }
+  .card.down .in { transform: rotateY(180deg); }
+  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 6.5% / 4.5%; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: calc(var(--o) * -1) var(--o) 0 var(--ink); }
+  .card img.b { transform: rotateY(180deg); box-shadow: var(--o) var(--o) 0 var(--ink); } /* mirrored by the flip, so the shadow lands the same way */
   .card.held { cursor: grabbing; }
-  .card.held img.f, .card.air img.f { box-shadow: 12px 12px 0 var(--ink); }
-  .card.held img.b { box-shadow: -12px 12px 0 var(--ink); }
-  .stage .hint { position: absolute; right: 4px; bottom: 22px; --t: 4deg; white-space: nowrap; z-index: 900; pointer-events: none; font-size: 13px; transition: opacity .3s; }
-  .stage .name { position: absolute; left: 10px; bottom: 0; z-index: 900; pointer-events: none; }
-  .stage .name .sticker { font-size: 13px; padding: 5px 10px; --t: -4deg; }
+  .stage .hint { position: absolute; z-index: 3000; --t: 6deg; white-space: nowrap; pointer-events: none; font-size: 13px; transition: opacity .3s; }
   .stage.touched .hint { opacity: 0; }
-  .stage.flip-side .zone { left: auto; right: -4px; }
-  .stage.flip-side .hint { right: auto; left: 4px; }
-  .stage.flip-side .name { left: auto; right: 10px; }
-  .deck-ctl { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 18px; }
-  .count { font: 800 14px/1 var(--display); min-width: 4.5ch; }
-  .hero .cta { margin-top: 26px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
+  .hero .cta { margin-top: 18px; }
   .hero .spark.a { top: 120px; right: 14px; --s: 30px; }
-  .hero .spark.b { top: 330px; left: 12px; --s: 40px; }
-  .hero .spark.c { bottom: 120px; right: 22px; --s: 22px; }
+  .hero .spark.b { top: 250px; left: 12px; --s: 34px; }
+  .hero .spark.c { bottom: 90px; right: 22px; --s: 22px; }
 
   /* who */
   .who { background: var(--f-who); }
@@ -115,9 +111,6 @@
   .how { background: var(--f-how); }
   .rule { display: flex; align-items: center; gap: 14px; margin-top: 22px; background: var(--paper); border: var(--line) solid var(--ink); border-radius: 18px; box-shadow: var(--sh); padding: 14px; }
   .rule .clock { flex: none; width: 76px; height: 76px; border-radius: 50%; border: var(--line) solid var(--ink); background: var(--sticker-hot); display: grid; place-items: center; font: 900 30px/1 var(--display); direction: ltr; }
-  .rule .clock { cursor: pointer; color: var(--ink); padding: 0; }
-  .rule .clock b { font: inherit; }
-  .rule .clock.low { background: var(--ink); color: #fff; }
   .rule .clock small { display: block; font-size: 11px; font-weight: 800; letter-spacing: .06em; margin-top: -10px; }
   .rule p { margin: 0; font-size: 16px; }
   .track { position: relative; margin-top: 30px; padding-inline-start: 74px; }
@@ -176,12 +169,19 @@
     section, header { padding-inline: max(16px, calc(50vw - 520px)); }
     .designs { padding-inline: 0; }
     .strip { --dw: 260px; }
+    .stage { height: calc(var(--cw) * 1.445 * 1.45 + 44px); }
     .duo { grid-template-columns: 1fr 1fr; max-width: 760px; }
     .track { max-width: 560px; }
   }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     .pawn, .stop .box { transition: none; }
+    /* the flip becomes a crossfade */
+    .card .in, .card.down .in { transition: none; transform: none; }
+    .card img { transition: opacity .25s; }
+    .card img.b { transform: none; opacity: 0; }
+    .card.down img.b { opacity: 1; }
+    .card.down img.f { opacity: 0; }
     /* a static grid instead of the leaning strip */
     .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; overflow: visible; padding: 26px 16px 0; --dw: auto; perspective: none; }
     .dz { width: auto; }
@@ -211,15 +211,11 @@
       <button type="button" data-deck="birthday" aria-pressed="false">יום הולדת 70 לאבא</button>
     </div>
 
-    <div class="stage" id="stage" role="group" aria-roledescription="חפיסת קלפים" aria-label="חפיסה הפוכה בצד. לחיצה הופכת את הקלף העליון, החלקה זורקת אותו לצד השני.">
-      <div class="zone" aria-hidden="true"></div>
-      <span class="sticker hint" aria-hidden="true">לחצו להפוך. החליקו לזרוק.</span>
-      <div class="name" id="name" aria-live="polite"></div>
-    </div>
-    <div class="deck-ctl">
-      <button class="pill ghost" type="button" id="dealBtn">להפוך קלף</button>
-      <span class="count" id="count">נשארו 12</span>
-      <button class="pill ghost" type="button" id="shuffleBtn">לערבב</button>
+    <div class="stage" id="stage">
+      <div class="slot" id="slot" aria-hidden="true"></div>
+      <button class="deck" id="deck" type="button" aria-label="לחלק קלף מהחפיסה"><img alt="" /><img alt="" /><img alt="" /></button>
+      <span class="sticker hint" id="hint" aria-hidden="true">לגעת בחפיסה</span>
+      <p class="sr" id="said" aria-live="polite"></p>
     </div>
     <div class="cta"><a class="pill" href="#order">בונים את המשחק · <span class="tok">{price}</span></a></div>
   </section>
@@ -249,7 +245,7 @@
   <section class="how" aria-labelledby="h-how">
     <h2 id="h-how">ככה זה עובד.</h2>
     <div class="rule">
-      <button class="clock" type="button" id="clock" aria-label="להפעיל שעון של 60 שניות"><b>60</b><small>לחצו</small></button>
+      <div class="clock" aria-hidden="true">60<small>שניות</small></div>
       <p>מתחלקים לקבוצות. מושכים קלף ומתארים את המילה בלי להגיד אותה. הקבוצה מנחשת כמה שיותר עד שהזמן נגמר.</p>
     </div>
     <div class="track" id="track">
@@ -308,36 +304,17 @@
   const lum = ([r, g, b]) => { const f = (v) => ((v /= 255) <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4); return .2126 * f(r) + .7152 * f(g) + .0722 * f(b); };
   const darkBg = (h) => (lum(hex(h)) + .05) / .05 < 4.5; // black text would fail AA on it
 
-  /* ---------- hero: the deck on one side; flip the top card, throw it across to the other ---------- */
-  const SIDE = new URLSearchParams(location.search).get('side') === 'left' ? 'left' : 'right'; // RTL inline start = right
+  /* ---------- hero: a deck in a fixed spot deals real cards across the table, and every card is a real object ---------- */
   const stage = document.getElementById('stage');
-  if (SIDE === 'left') stage.classList.add('flip-side');
-  const nameEl = document.getElementById('name');
-  const countEl = document.getElementById('count');
-  const MAX_PILE = 7;
-  let deck = [], pile = [], busy = false, lastKey = null, zTop = 100;
-  const recent = {};
+  const deckBtn = document.getElementById('deck');
+  const slot = document.getElementById('slot');
+  const hint = document.getElementById('hint');
+  const said = document.getElementById('said');
+  const F = .935, SF = .9; // per-frame friction: sliding, spinning
+  const cards = [];
+  let z = 10, lastKey = null, nextKey = null;
+  const recent = {}; // per design, the fronts shown lately, so a design shows a new card each time
 
-  // geometry in stage pixels; for side=left everything is mirrored
-  function geo() {
-    const W = stage.offsetWidth, H = stage.offsetHeight, cw = stage.querySelector('.card')?.offsetWidth || W * .34, ch = cw * 1.445;
-    const deckX = W - cw - 12, deckY = (H - ch) / 2 - 10;
-    const zone = { x0: -10, x1: Math.max(10, W - cw * 2 - 40), y0: 6, y1: H - ch - 8 };
-    return { W, H, cw, ch, deckX, deckY, zone };
-  }
-  const mx = (x, cw) => (SIDE === 'left' ? stage.offsetWidth - cw - x : x);
-  const cwNow = () => (stage.querySelector('.card') || {}).offsetWidth || 0;
-  const T = (c) => `translate3d(${mx(c.x, cwNow())}px, ${c.y}px, 0) rotate(${SIDE === 'left' ? -c.r : c.r}deg) scale(${c.s || 1})`;
-  const draw = (c) => { c.el.style.transform = T(c); };
-
-  function sequence(first) {
-    for (let tries = 0; tries < 500; tries++) {
-      const seq = [...shuffle(KEYS), ...shuffle(KEYS)];
-      if (first) { const i = seq.indexOf(first); [seq[0], seq[i]] = [seq[i], seq[0]]; }
-      if (seq.every((k, i) => !i || k !== seq[i - 1]) && (first || seq[0] !== lastKey)) return seq.reverse();
-    }
-    return KEYS.concat(KEYS);
-  }
   function front(k) {
     const r = (recent[k] = recent[k] || []);
     const opts = [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => !r.includes(n));
@@ -345,201 +322,191 @@
     r.push(n); if (r.length > 5) r.shift();
     return n;
   }
-  function makeCard(k) {
+  // the deck's top back is the design it deals next, never the one just dealt
+  function showNext(force) {
+    const opts = KEYS.filter((k) => k !== lastKey);
+    nextKey = force || opts[(Math.random() * opts.length) | 0];
+    const [a, b, top] = deckBtn.children, under = shuffle(KEYS.filter((k) => k !== nextKey));
+    a.src = `${C}${under[0]}-b1.webp`; b.src = `${C}${under[1]}-b1.webp`; top.src = `${C}${nextKey}-b1.webp`;
+  }
+  const geo = () => {
+    const W = stage.clientWidth, H = stage.clientHeight, cw = deckBtn.offsetWidth, ch = deckBtn.offsetHeight;
+    const band = Math.min(W, 980), L = (W - band) / 2;
+    return { W, H, cw, ch, L, R: L + band, dx: L + band - cw - 26, dy: H - ch - 18 };
+  };
+  function placeDeck() {
+    const g = geo();
+    Object.assign(deckBtn.style, { left: g.dx + 'px', top: g.dy + 'px' });
+    Object.assign(slot.style, { left: g.dx - 14 + 'px', top: g.dy - 10 + 'px', width: g.cw + 24 + 'px', height: g.ch + 20 + 'px' });
+    Object.assign(hint.style, { left: g.dx - 4 + 'px', top: g.dy - 46 + 'px' });
+  }
+  const draw = (c) => {
+    c.el.style.transform = `translate3d(${c.x}px, ${c.y}px, 0) rotate(${c.r}deg) scale(${c.s})`;
+    c.el.style.setProperty('--o', (4 + (c.s - 1) * 70).toFixed(1) + 'px'); // lifted higher, the shadow falls further
+  };
+  const cap = () => (innerWidth >= 900 ? 8 : 6);
+
+  // where the next card lands: of a few random spots on the table, the one furthest from every card already there
+  function spot(g) {
+    const others = cards.filter((c) => !c.gone).map((c) => [c.x, c.y]).concat([[g.dx, g.dy]]);
+    let best = null, bestD = -1;
+    for (let i = 0; i < 60; i++) {
+      const x = rnd(g.L + 8, g.R - g.cw - 8), y = rnd(8, g.H - g.ch - 8);
+      if (onDeck(x, y, g, 10)) continue;
+      const d = Math.min(...others.map(([ox, oy]) => Math.hypot((x - ox) / g.cw, (y - oy) / g.ch)));
+      if (d > bestD) { bestD = d; best = { x, y }; }
+    }
+    return best;
+  }
+
+  function deal(want) {
+    const g = geo();
+    const k = want || nextKey;
+    const to = spot(g);
+    lastKey = k;
     const el = document.createElement('div');
-    el.className = 'card';
-    el.innerHTML = `<div class="in"><img class="b" src="${C}${k}-b1.webp" alt=""><img class="f" src="${C}${k}-f${front(k)}.webp" alt=""></div>`;
+    el.className = 'card down';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = `<div class="in"><img class="f" src="${C}${k}-f${front(k)}.webp" alt=""><img class="b" src="${C}${k}-b1.webp" alt=""></div>`;
     stage.appendChild(el);
-    const c = { el, k, x: 0, y: 0, r: 0, s: 1, ox: rnd(-3, 3), oy: rnd(-3, 3), or: rnd(-4, 4) };
-    bind(c);
-    return c;
-  }
-  function layoutDeck() {
-    const g = geo();
-    deck.forEach((c, i) => {
-      c.x = g.deckX + c.ox - i * .5; c.y = g.deckY + c.oy - i * 1.1; c.r = c.or; c.s = 1;
-      c.el.style.zIndex = String(10 + i);
-      c.el.classList.toggle('top', i === deck.length - 1);
-      c.el.style.pointerEvents = i === deck.length - 1 ? 'auto' : 'none';
+    const c = { el, k, x: g.dx, y: g.dy, r: 0, s: 1, vx: 0, vy: 0, vr: 0, t: performance.now(), held: false, gone: false, launch: true };
+    el.style.zIndex = String(++z);
+    cards.push(c); bind(c);
+    said.textContent = `קלף מהעיצוב ${D[k].name}`;
+    showNext();
+    if (reduce) {
+      Object.assign(c, to, { r: rnd(-12, 12) }); el.classList.remove('down'); draw(c);
+      el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 240 });
+    } else {
+      // velocity that friction brings to rest exactly on the spot; now and then a full turn on the way
+      const tr = rnd(-16, 16) + (Math.random() < .22 ? (Math.random() < .5 ? 360 : -360) : 0);
+      c.vx = (to.x - c.x) * (1 - F); c.vy = (to.y - c.y) * (1 - F); c.vr = tr * (1 - SF);
       draw(c);
-    });
-    countEl.textContent = `נשארו ${deck.length}`;
-  }
-  function build(first) {
-    [...deck, ...pile].forEach((c) => c.el.remove());
-    pile = [];
-    deck = sequence(first).map(makeCard);
-    layoutDeck(); nameEl.textContent = '';
-  }
-  function showName(c) {
-    nameEl.innerHTML = `<span class="sticker hot">${D[c.k].name}</span>`;
-    if (!reduce) nameEl.firstChild.animate([{ transform: 'rotate(-4deg) scale(.5)' }, { transform: 'rotate(-4deg) scale(1.15)' }, { transform: 'rotate(-4deg) scale(1)' }], { duration: 320, easing: 'ease-out' });
-  }
-  const topCard = () => deck[deck.length - 1];
-
-  function flipUp(c) {
-    if (c.el.classList.contains('up')) return;
-    stage.classList.add('touched');
-    c.el.classList.add('up');
-    c.el.querySelector('.f').alt = `קלף מהעיצוב ${D[c.k].name}`;
-    lastKey = c.k;
-    if (reduce) c.el.animate([{ opacity: .4 }, { opacity: 1 }], { duration: 200 });
-    else c.el.animate([{ transform: T(c) }, { transform: T({ ...c, y: c.y - 26, r: c.r - 6, s: 1.07 }), offset: .4 }, { transform: T(c) }], { duration: 460, easing: 'cubic-bezier(.3, .8, .4, 1)' });
+      requestAnimationFrame(() => el.classList.remove('down')); // turns face up in the air
+      deckBtn.lastElementChild.animate([{ transform: 'translate(0, -5px) rotate(-1.5deg)' }, { transform: 'none' }], { duration: 260, easing: 'cubic-bezier(.3, 1.6, .5, 1)' });
+      kick(c);
+    }
+    retire();
   }
 
-  // the throw: an arc across the screen with gravity, spin, and a slide when it lands
-  function throwCard(c, vx = -24, vy = -6, spinHint = 0) {
-    deck.splice(deck.indexOf(c), 1);
-    c.el.classList.remove('top'); c.el.style.pointerEvents = 'none';
-    if (!c.el.classList.contains('up')) flipUp(c);
-    const g = geo();
-    const speed = Math.hypot(vx, vy);
-    // where it lands: anywhere in the loose zone, nudged by where you flicked it
-    const tx = Math.min(g.zone.x1, Math.max(g.zone.x0, rnd(g.zone.x0, g.zone.x1) + Math.max(-30, Math.min(30, vx * .4))));
-    const ty = Math.min(g.zone.y1, Math.max(g.zone.y0, rnd(g.zone.y0, g.zone.y1) + Math.max(-40, Math.min(40, vy * 2))));
-    const turns = speed > 30 || Math.random() < .18 ? (spinHint >= 0 ? 360 : -360) : 0;
-    const tr = rnd(-34, 34);
-    c.el.style.zIndex = String(++zTop + 1000);
-    deck.length && layoutDeck(); countEl.textContent = `נשארו ${deck.length}`;
-    const land = () => {
-      c.el.style.zIndex = String(++zTop);
-      c.el.classList.remove('air');
-      pile.push(c);
-      showName(c);
-      // older cards slide out of the zone and fade, so at most MAX_PILE stay on the table
-      while (pile.length > MAX_PILE) {
-        const old = pile.shift();
-        if (reduce) old.el.remove();
-        else old.el.animate([{ transform: T(old), opacity: 1 }, { transform: T({ ...old, x: old.x - 40, y: old.y + 30, r: old.r - 12 }), opacity: 0 }], { duration: 420, easing: 'ease-in', fill: 'forwards' }).onfinish = () => old.el.remove();
-      }
-      if (!deck.length) setTimeout(gather, reduce ? 300 : 700);
-    };
-    if (reduce) { Object.assign(c, { x: tx, y: ty, r: tr, s: 1 }); draw(c); c.el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 }); land(); return; }
-    c.el.classList.add('air');
-    const x0 = c.x, y0 = c.y, r0 = c.r;
-    const dur = Math.max(480, Math.min(820, 900 - speed * 9));
-    const h = Math.max(50, Math.min(150, 50 + speed * 2.6 - vy * 2)); // a harder flick throws higher
-    const t0 = performance.now();
-    let px = x0, py = y0;
-    const fly = (t) => {
-      const u = Math.min(1, (t - t0) / dur);
-      const e = 1 - (1 - u) * (1 - u) * .35 - .65 * (1 - u) ** 3; // fast out of the hand, slowing as it comes down
-      px = c.x; py = c.y;
-      c.x = x0 + (tx - x0) * e;
-      c.y = y0 + (ty - y0) * u - h * 4 * u * (1 - u); // gravity: a parabola
-      c.r = r0 + (tr + turns - r0) * (1 - (1 - u) ** 2);
-      c.s = 1 + .14 * 4 * u * (1 - u);
-      draw(c);
-      if (u < 1) return requestAnimationFrame(fly);
-      // inertia: it slides on a little after touching down
-      let sx = (c.x - px) * .6, sy = (c.y - py) * .25, sr = (Math.random() - .5) * 4, n = 0;
-      c.r = tr + turns; c.s = 1;
-      const slide = () => {
-        c.x += sx; c.y += sy; c.r += sr; sx *= .8; sy *= .8; sr *= .8; n++;
-        c.x = Math.max(g.zone.x0 - 14, Math.min(g.zone.x1 + 14, c.x)); draw(c);
-        if (n < 16) requestAnimationFrame(slide); else { c.r = ((c.r % 360) + 540) % 360 - 180; draw(c); land(); }
-      };
-      requestAnimationFrame(slide);
-    };
-    requestAnimationFrame(fly);
+  // past the cap, the card nobody touched longest slides off the table and fades
+  function retire() {
+    let on = cards.filter((c) => !c.gone);
+    while (on.length > cap()) {
+      const old = on.filter((c) => !c.held).sort((a, b) => a.t - b.t)[0];
+      if (!old) return;
+      old.gone = true; live.delete(old);
+      const from = old.el.style.transform;
+      old.el.style.pointerEvents = 'none';
+      old.el.animate([{ transform: from, opacity: 1 }, { transform: `${from} translate(${reduce ? 0 : -26}px, ${reduce ? 0 : 34}px) rotate(${reduce ? 0 : -8}deg)`, opacity: 0 }],
+        { duration: reduce ? 220 : 420, easing: 'cubic-bezier(.5, 0, .7, .4)', fill: 'forwards' }).onfinish = () => { old.el.remove(); cards.splice(cards.indexOf(old), 1); };
+      on = cards.filter((c) => !c.gone);
+    }
   }
 
-  // tap flips the top card; a second tap or a flick throws it; a short drag springs back
+  // ---- physics: hold a card and it turns about the point you hold; let go fast and it slides and spins; tap flips ----
   function bind(c) {
-    let sx, sy, t0, bx, by, br, samples, held = false, flippedNow = false;
+    let px, py, lx, ly, t0, moved, samples;
+    const local = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const worldGrab = () => { const a = c.r * Math.PI / 180; return [lx * Math.cos(a) - ly * Math.sin(a), lx * Math.sin(a) + ly * Math.cos(a)]; };
     c.el.addEventListener('pointerdown', (e) => {
-      if (topCard() !== c || busy) return;
-      e.preventDefault(); c.el.setPointerCapture(e.pointerId); held = true;
-      flippedNow = false;
-      c.el.classList.add('held'); sx = e.clientX; sy = e.clientY; t0 = performance.now(); bx = c.x; by = c.y; br = c.r;
-      samples = [{ x: sx, y: sy, t: t0 }];
+      if (c.gone) return;
+      e.preventDefault(); c.el.setPointerCapture(e.pointerId);
+      stage.classList.add('touched');
+      c.held = true; c.launch = false; live.delete(c); c.vx = c.vy = c.vr = 0; c.t = performance.now();
+      c.el.classList.add('held'); c.el.style.zIndex = String(++z);
+      [px, py] = local(e);
+      // the held point in the card's own frame, measured from its centre
+      const w = c.el.offsetWidth, h = c.el.offsetHeight, a = -c.r * Math.PI / 180, dx = px - (c.x + w / 2), dy = py - (c.y + h / 2);
+      lx = dx * Math.cos(a) - dy * Math.sin(a); ly = dx * Math.sin(a) + dy * Math.cos(a);
+      t0 = performance.now(); moved = 0; samples = [{ x: px, y: py, t: t0 }];
+      c.s = reduce ? 1 : 1.05; draw(c);
     });
     c.el.addEventListener('pointermove', (e) => {
-      if (!held) return;
-      let dx = e.clientX - sx, dy = e.clientY - sy;
-      if (!flippedNow && Math.hypot(dx, dy) > 12 && !c.el.classList.contains('up')) { flippedNow = true; flipUp(c); } // dragging deals it face up
-      if (SIDE === 'left') dx = -dx;
-      c.x = bx + dx; c.y = by + dy; c.r = br + (reduce ? 0 : dx * .06); c.s = 1.04; draw(c);
-      samples.push({ x: e.clientX, y: e.clientY, t: performance.now() }); if (samples.length > 6) samples.shift();
-    });
-    const up = (e) => {
-      if (!held) return; held = false; c.el.classList.remove('held'); c.s = 1;
-      const dx = e.clientX - sx, dy = e.clientY - sy, dist = Math.hypot(dx, dy);
-      if (dist < 8 && performance.now() - t0 < 350) {
-        draw(c);
-        if (c.el.classList.contains('up')) throwCard(c); else flipUp(c);
-        return;
+      if (!c.held) return;
+      const [nx, ny] = local(e), ddx = nx - px, ddy = ny - py;
+      moved += Math.hypot(ddx, ddy); px = nx; py = ny;
+      if (!reduce) {
+        // the pull swings the card so its centre trails the held point, like dragging a real card by its corner
+        const [gx, gy] = worldGrab();
+        c.r += (gx * ddy - gy * ddx) / (gx * gx + gy * gy + 900) * 0.62 * 180 / Math.PI;
       }
+      const [gx, gy] = worldGrab(), w = c.el.offsetWidth, h = c.el.offsetHeight;
+      c.x = px - gx - w / 2; c.y = py - gy - h / 2; draw(c);
+      samples.push({ x: px, y: py, t: performance.now() }); if (samples.length > 6) samples.shift();
+    });
+    const up = () => {
+      if (!c.held) return;
+      c.held = false; c.el.classList.remove('held'); c.t = performance.now();
+      if (moved < 8 && performance.now() - t0 < 350) { c.el.classList.toggle('down'); c.s = 1; draw(c); return; }
       const a = samples[0], b = samples[samples.length - 1], dt = Math.max(16, b.t - a.t);
-      let vx = (b.x - a.x) / dt * 16.67, vy = (b.y - a.y) / dt * 16.67;
-      if (SIDE === 'left') vx = -vx;
-      const fast = performance.now() - b.t < 90 && Math.hypot(vx, vy) > 10;
-      if (dist > 100 || fast) return throwCard(c, Math.min(-12, vx), vy, -vx);
-      // springs back onto the deck
-      if (reduce) { layoutDeck(); return; }
-      let vx2 = 0, vy2 = 0;
-      const g = geo(), hx = g.deckX + c.ox - (deck.length - 1) * .5, hy = g.deckY + c.oy - (deck.length - 1) * 1.1;
-      const spring = () => {
-        vx2 = (vx2 + (hx - c.x) * .16) * .72; vy2 = (vy2 + (hy - c.y) * .16) * .72;
-        c.x += vx2; c.y += vy2; c.r += (c.or - c.r) * .2; draw(c);
-        if (!held && Math.abs(hx - c.x) + Math.abs(hy - c.y) + Math.abs(vx2) > .3) requestAnimationFrame(spring); else if (!held) layoutDeck();
-      };
-      requestAnimationFrame(spring);
+      if (!reduce && performance.now() - b.t < 90) {
+        c.vx = (b.x - a.x) / dt * 16.67; c.vy = (b.y - a.y) / dt * 16.67;
+        const [gx, gy] = worldGrab();
+        c.vr = Math.max(-20, Math.min(20, (gx * c.vy - gy * c.vx) / (gx * gx + gy * gy + 900) * 40));
+      }
+      if (reduce) { c.s = 1; clampIn(c); draw(c); } else kick(c);
     };
-    c.el.addEventListener('pointerup', up); c.el.addEventListener('pointercancel', up);
+    c.el.addEventListener('pointerup', up);
+    c.el.addEventListener('pointercancel', up);
+  }
+  // the deck keeps its spot clear: a card that comes to rest on it is pushed off, like sliding into a block
+  const deckZone = (g, m = 0) => ({ x0: g.dx - m, y0: g.dy - m, x1: g.dx + g.cw + m, y1: g.dy + g.ch + m });
+  function onDeck(x, y, g, m = 0) { const d = deckZone(g, m); return x < d.x1 && x + g.cw > d.x0 && y < d.y1 && y + g.ch > d.y0; }
+  function offDeck(c, g) {
+    const d = deckZone(g, 8);
+    const push = [[d.x0 - g.cw - c.x, 0], [d.x1 - c.x, 0], [0, d.y0 - g.ch - c.y], [0, d.y1 - c.y]]
+      .filter(([px, py]) => { const b = bounds(g), nx = c.x + px, ny = c.y + py; return nx >= b.x0 && nx <= b.x1 && ny >= b.y0 && ny <= b.y1; })
+      .sort((a, b) => Math.hypot(...a) - Math.hypot(...b))[0];
+    return push || [0, 0];
+  }
+  const bounds = (g) => ({ x0: -g.cw * .3, x1: g.W - g.cw * .7, y0: -g.ch * .18, y1: g.H - g.ch * .82 });
+  function clampIn(c) {
+    const g = geo(), b = bounds(g);
+    c.x = Math.max(b.x0, Math.min(b.x1, c.x)); c.y = Math.max(b.y0, Math.min(b.y1, c.y));
+    if (onDeck(c.x, c.y, g, -12)) { const [px, py] = offDeck(c, g); c.x += px; c.y += py; }
   }
 
-  // the deck runs out: the pile sweeps back to its side, face down, and is riffled
-  async function gather(first) {
-    if (busy) return;
-    busy = true;
-    const g = geo();
-    const all = [...pile, ...deck];
-    if (reduce) { build(first); busy = false; return; }
-    await Promise.all(all.map((c, i) => {
-      c.el.classList.remove('up');
-      const to = { x: g.deckX, y: g.deckY, r: rnd(-4, 4), s: 1 };
-      const mid = { x: (c.x + to.x) / 2, y: Math.min(c.y, to.y) - 50, r: c.r + 30, s: 1.05 };
-      return c.el.animate([{ transform: T(c) }, { transform: T(mid) }, { transform: T(to) }], { duration: 520, delay: i * 50, easing: 'cubic-bezier(.4, .1, .3, 1)', fill: 'forwards' }).finished.then(() => Object.assign(c, to));
-    }));
-    await Promise.all(all.map((c, i) => {
-      const side = i % 2 ? 1 : -1;
-      return c.el.animate([{ transform: T(c) }, { transform: T({ ...c, x: c.x + side * 30, y: c.y - 8, r: side * 8 }), offset: .45 }, { transform: T(c) }], { duration: 480, delay: i * 25, easing: 'cubic-bezier(.4, 0, .2, 1)', fill: 'forwards' }).finished;
-    }));
-    build(first);
-    busy = false;
+  const live = new Set(); let raf = 0, tPrev = 0;
+  function kick(c) { live.add(c); if (!raf) { tPrev = performance.now(); raf = requestAnimationFrame(step); } }
+  function step(t) {
+    const k = Math.min(3, (t - tPrev) / 16.67); tPrev = t;
+    const g = geo(), b = bounds(g);
+    for (const c of live) {
+      if (c.held || c.gone) { live.delete(c); continue; }
+      c.x += c.vx * k; c.y += c.vy * k; c.r += c.vr * k;
+      c.vx *= F ** k; c.vy *= F ** k; c.vr *= SF ** k;
+      // soft walls: the screen's sides and the table's top and bottom push a card back instead of stopping it dead
+      let out = false;
+      if (c.x < b.x0) { c.vx += (b.x0 - c.x) * .14 * k; c.vx *= .82 ** k; out = true; }
+      if (c.x > b.x1) { c.vx += (b.x1 - c.x) * .14 * k; c.vx *= .82 ** k; out = true; }
+      if (c.y < b.y0) { c.vy += (b.y0 - c.y) * .14 * k; c.vy *= .82 ** k; out = true; }
+      if (c.y > b.y1) { c.vy += (b.y1 - c.y) * .14 * k; c.vy *= .82 ** k; out = true; }
+      // a dealt card is exempt until it has cleared the deck it left from
+      if (c.launch && !onDeck(c.x, c.y, g)) c.launch = false;
+      if (!c.launch && onDeck(c.x, c.y, g, -12)) {
+        const [px, py] = offDeck(c, g);
+        c.vx += px * .1 * k; c.vy += py * .1 * k; c.vx *= .85 ** k; c.vy *= .85 ** k; out = true;
+      }
+      const v = Math.hypot(c.vx, c.vy);
+      c.s = 1 + Math.min(.12, v * .007); // a fast card is in the air
+      draw(c);
+      if (!out && v < .06 && Math.abs(c.vr) < .04) { c.s = 1; draw(c); live.delete(c); }
+    }
+    raf = live.size ? requestAnimationFrame(step) : 0;
   }
 
-  document.getElementById('dealBtn').addEventListener('click', () => {
-    const c = topCard(); if (!c || busy) return;
-    if (c.el.classList.contains('up')) throwCard(c); else flipUp(c);
-  });
-  document.getElementById('shuffleBtn').addEventListener('click', () => gather());
-  stage.tabIndex = 0;
-  stage.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); document.getElementById('dealBtn').click(); } });
+  deckBtn.addEventListener('click', () => { stage.classList.add('touched'); deal(); }); // a real button: Enter and Space deal too
 
+  // the occasion tab and the who tiles deal that design next
   function choose(name, scroll) {
     document.querySelectorAll('.tabs button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.deck === name)));
-    gather(name);
-    if (scroll) stage.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    if (!scroll) return deal(name);
+    stage.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'center' });
+    setTimeout(() => deal(name), reduce ? 0 : 550);
   }
   document.querySelectorAll('.tabs button').forEach((b) => b.addEventListener('click', () => choose(b.dataset.deck)));
   document.querySelectorAll('.tile').forEach((b) => b.addEventListener('click', () => choose(b.dataset.deck, true)));
-
-  /* ---------- how: the clock really runs ---------- */
-  const clockBtn = document.getElementById('clock');
-  let clockRaf = 0;
-  clockBtn.addEventListener('click', () => {
-    cancelAnimationFrame(clockRaf);
-    const t0 = performance.now(), num = clockBtn.querySelector('b');
-    const tick = (t) => {
-      const left = Math.max(0, 60 - Math.floor((t - t0) / 1000));
-      num.textContent = String(left);
-      clockBtn.classList.toggle('low', left <= 10);
-      if (left > 0) clockRaf = requestAnimationFrame(tick);
-    };
-    clockRaf = requestAnimationFrame(tick);
-  });
 
   /* ---------- designs: the strip leans with swipe speed, the section takes on the centred design's colour ---------- */
   const sec = document.querySelector('.designs');
@@ -661,10 +628,19 @@
   }
   stops.forEach((s, i) => s.addEventListener('click', () => walk(i)));
 
-  build('bachelorette');
-  addEventListener('load', () => { walk(0); layoutDeck(); paint(); });
-  addEventListener('resize', () => { if (!busy) { layoutDeck(); pile.forEach(draw); } paint(); });
-  window.__r5 = { topCard, flipUp, throwCard, gather, state: () => ({ deck: deck.length, pile: pile.map((c) => c.k), shown: stage.querySelectorAll('.card').length - deck.length, busy, last: lastKey }), openDesign, closeDesign };
+  showNext('bachelorette'); // the first card matches the tab that starts pressed
+  placeDeck();
+  // the deck opens: on arrival one card is dealt out across the table
+  addEventListener('load', () => { walk(0); placeDeck(); paint(); setTimeout(() => deal(), reduce ? 0 : 450); });
+  let lastW = innerWidth;
+  addEventListener('resize', () => {
+    paint();
+    if (Math.abs(innerWidth - lastW) < 2) return;
+    lastW = innerWidth; placeDeck();
+    cards.forEach((c) => (reduce ? (clampIn(c), draw(c)) : kick(c)));
+    retire();
+  });
+  window.__r5 = { deal, state: () => ({ next: nextKey, last: lastKey, cards: cards.filter((c) => !c.gone).map((c) => ({ k: c.k, up: !c.el.classList.contains('down'), x: Math.round(c.x), y: Math.round(c.y), r: Math.round(c.r) })), moving: live.size }), openDesign, closeDesign };
 })();
 </script>
 </body>
