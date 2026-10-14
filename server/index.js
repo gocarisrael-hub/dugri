@@ -4480,7 +4480,8 @@ function feeMoveOnSettle(match) {
 
 // WHAT THIS PURCHASE WOULD COST RIGHT NOW, computed the way pay/init computes
 // what to charge (see the `charged` formula in the pay/init handler): the coupon
-// discounts the GAME and never the postage. A change to either belongs in both.
+// discounts the GAME and never the postage. A change to either belongs in both,
+// and tests/unit/charge-formula-binding.test.js fails if they drift apart.
 //
 // This exists because `order.total` is PRE-discount while a session's
 // `charged_total` is POST-discount, so `total - charged` is coupon-blind.
@@ -5816,6 +5817,8 @@ module.exports.cardEstimate = cardEstimate;
 // mobile). Exported so the rule can be asserted directly, without pressing a
 // button and reading the queue back.
 module.exports.orderReadySmsWillSend = orderReadySmsWillSend;
+// Bound to pay/init's charge by tests/unit/charge-formula-binding.test.js.
+module.exports.expectedChargeNow = expectedChargeNow;
 module.exports.pawnCardArgs = pawnCardArgs;
 // The two render caches, exported so a test can pin that they are SEPARATE — the
 // property the pawn card's per-order keys depend on (see pawnCardCache).
