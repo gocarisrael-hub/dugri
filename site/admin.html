@@ -3806,14 +3806,38 @@
         // a dialog that promises a mail the settings have turned off is worse
         // than no dialog: she confirms an action she cannot undo on the strength
         // of a sentence that was never true.
-        if (p.email_enabled && p.sms_enabled) {
-          lines.push('כל אחת תקבל מייל ו-SMS שהמשחק מוכן.');
-        } else if (p.email_enabled) {
-          lines.push('כל אחת תקבל מייל. SMS כבוי כרגע — לא יישלחו הודעות.');
-        } else if (p.sms_enabled) {
-          lines.push('המיילים כבויים כרגע — יישלח SMS בלבד.');
-        } else {
+        //
+        // The SMS half is a COUNT from the server (`will_sms`, answered by the
+        // sender's own gate), never "everyone": the order-ready text goes to
+        // self-pickup only, so "each one gets a text" was false for every
+        // delivery in the pile. And it is an ATTEMPT — a queued text can still
+        // fail, so nothing here says delivered.
+        const willSms = p.sms_enabled ? p.will_sms || 0 : 0;
+        if (!p.email_enabled && !willSms) {
           lines.push('שימו לב: לא יישלחו מיילים ולא הודעות SMS — ההזמנות רק יסומנו כמוכנות.');
+        } else {
+          lines.push(p.email_enabled ? 'כל אחת תקבל מייל שהמשחק מוכן.' : 'המיילים כבויים כרגע.');
+          if (!p.sms_enabled) {
+            lines.push('SMS כבוי כרגע — לא יישלחו הודעות.');
+          } else {
+            lines.push(
+              (willSms === p.count
+                ? 'ננסה לשלוח SMS לכל אחת'
+                : 'ננסה לשלוח SMS ל-' + willSms + ' מתוך ' + p.count) +
+                ' (הודעת "מוכן" נשלחת רק לאיסוף עצמי).'
+            );
+          }
+        }
+        // Who has a good mobile and still gets no text — the delivery, digital
+        // and custom orders. Named, so she can tell them some other way.
+        if (p.sms_enabled && p.no_sms_with_phone && p.no_sms_with_phone.length) {
+          lines.push(
+            '',
+            'בלי SMS כי זה לא איסוף עצמי (' +
+              (p.email_enabled ? 'יקבלו מייל בלבד' : 'לא יקבלו כלום') +
+              '): ' +
+              p.no_sms_with_phone.join(', ')
+          );
         }
         // Only worth naming while a text can actually go out: with SMS off
         // nobody gets one, and the list would point at the wrong problem.
@@ -3826,7 +3850,7 @@
               p.no_phone.join(', ')
           );
         }
-        if (p.email_enabled || p.sms_enabled) {
+        if (p.email_enabled || willSms) {
           lines.push('', 'אי אפשר לבטל את ההודעות שיישלחו.');
         }
         if (!confirm(lines.join('\n'))) return;
