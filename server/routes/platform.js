@@ -695,6 +695,7 @@ function registerAdsSettingsWhatsapp(
     requireAdmin,
     paymentBaseUrl,
     clientKey,
+    clientIp,
     makeRateLimiter,
     db,
     settings,
@@ -836,52 +837,28 @@ function registerAdsSettingsWhatsapp(
   // The buyer's address as Meta should see it.
   //
   // req.ip is the LEFTMOST X-Forwarded-For entry, because app.set('trust proxy',
-  // true) tells Express every hop in that header is trustworthy — and Cloudflare
-  // APPENDS to X-Forwarded-For rather than replacing it, so anything a client puts
-  // there arrives ahead of the address Cloudflare actually saw. A client could
+  // true) tells Express every hop in that header is trustworthy — and proxies
+  // APPEND to X-Forwarded-For rather than replacing it, so anything a client puts
+  // there arrives ahead of the address our own proxies saw. A client could
   // therefore CHOOSE the address we hand to an ad platform as the buyer's, and
   // have every one of its sales attributed to somebody else's neighbourhood.
   //
-  // So this field prefers the header a caller is least likely to be able to set:
-  //   • CF-Connecting-IP. Cloudflare writes it itself and overwrites whatever
-  //     arrived under that name, so for a request that came through Cloudflare —
-  //     which is every request to the site's own domain — it is the real client;
-  //   • with no Cloudflare header AND no X-Forwarded-For, req.ip is the socket
-  //     peer, which nobody but the peer can decide. That is the local run;
-  //   • an X-Forwarded-For with no CF-Connecting-IP means SOMETHING proxied this
-  //     and we cannot tell a proxy's word from a client's. Send nothing. Meta
-  //     always has external_id to match on, so the sale still counts.
+  // So it comes from trustedClientIp (server/payment-client-ip.js), the one
+  // derivation every rate limit and the payment path already count by: the
+  // X-Forwarded-For entry PAYMENT_PROXY_HOPS from the right, CF-Connecting-IP only
+  // when that entry really is a Cloudflare edge, the socket peer when there is no
+  // header (a local run). Unlike the limiter key it is the whole address, not an
+  // IPv6 /64: Meta matches on the address itself.
   //
-  // WHAT THIS IS NOT: proof. Nothing here verifies the request came through
-  // Cloudflare — the origin stays reachable on its own generated host, and a caller
-  // that posts pay/init straight there with a CF-Connecting-IP of its choosing and
-  // no X-Forwarded-For is believed. Verifying it properly means checking that the
-  // hop which handed us the request really was Cloudflare, and the peer this
-  // process sees is Railway's proxy rather than Cloudflare's edge — so the check
-  // cannot be written WITHOUT the trust-proxy change below. With a hop count set,
-  // the RIGHTMOST X-Forwarded-For entry is the one the last trusted hop appended,
-  // which is Cloudflare's edge address, and that is range-checkable. Until then
-  // this narrows the spoofable surface from "any request" to "a request that skips
-  // the front door"; it does not close it, and neither this comment nor
-  // RAILWAY_SETUP.md claims it does.
+  // It used to prefer CF-Connecting-IP and send NOTHING for an X-Forwarded-For
+  // without one. Production receives no CF-Connecting-IP (measured 2026-10-05:
+  // "<visitor>, <CDN77 address>", see "A variable that DOES differ" in
+  // RAILWAY_SETUP.md), so every production report went out with no IP at all.
   //
-  // Narrowing `trust proxy` from `true` to a hop count is the deeper fix and is
-  // not this function's to make: it also governs the rate limiters and the
-  // abuse-facing client key, and getting the count wrong there breaks those.
+  // A non-public address is still dropped, whatever the derivation returns.
   function clientIpForMeta(req) {
-    const usable = (raw) => {
-      const ip = String(raw || '')
-        .trim()
-        .slice(0, 45);
-      // Only a DOTTED mapped v4 is sent bare; stripping a hex one (::ffff:a00:1)
-      // would leave "a00:1", which is no address at all.
-      const bare = /^::ffff:\d+\.\d+\.\d+\.\d+$/i.test(ip) ? ip.slice(7) : ip;
-      return isNonPublicIp(bare) ? '' : bare;
-    };
-    const cf = usable(req.get('cf-connecting-ip'));
-    if (cf) return cf;
-    if (req.get('x-forwarded-for')) return '';
-    return usable(req.ip);
+    const ip = clientIp(req);
+    return isNonPublicIp(ip) ? '' : ip;
   }
 
   /**
@@ -1118,6 +1095,22 @@ function registerAdsSettingsWhatsapp(
 
   app.post('/api/track', (req, res) => {
     if (!trackRate.ok(clientKey(req))) return res.status(429).json({ error: 'too many attempts' });
+    // Only while META_LOG_CLIENT_IP=1, for a one-off check of what reaches this
+    // process on an ordinary (non-payment) route: the address Meta would be sent,
+    // and the headers it was derived from. Off by default: these are visitors'
+    // addresses. Read the line, then remove the variable.
+    if (process.env.META_LOG_CLIENT_IP === '1') {
+      console.log(
+        '[meta] client ip ' +
+          JSON.stringify(clientIpForMeta(req)) +
+          ' x-forwarded-for=' +
+          JSON.stringify(req.headers['x-forwarded-for'] || '') +
+          ' cf-connecting-ip=' +
+          JSON.stringify(req.headers['cf-connecting-ip'] || '') +
+          ' true-client-ip=' +
+          JSON.stringify(req.headers['true-client-ip'] || '')
+      );
+    }
     const body = req.body || {};
     const kind = String(body.kind || '');
     let value;

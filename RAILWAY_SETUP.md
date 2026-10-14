@@ -438,16 +438,18 @@ none of which you should need.)
 
 The buyer's own order link carries a token that opens her order — that token is
 stripped from every URL before anything is stored or sent, so it cannot reach
-Events Manager. The IP is taken from Cloudflare's `CF-Connecting-IP` rather than
-from `X-Forwarded-For`, which `trust proxy` makes anyone's to write, and if that
-header is missing behind a proxy no IP is sent at all. That is a narrower target,
-**not a guarantee**: nothing in the app proves a request came through Cloudflare,
-the Railway origin stays reachable on its own generated host, and a caller who
-goes straight there with a `CF-Connecting-IP` of its choosing is believed. Closing
-that needs an origin-level check, and the peer this process sees is Railway's
-proxy rather than Cloudflare's edge, so it cannot be done in the app. A private or
-loopback address is dropped either way: matching on one would make every buyer
-behind the same office NAT look like the same person.
+Events Manager. The IP is the same address every rate limit counts by: the
+`X-Forwarded-For` entry `PAYMENT_PROXY_HOPS` from the right (see "A variable
+that DOES differ" above), never the leftmost entry, which the caller writes. So
+it is only as right as that hop count: with a count too low, every buyer would
+be reported as our own proxy's address. A private or loopback address is
+dropped either way: matching on one would make every buyer behind the same
+office NAT look like the same person.
+
+To see what a production request carries on an ordinary page, set
+`META_LOG_CLIENT_IP=1`, open the site once, and read the `[meta] client ip …`
+line in the log: the quoted address must be your own. Then remove the variable,
+because the line logs every visitor's address.
 
 ### What the token buys, beyond reporting sales
 
