@@ -1234,6 +1234,7 @@
       import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './js/designs.js';
       import { fetchPricing, applySale, restampSale, PRICING_FALLBACK } from './js/pricing.js';
       import { initFaq } from './js/faq.js';
+      import { initSectionViews, initFirstSwipe } from './js/home-analytics.js';
       import { initPromo } from './js/promo.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
       import { defer, watchTrack } from './js/lazy-media.js';
@@ -1564,6 +1565,11 @@
       // them exactly where they are. It never throws, so nothing after it in this
       // module can be taken down by a FAQ fetch.
       initFaq(document.getElementById('faqList'));
+
+      // ---- GA: how far down the page people get, and the first designs swipe ----
+      // (js/home-analytics.js; through track(), so consent applies as for every event)
+      initSectionViews();
+      initFirstSwipe(productsTrack, document.getElementById('products'));
     </script>
 
     <!--
