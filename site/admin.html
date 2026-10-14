@@ -1123,6 +1123,7 @@
       // (the Hebrew design/colour NAME, plus the design's generator theme).
       import { DESIGNS, MAIN_COLORS } from './js/designs.js';
       import { paymentCharges, findByPaymentRef } from './js/payment-refs.js';
+      import { markStaff } from './js/friend-bar.js';
 
       const key = new URLSearchParams(location.search).get('key') || '';
       // Carry the admin key across the three linked admin pages.
@@ -3943,6 +3944,10 @@
           }
           const data = await r.json();
           allCols = data.collections || [];
+          // The key was accepted, so this browser is the shop's: the managing
+          // links opened from here must never offer it the friend coupon
+          // (js/friend-bar.js).
+          markStaff();
           // The WhatsApp group map is a SEPARATE, best-effort fetch: the orders
           // table must still render when the WhatsApp side is dormant or
           // erroring, so a failure here leaves waGroups empty rather than

@@ -145,6 +145,18 @@ describe('the bar and the on-screen keyboard', () => {
     document.getElementById('friendBar').remove();
   });
 
+  it('is a no-op on a staff browser, on every party', async () => {
+    vi.stubGlobal('localStorage', memoryStorage());
+    vi.resetModules();
+    const { initFriendBar, markStaff } = await import('../../site/js/friend-bar.js');
+    const fetchImpl = vi.fn();
+    markStaff();
+    await initFriendBar({ collectionId: 'c5', fetchImpl }).wordAdded();
+    await initFriendBar({ collectionId: 'c6', fetchImpl }).wordAdded();
+    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(document.getElementById('friendBar')).toBe(null);
+  });
+
   it('ignores the marker the first version left on every ?k= visitor', async () => {
     const ls = memoryStorage();
     ls.setItem('dugri:owned:c4', '1');
