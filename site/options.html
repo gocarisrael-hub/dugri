@@ -7019,6 +7019,15 @@
             nextBtn.textContent = prevLabel;
             return;
           }
+          // The per-client creation limit (server/index.js). Rare for a real
+          // buyer, so it is told plainly to wait rather than to retry now.
+          if (r.status === 429) {
+            createErr.textContent = 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.';
+            createErr.hidden = false;
+            nextBtn.disabled = false;
+            nextBtn.textContent = prevLabel;
+            return;
+          }
           if (!r.ok) throw new Error(data.error || 'failed');
           track('collection_created', { has_email: !!email, has_phone: !!phone });
           // This browser made the order, so it is the owner's: the friend coupon
