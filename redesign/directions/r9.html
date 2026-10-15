@@ -32,7 +32,7 @@
     --line: 3px;
     --sh: -4px 4px 0 var(--ink);      /* hard offset shadow, thrown toward the reading start (RTL) */
     --sh-sm: -3px 3px 0 var(--ink);
-    --rad: 4% / 2.8%;                 /* the card is the whole printed cell, so only a slight cut corner */
+    --rad: 6% / 4.26%;                /* the preview's card shape (.design-preview/outline-rules.txt): one corner and one 1.5 px border for every card */
     --cw: min(32vw, 150px);
   }
   @font-face { font-family: 'Gveret'; src: url(../../site/assets/fonts/gveret-levin-400-hebrew.8c865542.woff2) format('woff2'); unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F; font-display: swap; }
@@ -99,7 +99,7 @@
   .hero-switch button[aria-pressed='true'] { background: var(--ink); color: #fff; }
   .stage { position: relative; width: 100vw; margin: 0 calc(50% - 50vw) 10px; height: calc(var(--cw) * 1.41 * 1.22 + 40px); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
   .deck { position: absolute; width: var(--cw); aspect-ratio: 400 / 564; border: 0; padding: 0; background: none; cursor: pointer; z-index: 5; }
-  .deck img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--rad); outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); }
+  .deck img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
   .deck img:nth-child(1) { transform: translate(-5px, 5px) rotate(-3deg); }
   .deck img:nth-child(2) { transform: translate(-2.5px, 2.5px) rotate(1.6deg); }
   .deck:active img:last-child { transform: translate(-1px, 1px); box-shadow: var(--sh-sm); }
@@ -107,7 +107,7 @@
   .card { position: absolute; top: 0; left: 0; width: var(--cw); aspect-ratio: 400 / 564; z-index: 10; cursor: grab; touch-action: none; will-change: transform; --o: 4px; }
   .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.3, 1.2, .45, 1); }
   .card.down .in { transform: rotateY(180deg); }
-  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--rad); outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: calc(var(--o) * -1) var(--o) 0 var(--ink); pointer-events: none; }
+  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: calc(var(--o) * -1) var(--o) 0 var(--ink); pointer-events: none; }
   .card img.b { transform: rotateY(180deg); box-shadow: var(--o) var(--o) 0 var(--ink); } /* mirrored by the flip, so the shadow lands the same way */
   .card.held { cursor: grabbing; }
   .stage .hint { position: absolute; z-index: 3000; white-space: nowrap; pointer-events: none; font-size: 13px; transition: opacity .3s; }
@@ -125,7 +125,7 @@
   .strip::-webkit-scrollbar { display: none; }
   .dz { direction: rtl; flex: none; width: var(--dw); scroll-snap-align: center; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
   .dz .tilt { will-change: transform; transform-origin: 50% 85%; }
-  .dz img { width: 100%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); }
+  .dz img { width: 100%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
   .dz .sticker { margin-top: 14px; font-size: 13px; }
   .strip-hint { position: relative; font: var(--b-weight) 13px/1 var(--display); letter-spacing: .04em; }
   .order { position: relative; margin-top: 30px; display: grid; justify-items: center; gap: 14px; padding-inline: 16px; }
@@ -143,7 +143,7 @@
   .spread { display: grid; place-items: center; padding: 70px 16px 0; min-height: 0; }
   .tableau { position: relative; width: min(84vw, 600px, 62svh * 1.414); margin-bottom: calc(min(84vw, 600px, 62svh * 1.414) * .2); }
   .tableau .bd { width: 100%; aspect-ratio: 2200 / 1556; object-fit: cover; border-radius: 8px; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); transform: rotate(-2.5deg); }
-  .tableau .fc { position: absolute; bottom: -22%; width: 31%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); }
+  .tableau .fc { position: absolute; bottom: -22%; width: 31%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
   .tableau .fr { left: 17%; transform: rotate(-7deg); z-index: 2; }
   .tableau .bk { left: 50%; transform: rotate(6deg); }
   .tableau.solo { width: min(76vw, 440px, 44svh * 1.45); margin-bottom: 0; display: flex; justify-content: center; gap: 4%; }
@@ -385,7 +385,7 @@
 <script>
 (() => {
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const C = 'cards9/'; // the live cards with their printed frame evened out to טריפה's (42 px on a 400 x 564 card, every side): see README-r9
+  const C = 'cards9/'; // the preview helper's cards: live art, every printed frame evened out to 10.78% of the width (cards9/outline-rules.txt)
   // every public design on the live site (6 built-in + the 4 from /api/custom-designs), each with its main colour sampled from its real card.
   // All art is what the LIVE site serves today (2026-10-15), not the repo: the template artwork on the production volume overrides it.
   // The print template (/api/template-image/<theme>) is the truth where it is public: קליפורניה, סנטוריני, טוקיו and ברוקלין take their one
@@ -405,7 +405,7 @@
     tarifa: { name: 'טריפה', c: '#3d6b2c', fronts: 1, back: 1 },
     kids: { name: 'ברוקלין', c: '#1878fc', fronts: 1, back: 1 },
   };
-  for (const k in D) D[k].board = `boards8/${k}.webp`;
+  for (const k in D) D[k].board = `boards9/${k}.webp`; // the preview's boards, so the two match
   const ALL = Object.keys(D);
   const KEYS = ALL.filter((k) => D[k].back); // the hero deck deals every design that has a back
   const rnd = (a, b) => a + Math.random() * (b - a);

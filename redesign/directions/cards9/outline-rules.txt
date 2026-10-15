@@ -1,0 +1,62 @@
+Dugri preview: per-design card frame rule
+
+Target: visible frame (card edge to the outer edge of the inner art panel) = 10.78% of card width on the narrow side,
+taken from סנטוריני (marriage) and טריפה (tarifa), fronts and backs, which are left exactly as printed.
+Tolerance: a card whose side frame is within 9.8-12.3% is left untouched.
+Measurement: median over 41 scan lines per side of the first pixel that leaves the frame colour (solid frames);
+flood-fill box of the panel for the patterned frames (marriage, tarifa) and the thick-frame templates;
+אואזיס fronts use the back's outline box (same Canva template, the orange-slice frame defeats the scan).
+Padding: the panel is cut out with a rounded mask (52px radius at 400px, the template corner) and laid on a
+flat card of the design's frame colour sized so the side frame is exactly the target; card aspect stays 400x564.
+Trim: not needed for any card (no printed frame is thicker than the target + tolerance).
+Display: every card gets the same CSS shape: border-radius 6%/4.26%, 1.5px solid black border.
+
+פריז (bachelorette)
+  fronts (8): frame #ffeaef, measured 4.0–4.2%, PAD +6.6 to +6.8 pts to 10.8%
+  back (1): frame #ff79a1, measured 11.2%, none (already at target)
+  per card: bachelorette-f1 L4.2/R4.5/T5.0/B4.2, bachelorette-f2 L4.8/R4.2/T5.0/B4.2, bachelorette-f3 L5.0/R4.2/T5.0/B4.2, bachelorette-f4 L5.0/R4.0/T5.0/B4.2, bachelorette-f5 L4.2/R4.5/T4.0/B5.2, bachelorette-f6 L4.8/R4.2/T4.2/B5.2, bachelorette-f7 L5.0/R4.2/T4.0/B5.2, bachelorette-f8 L5.0/R4.0/T4.2/B5.2, bachelorette-b1 L11.2/R11.2/T10.5/B10.5
+
+קליפורניה (birthday)
+  fronts (1): frame #ffd37b, measured 11.0%, none (already at target)
+  back (1): frame #ff7baa, measured 11.5%, none (already at target)
+  per card: birthday-f1 L11.0/R11.0/T10.0/B10.5, birthday-b1 L11.5/R11.8/T10.8/B11.0
+
+טוקיו (japanese)
+  fronts (1): frame #222220, measured 11.2%, none (already at target)
+  back (1): frame #ffffff, measured 4.2%, PAD +6.6 pts to 10.8%
+  per card: japanese-f1 L11.2/R11.2/T10.5/B10.5, japanese-b1 L4.2/R4.2/T5.0/B4.5
+
+ברוקלין (kids)
+  fronts (1): frame #72acf6, measured 11.5%, none (already at target)
+  back (1): frame #72acf6, measured 4.2%, PAD +6.6 pts to 10.8%
+  per card: kids-f1 L11.5/R11.5/T10.8/B10.8, kids-b1 L4.2/R4.5/T5.0/B4.5
+
+סנטוריני (marriage)
+  fronts (1): frame #f4f1eb, measured 11.0%, none (already at target)
+  back (1): frame #004aac, measured 11.0%, none (already at target)
+  per card: marriage-f1 L11.0/R11.2/T10.5/B10.5, marriage-b1 L11.0/R11.2/T10.5/B10.5
+
+סיישל (posttrip)
+  fronts (8): frame #fff7cc, measured 4.0–4.2%, PAD +6.6 to +6.8 pts to 10.8%
+  back (1): frame #0b92a0, measured 4.2%, PAD +6.6 pts to 10.8%
+  per card: posttrip-f1 L4.2/R4.5/T5.0/B4.5, posttrip-f2 L4.8/R4.2/T5.0/B4.5, posttrip-f3 L5.0/R4.2/T5.0/B4.5, posttrip-f4 L5.0/R4.0/T5.0/B4.5, posttrip-f5 L4.2/R4.5/T4.0/B5.5, posttrip-f6 L4.8/R4.2/T4.2/B5.2, posttrip-f7 L5.0/R4.2/T4.2/B5.2, posttrip-f8 L5.0/R4.0/T4.2/B5.2, posttrip-b1 L4.2/R4.5/T5.0/B4.2
+
+דני (daniel)
+  fronts (8): frame #cfe9f2, measured 4.0–4.2%, PAD +6.6 to +6.8 pts to 10.8%
+  back (1): frame #cfe9f2, measured 4.2%, PAD +6.6 pts to 10.8%
+  per card: daniel-f1 L4.0/R4.5/T5.0/B4.2, daniel-f2 L4.8/R4.2/T5.0/B4.2, daniel-f3 L5.0/R4.2/T5.0/B4.2, daniel-f4 L5.0/R4.0/T5.0/B4.2, daniel-f5 L4.0/R4.5/T4.0/B5.2, daniel-f6 L4.8/R4.2/T4.0/B5.2, daniel-f7 L5.0/R4.2/T4.0/B5.2, daniel-f8 L5.0/R4.0/T4.0/B5.2, daniel-b1 L4.2/R4.5/T5.0/B4.2
+
+האלאנד (football)
+  fronts (8): frame #004aac, measured 3.8–4.0%, PAD +6.8 to +7.0 pts to 10.8% (frame decoration of footballs dropped)
+  back (1): frame #004aac, measured 4.0%, PAD +6.8 pts to 10.8%
+  per card: football-f1 L4.0/R4.2/T4.8/B4.2, football-f2 L4.5/R4.0/T4.8/B4.2, football-f3 L4.8/R4.0/T4.8/B4.2, football-f4 L4.8/R3.8/T4.8/B4.2, football-f5 L4.0/R4.2/T3.8/B5.2, football-f6 L4.5/R4.0/T4.0/B5.0, football-f7 L4.8/R4.0/T2.8/B5.2, football-f8 L4.8/R3.8/T4.0/B5.0, football-b1 L4.0/R4.5/T5.0/B4.5
+
+אואזיס (grapefruit)
+  fronts (8): frame #fffdf1, measured 4.0%, PAD +6.8 pts to 10.8% (frame decoration of grapefruit slices dropped)
+  back (1): frame #cbe6f6, measured 4.0%, PAD +6.8 pts to 10.8%
+  per card: grapefruit-f1 L4.0/R4.2/T5.0/B4.2, grapefruit-f2 L4.0/R4.2/T5.0/B4.2, grapefruit-f3 L4.0/R4.2/T5.0/B4.2, grapefruit-f4 L4.0/R4.2/T5.0/B4.2, grapefruit-f5 L4.0/R4.2/T5.0/B4.2, grapefruit-f6 L4.0/R4.2/T5.0/B4.2, grapefruit-f7 L4.0/R4.2/T5.0/B4.2, grapefruit-f8 L4.0/R4.2/T5.0/B4.2, grapefruit-b1 L4.0/R4.2/T5.0/B4.2
+
+טריפה (tarifa)
+  fronts (1): frame #252525, measured 10.8%, none (already at target)
+  back (1): frame #242424, measured 10.0%, none (already at target)
+  per card: tarifa-f1 L10.8/R10.8/T3.0/B10.0, tarifa-b1 L10.0/R10.2/T9.0/B9.2
