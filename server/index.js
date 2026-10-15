@@ -1104,6 +1104,10 @@ function publicView(c, { owner = false } = {}) {
     // mode the bot never adds or DMs anyone, so this (plus the invite email) is
     // how the buyer gets in. null when no group / no link yet.
     ...(owner ? { wa_invite_link: waState.inviteLinkForCollection(c.id) } : {}),
+    // The site's own address (PUBLIC_BASE_URL), so the share link the page builds
+    // is always the real domain, whichever host the owner opened the page on.
+    // null where it is unset; the page then falls back to its own origin.
+    share_base: paymentBaseUrl(),
     count: words.length,
     // Words the free quota refused and we are holding for release on payment.
     // Sent to EVERY viewer of the collect link, exactly like the word list, and

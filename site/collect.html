@@ -573,6 +573,49 @@
         height: 20px;
         flex: 0 0 auto;
       }
+      /* The share card's two icon buttons: 48px squares (over the 44px touch
+         minimum), sharp corners like the rest of the brand. WhatsApp keeps its
+         own green so it is recognised at a glance. */
+      .share-icons {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-top: 10px;
+      }
+      .share-ico {
+        width: 48px;
+        height: 48px;
+        min-width: 48px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1.5px solid #141414;
+        border-radius: 0;
+        background: #fff;
+        color: #141414;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      .share-ico::before {
+        display: none;
+      }
+      .share-ico svg {
+        width: 24px;
+        height: 24px;
+      }
+      .share-ico-wa {
+        background: #25d366;
+        border-color: #1da851;
+        color: #fff;
+      }
+      .share-ico:active {
+        transform: scale(0.96);
+      }
+      .share-copied {
+        font-size: 14px;
+        min-height: 1em;
+      }
       .hidden {
         display: none !important;
       }
@@ -2773,27 +2816,55 @@
           שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה. זה אותו קישור שקיבלתם במייל, וכל מי
           שיפתח אותו יוכל גם להוסיף מילים וגם לנהל את האיסוף:
         </p>
-        <a
-          class="share-wa"
-          id="shareWhatsapp"
-          href="#"
-          target="_blank"
-          rel="noopener"
-          data-testid="share-whatsapp"
-        >
-          <svg class="share-wa-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path
-              fill="currentColor"
-              d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
-            />
-          </svg>
-          <span data-edit="collect-share-wa-label">שתפו בוואטסאפ</span>
-        </a>
-        <div class="row" style="margin-top: 8px">
-          <input type="text" id="friendsLink" readonly />
-          <button class="ghost" id="copyFriends" type="button" data-edit="collect-copy-friends-btn">
-            העתק
+        <!-- Two icon buttons and no visible link (the owner's call: a long URL
+             in a box was noise). The link itself still lives in #friendsLink, a
+             hidden field, because the copy button, the WhatsApp text and the
+             tests all read that one value. -->
+        <input type="hidden" id="friendsLink" />
+        <div class="share-icons">
+          <a
+            class="share-ico share-ico-wa"
+            id="shareWhatsapp"
+            href="#"
+            target="_blank"
+            rel="noopener"
+            aria-label="שיתוף בוואטסאפ"
+            title="שיתוף בוואטסאפ"
+            data-testid="share-whatsapp"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.9-7.01A9.86 9.86 0 0 0 12.04 2Zm0 1.8c2.16 0 4.19.84 5.72 2.37a8.05 8.05 0 0 1 2.37 5.72c0 4.47-3.64 8.11-8.12 8.11a8.2 8.2 0 0 1-4.14-1.13l-.3-.18-3.1.81.83-3.02-.19-.31a8.06 8.06 0 0 1-1.26-4.36c0-4.47 3.64-8.11 8.11-8.11ZM8.55 7.33c-.16 0-.42.06-.64.3-.22.24-.85.83-.85 2.02 0 1.2.87 2.35.99 2.51.12.16 1.7 2.6 4.14 3.65.58.25 1.03.4 1.38.51.58.19 1.11.16 1.53.1.47-.07 1.44-.59 1.64-1.16.2-.57.2-1.06.14-1.16-.06-.1-.22-.16-.46-.28-.24-.12-1.44-.71-1.66-.79-.22-.08-.38-.12-.55.12-.16.24-.63.79-.77.95-.14.16-.28.18-.52.06-.24-.12-1.02-.38-1.94-1.2-.72-.64-1.2-1.43-1.34-1.67-.14-.24-.02-.37.1-.49.11-.11.24-.28.36-.42.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.54-1.32-.76-1.8-.18-.4-.37-.4-.55-.41-.14 0-.3-.01-.46-.01Z"
+              />
+            </svg>
+          </a>
+          <button
+            class="share-ico"
+            id="copyFriends"
+            type="button"
+            aria-label="העתקת הקישור"
+            title="העתקת הקישור"
+            data-testid="copy-friends"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M10 13a5 5 0 0 0 7.07 0l3-3a5 5 0 0 0-7.07-7.07l-1.5 1.5M14 11a5 5 0 0 0-7.07 0l-3 3a5 5 0 0 0 7.07 7.07l1.5-1.5"
+              />
+            </svg>
           </button>
+          <span
+            class="share-copied"
+            id="copyDone"
+            role="status"
+            aria-live="polite"
+            data-testid="copy-done"
+          ></span>
         </div>
         <!-- The WhatsApp word-collection group. Shown only once the bot has opened
              one and produced a join link (an owner-only field). This BUTTON is how
@@ -5753,7 +5824,9 @@
       // Returns true when the submission was handled by the server (word saved,
       // or skipped as a duplicate), false on any failure so callers can keep the
       // typed word for a retry instead of clearing it.
-      async function addWords(words, method) {
+      // `extra` rides along on word_added only (the question flow's category);
+      // it never carries the words themselves.
+      async function addWords(words, method, extra) {
         const parsed = parseWordText(Array.isArray(words) ? words.join('\n') : words);
         if (!parsed.length) return true; // nothing to submit — not a failure
         // Hold every entry to the length cap HERE, before the request, so the
@@ -5818,6 +5891,7 @@
           // the quota mid-paste, and with how many words behind her — the single
           // best predictor that she is about to pay, or about to give up.
           track('word_added', {
+            ...(extra || {}),
             method: method || 'single',
             count: added,
             skipped,
@@ -6159,6 +6233,7 @@
         return avail[Math.floor(Math.random() * avail.length)];
       }
       $('#ideaBtn').onclick = () => {
+        track('idea_click', { source: 'collect' });
         const p = pickPrompt();
         seenPrompts.push(p.id);
         if (seenPrompts.length > 8) seenPrompts.shift();
@@ -6196,7 +6271,7 @@
       // question has ≥1 answer a green ✓ shows on its head; each add commits the
       // current line and opens a fresh empty one (add-another) so a single
       // question can contribute several distinct words.
-      function buildQRow(question) {
+      function buildQRow(question, category) {
         const text = renderQ(question);
         const row = document.createElement('div');
         row.className = 'q-row';
@@ -6239,7 +6314,7 @@
             const v = input.value.trim();
             if (!v) return;
             add.disabled = true;
-            const ok = await addWords(v, 'question');
+            const ok = await addWords(v, 'question', { category });
             if (!ok) {
               // Save failed — keep the typed answer so the user can retry.
               add.disabled = false;
@@ -6276,13 +6351,16 @@
       }
 
       function showCat(cat, btn) {
+        // The category's stable id (people, places, jokes…), never its label,
+        // so a reworded chip does not split the GA report.
+        track('question_category', { category: cat.id });
         document.querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
         btn.classList.add('active');
         const list = $('#qList');
         list.innerHTML = '';
         list.style.display = 'flex';
         for (const question of cat.questions) {
-          list.appendChild(buildQRow(question));
+          list.appendChild(buildQRow(question, cat.id));
         }
       }
 
@@ -6304,8 +6382,15 @@
       //
       // Falls back to the token-free URL for a contributor, who has no token to
       // put in it — this is a formatter, not a source of authority.
+      //
+      // THE ADDRESS IS THE SITE'S, never the one she happens to be on. Opened
+      // through the Railway host, location.origin is that host, and the owner
+      // sent her friends https://dugri-production.up.railway.app/... The server
+      // tells us PUBLIC_BASE_URL as `share_base`; until the first fetch lands,
+      // or where it is unset (local, E2E), this page's own origin stands in.
       function friendsUrl() {
-        const url = location.origin + '/collect.html?c=' + id;
+        const base = (state && state.share_base) || location.origin;
+        const url = base + '/collect.html?c=' + id;
         return ownerToken ? url + '&k=' + encodeURIComponent(ownerToken) : url;
       }
       // Build the WhatsApp share href, personalized with the celebrant name(s).
@@ -6337,13 +6422,14 @@
         const waInvite = inviteName
           ? 'עזרו לי להכין הפתעה ל' + inviteName + '! הוסיפו מילים על ' + inviteName + ' כאן:'
           : 'עזרו לי להכין הפתעה! הוסיפו מילים על בעל/ת השמחה כאן:';
-        waBtn.href = 'https://wa.me/?text=' + encodeURIComponent(waInvite + ' ' + friendsUrl());
+        const link = friendsUrl();
+        $('#friendsLink').value = link;
+        waBtn.href = 'https://wa.me/?text=' + encodeURIComponent(waInvite + ' ' + link);
       }
       function setupOwner() {
         $('#sharePanel').classList.remove('hidden');
         // ONE link in the share card, and it is the managing one — the same URL
         // the confirmation email carries and the same page she is standing on.
-        $('#friendsLink').value = friendsUrl();
         // Primary share: open WhatsApp with a friendly Hebrew invite + the SAME
         // link the copy button uses. The href is (re)built by updateShareInvite()
         // once the collection state (and its honoree name) is loaded; seed a
@@ -6352,8 +6438,7 @@
         updateWaGroupLink();
         $('#shareWhatsapp').onclick = () => track('share_link_whatsapp', { link_type: 'manage' });
         $('#joinWaGroup').onclick = () => track('join_wa_group', { link_type: 'group_invite' });
-        $('#copyFriends').onclick = () =>
-          copy($('#friendsLink').value, $('#copyFriends'), 'manage');
+        $('#copyFriends').onclick = () => copy($('#friendsLink').value, $('#copyDone'), 'manage');
         // סיום: closes the collection. Shared by the pre-pay close card and the
         // post-payment "start production" CTA — closing is what starts production.
         // The dialog above, as a promise: resolves true only on the destructive
@@ -7897,12 +7982,15 @@
         });
       }
 
-      function copy(text, btn, linkType) {
+      // `note` is the status line beside the icon button: the button holds only
+      // an icon, so the confirmation is said next to it (and read out, role=status).
+      let copyNoteTimer = null;
+      function copy(text, note, linkType) {
         navigator.clipboard.writeText(text).then(() => {
           track('share_link_copied', { link_type: linkType });
-          const old = btn.textContent;
-          btn.textContent = 'הועתק ✓';
-          setTimeout(() => (btn.textContent = old), 1500);
+          note.textContent = 'הועתק ✓';
+          clearTimeout(copyNoteTimer);
+          copyNoteTimer = setTimeout(() => (note.textContent = ''), 1800);
         });
       }
       // ---- init ----

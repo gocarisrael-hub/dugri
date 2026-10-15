@@ -1582,8 +1582,11 @@ test('owner share card: ONE link, it is the MANAGING one, and it sits between th
   const panel = page.locator('#sharePanel');
   await expect(panel).toBeVisible();
 
-  // Exactly ONE link box in the share card, and no second one hiding anywhere.
+  // Exactly ONE link in the share card, and no second one hiding anywhere. It is
+  // a hidden field now (the card shows icon buttons only), but it is still the
+  // one value the copy button and the WhatsApp text are built from.
   await expect(panel.locator('input')).toHaveCount(1);
+  await expect(page.locator('#friendsLink')).toHaveAttribute('type', 'hidden');
   await expect(page.locator('#ownerLink')).toHaveCount(0);
   await expect(page.getByTestId('owner-private-link')).toHaveCount(0);
 
@@ -1803,7 +1806,6 @@ test('newly-tagged collect copy + the logo image become editable in owner edit m
     'collect-tab-single',
     'collect-cat-people-title',
     'collect-cat-people-eg',
-    'collect-share-wa-label',
     'collect-share-hint',
     'collect-coupon-label',
     'collect-card-pay-btn',
