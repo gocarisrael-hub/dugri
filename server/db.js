@@ -21,6 +21,9 @@ const commerceStore = require('./stores/commerce');
 // The friend coupon's pure rules (code format, email, dates, admin sums), handed
 // to commerceStore.friendCouponsBlock below. Requires nothing but node's crypto.
 const friendCouponRules = require('./friend-coupons');
+// Reads words from per-collection files when the data file says they are there
+// (docs/storage-plan.md, phase 1a). Requires only fs and path.
+const wordFiles = require('./word-files');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const DB_FILE = path.join(DATA_DIR, 'dugri-data.json');
@@ -853,7 +856,10 @@ function loadDb() {
     console.error(msg);
     throw new Error(msg);
   }
-  return { ...DEFAULTS, ...parsed };
+  // Words may live in per-collection files instead (server/word-files.js). This
+  // is OUTSIDE the catch on purpose: a word file that cannot be read stops the
+  // boot with its own error, never starting those collections empty.
+  return { ...DEFAULTS, ...wordFiles.pickWordSource(parsed, DATA_DIR) };
 }
 
 let _db = loadDb();
