@@ -1,0 +1,1044 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · r10 · עשרה פתיחים</title>
+<!-- FONTLINK:START -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;800;900&display=swap" rel="stylesheet" />
+<!-- FONTLINK:END -->
+<style>
+  /* FONT:START (the only block that differs between r7-a and r7-b) */
+  :root {
+    --display: 'Rubik', system-ui, sans-serif;  /* headings, stickers, pills */
+    --body: 'Rubik', system-ui, sans-serif;     /* running text */
+    --h-weight: 900; --h-track: -.01em;         /* headings */
+    --b-weight: 800;                            /* stickers, pills, labels */
+    --pitch-weight: 500;
+  }
+  /* FONT:END */
+
+  /* THEME: the Dugri colours on the live site's sand (tokens.css --section) as the page ground */
+  :root {
+    --page: #f4efe6;      /* tokens.css --section: the live site's warm sand */
+    --page-2: #ece3d5;    /* tokens.css --accent-tint: the alternate sections */
+    --tile: #ffffff;
+    --sticker-hot: #ea4795; /* the pink of the logo, sampled from logo-pink-original.png */
+    --spark: #ea4795;
+    --ink: #000;
+    --paper: #fff;
+    --line: 3px;
+    --sh: -4px 4px 0 var(--ink);      /* hard offset shadow, thrown toward the reading start (RTL) */
+    --sh-sm: -3px 3px 0 var(--ink);
+    --rad: 6% / 4.26%;                /* the preview's card shape (.design-preview/outline-rules.txt): one corner and one 1.5 px border for every card */
+    --cw: min(32vw, 150px);
+  }
+  @font-face { font-family: 'Gveret'; src: url(../../site/assets/fonts/gveret-levin-400-hebrew.8c865542.woff2) format('woff2'); unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F; font-display: swap; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; overflow-x: clip; }
+  body { background: var(--page); color: var(--ink); font: 400 17px/1.5 var(--body); -webkit-tap-highlight-color: transparent; }
+  img { display: block; max-width: 100%; user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+
+  /* the shared language: outlines, stickers, pills, sparkles */
+  /* labels: calm, flat, upright; a thin outline and nothing else */
+  .sticker { display: inline-block; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px; padding: 5px 12px 6px; font: 700 13px/1.1 var(--display); letter-spacing: .02em; }
+  .pill { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: var(--ink); color: #fff; text-decoration: none; border: 0; border-radius: 999px; font: var(--b-weight) 16px/1 var(--display); letter-spacing: .02em; padding: 16px 26px; cursor: pointer; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1); }
+  .pill:active { transform: scale(.96); }
+  .tok { display: inline-block; background: var(--paper); border: 2px dashed var(--ink); padding: 0 6px; font-weight: 800; direction: ltr; unicode-bidi: isolate; letter-spacing: 0; }
+  .pill .tok { background: transparent; border-color: #fff; color: #fff; }
+  .spark { position: absolute; width: var(--s, 34px); height: var(--s, 34px); pointer-events: none; fill: var(--spark); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; overflow: visible; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
+
+  section { position: relative; border-top: var(--line) solid var(--ink); padding: 44px 16px 52px; overflow: clip; background: var(--page); }
+  h1, h2 { font-family: var(--display); font-weight: var(--h-weight); margin: 0; line-height: 1; letter-spacing: var(--h-track); }
+  h2 { font-size: clamp(32px, 9vw, 58px); }
+  .lede { font-size: 17px; margin: 12px 0 0; max-width: 34ch; }
+
+  /* header */
+  header { display: flex; align-items: center; justify-content: space-between; padding: max(10px, env(safe-area-inset-top)) 16px 0; }
+  header .logo { width: 86px; height: auto; margin: -6px -6px -10px 0; }
+  header .pill { padding: 12px 18px; font-size: 14px; }
+
+  /* hero: ten different openings, one shown at a time (#hero=1..10). Only real photos, footage, cards, boards and the real leaflet and
+     timer; only her words. None uses the owner's list: no centred mega headline with a kicker and a pill, no chips, no numbered step
+     cards, no sticker labels, no highlighted word, no mirror symmetry. The section's own side padding is the gutter. */
+  .hero { border-top: 0; padding-block: 0 30px; }
+  .hv { display: none; position: relative; }
+  .hv.on { display: block; }
+  .go { display: inline-block; margin-top: 16px; font: 800 18px/1.3 var(--display); color: var(--ink); text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 5px; }
+  .go:hover { text-decoration-thickness: 3px; }
+  .go:active { translate: 0 1px; }
+  .hand { font-family: 'Gveret', var(--display); font-weight: 400; letter-spacing: 0; }
+  .park { display: none; }
+  .hv .stage { margin-top: 0; }
+  .say { margin: 14px 0 0; max-width: 34ch; font-size: 17px; line-height: 1.45; }
+  body.solo-logo header .logo { visibility: hidden; } /* openings that carry the logo themselves show it once */
+
+  /* 1. the magazine cover: a real photo, the real logo as the one masthead, her line as the cover line */
+  .hv1 .cover { position: relative; margin: 4px -16px 0; height: min(calc(100svh - 92px), 760px); min-height: 560px; overflow: hidden; background: #2b3a44 url(../../site/assets/hero-3.jpg) 50% 62% / cover no-repeat; color: #fff; }
+  .hv1 .cover::after { content: ''; position: absolute; inset: 0; background: radial-gradient(130% 62% at 64% 100%, rgba(20, 16, 18, .78), rgba(20, 16, 18, 0) 64%); }
+  .hv1 .mast { position: absolute; z-index: 1; top: 12px; right: 12px; width: 62%; max-width: 340px; filter: drop-shadow(0 3px 10px rgba(0, 0, 0, .35)); }
+  .hv1 .big { color: #fff; position: absolute; z-index: 1; right: 16px; left: 22%; bottom: 66px; margin: 0; font: 900 46px/.94 var(--display); font-size: clamp(42px, 12vw, 80px); letter-spacing: -.02em; text-shadow: 0 2px 14px rgba(0, 0, 0, .45); text-wrap: balance; }
+  .hv1 .go { position: absolute; z-index: 1; right: 16px; bottom: 22px; margin: 0; color: #fff; text-shadow: 0 1px 8px rgba(0, 0, 0, .5); }
+
+  /* 2. a table seen from above: the real board is the table, her line written on it by hand, the deck deals onto it */
+  .hv2 .table { position: relative; margin: 6px -16px 0; padding: 70px 0 18px; overflow: hidden; }
+  .hv2 .board { position: absolute; inset: 64px -8% 6px -6%; background: url(boards9/bachelorette.webp) 50% 50% / cover; rotate: -3deg; border-radius: 4px; box-shadow: 0 22px 30px -20px rgba(60, 40, 30, .5), 0 1px 2px rgba(60, 40, 30, .25); }
+  .hv2 .stage { position: relative; z-index: 2; }
+  .hv2 .card img, .hv2 .deck img { box-shadow: 0 10px 14px -8px rgba(60, 30, 40, .5), 0 1px 1px rgba(60, 30, 40, .3); } /* a card lying on a table casts a soft shadow */
+  .hv2 .note { position: absolute; z-index: 3; top: 6px; right: 18px; margin: 0; font-size: 40px; line-height: 1; color: #2a1d22; rotate: -2deg; }
+  .hv2 .arrow { position: absolute; z-index: 3; top: 26px; left: 64px; width: 120px; height: 80px; fill: none; stroke: #2a1d22; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* 3. a real card, blown up: her four words written in where its own four were; turn it over for the how-to */
+  .hv3 .row3 { display: grid; gap: 14px; }
+  .hv3 h1 { margin: 22px 0 0; font: 900 34px/1 var(--display); font-size: clamp(32px, 9vw, 52px); letter-spacing: -.02em; }
+  .hv3 .big-card { position: relative; display: block; width: min(78vw, 360px); aspect-ratio: 400 / 564; margin: 6px 4% 0 auto; cursor: pointer; perspective: 1400px; rotate: -3deg; container-type: inline-size; }
+  .hv3 .face { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: 6% / 4.26%; outline: 1.5px solid var(--ink); outline-offset: -.5px; background: center / cover no-repeat; box-shadow: 0 22px 34px -22px rgba(80, 30, 50, .55), 0 2px 4px rgba(80, 30, 50, .2); transition: transform .7s cubic-bezier(.3, 1.1, .4, 1); }
+  .hv3 .front { background-image: url(hero10/card-front-blank.webp); }
+  .hv3 .back { background-image: url(hero10/card-back-blank.webp); transform: rotateY(180deg); }
+  /* her words sit where the printed ones were: right edge 27.5%, lines from 35% down, in the card's own handwriting face */
+  .hv3 .front ol { position: absolute; top: 33.5%; right: 25%; left: 26%; margin: 0; padding: 0; list-style: none; counter-reset: w; font: 400 7.2cqw/1.82 'Gveret', var(--display); color: #5b3443; text-align: start; }
+  .hv3 .front ol li { counter-increment: w; white-space: nowrap; }
+  .hv3 .front ol li::before { content: counter(w) '.'; }
+  .hv3 .back p { position: absolute; top: 20%; right: 19%; left: 19%; margin: 0; font: 400 6.8cqw/1.45 'Gveret', var(--display); color: #fff6f8; text-align: center; }
+  .hv3 .big-card.flipped .front { transform: rotateY(-180deg); }
+  .hv3 .big-card.flipped .back { transform: rotateY(0deg); }
+  .hv3 .tail { margin: 18px 0 0; font: 600 17px/1.4 var(--display); }
+
+  /* 4. the morning after: two real WhatsApp messages, wallpaper and time stamps and all; the deck under them */
+  .hv4 .chat { margin: 18px 0 0; display: grid; gap: 8px; }
+  .hv4 .chat img { width: 92%; border-radius: 12px; box-shadow: 0 12px 24px -18px rgba(0, 0, 0, .5); }
+  .hv4 .chat img.d-only:last-child { margin-inline-start: 8%; }
+  .d-only { display: none; }
+  @media (min-width: 900px) { .d-only { display: block; } .m-only { display: none; } }
+  .hv4 .from { margin: 6px 0 0; font-size: 14px; color: #5f564d; }
+  .hv4 h1 { margin: 10px 0 0; font: 800 27px/1.1 var(--display); font-size: clamp(26px, 7vw, 40px); letter-spacing: -.01em; max-width: 15ch; }
+
+  /* 5. the lid: the real leaflet, photographed; tap and it lifts off the deck under it */
+  .hv5 .box { position: relative; margin: 24px 0 0; width: min(76vw, 400px); aspect-ratio: 855 / 935; margin-bottom: 50%; } /* the lid slides down past the box: room under it */
+  .hv5 .inside { position: absolute; inset: 0; background: #e9dfc6; box-shadow: inset 0 0 0 1.5px rgba(0, 0, 0, .45), inset 0 14px 22px -12px rgba(0, 0, 0, .35); overflow: hidden; } /* the box's own floor, a shade darker than the lid's paper */
+  .hv5 .inside .stage { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; }
+  .hv5 .lid { position: absolute; inset: 0; z-index: 20; transform: translate(-3%, 46%) rotate(3deg); border: 0; padding: 0; cursor: pointer; background: url(hero10/leaflet-lid.webp) center / cover; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), 0 26px 40px -24px rgba(60, 40, 20, .6); transition: transform .9s cubic-bezier(.3, 1.05, .4, 1); }
+  .hv5 .box.open .lid { transform: translate(-6%, 92%) rotate(6deg); }
+  .hv5 .lid:hover { transform: translate(-3%, 52%) rotate(3.5deg); }
+  .hv5 h1 { margin: 22px 0 0; font: 800 28px/1.1 var(--display); font-size: clamp(26px, 7.4vw, 40px); letter-spacing: -.01em; }
+
+  /* 6. a wall of real words off real cards; one at a time is described, then guessed and crossed off */
+  .hv6 .wall { margin: 16px 0 0; font: 800 22px/1.34 var(--display); letter-spacing: -.01em; text-wrap: pretty; }
+  .hv6 .wall span { display: inline-block; white-space: nowrap; margin-inline-end: .3em; position: relative; color: #2a2622; transition: color .3s; }
+  .hv6 .wall span.s { font-weight: 400; }
+  .hv6 .wall span.l { font-size: 1.3em; }
+  .hv6 .wall span.got { color: #a49a8e; text-decoration: line-through; text-decoration-thickness: 3px; text-decoration-color: #2a2622; }
+  .hv6 .wall span.now { color: var(--ink); }
+  .hv6 .wall span.now::after { content: ''; position: absolute; right: 0; bottom: -3px; height: 3px; width: 100%; background: var(--ink); transform-origin: right; animation: fuse var(--t, 3.2s) linear forwards; }
+  @keyframes fuse { to { transform: scaleX(0); } }
+  .hv6 .wall .theirs { display: block; margin: 10px 0 6px; font-family: var(--display); font-size: 41px; font-size: clamp(38px, 10.5vw, 96px); line-height: .95; font-weight: 900; letter-spacing: -.02em; color: var(--ink); }
+  .hv6 .tally { margin: 6px 0 18px; min-height: 1.3em; font: 600 16px/1.3 var(--display); font-variant-numeric: tabular-nums; }
+  @media (max-width: 899px) { .hv6 .wall span.xm { display: none; } }
+
+  /* 7. the real Dugri timer (the site's own 60-second timer, glossy black numerals) next to the deck */
+  .hv7 .timer { position: relative; margin: 14px 0 0; display: flex; align-items: flex-end; gap: 14px; }
+  .hv7 .num { margin: 0; font: 900 150px/.8 var(--display); letter-spacing: -.04em; font-variant-numeric: tabular-nums; direction: ltr; color: #111; } /* the real timer's numerals, in solid ink (no gradient text, no glow) */
+  .hv7 .start { border: 0; background: var(--ink); color: #fff; padding: 12px 20px; font: 800 17px/1 var(--display); cursor: pointer; margin-bottom: 14px; }
+  .hv7 .start:active { translate: 0 1px; }
+  .hv7 .label { margin: 0 0 8px; font: 800 20px/1.15 var(--display); white-space: nowrap; }
+  .hv7 .stage { margin-top: 4px; }
+  .hv7 h1 { margin: 6px 0 0; font: 800 26px/1.1 var(--display); font-size: clamp(24px, 6.6vw, 36px); letter-spacing: -.01em; }
+
+  /* 8. real photos and real cards dropped on the beige like prints on a table; her line written straight onto it */
+  .hv8 .drop { position: relative; margin: 10px -16px 0; height: 118vw; max-height: 540px; }
+  .hv8 .drop > * { position: absolute; margin: 0; box-shadow: 0 14px 22px -14px rgba(60, 40, 30, .55), 0 1px 2px rgba(60, 40, 30, .2); }
+  .hv8 .drop img { display: block; width: 100%; height: auto; }
+  .hv8 .card img { border-radius: 6% / 4.26%; outline: 1.5px solid var(--ink); outline-offset: -.5px; }
+  .hv8 h1 { margin: 6px 0 0; font-size: 44px; line-height: 1; color: #2a1d22; }
+  .hv8 .typed { margin: 8px 0 0; font: 600 17px/1.35 var(--display); }
+
+  /* 9. quiet: one line, the deck as the one big object, the order link */
+  .hv9 { --cw: min(42vw, 230px); }
+  .hv9 .q-line { margin: 34px 0 0; font: 600 26px/1.15 var(--display); font-size: clamp(26px, 7vw, 40px); max-width: 16ch; letter-spacing: -.01em; }
+  .hv9 .stage { margin-top: 18px; }
+  .hv9 .go { margin-top: 0; }
+
+  /* 10. a turn in progress: real party footage, her how-to as the reel's captions on solid strips */
+  .hv10 .reel { position: relative; margin: 6px -16px 0; height: min(calc(100svh - 150px), 700px); min-height: 500px; overflow: hidden; background: #2a2724; }
+  .hv10 .reel video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .hv10 .caption { position: absolute; z-index: 1; right: 16px; left: 16px; bottom: 22px; margin: 0; font: 800 19px/1.55 var(--display); text-align: center; text-wrap: balance; }
+  .hv10 .script { display: none; }
+  .hv10 .caption span { display: none; } .hv10 .caption span.on { display: inline; animation: cap .5s ease-out; }
+  .hv10 .caption span.on { background: #141414; color: #fff; padding: 2px 8px 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  @keyframes cap { from { opacity: 0; translate: 0 6px; } }
+  .hv10 .card-in-hand { position: absolute; z-index: 1; top: 16px; right: 16px; width: 25%; max-width: 140px; rotate: 7deg; border-radius: 6% / 4.26%; outline: 1.5px solid #000; outline-offset: -.5px; box-shadow: 0 10px 18px -10px rgba(0, 0, 0, .6); }
+
+  /* the opening switch: a row of small numbers, out of the way */
+  .hero-switch { position: fixed; left: 8px; bottom: max(8px, env(safe-area-inset-bottom)); z-index: 800; display: flex; flex-wrap: wrap; max-width: calc(100vw - 16px); gap: 2px; border: 1.5px solid var(--ink); background: var(--paper); padding: 3px; font: 700 12px/1 var(--display); }
+  .hero-switch a { display: grid; place-items: center; min-width: 26px; height: 26px; color: var(--ink); text-decoration: none; }
+  .hero-switch a[aria-current='true'] { background: var(--ink); color: #fff; }
+  .stage { position: relative; width: 100vw; margin: 0 calc(50% - 50vw) 10px; height: calc(var(--cw) * 1.41 * 1.22 + 40px); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+  .deck { position: absolute; width: var(--cw); aspect-ratio: 400 / 564; border: 0; padding: 0; background: none; cursor: pointer; z-index: 5; }
+  .deck img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .deck img:nth-child(1) { transform: translate(-5px, 5px) rotate(-3deg); }
+  .deck img:nth-child(2) { transform: translate(-2.5px, 2.5px) rotate(1.6deg); }
+  .deck:active img:last-child { transform: translate(-1px, 1px); box-shadow: var(--sh-sm); }
+  .deck:focus-visible { outline: 3px solid var(--ink); outline-offset: 10px; border-radius: 10px; }
+  .card { position: absolute; top: 0; left: 0; width: var(--cw); aspect-ratio: 400 / 564; z-index: 10; cursor: grab; touch-action: none; will-change: transform; --o: 4px; }
+  .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.3, 1.2, .45, 1); }
+  .card.down .in { transform: rotateY(180deg); }
+  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: calc(var(--o) * -1) var(--o) 0 var(--ink); pointer-events: none; }
+  .card img.b { transform: rotateY(180deg); box-shadow: var(--o) var(--o) 0 var(--ink); } /* mirrored by the flip, so the shadow lands the same way */
+  .card.held { cursor: grabbing; }
+  .stage .hint { position: absolute; z-index: 3000; white-space: nowrap; pointer-events: none; font-size: 13px; transition: opacity .3s; }
+  .stage.touched .hint { opacity: 0; }
+  .hero .spark.a { top: 18px; left: 22%; --s: 26px; }
+  .hero .spark.b { bottom: 40px; left: 10px; --s: 30px; }
+
+  /* designs: an endless strip that leans with your swipe and takes on each design's colour, in pastel */
+  .designs { background: var(--page-2); text-align: center; padding-inline: 0; }
+  .designs > h2, .designs > .lede { position: relative; margin-inline: 16px; }
+  .designs > .lede { margin-inline: auto; padding-inline: 16px; max-width: 46ch; }
+  .bgs { position: absolute; inset: 0; pointer-events: none; }
+  .bgs i { position: absolute; inset: 0; opacity: 0; will-change: opacity; }
+  .strip { direction: ltr; position: relative; display: flex; gap: 0; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 34px calc(50% - var(--dw) / 2) 22px; --dw: min(58vw, 250px); perspective: 900px; overscroll-behavior-x: contain; }
+  .strip::-webkit-scrollbar { display: none; }
+  .dz { direction: rtl; flex: none; width: var(--dw); scroll-snap-align: center; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .dz .tilt { will-change: transform; transform-origin: 50% 85%; }
+  .dz img { width: 100%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .dz .sticker { margin-top: 14px; font-size: 13px; }
+  .strip-hint { position: relative; font: var(--b-weight) 13px/1 var(--display); letter-spacing: .04em; }
+  .order { position: relative; margin-top: 30px; display: grid; justify-items: center; gap: 14px; padding-inline: 16px; }
+  .order .pill { font-size: 18px; padding: 19px 30px; }
+  .order .price { font: var(--h-weight) 22px/1 var(--display); }
+  .wa-line { font-size: 15px; font-weight: 500; }
+  .designs .spark { z-index: 1; }
+  .designs .spark.a { top: 28px; left: 20px; }
+  .designs .spark.b { bottom: 40px; right: 18px; --s: 26px; }
+
+  /* the flood: a tap fills the screen with that design's pastel and lays out its front, back and real board */
+  .flood { position: fixed; inset: 0; z-index: 900; background: var(--fc); color: var(--ink); visibility: hidden; touch-action: none; display: grid; grid-template-rows: 1fr auto; overflow: hidden; }
+  .flood.open { visibility: visible; }
+  .flood .x { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 14px; z-index: 5; width: 48px; height: 48px; border-radius: 50%; border: 2.5px solid var(--ink); background: #fff; color: var(--ink); font: 900 22px/1 system-ui, sans-serif; box-shadow: var(--sh-sm); cursor: pointer; }
+  .spread { display: grid; place-items: center; padding: 70px 16px 0; min-height: 0; }
+  .tableau { position: relative; width: min(84vw, 600px, 62svh * 1.414); margin-bottom: calc(min(84vw, 600px, 62svh * 1.414) * .2); }
+  .tableau .bd { width: 100%; aspect-ratio: 2200 / 1556; object-fit: cover; border-radius: 8px; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); transform: rotate(-2.5deg); }
+  .tableau .fc { position: absolute; bottom: -22%; width: 31%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .tableau .fr { left: 17%; transform: rotate(-7deg); z-index: 2; }
+  .tableau .bk { left: 50%; transform: rotate(6deg); }
+  .tableau.solo { width: min(76vw, 440px, 44svh * 1.45); margin-bottom: 0; display: flex; justify-content: center; gap: 4%; }
+  .tableau.solo .fc { position: relative; bottom: auto; left: auto; width: 48%; }
+  .flood .info { display: grid; justify-items: center; gap: 12px; padding: 18px 16px max(26px, env(safe-area-inset-bottom)); text-align: center; }
+  .flood h3 { margin: 0; font: var(--h-weight) clamp(36px, 10vw, 60px)/1 var(--display); letter-spacing: var(--h-track); }
+  .flood .info p { margin: 0; font-size: 16px; }
+  .flood .swipe { font: var(--b-weight) 12px/1 var(--display); letter-spacing: .02em; opacity: .75; }
+
+
+  /* recommendations: a flat oval table with a name plate, white pills floating on it, each in its own orbit.
+     On a phone the oval is a low stadium and the pills ride in one swipe row inside it. */
+  .recs { padding-inline: 0; }
+  .oval { position: relative; margin: 34px calc(50% - 320px) 0; width: 640px; max-width: none; aspect-ratio: 640 / 430; background: var(--page-2); border: 2.5px solid var(--ink); border-radius: 50%; }
+  .plate { position: absolute; top: 0; left: 50%; transform: translate(-50%, -50%); display: inline-flex; align-items: center; gap: 12px; margin: 0; background: var(--paper); border: 2.5px solid var(--ink); border-radius: 10px; box-shadow: var(--sh-sm); padding: 9px 14px; font: var(--h-weight) 19px/1 var(--display); letter-spacing: var(--h-track); white-space: nowrap; z-index: 3; }
+  .plate i { width: 7px; height: 7px; border-radius: 50%; border: 2px solid var(--ink); background: var(--page-2); }
+  .pills { list-style: none; margin: 0; padding: 0; position: absolute; inset: 0; z-index: 2; }
+  /* phone spots, in px on the 640-wide oval; only its middle 390 px (x 125-515) is on screen */
+  .pills li { position: absolute; left: var(--mx); top: var(--my2); transform: translate(-50%, -50%) rotate(var(--t, 0deg)); }
+  .pills li.wide-only { display: none; }
+  .bob { display: block; animation: bob var(--dur, 5s) ease-in-out var(--dl, 0s) infinite alternate; }
+  @keyframes bob { from { translate: 0 0; rotate: 0deg; } to { translate: var(--bx, 3px) var(--by, -5px); rotate: var(--br, 1.4deg); } }
+  .rp { position: relative; display: block; background: var(--paper); color: var(--ink); border: 2.5px solid var(--ink); border-radius: 999px; box-shadow: var(--sh-sm); font: inherit; text-align: center; }
+  .rp::before { content: ''; position: absolute; inset: -9px -13px; border: 1.5px solid var(--ink); border-radius: 50%; opacity: .45; transform: rotate(var(--o, -5deg)); pointer-events: none; }
+  button.rp { cursor: pointer; padding: 11px 16px 10px; width: 168px; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1); }
+  button.rp:active { transform: scale(.96); }
+  .rp q { display: block; font: var(--b-weight) 13.5px/1.3 var(--display); quotes: '״' '״'; }
+  .rp small { display: block; margin-top: 4px; font-size: 11.5px; line-height: 1.2; }
+  .rp.logo { padding: 10px 20px; }
+  .rp.logo img { width: auto; max-height: 44px; }
+  .deco { position: absolute; pointer-events: none; z-index: 1; overflow: visible; }
+  .deco.ring { width: var(--s, 16px); height: var(--s, 16px); border: 2px solid var(--ink); border-radius: 50%; background: var(--paper); }
+  .deco.clover { width: var(--s, 26px); height: var(--s, 26px); fill: var(--paper); stroke: var(--ink); stroke-width: 2; }
+  .deco.spark { fill: var(--spark); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; }
+
+  /* the review sheet */
+  .sheet { position: fixed; inset: auto 0 0; margin: 0 auto; width: min(560px, 100%); max-width: 100%; max-height: 88svh; border: 3px solid var(--ink); border-bottom: 0; border-radius: 22px 22px 0 0; padding: 16px 16px max(22px, env(safe-area-inset-bottom)); background: var(--paper); color: var(--ink); overflow: auto; }
+  .sheet::backdrop { background: rgba(0, 0, 0, .38); }
+  .sheet .grab { display: block; width: 46px; height: 5px; border-radius: 9px; background: var(--ink); opacity: .25; margin: 0 auto 12px; }
+  .sheet img { width: 100%; border-radius: 14px; outline: 2.5px solid var(--ink); outline-offset: -1px; }
+  .sheet p { margin: 12px 0 0; font-size: 15px; }
+  .sheet .x { position: absolute; top: 10px; left: 12px; width: 40px; height: 40px; border-radius: 50%; border: 2.5px solid var(--ink); background: var(--paper); font: 900 18px/1 system-ui, sans-serif; cursor: pointer; }
+
+  /* our story: two taped prints side by side, a gap between them so neither covers a face; each drifts a little */
+  .story { background: var(--page-2); }
+  .story-in { display: grid; gap: 26px; }
+  .prints { position: relative; height: calc(min(44vw, 220px) * 1.16 + 60px); --pw: min(44vw, 220px); }
+  .print { position: absolute; margin: 0; width: var(--pw); background: var(--paper); padding: 8px 8px 26px; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); animation: drift var(--dur) ease-in-out var(--dl) infinite alternate; }
+  .print img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+  .print .tape { position: absolute; top: -12px; left: 50%; width: 76px; height: 24px; margin-left: -38px; background: rgba(244, 239, 230, .82); border-inline: 2px dashed rgba(0, 0, 0, .14); transform: rotate(var(--tt, -4deg)); }
+  .print.old { top: 14px; right: 3%; rotate: 4deg; --dur: 15s; --dl: -4s; --dx: 1.5px; --dy: -2px; --dr: .5deg; }
+  .print.now { top: 40px; left: 3%; rotate: -4deg; --dur: 19s; --dl: -9s; --dx: -2px; --dy: 1.5px; --dr: -.4deg; }
+  @keyframes drift { from { translate: 0 0; transform: rotate(0deg); } to { translate: var(--dx) var(--dy); transform: rotate(var(--dr)); } }
+  .story-copy, .faq-col { position: relative; }
+  .story-copy h2 { margin-top: 14px; }
+  .story-copy p { margin: 14px 0 0; max-width: 40ch; }
+  .story-copy .sign { display: block; margin-top: 16px; font: 400 30px/1 'Gveret', var(--display); } /* signed by hand, not stuck on */
+
+  /* questions */
+  .faq-in { display: grid; gap: 30px; }
+  .qa { margin-top: 20px; display: grid; gap: 12px; }
+  .qa details { background: var(--paper); border: 2.5px solid var(--ink); border-radius: 14px; box-shadow: var(--sh-sm); }
+  .qa summary { list-style: none; cursor: pointer; padding: 14px 16px; font: var(--b-weight) 17px/1.3 var(--display); display: flex; justify-content: space-between; gap: 12px; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary::after { content: '+'; font: 900 22px/1 system-ui, sans-serif; transition: transform .2s; }
+  .qa details[open] summary::after { transform: rotate(45deg); }
+  .qa details p { margin: 0; padding: 0 16px 16px; font-size: 16px; white-space: pre-line; }
+
+  footer { border-top: var(--line) solid var(--ink); background: var(--page); padding: 22px 16px 34px; font-size: 14px; display: flex; justify-content: space-between; align-items: center; }
+  footer img { width: 54px; }
+
+  @media (min-width: 900px) {
+    :root { --cw: 170px; }
+    section, header { padding-inline: max(16px, calc(50vw - 520px)); }
+    /* the openings on a wide screen: each composed inside the page's own 1040 container */
+    .hv1.on { display: grid; grid-template-columns: 560px 1fr; column-gap: 56px; align-items: center; } .hv1 .cover { margin-inline: 0; height: 700px; grid-row: 1 / span 2; } .hv1 .cover::after { display: none; }
+    .hv1 .big, .hv1 .go { position: static; color: var(--ink); text-shadow: none; } .hv1 .big { grid-column: 2; font-size: 84px; align-self: end; } .hv1 .go { grid-column: 2; align-self: start; justify-self: start; margin-top: 18px; }
+    .hv2.on { display: grid; grid-template-columns: 1.5fr 1fr; align-content: start; column-gap: 40px; } .hv2 .say { margin-top: 90px; }
+    .hv2 .table { margin-inline: 0; grid-row: 1 / span 2; } .hv2 .stage { height: calc(var(--cw) * 1.41 * 1.5 + 60px); } .hv2 .say { font-size: 20px; } .hv2 .go { align-self: start; justify-self: start; }
+    .hv3 .row3 { grid-template-columns: auto 1fr; grid-template-rows: 1fr auto auto 1fr; column-gap: 56px; row-gap: 20px; }
+    .hv3 .big-card { grid-column: 1; grid-row: 1 / span 4; width: 400px; margin: 30px 0 10px; } .hv3 h1 { grid-column: 2; grid-row: 2; font-size: 72px; } .hv3 .row3 > div:last-child { grid-column: 2; grid-row: 3; } .hv3 .tail { margin-top: 0; font-size: 20px; }
+    .hv4.on { display: grid; grid-template-columns: 1fr 1fr; column-gap: 48px; align-items: start; }
+    .hv4 .chat, .hv4 .from { grid-column: 1; } .hv4 .slot, .hv4 h1, .hv4 .go { grid-column: 2; } .hv4 .chat { grid-row: 1 / span 2; } .hv4 .from { grid-row: 3; } .hv4 .slot { grid-row: 1; margin-top: 18px; } .hv4 h1 { grid-row: 2; font-size: 52px; } .hv4 .go { grid-row: 3; justify-self: start; }
+    .hv5.on { display: grid; grid-template-columns: auto 1fr; grid-template-rows: 1fr auto auto auto 1fr; column-gap: 56px; }
+    .hv5 .box { grid-row: 1 / span 5; width: 380px; margin-bottom: 200px; } .hv5 h1 { grid-row: 2; font-size: 60px; margin-top: 0; } .hv5 .say { grid-row: 3; font-size: 20px; margin-top: 12px; } .hv5 .go { grid-row: 4; justify-self: start; margin-top: 18px; }
+    .hv6 .wall { font-size: 30px; } .hv6 .say { font-size: 21px; }
+    .hv7.on { display: grid; grid-template-columns: 1fr 1fr; column-gap: 40px; align-items: end; }
+    .hv7 .timer { grid-row: 1 / span 4; grid-column: 2; } .hv7 .num { font-size: 260px; } .hv7 .slot { grid-row: 1; grid-column: 1; } .hv7 h1 { grid-column: 1; font-size: 46px; } .hv7 .say { grid-column: 1; font-size: 19px; } .hv7 .go { grid-column: 1; justify-self: start; }
+    .hv8.on { display: grid; grid-template-columns: 1.4fr 1fr; grid-template-rows: 1fr auto auto auto 1fr; column-gap: 40px; }
+    .hv8 .drop { margin-inline: 0; height: 600px; max-height: none; grid-row: 1 / span 5; } .hv8 h1 { grid-row: 2; font-size: 70px; } .hv8 .typed { grid-row: 3; font-size: 20px; margin-top: 12px; } .hv8 .go { grid-row: 4; justify-self: start; margin-top: 24px; }
+    .hv9 { --cw: 260px; } .hv9 .q-line { font-size: 84px; max-width: 12ch; } .hv9 .go { font-size: 22px; }
+    .hv10.on { display: grid; grid-template-columns: auto 1fr; column-gap: 56px; align-items: center; }
+    .hv10 .reel { margin-inline: 0; width: 405px; height: 720px; min-height: 0; } .hv10 .caption { display: none; } .hv10 .card-in-hand { width: 150px; max-width: none; }
+    .hv10 .script { display: block; } .hv10 .script .h1-like { margin: 0 0 18px; font: 900 64px/1 var(--display); letter-spacing: -.02em; }
+    .hv10 .script ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; font: 600 21px/1.4 var(--display); color: #6d655c; max-width: 34ch; } /* the lines not yet spoken, still 5:1 on the beige */
+    .hv10 .script li { transition: color .4s; font-weight: 500; } .hv10 .script li.on { color: var(--ink); font-weight: 800; } .hv10 .script .go { font-size: 22px; margin-top: 26px; }
+    .designs { padding-inline: 0; }
+    .strip { --dw: 260px; }
+    /* the oval proper: pills sit at fixed spots on it, like the pluto table */
+    .oval { width: auto; max-width: 1040px; margin: 34px auto 0; aspect-ratio: 1040 / 660; }
+    .pills li { left: var(--x); top: var(--y); }
+    .pills li.wide-only { display: block; }
+    button.rp { width: 240px; padding: 13px 22px 12px; }
+    .rp q { font-size: 15px; }
+    .rp small { font-size: 12.5px; }
+    .rp.logo { padding: 14px 26px; }
+    .rp.logo img { max-height: none; }
+    .story-in { grid-template-columns: 1fr 1fr; align-items: center; gap: 40px; }
+    .prints { grid-column: 2; grid-row: 1; height: 400px; --pw: 230px; }
+    .print.old { top: 40px; }
+    .print.now { top: 90px; }
+    .faq-in { max-width: 760px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .bob, .print { animation: none; }
+    /* the flip becomes a crossfade */
+    .card .in, .card.down .in { transition: none; transform: none; }
+    .card img { transition: opacity .25s; }
+    .card img.b { transform: none; opacity: 0; }
+    .card.down img.b { opacity: 1; }
+    .card.down img.f { opacity: 0; }
+    /* a static grid instead of the leaning strip */
+    .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; overflow: visible; padding: 26px 16px 0; --dw: auto; perspective: none; }
+    .dz { width: auto; }
+    .dz .sticker { font-size: 12px; padding: 4px 7px; }
+    .strip-hint, .bgs { display: none; }
+  }
+  /* ILLUS:css */
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true"><symbol id="spark" viewBox="0 0 40 40"><path d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z" /></symbol><symbol id="clover" viewBox="0 0 40 40"><circle cx="20" cy="11" r="8" /><circle cx="29" cy="20" r="8" /><circle cx="20" cy="29" r="8" /><circle cx="11" cy="20" r="8" /><circle cx="20" cy="20" r="4" /></symbol></svg>
+
+  <header>
+    <img class="logo" src="../../site/assets/logo-pink-original.png" alt="דוגרי" />
+    <a class="pill" href="#order">הזמינו עכשיו</a>
+  </header>
+
+  <section class="hero" id="top" aria-label="דוגרי">
+    <!-- ILLUS:hero -->
+    <div class="park" id="park"><div class="stage" id="stage">
+      <button class="deck" id="deck" type="button" aria-label="לחלק קלף מהחפיסה"><img src="cards9/posttrip-b1.webp" alt="" draggable="false" /><img src="cards9/birthday-b1.webp" alt="" draggable="false" /><img src="cards9/bachelorette-b1.webp" alt="" draggable="false" /></button>
+      <span class="hint" id="hint" hidden></span>
+      <p class="sr" id="said" aria-live="polite"></p>
+    </div></div>
+
+    <!-- 1. magazine cover -->
+    <div class="hv hv1" data-v="1" data-solo-logo>
+      <div class="cover">
+        <img class="mast" src="../../site/assets/logo-pink-original.png" alt="דוגרי" />
+      </div>
+      <h1 class="big">כל המילים עליכם!</h1>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 2. a table from above -->
+    <div class="hv hv2" data-v="2">
+      <div class="table">
+        <div class="board" aria-hidden="true"></div>
+        <h1 class="note hand">כל המילים עליכם!</h1>
+        <svg class="arrow" viewBox="0 0 120 80" aria-hidden="true"><path d="M116 6C92 10 62 18 40 34 28 43 20 54 16 70" /><path d="M7 60l9 12 11-9" /></svg>
+        <div class="slot" data-stage></div>
+      </div>
+      <p class="say">משחק מילים אישי שכל כולו על האדם שחוגגים לו.</p>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 3. one real card, blown up -->
+    <div class="hv hv3" data-v="3">
+      <div class="row3">
+        <h1>כל המילים עליכם!</h1>
+        <div class="big-card" id="bigCard" role="button" tabindex="0" aria-pressed="false" aria-label="קלף דוגרי: פדיחות, סיפורים מצחיקים, יריבים מושבעים, אהבה ראשונה. לחיצה הופכת אותו">
+          <span class="face front"><ol><li>פדיחות</li><li>סיפורים מצחיקים</li><li>יריבים מושבעים</li><li>אהבה ראשונה</li></ol></span>
+          <span class="face back"><p>מתחלקים לקבוצות, שולפים קלף ומתארים את המילה בלי להגיד אותה, הקבוצה שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל והתור שלכם נגמר.</p></span>
+        </div>
+        <div><p class="tail">ואפילו אקסים - הכל נכנס.</p><a class="go" href="#order">בונים את המשחק ›</a></div>
+      </div>
+    </div>
+
+    <!-- 4. the morning after -->
+    <div class="hv hv4" data-v="4">
+      <div class="chat">
+        <img class="m-only" src="hero10/review-1-top.webp" alt="הודעה מלקוחה: דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו" />
+        <img class="d-only" src="../../site/assets/testimonials/review-1.jpg" alt="הודעה מלקוחה: דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו" />
+        <img class="d-only" src="../../site/assets/testimonials/review-2.jpg" alt="הודעה מלקוחה: בסוף הערב היא אמרה שזה החלק שהיא הכי אהבה במסיבה" />
+      </div>
+      <p class="from">הודעות שקיבלנו בוואטסאפ</p>
+      <div class="slot" data-stage></div>
+      <h1>כל המילים עליכם!</h1>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 5. the lid -->
+    <div class="hv hv5" data-v="5" data-solo-logo>
+      <div class="box" id="box">
+        <div class="inside"><div class="slot" data-stage></div></div>
+        <button class="lid" id="lid" type="button" aria-expanded="false" aria-label="להרים את המכסה"></button>
+      </div>
+      <h1>כל המילים עליכם!</h1>
+      <p class="say">משחק מילים אישי שכל כולו על האדם שחוגגים לו.</p>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 6. a wall of real words -->
+    <div class="hv hv6" data-v="6">
+      <div class="wall" id="wall"><span>שניצל תירס</span> <span>שופינג</span> <span class="xm">בראשית</span> <span class="s">הנדסת חשמל</span> <span>סלים דלים</span> <span class="xm l">רוקסי</span> <span>תאילנד</span> <span class="s">אייל גר</span> <span class="xm">יובי</span> <span>תרגיעי את הדיבור שלך</span> <span class="s">סופר פארם</span> <span class="xm l">אולי נקפוץ</span> <span class="l">עמוד שדרה</span> <span class="s">יש לי משהו בשיניים?</span> <span class="xm l">קרם תלתלים</span> <span>דידי</span> <span>משהו בריא</span> <span class="xm">בונבון</span> <span>דוני</span> <span>פילאטיס מכשירים</span> <span class="xm">גבות יפות</span> <span>שירה בקטע שלי</span> <span class="s">היפוכונדרית</span> <span class="xm">קרסול</span> <span class="l">דרום איטליה</span> <span class="l">רופא ילדים</span> <h1 class="theirs">כל המילים עליכם!</h1> <span class="xm">פסיכיאטריה</span> <span class="s">ספה</span> <span class="s">שידה</span> <span class="xm s">כנפיים</span> <span class="l">רוטב שום</span> <span>שיר השירים</span> <span class="xm">בילבונג</span> <span class="l">תואר</span> <span>ברוקלין 99</span> <span class="xm">ברוקולי</span> <span>בריכה</span> <span class="s">ריקוד</span> <span class="xm">סבתא רינה</span> <span class="l">פורטנייט</span> <span class="s">גיטרה</span> <span class="xm s">6767</span> <span>נועה קירל</span> <span class="s">ספגטי עגבניות</span> <span class="xm">כיתה ח&#x27; 8</span> <span>בלט</span> <span>גיאומטריה</span> <span class="xm">בובספוג</span> <span class="l">מלך האריות</span> <span class="s">פנקייקים</span> <span class="xm">ארוחת בוקר</span> <span>גן טלי</span></div>
+      <p class="tally" id="tally" aria-live="polite"></p>
+      <p class="say">דוגרי, המתנה הכי אישית</p>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 7. the real timer -->
+    <div class="hv hv7" data-v="7">
+      <div class="timer">
+        <p class="num" id="num" role="timer" aria-label="60 שניות">60</p>
+        <div><p class="label">טיימר · 60 שניות</p><button class="start" id="start" type="button">התחל</button></div>
+      </div>
+      <div class="slot" data-stage></div>
+      <h1>כל המילים עליכם!</h1>
+      <p class="say">הקבוצה שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל והתור שלכם נגמר.</p>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 8. prints on a table -->
+    <div class="hv hv8" data-v="8">
+      <div class="drop">
+        <figure style="top: 0; right: 4%; width: 52%; rotate: 2.5deg"><img src="../../site/assets/hero-1.jpg" alt="לוח וקלפי דוגרי על שולחן זכוכית" /></figure>
+        <figure style="top: 10%; left: 3%; width: 44%; rotate: -4deg"><img src="../../site/assets/gallery-3.jpg" alt="חפיסה ביד, לידה הלוח" /></figure>
+        <figure class="card" style="top: 44%; left: 34%; width: 30%; rotate: 8deg"><img src="cards9/bachelorette-f1.webp" alt="קלף של שירה, מסיבת רווקות" /></figure>
+        <figure style="top: 50%; right: 3%; width: 40%; rotate: -2deg"><img src="../../site/assets/hero-2.jpg" alt="החוברת, הלוח והקלפים" /></figure>
+        <figure style="top: 52%; left: 2%; width: 36%; rotate: 3deg"><img src="../../site/assets/hero-3.jpg" alt="לוח כחול וקלפים ביד, על שמיכה מפוספסת" /></figure>
+      </div>
+      <h1 class="hand">כל המילים עליכם!</h1>
+      <p class="typed">דוגרי, המתנה הכי אישית</p>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 9. quiet -->
+    <div class="hv hv9" data-v="9">
+      <h1 class="q-line">כל המילים עליכם!</h1>
+      <p class="say">דוגרי, המתנה הכי אישית</p>
+      <div class="slot" data-stage></div>
+      <a class="go" href="#order">בונים את המשחק ›</a>
+    </div>
+
+    <!-- 10. a turn in progress -->
+    <div class="hv hv10" data-v="10">
+      <h1 class="sr">כל המילים עליכם!</h1>
+      <div class="reel">
+        <video id="reel" src="../../site/assets/video/party.mp4" poster="../../site/assets/video/party-poster.jpg" muted loop playsinline preload="metadata" aria-label="משחק דוגרי במסיבה"></video>
+        <img class="card-in-hand" src="cards9/bachelorette-f2.webp" alt="" />
+        <p class="caption" id="caption" aria-hidden="true"><span class="on">מתחלקים לקבוצות,</span><span>שולפים קלף ומתארים את המילה בלי להגיד אותה,</span><span>הקבוצה שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל והתור שלכם נגמר.</span><span>ומה הקאץ׳? כל המילים עליכם!</span><span>פדיחות, סיפורים מצחיקים, יריבים מושבעים, אהבה ראשונה ואפילו אקסים - הכל נכנס.</span></p>
+      </div>
+      <div class="script">
+        <p class="h1-like" aria-hidden="true">כל המילים עליכם!</p>
+        <ol id="script"><li class="on">מתחלקים לקבוצות,</li><li>שולפים קלף ומתארים את המילה בלי להגיד אותה,</li><li>הקבוצה שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל והתור שלכם נגמר.</li><li>ומה הקאץ׳? כל המילים עליכם!</li><li>פדיחות, סיפורים מצחיקים, יריבים מושבעים, אהבה ראשונה ואפילו אקסים - הכל נכנס.</li></ol>
+        <a class="go" href="#order">בונים את המשחק ›</a>
+      </div>
+      <a class="go m-only" href="#order">בונים את המשחק ›</a>
+    </div>
+  </section>
+
+  <section class="designs" id="order" aria-labelledby="h-designs">
+    <div class="bgs" id="bgs" aria-hidden="true"></div>
+    <svg class="spark a" aria-hidden="true"><use href="#spark" /></svg>
+    <svg class="spark b" aria-hidden="true"><use href="#spark" /></svg>
+    <!-- ILLUS:designs -->
+    <h2 id="h-designs">העיצובים שלנו</h2>
+    <p class="lede">כל עיצוב מתאים לכל חגיגה - את הכותרת אתם כותבים</p>
+    <div class="strip" id="strip" aria-label="העיצובים"></div>
+    <div class="strip-hint" aria-hidden="true">← החליקו →</div>
+    <div class="order">
+      <a class="pill" href="#">בונים את המשחק ›</a>
+      <span class="price">חפיסה ולוח: <span class="tok">{price}</span></span>
+      <a class="wa-line" href="https://wa.me/972552441334">יש שאלה? דברו איתנו בוואטסאפ</a>
+    </div>
+  </section>
+
+
+  <section class="recs" aria-labelledby="h-recs">
+    <!-- ILLUS:recs -->
+    <div class="oval">
+      <h2 class="plate" id="h-recs"><i aria-hidden="true"></i>ממליצים עלינו<i aria-hidden="true"></i></h2>
+      <svg class="deco spark" style="top: 14%; left: 9%; width: 22px; height: 22px" aria-hidden="true"><use href="#spark" /></svg>
+      <svg class="deco spark" style="top: 90%; left: 30%; width: 26px; height: 26px" aria-hidden="true"><use href="#spark" /></svg>
+      <svg class="deco spark" style="bottom: 9%; right: 12%; width: 18px; height: 18px" aria-hidden="true"><use href="#spark" /></svg>
+      <svg class="deco clover" style="top: 18%; right: 14%" aria-hidden="true"><use href="#clover" /></svg>
+      <svg class="deco clover" style="bottom: 16%; left: 38%; --s: 20px" aria-hidden="true"><use href="#clover" /></svg>
+      <span class="deco ring" style="top: 40%; left: 4%"></span>
+      <span class="deco ring" style="top: 8%; left: 34%; --s: 11px"></span>
+      <span class="deco ring" style="bottom: 30%; right: 3%; --s: 13px"></span>
+      <span class="deco ring" style="bottom: 6%; left: 58%; --s: 10px"></span>
+      <ul class="pills" id="pills">
+          <li style="--mx: 258px; --my2: 94px; --x: 50%; --y: 16%; --t: 3deg; --my: -6px"><span class="bob" style="--dur: 5.2s; --dl: -0.6s; --bx: 3px; --by: -5px; --br: -1.4deg"><span class="rp logo" style="--o: -6deg"><img src="logos/hm.webp" alt="H&amp;M" style="height: 40px" draggable="false" /></span></span></li>
+          <li style="--mx: 390px; --my2: 98px; --x: 87%; --y: 50%; --t: -7deg; --my: -8px"><span class="bob" style="--dur: 5.3s; --dl: -0.2s; --bx: 3px; --by: -5px; --br: -1.4deg"><span class="rp logo" style="--o: -6deg"><img src="logos/starcar.webp" alt="STAR CAR ירושלים" style="height: 62px" draggable="false" /></span></span></li>
+          <li style="--mx: 224px; --my2: 300px; --x: 27%; --y: 25%; --t: -5deg; --my: 0px"><span class="bob" style="--dur: 5.4s; --dl: -0.3s; --bx: -3px; --by: 4px; --br: 1.2deg"><button class="rp" type="button" data-shot="r7.jpg" style="--o: -8deg"><q>דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו</q><small data-edit="index-review-1-caption">{שם} · {תאריך}</small></button></span></li>
+          <li style="--mx: 222px; --my2: 190px; --x: 73%; --y: 26%; --t: 4deg; --my: 8px"><span class="bob" style="--dur: 6.1s; --dl: -0.5s; --bx: -3px; --by: 4px; --br: 1.6deg"><button class="rp" type="button" data-shot="r9.jpg" style="--o: -8deg"><q>אני לא מגזימה שעה וחצי של צחוק רצוף!</q><small data-edit="index-review-2-caption">{שם} · {תאריך}</small></button></span></li>
+          <li class="wide-only" style="--x: 14%; --y: 50%; --t: -7deg; --my: -4px"><span class="bob" style="--dur: 5.6s; --dl: -1.6s; --bx: -3px; --by: -5px; --br: 1.6deg"><button class="rp" type="button" data-shot="r5.jpg" style="--o: -5deg"><q>היא אמרה שזה פשוט היה הדבר הכי טוב בכל הרווקות שלה!</q><small data-edit="index-review-3-caption">{שם} · {תאריך}</small></button></span></li>
+          <li style="--mx: 418px; --my2: 214px; --x: 38%; --y: 47%; --t: 3deg; --my: 6px"><span class="bob" style="--dur: 5.1s; --dl: -0.6s; --bx: -3px; --by: 4px; --br: 1.2deg"><button class="rp" type="button" data-shot="r2.jpg" style="--o: -5deg"><q>זה יצא פשוט נדיר ברמות הכי גבוהות</q><small data-edit="index-review-4-caption">{שם} · {תאריך}</small></button></span></li>
+          <li class="wide-only" style="--x: 62%; --y: 53%; --t: -3deg; --my: -6px"><span class="bob" style="--dur: 4.8s; --dl: -2.3s; --bx: -3px; --by: -4px; --br: -1.4deg"><button class="rp" type="button" data-shot="r6.jpg" style="--o: -8deg"><q>בסוף הערב היא אמרה שזה החלק שהיא הכי אהבה במסיבה</q><small data-edit="index-review-5-caption">{שם} · {תאריך}</small></button></span></li>
+          <li style="--mx: 416px; --my2: 326px; --x: 26%; --y: 76%; --t: 5deg; --my: 4px"><span class="bob" style="--dur: 5.6s; --dl: -2.5s; --bx: 2px; --by: 4px; --br: 1.6deg"><button class="rp" type="button" data-shot="r8.jpg" style="--o: 9deg"><q>היה ממש כיף, כולם היו באטרף מזה</q><small data-edit="index-review-6-caption">{שם} · {תאריך}</small></button></span></li>
+          <li class="wide-only" style="--x: 50%; --y: 79%; --t: -4deg; --my: -6px"><span class="bob" style="--dur: 6.0s; --dl: -1.9s; --bx: 2px; --by: -4px; --br: 1.2deg"><button class="rp" type="button" data-shot="r1.jpg" style="--o: -5deg"><q>החמים שלי ממש ממש התרגשו והיה מעולה</q><small data-edit="index-review-7-caption">{שם} · {תאריך}</small></button></span></li>
+          <li class="wide-only" style="--x: 74%; --y: 76%; --t: 6deg; --my: 6px"><span class="bob" style="--dur: 6.0s; --dl: -2.8s; --bx: -3px; --by: -5px; --br: 1.6deg"><button class="rp" type="button" data-shot="r4.jpg" style="--o: 6deg"><q>תודה לך על הטיפול האישי עם המשלוח</q><small data-edit="index-review-8-caption">{שם} · {תאריך}</small></button></span></li>
+        </ul>
+    </div>
+  </section>
+
+  <dialog class="sheet" id="sheet" aria-labelledby="sheetTitle">
+    <span class="grab" aria-hidden="true"></span>
+    <button class="x" type="button" id="sheetX" aria-label="סגירה">✕</button>
+    <h3 class="sr" id="sheetTitle">ההמלצה המלאה</h3>
+    <div id="sheetPic"></div>
+    <p id="sheetCap"></p>
+  </dialog>
+
+  <section class="story" aria-labelledby="h-story">
+    <div class="story-in">
+      <div class="prints" aria-hidden="true">
+        <figure class="print old"><span class="tape" style="--tt: 3deg"></span><img src="https://dugri-israel.co.il/content-uploads/09d0097acf23847b.jpg" alt="" /></figure>
+        <figure class="print now"><span class="tape"></span><img src="https://dugri-israel.co.il/content-uploads/27ddf2fc1ac6fe9b.jpg" alt="" style="object-position: 50% 62%" /></figure>
+      </div>
+      <div class="story-copy">
+        <!-- ILLUS:story -->
+        <span class="sticker">הסיפור שלנו</span>
+        <h2 id="h-story">איך דוגרי נולד</h2>
+        <p>נעים להכיר - הדר ועלמה, חברות הכי טובות מגיל שנה והשתיים האלה בחבורה שתמיד מתכננות הכל. התחלנו לתכנן את מסיבת הרווקות של שירה וחיפשנו מתנה שתגרום לערב להרגיש כאילו הוא נכתב עליה וגם (!) יהיה קורע מצחוק, ולא מצאנו. אז ישבנו והמצאנו את דוגרי.</p>
+        <p>מאז הפכנו את זה למקצוע - לוקחים את הסיפורים הכי מצחיקים, מביכים ומרגשים שלכם והופכים אותם למשחק אישי אחד ויחיד. כל הזמנה שלכם מרגשת אותנו !</p>
+        <p class="sign">הדר ועלמה</p>
+      </div>
+    </div>
+  </section>
+
+
+  <div class="flood" id="flood" role="dialog" aria-modal="true" aria-labelledby="floodName">
+    <button class="x" type="button" id="floodX" aria-label="סגירה">✕</button>
+    <div class="spread"><div class="tableau" id="tableau"></div></div>
+    <div class="info">
+      <h3 id="floodName"></h3>
+      <p>כל עיצוב מתאים לכל חגיגה - את הכותרת אתם כותבים · <span class="tok">{price}</span></p>
+      <a class="pill" href="#" id="floodOrder">בונים את המשחק ›</a>
+      <span class="swipe" aria-hidden="true">החליקו למטה כדי לחזור</span>
+    </div>
+  </div>
+
+  <nav class="hero-switch" aria-label="פתיחים לבחירה"><a href="#hero=1" data-v="1">1</a><a href="#hero=2" data-v="2">2</a><a href="#hero=3" data-v="3">3</a><a href="#hero=4" data-v="4">4</a><a href="#hero=5" data-v="5">5</a><a href="#hero=6" data-v="6">6</a><a href="#hero=7" data-v="7">7</a><a href="#hero=8" data-v="8">8</a><a href="#hero=9" data-v="9">9</a><a href="#hero=10" data-v="10">10</a></nav>
+
+  <footer><span>דוגרי · הדר ועלמה · <a href="#">תקנון ותנאי שימוש</a> · <a href="r9-faq.html">שאלות נפוצות</a> · <a href="https://dugri-israel.co.il/pickup.html">איסוף עצמי</a></span><img src="../../site/assets/logo-pink-original.png" alt="" /></footer>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const C = 'cards9/'; // the preview helper's cards: live art, every printed frame evened out to 10.78% of the width (cards9/outline-rules.txt)
+  // every public design on the live site (6 built-in + the 4 from /api/custom-designs), each with its main colour sampled from its real card.
+  // All art is what the LIVE site serves today (2026-10-15), not the repo: the template artwork on the production volume overrides it.
+  // The print template (/api/template-image/<theme>) is the truth where it is public: קליפורניה, סנטוריני, טוקיו and ברוקלין take their one
+  // template card (front, and back where the template has one) and template board; their uploaded deck sheets are older art.
+  // פריז's template matches its live deck sheet, so it keeps the sheet's 8 fronts (template back and board). סיישל (template not
+  // public) and the custom designs come from their live deck sheets (/api/design-images deckFronts/deckBacks/deckBoard);
+  // טריפה has no sheets, so its cards are its template renders.
+  const D = {
+    bachelorette: { name: 'פריז', c: '#fc789c', fronts: 8, back: 1 },
+    birthday: { name: 'קליפורניה', c: '#9ce4fc', fronts: 1, back: 1 },
+    grapefruit: { name: 'אואזיס', c: '#f07848', fronts: 8, back: 1 },
+    marriage: { name: 'סנטוריני', c: '#0048a8', fronts: 1, back: 1 },
+    daniel: { name: 'דני', c: '#f5d98f', fronts: 8, back: 1 },
+    japanese: { name: 'טוקיו', c: '#181818', fronts: 1, back: 1 },
+    posttrip: { name: 'סיישל', c: '#90d8e4', fronts: 8, back: 1 },
+    football: { name: 'האלאנד', c: '#2a52be', fronts: 8, back: 1 },
+    tarifa: { name: 'טריפה', c: '#3d6b2c', fronts: 1, back: 1 },
+    kids: { name: 'ברוקלין', c: '#1878fc', fronts: 1, back: 1 },
+  };
+  for (const k in D) D[k].board = `boards9/${k}.webp`; // the preview's boards, so the two match
+  const ALL = Object.keys(D);
+  const KEYS = ALL.filter((k) => D[k].back); // the hero deck deals every design that has a back
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  // each design's colour, lifted most of the way to white: the same hue as a light pastel
+  const pastel = (h) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(h.slice(i, i + 2), 16) + (255 - parseInt(h.slice(i, i + 2), 16)) * .62).toString(16).padStart(2, '0')).join('');
+
+  /* ---------- hero: a small deck deals real cards onto a loose pile right beside it; every card is a real object ---------- */
+  const stage = document.getElementById('stage');
+  const deckBtn = document.getElementById('deck');
+  const hint = document.getElementById('hint');
+  const said = document.getElementById('said');
+  const F = .92, SF = .88; // per-frame friction: sliding, spinning (a short toss settles sooner)
+  const cards = [];
+  let z = 10, lastKey = null, nextKey = null;
+  const recent = {}; // per design, the fronts shown lately, so a design shows a new card each time
+
+  function front(k) {
+    const r = (recent[k] = recent[k] || []);
+    const all = Array.from({ length: D[k].fronts }, (_, i) => i + 1), opts = all.filter((n) => !r.includes(n));
+    const n = opts.length ? opts[(Math.random() * opts.length) | 0] : 1;
+    r.push(n); if (r.length > 5) r.shift();
+    return n;
+  }
+  // the deck's top back is the design it deals next, never the one just dealt
+  function showNext(force) {
+    const opts = KEYS.filter((k) => k !== lastKey && k !== 'kids');
+    nextKey = force || opts[(Math.random() * opts.length) | 0];
+    const [a, b, top] = deckBtn.children, under = shuffle(KEYS.filter((k) => k !== nextKey && k !== 'kids'));
+    a.src = `${C}${under[0]}-b1.webp`; b.src = `${C}${under[1]}-b1.webp`; top.src = `${C}${nextKey}-b1.webp`;
+  }
+  // the deck on the right, the pile one short toss to its left, the pair centred on the table
+  const geo = () => {
+    const W = stage.clientWidth, H = stage.clientHeight, cw = deckBtn.offsetWidth, ch = deckBtn.offsetHeight;
+    const gap = cw * .38, left = (W - (cw * 2 + gap)) / 2;
+    const dy = (H - ch) / 2 + 4;
+    return { W, H, cw, ch, dx: left + cw + gap, dy, px: left, py: dy - 4 };
+  };
+  function placeDeck() {
+    const g = geo();
+    Object.assign(deckBtn.style, { left: g.dx + 'px', top: g.dy + 'px' });
+    Object.assign(hint.style, { left: g.dx - 10 + 'px', top: g.dy + g.ch - 14 + 'px' });
+  }
+  const draw = (c) => {
+    c.el.style.transform = `translate3d(${c.x}px, ${c.y}px, 0) rotate(${c.r}deg) scale(${c.s})`;
+    c.el.style.setProperty('--o', (4 + (c.s - 1) * 70).toFixed(1) + 'px'); // lifted higher, the shadow falls further
+  };
+  const cap = () => (innerWidth >= 900 ? 7 : 6);
+
+  // where the next card lands: on the pile, a little off true, never twice in the same spot
+  function spot(g) {
+    return { x: g.px + rnd(-.13, .13) * g.cw, y: g.py + rnd(-.08, .08) * g.ch, r: rnd(-13, 13) };
+  }
+
+  function deal(want) {
+    const g = geo();
+    const k = want || nextKey;
+    const to = spot(g);
+    lastKey = k;
+    const el = document.createElement('div');
+    el.className = 'card down';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = `<div class="in"><img class="f" src="${C}${k}-f${front(k)}.webp" alt="" draggable="false"><img class="b" src="${C}${k}-b1.webp" alt="" draggable="false"></div>`;
+    stage.appendChild(el);
+    const c = { el, k, x: g.dx, y: g.dy, r: 0, s: 1, vx: 0, vy: 0, vr: 0, t: performance.now(), held: false, gone: false, launch: true };
+    el.style.zIndex = String(++z);
+    cards.push(c); bind(c);
+    said.textContent = `קלף מהעיצוב ${D[k].name}`;
+    showNext();
+    if (reduce) {
+      Object.assign(c, to); el.classList.remove('down'); draw(c);
+      el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 240 });
+    } else {
+      // velocity that friction brings to rest exactly on the pile; now and then a full turn on the way
+      const tr = to.r + (Math.random() < .1 ? (Math.random() < .5 ? 360 : -360) : 0);
+      c.vx = (to.x - c.x) * (1 - F); c.vy = (to.y - c.y) * (1 - F) - 1.2; c.vr = tr * (1 - SF);
+      draw(c);
+      requestAnimationFrame(() => el.classList.remove('down')); // turns face up in the air
+      deckBtn.lastElementChild.animate([{ transform: 'translate(0, -4px) rotate(-1.5deg)' }, { transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.3, 1.6, .5, 1)' });
+      kick(c);
+    }
+    retire();
+  }
+
+  // past the cap, the card nobody touched longest slides off and fades
+  function retire() {
+    let on = cards.filter((c) => !c.gone);
+    while (on.length > cap()) {
+      const old = on.filter((c) => !c.held).sort((a, b) => a.t - b.t)[0];
+      if (!old) return;
+      old.gone = true; live.delete(old);
+      const from = old.el.style.transform;
+      old.el.style.pointerEvents = 'none';
+      old.el.animate([{ transform: from, opacity: 1 }, { transform: `${from} translate(${reduce ? 0 : -18}px, ${reduce ? 0 : 22}px) rotate(${reduce ? 0 : -6}deg)`, opacity: 0 }],
+        { duration: reduce ? 200 : 380, easing: 'cubic-bezier(.5, 0, .7, .4)', fill: 'forwards' }).onfinish = () => { old.el.remove(); cards.splice(cards.indexOf(old), 1); };
+      on = cards.filter((c) => !c.gone);
+    }
+  }
+
+  // ---- physics: a held card follows the finger exactly and turns about the point you hold; it keeps the speed you let go with; tap flips ----
+  function bind(c) {
+    let px, py, lx, ly, t0, moved, samples, id = null;
+    const local = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const worldGrab = () => { const a = c.r * Math.PI / 180; return [lx * Math.cos(a) - ly * Math.sin(a), lx * Math.sin(a) + ly * Math.cos(a)]; };
+    c.el.addEventListener('pointerdown', (e) => {
+      if (c.gone || id !== null) return;
+      e.preventDefault(); id = e.pointerId; c.el.setPointerCapture(id);
+      stage.classList.add('touched');
+      c.held = true; c.launch = false; live.delete(c); c.vx = c.vy = c.vr = 0; c.t = performance.now();
+      c.el.classList.add('held'); c.el.style.zIndex = String(++z);
+      [px, py] = local(e);
+      // the held point in the card's own frame, measured from its centre
+      const w = c.el.offsetWidth, h = c.el.offsetHeight, a = -c.r * Math.PI / 180, dx = px - (c.x + w / 2), dy = py - (c.y + h / 2);
+      lx = dx * Math.cos(a) - dy * Math.sin(a); ly = dx * Math.sin(a) + dy * Math.cos(a);
+      t0 = performance.now(); moved = 0; samples = [{ x: px, y: py, t: t0 }];
+      c.s = reduce ? 1 : 1.04; draw(c);
+    });
+    c.el.addEventListener('pointermove', (e) => {
+      if (!c.held || e.pointerId !== id) return;
+      // every coalesced point, so a fast finger is followed point by point instead of in jumps
+      const co = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+      for (const ev of co.length ? co : [e]) {
+        const [nx, ny] = local(ev), ddx = nx - px, ddy = ny - py;
+        if (!ddx && !ddy) continue;
+        moved += Math.hypot(ddx, ddy); px = nx; py = ny;
+        if (!reduce) {
+          // the pull swings the card so its centre trails the held point, like dragging a real card by its corner
+          const [gx, gy] = worldGrab();
+          c.r += (gx * ddy - gy * ddx) / (gx * gx + gy * gy + 900) * 0.62 * 180 / Math.PI;
+        }
+        samples.push({ x: px, y: py, t: ev.timeStamp || performance.now() });
+      }
+      const [gx, gy] = worldGrab(), w = c.el.offsetWidth, h = c.el.offsetHeight;
+      c.x = px - gx - w / 2; c.y = py - gy - h / 2; draw(c);
+      while (samples.length > 2 && samples[samples.length - 1].t - samples[0].t > 100) samples.shift(); // the last 100 ms of the gesture
+    });
+    const up = (e) => {
+      if (!c.held || e.pointerId !== id) return;
+      id = null; c.held = false; c.el.classList.remove('held'); c.t = performance.now();
+      if (moved < 8 && performance.now() - t0 < 350) { c.el.classList.toggle('down'); c.s = 1; draw(c); kick(c); return; }
+      const a = samples[0], b = samples[samples.length - 1], dt = Math.max(16, b.t - a.t);
+      // the speed of the last 100 ms; a finger that stopped before letting go puts the card down where it is
+      const still = e.timeStamp - b.t > 120;
+      if (!reduce && !still) {
+        c.vx = Math.max(-60, Math.min(60, (b.x - a.x) / dt * 16.67)); c.vy = Math.max(-60, Math.min(60, (b.y - a.y) / dt * 16.67));
+        const [gx, gy] = worldGrab();
+        c.vr = Math.max(-16, Math.min(16, (gx * c.vy - gy * c.vx) / (gx * gx + gy * gy + 900) * 40));
+      }
+      if (reduce) { c.s = 1; clampIn(c); draw(c); } else kick(c);
+    };
+    c.el.addEventListener('pointerup', up);
+    c.el.addEventListener('pointercancel', up);
+    c.el.addEventListener('lostpointercapture', (e) => { if (c.held) up(e); }); // never left holding a card the browser took away
+  }
+  // the deck keeps its spot clear: a card that comes to rest on it is pushed off, like sliding into a block
+  const deckZone = (g, m = 0) => ({ x0: g.dx - m, y0: g.dy - m, x1: g.dx + g.cw + m, y1: g.dy + g.ch + m });
+  function onDeck(x, y, g, m = 0) { const d = deckZone(g, m); return x < d.x1 && x + g.cw > d.x0 && y < d.y1 && y + g.ch > d.y0; }
+  function offDeck(c, g) {
+    const d = deckZone(g, 8);
+    const push = [[d.x0 - g.cw - c.x, 0], [d.x1 - c.x, 0], [0, d.y0 - g.ch - c.y], [0, d.y1 - c.y]]
+      .filter(([px, py]) => { const b = bounds(g), nx = c.x + px, ny = c.y + py; return nx >= b.x0 && nx <= b.x1 && ny >= b.y0 && ny <= b.y1; })
+      .sort((a, b) => Math.hypot(...a) - Math.hypot(...b))[0];
+    return push || [0, 0];
+  }
+  // a card may hang well over the table's edges before the soft walls push it back
+  const bounds = (g) => ({ x0: -g.cw * .45, x1: g.W - g.cw * .55, y0: -g.ch * .45, y1: g.H - g.ch * .55 });
+  function clampIn(c) {
+    const g = geo(), b = bounds(g);
+    c.x = Math.max(b.x0, Math.min(b.x1, c.x)); c.y = Math.max(b.y0, Math.min(b.y1, c.y));
+    if (onDeck(c.x, c.y, g, -12)) { const [px, py] = offDeck(c, g); c.x += px; c.y += py; }
+  }
+
+  const live = new Set(); let raf = 0, tPrev = 0;
+  function kick(c) { live.add(c); if (!raf) { tPrev = performance.now(); raf = requestAnimationFrame(step); } }
+  function step(t) {
+    const k = Math.min(3, (t - tPrev) / 16.67); tPrev = t;
+    const g = geo(), b = bounds(g);
+    for (const c of live) {
+      if (c.held || c.gone) { live.delete(c); continue; }
+      c.x += c.vx * k; c.y += c.vy * k; c.r += c.vr * k;
+      c.vx *= F ** k; c.vy *= F ** k; c.vr *= SF ** k;
+      // soft walls push a card back instead of stopping it dead
+      let out = false;
+      if (c.x < b.x0) { c.vx += (b.x0 - c.x) * .12 * k; c.vx *= .84 ** k; out = true; }
+      if (c.x > b.x1) { c.vx += (b.x1 - c.x) * .12 * k; c.vx *= .84 ** k; out = true; }
+      if (c.y < b.y0) { c.vy += (b.y0 - c.y) * .12 * k; c.vy *= .84 ** k; out = true; }
+      if (c.y > b.y1) { c.vy += (b.y1 - c.y) * .12 * k; c.vy *= .84 ** k; out = true; }
+      // a dealt card is exempt until it has cleared the deck it left from
+      if (c.launch && !onDeck(c.x, c.y, g)) c.launch = false;
+      if (!c.launch && onDeck(c.x, c.y, g, -12)) {
+        const [px, py] = offDeck(c, g);
+        c.vx += px * .1 * k; c.vy += py * .1 * k; c.vx *= .86 ** k; c.vy *= .86 ** k; out = true;
+      }
+      const v = Math.hypot(c.vx, c.vy);
+      // a fast card is in the air; it settles back down smoothly instead of snapping
+      c.s += ((1 + Math.min(.1, v * .007)) - c.s) * Math.min(1, .35 * k);
+      draw(c);
+      if (!out && v < .05 && Math.abs(c.vr) < .03 && Math.abs(c.s - 1) < .002) { c.s = 1; draw(c); live.delete(c); }
+    }
+    raf = live.size ? requestAnimationFrame(step) : 0;
+  }
+
+  deckBtn.addEventListener('click', () => { stage.classList.add('touched'); deal(); }); // a real button: Enter and Space deal too
+
+  /* ---------- designs: an endless strip that leans with swipe speed; the section takes on the centred design's pastel ---------- */
+  const strip = document.getElementById('strip');
+  const bgs = document.getElementById('bgs');
+  // five copies of the list; the middle one is the real one, and the scroll is quietly moved back to it whenever it settles,
+  // so there is no first or last card. One copy is wider than any fling, so a fling never reaches an edge.
+  const N = ALL.length, COPIES = reduce ? 1 : 5, MID = reduce ? 0 : 2;
+  strip.innerHTML = Array.from({ length: COPIES * N }, (_, j) => {
+    const k = ALL[j % N], real = ((j / N) | 0) === MID;
+    return `<button class="dz" type="button" data-k="${k}"${real ? '' : ' tabindex="-1" aria-hidden="true"'} aria-label="${D[k].name}: לראות את הקלפים והלוח"><div class="tilt"><img src="${C}${k}-f1.webp" alt="" draggable="false"></div><span class="sticker">${D[k].name}</span></button>`;
+  }).join('');
+  bgs.innerHTML = ALL.map((k) => `<i style="background:${pastel(D[k].c)}"></i>`).join('');
+  const items = [...strip.children], layers = [...bgs.children];
+  const span = () => items[0].offsetWidth || 1;
+  let lastSL = 0, lastT = performance.now(), target = 0, lean = 0, leanV = 0, looping = false, settle = 0;
+
+  function recentre() {
+    if (reduce) return;
+    const copy = N * span(), sl = strip.scrollLeft;
+    let to = sl;
+    while (to < (MID - .5) * copy) to += copy;
+    while (to > (MID + .5) * copy) to -= copy;
+    if (to !== sl) { strip.scrollLeft = to; lastSL = to; paint(); } // the same cards in the same places: nothing visible moves
+  }
+  function paint() {
+    if (reduce) return; // a static grid on the section's own colour
+    const w = span(), mid = strip.scrollLeft + strip.clientWidth / 2;
+    const op = new Array(N).fill(0);
+    items.forEach((el, j) => {
+      const d = (el.offsetLeft + w / 2 - mid) / w; // -1..1 = one card away
+      if (Math.abs(d) > 3) return;
+      const ad = Math.min(1.4, Math.abs(d));
+      el.firstChild.style.transform = `translateY(${ad * 18}px) rotateY(${(-lean * 1.4 - d * 14).toFixed(2)}deg) rotateZ(${(lean * .7 + d * 6).toFixed(2)}deg) scale(${(1 - ad * .16).toFixed(3)})`;
+      op[j % N] = Math.max(op[j % N], 1 - Math.abs(d)); // neighbours cross-fade = colour morph, also across the wrap
+    });
+    layers.forEach((l, k) => { l.style.opacity = op[k].toFixed(3); });
+  }
+  function loop() {
+    // spring toward the lean the swipe asks for; settling past upright gives the little overshoot
+    target *= .86;
+    leanV += (target - lean) * .18; leanV *= .72; lean += leanV;
+    paint();
+    if (Math.abs(lean) + Math.abs(leanV) + Math.abs(target) > .02) requestAnimationFrame(loop);
+    else { lean = 0; paint(); looping = false; }
+  }
+  strip.addEventListener('scroll', () => {
+    const t = performance.now(), v = (strip.scrollLeft - lastSL) / Math.max(8, t - lastT);
+    lastSL = strip.scrollLeft; lastT = t;
+    if (reduce) return;
+    clearTimeout(settle); settle = setTimeout(recentre, 160);
+    // a very long fling that nears the outer copies is pulled back at once
+    const copy = N * span();
+    if (strip.scrollLeft < .6 * copy || strip.scrollLeft > (COPIES - 1.6) * copy) recentre();
+    target = Math.max(-22, Math.min(22, v * 9));
+    if (!looping) { looping = true; requestAnimationFrame(loop); }
+  }, { passive: true });
+  strip.addEventListener('scrollend', recentre);
+  function startStrip() { if (reduce) return; strip.scrollLeft = MID * N * span(); lastSL = strip.scrollLeft; paint(); }
+
+  /* ---------- the flood: tap a design; its pastel fills the screen, its front and back land on its real board ---------- */
+  const flood = document.getElementById('flood'), tableau = document.getElementById('tableau');
+  let openFrom = null;
+  function openDesign(btn, x, y) {
+    const k = btn.dataset.k, d = D[k];
+    openFrom = btn;
+    flood.style.setProperty('--fc', pastel(d.c));
+    document.getElementById('floodName').textContent = d.name;
+    tableau.className = 'tableau' + (d.board ? '' : ' solo');
+    tableau.innerHTML = (d.board ? `<img class="bd" src="${d.board}" alt="הלוח של ${d.name}">` : '')
+      + `<img class="fc fr" src="${C}${k}-f1.webp" alt="קלף מהעיצוב ${d.name}">`
+      + (d.back ? `<img class="fc bk" src="${C}${k}-b1.webp" alt="גב הקלף של ${d.name}">` : '');
+    flood.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    if (reduce) {
+      flood.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
+    } else {
+      flood.animate([{ clipPath: `circle(0px at ${x}px ${y}px)` }, { clipPath: `circle(${R}px at ${x}px ${y}px)` }], { duration: 520, easing: 'cubic-bezier(.6, 0, .25, 1)', fill: 'forwards' });
+      requestAnimationFrame(() => {
+        const bd = tableau.querySelector('.bd'), fr = tableau.querySelector('.fr'), bk = tableau.querySelector('.bk');
+        // the board drops onto the table, the tapped card flies from the strip onto it, its back slides out from under it
+        if (bd) bd.animate([{ transform: 'rotate(-9deg) scale(.82) translateY(-30px)', opacity: 0 }, { transform: 'rotate(-2.5deg)', opacity: 1 }], { duration: 560, delay: 120, easing: 'cubic-bezier(.3, 1.25, .45, 1)', fill: 'both' });
+        const from = btn.querySelector('img').getBoundingClientRect(), to = fr.getBoundingClientRect(), base = getComputedStyle(fr).transform;
+        const dx = from.left + from.width / 2 - (to.left + to.width / 2), dy = from.top + from.height / 2 - (to.top + to.height / 2);
+        fr.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width})` }, { transform: base }], { duration: 640, delay: 60, easing: 'cubic-bezier(.3, .9, .3, 1.05)', fill: 'both' });
+        if (bk) bk.animate([{ transform: `translate(${fr.offsetLeft - bk.offsetLeft}px, 0) rotate(-7deg)`, opacity: 0 }, { transform: getComputedStyle(bk).transform, opacity: 1 }], { duration: 480, delay: 520, easing: 'cubic-bezier(.3, 1.3, .45, 1)', fill: 'both' });
+      });
+    }
+    document.getElementById('floodX').focus({ preventScroll: true });
+  }
+  function closeDesign() {
+    if (!flood.classList.contains('open')) return;
+    const r = openFrom.querySelector('img').getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const done = () => { flood.classList.remove('open'); flood.getAnimations({ subtree: true }).forEach((a) => a.cancel()); tableau.innerHTML = ''; document.body.style.overflow = ''; openFrom.focus({ preventScroll: true }); };
+    if (reduce) { flood.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180 }).onfinish = done; return; }
+    tableau.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(26px) scale(.94)', opacity: 0 }], { duration: 260, easing: 'cubic-bezier(.5, 0, .7, .4)', fill: 'forwards' });
+    const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    flood.animate([{ clipPath: `circle(${R}px at ${x}px ${y}px)` }, { clipPath: `circle(0px at ${x}px ${y}px)` }], { duration: 480, delay: 120, easing: 'cubic-bezier(.6, 0, .3, 1)', fill: 'forwards' }).onfinish = done;
+  }
+  strip.addEventListener('click', (e) => {
+    const btn = e.target.closest('.dz'); if (!btn) return;
+    const r = btn.querySelector('img').getBoundingClientRect();
+    openDesign(btn, e.clientX || r.left + r.width / 2, e.clientY || r.top + r.height / 2);
+  });
+  document.getElementById('floodX').addEventListener('click', closeDesign);
+  // tap outside the board, the cards and the order pill, or swipe down, to close
+  let fy0 = null;
+  flood.addEventListener('pointerdown', (e) => { fy0 = e.clientY; });
+  flood.addEventListener('pointerup', (e) => {
+    const dy = fy0 == null ? 0 : e.clientY - fy0; fy0 = null;
+    if (dy > 70) return closeDesign();
+    if (Math.abs(dy) < 8 && !e.target.closest('.tableau img, .pill, .x, .tok')) closeDesign();
+  });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDesign(); });
+  document.getElementById('floodOrder').addEventListener('click', (e) => e.stopPropagation());
+
+  /* ---------- recommendations: a quote pill opens the review itself in a sheet ---------- */
+  const sheet = document.getElementById('sheet'), sheetPic = document.getElementById('sheetPic'), sheetCap = document.getElementById('sheetCap');
+  let sheetFrom = null;
+  document.querySelectorAll('button.rp').forEach((b) => b.addEventListener('click', () => {
+    sheetFrom = b;
+    const sheetImg = new Image(); sheetImg.src = `media/reviews/${b.dataset.shot}`; // redacted crops, local only: the repo is public
+    sheetImg.alt = `ההמלצה המלאה: ${b.querySelector('q').textContent}`; sheetPic.replaceChildren(sheetImg);
+    sheetCap.textContent = b.querySelector('small').textContent;
+    sheet.showModal();
+    if (!reduce) sheet.animate([{ transform: 'translateY(100%)' }, { transform: 'none' }], { duration: 360, easing: 'cubic-bezier(.2, .9, .3, 1.08)' });
+  }));
+  function closeSheet() {
+    if (!sheet.open) return;
+    const done = () => { sheet.close(); sheetFrom && sheetFrom.focus({ preventScroll: true }); };
+    if (reduce) return done();
+    sheet.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], { duration: 240, easing: 'cubic-bezier(.5, 0, .8, .4)', fill: 'forwards' }).onfinish = () => { done(); sheet.getAnimations().forEach((a) => a.cancel()); };
+  }
+  document.getElementById('sheetX').addEventListener('click', closeSheet);
+  sheet.addEventListener('cancel', (e) => { e.preventDefault(); closeSheet(); }); // Esc
+  sheet.addEventListener('click', (e) => { if (e.target === sheet) { const r = sheet.getBoundingClientRect(); if (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right) closeSheet(); } }); // the backdrop
+  let sy0 = null;
+  sheet.addEventListener('pointerdown', (e) => { sy0 = sheet.scrollTop <= 0 ? e.clientY : null; });
+  sheet.addEventListener('pointerup', (e) => { if (sy0 != null && e.clientY - sy0 > 70) closeSheet(); sy0 = null; });
+
+
+  showNext('bachelorette');
+  placeDeck();
+  // the deck opens: on arrival one card is dealt onto the pile
+  addEventListener('load', () => { startStrip(); }); // the opening deals its own first card (showHero)
+  let lastW = innerWidth;
+  addEventListener('resize', () => {
+    paint();
+    if (Math.abs(innerWidth - lastW) < 2) return;
+    lastW = innerWidth; placeDeck(); startStrip();
+    cards.forEach((c) => (reduce ? (clampIn(c), draw(c)) : kick(c)));
+    retire();
+  });
+  /* ---------- the ten openings: #hero=1..10 switches in place; the deck moves into whichever opening has a place for it ---------- */
+  const park = document.getElementById('park');
+  const views = [...document.querySelectorAll('.hv')];
+  const stops = [];
+  function stopAll() { while (stops.length) stops.pop()(); }
+  const inits = {
+    3() {
+      const c = document.getElementById('bigCard');
+      const flip = () => { c.classList.toggle('flipped'); c.setAttribute('aria-pressed', String(c.classList.contains('flipped'))); };
+      const key = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } };
+      c.addEventListener('click', flip); c.addEventListener('keydown', key);
+      // once, as it arrives, the card lifts a corner as if about to turn: the flip is visible without a label
+      const lift = () => !c.classList.contains('flipped') && c.querySelector('.front').animate([{ transform: 'none' }, { transform: 'rotateY(-24deg)' }, { transform: 'none' }], { duration: 900, easing: 'cubic-bezier(.3, .8, .4, 1)' });
+      // the card lifts a corner as it comes into view (and each time it does): the turn is visible without a label
+      const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting && !reduce) setTimeout(lift, 400); }), { threshold: .6 });
+      io.observe(c); stops.push(() => io.disconnect());
+      stops.push(() => { c.removeEventListener('click', flip); c.removeEventListener('keydown', key); });
+    },
+    5() {
+      const box = document.getElementById('box'), lid = document.getElementById('lid');
+      const open = () => { box.classList.toggle('open'); lid.setAttribute('aria-expanded', String(box.classList.contains('open'))); if (box.classList.contains('open') && !cards.some((c) => !c.gone)) setTimeout(() => deal(), reduce ? 0 : 500); };
+      lid.addEventListener('click', open);
+      stops.push(() => { lid.removeEventListener('click', open); box.classList.remove('open'); lid.setAttribute('aria-expanded', 'false'); });
+    },
+    6() {
+      // one real word at a time is the one being described; when its fuse burns down it is guessed and crossed off
+      const ws = [...document.querySelectorAll('#wall span')].filter((w) => w.offsetParent), tally = document.getElementById('tally'); tally.textContent = '';
+      ws.forEach((w) => w.classList.remove('got', 'now'));
+      let i = 0, got = 0, t = 0;
+      const order = ws.map((_, k) => k).sort(() => Math.random() - .5);
+      const next = () => {
+        if (i) { ws[order[i - 1]].classList.remove('now'); ws[order[i - 1]].classList.add('got'); got++; tally.textContent = `ניחשתם: ${got}`; }
+        if (i >= order.length) return;
+        const w = ws[order[i++]]; w.style.setProperty('--t', (2.2 + Math.random() * 1.6).toFixed(1) + 's'); w.classList.add('now');
+        t = setTimeout(next, parseFloat(w.style.getPropertyValue('--t')) * 1000);
+      };
+      if (!reduce) next();
+      stops.push(() => clearTimeout(t));
+    },
+    7() {
+      // the site's own 60-second timer: התחל starts it, it counts down, at 0 it rings (a shake) and is ready again
+      const num = document.getElementById('num'), start = document.getElementById('start');
+      let s = 60, t = 0;
+      const show = () => { num.textContent = s; num.setAttribute('aria-label', `${s} שניות`); };
+      const go = () => {
+        if (t) { clearInterval(t); t = 0; start.textContent = 'התחל'; return; }
+        s = 60; show(); start.textContent = 'עצור';
+        t = setInterval(() => { s--; show(); if (s <= 0) { clearInterval(t); t = 0; start.textContent = 'התחל'; if (!reduce) num.animate([{ translate: '0 0' }, { translate: '-6px 0' }, { translate: '6px 0' }, { translate: '0 0' }], { duration: 160, iterations: 4 }); setTimeout(() => { s = 60; show(); }, 1500); } }, 1000);
+      };
+      s = 60; show(); start.textContent = 'התחל'; start.addEventListener('click', go);
+      stops.push(() => { clearInterval(t); t = 0; start.removeEventListener('click', go); });
+    },
+    10() {
+      const v = document.getElementById('reel'), caps = [...document.querySelectorAll('#caption span')], lines = [...document.querySelectorAll('#script li')];
+      let i = 0, t = 0;
+      if (!reduce) { v.play().catch(() => {}); t = setInterval(() => { caps[i].classList.remove('on'); lines[i].classList.remove('on'); i = (i + 1) % caps.length; caps[i].classList.add('on'); lines[i].classList.add('on'); }, 2800); }
+      else { lines.forEach((l) => l.classList.add('on')); v.controls = true; }
+      stops.push(() => { clearInterval(t); v.pause(); });
+    },
+  };
+  function showHero(n) {
+    n = Math.min(10, Math.max(1, parseInt(n, 10) || 1));
+    stopAll();
+    views.forEach((v) => v.classList.toggle('on', +v.dataset.v === n));
+    document.body.classList.toggle('solo-logo', views[n - 1].hasAttribute('data-solo-logo'));
+    document.querySelectorAll('.hero-switch a').forEach((a) => a.setAttribute('aria-current', String(+a.dataset.v === n)));
+    const slot = views[n - 1].querySelector('[data-stage]');
+    // clear the table between openings, then seat the deck in this opening's slot (or park it)
+    cards.forEach((c) => c.el.remove()); cards.length = 0; live.clear();
+    (slot || park).appendChild(stage);
+    // every opening starts its deck on a פריז card
+    lastKey = null; showNext('bachelorette');
+    if (slot) { placeDeck(); setTimeout(() => deal(), reduce ? 0 : 350); } // under the lid too: its edges show in the gap
+    if (inits[n]) inits[n]();
+  }
+  addEventListener('hashchange', () => showHero((location.hash.match(/hero=(\d+)/) || [])[1]));
+  showHero((location.hash.match(/hero=(\d+)/) || [])[1]);
+
+  /* ILLUS:js */
+  window.__r7 = {
+    deal, openDesign, closeDesign, closeSheet,
+    geo, state: () => ({ next: nextKey, last: lastKey, cards: cards.filter((c) => !c.gone).map((c) => ({ k: c.k, up: !c.el.classList.contains('down'), x: Math.round(c.x), y: Math.round(c.y), r: Math.round(c.r), s: +c.s.toFixed(3) })), moving: live.size }),
+    strip: () => ({ sl: strip.scrollLeft, copy: N * span(), centred: (() => { const w = span(), mid = strip.scrollLeft + strip.clientWidth / 2; return items.map((el, j) => [Math.abs(el.offsetLeft + w / 2 - mid), ALL[j % N]]).sort((a, b) => a[0] - b[0])[0][1]; })() }),
+  };
+})();
+</script>
+</body>
+</html>
