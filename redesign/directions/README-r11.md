@@ -71,9 +71,9 @@ impeccable's detector still reports, accepted:
 - **`cream-palette`:** her page colour.
 - **`flat-type-hierarchy`:** reads the hidden flood and sheet headings, as in r10.
 
-Open, for her:
-- "בונים את המשחק ›" keeps the live site's arrow, which points backward in RTL.
-- "מרגשת אותנו !" (a space before "!") is her live story text, word for word.
+Her follow-ups, done:
+- Every "בונים את המשחק" link now ends in "‹", which points forward (left) in RTL. There are three, in the hero, under the strip and in the design flood; the FAQ page has none.
+- The story text reads "מרגשת אותנו!" (no space before "!"). The live site's text still has the space.
 - The sticker "הסיפור שלנו" is kept from r9.
 
 ## Files
