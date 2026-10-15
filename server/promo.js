@@ -66,7 +66,7 @@ const DEFAULT_PROMO = {
   title: '',
   sub: '',
   photos: [],
-  cta_text: 'לרכישה ›',
+  cta_text: 'לרכישה ‹',
   cta_url: '/products.html',
   cta2_enabled: false,
   cta2_text: '',

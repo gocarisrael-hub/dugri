@@ -107,7 +107,7 @@
   // The four stages, in her words. Each step's `note` is the soft/secondary aside.
   var TITLE = 'ככה בונים את המשחק - 4 שלבים';
   var SUB = 'לפני שמתחילים, הנה כל מה שמחכה לכם בדרך. זה לוקח כמה דקות.';
-  var CONTINUE = 'יאללה, מתחילים ›';
+  var CONTINUE = 'יאללה, מתחילים ‹';
   var WA_LABEL = 'שאלה? כתבו לנו בוואטסאפ';
   var STEPS = [
     {

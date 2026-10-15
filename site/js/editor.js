@@ -559,7 +559,7 @@
     //  • Enter COMMITS (see above). Skipped mid-IME-composition so a candidate is
     //    confirmed, not committed as raw pre-composition text.
     //  • Space on an INTERACTIVE editable (<button>/<summary>) is consumed by native
-    //    activation, so a space is never typed (labels like "לרכישה ›" and FAQ
+    //    activation, so a space is never typed (labels like "לרכישה ‹" and FAQ
     //    questions need spaces) — insert it as text instead. Plain editables keep
     //    native Space. Runs in the capture phase so native behavior never wins.
     document.addEventListener(

@@ -56,7 +56,7 @@ test.describe('the 4-step explainer on the product page', () => {
 
   test('the buy CTA is renamed and opens the explainer instead of navigating', async ({ page }) => {
     const buy = page.getByTestId('pdp-buy');
-    await expect(buy).toHaveText('מתחילים לבנות את המשחק ›');
+    await expect(buy).toHaveText('מתחילים לבנות את המשחק ‹');
     // The old wording is gone from the page entirely.
     await expect(page.locator('body')).not.toContainText('קנו עכשיו');
 

@@ -135,7 +135,7 @@ describe('publicPromo', () => {
       title: 'משחק חדש',
       sub: '',
       photos: [{ src: PHOTO, alt: 'קלפים' }],
-      cta_text: 'לרכישה ›',
+      cta_text: 'לרכישה ‹',
       cta_url: '/products.html',
       cta2: null,
     });
