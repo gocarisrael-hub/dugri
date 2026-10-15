@@ -8,7 +8,8 @@
 //
 // So no customer-facing page may end a link or button label in "›". The one
 // exception is a link that really does go back ("חזרה לאתר ›"), where pointing
-// right is the point. Admin pages are out of scope.
+// right is the point, and a back link must never end in a FORWARD arrow (‹ or ←).
+// Admin pages are out of scope.
 //
 // Carousel prev/next buttons are SVG (js/carousel.js) and never text, so they
 // are not affected either way.
@@ -40,6 +41,29 @@ describe('forward arrows on customer pages', () => {
       .map((m) => m[1].trim() + ' ›')
       .filter((label) => !BACK.test(label));
     expect(bad).toEqual([]);
+  });
+
+  // The mirror image: a BACK link ("חזרה …") must not end in an arrow that
+  // points forward. timer.html's "חזרה לדוגרי ←" did. "←" is not a mirrored
+  // glyph, so it is drawn pointing left, which is forward in RTL.
+  const BACK_LABEL_ENDING_IN_FORWARD_ARROW = />([^<>]*חזרה[^<>]*)[‹←]\s*<\/(a|button)\b/g;
+
+  it.each(pages)('%s: no back link ends in a forward arrow', (page) => {
+    const html = fs.readFileSync(path.join(siteDir, page), 'utf8');
+    const bad = [...html.matchAll(BACK_LABEL_ENDING_IN_FORWARD_ARROW)].map((m) => m[0]);
+    expect(bad).toEqual([]);
+  });
+
+  it('would catch the old timer back link, and lets a correct one through', () => {
+    const sample = [
+      '<a href="index.html">חזרה לדוגרי ←</a>',
+      '<a href="index.html">חזרה לאתר ‹</a\n>',
+      '<a href="index.html">חזרה לדוגרי →</a>',
+      '<a href="index.html">חזרה לאתר ›</a>',
+      '<a class="btn" href="products.html">מעבר אל החנות ‹</a>',
+    ].join('\n');
+    const hits = [...sample.matchAll(BACK_LABEL_ENDING_IN_FORWARD_ARROW)].map((m) => m[1].trim());
+    expect(hits).toEqual(['חזרה לדוגרי', 'חזרה לאתר']);
   });
 
   it('would catch the old CTA, and lets a real back link through', () => {
