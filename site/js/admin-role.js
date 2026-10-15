@@ -89,7 +89,7 @@
     p.setAttribute('style', 'margin:0 0 1.4rem;color:#5f5a54');
     var a = document.createElement('a');
     a.href = 'admin.html' + qs;
-    a.textContent = 'לניהול ההזמנות ›';
+    a.textContent = 'לניהול ההזמנות ‹';
     a.setAttribute(
       'style',
       'display:inline-block;background:#141414;color:#fff;padding:.7rem 1.4rem;text-decoration:none;font-weight:500'
