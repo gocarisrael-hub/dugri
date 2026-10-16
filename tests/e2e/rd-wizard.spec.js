@@ -135,3 +135,51 @@ test('the fullscreen view keeps its tabs on the screen', async ({ page }) => {
   await page.getByTestId('zoom-tab-board').click();
   await expect(page.getByTestId('zoom-tab-board')).toHaveAttribute('aria-selected', 'true');
 });
+
+// The mode-ON look for what wizard-preview-polish.spec.js pins in the live (mode-off) look: the active view tab and the
+// colour swatches.
+test('the active view tab is ink on paper chips, and the chosen swatch is ringed in ink', async ({
+  page,
+}) => {
+  await page.goto('/options.html');
+  const front = page.getByTestId('tab-front');
+  await expect(front).toHaveAttribute('aria-selected', 'true');
+  const style = (loc) =>
+    loc.evaluate((el) => {
+      const s = getComputedStyle(el);
+      return {
+        bg: s.backgroundColor,
+        image: s.backgroundImage,
+        color: s.color,
+        border: s.borderTopWidth,
+      };
+    });
+  const on = await style(front);
+  expect(on.bg).toBe('rgb(0, 0, 0)');
+  expect(on.image).toBe('none');
+  expect(on.color).toBe('rgb(255, 255, 255)');
+  const off = await style(page.getByTestId('tab-back'));
+  expect(off.bg).toBe('rgb(255, 255, 255)');
+  expect(off.color).toBe('rgb(0, 0, 0)');
+
+  await page.goto('/options.html?step=2');
+  const swatch = page.getByTestId('color-1');
+  await expect(swatch).toBeVisible();
+  // at rest: the colour with an ink outline, no ring
+  const resting = await swatch.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { border: s.borderTopWidth, color: s.borderTopColor, shadow: s.boxShadow };
+  });
+  expect(parseFloat(resting.border)).toBeGreaterThanOrEqual(1); // 1.5px, which Chromium snaps to device pixels
+  expect(resting.color).toBe('rgb(0, 0, 0)');
+  expect(resting.shadow).toBe('none');
+  // chosen: a ground gap, then an ink ring
+  await swatch.click();
+  await expect(swatch).toHaveAttribute('aria-pressed', 'true');
+  await expect
+    .poll(() => swatch.evaluate((el) => getComputedStyle(el).boxShadow))
+    .toContain('rgb(0, 0, 0) 0px 0px 0px 5.5px');
+  const other = page.getByTestId('color-2');
+  if (await other.count())
+    expect(await other.evaluate((el) => getComputedStyle(el).boxShadow)).toBe('none');
+});
