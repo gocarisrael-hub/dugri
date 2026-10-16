@@ -108,6 +108,38 @@ describe('the gate, as pure functions', () => {
     expect(out).toContain('<html lang="he" class="rd">');
   });
 
+  it('names a page restyle after the page, and refuses anything else', () => {
+    expect(gate.pageCssUrl('/x/site/how.html')).toBe('/css/rd/how.css');
+    expect(gate.pageCssUrl('terms.html')).toBe('/css/rd/terms.css');
+    expect(gate.pageCssUrl('new-faq.html')).toBe('/css/rd/new-faq.css');
+    // chrome.css is the shared file, never a page's own.
+    expect(gate.pageCssUrl('chrome.html')).toBe(null);
+    expect(gate.pageCssUrl('../x.html')).toBe('/css/rd/x.css');
+    expect(gate.pageCssUrl('a b.html')).toBe(null);
+    expect(gate.pageCssUrl(undefined)).toBe(null);
+  });
+
+  it('links the shell, the chrome, the page, then the script', () => {
+    const out = gate.apply(page, () => true, '/x/site/how.html');
+    const order = [
+      '<link rel="stylesheet" href="/css/redesign.css" />',
+      '<link rel="stylesheet" href="/css/rd/chrome.css" />',
+      '<link rel="stylesheet" href="/css/rd/how.css" />',
+      '<script src="/js/redesign-shell.js" defer></script>',
+    ].map((t) => out.indexOf(t));
+    expect(order.every((i) => i > out.indexOf('rel="canonical"'))).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(order[3]).toBeLessThan(out.indexOf('</head>'));
+  });
+
+  it("links only the restyles that exist, and never another page's", () => {
+    const has = (u) => u === '/css/rd/terms.css';
+    const terms = gate.apply(page, has, 'terms.html');
+    expect(terms).toContain('/css/rd/terms.css');
+    expect(terms).not.toContain('chrome.css');
+    expect(gate.apply(page, has, 'how.html')).not.toContain('/css/rd/');
+  });
+
   it('links a file only once it exists', () => {
     const none = gate.apply(page, () => false);
     expect(none).toBe(page.replace('<html lang="he">', '<html lang="he" class="rd">'));
@@ -124,8 +156,15 @@ describe('the gate, as pure functions', () => {
     fs.mkdirSync(path.join(dir, 'js'));
     fs.writeFileSync(path.join(dir, 'css', 'redesign.css'), 'html.rd{color:red}');
     fs.writeFileSync(path.join(dir, 'js', 'redesign-shell.js'), 'void 0;');
+    fs.mkdirSync(path.join(dir, 'css', 'rd'));
+    fs.writeFileSync(path.join(dir, 'css', 'rd', 'chrome.css'), 'html.rd body{margin:0}');
+    fs.writeFileSync(path.join(dir, 'css', 'rd', 'how.css'), 'html.rd h1{margin:0}');
     const assets = assetHashing.build(dir);
-    const out = assets.rewriteTags(assets.inject(gate.apply(page, (u) => assets.forward.has(u))));
+    const out = assets.rewriteTags(
+      assets.inject(gate.apply(page, (u) => assets.forward.has(u), 'how.html'))
+    );
+    expect(out).toMatch(/<link rel="stylesheet" href="\/css\/rd\/chrome\.[0-9a-f]{8}\.css" \/>/);
+    expect(out).toMatch(/<link rel="stylesheet" href="\/css\/rd\/how\.[0-9a-f]{8}\.css" \/>/);
     expect(out).toMatch(/<link rel="stylesheet" href="\/css\/redesign\.[0-9a-f]{8}\.css" \/>/);
     expect(out).toMatch(/<script src="\/js\/redesign-shell\.[0-9a-f]{8}\.js" defer><\/script>/);
   });
