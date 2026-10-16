@@ -16,20 +16,6 @@ html.rd {
   --rd-as-btn-secondary: '.wiz-back';
 }
 
-/* The bridge gives the old --display (Heebo, used here for labels, buttons and tabs) the heading face. Gveret is for
-   headings only (DESIGN.md, "The Two Faces Rule"), so on this page --display is the body face again and the step titles
-   take the heading face by name. */
-html.rd body {
-  --display: var(--font-body);
-}
-html.rd h1,
-html.rd h2,
-html.rd h3,
-html.rd h4 {
-  font-weight: var(--weight-strong);
-  letter-spacing: 0;
-}
-
 /* ---- the top bar: the shell header's look (logo, ≡ with its pink middle line) on the wizard's own fixed nav ---- */
 html.rd .nav {
   background: var(--color-ground);
