@@ -24,8 +24,16 @@
 # Ghostscript is a BINARY, not a pip package: press.py shells out to it, and the
 # tests that need it skip when it is absent rather than fail.
 #
-# Pinned loosely: these are stable, widely-packaged libraries and the tests do
-# not depend on version-specific behaviour.
+# Pinned loosely: these are stable, widely-packaged libraries — with one
+# exception, pillow, which is capped below 13. test_pawn_print_fixtures.py records
+# the exact bytes Pillow's BILINEAR resize gives (the browser's pawn print is a port
+# of it, checked against those bytes), and Pillow 13.0.0 resamples differently: the
+# day it reached PyPI (2026-10-16) CI went red on that one test, on PRs that touch
+# no Python. The production image does not get Pillow from pip at all but from
+# Alpine's py3-pillow, a distro package that lags PyPI, so the tests must run on
+# the Pillow production has, not on whatever PyPI has newest. Lift the cap only
+# together with the image's Pillow, and regenerate the fixtures then
+# (python3 generator/pawn_print_fixtures.py).
 pytest>=8
 # pytest-xdist — the suite runs on FOUR workers, one file at a time each
 # (`-n 4 --dist loadfile`).
@@ -45,7 +53,7 @@ pytest>=8
 # not cores, so it is a fixed number — and four is what a CI runner has anyway.
 # Raising it needs the render helper to tolerate contention first.
 pytest-xdist>=3
-pillow>=10
+pillow>=10,<13
 numpy>=1.26
 pikepdf>=8
 fonttools[woff]>=4.50
