@@ -205,6 +205,21 @@ const EMAIL_KINDS = [
     build: (n, c, base, opts) => n.buildCustomOrderAlert(c, base, opts),
   },
   {
+    id: 'owner_business_lead',
+    label: 'פנייה עסקית (לבעלת העסק)',
+    audience: 'owner',
+    settingsKey: 'business_lead',
+    // A sample lead: the email is about the business, not an order.
+    build: (n) =>
+      n.buildBusinessLead({
+        name: 'דנה כהן',
+        company: 'חברה לדוגמה בע"מ',
+        phone: '0521234567',
+        source: '/',
+        created_at: '2026-10-16T09:30:00.000Z',
+      }),
+  },
+  {
     id: 'owner_finished',
     label: 'הרשימה נסגרה — מוכן להפקה',
     audience: 'owner',

@@ -187,6 +187,7 @@ exports[`route registration order > matches the pinned table 1`] = `
   "GET /api/pricing",
   "GET /api/delivery-exceptions",
   "GET /api/faq",
+  "POST /api/business-lead",
   "GET /api/promo",
   "USE /^\\/api\\/?(?=\\/|$)/i (<anonymous>)",
   "GET /^\\/(?:js|css|assets\\/fonts)\\/.+\\.[0-9a-f]{8}\\.(?:m?js|css)$/",

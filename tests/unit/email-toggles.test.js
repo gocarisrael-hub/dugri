@@ -73,6 +73,12 @@ const GATED = [
   ['payment_received', (n) => n.sendPaymentReceipt(collection, null)],
   ['buyer_payment_received', (n) => n.sendBuyerReceipt(collection, null)],
   ['custom_order_alert', (n) => n.sendCustomOrderAlert(collection, null)],
+  // Resolves to a status the lead store records ('sent' / 'off' / 'failed').
+  [
+    'business_lead',
+    async (n) =>
+      (await n.sendBusinessLead({ name: 'דנה', company: 'חברה', phone: '0521234567' })) === 'sent',
+  ],
   ['buyer_confirmation', (n) => n.sendBuyerConfirmation(collection, null)],
   ['words_reminder', (n) => n.sendWordsReminder(collection, null)],
   ['payment_reminder', (n) => n.sendPaymentReminder(collection, null)],
