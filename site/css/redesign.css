@@ -372,6 +372,15 @@ html.rd:not(.rd-native) body {
   font-family: var(--font-body);
 }
 
+/* ---------- the hidden attribute wins ----------
+   Every component class sets display (.rd-box block, .rd-btn inline-flex …), and at html.rd's specificity that beats the
+   browser's own [hidden] { display: none }, so an element a page hides with the attribute (a message box waiting for its text)
+   showed in the mode. The pages already agree: each of their [hidden] rules hides. Nothing in the shell shows or hides with the
+   attribute: dialogs use open, the toast a class. */
+html.rd [hidden] {
+  display: none !important;
+}
+
 /* ---------- 3a. the shared header: logo, ≡ and the order button; the menu is a sheet from the reading start ---------- */
 html.rd .rd-hdr {
   display: flex;
