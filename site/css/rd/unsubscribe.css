@@ -1,0 +1,70 @@
+/* unsubscribe.html in redesign mode (docs/redesign-mode.md, DESIGN.md). D's file, linked by the gate only in the mode; the
+   page's HTML and its script are untouched. Safari 15.6: physical sides, no :is()/:where()/:has().
+
+   A page reached from an email footer, with one decision on it: no shop header or footer, just the card. The page hard-codes
+   its old colours and Heebo instead of using the tokens, so each is restated here. Its buttons are drawn by its script after
+   the status call returns; the shell's --rd-as-* watcher gives them the kit's look as they arrive. */
+
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+  --rd-as-box: '#card';
+  --rd-as-title: '#title';
+  --rd-as-btn: '#card button:not(.ghost)';
+  --rd-as-btn-ghost: '#card button.ghost';
+}
+
+html.rd body {
+  font-family: var(--font-body);
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  padding: var(--space-lg) var(--gutter);
+}
+
+html.rd .card {
+  max-width: 520px;
+  padding: var(--space-2xl) var(--space-lg);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow);
+}
+html.rd #title {
+  font-size: var(--text-catch);
+  line-height: 1.05;
+  margin-bottom: var(--space-md);
+}
+
+html.rd .card p {
+  color: var(--color-ink);
+}
+html.rd .card .muted {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+html.rd .card .err {
+  color: var(--color-error);
+}
+html.rd .card a {
+  color: var(--color-ink);
+}
+/* the address is an LTR run inside Hebrew: isolated, so it never reorders the sentence around it */
+html.rd .addr {
+  unicode-bidi: isolate;
+  font-weight: var(--weight-strong);
+}
+
+/* what "stop" means: a tag-cream note with the thin ink line */
+html.rd .what {
+  margin: var(--space-md) 0 var(--space-lg);
+  padding: var(--space-sm) var(--space-md);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-tag);
+  color: var(--color-ink);
+  font-size: var(--text-small);
+}
+
+html.rd .card button {
+  margin-top: var(--space-xs);
+}
