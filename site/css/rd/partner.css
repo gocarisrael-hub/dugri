@@ -1,0 +1,85 @@
+/* partner.html in the redesign (Agent A, Commerce): a partner's own earnings page. Linked by the gate in redesign mode only;
+   every rule is under html.rd. It is a private report reached by its link, so it gets no shop header or footer. */
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+  --rd-as-title: '#app h1, #app h2';
+  --rd-as-box: '.msg';
+}
+html.rd .wrap {
+  padding: var(--space-2xl) var(--gutter) var(--space-4xl);
+}
+html.rd #app h1.rd-title {
+  font-size: var(--text-section);
+}
+html.rd #app h2.rd-title {
+  font-size: 28px;
+  margin: var(--space-2xl) 0 var(--space-sm);
+  --rd-title-offset: var(--title-offset-designs);
+}
+html.rd .sub {
+  color: var(--color-ink);
+}
+
+/* The code is a label in the body face (the heading face is for headings only), on a pill like the shop's stickers. */
+html.rd .code {
+  margin-top: var(--space-md);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-sm);
+  padding: 6px 16px;
+  font: var(--weight-heavy) 18px / 1.4 var(--font-body);
+  letter-spacing: 0.08em;
+  unicode-bidi: isolate;
+  direction: ltr;
+}
+
+/* The four numbers: separate paper tiles; "still owed" is the hot one. Numbers in the body face at the price weight. */
+html.rd .tiles {
+  background: none;
+  border: 0;
+  grid-gap: var(--space-md);
+  gap: var(--space-md);
+  margin-top: var(--space-xl);
+}
+html.rd .tile {
+  background: var(--color-paper);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .tile.owed {
+  background: var(--color-card-hot);
+}
+html.rd .tile .k {
+  color: var(--color-ink);
+  font: var(--weight-label) var(--text-small) / 1.2 var(--font-body);
+  letter-spacing: 0;
+}
+html.rd .tile .v,
+html.rd .tile.owed .v {
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+  font-size: var(--text-price);
+  line-height: 1;
+  margin-top: var(--space-xs);
+}
+
+html.rd th,
+html.rd td {
+  border-bottom-color: var(--color-ink);
+}
+html.rd th {
+  color: var(--color-ink);
+  font-weight: var(--weight-label);
+}
+
+html.rd .foot {
+  border-top: 0;
+  color: var(--color-text-muted);
+}
+html.rd .foot a {
+  color: var(--color-ink);
+  font-weight: var(--weight-label);
+}
