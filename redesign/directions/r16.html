@@ -1,0 +1,1410 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · r16 · המשחק הכי אישי</title>
+<!-- FONTLINK:START -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- the body font, chosen by the owner (r14 option 8): M PLUS Rounded 1c, sized to Rubik's Hebrew letter height -->
+<style>
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0q5qsPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0q5qsNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGEAYIAV6gnpUpoWwNkYvrugw9RuMWDxL4g7eau9x0.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGEAYIAV6gnpUpoWwNkYvrugw9RuMWBxL4g7eau.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM1y56sPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM1y56sNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM064asPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM064asNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0m4qsPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0m4qsNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0C46sPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0C46sNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<!-- FONTLINK:END -->
+<style>
+  /* FONT:START */
+  :root {
+    --display: 'Body', system-ui, sans-serif;   /* labels, pills, prices: the body font */
+    --body: 'Body', system-ui, sans-serif;      /* running text: M PLUS Rounded 1c (the owner's choice, r14 option 8) */
+    --h-weight: 900; --h-track: -.01em;
+    --b-weight: 800;                            /* stickers, pills, labels */
+    --arr-sw: 3.35;                             /* the arrow line, matched to the 800 button type */
+    --pitch-weight: 500;
+  }
+  html, html * { font-synthesis: none; } /* a body font never fakes a weight it does not have */
+  /* the owner's choice (r13 font 18): Gveret Levin for the headings, in its one real weight; its Latin and digits come from the body font */
+  h1, h2, .flood h3, .catch .big { font-family: 'Gveret', var(--body) !important; font-weight: 400 !important; }
+  /* the owner's choice (r13 title 2, "צל ורוד"): ink with a soft pink offset */
+  .tt { text-shadow: .04em .04em 0 var(--tsh, var(--pink)); }
+  #h1 { --tsh: #ff7aa9; }        /* pink */
+  #h-designs { --tsh: #5fd0f5; } /* sky, deepened: it sits on the sky-tinted panel */
+  #h-story { --tsh: #f7b32b; }   /* yellow, deepened: #ffd37b is too faint on the page */
+  #h-recs { --tsh: #ea4795; }    /* the logo pink, on the sky field */
+  #h-biz { --tsh: #a4e9ff; }     /* sky */
+  /* FONT:END */
+
+
+  /* THEME: the Dugri colours on the live site's sand (tokens.css --section) as the page ground */
+  :root {
+    --page: #fff1de;      /* the owner's page colour (r11); the page flows on it with no section breaks */
+    /* the hero's three colours (the owner's, r12), in the leaflet's treatment: dark text on the fills, and any text set in a colour is large and outlined in ink */
+    --yel: #ffd37b;
+    --sky: #a4e9ff;
+    --pink: #ff7aa9;
+    --tile: #ffffff;
+    --sticker-hot: #ea4795; /* the pink of the logo, sampled from logo-pink-original.png */
+    --spark: #ea4795;
+    --ink: #000;
+    --paper: #fff;
+    --line: 3px;
+    --sh: 4px 4px 0 var(--ink);       /* hard offset shadow, bottom-right everywhere (r11: the same fall as the review cards) */
+    --sh-sm: 3px 3px 0 var(--ink);
+    --rad: 6% / 4.26%;                /* the preview's card shape (.design-preview/outline-rules.txt): one corner and one 1.5 px border for every card */
+    --cw: min(32vw, 150px);
+  }
+  @font-face { font-family: 'Gveret'; src: url(../../site/assets/fonts/gveret-levin-400-hebrew.8c865542.woff2) format('woff2'); unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F; font-display: swap; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; overflow-x: clip; }
+  body { background: var(--page); color: var(--ink); font: 400 17px/1.5 var(--body); -webkit-tap-highlight-color: transparent; }
+  img { display: block; max-width: 100%; user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+
+  /* the shared language: outlines, stickers, pills, sparkles */
+  /* labels: calm, flat, upright; a thin outline and nothing else */
+  .sticker { display: inline-block; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px; padding: 5px 12px 6px; font: 700 13px/1.1 var(--display); letter-spacing: .02em; }
+  .pill { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: var(--ink); color: #fff; text-decoration: none; border: 0; border-radius: 999px; font: var(--b-weight) 16px/1 var(--display); letter-spacing: .02em; padding: 16px 26px; cursor: pointer; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1); }
+  .pill:active { transform: scale(.96); }
+  /* the forward arrow: drawn, not a glyph, so it is the same in every font; its line follows the button type's weight (--arr-sw) */
+  .arr { width: 1.1em; height: 1.1em; flex: none; fill: none; stroke: currentColor; stroke-width: var(--arr-sw, 2.9); stroke-linecap: round; stroke-linejoin: round; }
+  .pill:has(.arr) { gap: 8px; }
+  .tok { display: inline-block; background: var(--paper); border: 2px dashed var(--ink); padding: 0 6px; font-weight: 800; direction: ltr; unicode-bidi: isolate; letter-spacing: 0; }
+  .pill .tok { background: transparent; border-color: #fff; color: #fff; }
+  .spark { position: absolute; width: var(--s, 34px); height: var(--s, 34px); pointer-events: none; fill: var(--spark); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; overflow: visible; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
+
+  section { position: relative; padding: 44px 16px 52px; overflow: clip; } /* no rule, no fill: the page just flows */
+  h1, h2 { font-family: var(--display); font-weight: var(--h-weight); margin: 0; line-height: 1; letter-spacing: var(--h-track); }
+  h2 { font-size: clamp(32px, 9vw, 58px); }
+  .lede { font-size: 17px; margin: 12px 0 0; max-width: 34ch; }
+
+  /* header */
+  header { display: flex; align-items: center; justify-content: space-between; padding: max(10px, env(safe-area-inset-top)) 16px 0; }
+  header .logo { width: 86px; height: auto; margin: -6px 0 -10px 0; }
+  header .pill { padding: 12px 18px; font-size: 14px; }
+
+  /* hero: the deck, then her whole "מה זה דוגרי?" text, set the way the printed leaflet sets "על המשחק":
+     a sky-blue panel with pink lettering, the mustard title with a pink outline and offset, a pink panel with light lettering */
+  .hero { padding-top: 4px; padding-bottom: 40px; }
+  .hero-in { display: grid; gap: 0; }
+  .hero-text { position: relative; }
+  .hero h1 { margin: 6px 0 0; font: 900 clamp(38px, 11vw, 76px)/.98 var(--display); letter-spacing: -.02em; max-width: 12ch; text-wrap: balance; }
+  .pn { margin: 16px 0 0; border-radius: 26px; padding: 20px 24px 22px; font: 500 17px/1.55 var(--body); max-width: 560px; }
+  .pn.sky { background: var(--sky); }
+  .pn.sky b { font-weight: 800; }
+  .catch { margin: 22px 0 0; }
+  .catch .q { display: block; font: 800 21px/1 var(--display); }
+  .catch .big { display: block; margin-top: 8px; font: 900 clamp(32px, 8.6vw, 54px)/1.05 var(--display); letter-spacing: -.01em; color: var(--yel);
+    -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; text-shadow: 4px 4px 0 var(--pink); }
+  .pn.pink { margin-top: 14px; background: var(--pink); color: var(--ink); font: 800 20px/1.5 var(--display); }
+  .pn.pink .y, .pn.pink .b { -webkit-text-stroke: 1.4px var(--ink); paint-order: stroke fill; }
+  .pn.pink .y { color: var(--yel); }
+  .pn.pink .b { color: var(--sky); }
+  .hero .cta { margin-top: 22px; }
+  @media (max-width: 899px) { .catch .big { text-shadow: 3px 3px 0 var(--pink); } }
+  .stage { position: relative; width: 100vw; margin: 0 calc(50% - 50vw) 10px; height: calc(var(--cw) * 1.41 * 1.22 + 40px); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+  .deck { position: absolute; width: var(--cw); aspect-ratio: 400 / 564; border: 0; padding: 0; background: none; cursor: pointer; z-index: 5; }
+  .deck img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .deck img:nth-child(1) { transform: translate(-5px, 5px) rotate(-3deg); }
+  .deck img:nth-child(2) { transform: translate(-2.5px, 2.5px) rotate(1.6deg); }
+  .deck:active img:last-child { transform: translate(-1px, 1px); box-shadow: var(--sh-sm); }
+  .deck:focus-visible { outline: 3px solid var(--ink); outline-offset: 10px; border-radius: 10px; }
+  .card { position: absolute; top: 0; left: 0; width: var(--cw); aspect-ratio: 400 / 564; z-index: 10; cursor: grab; touch-action: none; will-change: transform; --o: 4px; }
+  .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.3, 1.2, .45, 1); }
+  .card.down .in { transform: rotateY(180deg); }
+  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--o) var(--o) 0 var(--ink); pointer-events: none; }
+  .card img.b { transform: rotateY(180deg); box-shadow: calc(var(--o) * -1) var(--o) 0 var(--ink); } /* mirrored by the flip, so the shadow lands the same way */
+  .card.held { cursor: grabbing; }
+  .flood .nw { white-space: nowrap; }
+  .stage { isolation: isolate; } /* the deck, its cards and its hint stay in their own layer, under an open design */
+  .stage .hint { position: absolute; z-index: 3000; white-space: nowrap; pointer-events: none; font: 600 13px/1 var(--display); text-align: center; transition: opacity .3s; }
+  .stage.touched .hint { opacity: 0; }
+
+  /* designs: an endless strip that leans with your swipe and takes on each design's colour, in pastel */
+  /* designs: the only panel on the page, Pluto's rescue card: inset from the edges, big rounded corners, a soft vertical gradient
+     in two tints of the centred design's pastel (the layers cross-fade as the strip moves) */
+  .designs { margin: 6px 16px 0; border-radius: 40px; text-align: center; padding-inline: 0; padding-top: 48px; background: linear-gradient(180deg, #9ce4fc, #d8f4fe 48%, var(--page)); isolation: isolate; border-end-start-radius: 0; border-end-end-radius: 0; padding-bottom: 88px; }
+  .designs > h2, .designs > .lede { position: relative; margin-inline: 16px; }
+  .designs > .lede { margin-inline: auto; padding-inline: 16px; max-width: 46ch; text-wrap: balance; }
+  .bgs { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; overflow: hidden; z-index: -1; }
+  .bgs i { position: absolute; inset: 0; opacity: 0; will-change: opacity; }
+  .strip { direction: ltr; position: relative; display: flex; gap: 0; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 34px calc(50% - var(--dw) / 2) 22px; --dw: min(58vw, 250px); perspective: 900px; overscroll-behavior-x: contain; }
+  .strip::-webkit-scrollbar { display: none; }
+  .dz { direction: rtl; flex: none; width: var(--dw); scroll-snap-align: center; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .dz .tilt { will-change: transform; transform-origin: 50% 85%; }
+  .dz img { width: 100%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .dz .nm { display: block; margin-top: 32px; font: 700 15px/1 var(--display); }
+  .strip-hint { position: relative; font: var(--b-weight) 13px/1 var(--display); letter-spacing: .04em; }
+  .order { position: relative; margin-top: 30px; display: grid; justify-items: center; gap: 14px; padding-inline: 16px; }
+  .order .pill { font-size: 18px; padding: 19px 30px; }
+  .wa-line { font-size: 15px; font-weight: 500; }
+
+  /* the flood: a tap fills the screen with that design's pastel and lays out its front, back and real board */
+  .flood { position: fixed; inset: 0; z-index: 900; background: var(--fc); color: var(--ink); visibility: hidden; touch-action: none; display: grid; grid-template-rows: 1fr auto; overflow: hidden; }
+  .flood.open { visibility: visible; }
+  .flood .x { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 14px; z-index: 5; width: 48px; height: 48px; border-radius: 50%; border: 2.5px solid var(--ink); background: #fff; color: var(--ink); font: 900 22px/1 system-ui, sans-serif; box-shadow: var(--sh-sm); cursor: pointer; }
+  .spread { display: grid; place-items: center; padding: 70px 16px 0; min-height: 0; }
+  .flood { grid-template-rows: auto auto; align-content: center; } /* the board, the cards and the words sit together, centred on the screen */
+  .tableau { position: relative; width: min(84vw, 600px, 62svh * 1.414); margin-bottom: calc(min(84vw, 600px, 62svh * 1.414) * .2); }
+  .tableau .bd { width: 100%; aspect-ratio: 2200 / 1556; object-fit: cover; border-radius: 8px; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); transform: rotate(-2.5deg); }
+  .tableau .fc { position: absolute; bottom: -22%; width: 31%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .tableau .fr { left: 17%; transform: rotate(-7deg); z-index: 2; }
+  .tableau .bk { left: 50%; transform: rotate(6deg); }
+  .tableau.solo { width: min(76vw, 440px, 44svh * 1.45); margin-bottom: 0; display: flex; justify-content: center; gap: 4%; }
+  .tableau.solo .fc { position: relative; bottom: auto; left: auto; width: 48%; }
+  .flood .info { display: grid; justify-items: center; gap: 12px; padding: 18px 16px max(26px, env(safe-area-inset-bottom)); text-align: center; }
+  .flood h3 { margin: 0; font: var(--h-weight) clamp(36px, 10vw, 60px)/1 var(--display); letter-spacing: var(--h-track); }
+  .flood .info p { margin: 0; font-size: 16px; }
+  @media (min-width: 900px) { .flood .swipe { display: none; } }
+  .flood .x { box-shadow: none !important; }
+  @media (max-width: 899px) { .pn.pink .y, .pn.pink .b { -webkit-text-stroke-width: 1.6px; } }
+  /* r14: one view: the name, the price, what is in the box, the button and the time, start-aligned in one column like the live product page */
+  .flood .info { justify-items: start; text-align: start; gap: 10px; width: min(100%, 452px); margin-inline: auto; padding-top: 12px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .flood h3 { font-size: clamp(32px, 8.8vw, 52px); }
+  .flood .pr { margin: -4px 0 0 !important; font: var(--h-weight) clamp(28px, 7.4vw, 38px)/1 var(--display) !important; }
+  .flood .pr .tok { padding: 2px 6px; }
+  .flood .inbox { width: min(100%, 420px); margin-top: 2px; }
+  .inbox .hd { margin: 0 0 4px !important; font: var(--b-weight) 15px/1.2 var(--display) !important; }
+  .inbox ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 15px; line-height: 1.35; }
+  .inbox li { position: relative; padding-inline-start: 22px; }
+  .inbox li::before { content: ''; position: absolute; right: 2px; top: .32em; width: 10px; height: 6px; border: solid var(--ink); border-width: 0 0 2px 2px; rotate: -45deg; }
+  .flood .info > .pill { width: min(100%, 420px); margin-top: 6px; }
+  .flood .note { margin: -2px 0 0 !important; font-size: 14px !important; opacity: .8; }
+  .flood .swipe { font: var(--b-weight) 12px/1 var(--display); letter-spacing: .03em; opacity: .75; }
+  .tableau { width: min(80vw, 520px, 37svh * 1.414); margin-bottom: calc(min(80vw, 520px, 37svh * 1.414) * .2); }
+  .tableau.solo { width: min(64vw, 340px, 34svh * 1.45); }
+  .spread { padding-top: 66px; }
+  /* short phones (an SE, or browser bars showing): a smaller board; below 700 px the swipe hint goes */
+  @media (max-height: 760px) { .tableau { width: min(76vw, 30svh * 1.414); margin-bottom: calc(min(76vw, 30svh * 1.414) * .2); } .tableau.solo { width: min(56vw, 26svh * 1.45); } .flood h3 { font-size: 32px; } }
+  @media (max-height: 700px) { .flood .swipe { display: none; } .flood .info { gap: 8px; } .inbox ul { font-size: 14px; gap: 0; } }
+
+
+  /* recommendations: Pluto's card row (white, 16 px corners, a thin black line and a hard black offset shadow, a small tag at the
+     reading start), scrolling on its own in an endless loop; a hover or a touch stops it, and it can be swiped */
+  .recs { padding-inline: 0; }
+  .recs-head { position: relative; padding-inline: 16px; }
+  .row { direction: ltr; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; margin-top: 26px; padding: 4px 0 18px; }
+  .row::-webkit-scrollbar { display: none; }
+  .track { display: flex; gap: 20px; width: max-content; padding-inline: 10px; }
+  .row { cursor: grab; user-select: none; -webkit-user-select: none; } .row.dragging { cursor: grabbing; }
+  .rc { direction: rtl; flex: none; width: 272px; min-height: 176px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; background: #fff; color: var(--ink); border: 1px solid var(--ink); border-radius: 16px; box-shadow: 6px 7px 0 var(--ink); padding: 18px; font: inherit; text-align: start; }
+  button.rc { cursor: pointer; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1), box-shadow .15s; }
+  @media (hover: hover) { button.rc:hover { transform: translate(-2px, -2px); box-shadow: 8px 9px 0 var(--ink); } }
+  button.rc:active { transform: translate(3px, 3px); box-shadow: 3px 4px 0 var(--ink); }
+  .rc .tag { background: #fdf2d4; padding: 3px 10px 4px; border-radius: 3px; font: 600 14px/1.4 var(--display); }
+  .rc.hot { background: #ffe9f0; }
+  .rc.hot .tag { background: #c8246a; color: #fff; }
+  .rc .ttl { font: 800 18px/1.3 var(--display); quotes: '״' '״'; }
+  .rc .ttl::before { content: open-quote; } .rc .ttl::after { content: close-quote; }
+  .rc .cap { margin-top: auto; font-size: 14px; color: #5c544b; }
+  .rc.logo { justify-content: flex-start; }
+  .rc.logo img { margin: auto; width: auto; max-width: 70%; }
+
+  /* the review sheet */
+  .sheet { position: fixed; inset: auto 0 0; margin: 0 auto; width: min(560px, 100%); max-width: 100%; max-height: 88svh; border: 3px solid var(--ink); border-bottom: 0; border-radius: 22px 22px 0 0; padding: 16px 16px max(22px, env(safe-area-inset-bottom)); background: var(--paper); color: var(--ink); overflow: auto; }
+  .sheet::backdrop { background: rgba(0, 0, 0, .38); }
+  .sheet .grab { display: block; width: 46px; height: 5px; border-radius: 9px; background: var(--ink); opacity: .25; margin: 0 auto 12px; }
+  .sheet img { width: 100%; border-radius: 14px; outline: 2.5px solid var(--ink); outline-offset: -1px; }
+  .sheet p { margin: 12px 0 0; font-size: 15px; }
+  .sheet .x { position: absolute; top: 10px; left: 12px; width: 40px; height: 40px; border-radius: 50%; border: 2.5px solid var(--ink); background: var(--paper); font: 900 18px/1 system-ui, sans-serif; cursor: pointer; }
+
+  /* our story: two taped prints side by side, a gap between them so neither covers a face; each drifts a little */
+  .story-in { display: grid; gap: 26px; }
+  @media (max-width: 899px) { .story { padding-bottom: 32px; } }
+  .prints { position: relative; height: calc(min(44vw, 220px) * 1.16 + 60px); --pw: min(44vw, 220px); }
+  .print { position: absolute; margin: 0; width: var(--pw); background: var(--paper); padding: 8px 8px 26px; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); animation: drift var(--dur) ease-in-out var(--dl) infinite alternate; }
+  .print img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+  .print .tape { position: absolute; top: -12px; left: 50%; width: 76px; height: 24px; margin-left: -38px; background: rgba(244, 239, 230, .82); border-inline: 2px dashed rgba(0, 0, 0, .14); transform: rotate(var(--tt, -4deg)); }
+  .print.old { top: 14px; right: 3%; rotate: 4deg; --dur: 15s; --dl: -4s; --dx: 1.5px; --dy: -2px; --dr: .5deg; }
+  .print.now { top: 40px; left: 3%; rotate: -4deg; --dur: 19s; --dl: -9s; --dx: -2px; --dy: 1.5px; --dr: -.4deg; }
+  @keyframes drift { from { translate: 0 0; transform: rotate(0deg); } to { translate: var(--dx) var(--dy); transform: rotate(var(--dr)); } }
+  .story-copy, .faq-col { position: relative; }
+  .story-copy p { margin: 0 0 14px; max-width: 40ch; }
+  .story-copy .sign { margin-bottom: 0; }
+  .story-copy .sign { display: block; margin-top: 16px; font: 400 30px/1 'Gveret', var(--display); } /* signed by hand, not stuck on */
+
+  /* questions */
+  .faq-in { display: grid; gap: 30px; }
+  .qa { margin-top: 20px; display: grid; gap: 12px; }
+  .qa details { background: var(--paper); border: 2.5px solid var(--ink); border-radius: 14px; box-shadow: var(--sh-sm); }
+  .qa summary { list-style: none; cursor: pointer; padding: 14px 16px; font: var(--b-weight) 17px/1.25 var(--display); display: flex; justify-content: space-between; gap: 12px; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary::after { content: '+'; font: 900 22px/1 system-ui, sans-serif; transition: transform .2s; }
+  .qa details[open] summary::after { transform: rotate(45deg); }
+  .qa details p { margin: 0; padding: 0 16px 16px; font-size: 16px; white-space: pre-line; }
+
+  footer { padding: 22px 16px 34px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; }
+  /* ---------- the floating WhatsApp (bottom left: the end side in RTL), the font chooser (bottom right, while testing) ---------- */
+  .fab { position: fixed; z-index: 800; bottom: calc(max(16px, env(safe-area-inset-bottom) + 10px) + var(--pal-h, 0px)); transition: opacity .2s, visibility .2s, bottom .2s; }
+  .wa-fab { inset-inline-end: max(16px, env(safe-area-inset-left)); width: 56px; height: 56px; border-radius: 50%; background: #25d366; color: #fff; display: grid; place-items: center; outline: 1.5px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+  .wa-fab svg { width: 32px; height: 32px; fill: currentColor; }
+  .wa-fab:active { transform: scale(.94); }
+  .wa-fab:focus-visible { outline-offset: 3px; }
+  /* out of the way whenever something sits over the page: an open design, the review sheet, the menu */
+  body:has(.flood.open) .fab, body:has(dialog[open]) .fab { opacity: 0; visibility: hidden; }
+
+  /* ---------- the menu: a square ≡ at the top, on the RTL side; a sheet from that side ---------- */
+  .menu-btn { width: 44px; height: 44px; display: grid; place-items: center; padding: 0; margin-inline-start: -8px; background: transparent; border: 0; color: var(--ink); cursor: pointer; }
+  /* the icon: right-aligned lines (the RTL start) of 20, 13 and 8, rounded, ink with a pink middle; drawn by dash length so they can morph */
+  .mi { width: 28px; height: 28px; overflow: visible; }
+  .mi path { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; transform-box: view-box; transform-origin: 14px 14px;
+    transition: transform .34s cubic-bezier(.3, 1.35, .45, 1), stroke-dasharray .3s ease, opacity .2s; }
+  .mi .l1 { stroke-dasharray: 20 40; }
+  .mi .l2 { stroke: var(--pink); stroke-dasharray: 13 40; }
+  .mi .l3 { stroke-dasharray: 8 40; }
+  .menu-btn:hover .mi .l2, .menu-btn:focus-visible .mi .l2 { stroke-dasharray: 20 40; } /* a small hello under the pointer */
+  .menu-btn:hover .mi .l3, .menu-btn:focus-visible .mi .l3 { stroke-dasharray: 14 40; }
+  /* the sheet's ✕ is the same icon: the outer lines grow and cross, the pink one shrinks away */
+  dialog.menu.xs .x .l1 { stroke-dasharray: 20 40; transform: rotate(45deg) translateY(6px); }
+  dialog.menu.xs .x .l3 { stroke-dasharray: 20 40; transform: rotate(-45deg) translateY(-6px); }
+  dialog.menu.xs .x .l2 { stroke-dasharray: 0 40; opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { .mi path { transition: none; } }
+  header .start { display: flex; align-items: center; gap: 10px; }
+  dialog.menu { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(86vw, 380px); height: 100%; max-height: none; max-width: none; border: 0; border-inline-end: 1.5px solid var(--ink); padding: max(14px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); background: var(--page); color: var(--ink); display: flex; flex-direction: column; translate: 100% 0; transition: translate .28s cubic-bezier(.2, .8, .2, 1), overlay .28s allow-discrete, display .28s allow-discrete; }
+  dialog.menu:not([open]) { display: none; }
+  dialog.menu[open] { translate: 0 0; }
+  @starting-style { dialog.menu[open] { translate: 100% 0; } }
+  html:has(dialog.menu[open]) { overflow: hidden; }
+  dialog.menu::backdrop { background: rgba(0, 0, 0, .32); }
+  dialog.menu .x { position: absolute; top: var(--mx-t, 14px); right: var(--mx-r, 16px); width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; } /* on the ≡'s spot */
+  dialog.menu ul { list-style: none; margin: 64px 0 0; padding: 0; display: grid; }
+  dialog.menu li a { display: block; padding: 10px 0; font: var(--b-weight) 24px/1.15 var(--display); text-decoration: none; }
+  dialog.menu li a:hover { text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 2px; }
+  dialog.menu .pill { margin-top: 32px; align-self: stretch; }
+  @media (prefers-reduced-motion: reduce) { dialog.menu { transition: none; } }
+
+  /* ---------- 7. business enquiries ---------- */
+  .biz-in { display: grid; gap: 16px; justify-items: start; }
+  .biz .lede { max-width: 38ch; }
+  .biz .logos { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; margin: 2px 0 6px; }
+  .biz .logos span { flex-basis: 100%; }
+  .biz .logos img { height: 40px; width: auto; }
+  .biz .logos span { font-size: 15px; font-weight: 500; }
+  .biz .logos img[src*='starcar'] { height: 52px; }
+  /* the wide wordmarks drawn lower, so the five read at about the same weight */
+  .biz .logos img[src*='microsoft'] { height: 30px; }
+  .biz .logos img[src*='elbit'] { height: 40px; }
+  .biz .logos img[src*='hapoalim'] { height: 22px; }
+  .biz .pill svg.wa { width: 22px; height: 22px; fill: currentColor; flex: none; }
+  .biz-in { max-width: 560px; }
+  /* the form: stacked on a phone, one row on desktop; labels above the fields; an error under its own field */
+  .lead { width: 100%; margin-top: 6px; }
+  .lead-hd { margin: 0 0 14px; font: var(--b-weight) 17px/1.3 var(--display); }
+  /* r16: Pluto's form language in ours: fully rounded fields with a thin ink line, a bold label above each with a pink asterisk on the
+     required ones; name and company share a row, the phone takes the full width under them; stacked on a phone; the send is our pill CTA */
+  .lead-row { display: grid; gap: 16px; }
+  .fld-w { display: grid; gap: 7px; min-width: 0; }
+  .fld-w label { font: 700 15px/1.2 var(--display); }
+  .fld-w .req { color: #ea4795; margin-inline-start: 3px; }
+  .fld-w input { width: 100%; height: 50px; padding: 0 22px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); font: 400 16px/1 var(--body); }
+  .fld-w input[dir='ltr'] { text-align: right; }
+  .fld-w input:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .fld-w input[aria-invalid='true'] { border-color: #b3002d; border-width: 2px; }
+  .fe { margin: 0; padding-inline: 22px; font-size: 13px; line-height: 1.25; color: #b3002d; }
+  .fe:empty { display: none; }
+  .lead .pill { justify-self: start; margin-top: 4px; }
+  .lead-ok { margin: 6px 0 0; padding: 14px 18px; border: 1.5px solid var(--ink); border-radius: 14px; background: #fff; box-shadow: var(--sh-sm); font: var(--b-weight) 17px/1.3 var(--display); }
+  .lead-ok:focus { outline: none; }
+  @media (min-width: 600px) {
+    .biz-in:has(.lead) { max-width: 640px; }
+    .lead-row { grid-template-columns: 1fr 1fr; align-items: start; }
+    .fld-w.wide, .lead .pill { grid-column: 1 / -1; }
+  }
+
+  footer { padding-bottom: calc(34px + 72px + env(safe-area-inset-bottom)) !important; } /* the last links clear the floating buttons */
+  footer a { display: inline-block; padding-block: 10px; }
+
+  /* r14: one wavy line between the story and the reviews, like Pluto's boundary between two fields, but only the line: a single smooth S
+     across the full width in the palette pink, 2 px at every width (the stroke does not scale with the box) */
+  .wave { height: clamp(44px, 8vw, 96px); margin: 0; }
+  .wave svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .wave .ln { fill: none; stroke: var(--pink); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  /* r15, #fields=on (the default): each wave is the edge of a soft field, so the reviews between the two waves sit on a light tint of the
+     palette's sky; the line stays the 2 px pink on that edge. #fields=yellow: the same in a yellow tint. #fields=off: the lines alone (r14) */
+  :root { --field: #e9f8fd; }                   /* #a4e9ff lifted most of the way to white */
+  html.fields-yel { --field: #ffe9c4; }         /* #ffd37b at 28% over the page #fff1de */
+  .wave .fld { fill: var(--field); stroke: none; }
+  html.fields .recs { background: var(--field); }
+  html:not(.fields) .wave .fld { display: none; }
+  footer .fl { white-space: nowrap; }
+  footer .dot { font-style: normal; }
+  @media (max-width: 899px) { footer > span { display: grid; gap: 0; } footer .dot { display: none; } }
+  footer img { width: 54px; }
+
+  @media (min-width: 900px) {
+    :root { --cw: min(210px, 19vw); }
+    section, header, footer { padding-inline: max(16px, calc(50vw - 520px)); }
+    /* the cards beside the words */
+    .hero-in { grid-template-columns: 1fr 1.1fr; align-items: center; gap: 64px; }
+    .stage { width: 100%; margin: 0; height: calc(var(--cw) * 1.41 * 1.35 + 50px); }
+    .designs { padding-inline: 0; margin-inline: 20px; border-radius: 80px; padding-top: 64px; }
+    .strip { --dw: 260px; }
+    .rc { width: 360px; }
+    .strip-hint { display: none; }
+    .strip { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+    .rc .ttl { font-size: 20px; }
+    .story-in { grid-template-columns: 1fr 1fr; align-items: center; gap: 22px 40px; }
+    .story-in h2 { grid-column: 1 / -1; }
+    .prints { height: 400px; --pw: 230px; } /* in RTL the photos come first (right), then the text */
+    .print.old { top: 40px; }
+    .print.now { top: 90px; }
+    .faq-in { max-width: 760px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .print { animation: none; }
+    /* the flip becomes a crossfade */
+    .card .in, .card.down .in { transition: none; transform: none; }
+    .card img { transition: opacity .25s; }
+    .card img.b { transform: none; opacity: 0; }
+    .card.down img.b { opacity: 1; }
+    .card.down img.f { opacity: 0; }
+    /* a static grid instead of the leaning strip */
+    .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; overflow: visible; padding: 26px 16px 0; --dw: auto; perspective: none; }
+    .dz { width: auto; }
+    .dz .nm { margin-top: 10px; font-size: 13px; }
+    .strip-hint, .bgs { display: none; }
+  }
+  /* illustrations: four from the owner's pick (#13 hourglass, #25 popper, #27 disco ball, #91 sparkles), each with its own gallery motion,
+     small and in empty margin; reduced motion holds them still */
+  .illo { position: absolute; pointer-events: none; z-index: 0; }
+  .illo .il { display: block; width: 100%; height: auto; overflow: visible; fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; direction: ltr; }
+  .illo .t { stroke-width: 1.4; } .illo .h { fill: #fff; stroke: none; } .illo .n { stroke: none; }
+  .illo .a { animation-duration: var(--d, 6s); animation-delay: var(--dl, 0s); animation-timing-function: ease-in-out; animation-iteration-count: infinite; transform-box: fill-box; transform-origin: var(--o, 50% 50%); }
+  .illo .sway { animation-name: il-sway; animation-direction: alternate; }
+  @keyframes il-sway { from { transform: rotate(calc(-1 * var(--r, 4deg))); } to { transform: rotate(var(--r, 4deg)); } }
+  .illo .tw { animation-name: il-tw; }
+  @keyframes il-tw { 0%, 100% { transform: scale(.55) rotate(0deg); opacity: .35; } 50% { transform: scale(1) rotate(var(--r, 0deg)); opacity: 1; } }
+  .illo .rise { animation-name: il-rise; }
+  @keyframes il-rise { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(var(--x, 0px), var(--y, -30px)); opacity: 0; } }
+  @keyframes i13r{0%,40%{transform:rotate(0)}48%,90%{transform:rotate(180deg)}98%,100%{transform:rotate(360deg)}}.i13r{animation-name:i13r}@keyframes i13a{0%{opacity:1}38%,48%{opacity:0}88%,100%{opacity:1}}.i13a{animation-name:i13a;animation-timing-function:linear}@keyframes i13b{0%{opacity:0}38%,48%{opacity:1}88%,100%{opacity:0}}.i13b{animation-name:i13b;animation-timing-function:linear}@keyframes i13s{0%,3%,37%,51%,86%,100%{opacity:0}6%,34%,54%,83%{opacity:1}}.i13s{animation-name:i13s;animation-timing-function:linear}
+  @media (min-width: 900px) {
+    .recs-head { padding-inline: max(16px, calc(50vw - 520px)); }
+  }
+  .illo .twk { animation-name: il-twk; }
+  @keyframes il-twk { 0%, 100% { transform: scale(.78) rotate(0deg); opacity: .6; } 50% { transform: scale(1) rotate(var(--r, 45deg)); opacity: 1; } }
+  /* a placed illustration: a position in its section, in % of the section; a width in px for this layout (phone or desktop); a turn */
+  /* x is in % of the page's content column (1040 px on desktop, the screen less its 16 px gutters on a phone), so an item keeps its place
+     beside the content at any width; y is in % of its section */
+  .pl { position: absolute; z-index: 1; left: calc(var(--cl, 0px) + var(--x) * var(--cw2, 100vw) / 100); translate: -50% -50%; rotate: var(--r, 0deg); pointer-events: none; }
+  .pl > .illo { position: relative; display: block; }
+  @media (prefers-reduced-motion: reduce) { .illo .a { animation-play-state: paused !important; } }
+
+  /* the placement editor (#place) */
+  body.placing { touch-action: pan-y; } /* a second finger pinches an item, never the page */
+  body.placing .pl { pointer-events: auto; cursor: grab; touch-action: none; z-index: 60; }
+  body.placing .pl::before { content: ''; position: absolute; inset: -16px; } /* a 44 px+ grab area even for a small star */
+  body.placing .pl::after { content: ''; position: absolute; inset: -6px; border: 1.5px dashed rgba(0, 0, 0, .28); border-radius: 6px; pointer-events: none; }
+  body.placing .pl.sel::after { border: 2px solid var(--ink); }
+  .pl .hd { display: none; position: absolute; width: 40px; height: 40px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); font: 900 16px/36px system-ui, sans-serif; text-align: center; color: var(--ink); touch-action: none; padding: 0; z-index: 2; }
+  body.placing .pl.sel .hd { display: block; }
+  .pl .hd.rot { top: -44px; left: -44px; cursor: grab; }
+  .pl .hd.size { bottom: -44px; left: -44px; cursor: nwse-resize; }
+  .pl.drag { position: fixed; z-index: 1200; }
+  .pal { display: none; position: fixed; z-index: 1100; inset: auto 8px max(8px, env(safe-area-inset-bottom)); margin: 0 auto; max-width: 720px; background: #fff; border: 2px solid var(--ink); border-radius: 16px; box-shadow: 4px 4px 0 var(--ink); padding: 8px; font: 600 13px/1.2 var(--display); }
+  body.placing .pal { display: block; }
+  .pal .row1 { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .pal .add { flex: none; display: grid; justify-items: center; gap: 2px; width: 62px; padding: 4px 2px; border: 1.5px solid transparent; border-radius: 10px; background: none; font: inherit; font-size: 11px; color: var(--ink); cursor: pointer; }
+  .pal .add:active { border-color: var(--ink); }
+  .pal .add .illo { position: relative; width: 34px; height: 34px; display: grid; place-items: center; }
+  .pal .row2 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+  .pal button.t { border: 1.5px solid var(--ink); background: #fff; color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; cursor: pointer; }
+  .pal button.t[aria-pressed='true'] { background: var(--ink); color: #fff; }
+  .pal button.t:disabled { opacity: .35; cursor: default; }
+  .pal .note { flex-basis: 100%; color: #5c544b; font-weight: 500; }
+  .pal textarea { display: none; width: 100%; height: 88px; margin-top: 8px; font: 12px/1.3 ui-monospace, monospace; direction: ltr; border: 1.5px solid var(--ink); border-radius: 8px; padding: 6px; }
+  .pal.io textarea { display: block; }
+  .pal .min { margin-inline-start: auto; }
+  .pal.small .row1, .pal.small .row2 > :not(.min) { display: none; }
+  @media (max-width: 899px) {
+    .pal { padding: 6px; }
+    .pal .add { width: 46px; font-size: 0; }
+    .pal .add .illo { width: 30px; height: 30px; }
+    .pal .row2 { gap: 4px; margin-top: 4px; }
+    .pal button.t { padding: 6px 9px; }
+    .pal .note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+  <svg width="0" height="0" style="position: absolute" aria-hidden="true"><symbol id="spark" viewBox="0 0 40 40"><path d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z" /></symbol><symbol id="clover" viewBox="0 0 40 40"><circle cx="20" cy="11" r="8" /><circle cx="29" cy="20" r="8" /><circle cx="20" cy="29" r="8" /><circle cx="11" cy="20" r="8" /><circle cx="20" cy="20" r="4" /></symbol></svg>
+
+  <header>
+    <div class="start">
+      <button class="menu-btn" id="menuBtn" type="button" aria-label="תפריט" aria-haspopup="dialog" aria-expanded="false" aria-controls="menu"><svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false"><path class="l1" d="M24 8H4" /><path class="l2" d="M24 14H4" /><path class="l3" d="M24 20H4" /></svg></button>
+      <img class="logo" src="../../site/assets/logo-pink-original.png" alt="דוגרי" />
+    </div>
+    <a class="pill" href="#order">הזמינו עכשיו</a>
+  </header>
+
+  <section class="hero" id="top" aria-labelledby="h1">
+    <div class="hero-in">
+      <div class="stage" id="stage">
+        <button class="deck" id="deck" type="button" aria-label="לחלק קלף מהחפיסה"><img src="cards12/posttrip-b1.webp" alt="" draggable="false" /><img src="cards12/birthday-b1.webp" alt="" draggable="false" /><img src="cards12/bachelorette-b1.webp" alt="" draggable="false" /></button>
+        <span class="hint" id="hint" aria-hidden="true">לגעת בחפיסה</span>
+        <p class="sr" id="said" aria-live="polite"></p>
+      </div>
+      <div class="hero-text">
+        <!-- every word below is the live site's "מה זה דוגרי?" text (index-about-body), verbatim and whole; the colours are the owner's three, in the printed leaflet's treatment -->
+        <h1 id="h1" class="tt">דוגרי, המשחק הכי אישי</h1>
+        <p class="pn sky"><b>משחק מילים אישי שכל כולו על האדם שחוגגים לו.</b> מתחלקים לקבוצות, שולפים קלף ומתארים את המילה בלי להגיד אותה, הקבוצה שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל והתור שלכם נגמר.</p>
+        <p class="catch"><span class="q">ומה הקאץ׳?</span> <span class="big">כל המילים עליכם!</span></p>
+        <p class="pn pink">פדיחות, <span class="y">סיפורים מצחיקים,</span> יריבים מושבעים, <span class="y">אהבה ראשונה</span> <span class="b">ואפילו אקסים</span> - הכל נכנס.</p>
+        <div class="cta"><a class="pill" href="#order">בונים את המשחק<svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6" /></svg></a></div>
+      </div>
+    </div>
+    </section>
+
+  <section class="designs" id="order" aria-labelledby="h-designs">
+    <div class="bgs" id="bgs" aria-hidden="true"></div>
+    <h2 id="h-designs" class="tt">העיצובים שלנו</h2>
+    <p class="lede">כל עיצוב מתאים לכל חגיגה&nbsp;- את הכותרת אתם כותבים</p>
+    <div class="strip" id="strip" aria-label="העיצובים"></div>
+    <div class="strip-hint" aria-hidden="true">← החליקו →</div>
+    <div class="order">
+      <a class="pill" href="#">בונים את המשחק<svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6" /></svg></a>
+      <a class="wa-line" href="https://wa.me/972552441334">יש שאלה? דברו איתנו בוואטסאפ</a>
+    </div>
+  </section>
+
+
+
+  <section class="story" id="story" aria-labelledby="h-story">
+    <div class="story-in">
+      <h2 id="h-story" class="tt">איך דוגרי נולד</h2>
+      <div class="prints" aria-hidden="true">
+        <figure class="print old"><span class="tape" style="--tt: 3deg"></span><img src="https://dugri-israel.co.il/content-uploads/09d0097acf23847b.jpg" alt="" /></figure>
+        <figure class="print now"><span class="tape"></span><img src="https://dugri-israel.co.il/content-uploads/27ddf2fc1ac6fe9b.jpg" alt="" style="object-position: 50% 62%" /></figure>
+      </div>
+      <div class="story-copy">
+        <p>נעים להכיר - הדר ועלמה, חברות הכי טובות מגיל שנה והשתיים האלה בחבורה שתמיד מתכננות הכל. התחלנו לתכנן את מסיבת הרווקות של שירה וחיפשנו מתנה שתגרום לערב להרגיש כאילו הוא נכתב עליה וגם (!) יהיה קורע מצחוק, ולא מצאנו. אז ישבנו והמצאנו את דוגרי.</p>
+        <p>מאז הפכנו את זה למקצוע - לוקחים את הסיפורים הכי מצחיקים, מביכים ומרגשים שלכם והופכים אותם למשחק אישי אחד ויחיד. כל הזמנה שלכם מרגשת אותנו!</p>
+        <p class="sign">הדר ועלמה</p>
+      </div>
+    </div>
+  </section>
+  <div class="wave w1" aria-hidden="true"><svg viewBox="0 0 1200 100" preserveAspectRatio="none" focusable="false"><path class="fld" d="M0 74 C 260 74 380 22 600 48 S 940 86 1200 26 L 1200 103 L 0 103 Z" /><path class="ln" d="M0 74 C 260 74 380 22 600 48 S 940 86 1200 26" /></svg></div>
+
+  <section class="recs" id="recs" aria-labelledby="h-recs">
+    <div class="recs-head">
+      <h2 id="h-recs" class="tt">ממליצים עלינו</h2>
+    </div>
+    <div class="row" id="row" aria-label="המלצות, אפשר להחליק">
+      <div class="track" id="track">
+        <div class="rc logo"><span class="tag">לקוח עסקי</span><img src="logos/microsoft.webp" alt="Microsoft" style="height: 40px" draggable="false" /></div>
+        <button class="rc hot" type="button" data-shot="r7.jpg"><span class="tag">מסיבת רווקות</span><span class="ttl">דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו</span><span class="cap" data-edit="index-review-1-caption">{שם} · {תאריך}</span></button>
+        <button class="rc" type="button" data-shot="r9.jpg"><span class="tag">מתנה לאמא</span><span class="ttl">אני לא מגזימה שעה וחצי של צחוק רצוף!</span><span class="cap" data-edit="index-review-2-caption">{שם} · {תאריך}</span></button>
+        <div class="rc logo"><span class="tag">לקוח עסקי</span><img src="logos/elbit.svg" alt="Elbit Systems" style="height: 54px" draggable="false" /></div>
+        <button class="rc" type="button" data-shot="r5.jpg"><span class="tag">מסיבת רווקות</span><span class="ttl">היא אמרה שזה פשוט היה הדבר הכי טוב בכל הרווקות שלה!</span><span class="cap" data-edit="index-review-3-caption">{שם} · {תאריך}</span></button>
+        <button class="rc" type="button" data-shot="r2.jpg"><span class="tag">יום הולדת</span><span class="ttl">זה יצא פשוט נדיר ברמות הכי גבוהות</span><span class="cap" data-edit="index-review-4-caption">{שם} · {תאריך}</span></button>
+        <div class="rc logo"><span class="tag">לקוח עסקי</span><img src="logos/hapoalim.svg" alt="בנק הפועלים" style="height: 30px" draggable="false" /></div>
+        <button class="rc" type="button" data-shot="r6.jpg"><span class="tag">מסיבה</span><span class="ttl">בסוף הערב היא אמרה שזה החלק שהיא הכי אהבה במסיבה</span><span class="cap" data-edit="index-review-5-caption">{שם} · {תאריך}</span></button>
+        <button class="rc" type="button" data-shot="r8.jpg"><span class="tag">מתנה</span><span class="ttl">היה ממש כיף, כולם היו באטרף מזה</span><span class="cap" data-edit="index-review-6-caption">{שם} · {תאריך}</span></button>
+        <div class="rc logo"><span class="tag">לקוח עסקי</span><img src="logos/hm.webp" alt="H&amp;M" style="height: 60px" draggable="false" /></div>
+        <button class="rc" type="button" data-shot="r1.jpg"><span class="tag">מתנה לחמים</span><span class="ttl">החמים שלי ממש ממש התרגשו והיה מעולה</span><span class="cap" data-edit="index-review-7-caption">{שם} · {תאריך}</span></button>
+        <button class="rc" type="button" data-shot="r4.jpg"><span class="tag">מתנה לאחות</span><span class="ttl">תודה לך על הטיפול האישי עם המשלוח</span><span class="cap" data-edit="index-review-8-caption">{שם} · {תאריך}</span></button>
+        <div class="rc logo"><span class="tag">לקוח עסקי</span><img src="logos/starcar.webp" alt="STAR CAR ירושלים" style="height: 56px" draggable="false" /></div>
+      </div>
+    </div>
+  </section>
+
+  <dialog class="sheet" id="sheet" aria-labelledby="sheetTitle">
+    <span class="grab" aria-hidden="true"></span>
+    <button class="x" type="button" id="sheetX" aria-label="סגירה">✕</button>
+    <h3 class="sr" id="sheetTitle">ההמלצה המלאה</h3>
+    <div id="sheetPic"></div>
+    <p id="sheetCap"></p>
+  </dialog>
+
+
+
+  <div class="flood" id="flood" role="dialog" aria-modal="true" aria-labelledby="floodName">
+    <button class="x" type="button" id="floodX" aria-label="סגירה">✕</button>
+    <div class="spread"><div class="tableau" id="tableau"></div></div>
+    <div class="info">
+      <h3 id="floodName"></h3>
+      <!-- from the live product page (product.html?design=marriage, 2026-10-16): the price, "מה בפנים" as ticked lines, the button and "מוכן תוך 4 ימי עסקים" -->
+      <p class="pr"><span class="tok">{price}</span></p>
+      <div class="inbox">
+        <p class="hd">מה בפנים</p>
+        <ul>
+          <li>חפיסת קלפים מותאמת אישית</li>
+          <li>לוח משחק</li>
+          <li>חיילי משחק עם הפרצופים שלכם</li>
+          <li>דף חוקים</li>
+        </ul>
+      </div>
+      <a class="pill" href="#" id="floodOrder">יאללה בואו נתחיל<svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6" /></svg></a>
+      <p class="note">מוכן תוך 4 ימי עסקים</p>
+      <span class="swipe" aria-hidden="true">החליקו למטה כדי לחזור</span>
+    </div>
+  </div>
+
+  <div class="pal" id="pal" role="toolbar" aria-label="עורך האיורים">
+    <div class="row1"><button class="add" type="button" data-t="glass" title="שעון חול"><span class="illo"><svg class="il" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><ellipse cx="60" cy="106" rx="26" ry="3.5" fill="#ece3d5" class="n"/><g class="a i13r" style="--d:10s;--dl:0s;--o:50% 50%;"><path class="n" d="M44,33 C44,48 56,55 57.5,62 C56,69 44,76 44,91 L76,91 C76,76 64,69 62.5,62 C64,55 76,48 76,33Z" fill="#fffdf8"/><g class="a i13a" style="--d:10s;--dl:0s;--o:50% 50%;"><path class="n" d="M47.5,38 C49,49 55,55 60,60 C65,55 71,49 72.5,38 Q60,41 47.5,38Z" fill="#f7dc72"/></g><g class="a i13b" style="--d:10s;--dl:0s;--o:50% 50%;"><path class="n" d="M46,92 Q49,79 60,77 Q71,79 74,92Z" fill="#f7dc72"/></g><path d="M60,63 V89" stroke="#f2c14e" stroke-width="1.6" class="a i13s" style="--d:10s"/><path d="M44,33 C44,48 56,55 57.5,62 C56,69 44,76 44,91 M76,33 C76,48 64,55 62.5,62 C64,69 76,76 76,91"/><path class="h" d="M48,36 C48,44 51,49 54,53 C51,48 50,43 50.5,36Z" opacity=".9"/><rect x="38" y="91" width="44" height="7" rx="3" fill="#f7b58e"/><rect x="38" y="26" width="44" height="7" rx="3" fill="#f7b58e"/><rect x="38.5" y="33" width="4" height="58" rx="2" fill="#ece3d5"/><rect x="77.5" y="33" width="4" height="58" rx="2" fill="#ece3d5"/></g><g class="a tw" style="--d:4s;--dl:0s;--o:50% 50%;"><path d="M22.0,27.0 Q22.8,31.2 27.0,32.0 Q22.8,32.8 22.0,37.0 Q21.2,32.8 17.0,32.0 Q21.2,31.2 22.0,27.0Z" fill="#f7dc72" /></g><g class="a tw" style="--d:5s;--dl:-2s;--o:50% 50%;"><path class="t" d="M96.0,36.0H104.0M100.0,32.0V40.0" /></g><circle class="t" cx="98" cy="80" r="2.4" fill="none"/><circle cx="22" cy="76" r="1.6" fill="#1b1a19" stroke="none"/></svg></span>שעון חול</button><button class="add" type="button" data-t="popper" title="פופר"><span class="illo"><svg class="il" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><ellipse cx="40" cy="108" rx="26" ry="3" fill="#ece3d5" class="n"/><g class="a rise" style="--d:3.2s;--dl:0s;--o:50% 50%;--x:22px;--y:-30px"><rect x="62" y="48" width="9" height="5" rx="1.2" fill="#f0866a" class="t"/></g><g class="a rise" style="--d:3.2s;--dl:-0.5s;--o:50% 50%;--x:36px;--y:-22px"><circle cx="66" cy="52" r="3.4" fill="#9ed7bf" class="t"/></g><g class="a rise" style="--d:3.2s;--dl:-1s;--o:50% 50%;--x:30px;--y:-40px"><rect x="62" y="48" width="9" height="5" rx="1.2" fill="#c9b8ec" class="t"/></g><g class="a rise" style="--d:3.2s;--dl:-1.6s;--o:50% 50%;--x:40px;--y:-36px"><path d="M66.0,46.0 Q67.0,51.0 72.0,52.0 Q67.0,53.0 66.0,58.0 Q65.0,53.0 60.0,52.0 Q65.0,51.0 66.0,46.0Z" fill="#f7dc72" stroke-width="1.3" /></g><g class="a rise" style="--d:3.2s;--dl:-2.2s;--o:50% 50%;--x:14px;--y:-42px"><path d="M60,54 q3,-6 6,0 t6,0" stroke="#ea4795" stroke-width="2.4"/></g><g class="a rise" style="--d:3.2s;--dl:-2.8s;--o:50% 50%;--x:42px;--y:-8px"><rect x="62" y="48" width="9" height="5" rx="1.2" fill="#a8cdee" class="t"/></g><g class="a rise" style="--d:3.2s;--dl:-0.9s;--o:50% 50%;--x:24px;--y:-16px"><circle cx="66" cy="52" r="3.4" fill="#ea4795" class="t"/></g><g class="a rise" style="--d:3.2s;--dl:-3.3s;--o:50% 50%;--x:44px;--y:-26px"><path d="M60,54 q3,-6 6,0 t6,0" stroke="#9ed7bf" stroke-width="2.4"/></g><clipPath id="i25c"><path d="M25.5,103.5 L18.5,96.5 L56.2,50.2 L71.8,65.8Z"/></clipPath><path d="M25.5,103.5 L18.5,96.5 L56.2,50.2 L71.8,65.8Z" fill="#f7dc72"/><g clip-path="url(#i25c)"><path class="n" d="M-110,0 L10,120 L17,120 L-103,0Z" fill="#ea4795"/><path class="n" d="M-95,0 L25,120 L32,120 L-88,0Z" fill="#ea4795"/><path class="n" d="M-80,0 L40,120 L47,120 L-73,0Z" fill="#ea4795"/><path class="n" d="M-65,0 L55,120 L62,120 L-58,0Z" fill="#ea4795"/><path class="n" d="M-50,0 L70,120 L77,120 L-43,0Z" fill="#ea4795"/><path class="n" d="M-35,0 L85,120 L92,120 L-28,0Z" fill="#ea4795"/><path class="n" d="M-20,0 L100,120 L107,120 L-13,0Z" fill="#ea4795"/><path class="n" d="M-5,0 L115,120 L122,120 L2,0Z" fill="#ea4795"/><path class="n" d="M10,0 L130,120 L137,120 L17,0Z" fill="#ea4795"/><path class="n" d="M25,0 L145,120 L152,120 L32,0Z" fill="#ea4795"/><path class="n" d="M40,0 L160,120 L167,120 L47,0Z" fill="#ea4795"/><path class="n" d="M55,0 L175,120 L182,120 L62,0Z" fill="#ea4795"/><path class="n" d="M70,0 L190,120 L197,120 L77,0Z" fill="#ea4795"/></g><path d="M25.5,103.5 L18.5,96.5 L56.2,50.2 L71.8,65.8Z"/><ellipse cx="64" cy="58" rx="11" ry="4.2" transform="rotate(45 64 58)" fill="#fbf6ee"/><path d="M18.5,96.5 L25.5,103.5 L21,108 L14,101Z" fill="#ea4795"/><g class="a tw" style="--d:3.2s;--dl:-1s;--o:50% 50%;"><path d="M96.0,16.0 Q97.0,21.0 102.0,22.0 Q97.0,23.0 96.0,28.0 Q95.0,23.0 90.0,22.0 Q95.0,21.0 96.0,16.0Z" fill="#f7dc72" /></g><g class="a tw" style="--d:3.2s;--dl:-2s;--o:50% 50%;"><path class="t" d="M98.0,66.0H106.0M102.0,62.0V70.0" /></g><g class="a tw" style="--d:3.2s;--dl:-0.5s;--o:50% 50%;"><path class="t" d="M68.5,20.0H75.5M72.0,16.5V23.5" /></g></svg></span>פופר</button><button class="add" type="button" data-t="disco" title="כדור דיסקו"><span class="illo"><svg class="il" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><path d="M60,8 V30" stroke-width="1.8"/><rect x="54" y="30" width="12" height="7" rx="2" fill="#ece3d5"/><g class="a sway" style="--d:3s;--dl:0s;--o:50% 0%;--r:3deg"><g><clipPath id="i27c"><circle cx="60" cy="64" r="28"/></clipPath><circle cx="60" cy="64" r="28" fill="#c9b8ec"/><g clip-path="url(#i27c)"><rect x="60" y="36" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="52" y="44" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="76" y="44" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="44" y="52" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="68" y="52" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="36" y="60" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="60" y="60" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="52" y="68" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="76" y="68" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="44" y="76" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="68" y="76" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><rect x="60" y="84" width="8" height="8" fill="#ffffff" stroke="none" opacity=".75"/><path class="n" d="M32,64 A28,28 0 0 0 88,64 Q60,76 32,64Z" fill="#a994da"/><path class="t" d="M45.6,40 H74.4"/><path class="t" d="M37.0,48 H83.0"/><path class="t" d="M33.2,56 H86.8"/><path class="t" d="M32.0,64 H88.0"/><path class="t" d="M33.2,72 H86.8"/><path class="t" d="M37.0,80 H83.0"/><path class="t" d="M45.6,88 H74.4"/><path class="t" d="M60,36 V92"/><ellipse class="t" cx="60" cy="64" rx="8" ry="28" fill="none"/><ellipse class="t" cx="60" cy="64" rx="17" ry="28" fill="none"/><ellipse class="t" cx="60" cy="64" rx="24" ry="28" fill="none"/></g><circle cx="60" cy="64" r="28" fill="none"/><path class="h" d="M44,52 l6,0 l0,6 l-6,0Z M52,46 l6,0 l0,5 l-6,0Z"/></g></g><g class="a tw" style="--d:2.6s;--dl:0s;--o:50% 50%;--r:90deg"><path d="M84.0,42.0 Q85.3,48.7 92.0,50.0 Q85.3,51.3 84.0,58.0 Q82.7,51.3 76.0,50.0 Q82.7,48.7 84.0,42.0Z" fill="#ffffff" /></g><g class="a tw" style="--d:2.6s;--dl:-1.3s;--o:50% 50%;--r:90deg"><path d="M40.0,74.0 Q41.0,79.0 46.0,80.0 Q41.0,81.0 40.0,86.0 Q39.0,81.0 34.0,80.0 Q39.0,79.0 40.0,74.0Z" fill="#ffffff" /></g><g class="a tw" style="--d:3.4s;--dl:-0.6s;--o:50% 50%;--r:-90deg"><path d="M100.0,78.0 Q101.0,83.0 106.0,84.0 Q101.0,85.0 100.0,90.0 Q99.0,85.0 94.0,84.0 Q99.0,83.0 100.0,78.0Z" fill="#f7dc72" /></g><g class="a tw" style="--d:3.4s;--dl:-2s;--o:50% 50%;--r:90deg"><path d="M20.0,41.0 Q20.8,45.2 25.0,46.0 Q20.8,46.8 20.0,51.0 Q19.2,46.8 15.0,46.0 Q19.2,45.2 20.0,41.0Z" fill="#ea4795" /></g><path class="t" d="M24,98 l6,-4 M96,22 l-5,4 M104,60 h-6"/></svg></span>כדור דיסקו</button><button class="add" type="button" data-t="sparks" title="נצנוצים"><span class="illo"><svg class="il" viewBox="0 0 120 120" aria-hidden="true" focusable="false"><g class="a tw" style="--d:3s;--dl:0s;--o:50% 50%;--r:45deg"><path d="M54.0,36.0 Q58.7,57.3 80.0,62.0 Q58.7,66.7 54.0,88.0 Q49.3,66.7 28.0,62.0 Q49.3,57.3 54.0,36.0Z" fill="#f7dc72" /></g><g class="a tw" style="--d:3s;--dl:-1s;--o:50% 50%;--r:-45deg"><path d="M88.0,17.0 Q90.3,27.7 101.0,30.0 Q90.3,32.3 88.0,43.0 Q85.7,32.3 75.0,30.0 Q85.7,27.7 88.0,17.0Z" fill="#ea4795" /></g><g class="a tw" style="--d:3s;--dl:-2s;--o:50% 50%;--r:45deg"><path d="M90.0,79.0 Q91.6,86.4 99.0,88.0 Q91.6,89.6 90.0,97.0 Q88.4,89.6 81.0,88.0 Q88.4,86.4 90.0,79.0Z" fill="#ffffff" /></g><circle cx="30" cy="28" r="1.6" fill="#1b1a19" stroke="none"/><circle cx="102" cy="60" r="1.4" fill="#1b1a19" stroke="none"/><circle class="t" cx="22" cy="96" r="2.4" fill="none"/><g class="a tw" style="--d:3s;--dl:-0.5s;--o:50% 50%;"><path class="t" d="M22.5,46.0H29.5M26.0,42.5V49.5" /></g></svg></span>נצנוצים</button><button class="add" type="button" data-t="star" title="כוכב שחור"><span class="illo"><svg class="il" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><g class="a twk" style="--d:5.5s;--r:45deg"><path d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z" fill="#000" stroke="#000" /></g></svg></span>כוכב שחור</button><button class="add" type="button" data-t="bstar" title="כוכב תכלת"><span class="illo"><svg class="il" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><g class="a twk" style="--d:6s;--dl:-1s;--r:45deg"><path d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z" fill="#a4e9ff" stroke-width="2.4" /></g></svg></span>כוכב תכלת</button><button class="add" type="button" data-t="pstar" title="כוכב ורוד"><span class="illo"><svg class="il" viewBox="0 0 40 40" aria-hidden="true" focusable="false"><g class="a twk" style="--d:6.4s;--dl:-2s;--r:-45deg"><path d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z" fill="#ea4795" stroke-width="2.4" /></g></svg></span>כוכב ורוד</button><button class="add" type="button" data-t="cross" title="פלוס"><span class="illo"><svg class="il" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><g class="a twk" style="--d:7s;--dl:-3s;--r:0deg"><path d="M8 2v12M2 8h12" stroke-width="1.6" /></g></svg></span>פלוס</button></div>
+    <div class="row2">
+      <button class="t" type="button" data-bp="m">טלפון</button><button class="t" type="button" data-bp="d">מחשב</button>
+      <button class="t" type="button" id="plDup" disabled>⧉ שכפול</button><button class="t" type="button" id="plDel" disabled>✕ מחיקה</button>
+      <button class="t" type="button" id="plCopy">העתק מיקומים</button>
+      <button class="t" type="button" id="plLoad">טען</button>
+      <button class="t" type="button" id="plReset">התחלה מחדש</button>
+      <button class="t min" type="button" id="plMin" aria-label="הקטנה">▾</button>
+      <span class="note" id="plNote"></span>
+    </div>
+    <textarea id="plIO" aria-label="מיקומים בפורמט JSON" spellcheck="false"></textarea>
+  </div>
+
+  <div class="wave w2" aria-hidden="true"><svg viewBox="0 0 1200 100" preserveAspectRatio="none" focusable="false"><path class="fld" d="M0 30 C 200 30 330 84 560 70 S 960 16 1200 58 L 1200 -3 L 0 -3 Z" /><path class="ln" d="M0 30 C 200 30 330 84 560 70 S 960 16 1200 58" /></svg></div>
+
+  <section class="biz" id="biz" aria-labelledby="h-biz">
+    <div class="biz-in">
+      <h2 id="h-biz" class="tt">פניות עסקיות</h2>
+      <p class="lede">ערב צוות, יום גיבוש או מתנה לעובדים? נבנה לכם דוגרי על הצוות, עם השמות מהמשרד והבדיחות הפנימיות שכולם מכירים.</p>
+      <div class="logos"><span>כבר שיחקו:</span><img src="logos/microsoft.webp" alt="Microsoft" /><img src="logos/elbit.svg" alt="Elbit Systems" /><img src="logos/hapoalim.svg" alt="בנק הפועלים" /><img src="logos/hm.webp" alt="H&amp;M" /><img src="logos/starcar.webp" alt="STAR CAR ירושלים" /></div>
+      <a class="pill" href="https://wa.me/972546577715?text=%D7%94%D7%99%D7%99%21%20%D7%90%D7%A0%D7%97%D7%A0%D7%95%20%D7%9E%D7%A2%D7%95%D7%A0%D7%99%D7%99%D7%A0%D7%99%D7%9D%20%D7%91%D7%94%D7%96%D7%9E%D7%A0%D7%94%20%D7%9C%D7%A2%D7%A1%D7%A7%2F%D7%90%D7%99%D7%A8%D7%95%D7%A2%20%D7%92%D7%93%D7%95%D7%9C" target="_blank" rel="noopener">דברו איתנו בוואטסאפ<svg class="wa" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z" /></svg></a>
+      <!-- the prototype has no backend: a valid send only shows the thank-you. The live version posts to an endpoint that emails the owner -->
+      <form class="lead" id="lead" novalidate aria-labelledby="leadHd">
+        <p class="lead-hd" id="leadHd">או השאירו פרטים ונחזור אליכם</p>
+        <div class="lead-row">
+          <div class="fld-w"><label for="lName">שם<span class="req" aria-hidden="true">*</span></label><input id="lName" name="name" autocomplete="name" required aria-describedby="lNameE" /><p class="fe" id="lNameE"></p></div>
+          <div class="fld-w"><label for="lCo">חברה<span class="req" aria-hidden="true">*</span></label><input id="lCo" name="company" autocomplete="organization" required aria-describedby="lCoE" /><p class="fe" id="lCoE"></p></div>
+          <div class="fld-w wide"><label for="lTel">טלפון<span class="req" aria-hidden="true">*</span></label><input id="lTel" name="phone" type="tel" inputmode="tel" autocomplete="tel" dir="ltr" required aria-describedby="lTelE" /><p class="fe" id="lTelE"></p></div>
+          <button class="pill" type="submit">שלחו<svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6" /></svg></button>
+        </div>
+      </form>
+      <p class="lead-ok" id="leadOk" role="status" tabindex="-1" hidden>תודה! נחזור אליכם בקרוב</p>
+    </div>
+  </section>
+
+  <dialog class="menu" id="menu" aria-label="תפריט">
+    <button class="x" type="button" id="menuX" aria-label="סגירת התפריט"><svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false"><path class="l1" d="M24 8H4" /><path class="l2" d="M24 14H4" /><path class="l3" d="M24 20H4" /></svg></button>
+    <nav aria-label="ניווט">
+      <ul>
+        <li><a href="#order">העיצובים</a></li>
+        <li><a href="#story">איך דוגרי נולד</a></li>
+        <li><a href="#recs">ממליצים עלינו</a></li>
+        <li><a href="r16-faq.html">שאלות נפוצות</a></li>
+        <li><a href="https://dugri-israel.co.il/pickup.html">איסוף עצמי</a></li>
+        <li><a href="#biz">פניות עסקיות</a></li>
+      </ul>
+    </nav>
+    <a class="pill" href="#order">הזמינו עכשיו</a>
+  </dialog>
+
+  <a class="fab wa-fab" id="waFab" href="https://wa.me/972552441334?text=%D7%94%D7%99%D7%99!%20%D7%90%D7%A0%D7%99%20%D7%A8%D7%95%D7%A6%D7%94%20%D7%9C%D7%94%D7%96%D7%9E%D7%99%D7%9F%20%D7%9E%D7%A9%D7%97%D7%A7%20%D7%93%D7%95%D7%92%D7%A8%D7%99" target="_blank" rel="noopener" aria-label="דברו איתנו בוואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z" /></svg></a>
+
+  <footer><span><span class="fl"><a href="#">תקנון ותנאי שימוש</a></span> <span class="fl"><i class="dot">· </i><a href="r16-faq.html">שאלות נפוצות</a></span> <span class="fl"><i class="dot">· </i><a href="https://dugri-israel.co.il/pickup.html">איסוף עצמי</a></span></span><img src="../../site/assets/logo-pink-original.png" alt="" /></footer>
+
+<script>
+(() => {
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const C = 'cards12/'; // the preview helper's cards: live art, every printed frame evened out to 10.78% of the width (cards12/outline-rules.txt)
+  // every public design on the live site (6 built-in + the 4 from /api/custom-designs), each with its main colour sampled from its real card.
+  // All art is what the LIVE site serves today (2026-10-15), not the repo: the template artwork on the production volume overrides it.
+  // The print template (/api/template-image/<theme>) is the truth where it is public: קליפורניה, סנטוריני, טוקיו and ברוקלין take their one
+  // template card (front, and back where the template has one) and template board; their uploaded deck sheets are older art.
+  // פריז's template matches its live deck sheet, so it keeps the sheet's 8 fronts (template back and board). סיישל (template not
+  // public) and the custom designs come from their live deck sheets (/api/design-images deckFronts/deckBacks/deckBoard);
+  // טריפה has no sheets, so its cards are its template renders.
+  const D = {
+    bachelorette: { name: 'פריז', c: '#fc789c', fronts: 8, back: 1 },
+    birthday: { name: 'קליפורניה', c: '#9ce4fc', fronts: 1, back: 1 },
+    grapefruit: { name: 'אואזיס', c: '#f07848', fronts: 1, back: 1 }, // the live shop's one front (its print template)
+    marriage: { name: 'סנטוריני', c: '#0048a8', fronts: 1, back: 1 },
+    daniel: { name: 'דני', c: '#f5d98f', fronts: 8, back: 1 },
+    japanese: { name: 'טוקיו', c: '#b03a3a', fronts: 1, back: 1 }, // the koi red of its art, so its panel and flood are a pastel red, not grey
+    posttrip: { name: 'סיישל', c: '#90d8e4', fronts: 8, back: 1 },
+    football: { name: 'האלאנד', c: '#2a52be', fronts: 8, back: 1 },
+    tarifa: { name: 'טריפה', c: '#3d6b2c', fronts: 1, back: 1 },
+    kids: { name: 'ברוקלין', c: '#1878fc', fronts: 1, back: 1 },
+  };
+  for (const k in D) D[k].board = `boards12/${k}.webp`; // the preview's boards, so the two match
+  for (const k of ["bachelorette", "birthday", "grapefruit", "marriage", "daniel", "japanese", "posttrip", "football", "tarifa"]) D[k].board2 = `boards14/${k}.webp`; // r14: the same boards at the live deck board's 2000 px, for 2x screens
+  const ALL = Object.keys(D);
+  const KEYS = ALL.filter((k) => D[k].back && k !== 'kids'); // the hero deck deals every design that has a back, except ברוקלין (an NBA-like logo on its back)
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  // each design's colour, lifted most of the way to white: the same hue as a light pastel
+  const tint = (h, f) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(h.slice(i, i + 2), 16) + (255 - parseInt(h.slice(i, i + 2), 16)) * f).toString(16).padStart(2, '0')).join('');
+  const pastel = (h) => tint(h, .62);
+
+  /* ---------- hero: a small deck deals real cards onto a loose pile right beside it; every card is a real object ---------- */
+  const stage = document.getElementById('stage');
+  const deckBtn = document.getElementById('deck');
+  const hint = document.getElementById('hint');
+  const said = document.getElementById('said');
+  const F = .92, SF = .88; // per-frame friction: sliding, spinning (a short toss settles sooner)
+  const cards = [];
+  let z = 10, lastKey = null, nextKey = null;
+  const recent = {}; // per design, the fronts shown lately, so a design shows a new card each time
+
+  function front(k) {
+    const r = (recent[k] = recent[k] || []);
+    const all = Array.from({ length: D[k].fronts }, (_, i) => i + 1), opts = all.filter((n) => !r.includes(n));
+    const n = opts.length ? opts[(Math.random() * opts.length) | 0] : 1;
+    r.push(n); if (r.length > 5) r.shift();
+    return n;
+  }
+  // the deck's top back is the design it deals next, never the one just dealt
+  function showNext(force) {
+    const opts = KEYS.filter((k) => k !== lastKey);
+    nextKey = force || opts[(Math.random() * opts.length) | 0];
+    const [a, b, top] = deckBtn.children, under = shuffle(KEYS.filter((k) => k !== nextKey));
+    a.src = `${C}${under[0]}-b1.webp`; b.src = `${C}${under[1]}-b1.webp`; top.src = `${C}${nextKey}-b1.webp`;
+  }
+  // the deck on the right, the pile one short toss to its left, the pair centred on the table
+  const geo = () => {
+    const W = stage.clientWidth, H = stage.clientHeight, cw = deckBtn.offsetWidth, ch = deckBtn.offsetHeight;
+    const gap = cw * .38, left = (W - (cw * 2 + gap)) / 2;
+    const dy = (H - ch) / 2 + 4;
+    return { W, H, cw, ch, dx: left + cw + gap, dy, px: left, py: dy - 4 };
+  };
+  function placeDeck() {
+    const g = geo();
+    Object.assign(deckBtn.style, { left: g.dx + 'px', top: g.dy + 'px' });
+    Object.assign(hint.style, { left: g.dx + 'px', width: g.cw + 'px', top: g.dy + g.ch + 14 + 'px' });
+  }
+  const draw = (c) => {
+    c.el.style.transform = `translate3d(${c.x}px, ${c.y}px, 0) rotate(${c.r}deg) scale(${c.s})`;
+    c.el.style.setProperty('--o', (4 + (c.s - 1) * 70).toFixed(1) + 'px'); // lifted higher, the shadow falls further
+  };
+  const cap = () => (innerWidth >= 900 ? 7 : 6);
+
+  // where the next card lands: on the pile, a little off true, never twice in the same spot
+  function spot(g) {
+    return { x: Math.max(innerWidth >= 900 ? g.cw * .22 : -1e9, g.px + rnd(-.13, .13) * g.cw), y: g.py + rnd(-.08, .08) * g.ch, r: rnd(-13, 13) };
+  }
+
+  function deal(want) {
+    const g = geo();
+    const k = want || nextKey;
+    const to = spot(g);
+    lastKey = k;
+    const el = document.createElement('div');
+    el.className = 'card down';
+    el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = `<div class="in"><img class="f" src="${C}${k}-f${front(k)}.webp" alt="" draggable="false"><img class="b" src="${C}${k}-b1.webp" alt="" draggable="false"></div>`;
+    stage.appendChild(el);
+    const c = { el, k, x: g.dx, y: g.dy, r: 0, s: 1, vx: 0, vy: 0, vr: 0, t: performance.now(), held: false, gone: false, launch: true };
+    el.style.zIndex = String(++z);
+    cards.push(c); bind(c);
+    said.textContent = `קלף מהעיצוב ${D[k].name}`;
+    showNext();
+    if (reduce) {
+      Object.assign(c, to); el.classList.remove('down'); draw(c);
+      el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 240 });
+    } else {
+      // velocity that friction brings to rest exactly on the pile; now and then a full turn on the way
+      const tr = to.r + (Math.random() < .1 ? (Math.random() < .5 ? 360 : -360) : 0);
+      c.vx = (to.x - c.x) * (1 - F); c.vy = (to.y - c.y) * (1 - F) - 1.2; c.vr = tr * (1 - SF);
+      draw(c);
+      requestAnimationFrame(() => el.classList.remove('down')); // turns face up in the air
+      deckBtn.lastElementChild.animate([{ transform: 'translate(0, -4px) rotate(-1.5deg)' }, { transform: 'none' }], { duration: 240, easing: 'cubic-bezier(.3, 1.6, .5, 1)' });
+      kick(c);
+    }
+    retire();
+  }
+
+  // past the cap, the card nobody touched longest slides off and fades
+  function retire() {
+    let on = cards.filter((c) => !c.gone);
+    while (on.length > cap()) {
+      const old = on.filter((c) => !c.held).sort((a, b) => a.t - b.t)[0];
+      if (!old) return;
+      old.gone = true; live.delete(old);
+      const from = old.el.style.transform;
+      old.el.style.pointerEvents = 'none';
+      old.el.animate([{ transform: from, opacity: 1 }, { transform: `${from} translate(${reduce ? 0 : -18}px, ${reduce ? 0 : 22}px) rotate(${reduce ? 0 : -6}deg)`, opacity: 0 }],
+        { duration: reduce ? 200 : 380, easing: 'cubic-bezier(.5, 0, .7, .4)', fill: 'forwards' }).onfinish = () => { old.el.remove(); cards.splice(cards.indexOf(old), 1); };
+      on = cards.filter((c) => !c.gone);
+    }
+  }
+
+  // ---- physics: a held card follows the finger exactly and turns about the point you hold; it keeps the speed you let go with; tap flips ----
+  function bind(c) {
+    let px, py, lx, ly, t0, moved, samples, id = null;
+    const local = (e) => { const r = stage.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    const worldGrab = () => { const a = c.r * Math.PI / 180; return [lx * Math.cos(a) - ly * Math.sin(a), lx * Math.sin(a) + ly * Math.cos(a)]; };
+    c.el.addEventListener('pointerdown', (e) => {
+      if (c.gone || id !== null) return;
+      e.preventDefault(); id = e.pointerId; c.el.setPointerCapture(id);
+      stage.classList.add('touched');
+      c.held = true; c.launch = false; live.delete(c); c.vx = c.vy = c.vr = 0; c.t = performance.now();
+      c.el.classList.add('held'); c.el.style.zIndex = String(++z);
+      [px, py] = local(e);
+      // the held point in the card's own frame, measured from its centre
+      const w = c.el.offsetWidth, h = c.el.offsetHeight, a = -c.r * Math.PI / 180, dx = px - (c.x + w / 2), dy = py - (c.y + h / 2);
+      lx = dx * Math.cos(a) - dy * Math.sin(a); ly = dx * Math.sin(a) + dy * Math.cos(a);
+      t0 = performance.now(); moved = 0; samples = [{ x: px, y: py, t: t0 }];
+      c.s = reduce ? 1 : 1.04; draw(c);
+    });
+    c.el.addEventListener('pointermove', (e) => {
+      if (!c.held || e.pointerId !== id) return;
+      // every coalesced point, so a fast finger is followed point by point instead of in jumps
+      const co = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+      for (const ev of co.length ? co : [e]) {
+        const [nx, ny] = local(ev), ddx = nx - px, ddy = ny - py;
+        if (!ddx && !ddy) continue;
+        moved += Math.hypot(ddx, ddy); px = nx; py = ny;
+        if (!reduce) {
+          // the pull swings the card so its centre trails the held point, like dragging a real card by its corner
+          const [gx, gy] = worldGrab();
+          c.r += (gx * ddy - gy * ddx) / (gx * gx + gy * gy + 900) * 0.62 * 180 / Math.PI;
+        }
+        samples.push({ x: px, y: py, t: ev.timeStamp || performance.now() });
+      }
+      const [gx, gy] = worldGrab(), w = c.el.offsetWidth, h = c.el.offsetHeight;
+      c.x = px - gx - w / 2; c.y = py - gy - h / 2; draw(c);
+      while (samples.length > 2 && samples[samples.length - 1].t - samples[0].t > 100) samples.shift(); // the last 100 ms of the gesture
+    });
+    const up = (e) => {
+      if (!c.held || e.pointerId !== id) return;
+      id = null; c.held = false; c.el.classList.remove('held'); c.t = performance.now();
+      if (moved < 8 && performance.now() - t0 < 350) { c.el.classList.toggle('down'); c.s = 1; draw(c); kick(c); return; }
+      const a = samples[0], b = samples[samples.length - 1], dt = Math.max(16, b.t - a.t);
+      // the speed of the last 100 ms; a finger that stopped before letting go puts the card down where it is
+      const still = e.timeStamp - b.t > 120;
+      if (!reduce && !still) {
+        c.vx = Math.max(-60, Math.min(60, (b.x - a.x) / dt * 16.67)); c.vy = Math.max(-60, Math.min(60, (b.y - a.y) / dt * 16.67));
+        const [gx, gy] = worldGrab();
+        c.vr = Math.max(-16, Math.min(16, (gx * c.vy - gy * c.vx) / (gx * gx + gy * gy + 900) * 40));
+      }
+      if (reduce) { c.s = 1; clampIn(c); draw(c); } else kick(c);
+    };
+    c.el.addEventListener('pointerup', up);
+    c.el.addEventListener('pointercancel', up);
+    c.el.addEventListener('lostpointercapture', (e) => { if (c.held) up(e); }); // never left holding a card the browser took away
+  }
+  // the deck keeps its spot clear: a card that comes to rest on it is pushed off, like sliding into a block
+  const deckZone = (g, m = 0) => ({ x0: g.dx - m, y0: g.dy - m, x1: g.dx + g.cw + m, y1: g.dy + g.ch + m });
+  function onDeck(x, y, g, m = 0) { const d = deckZone(g, m); return x < d.x1 && x + g.cw > d.x0 && y < d.y1 && y + g.ch > d.y0; }
+  function offDeck(c, g) {
+    const d = deckZone(g, 8);
+    const push = [[d.x0 - g.cw - c.x, 0], [d.x1 - c.x, 0], [0, d.y0 - g.ch - c.y], [0, d.y1 - c.y]]
+      .filter(([px, py]) => { const b = bounds(g), nx = c.x + px, ny = c.y + py; return nx >= b.x0 && nx <= b.x1 && ny >= b.y0 && ny <= b.y1; })
+      .sort((a, b) => Math.hypot(...a) - Math.hypot(...b))[0];
+    return push || [0, 0];
+  }
+  // a card may hang well over the table's edges before the soft walls push it back
+  const bounds = (g) => ({ x0: -g.cw * .45, x1: g.W - g.cw * .55, y0: -g.ch * .45, y1: g.H - g.ch * .55 });
+  function clampIn(c) {
+    const g = geo(), b = bounds(g);
+    c.x = Math.max(b.x0, Math.min(b.x1, c.x)); c.y = Math.max(b.y0, Math.min(b.y1, c.y));
+    if (onDeck(c.x, c.y, g, -12)) { const [px, py] = offDeck(c, g); c.x += px; c.y += py; }
+  }
+
+  const live = new Set(); let raf = 0, tPrev = 0;
+  function kick(c) { live.add(c); if (!raf) { tPrev = performance.now(); raf = requestAnimationFrame(step); } }
+  function step(t) {
+    const k = Math.min(3, (t - tPrev) / 16.67); tPrev = t;
+    const g = geo(), b = bounds(g);
+    for (const c of live) {
+      if (c.held || c.gone) { live.delete(c); continue; }
+      c.x += c.vx * k; c.y += c.vy * k; c.r += c.vr * k;
+      c.vx *= F ** k; c.vy *= F ** k; c.vr *= SF ** k;
+      // soft walls push a card back instead of stopping it dead
+      let out = false;
+      if (c.x < b.x0) { c.vx += (b.x0 - c.x) * .12 * k; c.vx *= .84 ** k; out = true; }
+      if (c.x > b.x1) { c.vx += (b.x1 - c.x) * .12 * k; c.vx *= .84 ** k; out = true; }
+      if (c.y < b.y0) { c.vy += (b.y0 - c.y) * .12 * k; c.vy *= .84 ** k; out = true; }
+      if (c.y > b.y1) { c.vy += (b.y1 - c.y) * .12 * k; c.vy *= .84 ** k; out = true; }
+      // a dealt card is exempt until it has cleared the deck it left from
+      if (c.launch && !onDeck(c.x, c.y, g)) c.launch = false;
+      if (!c.launch && onDeck(c.x, c.y, g, -12)) {
+        const [px, py] = offDeck(c, g);
+        c.vx += px * .1 * k; c.vy += py * .1 * k; c.vx *= .86 ** k; c.vy *= .86 ** k; out = true;
+      }
+      const v = Math.hypot(c.vx, c.vy);
+      // a fast card is in the air; it settles back down smoothly instead of snapping
+      c.s += ((1 + Math.min(.1, v * .007)) - c.s) * Math.min(1, .35 * k);
+      draw(c);
+      if (!out && v < .05 && Math.abs(c.vr) < .03 && Math.abs(c.s - 1) < .002) { c.s = 1; draw(c); live.delete(c); }
+    }
+    raf = live.size ? requestAnimationFrame(step) : 0;
+  }
+
+  deckBtn.addEventListener('click', () => { stage.classList.add('touched'); deal(); }); // a real button: Enter and Space deal too
+
+  /* ---------- designs: an endless strip that leans with swipe speed; the section takes on the centred design's pastel ---------- */
+  const strip = document.getElementById('strip');
+  const bgs = document.getElementById('bgs');
+  // five copies of the list; the middle one is the real one, and the scroll is quietly moved back to it whenever it settles,
+  // so there is no first or last card. One copy is wider than any fling, so a fling never reaches an edge.
+  const N = ALL.length, COPIES = reduce ? 1 : 5, MID = reduce ? 0 : 2;
+  strip.innerHTML = Array.from({ length: COPIES * N }, (_, j) => {
+    const k = ALL[j % N], real = ((j / N) | 0) === MID;
+    return `<button class="dz" type="button" data-k="${k}"${real ? '' : ' tabindex="-1" aria-hidden="true"'} aria-label="${D[k].name}: לראות את הקלפים והלוח"><div class="tilt"><img src="${C}${k}-f1.webp" alt="" draggable="false"></div><span class="nm">${D[k].name}</span></button>`;
+  }).join('');
+  // each design's colour, strong at the top (lifted only as far as black text needs: luminance >= .42, about 9:1), then lighter and lighter
+  // until it is the page itself at the bottom, so the panel has no bottom edge. A near-black design lifts toward the page, so it is warm, not grey
+  const PAGE = [255, 241, 222], rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const mix = (h, f, to) => '#' + rgb(h).map((v, i) => Math.round(v + (to[i] - v) * f).toString(16).padStart(2, '0')).join('');
+  const lum = (h) => { const c = rgb(h).map((v) => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }); return .2126 * c[0] + .7152 * c[1] + .0722 * c[2]; };
+  const panel = (c) => {
+    const v = rgb(c), to = Math.max(...v) - Math.min(...v) < 40 ? PAGE : [255, 255, 255];
+    let f = .12; while (f < .9 && lum(mix(c, f, to)) < .42) f += .03;
+    return [mix(c, f, to), mix(c, f + (1 - f) * .62, to)];
+  };
+  bgs.innerHTML = ALL.map((k) => { const [a, b] = panel(D[k].c); return `<i style="background:linear-gradient(180deg, ${a}, ${b} 48%, #fff1de); background:linear-gradient(in oklab 180deg, ${a}, ${b} 48%, #fff1de)"></i>`; }).join('');
+  const items = [...strip.children], layers = [...bgs.children];
+  const span = () => items[0].offsetWidth || 1;
+  let lastSL = 0, lastT = performance.now(), target = 0, lean = 0, leanV = 0, looping = false, settle = 0;
+
+  function recentre() {
+    if (reduce) return;
+    const copy = N * span(), sl = strip.scrollLeft;
+    let to = sl;
+    while (to < (MID - .5) * copy) to += copy;
+    while (to > (MID + .5) * copy) to -= copy;
+    if (to !== sl) { strip.scrollLeft = to; lastSL = to; paint(); } // the same cards in the same places: nothing visible moves
+  }
+  function paint() {
+    if (reduce) return; // a static grid on the section's own colour
+    const w = span(), mid = strip.scrollLeft + strip.clientWidth / 2;
+    const op = new Array(N).fill(0);
+    items.forEach((el, j) => {
+      const d = (el.offsetLeft + w / 2 - mid) / w; // -1..1 = one card away
+      if (Math.abs(d) > 3) return;
+      const ad = Math.min(1.4, Math.abs(d));
+      el.firstChild.style.transform = `translateY(${ad * 18}px) rotateY(${(-lean * 1.4 - d * 14).toFixed(2)}deg) rotateZ(${(lean * .7 + d * 6).toFixed(2)}deg) scale(${(1 - ad * .16).toFixed(3)})`;
+      op[j % N] = Math.max(op[j % N], 1 - Math.abs(d)); // neighbours cross-fade = colour morph, also across the wrap
+    });
+    layers.forEach((l, k) => { l.style.opacity = op[k].toFixed(3); });
+  }
+  function loop() {
+    // spring toward the lean the swipe asks for; settling past upright gives the little overshoot
+    target *= .86;
+    leanV += (target - lean) * .18; leanV *= .72; lean += leanV;
+    paint();
+    if (Math.abs(lean) + Math.abs(leanV) + Math.abs(target) > .02) requestAnimationFrame(loop);
+    else { lean = 0; paint(); looping = false; }
+  }
+  strip.addEventListener('scroll', () => {
+    const t = performance.now(), v = (strip.scrollLeft - lastSL) / Math.max(8, t - lastT);
+    lastSL = strip.scrollLeft; lastT = t;
+    if (reduce) return;
+    clearTimeout(settle); settle = setTimeout(recentre, 160);
+    // a very long fling that nears the outer copies is pulled back at once
+    const copy = N * span();
+    if (strip.scrollLeft < .6 * copy || strip.scrollLeft > (COPIES - 1.6) * copy) recentre();
+    target = Math.max(-22, Math.min(22, v * 9));
+    if (!looping) { looping = true; requestAnimationFrame(loop); }
+  }, { passive: true });
+  strip.addEventListener('scrollend', recentre);
+  function startStrip() { if (reduce) return; strip.scrollLeft = (MID * N + 1) * span(); lastSL = strip.scrollLeft; paint(); }
+
+  /* SHARED:START (copied into r12-designs.html) */
+  // what a tapped design shows: its pastel, its board with a front and a back on it, and its name. The board comes in two sizes, so a 2x or 3x
+  // screen gets the native 2000 px one (boards14/) and the rest the 1200 px one; ברוקלין has only the 1200 px board
+  function fillFlood(root, k) {
+    const d = D[k], tab = root.querySelector('.tableau');
+    const v = [1, 3, 5].map((i) => parseInt(d.c.slice(i, i + 2), 16)), P = [255, 241, 222];
+    root.style.setProperty('--fc', Math.max(...v) - Math.min(...v) >= 40 ? pastel(d.c) : '#' + v.map((x, i) => Math.round(x + (P[i] - x) * .62).toString(16).padStart(2, '0')).join(''));
+    root.querySelector('h3').textContent = d.name;
+    tab.className = 'tableau' + (d.board ? '' : ' solo');
+    tab.innerHTML = (d.board ? `<img class="bd" src="${d.board}"${d.board2 ? ` srcset="${d.board} 1200w, ${d.board2} 2000w" sizes="(min-width: 650px) 520px, 80vw"` : ''} alt="הלוח של ${d.name}">` : '')
+      + `<img class="fc fr" src="${C}${k}-f1.webp" alt="קלף מהעיצוב ${d.name}">`
+      + (d.back ? `<img class="fc bk" src="${C}${k}-b1.webp" alt="גב הקלף של ${d.name}">` : '');
+  }
+  /* SHARED:END */
+  /* ---------- the flood: tap a design; its pastel fills the screen, its front and back land on its real board ---------- */
+  const flood = document.getElementById('flood'), tableau = document.getElementById('tableau');
+  let openFrom = null;
+  function openDesign(btn, x, y) {
+    const k = btn.dataset.k, d = D[k];
+    openFrom = btn;
+    fillFlood(flood, k);
+    flood.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    if (reduce) {
+      flood.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 });
+    } else {
+      flood.animate([{ clipPath: `circle(0px at ${x}px ${y}px)` }, { clipPath: `circle(${R}px at ${x}px ${y}px)` }], { duration: 520, easing: 'cubic-bezier(.6, 0, .25, 1)', fill: 'forwards' });
+      requestAnimationFrame(() => {
+        const bd = tableau.querySelector('.bd'), fr = tableau.querySelector('.fr'), bk = tableau.querySelector('.bk');
+        // the board drops onto the table, the tapped card flies from the strip onto it, its back slides out from under it
+        if (bd) bd.animate([{ transform: 'rotate(-9deg) scale(.82) translateY(-30px)', opacity: 0 }, { transform: 'rotate(-2.5deg)', opacity: 1 }], { duration: 560, delay: 120, easing: 'cubic-bezier(.3, 1.25, .45, 1)', fill: 'both' });
+        const from = btn.querySelector('img').getBoundingClientRect(), to = fr.getBoundingClientRect(), base = getComputedStyle(fr).transform;
+        const dx = from.left + from.width / 2 - (to.left + to.width / 2), dy = from.top + from.height / 2 - (to.top + to.height / 2);
+        fr.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${from.width / to.width})` }, { transform: base }], { duration: 640, delay: 60, easing: 'cubic-bezier(.3, .9, .3, 1.05)', fill: 'both' });
+        if (bk) bk.animate([{ transform: `translate(${fr.offsetLeft - bk.offsetLeft}px, 0) rotate(-7deg)`, opacity: 0 }, { transform: getComputedStyle(bk).transform, opacity: 1 }], { duration: 480, delay: 520, easing: 'cubic-bezier(.3, 1.3, .45, 1)', fill: 'both' });
+      });
+    }
+    const opening = flood.getAnimations({ subtree: true });
+    requestAnimationFrame(() => { const all = [...opening, ...flood.getAnimations({ subtree: true })]; Promise.all(all.map((a) => a.finished)).then(() => { if (flood.classList.contains('open') && !flood.classList.contains('closing')) all.forEach((a) => a.cancel()); }, () => {}); });
+    document.getElementById('floodX').focus({ preventScroll: true, focusVisible: false }); // focus moves in, without a ring after a tap
+  }
+  function closeDesign() {
+    if (!flood.classList.contains('open') || flood.classList.contains('closing')) return;
+    flood.classList.add('closing');
+    const r = openFrom.querySelector('img').getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const done = () => { flood.classList.remove('open', 'closing'); flood.getAnimations({ subtree: true }).forEach((a) => a.cancel()); tableau.innerHTML = ''; document.body.style.overflow = ''; openFrom.focus({ preventScroll: true }); };
+    if (reduce) { flood.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 180 }).onfinish = done; return; }
+    tableau.animate([{ transform: 'none', opacity: 1 }, { transform: 'translateY(26px) scale(.94)', opacity: 0 }], { duration: 260, easing: 'cubic-bezier(.5, 0, .7, .4)', fill: 'forwards' });
+    const R = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+    flood.animate([{ clipPath: `circle(${R}px at ${x}px ${y}px)` }, { clipPath: `circle(0px at ${x}px ${y}px)` }], { duration: 480, delay: 120, easing: 'cubic-bezier(.6, 0, .3, 1)', fill: 'forwards' }).onfinish = done;
+  }
+  strip.addEventListener('click', (e) => {
+    const btn = e.target.closest('.dz'); if (!btn) return;
+    const r = btn.querySelector('img').getBoundingClientRect();
+    openDesign(btn, e.clientX || r.left + r.width / 2, e.clientY || r.top + r.height / 2);
+  });
+  document.getElementById('floodX').addEventListener('click', closeDesign);
+  // tap outside the board, the cards and the order pill, or swipe down, to close
+  let fy0 = null;
+  flood.addEventListener('pointerdown', (e) => { fy0 = e.clientY; });
+  flood.addEventListener('pointerup', (e) => {
+    const dy = fy0 == null ? 0 : e.clientY - fy0; fy0 = null;
+    if (dy > 70) return closeDesign();
+    if (Math.abs(dy) < 8 && !e.target.closest('.tableau img, .pill, .x, .tok')) closeDesign();
+  });
+  addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDesign(); });
+  document.getElementById('floodOrder').addEventListener('click', (e) => e.stopPropagation());
+
+  /* ---------- recommendations: an endless row that moves on its own; a card opens the review itself in a sheet ---------- */
+  const sheet = document.getElementById('sheet'), sheetPic = document.getElementById('sheetPic'), sheetCap = document.getElementById('sheetCap');
+  const row = document.getElementById('row'), track = document.getElementById('track');
+  const one = [...track.children];
+  for (let i = 0; i < 2; i++) one.forEach((c) => { const k = c.cloneNode(true); k.setAttribute('aria-hidden', 'true'); k.querySelectorAll('[data-edit]').forEach((e) => e.removeAttribute('data-edit')); if (k.tagName === 'BUTTON') k.tabIndex = -1; track.appendChild(k); });
+  let sheetFrom = null;
+  track.addEventListener('click', (e) => {
+    const b = e.target.closest('button.rc'); if (!b || dragged) return;
+    sheetFrom = b;
+    const sheetImg = new Image(); sheetImg.src = `media/reviews/${b.dataset.shot}`; // redacted crops, local only: the repo is public
+    sheetImg.alt = `ההמלצה המלאה: ${b.querySelector('.ttl').textContent}`; sheetPic.replaceChildren(sheetImg);
+    sheetCap.textContent = b.querySelector('.cap').textContent;
+    sheet.showModal();
+    if (!reduce) sheet.animate([{ transform: 'translateY(100%)' }, { transform: 'none' }], { duration: 360, easing: 'cubic-bezier(.2, .9, .3, 1.08)' });
+  });
+  // three copies side by side; the scroll is kept inside the middle one, so the row never ends. It drifts toward the reading
+  // direction (right to left) unless a finger, a mouse or focus is on it, or it is off screen.
+  const copyW = () => track.children[one.length].offsetLeft - one[0].offsetLeft || 1;
+  let pos = 0, seen = false, rowT = 0, dragged = false, wrapT = 0, hovering = false, touching = false, kbFocus = false;
+  const wrap = () => { const w = copyW(); if (pos < w * .5) pos += w; if (pos > w * 1.5) pos -= w; };
+  const setPos = () => { row.scrollLeft = pos; };
+  function tickRow(t) {
+    const dt = Math.min(64, t - (rowT || t)); rowT = t;
+    if (!hovering && !touching && !kbFocus && !mdrag && seen && !document.hidden && !sheet.open) { pos -= dt * .03; wrap(); setPos(); }
+    requestAnimationFrame(tickRow);
+  }
+  row.addEventListener('scroll', () => {
+    if (Math.abs(row.scrollLeft - pos) > 2) { pos = row.scrollLeft; clearTimeout(wrapT); wrapT = setTimeout(() => { wrap(); setPos(); }, 140); } // a swipe: follow it, re-centre when it settles
+  }, { passive: true });
+  // paused while a mouse is over it, for 1.8 s after a finger lets go, and while a key user is on a card
+  row.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') hovering = true; });
+  row.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') hovering = false; });
+  let tx = null, rel = 0, mdrag = null;
+  row.addEventListener('pointerdown', (e) => {
+    tx = e.clientX; dragged = false;
+    if (e.pointerType === 'mouse') { if (e.button === 0) mdrag = { x: e.clientX, sl: row.scrollLeft }; } // a mouse drags the row like a finger
+  });
+  addEventListener('pointermove', (e) => {
+    if (tx != null && Math.abs(e.clientX - tx) > 8) dragged = true;
+    if (mdrag && dragged) { row.scrollLeft = mdrag.sl - (e.clientX - mdrag.x); pos = row.scrollLeft; row.classList.add('dragging'); }
+  });
+  const rowUp = (e) => {
+    if (tx == null) return;
+    tx = null; if (mdrag) { mdrag = null; row.classList.remove('dragging'); wrap(); setPos(); }
+    setTimeout(() => { dragged = false; }, 0); // a drag is not a tap on the card under it
+  };
+  addEventListener('pointerup', rowUp); addEventListener('pointercancel', rowUp);
+  // touch: still from the first touch until the last finger is really up (the browser's pointercancel on scrolling is not a lift), then 1.8 s more
+  row.addEventListener('touchstart', () => { clearTimeout(rel); touching = true; }, { passive: true });
+  const lift = (e) => { if (!e.touches.length) { clearTimeout(rel); rel = setTimeout(() => { touching = false; }, 1800); } };
+  row.addEventListener('touchend', lift); row.addEventListener('touchcancel', lift);
+  row.addEventListener('focusin', () => { kbFocus = !!row.querySelector(':focus-visible'); });
+  row.addEventListener('focusout', () => { kbFocus = false; });
+  new IntersectionObserver((es) => { seen = es[0].isIntersecting; }).observe(row);
+  function startRow() { pos = copyW(); setPos(); if (!reduce) requestAnimationFrame(tickRow); }  function closeSheet() {
+    if (!sheet.open) return;
+    const done = () => { sheet.close(); sheetFrom && sheetFrom.focus({ preventScroll: true }); };
+    if (reduce) return done();
+    sheet.animate([{ transform: 'none' }, { transform: 'translateY(100%)' }], { duration: 240, easing: 'cubic-bezier(.5, 0, .8, .4)', fill: 'forwards' }).onfinish = () => { done(); sheet.getAnimations().forEach((a) => a.cancel()); };
+  }
+  document.getElementById('sheetX').addEventListener('click', closeSheet);
+  sheet.addEventListener('cancel', (e) => { e.preventDefault(); closeSheet(); }); // Esc
+  sheet.addEventListener('click', (e) => { if (e.target === sheet) { const r = sheet.getBoundingClientRect(); if (e.clientY < r.top || e.clientX < r.left || e.clientX > r.right) closeSheet(); } }); // the backdrop
+  let sy0 = null;
+  sheet.addEventListener('pointerdown', (e) => { sy0 = sheet.scrollTop <= 0 ? e.clientY : null; });
+  sheet.addEventListener('pointerup', (e) => { if (sy0 != null && e.clientY - sy0 > 70) closeSheet(); sy0 = null; });
+
+
+  showNext('bachelorette');
+  placeDeck();
+  // the deck opens: on arrival one card is dealt onto the pile
+  addEventListener('load', () => { placeDeck(); startStrip(); startRow(); setTimeout(() => deal(), reduce ? 0 : 450); });
+  let lastW = innerWidth;
+  addEventListener('resize', () => {
+    paint();
+    if (Math.abs(innerWidth - lastW) < 2) return;
+    lastW = innerWidth; placeDeck(); startStrip(); pos = copyW(); setPos();
+    cards.forEach((c) => (reduce ? (clampIn(c), draw(c)) : kick(c)));
+    retire();
+  });
+
+
+  /* ---------- illustrations: placed from PLACEMENTS (normal view) or edited at #place ----------
+     A layout is { m: phone, d: desktop }, each a list of [type, section, x%, y%, width px, turn deg]; x and y are the item's centre
+     in % of its section's width and height, so it holds on any width of the same layout. */
+  const ILL = {"glass": ["שעון חול", "<svg class=\"il\" viewBox=\"0 0 120 120\" aria-hidden=\"true\" focusable=\"false\"><ellipse cx=\"60\" cy=\"106\" rx=\"26\" ry=\"3.5\" fill=\"#ece3d5\" class=\"n\"/><g class=\"a i13r\" style=\"--d:10s;--dl:0s;--o:50% 50%;\"><path class=\"n\" d=\"M44,33 C44,48 56,55 57.5,62 C56,69 44,76 44,91 L76,91 C76,76 64,69 62.5,62 C64,55 76,48 76,33Z\" fill=\"#fffdf8\"/><g class=\"a i13a\" style=\"--d:10s;--dl:0s;--o:50% 50%;\"><path class=\"n\" d=\"M47.5,38 C49,49 55,55 60,60 C65,55 71,49 72.5,38 Q60,41 47.5,38Z\" fill=\"#f7dc72\"/></g><g class=\"a i13b\" style=\"--d:10s;--dl:0s;--o:50% 50%;\"><path class=\"n\" d=\"M46,92 Q49,79 60,77 Q71,79 74,92Z\" fill=\"#f7dc72\"/></g><path d=\"M60,63 V89\" stroke=\"#f2c14e\" stroke-width=\"1.6\" class=\"a i13s\" style=\"--d:10s\"/><path d=\"M44,33 C44,48 56,55 57.5,62 C56,69 44,76 44,91 M76,33 C76,48 64,55 62.5,62 C64,69 76,76 76,91\"/><path class=\"h\" d=\"M48,36 C48,44 51,49 54,53 C51,48 50,43 50.5,36Z\" opacity=\".9\"/><rect x=\"38\" y=\"91\" width=\"44\" height=\"7\" rx=\"3\" fill=\"#f7b58e\"/><rect x=\"38\" y=\"26\" width=\"44\" height=\"7\" rx=\"3\" fill=\"#f7b58e\"/><rect x=\"38.5\" y=\"33\" width=\"4\" height=\"58\" rx=\"2\" fill=\"#ece3d5\"/><rect x=\"77.5\" y=\"33\" width=\"4\" height=\"58\" rx=\"2\" fill=\"#ece3d5\"/></g><g class=\"a tw\" style=\"--d:4s;--dl:0s;--o:50% 50%;\"><path d=\"M22.0,27.0 Q22.8,31.2 27.0,32.0 Q22.8,32.8 22.0,37.0 Q21.2,32.8 17.0,32.0 Q21.2,31.2 22.0,27.0Z\" fill=\"#f7dc72\" /></g><g class=\"a tw\" style=\"--d:5s;--dl:-2s;--o:50% 50%;\"><path class=\"t\" d=\"M96.0,36.0H104.0M100.0,32.0V40.0\" /></g><circle class=\"t\" cx=\"98\" cy=\"80\" r=\"2.4\" fill=\"none\"/><circle cx=\"22\" cy=\"76\" r=\"1.6\" fill=\"#1b1a19\" stroke=\"none\"/></svg>"], "popper": ["פופר", "<svg class=\"il\" viewBox=\"0 0 120 120\" aria-hidden=\"true\" focusable=\"false\"><ellipse cx=\"40\" cy=\"108\" rx=\"26\" ry=\"3\" fill=\"#ece3d5\" class=\"n\"/><g class=\"a rise\" style=\"--d:3.2s;--dl:0s;--o:50% 50%;--x:22px;--y:-30px\"><rect x=\"62\" y=\"48\" width=\"9\" height=\"5\" rx=\"1.2\" fill=\"#f0866a\" class=\"t\"/></g><g class=\"a rise\" style=\"--d:3.2s;--dl:-0.5s;--o:50% 50%;--x:36px;--y:-22px\"><circle cx=\"66\" cy=\"52\" r=\"3.4\" fill=\"#9ed7bf\" class=\"t\"/></g><g class=\"a rise\" style=\"--d:3.2s;--dl:-1s;--o:50% 50%;--x:30px;--y:-40px\"><rect x=\"62\" y=\"48\" width=\"9\" height=\"5\" rx=\"1.2\" fill=\"#c9b8ec\" class=\"t\"/></g><g class=\"a rise\" style=\"--d:3.2s;--dl:-1.6s;--o:50% 50%;--x:40px;--y:-36px\"><path d=\"M66.0,46.0 Q67.0,51.0 72.0,52.0 Q67.0,53.0 66.0,58.0 Q65.0,53.0 60.0,52.0 Q65.0,51.0 66.0,46.0Z\" fill=\"#f7dc72\" stroke-width=\"1.3\" /></g><g class=\"a rise\" style=\"--d:3.2s;--dl:-2.2s;--o:50% 50%;--x:14px;--y:-42px\"><path d=\"M60,54 q3,-6 6,0 t6,0\" stroke=\"#ea4795\" stroke-width=\"2.4\"/></g><g class=\"a rise\" style=\"--d:3.2s;--dl:-2.8s;--o:50% 50%;--x:42px;--y:-8px\"><rect x=\"62\" y=\"48\" width=\"9\" height=\"5\" rx=\"1.2\" fill=\"#a8cdee\" class=\"t\"/></g><g class=\"a rise\" style=\"--d:3.2s;--dl:-0.9s;--o:50% 50%;--x:24px;--y:-16px\"><circle cx=\"66\" cy=\"52\" r=\"3.4\" fill=\"#ea4795\" class=\"t\"/></g><g class=\"a rise\" style=\"--d:3.2s;--dl:-3.3s;--o:50% 50%;--x:44px;--y:-26px\"><path d=\"M60,54 q3,-6 6,0 t6,0\" stroke=\"#9ed7bf\" stroke-width=\"2.4\"/></g><clipPath id=\"i25c\"><path d=\"M25.5,103.5 L18.5,96.5 L56.2,50.2 L71.8,65.8Z\"/></clipPath><path d=\"M25.5,103.5 L18.5,96.5 L56.2,50.2 L71.8,65.8Z\" fill=\"#f7dc72\"/><g clip-path=\"url(#i25c)\"><path class=\"n\" d=\"M-110,0 L10,120 L17,120 L-103,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M-95,0 L25,120 L32,120 L-88,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M-80,0 L40,120 L47,120 L-73,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M-65,0 L55,120 L62,120 L-58,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M-50,0 L70,120 L77,120 L-43,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M-35,0 L85,120 L92,120 L-28,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M-20,0 L100,120 L107,120 L-13,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M-5,0 L115,120 L122,120 L2,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M10,0 L130,120 L137,120 L17,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M25,0 L145,120 L152,120 L32,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M40,0 L160,120 L167,120 L47,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M55,0 L175,120 L182,120 L62,0Z\" fill=\"#ea4795\"/><path class=\"n\" d=\"M70,0 L190,120 L197,120 L77,0Z\" fill=\"#ea4795\"/></g><path d=\"M25.5,103.5 L18.5,96.5 L56.2,50.2 L71.8,65.8Z\"/><ellipse cx=\"64\" cy=\"58\" rx=\"11\" ry=\"4.2\" transform=\"rotate(45 64 58)\" fill=\"#fbf6ee\"/><path d=\"M18.5,96.5 L25.5,103.5 L21,108 L14,101Z\" fill=\"#ea4795\"/><g class=\"a tw\" style=\"--d:3.2s;--dl:-1s;--o:50% 50%;\"><path d=\"M96.0,16.0 Q97.0,21.0 102.0,22.0 Q97.0,23.0 96.0,28.0 Q95.0,23.0 90.0,22.0 Q95.0,21.0 96.0,16.0Z\" fill=\"#f7dc72\" /></g><g class=\"a tw\" style=\"--d:3.2s;--dl:-2s;--o:50% 50%;\"><path class=\"t\" d=\"M98.0,66.0H106.0M102.0,62.0V70.0\" /></g><g class=\"a tw\" style=\"--d:3.2s;--dl:-0.5s;--o:50% 50%;\"><path class=\"t\" d=\"M68.5,20.0H75.5M72.0,16.5V23.5\" /></g></svg>"], "disco": ["כדור דיסקו", "<svg class=\"il\" viewBox=\"0 0 120 120\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M60,8 V30\" stroke-width=\"1.8\"/><rect x=\"54\" y=\"30\" width=\"12\" height=\"7\" rx=\"2\" fill=\"#ece3d5\"/><g class=\"a sway\" style=\"--d:3s;--dl:0s;--o:50% 0%;--r:3deg\"><g><clipPath id=\"i27c\"><circle cx=\"60\" cy=\"64\" r=\"28\"/></clipPath><circle cx=\"60\" cy=\"64\" r=\"28\" fill=\"#c9b8ec\"/><g clip-path=\"url(#i27c)\"><rect x=\"60\" y=\"36\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"52\" y=\"44\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"76\" y=\"44\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"44\" y=\"52\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"68\" y=\"52\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"36\" y=\"60\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"60\" y=\"60\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"52\" y=\"68\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"76\" y=\"68\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"44\" y=\"76\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"68\" y=\"76\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><rect x=\"60\" y=\"84\" width=\"8\" height=\"8\" fill=\"#ffffff\" stroke=\"none\" opacity=\".75\"/><path class=\"n\" d=\"M32,64 A28,28 0 0 0 88,64 Q60,76 32,64Z\" fill=\"#a994da\"/><path class=\"t\" d=\"M45.6,40 H74.4\"/><path class=\"t\" d=\"M37.0,48 H83.0\"/><path class=\"t\" d=\"M33.2,56 H86.8\"/><path class=\"t\" d=\"M32.0,64 H88.0\"/><path class=\"t\" d=\"M33.2,72 H86.8\"/><path class=\"t\" d=\"M37.0,80 H83.0\"/><path class=\"t\" d=\"M45.6,88 H74.4\"/><path class=\"t\" d=\"M60,36 V92\"/><ellipse class=\"t\" cx=\"60\" cy=\"64\" rx=\"8\" ry=\"28\" fill=\"none\"/><ellipse class=\"t\" cx=\"60\" cy=\"64\" rx=\"17\" ry=\"28\" fill=\"none\"/><ellipse class=\"t\" cx=\"60\" cy=\"64\" rx=\"24\" ry=\"28\" fill=\"none\"/></g><circle cx=\"60\" cy=\"64\" r=\"28\" fill=\"none\"/><path class=\"h\" d=\"M44,52 l6,0 l0,6 l-6,0Z M52,46 l6,0 l0,5 l-6,0Z\"/></g></g><g class=\"a tw\" style=\"--d:2.6s;--dl:0s;--o:50% 50%;--r:90deg\"><path d=\"M84.0,42.0 Q85.3,48.7 92.0,50.0 Q85.3,51.3 84.0,58.0 Q82.7,51.3 76.0,50.0 Q82.7,48.7 84.0,42.0Z\" fill=\"#ffffff\" /></g><g class=\"a tw\" style=\"--d:2.6s;--dl:-1.3s;--o:50% 50%;--r:90deg\"><path d=\"M40.0,74.0 Q41.0,79.0 46.0,80.0 Q41.0,81.0 40.0,86.0 Q39.0,81.0 34.0,80.0 Q39.0,79.0 40.0,74.0Z\" fill=\"#ffffff\" /></g><g class=\"a tw\" style=\"--d:3.4s;--dl:-0.6s;--o:50% 50%;--r:-90deg\"><path d=\"M100.0,78.0 Q101.0,83.0 106.0,84.0 Q101.0,85.0 100.0,90.0 Q99.0,85.0 94.0,84.0 Q99.0,83.0 100.0,78.0Z\" fill=\"#f7dc72\" /></g><g class=\"a tw\" style=\"--d:3.4s;--dl:-2s;--o:50% 50%;--r:90deg\"><path d=\"M20.0,41.0 Q20.8,45.2 25.0,46.0 Q20.8,46.8 20.0,51.0 Q19.2,46.8 15.0,46.0 Q19.2,45.2 20.0,41.0Z\" fill=\"#ea4795\" /></g><path class=\"t\" d=\"M24,98 l6,-4 M96,22 l-5,4 M104,60 h-6\"/></svg>"], "sparks": ["נצנוצים", "<svg class=\"il\" viewBox=\"0 0 120 120\" aria-hidden=\"true\" focusable=\"false\"><g class=\"a tw\" style=\"--d:3s;--dl:0s;--o:50% 50%;--r:45deg\"><path d=\"M54.0,36.0 Q58.7,57.3 80.0,62.0 Q58.7,66.7 54.0,88.0 Q49.3,66.7 28.0,62.0 Q49.3,57.3 54.0,36.0Z\" fill=\"#f7dc72\" /></g><g class=\"a tw\" style=\"--d:3s;--dl:-1s;--o:50% 50%;--r:-45deg\"><path d=\"M88.0,17.0 Q90.3,27.7 101.0,30.0 Q90.3,32.3 88.0,43.0 Q85.7,32.3 75.0,30.0 Q85.7,27.7 88.0,17.0Z\" fill=\"#ea4795\" /></g><g class=\"a tw\" style=\"--d:3s;--dl:-2s;--o:50% 50%;--r:45deg\"><path d=\"M90.0,79.0 Q91.6,86.4 99.0,88.0 Q91.6,89.6 90.0,97.0 Q88.4,89.6 81.0,88.0 Q88.4,86.4 90.0,79.0Z\" fill=\"#ffffff\" /></g><circle cx=\"30\" cy=\"28\" r=\"1.6\" fill=\"#1b1a19\" stroke=\"none\"/><circle cx=\"102\" cy=\"60\" r=\"1.4\" fill=\"#1b1a19\" stroke=\"none\"/><circle class=\"t\" cx=\"22\" cy=\"96\" r=\"2.4\" fill=\"none\"/><g class=\"a tw\" style=\"--d:3s;--dl:-0.5s;--o:50% 50%;\"><path class=\"t\" d=\"M22.5,46.0H29.5M26.0,42.5V49.5\" /></g></svg>"], "star": ["כוכב שחור", "<svg class=\"il\" viewBox=\"0 0 40 40\" aria-hidden=\"true\" focusable=\"false\"><g class=\"a twk\" style=\"--d:5.5s;--r:45deg\"><path d=\"M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z\" fill=\"#000\" stroke=\"#000\" /></g></svg>"], "bstar": ["כוכב תכלת", "<svg class=\"il\" viewBox=\"0 0 40 40\" aria-hidden=\"true\" focusable=\"false\"><g class=\"a twk\" style=\"--d:6s;--dl:-1s;--r:45deg\"><path d=\"M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z\" fill=\"#a4e9ff\" stroke-width=\"2.4\" /></g></svg>"], "pstar": ["כוכב ורוד", "<svg class=\"il\" viewBox=\"0 0 40 40\" aria-hidden=\"true\" focusable=\"false\"><g class=\"a twk\" style=\"--d:6.4s;--dl:-2s;--r:-45deg\"><path d=\"M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z\" fill=\"#ea4795\" stroke-width=\"2.4\" /></g></svg>"], "cross": ["פלוס", "<svg class=\"il\" viewBox=\"0 0 16 16\" aria-hidden=\"true\" focusable=\"false\"><g class=\"a twk\" style=\"--d:7s;--dl:-3s;--r:0deg\"><path d=\"M8 2v12M2 8h12\" stroke-width=\"1.6\" /></g></svg>"]};
+  const PLACEMENTS = {"m": [["sparks", "top", 19.4, 35, 40, -6], ["star", "top", 13.7, 63.9, 22, -10], ["pstar", "top", 12.2, 91, 16, -14], ["popper", "order", 11.5, 7.9, 78, -6], ["bstar", "order", 9.4, 77.8, 18, -10], ["cross", "order", 83, 84.2, 14, 0], ["disco", "recs", 27.8, 17, 71, 6], ["cross", "recs", 28.7, 93.9, 14, 0], ["glass", "story", 47.6, 19.9, 68, 5], ["pstar", "story", 61.4, 7.8, 18, 18], ["star", "story", 58.6, 55, 16, -14], ["bstar", "story", 23.8, 85.9, 33, 0], ["disco", "order", 98, 83.7, 65, 13], ["pstar", "order", 101, 10.6, 27, 0], ["sparks", "top", 3.5, 17, 50, 0]], "d": [["sparks", "top", 18.2, 19, 56, -6], ["star", "top", 51.4, 7.4, 20, -10], ["bstar", "top", 35, 53.5, 24, 18], ["cross", "top", 27, 93.8, 22, -14], ["pstar", "top", 14.6, 87.8, 22, 12], ["popper", "order", 23.4, 13.9, 84, 5], ["star", "order", 36.6, 78.2, 26, 18], ["cross", "order", 61.4, 84.6, 18, 0], ["disco", "recs", -1, 18.8, 76, -14], ["glass", "story", 57.7, 23, 70, 5], ["pstar", "story", 87.4, 14.2, 26, 18], ["bstar", "story", 85.8, 84.2, 22, -14], ["pstar", "order", 90.3, 22, 30, 0], ["cross", "top", 23.8, 90.7, 30, 0], ["pstar", "order", 34.4, 21.8, 30, 0], ["sparks", "order", 101, 9, 76, 0], ["bstar", "order", -1, 27.9, 20, 8], ["disco", "order", 101, 81.6, 75, 0], ["sparks", "order", 7.2, 92.3, 98, 0], ["bstar", "story", -1, 58.9, 30, 0], ["pstar", "story", 32.2, 86.5, 30, 0], ["pstar", "recs", 48.9, 7.4, 30, 0], ["bstar", "recs", 81.7, 90.7, 30, 0]]};
+  const SECS = ['top', 'order', 'recs', 'story'];
+  const KEY = 'dugri-r16-placements';
+  const bp = () => (innerWidth >= 900 ? 'd' : 'm');
+  const hashOn = (w) => new RegExp('(^#|&)' + w + '(&|=|$)').test(location.hash);
+  let layout = JSON.parse(JSON.stringify(PLACEMENTS)), shown = null, editing = false, editBp = bp();
+  const secEl = (id) => document.getElementById(id);
+  function makePl(it) {
+    const [t, sec, x, y, w, r] = it, host = secEl(sec);
+    if (!ILL[t] || !host) return null;
+    const el = document.createElement('div');
+    el.className = 'pl'; el.setAttribute('aria-hidden', 'true');
+    el.innerHTML = `<span class="illo">${ILL[t][1]}</span><button class="hd rot" type="button" tabindex="-1" aria-label="סיבוב">↻</button><button class="hd size" type="button" tabindex="-1" aria-label="גודל">⤡</button>`;
+    el._it = it; host.appendChild(el); setPl(el);
+    return el;
+  }
+  function setPl(el) { const [, , x, y, w, r] = el._it; Object.assign(el.style, { top: y + '%', width: w + 'px' }); el.style.setProperty('--x', x); el.style.setProperty('--r', r + 'deg'); }
+  // the content column, in viewport px, and where it starts inside each section
+  const col = () => { const l = Math.max(16, (innerWidth - 1040) / 2); return { l, w: innerWidth - 2 * l }; };
+  function colVars() { const c = col(); for (const id of SECS) { const S = secEl(id); S.style.setProperty('--cl', c.l - S.getBoundingClientRect().left + 'px'); S.style.setProperty('--cw2', c.w + 'px'); } }
+  function render() {
+    document.querySelectorAll('.pl').forEach((e) => e.remove());
+    shown = editing ? editBp : bp();
+    (layout[shown] || []).forEach(makePl);
+  }
+  addEventListener('resize', () => { colVars(); if (!editing && bp() !== shown) render(); });
+
+  /* the editor */
+  const pal = document.getElementById('pal'), note = document.getElementById('plNote'), io = document.getElementById('plIO');
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(layout)); } catch (e) {} };
+  const compact = () => JSON.stringify({ v: 1, m: layout.m, d: layout.d }).replace(/\],\[/g, '],\n[');
+  function sayBp() {
+    pal.querySelectorAll('[data-bp]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.bp === editBp)));
+    note.textContent = editBp === bp() ? `עורכים את המיקומים ל${editBp === 'm' ? 'טלפון' : 'מחשב'} · ${layout[editBp].length} איורים`
+      : `עורכים את פריסת ה${editBp === 'm' ? 'טלפון' : 'מחשב'} במסך של ${bp() === 'm' ? 'טלפון' : 'מחשב'}: המיקומים באחוזים, אבל כדאי לבדוק אותם במכשיר עצמו`;
+  }
+  function startEdit() {
+    editing = true; document.body.classList.add('placing');
+    try { const v = JSON.parse(localStorage.getItem(KEY)); if (v && Array.isArray(v.m) && Array.isArray(v.d)) layout = v; } catch (e) {}
+    editBp = bp(); render(); sayBp();
+  }
+  function stopEdit() { editing = false; document.body.classList.remove('placing'); layout = JSON.parse(JSON.stringify(PLACEMENTS)); render(); }
+  // the section under a point, else the nearest one
+  function secAt(x, y) {
+    let best = null, bd = 1e9;
+    for (const id of SECS) {
+      const r = secEl(id).getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return [id, r];
+      const d = Math.abs(y - Math.min(Math.max(y, r.top), r.bottom)); if (d < bd) { bd = d; best = [id, r]; }
+    }
+    return best;
+  }
+  function putAt(el, cx, cy) { // centre in viewport px -> section + %
+    const [id, r] = secAt(cx, cy), it = el._it;
+    const c = col(); it[1] = id; it[2] = r1(Math.min(101, Math.max(-1, (cx - c.l) / c.w * 100))); /* -1..101: visible at the narrowest width of the layout too */ it[3] = r1(Math.min(100, Math.max(0, (cy - r.top) / r.height * 100)));
+    if (el.parentElement !== secEl(id)) secEl(id).appendChild(el);
+    el.classList.remove('drag'); el.style.left = ''; setPl(el);
+  }
+  let sel = null;
+  const select = (el) => { if (sel) sel.classList.remove('sel'); sel = el; if (el) el.classList.add('sel'); document.getElementById('plDup').disabled = document.getElementById('plDel').disabled = !el; };
+  const remove = (el) => { layout[editBp].splice(layout[editBp].indexOf(el._it), 1); el.remove(); select(null); save(); sayBp(); };
+  pal.addEventListener('click', (e) => {
+    const a = e.target.closest('.add');
+    if (a) {
+      const [id, r] = secAt(innerWidth / 2, innerHeight / 2), t = a.dataset.t, w = editBp === 'd' ? (/star|cross/.test(t) ? 30 : 76) : (/star|cross/.test(t) ? 20 : 50);
+      const y = Math.min(r.bottom - 20, Math.max(r.top + 20, innerHeight / 2));
+      const it = [t, id, 50, r1((y - r.top) / r.height * 100), w, 0];
+      layout[editBp].push(it); select(makePl(it)); save(); sayBp(); return;
+    }
+    const b = e.target.closest('[data-bp]');
+    if (b) { editBp = b.dataset.bp; select(null); render(); sayBp(); }
+  });
+  document.getElementById('plDup').addEventListener('click', () => { if (sel) dup(sel); });
+  document.getElementById('plDel').addEventListener('click', () => { if (sel) remove(sel); });
+  document.getElementById('plCopy').addEventListener('click', async () => {
+    const txt = compact(); io.value = txt; pal.classList.add('io');
+    try { await navigator.clipboard.writeText(txt); note.textContent = 'המיקומים הועתקו. הדביקו אותם בשיחה.'; }
+    catch (e) { io.select(); note.textContent = 'סמנו את הטקסט למטה והעתיקו אותו.'; }
+  });
+  document.getElementById('plLoad').addEventListener('click', () => {
+    if (!pal.classList.contains('io') || !io.value.trim()) { pal.classList.add('io'); io.value = ''; io.focus(); note.textContent = 'הדביקו כאן מיקומים ולחצו שוב על "טען".'; return; }
+    try {
+      const v = JSON.parse(io.value); if (!Array.isArray(v.m) || !Array.isArray(v.d)) throw 0;
+      const ok = (it) => Array.isArray(it) && it.length === 6 && ILL[it[0]] && SECS.includes(it[1]) && it.slice(2).every((n) => typeof n === 'number' && isFinite(n));
+      const bad = v.m.filter((it) => !ok(it)).length + v.d.filter((it) => !ok(it)).length;
+      layout = { m: v.m.filter(ok), d: v.d.filter(ok) }; save(); select(null); render(); sayBp();
+      note.textContent = bad ? `נטען, בלי ${bad} שורות שלא הובנו.` : 'נטען.';
+    }
+    catch (e) { note.textContent = 'זה לא נראה כמו מיקומים שהועתקו מכאן.'; }
+  });
+  document.getElementById('plReset').addEventListener('click', () => { layout = JSON.parse(JSON.stringify(PLACEMENTS)); save(); select(null); render(); sayBp(); });
+  document.getElementById('plMin').addEventListener('click', (e) => { pal.classList.toggle('small'); e.currentTarget.textContent = pal.classList.contains('small') ? '▴' : '▾'; });
+
+  // gestures on a placed item: drag to move, the corner to resize, the top corner to turn, ✕ to delete, hold to duplicate, two fingers to pinch and turn
+  const pts = new Map();
+  let g = null;
+  const dup = (el) => { const it = el._it, it2 = it.slice(); it2[2] = r1(Math.min(100, it[2] + 6)); it2[3] = r1(Math.min(100, it[3] + 3)); layout[editBp].push(it2); select(makePl(it2)); save(); sayBp(); };
+  const drop = (el) => { if (el.classList.contains('drag')) { const r = el.getBoundingClientRect(); putAt(el, r.left + r.width / 2, r.top + r.height / 2); } };
+  document.addEventListener('pointerdown', (e) => {
+    if (!editing) return;
+    // a second finger anywhere, while one finger holds an item: pinch that item (a small item can't take two fingers)
+    if (g && g.el && pts.size === 1 && e.pointerType === 'touch' && !pts.has(e.pointerId)) {
+      e.preventDefault(); clearTimeout(g.hold); cancelAnimationFrame(g.auto); g.edge = 0;
+      drop(g.el); // if the first finger had already lifted it out of its section, put it back first
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      const [a, b] = [...pts.values()], it = g.el._it;
+      g = { el: g.el, mode: 'pinch', d0: Math.hypot(b.x - a.x, b.y - a.y) || 1, a0: Math.atan2(b.y - a.y, b.x - a.x), w0: it[4], r0: it[5] };
+      return;
+    }
+    const el = e.target.closest('.pl');
+    if (!el) { if (!e.target.closest('.pal')) select(null); return; }
+    e.preventDefault(); el.setPointerCapture?.(e.pointerId);
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const hd = e.target.closest('.hd');
+    select(el);
+    const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, it = el._it;
+    g = { el, cx, cy, x0: e.clientX, y0: e.clientY, w0: it[4], r0: it[5], moved: false,
+      mode: hd ? (hd.classList.contains('rot') ? 'rot' : 'size') : 'move',
+      a0: Math.atan2(e.clientY - cy, e.clientX - cx), d0: Math.hypot(e.clientX - cx, e.clientY - cy) || 1 };
+    // hold still to copy: by touch only (a slow mouse click must not copy; a mouse has the ⧉ handle)
+    if (g.mode === 'move' && e.pointerType === 'touch') { const mine = g; g.hold = setTimeout(() => { if (g !== mine || mine.moved) return; dup(el); g = null; pts.clear(); }, 550); }
+  });
+  document.addEventListener('pointermove', (e) => {
+    if (!g || !pts.has(e.pointerId)) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const el = g.el, it = el._it;
+    if (g.mode === 'pinch') {
+      const [a, b] = [...pts.values()]; if (!b) return;
+      it[4] = Math.round(Math.min(400, Math.max(10, g.w0 * Math.hypot(b.x - a.x, b.y - a.y) / g.d0)));
+      it[5] = Math.round(g.r0 + (Math.atan2(b.y - a.y, b.x - a.x) - g.a0) * 180 / Math.PI); setPl(el); return;
+    }
+    const dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+    if (!g.moved && Math.hypot(dx, dy) < 4) return;
+    g.moved = true; clearTimeout(g.hold);
+    if (g.mode === 'move') { // lifted out of its section while it moves, so no section edge clips it
+      if (!el.classList.contains('drag')) { el.classList.add('drag'); document.body.appendChild(el); }
+      Object.assign(el.style, { left: g.cx + dx + 'px', top: g.cy + dy + 'px' }); // .drag is fixed: plain viewport px while it moves
+      // near the top or bottom of the screen the page scrolls, so an item can travel to a section that is not in view
+      const bottom = pal.classList.contains('small') ? innerHeight : pal.getBoundingClientRect().top;
+      g.edge = e.clientY > bottom - 60 ? 1 : e.clientY < 70 ? -1 : 0;
+      if (g.edge && !g.auto) { const tick = () => { if (!g || !g.edge) { if (g) g.auto = 0; return; } scrollBy(0, g.edge * 10); g.auto = requestAnimationFrame(tick); }; g.auto = requestAnimationFrame(tick); }
+    } else if (g.mode === 'size') {
+      it[4] = Math.round(Math.min(400, Math.max(10, g.w0 * Math.hypot(e.clientX - g.cx, e.clientY - g.cy) / g.d0))); setPl(el);
+    } else {
+      it[5] = Math.round(g.r0 + (Math.atan2(e.clientY - g.cy, e.clientX - g.cx) - g.a0) * 180 / Math.PI); setPl(el);
+    }
+  });
+  const end = (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (!g) return;
+    clearTimeout(g.hold); cancelAnimationFrame(g.auto); g.edge = 0;
+    if (g.mode === 'pinch') { if (!pts.size) { drop(g.el); g = null; save(); } return; }
+    if (g.mode === 'move' && g.el.classList.contains('drag')) { const r = g.el.getBoundingClientRect(); putAt(g.el, r.left + r.width / 2, r.top + r.height / 2); }
+    if (g.moved) save();
+    g = null;
+  };
+  document.addEventListener('pointerup', end); document.addEventListener('pointercancel', end);
+  addEventListener('keydown', (e) => {
+    if (!editing || !sel || e.target.closest('textarea')) return;
+    if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); remove(sel); return; }
+    const d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key]; if (!d) return;
+    e.preventDefault(); const st = e.shiftKey ? 2 : .5, it = sel._it;
+    it[2] = r1(Math.min(101, Math.max(-1, it[2] + d[0] * st))); it[3] = r1(Math.min(100, Math.max(0, it[3] + d[1] * st))); setPl(sel); save();
+  });
+
+  function readHash() {
+    if (hashOn('place') !== editing) (hashOn('place') ? startEdit : stopEdit)();
+  }
+  addEventListener('hashchange', readHash);
+  colVars(); render(); readHash(); addEventListener('load', colVars);
+
+
+  /* ---------- r13: the menu ---------- */
+  const menu = document.getElementById('menu'), menuBtn = document.getElementById('menuBtn');
+  const closeMenu = () => { if (menu.open) menu.close(); };
+  menuBtn.addEventListener('click', () => {
+    // the sheet's ✕ sits exactly where the ≡ was, and morphs from it as the sheet slides in
+    const r = menuBtn.getBoundingClientRect(), w = Math.min(innerWidth * .86, 380);
+    menu.style.setProperty('--mx-t', r.top + 'px'); menu.style.setProperty('--mx-r', Math.min(innerWidth - r.right, w - 44 - 16) + 'px');
+    menu.classList.remove('xs'); menu.showModal(); menuBtn.setAttribute('aria-expanded', 'true');
+    requestAnimationFrame(() => requestAnimationFrame(() => menu.classList.add('xs')));
+  });
+  let menuTo = null; // a link that closed the menu: focus goes to that section, not back to the ≡
+  menu.addEventListener('close', () => { menuBtn.setAttribute('aria-expanded', 'false'); if (!menuTo) menuBtn.focus({ preventScroll: true }); });
+  document.getElementById('menuX').addEventListener('click', closeMenu);
+  menu.addEventListener('click', (e) => { if (e.target === menu) closeMenu(); }); // the backdrop
+  // a link closes the sheet first; an in-page link then scrolls once the page is not inert
+  menu.querySelectorAll('a').forEach((a) => a.addEventListener('click', (e) => {
+    const h = a.getAttribute('href');
+    if (!h.startsWith('#')) return;
+    e.preventDefault(); menuTo = h; closeMenu();
+    requestAnimationFrame(() => {
+      document.querySelector(h).scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
+      const t = document.querySelector(h + ' h2') || document.querySelector(h); t.tabIndex = -1; t.focus({ preventScroll: true }); menuTo = null;
+    });
+  }));
+  // focus stays inside the sheet and visits every link: Tab is handled here, because Safari's own Tab skips links by default
+  menu.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    e.preventDefault();
+    const f = [...menu.querySelectorAll('a, button')], i = f.indexOf(document.activeElement);
+    f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+  });
+
+
+
+  /* ---------- r15: business enquiries, "leave your details" (no backend in the prototype) ---------- */
+  const lead = document.getElementById('lead'), leadOk = document.getElementById('leadOk');
+  // an Israeli number: 9-10 digits from 0 (landline or mobile), or the same after +972; spaces, dashes and brackets are ignored
+  const telOk = (v) => { const d = v.replace(/[\s\-().]/g, ''); return /^0\d{8,9}$/.test(d) || /^\+9720?\d{8,9}$/.test(d); };
+  const rules = { lName: (v) => v.trim().length >= 2 ? '' : 'כתבו את השם שלכם', lCo: (v) => v.trim().length >= 2 ? '' : 'כתבו את שם החברה', lTel: (v) => !v.trim() ? 'כתבו מספר טלפון' : telOk(v) ? '' : 'מספר טלפון לא תקין, למשל ⁦054‑123‑4567⁩' };
+  const check = (id) => { const i = document.getElementById(id), m = rules[id](i.value); i.setAttribute('aria-invalid', String(!!m)); document.getElementById(id + 'E').textContent = m; return !m; };
+  Object.keys(rules).forEach((id) => document.getElementById(id).addEventListener('blur', () => { if (document.getElementById(id).value) check(id); }));
+  Object.keys(rules).forEach((id) => document.getElementById(id).addEventListener('input', () => { if (document.getElementById(id).getAttribute('aria-invalid') === 'true') check(id); }));
+  lead.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const bad = Object.keys(rules).filter((id) => !check(id));
+    if (bad.length) { document.getElementById(bad[0]).focus(); return; }
+    lead.hidden = true; leadOk.hidden = false; leadOk.focus();
+  });
+
+  /* ---------- r15: #fields=on|yellow|off (default on, sky): the soft field behind the reviews ---------- */
+  const applyFields = () => { const h = location.hash, H = document.documentElement; H.classList.toggle('fields', !/(?:^#|&)fields=off/.test(h)); H.classList.toggle('fields-yel', /(?:^#|&)fields=yellow/.test(h)); };
+  addEventListener('hashchange', applyFields); applyFields();
+
+  // the floats rise above the editor's palette while it is open
+  const palEl = document.getElementById('pal');
+  new ResizeObserver(() => document.body.style.setProperty('--pal-h', palEl.offsetHeight ? palEl.offsetHeight + 8 + 'px' : '0px')).observe(palEl);
+
+  window.__r7 = {
+    deal, openDesign, closeDesign, closeSheet, layout: () => layout, shown: () => shown, row: () => ({ pos, w: copyW(), held: hovering || touching || kbFocus || !!mdrag, seen }),
+    geo, state: () => ({ next: nextKey, last: lastKey, cards: cards.filter((c) => !c.gone).map((c) => ({ k: c.k, up: !c.el.classList.contains('down'), x: Math.round(c.x), y: Math.round(c.y), r: Math.round(c.r), s: +c.s.toFixed(3) })), moving: live.size }),
+    strip: () => ({ sl: strip.scrollLeft, copy: N * span(), centred: (() => { const w = span(), mid = strip.scrollLeft + strip.clientWidth / 2; return items.map((el, j) => [Math.abs(el.offsetLeft + w / 2 - mid), ALL[j % N]]).sort((a, b) => a[0] - b[0])[0][1]; })() }),
+  };
+})();
+</script>
+</body>
+</html>
