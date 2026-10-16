@@ -26,6 +26,39 @@
   html.f-accent h1, html.f-accent h2, html.f-accent .flood h3, html.f-accent .catch .big { font-family: 'Gveret', 'Rubik', sans-serif !important; font-weight: 400 !important; }
   /* FONT:END */
 
+  /* TITLES (#title=1..10 -> html.t-N): the hero headline and the four section titles (.tt), each with a palette colour (--c) and a key word (.kw).
+     Only the palette (#ffd37b, #a4e9ff, #ff7aa9, the logo pink #ea4795, ink, #fff1de); a colour that carries text alone is darkened to AA large */
+  .tt { --c: var(--pink); --cd: #ad003d; --kick: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 44 44'><path d='M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z' fill='%23ff7aa9' stroke='%23000' stroke-width='2.6' stroke-linejoin='round'/></svg>"); }
+  .tt.tc-y { --c: var(--yel); --cd: #764f00; --kick: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 44 44'><path d='M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z' fill='%23ffd37b' stroke='%23000' stroke-width='2.6' stroke-linejoin='round'/></svg>"); }
+  .tt.tc-s { --c: var(--sky); --cd: #005d7b; --kick: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 44 44'><path d='M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z' fill='%23a4e9ff' stroke='%23000' stroke-width='2.6' stroke-linejoin='round'/></svg>"); }
+  /* 2: ink, with a soft pink offset */
+  html.t-2 .tt { text-shadow: .04em .04em 0 var(--pink); }
+  /* 3: the headline in the logo pink (3.2:1 on the page: AA for large text); the section titles ink */
+  html.t-3 #h1 { color: #ea4795; }
+  /* 4: the key word in its colour, outlined in ink, like the leaflet's coloured words */
+  html.t-4 .tt .kw { color: var(--c); -webkit-text-stroke: .07em var(--ink); paint-order: stroke fill; }
+  /* 5: a yellow marker band behind the key word, with a hand-drawn edge */
+  html.t-5 .tt .kw { background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40' preserveAspectRatio='none'><path d='M5 10 C40 5 90 8 140 6 S188 7 196 9 L194 31 C150 35 100 31 60 33 S14 33 4 31 Z' fill='%23ffd37b'/></svg>") no-repeat 0 82% / 100% 50%; padding-inline: .06em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  /* 6: the headline as the leaflet's title: an ink outline, a page-coloured fill and a pink offset; the section titles solid */
+  html.t-6 #h1 { color: var(--page); -webkit-text-stroke: .055em var(--ink); paint-order: stroke fill; text-shadow: .05em .05em 0 var(--pink); letter-spacing: .015em; }
+  /* 7: a hand-drawn squiggle under the key word, in the logo pink */
+  html.t-7 .tt .kw { position: relative; display: inline-block; }
+  html.t-7 .tt .kw::after { content: ''; position: absolute; inset-inline: 0; bottom: -.14em; height: .16em; background: #ea4795; -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 10'><path d='M0 6 Q5 1 10 5 T20 5 T30 5 T40 5' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'/></svg>") repeat-x 0 50% / .62em 100%; mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 10'><path d='M0 6 Q5 1 10 5 T20 5 T30 5 T40 5' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'/></svg>") repeat-x 0 50% / .62em 100%; }
+  /* 8: each title in its own colour, darkened to AA for large text (6.5:1 on the page; 3.2:1 even at the designs panel's palest top) */
+  html.t-8 .tt { color: var(--cd); }
+  /* 9: a small star before each title, in its colour with an ink line; the title stays ink */
+  html.t-9 .tt::before { content: ''; display: inline-block; width: .4em; height: .4em; margin-inline-end: .14em; vertical-align: .1em; background: var(--kick) center / contain no-repeat; }
+  /* 10: a deep plum ink instead of black, for every title */
+  html.t-10 .tt { color: #2b1a33; }
+
+  /* the title switch (while testing), above the font chooser */
+  .tsw { inset-inline-start: max(16px, env(safe-area-inset-right)); bottom: calc(max(16px, env(safe-area-inset-bottom) + 10px) + var(--pal-h, 0px) + 50px); display: flex; align-items: center; background: #fff; border: 1.5px dashed var(--ink); border-radius: 999px; font: 600 13px/1 system-ui, sans-serif; }
+  .tsw { opacity: .92; }
+  .tsw > button { border: 0; background: none; color: var(--ink); font: inherit; min-height: 40px; padding: 0 10px; cursor: pointer; }
+  .tsw > button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; display: block; }
+  .tsw #tName { padding: 0 2px; white-space: nowrap; }
+  body:has(.fsw.open) .tsw { opacity: 0; visibility: hidden; }
+
   /* THEME: the Dugri colours on the live site's sand (tokens.css --section) as the page ground */
   :root {
     --page: #fff1de;      /* the owner's page colour (r11); the page flows on it with no section breaks */

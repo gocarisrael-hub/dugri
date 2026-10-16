@@ -108,6 +108,27 @@ A chooser sits at the bottom right while testing: ‹ name › to step through, 
 - **Condensed faces:** Karantina and Amatic SC draw much smaller at the same size, so their display text is scaled to Rubik's letter height, and the pink list keeps the text font.
 - **On the page:** `shots/r13-fonts.png` shows the hero in all 18.
 
+## 6b. Title treatments: `#title=1` … `#title=10` (update, same day)
+
+Ten treatments for the black titles: the hero headline and the four section titles (העיצובים שלנו, ממליצים עלינו, איך דוגרי נולד, פניות עסקיות). A dashed switch ‹ › sits above the font chooser. It changes `#title=N` and keeps `#font`, `#place` and `flood=b`, so every treatment works with every font.
+
+They use only the palette: #ffd37b, #a4e9ff, #ff7aa9, the logo pink #ea4795, ink and #fff1de. Each title has a colour in turn (headline pink, designs yellow, reviews sky, story pink, business sky) and one key word: אישי, העיצובים, עלינו, דוגרי, עסקיות.
+
+1. Solid black, as now (the control).
+2. Ink with a soft pink (#ff7aa9) offset, 0.04em.
+3. The headline in the logo pink #ea4795 (3.2:1 on the page, AA for large text); the section titles stay ink.
+4. The key word in its colour, outlined in ink like the leaflet's coloured words; the rest ink.
+5. A yellow marker band with a hand-drawn edge behind the key word.
+6. The headline as the leaflet's title: ink outline, page-coloured fill and a pink offset; the section titles solid.
+7. A hand-drawn squiggle in the logo pink under the key word.
+8. Each title in its own colour, darkened only to AA for large text: pink #ad003d, yellow #764f00, sky #005d7b (6.5:1 on the page; at least 3.2:1 on the designs panel's palest top).
+9. A small 4-point star in the title's colour, with an ink line, before each title; the title stays ink.
+10. A deep plum ink, #2b1a33, instead of black for every title (14.6:1).
+
+`shots/r13-titles.png` shows all ten on a phone: the hero headline, the designs title on its panel and the reviews title.
+
+In 9 the star makes each title a little longer, so the reviews title comes close to the disco ball beside it (her placement is in % of the content column).
+
 ## 7. Business enquiries
 
 "פניות עסקיות" comes before the footer and is linked from the menu. It has:

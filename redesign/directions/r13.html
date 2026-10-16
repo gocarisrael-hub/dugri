@@ -26,6 +26,39 @@
   html.f-accent h1, html.f-accent h2, html.f-accent .flood h3, html.f-accent .catch .big { font-family: 'Gveret', 'Rubik', sans-serif !important; font-weight: 400 !important; }
   /* FONT:END */
 
+  /* TITLES (#title=1..10 -> html.t-N): the hero headline and the four section titles (.tt), each with a palette colour (--c) and a key word (.kw).
+     Only the palette (#ffd37b, #a4e9ff, #ff7aa9, the logo pink #ea4795, ink, #fff1de); a colour that carries text alone is darkened to AA large */
+  .tt { --c: var(--pink); --cd: #ad003d; --kick: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 44 44'><path d='M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z' fill='%23ff7aa9' stroke='%23000' stroke-width='2.6' stroke-linejoin='round'/></svg>"); }
+  .tt.tc-y { --c: var(--yel); --cd: #764f00; --kick: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 44 44'><path d='M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z' fill='%23ffd37b' stroke='%23000' stroke-width='2.6' stroke-linejoin='round'/></svg>"); }
+  .tt.tc-s { --c: var(--sky); --cd: #005d7b; --kick: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-2 -2 44 44'><path d='M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z' fill='%23a4e9ff' stroke='%23000' stroke-width='2.6' stroke-linejoin='round'/></svg>"); }
+  /* 2: ink, with a soft pink offset */
+  html.t-2 .tt { text-shadow: .04em .04em 0 var(--pink); }
+  /* 3: the headline in the logo pink (3.2:1 on the page: AA for large text); the section titles ink */
+  html.t-3 #h1 { color: #ea4795; }
+  /* 4: the key word in its colour, outlined in ink, like the leaflet's coloured words */
+  html.t-4 .tt .kw { color: var(--c); -webkit-text-stroke: .07em var(--ink); paint-order: stroke fill; }
+  /* 5: a yellow marker band behind the key word, with a hand-drawn edge */
+  html.t-5 .tt .kw { background: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 40' preserveAspectRatio='none'><path d='M5 10 C40 5 90 8 140 6 S188 7 196 9 L194 31 C150 35 100 31 60 33 S14 33 4 31 Z' fill='%23ffd37b'/></svg>") no-repeat 0 82% / 100% 50%; padding-inline: .06em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+  /* 6: the headline as the leaflet's title: an ink outline, a page-coloured fill and a pink offset; the section titles solid */
+  html.t-6 #h1 { color: var(--page); -webkit-text-stroke: .055em var(--ink); paint-order: stroke fill; text-shadow: .05em .05em 0 var(--pink); letter-spacing: .015em; }
+  /* 7: a hand-drawn squiggle under the key word, in the logo pink */
+  html.t-7 .tt .kw { position: relative; display: inline-block; }
+  html.t-7 .tt .kw::after { content: ''; position: absolute; inset-inline: 0; bottom: -.14em; height: .16em; background: #ea4795; -webkit-mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 10'><path d='M0 6 Q5 1 10 5 T20 5 T30 5 T40 5' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'/></svg>") repeat-x 0 50% / .62em 100%; mask: url("data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 10'><path d='M0 6 Q5 1 10 5 T20 5 T30 5 T40 5' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'/></svg>") repeat-x 0 50% / .62em 100%; }
+  /* 8: each title in its own colour, darkened to AA for large text (6.5:1 on the page; 3.2:1 even at the designs panel's palest top) */
+  html.t-8 .tt { color: var(--cd); }
+  /* 9: a small star before each title, in its colour with an ink line; the title stays ink */
+  html.t-9 .tt::before { content: ''; display: inline-block; width: .4em; height: .4em; margin-inline-end: .14em; vertical-align: .1em; background: var(--kick) center / contain no-repeat; }
+  /* 10: a deep plum ink instead of black, for every title */
+  html.t-10 .tt { color: #2b1a33; }
+
+  /* the title switch (while testing), above the font chooser */
+  .tsw { inset-inline-start: max(16px, env(safe-area-inset-right)); bottom: calc(max(16px, env(safe-area-inset-bottom) + 10px) + var(--pal-h, 0px) + 50px); display: flex; align-items: center; background: #fff; border: 1.5px dashed var(--ink); border-radius: 999px; font: 600 13px/1 system-ui, sans-serif; }
+  .tsw { opacity: .92; }
+  .tsw > button { border: 0; background: none; color: var(--ink); font: inherit; min-height: 40px; padding: 0 10px; cursor: pointer; }
+  .tsw > button svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; display: block; }
+  .tsw #tName { padding: 0 2px; white-space: nowrap; }
+  body:has(.fsw.open) .tsw { opacity: 0; visibility: hidden; }
+
   /* THEME: the Dugri colours on the live site's sand (tokens.css --section) as the page ground */
   :root {
     --page: #fff1de;      /* the owner's page colour (r11); the page flows on it with no section breaks */
@@ -426,7 +459,7 @@
       </div>
       <div class="hero-text">
         <!-- every word below is the live site's "מה זה דוגרי?" text (index-about-body), verbatim and whole; the colours are the owner's three, in the printed leaflet's treatment -->
-        <h1 id="h1">דוגרי, המשחק הכי אישי</h1>
+        <h1 id="h1" class="tt tc-p">דוגרי, המשחק הכי <span class="kw">אישי</span></h1>
         <p class="pn sky"><b>משחק מילים אישי שכל כולו על האדם שחוגגים לו.</b> מתחלקים לקבוצות, שולפים קלף ומתארים את המילה בלי להגיד אותה, הקבוצה שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל והתור שלכם נגמר.</p>
         <p class="catch"><span class="q">ומה הקאץ׳?</span> <span class="big">כל המילים עליכם!</span></p>
         <p class="pn pink">פדיחות, <span class="y">סיפורים מצחיקים,</span> יריבים מושבעים, <span class="y">אהבה ראשונה</span> <span class="b">ואפילו אקסים</span> - הכל נכנס.</p>
@@ -437,7 +470,7 @@
 
   <section class="designs" id="order" aria-labelledby="h-designs">
     <div class="bgs" id="bgs" aria-hidden="true"></div>
-    <h2 id="h-designs">העיצובים שלנו</h2>
+    <h2 id="h-designs" class="tt tc-y"><span class="kw">העיצובים</span> שלנו</h2>
     <p class="lede">כל עיצוב מתאים לכל חגיגה&nbsp;- את הכותרת אתם כותבים</p>
     <div class="strip" id="strip" aria-label="העיצובים"></div>
     <div class="strip-hint" aria-hidden="true">← החליקו →</div>
@@ -452,7 +485,7 @@
 
   <section class="recs" id="recs" aria-labelledby="h-recs">
     <div class="recs-head">
-      <h2 id="h-recs">ממליצים עלינו</h2>
+      <h2 id="h-recs" class="tt tc-s">ממליצים <span class="kw">עלינו</span></h2>
     </div>
     <div class="row" id="row" aria-label="המלצות, אפשר להחליק">
       <div class="track" id="track">
@@ -480,7 +513,7 @@
 
   <section class="story" id="story" aria-labelledby="h-story">
     <div class="story-in">
-      <h2 id="h-story">איך דוגרי נולד</h2>
+      <h2 id="h-story" class="tt tc-p">איך <span class="kw">דוגרי</span> נולד</h2>
       <div class="prints" aria-hidden="true">
         <figure class="print old"><span class="tape" style="--tt: 3deg"></span><img src="https://dugri-israel.co.il/content-uploads/09d0097acf23847b.jpg" alt="" /></figure>
         <figure class="print now"><span class="tape"></span><img src="https://dugri-israel.co.il/content-uploads/27ddf2fc1ac6fe9b.jpg" alt="" style="object-position: 50% 62%" /></figure>
@@ -544,7 +577,7 @@
 
   <section class="biz" id="biz" aria-labelledby="h-biz">
     <div class="biz-in">
-      <h2 id="h-biz">פניות עסקיות</h2>
+      <h2 id="h-biz" class="tt tc-s">פניות <span class="kw">עסקיות</span></h2>
       <p class="lede">ערב צוות, יום גיבוש או מתנה לעובדים? נבנה לכם דוגרי על הצוות, עם השמות מהמשרד והבדיחות הפנימיות שכולם מכירים.</p>
       <div class="logos"><span>כבר שיחקו:</span><img src="logos/hm.webp" alt="H&amp;M" /><img src="logos/starcar.webp" alt="STAR CAR ירושלים" /></div>
       <a class="pill" href="https://wa.me/972546577715?text=%D7%94%D7%99%D7%99%21%20%D7%90%D7%A0%D7%97%D7%A0%D7%95%20%D7%9E%D7%A2%D7%95%D7%A0%D7%99%D7%99%D7%A0%D7%99%D7%9D%20%D7%91%D7%94%D7%96%D7%9E%D7%A0%D7%94%20%D7%9C%D7%A2%D7%A1%D7%A7%2F%D7%90%D7%99%D7%A8%D7%95%D7%A2%20%D7%92%D7%93%D7%95%D7%9C" target="_blank" rel="noopener">דברו איתנו בוואטסאפ<svg class="wa" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z" /></svg></a>
@@ -568,6 +601,11 @@
   </dialog>
 
   <a class="fab wa-fab" id="waFab" href="https://wa.me/972552441334?text=%D7%94%D7%99%D7%99!%20%D7%90%D7%A0%D7%99%20%D7%A8%D7%95%D7%A6%D7%94%20%D7%9C%D7%94%D7%96%D7%9E%D7%99%D7%9F%20%D7%9E%D7%A9%D7%97%D7%A7%20%D7%93%D7%95%D7%92%D7%A8%D7%99" target="_blank" rel="noopener" aria-label="דברו איתנו בוואטסאפ"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z" /></svg></a>
+  <div class="fab tsw" id="tsw" role="group" aria-label="סגנון הכותרות (לבדיקה)">
+    <button type="button" id="tPrev" aria-label="הסגנון הקודם"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg></button>
+    <span id="tName" aria-live="polite"></span>
+    <button type="button" id="tNext" aria-label="הסגנון הבא"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3L5 8l5 5" /></svg></button>
+  </div>
   <div class="fab fsw" id="fsw">
     <button type="button" id="fPrev" aria-label="הגופן הקודם"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg></button>
     <button type="button" id="fName" aria-expanded="false" aria-controls="fList"></button>
@@ -1275,6 +1313,20 @@
   document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#fsw') && fsw.classList.contains('open')) { fsw.classList.remove('open'); fName.setAttribute('aria-expanded', 'false'); } });
   addEventListener('keydown', (e) => { if (e.key === 'Escape' && fsw.classList.contains('open')) { fsw.classList.remove('open'); fName.setAttribute('aria-expanded', 'false'); fName.focus(); } });
   addEventListener('hashchange', applyFont); applyFont();
+
+
+  /* ---------- r13: title treatments (#title=N) ---------- */
+  const TITLES = ["שחור, כמו היום", "צל ורוד", "כותרת ראשית ורודה", "מילה אחת בצבע", "מרקר צהוב", "קו מתאר כמו בעלון", "קו מסולסל", "כל כותרת בצבע", "כוכב לפני", "דיו שזיף"];
+  const titleN = () => { const m = location.hash.match(/(?:^#|&)title=(\d+)/); const n = m ? +m[1] : 1; return n >= 1 && n <= TITLES.length ? n : 1; };
+  function applyTitle() {
+    const n = titleN(), H = document.documentElement;
+    for (let i = 2; i <= TITLES.length; i++) H.classList.toggle('t-' + i, i === n);
+    document.getElementById('tName').textContent = `כותרות ${n} · ${TITLES[n - 1]}`;
+  }
+  const stepTitle = (d) => { const n = (titleN() - 1 + d + TITLES.length) % TITLES.length + 1; setHash('title', n === 1 ? null : n); applyTitle(); };
+  document.getElementById('tPrev').addEventListener('click', () => stepTitle(-1));
+  document.getElementById('tNext').addEventListener('click', () => stepTitle(1));
+  addEventListener('hashchange', applyTitle); applyTitle();
 
   // the floats rise above the editor's palette while it is open
   const palEl = document.getElementById('pal');
