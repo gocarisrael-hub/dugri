@@ -314,7 +314,11 @@ html.rd .wiz-bar .btn {
 /* under 400px the bar has no room for the arrow beside "צרו את המשחק" */
 @media (max-width: 400px) {
   html.rd .wiz-bar .btn {
-    padding: 15px 12px;
+    padding: 15px 10px;
+  }
+  html.rd .wiz-back {
+    padding-right: 14px;
+    padding-left: 14px;
   }
   html.rd .wiz-bar .btn.arrow::after,
   html.rd .wiz-bar .btn.arrow:disabled::after {
