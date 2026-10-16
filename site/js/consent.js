@@ -45,7 +45,7 @@
     'pointer-events:auto;position:fixed;left:12px;bottom:12px;display:flex;align-items:center;' +
       'gap:6px;font-size:11px;line-height:1.4;padding:4px 9px;border-radius:999px;' +
       'background:rgba(44,26,41,.9);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.2);' +
-      'transition:opacity .4s ease'
+      'transition:opacity .4s ease,bottom .2s ease'
   );
 
   var text = document.createElement('span');
@@ -67,6 +67,57 @@
   bar.appendChild(close);
   wrap.appendChild(bar);
   document.body.appendChild(wrap);
+
+  // CLEAR OF A BOTTOM BAR. The corner is only free on a page with nothing fixed
+  // to the foot of the screen. The order wizard's Back/Next bar, the word
+  // collection's pay bar and how.html's order bar all sit there, and on the
+  // wizard at 390 px the chip lay over "הבא", so a first-time buyer's tap could
+  // land on the chip. So the chip stands just above whatever short bar is FIXED
+  // to the bottom under it, found by asking what is on top at the foot of the
+  // screen across the chip's own width (a few hit-tests, not a walk of the page).
+  // Only bars count: something 200 px or taller is a sheet or a panel, and a
+  // sticky footer inside one (the start explainer's continue button) already
+  // lifts itself clear of the corner. Measured again while the chip is up,
+  // because a page may draw its bar after this script runs, or change it.
+  var BASE_BOTTOM = 12;
+  var BAR_MAX = 200;
+  function barUnderChip() {
+    if (!document.elementsFromPoint) return 0;
+    var vh = window.innerHeight;
+    var r = bar.getBoundingClientRect();
+    var xs = [r.left + 4, r.left + r.width / 2, r.right - 4];
+    var lift = 0;
+    for (var i = 0; i < xs.length; i++) {
+      var stack = document.elementsFromPoint(xs[i], vh - 2);
+      // Only what is ON TOP at the foot of the screen: a bar covered by an open
+      // sheet is not what the chip would sit on.
+      var top = null;
+      for (var j = 0; j < stack.length && !top; j++) {
+        if (!wrap.contains(stack[j])) top = stack[j];
+      }
+      for (var n = top; n && n !== document.body; n = n.parentElement) {
+        if (window.getComputedStyle(n).position !== 'fixed') continue;
+        var b = n.getBoundingClientRect();
+        if (b.bottom >= vh - 4 && b.height > 0 && b.height < BAR_MAX) {
+          lift = Math.max(lift, vh - b.top);
+        }
+        break;
+      }
+    }
+    return lift;
+  }
+  function place() {
+    if (!wrap.isConnected) return;
+    var lift = barUnderChip();
+    bar.style.bottom = (lift ? Math.ceil(lift) + 8 : BASE_BOTTOM) + 'px';
+  }
+  place();
+  if (window.requestAnimationFrame) window.requestAnimationFrame(place);
+  window.addEventListener('resize', place);
+  var placeTimer = setInterval(function () {
+    if (!wrap.isConnected) return clearInterval(placeTimer);
+    place();
+  }, 300);
 
   // Mark as shown the moment it renders, so it never appears again anywhere.
   try {
