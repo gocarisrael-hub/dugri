@@ -114,6 +114,27 @@ test.describe('rd-kit.html', () => {
     await expect(page.locator('#h1')).toBeVisible();
   });
 
+  test('an element the page hides with its own .hidden class stays hidden too, and shows when the class goes', async ({
+    page,
+  }) => {
+    await page.goto('/rd-kit.html');
+    await page.evaluate(() => {
+      document
+        .querySelector('main')
+        .insertAdjacentHTML(
+          'beforeend',
+          '<a class="rd-btn hidden" id="c1">x</a><div class="rd-box hidden" id="c2">x</div>' +
+            '<button class="kit-go hidden" id="c3">x</button>' +
+            '<span class="rd-tag visually-hidden" id="c4">x</span><span class="rd-tag is-hidden" id="c5">x</span>'
+        );
+    });
+    await expect(page.locator('#c3')).toHaveClass(/\brd-btn\b/);
+    for (const id of ['#c1', '#c2', '#c3']) await expect(page.locator(id)).toBeHidden();
+    for (const id of ['#c4', '#c5']) await expect(page.locator(id)).toBeVisible(); // only the exact class
+    await page.locator('#c1').evaluate((e) => e.classList.remove('hidden'));
+    await expect(page.locator('#c1')).toBeVisible();
+  });
+
   test('shows every component, takes a page’s own element into one from CSS, and its sheet and toast work', async ({
     page,
   }) => {

@@ -61,7 +61,7 @@ describe('the stylesheet', () => {
     }
     expect(css).toMatch(/html\.rd dialog:not\(\[open\]\) \{\s*display: none;/);
     // a component's display must never beat the hidden attribute
-    expect(css).toMatch(/html\.rd \[hidden\] \{\s*display: none !important;/);
+    expect(css).toMatch(/html\.rd \[hidden\],\s*html\.rd \.hidden \{\s*display: none !important;/);
   });
 
   it('every component rule is scoped under html.rd, so nothing applies outside the mode', () => {
@@ -195,6 +195,27 @@ describe('the shell script', () => {
     expect(t.getAttribute('role')).toBe('status');
     await new Promise((r) => setTimeout(r, 30));
     expect(t.className).toBe('rd-toast out');
+  });
+});
+
+describe('the pages’ own .hidden class', () => {
+  it('means display: none wherever a page defines it, so the shell may make it win', () => {
+    const pages = fs.readdirSync(SITE).filter((f) => f.endsWith('.html') && !f.startsWith('admin'));
+    const users = [];
+    for (const f of pages) {
+      const html = read(f);
+      const uses = [...html.matchAll(/class="([^"]*)"/g)].some((m) =>
+        m[1].split(/\s+/).includes('hidden')
+      );
+      const rules = [...html.matchAll(/([^{}]*\.hidden)\s*\{([^}]*)\}/g)].filter((m) =>
+        /\.hidden$/.test(m[1].trim())
+      );
+      if (!uses && !rules.length) continue;
+      users.push(f);
+      for (const [, sel, body] of rules)
+        expect(body, `${f}: ${sel.trim()}`).toMatch(/^\s*display: none( !important)?;\s*$/);
+    }
+    expect(users.sort()).toEqual(['collect.html', 'timer.html']); // a new page using .hidden: check it means the same, then add it
   });
 });
 

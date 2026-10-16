@@ -378,8 +378,11 @@ html.rd:not(.rd-native) body {
    Every component class sets display (.rd-box block, .rd-btn inline-flex …), and at html.rd's specificity that beats the
    browser's own [hidden] { display: none }, so an element a page hides with the attribute (a message box waiting for its text)
    showed in the mode. The pages already agree: each of their [hidden] rules hides. Nothing in the shell shows or hides with the
-   attribute: dialogs use open, the toast a class. */
-html.rd [hidden] {
+   attribute: dialogs use open, the toast a class.
+   The same for the pages' own .hidden class (collect.html and timer.html, the only pages that use it; every rule there for
+   .hidden, alone or compound, is display: none). Only the exact class: .visually-hidden and .is-hidden are other things. */
+html.rd [hidden],
+html.rd .hidden {
   display: none !important;
 }
 
