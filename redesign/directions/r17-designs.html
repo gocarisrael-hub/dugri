@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>דוגרי · r17 · כל העיצובים בהקשה</title>
+<!-- FONTLINK:START -->
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<!-- the body font, chosen by the owner (r14 option 8): M PLUS Rounded 1c, sized to Rubik's Hebrew letter height -->
+<style>
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0q5qsPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 300;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0q5qsNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGEAYIAV6gnpUpoWwNkYvrugw9RuMWDxL4g7eau9x0.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGEAYIAV6gnpUpoWwNkYvrugw9RuMWBxL4g7eau.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM1y56sPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM1y56sNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM064asPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM064asNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0m4qsPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0m4qsNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+/* M PLUS Rounded 1c hebrew */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0C46sPz-uEzRRLclI.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+/* M PLUS Rounded 1c latin */
+@font-face {
+  font-family: 'Body';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(https://fonts.gstatic.com/s/mplusrounded1c/v22/VdGBAYIAV6gnpUpoWwNkYvrugw9RuM0C46sNz-uEzRRL.woff2) format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+</style>
+<!-- FONTLINK:END -->
+<style>
+  /* FONT:START */
+  :root {
+    --display: 'Body', system-ui, sans-serif;   /* labels, pills, prices: the body font */
+    --body: 'Body', system-ui, sans-serif;      /* running text: M PLUS Rounded 1c (the owner's choice, r14 option 8) */
+    --h-weight: 900; --h-track: -.01em;
+    --b-weight: 800;                            /* stickers, pills, labels */
+    --arr-sw: 3.35;                             /* the arrow line, matched to the 800 button type */
+    --pitch-weight: 500;
+  }
+  html, html * { font-synthesis: none; } /* a body font never fakes a weight it does not have */
+  /* the owner's choice (r13 font 18): Gveret Levin for the headings, in its one real weight; its Latin and digits come from the body font */
+  h1, h2, .flood h3, .catch .big { font-family: 'Gveret', var(--body) !important; font-weight: 400 !important; }
+  /* the owner's choice (r13 title 2, "צל ורוד"): ink with a soft pink offset */
+  .tt { text-shadow: .04em .04em 0 var(--tsh, var(--pink)); }
+  #h1 { --tsh: #ff7aa9; }        /* pink */
+  #h-designs { --tsh: #5fd0f5; } /* sky, deepened: it sits on the sky-tinted panel */
+  #h-story { --tsh: #f7b32b; }   /* yellow, deepened: #ffd37b is too faint on the page */
+  #h-recs { --tsh: #ea4795; }    /* the logo pink, on the sky field */
+  #h-biz { --tsh: #a4e9ff; }     /* sky */
+  /* FONT:END */
+
+
+  /* THEME: the Dugri colours on the live site's sand (tokens.css --section) as the page ground */
+  :root {
+    --page: #fff1de;      /* the owner's page colour (r11); the page flows on it with no section breaks */
+    /* the hero's three colours (the owner's, r12), in the leaflet's treatment: dark text on the fills, and any text set in a colour is large and outlined in ink */
+    --yel: #ffd37b;
+    --sky: #a4e9ff;
+    --pink: #ff7aa9;
+    --tile: #ffffff;
+    --sticker-hot: #ea4795; /* the pink of the logo, sampled from logo-pink-original.png */
+    --spark: #ea4795;
+    --ink: #000;
+    --paper: #fff;
+    --line: 3px;
+    --sh: 4px 4px 0 var(--ink);       /* hard offset shadow, bottom-right everywhere (r11: the same fall as the review cards) */
+    --sh-sm: 3px 3px 0 var(--ink);
+    --rad: 6% / 4.26%;                /* the preview's card shape (.design-preview/outline-rules.txt): one corner and one 1.5 px border for every card */
+    --cw: min(32vw, 150px);
+  }
+  @font-face { font-family: 'Gveret'; src: url(../../site/assets/fonts/gveret-levin-400-hebrew.8c865542.woff2) format('woff2'); unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F; font-display: swap; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  html, body { margin: 0; overflow-x: clip; }
+  body { background: var(--page); color: var(--ink); font: 400 17px/1.5 var(--body); -webkit-tap-highlight-color: transparent; }
+  img { display: block; max-width: 100%; user-select: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 4px; }
+
+  /* the shared language: outlines, stickers, pills, sparkles */
+  /* labels: calm, flat, upright; a thin outline and nothing else */
+  .sticker { display: inline-block; background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px; padding: 5px 12px 6px; font: 700 13px/1.1 var(--display); letter-spacing: .02em; }
+  .pill { display: inline-flex; align-items: center; justify-content: center; gap: 10px; background: var(--ink); color: #fff; text-decoration: none; border: 0; border-radius: 999px; font: var(--b-weight) 16px/1 var(--display); letter-spacing: .02em; padding: 16px 26px; cursor: pointer; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1); }
+  .pill:active { transform: scale(.96); }
+  /* the forward arrow: drawn, not a glyph, so it is the same in every font; its line follows the button type's weight (--arr-sw) */
+  .arr { width: 1.1em; height: 1.1em; flex: none; fill: none; stroke: currentColor; stroke-width: var(--arr-sw, 2.9); stroke-linecap: round; stroke-linejoin: round; }
+  .pill:has(.arr) { gap: 8px; }
+  .tok { display: inline-block; background: var(--paper); border: 2px dashed var(--ink); padding: 0 6px; font-weight: 800; direction: ltr; unicode-bidi: isolate; letter-spacing: 0; }
+  .pill .tok { background: transparent; border-color: #fff; color: #fff; }
+  .spark { position: absolute; width: var(--s, 34px); height: var(--s, 34px); pointer-events: none; fill: var(--spark); stroke: var(--ink); stroke-width: 2.4; stroke-linejoin: round; overflow: visible; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; margin: 0; }
+
+  section { position: relative; padding: 44px 16px 52px; overflow: clip; } /* no rule, no fill: the page just flows */
+  h1, h2 { font-family: var(--display); font-weight: var(--h-weight); margin: 0; line-height: 1; letter-spacing: var(--h-track); }
+  h2 { font-size: clamp(32px, 9vw, 58px); }
+  .lede { font-size: 17px; margin: 12px 0 0; max-width: 34ch; }
+
+  /* header */
+  header { display: flex; align-items: center; justify-content: space-between; padding: max(10px, env(safe-area-inset-top)) 16px 0; }
+  header .logo { width: 86px; height: auto; margin: -6px 0 -10px 0; }
+  header .pill { padding: 12px 18px; font-size: 14px; }
+
+  /* hero: the deck, then her whole "מה זה דוגרי?" text, set the way the printed leaflet sets "על המשחק":
+     a sky-blue panel with pink lettering, the mustard title with a pink outline and offset, a pink panel with light lettering */
+  .hero { padding-top: 4px; padding-bottom: 40px; }
+  .hero-in { display: grid; gap: 0; }
+  .hero-text { position: relative; }
+  .hero h1 { margin: 6px 0 0; font: 900 clamp(38px, 11vw, 76px)/.98 var(--display); letter-spacing: -.02em; max-width: 12ch; text-wrap: balance; }
+  .pn { margin: 16px 0 0; border-radius: 26px; padding: 20px 24px 22px; font: 500 17px/1.55 var(--body); max-width: 560px; }
+  .pn.sky { background: var(--sky); }
+  .pn.sky b { font-weight: 800; }
+  .catch { margin: 22px 0 0; }
+  .catch .q { display: block; font: 800 21px/1 var(--display); }
+  .catch .big { display: block; margin-top: 8px; font: 900 clamp(32px, 8.6vw, 54px)/1.05 var(--display); letter-spacing: -.01em; color: var(--yel);
+    -webkit-text-stroke: 2px var(--ink); paint-order: stroke fill; text-shadow: 4px 4px 0 var(--pink); }
+  .pn.pink { margin-top: 14px; background: var(--pink); color: var(--ink); font: 800 20px/1.5 var(--display); }
+  .pn.pink .y, .pn.pink .b { -webkit-text-stroke: 1.4px var(--ink); paint-order: stroke fill; }
+  .pn.pink .y { color: var(--yel); }
+  .pn.pink .b { color: var(--sky); }
+  .hero .cta { margin-top: 22px; }
+  @media (max-width: 899px) { .catch .big { text-shadow: 3px 3px 0 var(--pink); } }
+  .stage { position: relative; width: 100vw; margin: 0 calc(50% - 50vw) 10px; height: calc(var(--cw) * 1.41 * 1.22 + 40px); touch-action: pan-y; user-select: none; -webkit-user-select: none; }
+  .deck { position: absolute; width: var(--cw); aspect-ratio: 400 / 564; border: 0; padding: 0; background: none; cursor: pointer; z-index: 5; }
+  .deck img { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .deck img:nth-child(1) { transform: translate(-5px, 5px) rotate(-3deg); }
+  .deck img:nth-child(2) { transform: translate(-2.5px, 2.5px) rotate(1.6deg); }
+  .deck:active img:last-child { transform: translate(-1px, 1px); box-shadow: var(--sh-sm); }
+  .deck:focus-visible { outline: 3px solid var(--ink); outline-offset: 10px; border-radius: 10px; }
+  .card { position: absolute; top: 0; left: 0; width: var(--cw); aspect-ratio: 400 / 564; z-index: 10; cursor: grab; touch-action: none; will-change: transform; --o: 4px; }
+  .card .in { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; transition: transform .5s cubic-bezier(.3, 1.2, .45, 1); }
+  .card.down .in { transform: rotateY(180deg); }
+  .card img { position: absolute; inset: 0; width: 100%; height: 100%; backface-visibility: hidden; -webkit-backface-visibility: hidden; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--o) var(--o) 0 var(--ink); pointer-events: none; }
+  .card img.b { transform: rotateY(180deg); box-shadow: calc(var(--o) * -1) var(--o) 0 var(--ink); } /* mirrored by the flip, so the shadow lands the same way */
+  .card.held { cursor: grabbing; }
+  .flood .nw { white-space: nowrap; }
+  .stage { isolation: isolate; } /* the deck, its cards and its hint stay in their own layer, under an open design */
+  .stage .hint { position: absolute; z-index: 3000; white-space: nowrap; pointer-events: none; font: 600 13px/1 var(--display); text-align: center; transition: opacity .3s; }
+  .stage.touched .hint { opacity: 0; }
+
+  /* designs: an endless strip that leans with your swipe and takes on each design's colour, in pastel */
+  /* designs: the only panel on the page, Pluto's rescue card: inset from the edges, big rounded corners, a soft vertical gradient
+     in two tints of the centred design's pastel (the layers cross-fade as the strip moves) */
+  .designs { margin: 6px 16px 0; border-radius: 40px; text-align: center; padding-inline: 0; padding-top: 48px; background: linear-gradient(180deg, #9ce4fc, #d8f4fe 48%, var(--page)); isolation: isolate; border-end-start-radius: 0; border-end-end-radius: 0; padding-bottom: 88px; }
+  .designs > h2, .designs > .lede { position: relative; margin-inline: 16px; }
+  .designs > .lede { margin-inline: auto; padding-inline: 16px; max-width: 46ch; text-wrap: balance; }
+  .bgs { position: absolute; inset: 0; pointer-events: none; border-radius: inherit; overflow: hidden; z-index: -1; }
+  .bgs i { position: absolute; inset: 0; opacity: 0; will-change: opacity; }
+  .strip { direction: ltr; position: relative; display: flex; gap: 0; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 34px calc(50% - var(--dw) / 2) 22px; --dw: min(58vw, 250px); perspective: 900px; overscroll-behavior-x: contain; }
+  .strip::-webkit-scrollbar { display: none; }
+  .dz { direction: rtl; flex: none; width: var(--dw); scroll-snap-align: center; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; }
+  .dz .tilt { will-change: transform; transform-origin: 50% 85%; }
+  .dz img { width: 100%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .dz .nm { display: block; margin-top: 32px; font: 700 15px/1 var(--display); }
+  .strip-hint { position: relative; font: var(--b-weight) 13px/1 var(--display); letter-spacing: .04em; }
+  .order { position: relative; margin-top: 30px; display: grid; justify-items: center; gap: 14px; padding-inline: 16px; }
+  .order .pill { font-size: 18px; padding: 19px 30px; }
+  .wa-line { font-size: 15px; font-weight: 500; }
+
+  /* the flood: a tap fills the screen with that design's pastel and lays out its front, back and real board */
+  .flood { position: fixed; inset: 0; z-index: 900; background: var(--fc); color: var(--ink); visibility: hidden; touch-action: none; display: grid; grid-template-rows: 1fr auto; overflow: hidden; }
+  .flood.open { visibility: visible; }
+  .flood .x { position: absolute; top: max(14px, env(safe-area-inset-top)); left: 14px; z-index: 5; width: 48px; height: 48px; border-radius: 50%; border: 2.5px solid var(--ink); background: #fff; color: var(--ink); font: 900 22px/1 system-ui, sans-serif; box-shadow: var(--sh-sm); cursor: pointer; }
+  .spread { display: grid; place-items: center; padding: 70px 16px 0; min-height: 0; }
+  .flood { grid-template-rows: auto auto; align-content: center; } /* the board, the cards and the words sit together, centred on the screen */
+  .tableau { position: relative; width: min(84vw, 600px, 62svh * 1.414); margin-bottom: calc(min(84vw, 600px, 62svh * 1.414) * .2); }
+  .tableau .bd { width: 100%; aspect-ratio: 2200 / 1556; object-fit: cover; border-radius: 8px; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); transform: rotate(-2.5deg); }
+  .tableau .fc { position: absolute; bottom: -22%; width: 31%; aspect-ratio: 400 / 564; border-radius: var(--rad); outline: 1.5px solid var(--ink); outline-offset: -.5px; box-shadow: var(--sh); }
+  .tableau .fr { left: 17%; transform: rotate(-7deg); z-index: 2; }
+  .tableau .bk { left: 50%; transform: rotate(6deg); }
+  .tableau.solo { width: min(76vw, 440px, 44svh * 1.45); margin-bottom: 0; display: flex; justify-content: center; gap: 4%; }
+  .tableau.solo .fc { position: relative; bottom: auto; left: auto; width: 48%; }
+  .flood .info { display: grid; justify-items: center; gap: 12px; padding: 18px 16px max(26px, env(safe-area-inset-bottom)); text-align: center; }
+  .flood h3 { margin: 0; font: var(--h-weight) clamp(36px, 10vw, 60px)/1 var(--display); letter-spacing: var(--h-track); }
+  .flood .info p { margin: 0; font-size: 16px; }
+  @media (min-width: 900px) { .flood .swipe { display: none; } }
+  .flood .x { box-shadow: none !important; }
+  @media (max-width: 899px) { .pn.pink .y, .pn.pink .b { -webkit-text-stroke-width: 1.6px; } }
+  /* r14: one view: the name, the price, what is in the box, the button and the time, start-aligned in one column like the live product page */
+  .flood .info { justify-items: start; text-align: start; gap: 10px; width: min(100%, 452px); margin-inline: auto; padding-top: 12px; padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .flood h3 { font-size: clamp(32px, 8.8vw, 52px); }
+  .flood .pr { margin: -4px 0 0 !important; font: var(--h-weight) clamp(28px, 7.4vw, 38px)/1 var(--display) !important; }
+  .flood .pr .tok { padding: 2px 6px; }
+  .flood .inbox { width: min(100%, 420px); margin-top: 2px; }
+  .inbox .hd { margin: 0 0 4px !important; font: var(--b-weight) 15px/1.2 var(--display) !important; }
+  .inbox ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; font-size: 15px; line-height: 1.35; }
+  .inbox li { position: relative; padding-inline-start: 22px; }
+  .inbox li::before { content: ''; position: absolute; right: 2px; top: .32em; width: 10px; height: 6px; border: solid var(--ink); border-width: 0 0 2px 2px; rotate: -45deg; }
+  .flood .info > .pill { width: min(100%, 420px); margin-top: 6px; }
+  .flood .note { margin: -2px 0 0 !important; font-size: 14px !important; opacity: .8; }
+  .flood .swipe { font: var(--b-weight) 12px/1 var(--display); letter-spacing: .03em; opacity: .75; }
+  .tableau { width: min(80vw, 520px, 37svh * 1.414); margin-bottom: calc(min(80vw, 520px, 37svh * 1.414) * .2); }
+  .tableau.solo { width: min(64vw, 340px, 34svh * 1.45); }
+  .spread { padding-top: 66px; }
+  /* short phones (an SE, or browser bars showing): a smaller board; below 700 px the swipe hint goes */
+  @media (max-height: 760px) { .tableau { width: min(76vw, 30svh * 1.414); margin-bottom: calc(min(76vw, 30svh * 1.414) * .2); } .tableau.solo { width: min(56vw, 26svh * 1.45); } .flood h3 { font-size: 32px; } }
+  @media (max-height: 700px) { .flood .swipe { display: none; } .flood .info { gap: 8px; } .inbox ul { font-size: 14px; gap: 0; } }
+
+
+  /* recommendations: Pluto's card row (white, 16 px corners, a thin black line and a hard black offset shadow, a small tag at the
+     reading start), scrolling on its own in an endless loop; a hover or a touch stops it, and it can be swiped */
+  .recs { padding-inline: 0; }
+  .recs-head { position: relative; padding-inline: 16px; }
+  .row { direction: ltr; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; margin-top: 26px; padding: 4px 0 18px; }
+  .row::-webkit-scrollbar { display: none; }
+  .track { display: flex; gap: 20px; width: max-content; padding-inline: 10px; }
+  .row { cursor: grab; user-select: none; -webkit-user-select: none; } .row.dragging { cursor: grabbing; }
+  .rc { direction: rtl; flex: none; width: 272px; min-height: 176px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; background: #fff; color: var(--ink); border: 1px solid var(--ink); border-radius: 16px; box-shadow: 6px 7px 0 var(--ink); padding: 18px; font: inherit; text-align: start; }
+  button.rc { cursor: pointer; transition: transform .15s cubic-bezier(.3, 1.4, .5, 1), box-shadow .15s; }
+  @media (hover: hover) { button.rc:hover { transform: translate(-2px, -2px); box-shadow: 8px 9px 0 var(--ink); } }
+  button.rc:active { transform: translate(3px, 3px); box-shadow: 3px 4px 0 var(--ink); }
+  .rc .tag { background: #fdf2d4; padding: 3px 10px 4px; border-radius: 3px; font: 600 14px/1.4 var(--display); }
+  .rc.hot { background: #ffe9f0; }
+  .rc.hot .tag { background: #c8246a; color: #fff; }
+  .rc .ttl { font: 800 18px/1.3 var(--display); quotes: '״' '״'; }
+  .rc .ttl::before { content: open-quote; } .rc .ttl::after { content: close-quote; }
+  .rc .cap { margin-top: auto; font-size: 14px; color: #5c544b; }
+  .rc.logo { justify-content: flex-start; }
+  .rc.logo img { margin: auto; width: auto; max-width: 70%; }
+
+  /* the review sheet */
+  .sheet { position: fixed; inset: auto 0 0; margin: 0 auto; width: min(560px, 100%); max-width: 100%; max-height: 88svh; border: 3px solid var(--ink); border-bottom: 0; border-radius: 22px 22px 0 0; padding: 16px 16px max(22px, env(safe-area-inset-bottom)); background: var(--paper); color: var(--ink); overflow: auto; }
+  .sheet::backdrop { background: rgba(0, 0, 0, .38); }
+  .sheet .grab { display: block; width: 46px; height: 5px; border-radius: 9px; background: var(--ink); opacity: .25; margin: 0 auto 12px; }
+  .sheet img { width: 100%; border-radius: 14px; outline: 2.5px solid var(--ink); outline-offset: -1px; }
+  .sheet p { margin: 12px 0 0; font-size: 15px; }
+  .sheet .x { position: absolute; top: 10px; left: 12px; width: 40px; height: 40px; border-radius: 50%; border: 2.5px solid var(--ink); background: var(--paper); font: 900 18px/1 system-ui, sans-serif; cursor: pointer; }
+
+  /* our story: two taped prints side by side, a gap between them so neither covers a face; each drifts a little */
+  .story-in { display: grid; gap: 26px; }
+  @media (max-width: 899px) { .story { padding-bottom: 32px; } }
+  .prints { position: relative; height: calc(min(44vw, 220px) * 1.16 + 60px); --pw: min(44vw, 220px); }
+  .print { position: absolute; margin: 0; width: var(--pw); background: var(--paper); padding: 8px 8px 26px; outline: 2.5px solid var(--ink); outline-offset: -1px; box-shadow: var(--sh); animation: drift var(--dur) ease-in-out var(--dl) infinite alternate; }
+  .print img { width: 100%; aspect-ratio: 1; object-fit: cover; }
+  .print .tape { position: absolute; top: -12px; left: 50%; width: 76px; height: 24px; margin-left: -38px; background: rgba(244, 239, 230, .82); border-inline: 2px dashed rgba(0, 0, 0, .14); transform: rotate(var(--tt, -4deg)); }
+  .print.old { top: 14px; right: 3%; rotate: 4deg; --dur: 15s; --dl: -4s; --dx: 1.5px; --dy: -2px; --dr: .5deg; }
+  .print.now { top: 40px; left: 3%; rotate: -4deg; --dur: 19s; --dl: -9s; --dx: -2px; --dy: 1.5px; --dr: -.4deg; }
+  @keyframes drift { from { translate: 0 0; transform: rotate(0deg); } to { translate: var(--dx) var(--dy); transform: rotate(var(--dr)); } }
+  .story-copy, .faq-col { position: relative; }
+  .story-copy p { margin: 0 0 14px; max-width: 40ch; }
+  .story-copy .sign { margin-bottom: 0; }
+  .story-copy .sign { display: block; margin-top: 16px; font: 400 30px/1 'Gveret', var(--display); } /* signed by hand, not stuck on */
+
+  /* questions */
+  .faq-in { display: grid; gap: 30px; }
+  .qa { margin-top: 20px; display: grid; gap: 12px; }
+  .qa details { background: var(--paper); border: 2.5px solid var(--ink); border-radius: 14px; box-shadow: var(--sh-sm); }
+  .qa summary { list-style: none; cursor: pointer; padding: 14px 16px; font: var(--b-weight) 17px/1.25 var(--display); display: flex; justify-content: space-between; gap: 12px; }
+  .qa summary::-webkit-details-marker { display: none; }
+  .qa summary::after { content: '+'; font: 900 22px/1 system-ui, sans-serif; transition: transform .2s; }
+  .qa details[open] summary::after { transform: rotate(45deg); }
+  .qa details p { margin: 0; padding: 0 16px 16px; font-size: 16px; white-space: pre-line; }
+
+  footer { padding: 22px 16px 34px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; }
+  /* ---------- the floating WhatsApp (bottom left: the end side in RTL), the font chooser (bottom right, while testing) ---------- */
+  .fab { position: fixed; z-index: 800; bottom: calc(max(16px, env(safe-area-inset-bottom) + 10px) + var(--pal-h, 0px)); transition: opacity .2s, visibility .2s, bottom .2s; }
+  .wa-fab { inset-inline-end: max(16px, env(safe-area-inset-left)); width: 56px; height: 56px; border-radius: 50%; background: #25d366; color: #fff; display: grid; place-items: center; outline: 1.5px solid var(--ink); box-shadow: 3px 3px 0 var(--ink); }
+  .wa-fab svg { width: 32px; height: 32px; fill: currentColor; }
+  .wa-fab:active { transform: scale(.94); }
+  .wa-fab:focus-visible { outline-offset: 3px; }
+  /* out of the way whenever something sits over the page: an open design, the review sheet, the menu */
+  body:has(.flood.open) .fab, body:has(dialog[open]) .fab { opacity: 0; visibility: hidden; }
+
+  /* ---------- the menu: a square ≡ at the top, on the RTL side; a sheet from that side ---------- */
+  .menu-btn { width: 44px; height: 44px; display: grid; place-items: center; padding: 0; margin-inline-start: -8px; background: transparent; border: 0; color: var(--ink); cursor: pointer; }
+  /* the icon: right-aligned lines (the RTL start) of 20, 13 and 8, rounded, ink with a pink middle; drawn by dash length so they can morph */
+  .mi { width: 28px; height: 28px; overflow: visible; }
+  .mi path { fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; transform-box: view-box; transform-origin: 14px 14px;
+    transition: transform .34s cubic-bezier(.3, 1.35, .45, 1), stroke-dasharray .3s ease, opacity .2s; }
+  .mi .l1 { stroke-dasharray: 20 40; }
+  .mi .l2 { stroke: var(--pink); stroke-dasharray: 13 40; }
+  .mi .l3 { stroke-dasharray: 8 40; }
+  .menu-btn:hover .mi .l2, .menu-btn:focus-visible .mi .l2 { stroke-dasharray: 20 40; } /* a small hello under the pointer */
+  .menu-btn:hover .mi .l3, .menu-btn:focus-visible .mi .l3 { stroke-dasharray: 14 40; }
+  /* the sheet's ✕ is the same icon: the outer lines grow and cross, the pink one shrinks away */
+  dialog.menu.xs .x .l1 { stroke-dasharray: 20 40; transform: rotate(45deg) translateY(6px); }
+  dialog.menu.xs .x .l3 { stroke-dasharray: 20 40; transform: rotate(-45deg) translateY(-6px); }
+  dialog.menu.xs .x .l2 { stroke-dasharray: 0 40; opacity: 0; }
+  @media (prefers-reduced-motion: reduce) { .mi path { transition: none; } }
+  header .start { display: flex; align-items: center; gap: 10px; }
+  dialog.menu { position: fixed; inset: 0 0 0 auto; margin: 0; width: min(86vw, 380px); height: 100%; max-height: none; max-width: none; border: 0; border-inline-end: 1.5px solid var(--ink); padding: max(14px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom)); background: var(--page); color: var(--ink); display: flex; flex-direction: column; translate: 100% 0; transition: translate .28s cubic-bezier(.2, .8, .2, 1), overlay .28s allow-discrete, display .28s allow-discrete; }
+  dialog.menu:not([open]) { display: none; }
+  dialog.menu[open] { translate: 0 0; }
+  @starting-style { dialog.menu[open] { translate: 100% 0; } }
+  html:has(dialog.menu[open]) { overflow: hidden; }
+  dialog.menu::backdrop { background: rgba(0, 0, 0, .32); }
+  dialog.menu .x { position: absolute; top: var(--mx-t, 14px); right: var(--mx-r, 16px); width: 44px; height: 44px; display: grid; place-items: center; padding: 0; border: 0; background: transparent; color: var(--ink); cursor: pointer; } /* on the ≡'s spot */
+  dialog.menu ul { list-style: none; margin: 64px 0 0; padding: 0; display: grid; }
+  dialog.menu li a { display: block; padding: 10px 0; font: var(--b-weight) 24px/1.15 var(--display); text-decoration: none; }
+  dialog.menu li a:hover { text-decoration: underline; text-underline-offset: 6px; text-decoration-thickness: 2px; }
+  dialog.menu .pill { margin-top: 32px; align-self: stretch; }
+  @media (prefers-reduced-motion: reduce) { dialog.menu { transition: none; } }
+
+  /* ---------- 7. business enquiries ---------- */
+  .biz-in { display: grid; gap: 16px; justify-items: start; }
+  .biz .lede { max-width: 38ch; }
+  .biz .logos { display: flex; flex-wrap: wrap; align-items: center; gap: 14px 22px; margin: 2px 0 6px; }
+  .biz .logos span { flex-basis: 100%; }
+  .biz .logos img { height: 40px; width: auto; }
+  .biz .logos span { font-size: 15px; font-weight: 500; }
+  .biz .logos img[src*='starcar'] { height: 52px; }
+  /* the wide wordmarks drawn lower, so the five read at about the same weight */
+  .biz .logos img[src*='microsoft'] { height: 30px; }
+  .biz .logos img[src*='elbit'] { height: 40px; }
+  .biz .logos img[src*='hapoalim'] { height: 22px; }
+  .biz .pill svg.wa { width: 22px; height: 22px; fill: currentColor; flex: none; }
+  .biz-in { max-width: 560px; }
+  /* the form: stacked on a phone, one row on desktop; labels above the fields; an error under its own field */
+  .lead { width: 100%; margin-top: 6px; }
+  .lead-hd { margin: 0 0 14px; font: var(--b-weight) 17px/1.3 var(--display); }
+  /* r16: Pluto's form language in ours: fully rounded fields with a thin ink line, a bold label above each with a pink asterisk on the
+     required ones; name and company share a row, the phone takes the full width under them; stacked on a phone; the send is our pill CTA */
+  .lead-row { display: grid; gap: 16px; }
+  .fld-w { display: grid; gap: 7px; min-width: 0; }
+  .fld-w label { font: 700 15px/1.2 var(--display); }
+  .fld-w .req { color: #ea4795; margin-inline-start: 3px; }
+  .fld-w input { width: 100%; height: 50px; padding: 0 22px; border: 1.5px solid var(--ink); border-radius: 999px; background: #fff; color: var(--ink); font: 400 16px/1 var(--body); }
+  .fld-w input[dir='ltr'] { text-align: right; }
+  .fld-w input:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .fld-w input[aria-invalid='true'] { border-color: #b3002d; border-width: 2px; }
+  .fe { margin: 0; padding-inline: 22px; font-size: 13px; line-height: 1.25; color: #b3002d; }
+  .fe:empty { display: none; }
+  .lead .pill { justify-self: start; margin-top: 4px; }
+  .lead-ok { margin: 6px 0 0; padding: 14px 18px; border: 1.5px solid var(--ink); border-radius: 14px; background: #fff; box-shadow: var(--sh-sm); font: var(--b-weight) 17px/1.3 var(--display); }
+  .lead-ok:focus { outline: none; }
+  @media (min-width: 600px) {
+    .biz-in:has(.lead) { max-width: 640px; }
+    .lead-row { grid-template-columns: 1fr 1fr; align-items: start; }
+    .fld-w.wide, .lead .pill { grid-column: 1 / -1; }
+  }
+
+  footer { padding-bottom: calc(34px + 72px + env(safe-area-inset-bottom)) !important; } /* the last links clear the floating buttons */
+  footer a { display: inline-block; padding-block: 10px; }
+
+  /* r14: one wavy line between the story and the reviews, like Pluto's boundary between two fields, but only the line: a single smooth S
+     across the full width in the palette pink, 2 px at every width (the stroke does not scale with the box) */
+  .wave { height: clamp(44px, 8vw, 96px); margin: 0; }
+  .wave svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .wave .ln { fill: none; stroke: var(--pink); stroke-width: 2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+  /* r15, #fields=on (the default): each wave is the edge of a soft field, so the reviews between the two waves sit on a light tint of the
+     palette's sky; the line stays the 2 px pink on that edge. #fields=yellow: the same in a yellow tint. #fields=off: the lines alone (r14) */
+  :root { --field: #e9f8fd; }                   /* #a4e9ff lifted most of the way to white */
+  html.fields-yel { --field: #ffe9c4; }         /* #ffd37b at 28% over the page #fff1de */
+  .wave .fld { fill: var(--field); stroke: none; }
+  html.fields .recs { background: var(--field); }
+  html:not(.fields) .wave .fld { display: none; }
+  footer .fl { white-space: nowrap; }
+  footer .dot { font-style: normal; }
+  @media (max-width: 899px) { footer > span { display: grid; gap: 0; } footer .dot { display: none; } }
+  footer img { width: 54px; }
+
+  @media (min-width: 900px) {
+    :root { --cw: min(210px, 19vw); }
+    section, header, footer { padding-inline: max(16px, calc(50vw - 520px)); }
+    /* the cards beside the words */
+    .hero-in { grid-template-columns: 1fr 1.1fr; align-items: center; gap: 64px; }
+    .stage { width: 100%; margin: 0; height: calc(var(--cw) * 1.41 * 1.35 + 50px); }
+    .designs { padding-inline: 0; margin-inline: 20px; border-radius: 80px; padding-top: 64px; }
+    .strip { --dw: 260px; }
+    .rc { width: 360px; }
+    .strip-hint { display: none; }
+    .strip { -webkit-mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); mask-image: linear-gradient(90deg, transparent, #000 48px, #000 calc(100% - 48px), transparent); }
+    .rc .ttl { font-size: 20px; }
+    .story-in { grid-template-columns: 1fr 1fr; align-items: center; gap: 22px 40px; }
+    .story-in h2 { grid-column: 1 / -1; }
+    .prints { height: 400px; --pw: 230px; } /* in RTL the photos come first (right), then the text */
+    .print.old { top: 40px; }
+    .print.now { top: 90px; }
+    .faq-in { max-width: 760px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .print { animation: none; }
+    /* the flip becomes a crossfade */
+    .card .in, .card.down .in { transition: none; transform: none; }
+    .card img { transition: opacity .25s; }
+    .card img.b { transform: none; opacity: 0; }
+    .card.down img.b { opacity: 1; }
+    .card.down img.f { opacity: 0; }
+    /* a static grid instead of the leaning strip */
+    .strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px 12px; overflow: visible; padding: 26px 16px 0; --dw: auto; perspective: none; }
+    .dz { width: auto; }
+    .dz .nm { margin-top: 10px; font-size: 13px; }
+    .strip-hint, .bgs { display: none; }
+  }
+  /* illustrations: four from the owner's pick (#13 hourglass, #25 popper, #27 disco ball, #91 sparkles), each with its own gallery motion,
+     small and in empty margin; reduced motion holds them still */
+  .illo { position: absolute; pointer-events: none; z-index: 0; }
+  .illo .il { display: block; width: 100%; height: auto; overflow: visible; fill: none; stroke: var(--ink); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; direction: ltr; }
+  .illo .t { stroke-width: 1.4; } .illo .h { fill: #fff; stroke: none; } .illo .n { stroke: none; }
+  .illo .a { animation-duration: var(--d, 6s); animation-delay: var(--dl, 0s); animation-timing-function: ease-in-out; animation-iteration-count: infinite; transform-box: fill-box; transform-origin: var(--o, 50% 50%); }
+  .illo .sway { animation-name: il-sway; animation-direction: alternate; }
+  @keyframes il-sway { from { transform: rotate(calc(-1 * var(--r, 4deg))); } to { transform: rotate(var(--r, 4deg)); } }
+  .illo .tw { animation-name: il-tw; }
+  @keyframes il-tw { 0%, 100% { transform: scale(.55) rotate(0deg); opacity: .35; } 50% { transform: scale(1) rotate(var(--r, 0deg)); opacity: 1; } }
+  .illo .rise { animation-name: il-rise; }
+  @keyframes il-rise { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: 1; } 75% { opacity: 1; } 100% { transform: translate(var(--x, 0px), var(--y, -30px)); opacity: 0; } }
+  @keyframes i13r{0%,40%{transform:rotate(0)}48%,90%{transform:rotate(180deg)}98%,100%{transform:rotate(360deg)}}.i13r{animation-name:i13r}@keyframes i13a{0%{opacity:1}38%,48%{opacity:0}88%,100%{opacity:1}}.i13a{animation-name:i13a;animation-timing-function:linear}@keyframes i13b{0%{opacity:0}38%,48%{opacity:1}88%,100%{opacity:0}}.i13b{animation-name:i13b;animation-timing-function:linear}@keyframes i13s{0%,3%,37%,51%,86%,100%{opacity:0}6%,34%,54%,83%{opacity:1}}.i13s{animation-name:i13s;animation-timing-function:linear}
+  @media (min-width: 900px) {
+    .recs-head { padding-inline: max(16px, calc(50vw - 520px)); }
+  }
+  .illo .twk { animation-name: il-twk; }
+  @keyframes il-twk { 0%, 100% { transform: scale(.78) rotate(0deg); opacity: .6; } 50% { transform: scale(1) rotate(var(--r, 45deg)); opacity: 1; } }
+  /* a placed illustration: a position in its section, in % of the section; a width in px for this layout (phone or desktop); a turn */
+  /* x is in % of the page's content column (1040 px on desktop, the screen less its 16 px gutters on a phone), so an item keeps its place
+     beside the content at any width; y is in % of its section */
+  .pl { position: absolute; z-index: 1; left: calc(var(--cl, 0px) + var(--x) * var(--cw2, 100vw) / 100); translate: -50% -50%; rotate: var(--r, 0deg); pointer-events: none; }
+  .pl > .illo { position: relative; display: block; }
+  @media (prefers-reduced-motion: reduce) { .illo .a { animation-play-state: paused !important; } }
+
+  /* the placement editor (#place) */
+  body.placing { touch-action: pan-y; } /* a second finger pinches an item, never the page */
+  body.placing .pl { pointer-events: auto; cursor: grab; touch-action: none; z-index: 60; }
+  body.placing .pl::before { content: ''; position: absolute; inset: -16px; } /* a 44 px+ grab area even for a small star */
+  body.placing .pl::after { content: ''; position: absolute; inset: -6px; border: 1.5px dashed rgba(0, 0, 0, .28); border-radius: 6px; pointer-events: none; }
+  body.placing .pl.sel::after { border: 2px solid var(--ink); }
+  .pl .hd { display: none; position: absolute; width: 40px; height: 40px; border-radius: 50%; background: #fff; border: 2px solid var(--ink); font: 900 16px/36px system-ui, sans-serif; text-align: center; color: var(--ink); touch-action: none; padding: 0; z-index: 2; }
+  body.placing .pl.sel .hd { display: block; }
+  .pl .hd.rot { top: -44px; left: -44px; cursor: grab; }
+  .pl .hd.size { bottom: -44px; left: -44px; cursor: nwse-resize; }
+  .pl.drag { position: fixed; z-index: 1200; }
+  .pal { display: none; position: fixed; z-index: 1100; inset: auto 8px max(8px, env(safe-area-inset-bottom)); margin: 0 auto; max-width: 720px; background: #fff; border: 2px solid var(--ink); border-radius: 16px; box-shadow: 4px 4px 0 var(--ink); padding: 8px; font: 600 13px/1.2 var(--display); }
+  body.placing .pal { display: block; }
+  .pal .row1 { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+  .pal .add { flex: none; display: grid; justify-items: center; gap: 2px; width: 62px; padding: 4px 2px; border: 1.5px solid transparent; border-radius: 10px; background: none; font: inherit; font-size: 11px; color: var(--ink); cursor: pointer; }
+  .pal .add:active { border-color: var(--ink); }
+  .pal .add .illo { position: relative; width: 34px; height: 34px; display: grid; place-items: center; }
+  .pal .row2 { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; align-items: center; }
+  .pal button.t { border: 1.5px solid var(--ink); background: #fff; color: var(--ink); border-radius: 999px; padding: 7px 12px; font: inherit; cursor: pointer; }
+  .pal button.t[aria-pressed='true'] { background: var(--ink); color: #fff; }
+  .pal button.t:disabled { opacity: .35; cursor: default; }
+  .pal .note { flex-basis: 100%; color: #5c544b; font-weight: 500; }
+  .pal textarea { display: none; width: 100%; height: 88px; margin-top: 8px; font: 12px/1.3 ui-monospace, monospace; direction: ltr; border: 1.5px solid var(--ink); border-radius: 8px; padding: 6px; }
+  .pal.io textarea { display: block; }
+  .pal .min { margin-inline-start: auto; }
+  .pal.small .row1, .pal.small .row2 > :not(.min) { display: none; }
+  @media (max-width: 899px) {
+    .pal { padding: 6px; }
+    .pal .add { width: 46px; font-size: 0; }
+    .pal .add .illo { width: 30px; height: 30px; }
+    .pal .row2 { gap: 4px; margin-top: 4px; }
+    .pal button.t { padding: 6px 9px; }
+    .pal .note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+  }
+</style>
+  <style>
+    /* every flood, still and in a row, exactly as r17 draws it when a design is tapped */
+    .gal-head { padding: 22px 16px 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .gal-head h1 { font: 900 clamp(26px, 7vw, 44px)/1 var(--display); margin: 0; }
+    .flood.still { position: relative; inset: auto; visibility: visible; height: 100svh; min-height: 640px; max-height: 1000px; touch-action: auto; }
+  </style>
+</head>
+<body>
+  <div class="gal-head"><h1>כל העיצובים, כמו שהם נפתחים בהקשה</h1></div>
+  <main id="gal"></main>
+  <footer><span><a href="r17.html">חזרה לדף הבית (r17)</a></span></footer>
+<script>
+(() => {
+  const C = 'cards12/'; // the preview helper's cards: live art, every printed frame evened out to 10.78% of the width (cards12/outline-rules.txt)
+  // every public design on the live site (6 built-in + the 4 from /api/custom-designs), each with its main colour sampled from its real card.
+  // All art is what the LIVE site serves today (2026-10-15), not the repo: the template artwork on the production volume overrides it.
+  // The print template (/api/template-image/<theme>) is the truth where it is public: קליפורניה, סנטוריני, טוקיו and ברוקלין take their one
+  // template card (front, and back where the template has one) and template board; their uploaded deck sheets are older art.
+  // פריז's template matches its live deck sheet, so it keeps the sheet's 8 fronts (template back and board). סיישל (template not
+  // public) and the custom designs come from their live deck sheets (/api/design-images deckFronts/deckBacks/deckBoard);
+  // טריפה has no sheets, so its cards are its template renders.
+  const D = {
+    bachelorette: { name: 'פריז', c: '#fc789c', fronts: 8, back: 1 },
+    birthday: { name: 'קליפורניה', c: '#9ce4fc', fronts: 1, back: 1 },
+    grapefruit: { name: 'אואזיס', c: '#f07848', fronts: 1, back: 1 }, // the live shop's one front (its print template)
+    marriage: { name: 'סנטוריני', c: '#0048a8', fronts: 1, back: 1 },
+    daniel: { name: 'דני', c: '#f5d98f', fronts: 8, back: 1 },
+    japanese: { name: 'טוקיו', c: '#b03a3a', fronts: 1, back: 1 }, // the koi red of its art, so its panel and flood are a pastel red, not grey
+    posttrip: { name: 'סיישל', c: '#90d8e4', fronts: 8, back: 1 },
+    football: { name: 'האלאנד', c: '#2a52be', fronts: 8, back: 1 },
+    tarifa: { name: 'טריפה', c: '#3d6b2c', fronts: 1, back: 1 },
+    kids: { name: 'ברוקלין', c: '#1878fc', fronts: 1, back: 1 },
+  };
+  for (const k in D) D[k].board = `boards12/${k}.webp`; // the preview's boards, so the two match
+  for (const k of ["bachelorette", "birthday", "grapefruit", "marriage", "daniel", "japanese", "posttrip", "football", "tarifa"]) D[k].board2 = `boards14/${k}.webp`; // r14: the 2000 px boards for 2x screens
+  // each design's colour, lifted most of the way to white: the same hue as a light pastel
+  const tint = (h, f) => '#' + [1, 3, 5].map((i) => Math.round(parseInt(h.slice(i, i + 2), 16) + (255 - parseInt(h.slice(i, i + 2), 16)) * f).toString(16).padStart(2, '0')).join('');
+  const pastel = (h) => tint(h, .62);
+  /* SHARED:START (copied into r12-designs.html) */
+  // what a tapped design shows: its pastel, its board with a front and a back on it, and its name. The board comes in two sizes, so a 2x or 3x
+  // screen gets the native 2000 px one (boards14/) and the rest the 1200 px one; ברוקלין has only the 1200 px board
+  function fillFlood(root, k) {
+    const d = D[k], tab = root.querySelector('.tableau');
+    const v = [1, 3, 5].map((i) => parseInt(d.c.slice(i, i + 2), 16)), P = [255, 241, 222];
+    root.style.setProperty('--fc', Math.max(...v) - Math.min(...v) >= 40 ? pastel(d.c) : '#' + v.map((x, i) => Math.round(x + (P[i] - x) * .62).toString(16).padStart(2, '0')).join(''));
+    root.querySelector('h3').textContent = d.name;
+    tab.className = 'tableau' + (d.board ? '' : ' solo');
+    tab.innerHTML = (d.board ? `<img class="bd" src="${d.board}"${d.board2 ? ` srcset="${d.board} 1200w, ${d.board2} 2000w" sizes="(min-width: 650px) 520px, 80vw"` : ''} alt="הלוח של ${d.name}">` : '')
+      + `<img class="fc fr" src="${C}${k}-f1.webp" alt="קלף מהעיצוב ${d.name}">`
+      + (d.back ? `<img class="fc bk" src="${C}${k}-b1.webp" alt="גב הקלף של ${d.name}">` : '');
+  }
+  
+  const ALL = Object.keys(D), gal = document.getElementById('gal');
+  const INFO = "    <div class=\"info\">\n      <h3></h3>\n      <!-- from the live product page (product.html?design=marriage, 2026-10-16): the price, \"מה בפנים\" as ticked lines, the button and \"מוכן תוך 4 ימי עסקים\" -->\n      <p class=\"pr\"><span class=\"tok\">{price}</span></p>\n      <div class=\"inbox\">\n        <p class=\"hd\">מה בפנים</p>\n        <ul>\n          <li>חפיסת קלפים מותאמת אישית</li>\n          <li>לוח משחק</li>\n          <li>חיילי משחק עם הפרצופים שלכם</li>\n          <li>דף חוקים</li>\n        </ul>\n      </div>\n      <a class=\"pill\" href=\"#\">יאללה בואו נתחיל<svg class=\"arr\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\"><path d=\"M19 12H5M11 6l-6 6 6 6\" /></svg></a>\n      <p class=\"note\">מוכן תוך 4 ימי עסקים</p>\n    </div>\n";
+  gal.innerHTML = ALL.map((k, i) => `<section class="flood still" aria-label="${D[k].name}"><div class="spread"><div class="tableau"></div></div>${INFO}</section>`).join('');
+  [...gal.children].forEach((el, i) => fillFlood(el, ALL[i]));
+})();
+</script>
+</body>
+</html>

@@ -123,7 +123,7 @@ components:
 
 # Design System: דוגרי
 
-Written for gate D4 of `REDESIGN_PLAN.md` from what `redesign/directions/r16.html` actually ships (commit 190aa63, the round the owner approved on 2026-10-16), not from intentions. Where the prototype and this file disagree, the prototype is right and this file has a bug. The tokens live in `site/css/redesign-tokens.css`; the `--` names below are from that file.
+Written for gate D4 of `REDESIGN_PLAN.md` from what `redesign/directions/r16.html` actually ships (commit 190aa63, the round the owner approved on 2026-10-16; r17 moves only the illustrations that sat on text), not from intentions. Where the prototype and this file disagree, the prototype is right and this file has a bug. The tokens live in `site/css/redesign-tokens.css`; the `--` names below are from that file.
 
 ## Overview
 
@@ -413,25 +413,11 @@ In the hero, a small deck of real card backs deals real cards onto a pile beside
 
 ## Open items
 
-1. **Illustrations that still touch text.** The owner's final placements are pending. On r16's layout these overlap:
-   - **Phone:**
-     - the popper on the designs subtitle;
-     - the cross on the designs button;
-     - the hourglass over the story photos;
-     - the pink star on "איך דוגרי נולד";
-     - a black star on "ועלמה";
-     - the sky star on the second story paragraph;
-     - a black star on the sky panel's edge (390 px only);
-     - the sky star in the designs grid (reduced motion only).
-   - **Desktop:**
-     - the sparkles at the end of the headline;
-     - the sky star on "ומה הקאץ'?";
-     - the cross on the designs button;
-     - the pink star on "איך דוגרי נולד".
+1. **Illustrations that still touch text.** r17 moved every mark that sat on text the smallest distance that clears it: phone at 360–430 px, desktop at 1100–1920 px, with and without reduced motion (`README-r17.md`). Two cases are left for the owner:
+   - **Desktop under reduced motion:** four marks in the designs section touch the static grid that replaces the strip. Clearing them needs moves of 33–153 px; they could be hidden under reduced motion instead.
+   - **Narrower desktops, 900–1099 px:** the hero text wraps onto more lines, and a few desktop marks touch it. The fix is either a desktop layout that starts at 1100 px or a third set of placements.
 
-   Positions and the editor are in `README-r16.md`.
-
-2. **The form's endpoint.** The prototype has no backend; a valid send only shows the thank-you. The live form needs a server route that takes name, company and phone and emails the owner, optionally with a row in the admin (Agent A or D builds it). Until it exists the form must not go live, or leads are lost.
+2. **The form's endpoint.** Built: `POST /api/business-lead` (#673) stores the lead and emails the owner. The prototype still only shows the thank-you; the real page posts to it.
 3. **Live-data wiring:**
    - the price (`{price}`, and `{delivery_fee}` wherever delivery is mentioned) from the pricing settings;
    - the designs, names and art from `/api/design-names`, `/api/custom-designs` and the template images, instead of the prototype's fixed list of ten;
