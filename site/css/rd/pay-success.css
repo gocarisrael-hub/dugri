@@ -107,11 +107,3 @@ html.rd .done .wa.rd-btn:hover {
   background: var(--color-paper);
   color: var(--color-ink);
 }
-
-/* A shell class sets display, which outranks the hidden attribute: an element the page hides must stay hidden. */
-html.rd .rd-box[hidden],
-html.rd .rd-card[hidden],
-html.rd .rd-btn[hidden],
-html.rd .rd-title[hidden] {
-  display: none;
-}
