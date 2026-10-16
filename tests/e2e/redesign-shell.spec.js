@@ -3,7 +3,7 @@ import { previewRedesign } from './helpers/redesign.js';
 
 // The redesign shell (css/redesign.css, js/redesign-shell.js) on a page not built in the redesign yet. What these pin:
 // - the shared header stands in for the page's own header.hdr, which stays in the DOM hidden; the menu sheet opens, closes on Esc
-//   and on ✕, marks the page it is on; the shared footer stands in for the page's own;
+//   and on ✕, marks the page it is on; the page keeps its own footer (the owner's contacts) unless it asks for the shared one;
 // - the bridge: a page that styles through tokens.css takes the redesign's ground and ink without an edit;
 // - a page built in the redesign (new.html) is marked rd-native and left alone;
 // - rd-kit.html shows every component and nothing scrolls sideways;
@@ -29,7 +29,6 @@ test.describe('the shell on a page not built in the redesign', () => {
     );
     await expect(page.locator('head script[src*="/js/redesign-shell."]')).toHaveCount(1);
     await expect(page.locator('.rd-hdr')).toBeVisible();
-    await expect(page.locator('.rd-ftr')).toBeVisible();
     await page.goto('/products.html'); // the cookie carries the mode
     await expect(page.locator('.rd-hdr')).toBeVisible();
     await page.goto('/products.html?rd=0');
@@ -38,15 +37,15 @@ test.describe('the shell on a page not built in the redesign', () => {
     await expect(page.locator('header.hdr')).toBeVisible();
   });
 
-  test('the shared header and footer stand in for the page’s own, and the page takes the new ground', async ({
+  test('the shared header stands in for the page’s own, the page keeps its footer, and takes the new ground', async ({
     page,
   }) => {
     await page.goto('/pickup.html');
     await expect(page.locator('.rd-hdr')).toBeVisible();
     await expect(page.locator('header.hdr')).toHaveCount(1);
     await expect(page.locator('header.hdr')).toBeHidden();
-    await expect(page.locator('.rd-ftr')).toBeVisible();
-    await expect(page.locator('body > footer[data-rd-replaced]')).toBeHidden();
+    await expect(page.locator('.rd-ftr')).toHaveCount(0);
+    await expect(page.locator('body > footer')).toBeVisible();
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 241, 222)');
     await expect(page.locator('body')).toHaveCSS('padding-top', '0px');
     expect(await sideways(page)).toBe(0);

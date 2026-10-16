@@ -25,32 +25,46 @@ With the mode off, every page is byte-identical to before.
 - **Build on the shell, don't repeat it.** Use its tokens (`var(--color-ink)`, `var(--radius-box)`, …). Give your own elements its components' look with `--rd-as-*` (below) instead of copying their rules.
 - **Preview in a spec** with `previewRedesign(page)` from `tests/e2e/helpers/redesign.js`. It goes through the real `?rd=1` path.
 
+## Redesign page owners
+
+For the redesign, this table overrides `docs/agent-partition.md` where they differ. The page-level owner holds the page's settings (`--rd-header`, `--rd-footer`, the `--rd-as-*` lists) in its own section of `css/rd/<page>.css`, and adds another owner's selectors to those lists when asked. Each owner writes only inside its own marked section, `/* == X: <domain> — <part> == */ … /* == end X == */`; whoever lands second rebases and adds its section as a unit.
+
+| Page                                             | Page-level owner                                   | Other sections                                         |
+| ------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------ |
+| products.html, design-codes.html                 | B                                                  | none                                                   |
+| product.html                                     | B (gallery, title note, sections, related designs) | A: the buy box (`.pdp-head`, `.pdp-price`, `.pdp-buy`) |
+| options.html, collect.html                       | C (the wizard, the word collection)                | A: the checkout sections                               |
+| pickup.html, pay pages, partner, coupons         | A                                                  | none                                                   |
+| wordlists, proof                                 | C                                                  | none                                                   |
+| how, timer, terms, unsubscribe                   | D                                                  | none                                                   |
+| the site header and footer (`css/rd/chrome.css`) | D                                                  | none                                                   |
+
 ## What the shell gives every page
 
 ### 1. The token bridge (`html.rd:not(.rd-native)`)
 
 Every palette token `tokens.css` declares is renamed onto the redesign. A page that styles through them takes the new look with no edit; its hard-coded colours stay its owner's to change.
 
-| tokens.css                                                             | becomes                                      |
-| ---------------------------------------------------------------------- | -------------------------------------------- |
-| `--bg`                                                                 | `--color-ground` (#fff1de)                   |
-| `--section`, `--surface`                                               | `--color-paper` (#fff)                       |
-| `--ink`, `--line`, `--sage`, `--sage-deep`, `--sage-deeper`, `--blush` | `--color-ink` (#000)                         |
-| `--muted`                                                              | `--color-text-muted`                         |
-| `--sage-tint`, `--blush-tint`                                          | `--color-tag` (#fdf2d4)                      |
-| `--accent`                                                             | `--color-accent-pink` (#ff7aa9)              |
-| `--accent-deep`                                                        | `--color-brand-pink` (#ea4795)               |
-| `--accent-tint`                                                        | `--color-card-hot` (#ffe9f0)                 |
-| `--ok`                                                                 | #1f7a4f                                      |
-| `--display`                                                            | `--font-heading` (Gveret Levin, then M PLUS) |
-| `--font`                                                               | `--font-body` (M PLUS Rounded 1c)            |
-| `--h-weight`                                                           | `--weight-heading`                           |
-| `--h-spacing`                                                          | `--track-heading`                            |
-| `--sub-weight`                                                         | `--weight-body`                              |
-| `--radius`                                                             | `--radius-box` (14px)                        |
-| `--radius-pill`                                                        | 999px                                        |
-| `--ease`                                                               | `--ease-pop`                                 |
-| `--shadow-sm` / `-md` / `-lg`                                          | hard ink shadows: 3/3, 4/4, 6/7 px           |
+| tokens.css                                                             | becomes                                                                                                                                          |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--bg`                                                                 | `--color-ground` (#fff1de)                                                                                                                       |
+| `--section`, `--surface`                                               | `--color-paper` (#fff)                                                                                                                           |
+| `--ink`, `--line`, `--sage`, `--sage-deep`, `--sage-deeper`, `--blush` | `--color-ink` (#000)                                                                                                                             |
+| `--muted`                                                              | `--color-text-muted`                                                                                                                             |
+| `--sage-tint`, `--blush-tint`                                          | `--color-tag` (#fdf2d4)                                                                                                                          |
+| `--accent`                                                             | `--color-accent-pink` (#ff7aa9)                                                                                                                  |
+| `--accent-deep`                                                        | `--color-brand-pink` (#ea4795)                                                                                                                   |
+| `--accent-tint`                                                        | `--color-card-hot` (#ffe9f0)                                                                                                                     |
+| `--ok`                                                                 | #1f7a4f                                                                                                                                          |
+| `--display`                                                            | `--font-body` (M PLUS): the old display face also set prices, buttons and names, so Gveret goes only where a page asks for a title (`.rd-title`) |
+| `--font`                                                               | `--font-body` (M PLUS Rounded 1c)                                                                                                                |
+| `--h-weight`                                                           | `--weight-strong` (800)                                                                                                                          |
+| `--h-spacing`                                                          | 0                                                                                                                                                |
+| `--sub-weight`                                                         | `--weight-body`                                                                                                                                  |
+| `--radius`                                                             | `--radius-box` (14px)                                                                                                                            |
+| `--radius-pill`                                                        | 999px                                                                                                                                            |
+| `--ease`                                                               | `--ease-pop`                                                                                                                                     |
+| `--shadow-sm` / `-md` / `-lg`                                          | hard ink shadows: 3/3, 4/4, 6/7 px                                                                                                               |
 
 `--price-gap` and `--was-gap` are spacing and stay as they are. A test fails if a new palette token is added to `tokens.css` without a mapping here.
 
@@ -65,7 +79,8 @@ Every palette token `tokens.css` declares is renamed onto the redesign. A page t
 
 The shell renders the shared header (logo, ≡ and "הזמינו עכשיו"), the menu sheet and the footer.
 
-- **Where they go:** in place of the page's own header and footer. The old ones stay in the DOM, hidden (`data-rd-replaced`), so their ids, their scripts and their tests keep working.
+- **Where they go:** the header goes in place of the page's own header. The footer is opt-in (`--rd-footer`), because a page's own footer usually holds the owner's contacts (WhatsApp, phone, email, Instagram, the business line), which the shell's footer doesn't. Restyle that one instead. Anything replaced stays in the DOM, hidden (`data-rd-replaced`), so its ids, scripts and tests keep working.
+- **Page rules don't reach them:** the shell's header and footer reset what a page's own `header { }` / `footer { }` rules would give them.
 - **header.js:** it doesn't need to stand down, and the gate doesn't skip it. It only wires the hidden `header.hdr`, so it does nothing visible.
 - **Before the shell runs:** `header.hdr` is hidden by CSS from the first paint, and the body padding it reserved goes to the new header, so nothing flashes or jumps.
 
@@ -75,7 +90,7 @@ A page decides from its `css/rd/<page>.css`:
 html.rd {
   --rd-header: replace; /* replace (default, when the page has one) | top | none */
   --rd-header-replace: '#wizTop'; /* the page's own header, if it isn't header.hdr */
-  --rd-footer: replace; /* replace (default once the header was placed) | end | none */
+  --rd-footer: replace; /* none (default) | replace | end */
   --rd-footer-replace: 'body > footer';
 }
 ```
