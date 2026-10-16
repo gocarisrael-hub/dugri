@@ -598,6 +598,44 @@ html.rd .rd-btn:focus-visible {
   outline-offset: var(--focus-offset);
 }
 
+/* the forward arrow drawn into a button (.rd-btn.arrow): it points left, the reading direction, in the button's own colour */
+html.rd .rd-btn.arrow::after {
+  content: '';
+  flex: none;
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 10px;
+  background-color: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.35' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 12H5M11 6l-6 6 6 6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='3.35' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M19 12H5M11 6l-6 6 6 6'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+
+/* a title in the heading face with its coloured offset; --rd-title-offset picks the colour (pink by default) */
+html.rd .rd-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading);
+  font-size: var(--text-section);
+  line-height: var(--leading-heading);
+  letter-spacing: var(--track-heading);
+  color: var(--color-ink);
+  text-shadow: var(--title-offset) var(--title-offset) 0
+    var(--rd-title-offset, var(--title-offset-hero));
+}
+
+/* a box: the FAQ item's look, for a panel of text or a group of fields */
+html.rd .rd-box {
+  display: block;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: var(--border-bold) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-sm);
+  padding: var(--pad-card);
+}
+
 /* fields: a label above, the input, a hint or an error under it (.rd-field.invalid, or aria-invalid on the input) */
 html.rd .rd-field {
   display: block;

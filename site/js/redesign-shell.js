@@ -1,14 +1,22 @@
-// The redesign's shell for the pages not built in it yet (css/redesign.css has the why). Loaded with defer, only in redesign mode:
-// the server adds it, with class="rd" on <html>, when the setting redesign.enabled is on or the visitor previews with ?rd=1.
-// ES5, so the owner's old Safari runs it. What it does, once per page:
+// The redesign's shell for the pages not built in it yet (docs/redesign-mode.md is the guide; css/redesign.css has the look).
+// Loaded with defer, only in redesign mode: the server's gate (server/redesign-gate.js) adds it, with class="rd" on <html>, when
+// the setting redesign.enabled is on or the visitor previews with ?rd=1. ES5, so the owner's old Safari runs it.
+// A page's HTML is never edited for the mode: a page tells the shell what it wants from its own /css/rd/<page>.css, through
+// custom properties on html.rd (read here once, at start):
+//   --rd-header: replace | top | none        the shared header in place of the page's own (default: replace, when there is one)
+//   --rd-header-replace: '<selector>'        which element is the page's own header (default 'header.hdr')
+//   --rd-footer: replace | end | none        the shared footer (default: replace, when the header was replaced)
+//   --rd-footer-replace: '<selector>'        which element is the page's own footer (default 'body > footer')
+//   --rd-as-<component>: '<selectors>'       the page's own elements that take a shared component's look, e.g.
+//                                            --rd-as-btn: '.cta, .next'; the shell adds the class, now and as the page adds more
+// What it does, once per page:
 //   1. a page already built in the redesign (new.html, new-faq.html, served at / in the mode too) is marked html.rd-native and
 //      left alone
-//   2. <dialog> and replaceChildren for Safari before 15.4 / 14 (the same fallbacks as js/home-legacy.js, for pages without it)
-//   3. the shared header: logo, ≡ and the order button, with the menu sheet. It stands in for the page's own header.hdr, or fills
-//      an element marked data-rd-header; the page's header stays in the DOM, hidden, so its ids and scripts keep working
-//   4. the shared footer: into data-rd-footer, or in place of the page's own <footer> when the header was replaced
+//   2. <dialog> and replaceChildren for Safari before 15.4 / 14 (the same fallbacks as js/home-legacy.js)
+//   3. the shared header (logo, ≡ and the order button, with the menu sheet) and footer; a page's own stays in the DOM, hidden,
+//      so its ids, scripts (header.js) and tests keep working
+//   4. the component classes from --rd-as-*
 //   5. window.dugriRd.toast(text)
-// A page opts out of 3 and 4 with data-rd-no-header / data-rd-no-footer on <body> (the wizard keeps its own bar, for example).
 (function () {
   var doc = document;
   var root = doc.documentElement;
@@ -198,40 +206,105 @@
     trapTab(menu);
   }
 
+  // a page's settings: a custom property's value, without the quotes a string needs in CSS
+  var cs = window.getComputedStyle(root);
+  var conf = function (name, dflt) {
+    var v = (cs.getPropertyValue(name) || '').trim().replace(/^(['"])([\s\S]*)\1$/, '$2');
+    return v || dflt;
+  };
+  var pick = function (sel) {
+    try {
+      return doc.querySelector(sel);
+      // eslint-disable-next-line no-unused-vars -- ES5 has no catch without a binding
+    } catch (e) {
+      return null; // a selector this browser cannot read
+    }
+  };
+
   var body = doc.body;
-  var noHeader = body.hasAttribute('data-rd-no-header');
-  var noFooter = body.hasAttribute('data-rd-no-footer');
-  var replacedHeader = false;
-  if (!noHeader) {
-    var slot = doc.querySelector('[data-rd-header]');
-    var old = slot ? null : doc.querySelector('header.hdr');
-    if (slot || old) {
+  var placed = false;
+  var hMode = conf('--rd-header', 'replace');
+  if (hMode !== 'none') {
+    var old = pick(conf('--rd-header-replace', 'header.hdr'));
+    if (hMode === 'top' || old) {
       var hdr = doc.createElement('header');
       hdr.className = 'rd-hdr';
       hdr.innerHTML = headerHtml();
-      if (slot) slot.appendChild(hdr);
-      else {
+      if (hMode === 'replace' && old) {
         old.parentNode.insertBefore(hdr, old);
         old.setAttribute('data-rd-replaced', '');
         root.className += ' rd-hdr-swapped';
-        replacedHeader = true;
-      }
+      } else body.insertBefore(hdr, body.firstChild);
       mountMenu(hdr.querySelector('#rdMenuBtn'));
+      placed = true;
     }
   }
-  if (!noFooter) {
-    var fslot = doc.querySelector('[data-rd-footer]');
-    var oldF = fslot ? null : replacedHeader ? doc.querySelector('body > footer') : null;
-    if (fslot || oldF) {
+  var fMode = conf('--rd-footer', placed ? 'replace' : 'none');
+  if (fMode !== 'none') {
+    var oldF = pick(conf('--rd-footer-replace', 'body > footer'));
+    if (fMode === 'end' || oldF) {
       var ftr = doc.createElement('footer');
       ftr.className = 'rd-ftr';
       ftr.innerHTML = footerHtml();
-      if (fslot) fslot.appendChild(ftr);
-      else {
+      if (fMode === 'replace' && oldF) {
         oldF.parentNode.insertBefore(ftr, oldF);
         oldF.setAttribute('data-rd-replaced', '');
-      }
+      } else body.appendChild(ftr);
     }
+  }
+
+  // ---------- 4. the page's own elements in a shared component's look ----------
+  var AS = {
+    btn: 'rd-btn',
+    'btn-secondary': 'rd-btn secondary',
+    'btn-ghost': 'rd-btn ghost',
+    'btn-arrow': 'rd-btn arrow',
+    field: 'rd-field',
+    select: 'rd-select',
+    check: 'rd-check',
+    card: 'rd-card',
+    'card-hot': 'rd-card hot',
+    box: 'rd-box',
+    tag: 'rd-tag',
+    chip: 'rd-chip',
+    title: 'rd-title',
+    x: 'rd-x',
+    price: 'rd-price',
+    steps: 'rd-steps',
+    sheet: 'rd-sheet',
+  };
+  var maps = [];
+  for (var key in AS) {
+    if (!Object.prototype.hasOwnProperty.call(AS, key)) continue;
+    var sel = conf('--rd-as-' + key, '');
+    if (sel) maps.push([sel, AS[key].split(' ')]);
+  }
+  var applyAs = function (scope) {
+    for (var m = 0; m < maps.length; m++) {
+      var els;
+      try {
+        els = scope.querySelectorAll(maps[m][0]);
+        // eslint-disable-next-line no-unused-vars -- ES5 has no catch without a binding
+      } catch (e) {
+        continue;
+      }
+      for (var k = 0; k < els.length; k++)
+        for (var c = 0; c < maps[m][1].length; c++) els[k].classList.add(maps[m][1][c]);
+    }
+  };
+  if (maps.length) {
+    applyAs(doc);
+    // the wizard and the word lists draw more as you go: give what they add the same look
+    var queued = false;
+    if (window.MutationObserver)
+      new MutationObserver(function () {
+        if (queued) return; // one pass per frame, however many nodes arrived
+        queued = true;
+        window.requestAnimationFrame(function () {
+          queued = false;
+          applyAs(doc);
+        });
+      }).observe(body, { childList: true, subtree: true });
   }
 
   // ---------- 5. the page's API ----------

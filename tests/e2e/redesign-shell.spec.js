@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { simulateRedesignGate } from './helpers/redesign.js';
+import { previewRedesign } from './helpers/redesign.js';
 
 // The redesign shell (css/redesign.css, js/redesign-shell.js) on a page not built in the redesign yet. What these pin:
 // - the shared header stands in for the page's own header.hdr, which stays in the DOM hidden; the menu sheet opens, closes on Esc
@@ -8,14 +8,34 @@ import { simulateRedesignGate } from './helpers/redesign.js';
 // - a page built in the redesign (new.html) is marked rd-native and left alone;
 // - rd-kit.html shows every component and nothing scrolls sideways;
 // - the menu still opens in a browser without <dialog> (Safari before 15.4).
-// The server's gate is D's; here simulateRedesignGate does in the browser what it does, so these do not depend on its setting.
+// Through the real gate (server/redesign-gate.js): ?rd=1 sets the preview cookie, as when the owner previews.
 
 const sideways = (page) =>
   page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
 
 test.describe('the shell on a page not built in the redesign', () => {
   test.beforeEach(async ({ page }) => {
-    await simulateRedesignGate(page, /\/(pickup|new)\.html$/);
+    await previewRedesign(page);
+  });
+
+  test('?rd=1 turns the mode on through the gate: the class, the stylesheet and the shell, on every page after', async ({
+    page,
+  }) => {
+    await page.context().clearCookies();
+    await page.goto('/pickup.html?rd=1');
+    await expect(page.locator('html')).toHaveClass(/(^|\s)rd(\s|$)/);
+    await expect(page.locator('head link[rel="stylesheet"][href*="/css/redesign."]')).toHaveCount(
+      1
+    );
+    await expect(page.locator('head script[src*="/js/redesign-shell."]')).toHaveCount(1);
+    await expect(page.locator('.rd-hdr')).toBeVisible();
+    await expect(page.locator('.rd-ftr')).toBeVisible();
+    await page.goto('/products.html'); // the cookie carries the mode
+    await expect(page.locator('.rd-hdr')).toBeVisible();
+    await page.goto('/products.html?rd=0');
+    await expect(page.locator('html')).not.toHaveClass(/(^|\s)rd(\s|$)/);
+    await expect(page.locator('.rd-hdr')).toHaveCount(0);
+    await expect(page.locator('header.hdr')).toBeVisible();
   });
 
   test('the shared header and footer stand in for the page’s own, and the page takes the new ground', async ({
@@ -75,7 +95,9 @@ test.describe('the shell on a page not built in the redesign', () => {
 });
 
 test.describe('rd-kit.html', () => {
-  test('shows every component, and its sheet and toast work', async ({ page }) => {
+  test('shows every component, takes a page’s own element into one from CSS, and its sheet and toast work', async ({
+    page,
+  }) => {
     const res = await page.goto('/rd-kit.html');
     expect(res.headers()['x-robots-tag'] || '').toMatch(/noindex/);
     for (const sel of [
@@ -93,6 +115,10 @@ test.describe('rd-kit.html', () => {
     ])
       await expect(page.locator(sel).first(), sel).toBeVisible();
     await expect(page.locator('.rd-btn').first()).toHaveCSS('background-color', 'rgb(0, 0, 0)');
+    await expect(page.locator('#kitMapped')).toHaveClass(/\brd-btn\b/); // --rd-as-btn: '.kit-go'
+    await expect(page.locator('#kitMapped')).toHaveCSS('border-radius', '999px');
+    await expect(page.locator('h1.rd-title')).toHaveCSS('text-shadow', /rgb\(255, 122, 169\)/);
+    await expect(page.locator('.rd-hdr')).toBeVisible(); // --rd-header: top
     await expect(page.locator('.rd-card').first()).toHaveCSS(
       'box-shadow',
       /rgb\(0, 0, 0\) 6px 7px 0px/

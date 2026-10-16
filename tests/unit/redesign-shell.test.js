@@ -3,9 +3,11 @@
 //   1. the faces and the role tokens are copies of home-new.css's and redesign-tokens.css's, byte for byte, so the two never drift
 //   2. the bridge renames every palette token tokens.css declares, so no old page keeps an old colour through a token
 //   3. the stylesheet keeps to what the owner's old Safari reads (15.6 at most), and the shell script is ES5
-//   4. the shell: the shared header and footer stand in for a page's own; a page built in the redesign is left alone; nothing runs
-//      outside the mode or twice; a page can opt out
-//   5. rd-kit.html is private
+//   4. the shell: the shared header and footer stand in for a page's own; a page places or drops them, and gives its own elements
+//      a shared component's look, from its CSS alone (--rd-header, --rd-as-btn …); a page built in the redesign is left alone;
+//      nothing runs outside the mode or twice
+//   5. every per-page stylesheet (css/rd/*.css) is scoped under html.rd, so the mode never leaks out of it
+//   6. rd-kit.html is private
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -81,10 +83,12 @@ describe('the shell script', () => {
   });
 
   const run = () => window.eval(JS);
-  const page = (bodyHtml, { rd = true, meta } = {}) => {
+  const page = (bodyHtml, { rd = true, meta, css = '' } = {}) => {
     delete window.__dugriRdShell;
     document.documentElement.className = rd ? 'rd' : '';
-    document.head.innerHTML = meta ? `<meta name="dugri:page" content="${meta}">` : '';
+    document.head.innerHTML =
+      (meta ? `<meta name="dugri:page" content="${meta}">` : '') +
+      (css ? `<style>html.rd { ${css} }</style>` : '');
     document.body.outerHTML = `<body>${bodyHtml}</body>`;
   };
   const OLD =
@@ -115,16 +119,40 @@ describe('the shell script', () => {
     ]);
   });
 
-  it('fills the slots a page marks, and leaves a page that opts out alone', () => {
-    page('<div data-rd-header></div><main></main><div data-rd-footer></div>');
+  it('a page places the header at the top, the footer at the end, or drops them, from its CSS alone', () => {
+    page('<main id="m"></main>', { css: '--rd-header: top; --rd-footer: end;' });
     run();
-    expect(document.querySelector('[data-rd-header] > .rd-hdr')).not.toBe(null);
-    expect(document.querySelector('[data-rd-footer] > .rd-ftr')).not.toBe(null);
-    page(OLD.replace('<header', '<header data-x'));
-    document.body.setAttribute('data-rd-no-header', '');
-    document.body.setAttribute('data-rd-no-footer', '');
+    expect(document.body.firstElementChild.className).toBe('rd-hdr');
+    expect(document.body.lastElementChild.className).toBe('rd-ftr');
+    page(OLD, { css: '--rd-header: none; --rd-footer: none;' });
     run();
     expect(document.querySelector('.rd-hdr, .rd-ftr, #rdMenu')).toBe(null);
+    expect(document.getElementById('old').hasAttribute('data-rd-replaced')).toBe(false);
+  });
+
+  it('a page names its own header and footer when they are not header.hdr and <footer>', () => {
+    page('<div id="bar">b</div><main></main><div id="foot">f</div>', {
+      css: "--rd-header-replace: '#bar'; --rd-footer-replace: '#foot';",
+    });
+    run();
+    expect(document.getElementById('bar').hasAttribute('data-rd-replaced')).toBe(true);
+    expect(document.getElementById('bar').previousElementSibling.className).toBe('rd-hdr');
+    expect(document.getElementById('foot').previousElementSibling.className).toBe('rd-ftr');
+  });
+
+  it('gives a page’s own elements a shared component’s look, also the ones it adds later', async () => {
+    page('<a class="cta">x</a><button class="next">y</button><div class="opt"></div>', {
+      css: "--rd-as-btn: '.cta, .next'; --rd-as-card-hot: '.opt'; --rd-as-chip: '[[bad';",
+    });
+    run();
+    expect(document.querySelector('.cta').className).toBe('cta rd-btn');
+    expect(document.querySelector('.next').className).toBe('next rd-btn');
+    expect(document.querySelector('.opt').className).toBe('opt rd-card hot');
+    const later = document.createElement('a');
+    later.className = 'cta';
+    document.body.appendChild(later);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(later.classList.contains('rd-btn')).toBe(true);
   });
 
   it('a page without the shared header keeps its own footer', () => {
@@ -162,6 +190,25 @@ describe('the shell script', () => {
     expect(t.getAttribute('role')).toBe('status');
     await new Promise((r) => setTimeout(r, 30));
     expect(t.className).toBe('rd-toast out');
+  });
+});
+
+describe('the per-page stylesheets, css/rd/*.css', () => {
+  it('scope every rule under html.rd', () => {
+    const dir = path.join(SITE, 'css/rd');
+    const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.css')) : [];
+    for (const f of files) {
+      const css = fs
+        .readFileSync(path.join(dir, f), 'utf8')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/@[a-z-]*keyframes[^{]*\{(?:[^{}]*\{[^}]*\})*\s*\}/g, '');
+      for (const m of css.matchAll(/([^{}@]+)\{[^{}]*\}/g))
+        for (const sel of m[1]
+          .split(',')
+          .map((x) => x.trim())
+          .filter(Boolean))
+          expect(sel, `${f}: ${sel}`).toMatch(/^html\.rd\b/);
+    }
   });
 });
 
