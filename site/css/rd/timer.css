@@ -1,0 +1,140 @@
+/* timer.html in redesign mode (docs/redesign-mode.md, DESIGN.md). D's file, linked by the gate only in the mode; the page's
+   HTML and its timer script are untouched. Safari 15.6: physical sides, no :is()/:where()/:has().
+
+   The timer is the one page used DURING the game, on a phone in the middle of the table, so it keeps its own full-screen
+   layout and gets no site header or footer. The count becomes a printed disc: sky, outlined in ink, with the hard shadow,
+   its number in the body face at its heaviest (the price style), never gradient text. */
+
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+  --rd-as-title: 'body > h1';
+  --rd-as-btn: '#toggle';
+  --rd-as-btn-secondary: '#reset';
+}
+
+html.rd body {
+  background: var(--color-ground);
+  font-family: var(--font-body);
+  padding: max(var(--space-2xl), env(safe-area-inset-top)) var(--gutter)
+    max(var(--space-2xl), env(safe-area-inset-bottom));
+}
+
+/* no load-in entrance: the logo, the title, the disc and the buttons are simply there */
+html.rd .logo,
+html.rd body > h1,
+html.rd .count-wrap,
+html.rd .controls,
+html.rd .back {
+  opacity: 1;
+  transform: none;
+  -webkit-animation: none;
+  animation: none;
+}
+
+html.rd .logo {
+  width: 96px;
+  margin-bottom: var(--space-sm);
+}
+html.rd body > h1 {
+  font-size: var(--text-catch);
+  line-height: 1.05;
+}
+html.rd body > h1 .dot {
+  color: var(--color-ink);
+}
+
+/* the disc */
+html.rd .count-wrap {
+  width: 240px;
+  height: 240px;
+  min-height: 0;
+  margin: var(--space-xl) 0 var(--space-sm);
+  border: var(--border-bold) solid var(--color-ink);
+  border-radius: 50%;
+  background: var(--color-accent-sky);
+  box-shadow: var(--shadow);
+}
+html.rd .count-wrap::before {
+  display: none;
+}
+html.rd .count {
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+  font-size: 112px;
+  letter-spacing: -0.02em;
+  color: var(--color-ink);
+  background: none;
+  -webkit-text-fill-color: currentColor;
+}
+html.rd .count.done {
+  font-size: 40px;
+  color: var(--color-ink);
+}
+
+html.rd .status {
+  color: var(--color-ink);
+  font-size: var(--text-label);
+  font-weight: var(--weight-label);
+}
+html.rd .status.done {
+  color: var(--color-ink);
+}
+
+html.rd .controls {
+  gap: 0;
+  margin-top: var(--space-lg);
+}
+html.rd .controls .btn {
+  margin: 0 var(--space-xs) var(--space-sm);
+  min-width: 132px;
+  padding: var(--pad-button-lg);
+  font-size: var(--text-button-lg);
+}
+/* the page's own glow, shine and wipe go; the kit's pill takes over */
+html.rd .controls .btn {
+  box-shadow: none;
+  filter: none;
+  background-image: none;
+}
+html.rd .controls .btn.secondary {
+  box-shadow: var(--shadow-sm);
+}
+html.rd .controls .btn::before,
+html.rd .controls .btn::after {
+  display: none;
+}
+html.rd .controls .btn:hover {
+  transform: none;
+  filter: none;
+}
+html.rd .controls .btn.rd-btn:active {
+  transform: scale(0.96);
+}
+/* the kit's pill is display:inline-flex, which would outrank the page's own .hidden and show the reset button before the
+   timer has run */
+html.rd .controls .btn.hidden {
+  display: none;
+}
+
+html.rd .back {
+  margin-top: var(--space-xl);
+  font-size: var(--text-label);
+}
+html.rd .back a {
+  color: var(--color-ink);
+  font-weight: var(--weight-panel);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  border: 0;
+}
+
+@media (max-width: 380px) {
+  html.rd .count-wrap {
+    width: 200px;
+    height: 200px;
+  }
+  html.rd .count {
+    font-size: 92px;
+  }
+}
