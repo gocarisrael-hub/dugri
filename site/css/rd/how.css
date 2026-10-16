@@ -1,0 +1,262 @@
+/* how.html in redesign mode (docs/redesign-mode.md, DESIGN.md). D's file, linked by the gate only in the mode. The page's HTML
+   and scripts are untouched: this only restyles, under html.rd, on top of the shell (redesign.css) and its token bridge.
+   Safari 15.6: physical sides (the page is RTL, so the reading start is the RIGHT), no :is()/:where()/:has(), margins for gaps
+   where the spacing matters.
+
+   The page's own rules were written for the old look and several of them reach further than they read: `header` styles every
+   header (the hero), `.btn::after` is a sweeping shine and `.btn::before` a press wipe (both would land on the kit's drawn
+   arrow), `.btn` carries a pink glow, and the scroll reveals hide content until it is scrolled to. Each is reset below, by
+   name, rather than outranked by accident. */
+
+/* the shell's header in place of the page's own fixed nav, hidden from the first paint (as the shell does for header.hdr) so it
+   never flashes, and the room the body kept for it goes. The page keeps its own footer, with its contacts, in the shared
+   old-footer look from css/rd/chrome.css */
+html.rd {
+  --rd-header: replace;
+  --rd-header-replace: 'body > nav.nav';
+  --rd-footer: none;
+  --rd-as-title: '#top h1, .sec-title h2, .final h2';
+  --rd-as-btn-arrow: '.hero-cta .btn:not(.ghost):not(.wa), #stickyOrder';
+  --rd-as-btn-ghost: '.hero-cta .btn.ghost, .hero-cta .btn.wa';
+  --rd-as-box: '.step, .item';
+}
+html.rd body > nav.nav {
+  display: none !important;
+}
+html.rd body {
+  padding-top: 0;
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+html.rd .wrap {
+  max-width: var(--column);
+  padding: 0 var(--gutter);
+}
+
+/* no scroll-triggered entrances: everything is simply there */
+html.rd.reveal-on .reveal,
+html.rd.reveal-on .stagger > * {
+  opacity: 1;
+  transform: none;
+  transition: none;
+}
+
+/* sections flow on the one cream ground: no fills, no rules, no glows */
+html.rd #top,
+html.rd section,
+html.rd .final {
+  background: none;
+  border: 0;
+  overflow: hidden;
+  overflow: clip;
+  text-align: right;
+}
+html.rd section {
+  padding: var(--section-pad-top) 0 var(--section-pad-bottom);
+}
+html.rd #how::before,
+html.rd #pricing::before,
+html.rd #gallery::before {
+  display: none;
+}
+
+/* the hero: the display title, the lede, the order pill and a quiet way back */
+html.rd #top {
+  padding: var(--space-2xl) 0 var(--space-lg);
+}
+html.rd #top h1 {
+  font-size: var(--text-display);
+  letter-spacing: var(--track-display);
+  line-height: 0.98;
+  max-width: 12ch;
+}
+html.rd #top p.lede {
+  max-width: var(--measure-lede);
+  margin: var(--space-md) 0 0;
+  color: var(--color-ink);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+}
+html.rd .hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0;
+  margin-top: var(--space-lg);
+}
+html.rd .hero-cta .btn {
+  margin: 0 0 var(--space-sm) var(--space-md);
+}
+
+/* the section titles, each with the next colour of the offset rotation (DESIGN.md, the Coloured Offset Rule) */
+html.rd .sec-title {
+  text-align: right;
+  margin-bottom: var(--space-xl);
+}
+html.rd #how .sec-title h2 {
+  --rd-title-offset: var(--title-offset-designs);
+}
+html.rd #included .sec-title h2 {
+  --rd-title-offset: var(--title-offset-story);
+}
+html.rd .final h2 {
+  --rd-title-offset: var(--title-offset-recs);
+  font-size: var(--text-section);
+}
+html.rd .sec-title p,
+html.rd .final p {
+  margin-top: var(--space-xs);
+  color: var(--color-ink);
+  font-size: var(--text-body);
+  max-width: var(--measure-body);
+}
+
+/* every .btn: no glow, no shine, no wipe, no lift. The kit's pill (.rd-btn) and its drawn arrow take over */
+html.rd .btn {
+  box-shadow: none;
+  filter: none;
+  background-image: none;
+  white-space: nowrap;
+}
+html.rd .btn::before {
+  display: none;
+}
+html.rd .btn::after {
+  position: static;
+  top: auto;
+  right: auto;
+  left: auto;
+  transform: none;
+  transition: none;
+  background-image: none;
+}
+html.rd .btn:not(.arrow)::after {
+  display: none;
+}
+html.rd .btn:hover {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+html.rd .btn.rd-btn:active {
+  transform: scale(0.96);
+}
+html.rd .btn .was {
+  opacity: 0.75;
+}
+/* "יש שאלה? דברו איתנו בוואטסאפ": a text link under the button (DESIGN.md, Buttons) */
+html.rd .hero-cta .btn.wa {
+  padding: var(--space-sm) 0;
+  font-size: var(--text-label);
+  font-weight: var(--weight-panel);
+  background: none;
+  color: var(--color-ink);
+}
+
+/* the three steps: boxes, each numbered on one of the leaflet colours */
+html.rd .steps {
+  gap: var(--space-lg);
+}
+html.rd .step {
+  text-align: right;
+  padding: var(--space-lg);
+  transition: none;
+}
+html.rd .step:hover,
+html.rd .item:hover {
+  transform: none;
+  box-shadow: var(--shadow-sm);
+}
+html.rd .step .n {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  margin: 0 0 var(--space-sm);
+  border: var(--border-bold) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-yellow);
+  color: var(--color-ink);
+  box-shadow: none;
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+  font-size: var(--text-card-title);
+}
+html.rd .step:nth-child(2) .n {
+  background: var(--color-accent-sky);
+}
+html.rd .step:nth-child(3) .n {
+  background: var(--color-accent-pink);
+}
+html.rd .step h3,
+html.rd .item h4 {
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+  font-size: var(--text-card-title);
+  line-height: 1.3;
+  letter-spacing: 0;
+  margin-bottom: var(--space-2xs);
+}
+html.rd .step p,
+html.rd .item p {
+  color: var(--color-ink);
+  font-size: var(--text-label);
+  line-height: var(--leading-body);
+}
+html.rd .step .hint {
+  margin-top: var(--space-sm);
+  padding: 3px 10px 4px;
+  border-radius: var(--radius-tag);
+  background: var(--color-tag);
+  color: var(--color-ink);
+  font-size: var(--text-micro);
+}
+
+/* what you get: four boxes, a star at the reading start of each */
+html.rd .items {
+  gap: var(--space-md);
+}
+html.rd .item {
+  display: flex; /* the kit's box is a block; the star sits beside the text */
+  padding: var(--space-md) var(--space-lg);
+  transition: none;
+}
+html.rd .item .tick {
+  color: var(--color-brand-pink);
+  margin-left: var(--space-sm);
+}
+html.rd .delivery-note {
+  text-align: right;
+  margin-top: var(--space-lg);
+  color: var(--color-ink);
+  font-size: var(--text-small);
+}
+
+/* the closing call */
+html.rd .final {
+  padding-bottom: var(--space-4xl);
+}
+
+/* the phone's sticky order bar: no frosted glass, no bar. Two buttons standing on the page, each with the hard shadow that
+   lifts it off whatever scrolls under it */
+html.rd .sticky {
+  background: none;
+  border: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  padding: var(--space-sm) var(--gutter) max(var(--space-sm), env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+html.rd .sticky .btn {
+  pointer-events: auto;
+  box-shadow: var(--shadow-sm);
+  font-size: var(--text-small);
+}
+html.rd .sticky #waSticky {
+  background: var(--color-whatsapp);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+}
