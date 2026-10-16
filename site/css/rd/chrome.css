@@ -12,8 +12,8 @@
       is hand-lettered; the contact buttons are round outlined cut-outs and the page links are pills. Pages built in the
       redesign (html.rd-native) have their own footer and are left alone.
    3. The consent chip (js/consent.js), which draws itself with inline styles, so its look here needs !important. A paper pill
-      with an ink outline and the low hard shadow, in the body face. It stays in its physical bottom-left corner: that is where
-      consent.js puts it on every page. The native pages (new.html, new-faq.html) place it themselves (#675), so they are
+      with an ink outline and the low hard shadow, in the body face. Its position is left to consent.js, which keeps it in the
+      bottom-left corner or lifts it above a bottom bar (#689); nothing here pins it. The native pages (new.html, new-faq.html) place it themselves (#675), so they are
       left alone. */
 
 html.rd header.rd-hdr {
@@ -34,8 +34,6 @@ html.rd footer.rd-ftr {
 }
 
 html.rd:not(.rd-native) #cookieNotice {
-  bottom: 14px !important;
-  left: 14px !important;
   padding: 6px 12px !important;
   font-family: var(--font-body) !important;
   font-size: var(--text-micro) !important;
