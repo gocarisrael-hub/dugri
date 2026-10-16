@@ -1,0 +1,27 @@
+/* pay-done.html in the redesign (Agent A, Commerce). Linked by the gate in redesign mode only; every rule is under html.rd.
+   The page normally opens inside the payment window and hands off at once, so it gets no header or footer: a status line,
+   and a way back when it lands at the top level after a failure. */
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+  --rd-as-btn: '#back';
+}
+html.rd .msg {
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+  font-size: 22px;
+}
+html.rd .msg.ok {
+  color: var(--color-ink);
+}
+html.rd .msg.err {
+  color: var(--color-error);
+}
+html.rd .sub {
+  color: var(--color-text-muted);
+}
+/* Hidden until the script shows it (an inline display), as outside the mode: .rd-btn's own display must not reveal it. */
+html.rd #back.rd-btn {
+  display: none;
+  margin-top: var(--space-lg);
+}
