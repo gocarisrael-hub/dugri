@@ -5,7 +5,8 @@
    is A's, in A's own section of this file. The site footer is shared chrome (css/rd/chrome.css). The gallery stays transparent
    behind its pictures, as tests/e2e/picture-letterbox.spec.js asks: the letterbox is the page. */
 html.rd {
-  --rd-as-title: '.pdp-related-head h2';
+  --rd-as-title: '.pdp-related-head h2, .pdp-head h1'; /* .pdp-head h1: A's */
+  --rd-as-btn: '#pdpBuy'; /* A's */
   --rd-as-box: '.pdp-sec';
   --rd-as-card: '.pdp-rel-card';
 }

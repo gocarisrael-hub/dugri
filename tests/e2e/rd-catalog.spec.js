@@ -73,6 +73,9 @@ for (const width of WIDTHS) {
         await expect(page.locator('.pdp-related-head h2')).toHaveClass(/\brd-title\b/);
         await expect(page.locator('.pdp-rel-card').first()).toHaveClass(/\brd-card\b/);
         await expect(page.locator('#pdpBuy')).toBeVisible(); // A's buy box is still there
+        // A's selectors in the page-level lists: its title and its button take the shared look
+        await expect(page.locator('.pdp-head h1')).toHaveClass(/\brd-title\b/);
+        await expect(page.locator('#pdpBuy')).toHaveClass(/\brd-btn\b/);
         await expect(page.locator('body > footer')).toBeVisible();
         expect(await sideways(page)).toBe(0);
       });
