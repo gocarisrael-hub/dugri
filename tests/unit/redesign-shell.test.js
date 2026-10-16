@@ -60,6 +60,8 @@ describe('the stylesheet', () => {
       if (fv.length) expect(fv.length, m[1]).toBe(sels.length);
     }
     expect(css).toMatch(/html\.rd dialog:not\(\[open\]\) \{\s*display: none;/);
+    // a component's display must never beat the hidden attribute
+    expect(css).toMatch(/html\.rd \[hidden\] \{\s*display: none !important;/);
   });
 
   it('every component rule is scoped under html.rd, so nothing applies outside the mode', () => {

@@ -95,6 +95,26 @@ test.describe('the shell on a page not built in the redesign', () => {
 });
 
 test.describe('rd-kit.html', () => {
+  test('an element the page hides with the hidden attribute stays hidden, whatever shell class it wears', async ({
+    page,
+  }) => {
+    await page.goto('/rd-kit.html');
+    await page.evaluate(() => {
+      const main = document.querySelector('main');
+      main.insertAdjacentHTML(
+        'beforeend',
+        '<div class="rd-box" id="h1" hidden>x</div><a class="rd-btn" id="h2" hidden>x</a>' +
+          '<div class="rd-card" id="h3" hidden>x</div><h2 class="rd-title" id="h4" hidden>x</h2>' +
+          '<button class="kit-go" id="h5" hidden>x</button>' // mapped to .rd-btn by --rd-as-btn
+      );
+    });
+    await expect(page.locator('#h5')).toHaveClass(/\brd-btn\b/);
+    for (const id of ['#h1', '#h2', '#h3', '#h4', '#h5'])
+      await expect(page.locator(id)).toBeHidden();
+    await page.locator('#h1').evaluate((e) => (e.hidden = false)); // and shows again when the page un-hides it
+    await expect(page.locator('#h1')).toBeVisible();
+  });
+
   test('shows every component, takes a page’s own element into one from CSS, and its sheet and toast work', async ({
     page,
   }) => {
