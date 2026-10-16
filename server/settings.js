@@ -138,6 +138,17 @@ const REGISTRY = {
           'ההזמנה דורשת עיצוב ידני — אין תבנית מוכנה, יש להכין עיצוב בהתאמה מלאה.',
       },
     },
+    // The owner's alert for a business inquiry from the homepage form (POST
+    // /api/business-lead). The lead is stored whether or not this is on.
+    business_lead: {
+      kind: 'email',
+      tokens: ['company', 'name', 'phone'],
+      default: {
+        enabled: true,
+        subject: 'פנייה עסקית חדשה: {company}',
+        body: 'התקבלה פנייה עסקית חדשה מהאתר. כדאי לחזור אליהם בהקדם.',
+      },
+    },
     buyer_confirmation: {
       kind: 'email',
       tokens: ['honoree', 'link'],

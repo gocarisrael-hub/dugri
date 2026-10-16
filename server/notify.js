@@ -591,6 +591,41 @@ function buildCustomOrderAlert(collection, baseUrl, options) {
   return { subject, text };
 }
 
+// Pure builder: the owner's alert for a business inquiry (server/business-leads.js
+// stores the lead; POST /api/business-lead sends this). `lead` is the stored
+// record { name, company, phone, source, created_at }. The phone is a tel: link in
+// the HTML so one tap on a phone calls them back. Returns { subject, text, html }.
+function buildBusinessLead(lead) {
+  const l = lead || {};
+  const tpl = emailTpl('business_lead');
+  const values = { company: l.company || '', name: l.name || '', phone: l.phone || '' };
+  const subject = interpolate(tpl.subject, values);
+  const when = (() => {
+    const d = new Date(l.created_at || Date.now());
+    try {
+      return d.toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
+    } catch {
+      return d.toISOString();
+    }
+  })();
+  const intro = interpolate(tpl.body, values).split('\n');
+  const details = [
+    'שם: ' + values.name,
+    'חברה: ' + values.company,
+    'טלפון: ' + values.phone,
+    'נשלח: ' + when,
+    'מעמוד: ' + (l.source || 'לא ידוע'),
+  ];
+  const text = [...intro, '', ...details].join('\n');
+  const tel = 'tel:+972' + String(values.phone).replace(/^0/, '');
+  const html = renderEmailHtml({
+    title: subject,
+    bodyLines: [...intro, '', ...details],
+    cta: values.phone ? { label: 'להתקשר ל' + values.phone, url: tel } : null,
+  });
+  return { subject, text, html };
+}
+
 // Pure builder: the BUYER's confirmation email — sent to the customer (not the
 // owner) when their order is created. Warm, on-brand, RTL-friendly: a thank-you,
 // a PHOTO of the template they chose, how they will receive it, and the CTA.
@@ -1121,6 +1156,19 @@ async function sendSystemAlert(subject, lines) {
   }
 }
 
+// Fire the owner's business-inquiry alert to NOTIFY_TO. Resolves to 'sent',
+// 'off' (the owner switched this email off) or 'failed' (Resend unconfigured, or
+// the send failed), which the lead store records. Never throws.
+async function sendBusinessLead(lead) {
+  try {
+    if (!settings.emailEnabled('business_lead')) return 'off';
+    return (await send(buildBusinessLead(lead))) ? 'sent' : 'failed';
+  } catch (e) {
+    console.warn('[notify] sendBusinessLead failed:', e && e.message ? e.message : e);
+    return 'failed';
+  }
+}
+
 // Fire the "order paid" notification. `baseUrl` is the normalized public origin
 // (optional). `options` may carry `amountCharged` (the amount actually paid).
 // Never throws.
@@ -1524,6 +1572,7 @@ module.exports = {
   renderEmailHtml,
   buildPaidMessage,
   buildCustomOrderAlert,
+  buildBusinessLead,
   buildBuyerConfirmation,
   buildPaymentReceipt,
   buildBuyerReceipt,
@@ -1542,6 +1591,7 @@ module.exports = {
   formatAddress,
   sendOrderPaid,
   sendCustomOrderAlert,
+  sendBusinessLead,
   sendBuyerConfirmation,
   sendPaymentReceipt,
   sendBuyerReceipt,

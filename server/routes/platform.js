@@ -1819,7 +1819,63 @@ function registerFaq(app, { settings, faq }) {
   });
 }
 
+// The homepage's business-inquiry form: POST /api/business-lead.
+//
+// Public and unauthenticated, so three gates sit in front of it:
+//   - a honeypot: `website` is a field the page hides from people. A body that
+//     fills it is a bot, and gets the same { ok: true } a person gets (telling
+//     a bot it was caught only teaches it), but nothing is stored or sent;
+//   - a rate limit per client (clientKey), counting every attempt, valid or not:
+//     5 an hour by default (BUSINESS_LEAD_RATE_LIMIT), 429 past it;
+//   - server-side validation (server/business-leads.js validateLead), 400 with
+//     one code per bad field.
+// The lead is stored BEFORE the owner's email is attempted, and the answer goes
+// back as soon as it is stored: the email is sent after, and its outcome is
+// recorded on the lead, so a slow or failing Resend neither delays the visitor
+// nor loses the lead.
+function registerBusinessLead(app, { clientKey, makeRateLimiter, notify, businessLeads }) {
+  const leadRate = makeRateLimiter({
+    limit: Number(process.env.BUSINESS_LEAD_RATE_LIMIT || 5),
+    windowMs: 60 * 60 * 1000,
+    maxKeys: Number(process.env.COUPON_RATE_MAX_KEYS || 10000),
+  });
+
+  app.post('/api/business-lead', (req, res) => {
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    if (!leadRate.ok('lead:' + clientKey(req))) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    if (typeof body.website === 'string' ? body.website.trim() : body.website) {
+      return res.json({ ok: true });
+    }
+    const v = businessLeads.validateLead(body);
+    if (!v.ok) return res.status(400).json({ error: 'invalid', fields: v.errors });
+
+    let rec;
+    try {
+      rec = businessLeads.add(v.lead, { source: businessLeads.sourceOf(body, req.get('referer')) });
+    } catch (e) {
+      console.error('[business-lead] NOT STORED:', e && e.message ? e.message : e);
+      return res.status(500).json({ error: 'not stored' });
+    }
+    res.json({ ok: true });
+
+    // After the answer. Never throws (sendBusinessLead resolves to a status).
+    return notify.sendBusinessLead(rec).then((status) => {
+      try {
+        businessLeads.setEmailStatus(rec.id, status);
+      } catch (e) {
+        console.error('[business-lead] email status not recorded:', e && e.message);
+      }
+      if (status === 'failed') {
+        console.error(`[business-lead] owner email FAILED for lead ${rec.id}; the lead is stored`);
+      }
+    });
+  });
+}
+
 module.exports = {
+  registerBusinessLead,
   registerPlaybook,
   registerUnsubscribeSmsContent,
   registerContentUploads,

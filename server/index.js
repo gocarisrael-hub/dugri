@@ -30,6 +30,8 @@ const whatsapp = require('./whatsapp');
 const waState = require('./wa-state');
 const reminders = require('./reminders');
 const faq = require('./faq');
+// The homepage's business-inquiry leads (Agent D), stored apart from the order store.
+const businessLeads = require('./business-leads');
 const promo = require('./promo');
 const wordlists = require('./wordlists');
 const wordlistOptions = require('./wordlist-options');
@@ -5536,6 +5538,13 @@ commerceRoutes.registerPricing(app, { db });
 
 // Agent D: the public FAQ read, in server/routes/platform.js.
 platformRoutes.registerFaq(app, { settings, faq });
+// Agent D: the homepage's business-inquiry form, in server/routes/platform.js.
+platformRoutes.registerBusinessLead(app, {
+  clientKey,
+  makeRateLimiter,
+  notify,
+  businessLeads,
+});
 
 // Agent B: the public promo block, in server/routes/catalog.js.
 catalogRoutes.registerPromo(app, { settings, promo });
