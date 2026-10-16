@@ -594,6 +594,14 @@ const REGISTRY = {
     name_preview: { kind: 'flag', tokens: [], default: false },
     deck_proof: { kind: 'flag', tokens: [], default: true },
   },
+  // --- Redesign mode (server/redesign-gate.js) --------------------------------
+  // The site-wide switch to the new design: every page but the admin gets the
+  // redesign stylesheet and shell, and "/" serves new.html. Default OFF — the
+  // owner flips it from admin-features.html when the redesign is ready. Before
+  // that, ?rd=1 previews it in one browser without turning it on for anyone.
+  redesign: {
+    enabled: { kind: 'flag', tokens: [], default: false },
+  },
   // --- Pricing (owner-editable, no deploy) -----------------------------------
   // The storefront display price (`store_now` shown, `store_was` struck through)
   // and, per checkout version, an `<v>_enabled` flag + an `<v>_price` (NIS). The
