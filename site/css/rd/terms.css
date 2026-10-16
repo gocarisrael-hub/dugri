@@ -1,0 +1,121 @@
+/* terms.html in redesign mode (docs/redesign-mode.md, DESIGN.md). D's file, linked by the gate only in the mode; the page's
+   HTML is untouched. Safari 15.6: physical sides (the page is RTL, so the reading start is the RIGHT), no :is()/:where()/:has().
+
+   A legal page keeps its plain bar, not the shop's header: someone reading a refund clause is not shopping, and an order button
+   over the terms reads as a trap (the page's own comment on .bar). So no shell header; the page's own footer, with the contact
+   details §25 sends a reader to, takes the shared old-footer look from css/rd/chrome.css. It is a long document: the reading measure, the size and the
+   line height are set for reading, and only the title is hand-lettered. */
+
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+  --rd-as-title: 'header.doc h1';
+  --rd-as-box: 'nav.toc';
+}
+
+html.rd body {
+  font-size: var(--text-body);
+  line-height: 1.7;
+}
+html.rd .wrap {
+  max-width: 760px;
+  padding: 0 var(--gutter);
+}
+
+/* the bar: the logo and the way back, on the ground, with no rule under it */
+html.rd .bar {
+  background: var(--color-ground);
+  border: 0;
+  padding: max(var(--space-sm), env(safe-area-inset-top)) 0 var(--space-sm);
+}
+html.rd .bar img {
+  height: 44px;
+}
+html.rd .bar a.back {
+  color: var(--color-ink);
+  font-size: var(--text-label);
+  font-weight: var(--weight-panel);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+html.rd header.doc {
+  padding: var(--space-xl) 0 var(--space-lg);
+}
+html.rd header.doc h1 {
+  font-size: var(--text-section);
+}
+html.rd header.doc .sub,
+html.rd header.doc .updated {
+  color: var(--color-ink);
+}
+html.rd header.doc .sub {
+  margin-top: var(--space-md);
+  font-weight: var(--weight-label);
+}
+html.rd header.doc .updated {
+  font-size: var(--text-small);
+}
+
+/* the contents: a box, its title a label (the Two Faces Rule: Gveret is for the page title) */
+html.rd nav.toc {
+  margin-bottom: var(--space-3xl);
+  padding: var(--space-lg) var(--space-lg) var(--space-md);
+}
+html.rd nav.toc h2 {
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+  font-size: var(--text-label);
+  letter-spacing: 0;
+}
+html.rd nav.toc ol {
+  padding-right: 22px;
+  padding-left: 0;
+}
+html.rd nav.toc li {
+  margin-bottom: var(--space-xs);
+}
+html.rd nav.toc a {
+  color: var(--color-ink);
+}
+
+/* the clauses: a number tag at the reading start of each heading */
+html.rd main section {
+  margin-bottom: var(--space-2xl);
+  scroll-margin-top: 84px;
+}
+html.rd main h2 {
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+  font-size: var(--text-card-title);
+  line-height: 1.3;
+  letter-spacing: 0;
+  gap: 0;
+}
+html.rd main h2 .num {
+  -webkit-flex: none;
+  flex: none;
+  min-width: 30px;
+  margin-left: var(--space-sm);
+  padding: 2px 8px 3px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-tag);
+  background: var(--color-tag);
+  color: var(--color-ink);
+  font-size: var(--text-small);
+  font-weight: var(--weight-strong);
+  text-align: center;
+}
+html.rd main p {
+  max-width: 64ch;
+}
+html.rd main a {
+  text-underline-offset: 3px;
+}
+
+html.rd .sign {
+  border-top: var(--border-thin) solid var(--color-ink);
+  color: var(--color-ink);
+  font-size: var(--text-small);
+  padding-bottom: var(--space-2xl);
+}
