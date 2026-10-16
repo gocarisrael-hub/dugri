@@ -6,7 +6,7 @@
       the element itself (how.html: `header { background: gradients; border-bottom; text-align: center; overflow: hidden }`,
       `footer { background: ink; text-align: center }`), and those reach the shell's .rd-hdr / .rd-ftr too, because the shell
       only sets the properties it cares about. A black footer with ink text was the visible result.
-   2. The old site footer, the same markup on index, products, product, how and terms (pickup's is a shorter cousin): black
+   2. The old site footer (pages keep their own footer from B's #683, the shell's new default), the same markup on index, products, product, how and terms (pickup's is a shorter cousin): black
       in the old look, here the cream ground with ink text. Every owner-editable contact stays exactly where it is (WhatsApp,
       phone, email, Instagram, the business line); only the look changes. The brand line is the one heading in it, so it alone
       is hand-lettered; the contact buttons are round outlined cut-outs and the page links are pills. Pages built in the
@@ -57,11 +57,6 @@ html.rd:not(.rd-native) #cookieNotice button {
 }
 
 /* ---------- 2. the old site footer ---------- */
-/* Pages keep their own footer (the shell's default once B's feat/rd-catalog lands; said here too so it holds before that). At
-   the same specificity as a page's own html.rd { --rd-footer: … }, which comes later and so still decides for that page. */
-html.rd {
-  --rd-footer: none;
-}
 html.rd:not(.rd-native) body > footer {
   padding: var(--space-3xl) 0 calc(var(--space-3xl) + 72px);
   background: none;
