@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="he" dir="rtl" class="rd">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="rd-kit.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- the redesign shell's components, for the agents restyling the other pages; private, never linked -->
+    <meta name="robots" content="noindex, nofollow" />
+    <title>ערכת העיצוב | דוגרי</title>
+    <link rel="stylesheet" href="/css/redesign.css" />
+    <script src="js/redesign-shell.js" defer></script>
+    <style>
+      .kit {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 24px 16px 60px;
+      }
+      .kit h1 {
+        font: var(--weight-heading) var(--text-section) / 1 var(--font-heading);
+        margin: 10px 0 6px;
+      }
+      .kit h2 {
+        font: var(--weight-strong) 20px/1.3 var(--font-body);
+        margin: 40px 0 14px;
+      }
+      .kit .row {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .kit .row > * {
+        margin: 0 0 12px 12px;
+      }
+      .kit .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        grid-gap: 20px;
+      }
+      .kit code {
+        font-size: 13px;
+        direction: ltr;
+        unicode-bidi: isolate;
+      }
+    </style>
+  </head>
+  <body>
+    <div data-rd-header></div>
+    <main class="kit">
+      <h1>ערכת העיצוב</h1>
+      <p>
+        כל רכיב כאן חי ב-<code>css/redesign.css</code>, תחת <code>html.rd</code>. הכותרת, התפריט
+        והתחתית מגיעים מ-<code>js/redesign-shell.js</code>.
+      </p>
+
+      <h2>כפתורים <code>.rd-btn</code></h2>
+      <div class="row">
+        <a class="rd-btn" href="#">ראשי</a>
+        <button class="rd-btn secondary" type="button">משני</button>
+        <button class="rd-btn ghost" type="button">שקט</button>
+        <button class="rd-btn sm" type="button">קטן</button>
+        <button class="rd-btn lg" type="button">גדול</button>
+        <button class="rd-btn" type="button" disabled>לא זמין</button>
+        <button class="rd-btn" type="button" aria-busy="true" id="kitBusy">שולחים</button>
+      </div>
+
+      <h2>שדות <code>.rd-field</code>, <code>.rd-select</code>, <code>.rd-check</code></h2>
+      <div class="rd-field">
+        <label for="kName">שם<span class="req" aria-hidden="true">*</span></label>
+        <input id="kName" autocomplete="off" />
+        <p class="hint">כמו שיופיע על הקלפים</p>
+      </div>
+      <div class="rd-field invalid">
+        <label for="kTel">טלפון</label>
+        <input id="kTel" dir="ltr" aria-invalid="true" aria-describedby="kTelE" value="05" />
+        <p class="err" id="kTelE">מספר טלפון לא תקין</p>
+      </div>
+      <div class="rd-field">
+        <label for="kNote">הערה</label>
+        <textarea id="kNote"></textarea>
+      </div>
+      <div class="rd-field">
+        <label for="kSel">אירוע</label>
+        <span class="rd-select"
+          ><select id="kSel">
+            <option>מסיבת רווקות</option>
+            <option>יום הולדת</option>
+          </select></span
+        >
+      </div>
+      <label class="rd-check"><input type="checkbox" checked /> אני מאשר/ת את התקנון</label>
+      <label class="rd-check"><input type="radio" name="k" checked /> איסוף עצמי</label>
+      <label class="rd-check"><input type="radio" name="k" /> משלוח</label>
+
+      <h2>כרטיסים ותגיות <code>.rd-card</code>, <code>.rd-tag</code>, <code>.rd-chip</code></h2>
+      <div class="grid">
+        <div class="rd-card">
+          <span class="rd-tag">מסיבת רווקות</span>
+          <p>כרטיס רגיל</p>
+        </div>
+        <a class="rd-card hot" href="#"
+          ><span class="rd-tag hot">הכי נמכר</span>
+          <p>כרטיס לחיץ</p></a
+        >
+      </div>
+      <div class="row" style="margin-top: 16px">
+        <button class="rd-chip" type="button" aria-pressed="true">אנשים</button>
+        <button class="rd-chip" type="button" aria-pressed="false">מקומות</button>
+      </div>
+
+      <h2>מחיר <code>.rd-price</code></h2>
+      <span class="rd-price"><span class="amt">199 ₪</span><s class="amt">239 ₪</s></span>
+
+      <h2>שלבים <code>.rd-steps</code></h2>
+      <ol class="rd-steps">
+        <li class="done">עיצוב</li>
+        <li aria-current="step">פרטים</li>
+        <li>תשלום</li>
+        <li>מילים</li>
+      </ol>
+
+      <h2>גיליון, הודעה, ריק וטעינה</h2>
+      <div class="row">
+        <button class="rd-btn secondary" type="button" id="kitSheetBtn">לפתוח גיליון</button>
+        <button class="rd-btn secondary" type="button" id="kitToastBtn">להציג הודעה</button>
+      </div>
+      <p class="rd-empty">עוד אין כאן כלום</p>
+      <span class="rd-skeleton" style="height: 60px"></span>
+    </main>
+    <dialog class="rd-sheet" id="kitSheet" aria-labelledby="kitSheetT">
+      <button class="rd-x" type="button" id="kitSheetX" aria-label="סגירה">✕</button>
+      <h3 id="kitSheetT">גיליון מלמטה</h3>
+      <p><code>&lt;dialog class="rd-sheet"&gt;</code>, נפתח עם <code>showModal()</code>.</p>
+    </dialog>
+    <div data-rd-footer></div>
+    <script src="js/rd-kit.js" defer></script>
+  </body>
+</html>

@@ -1,0 +1,920 @@
+/* The redesign's shell for every page that is not built in it yet (DESIGN.md, "The Game Night Table").
+   Loaded only in redesign mode: the server adds class="rd" to <html> and links this file and js/redesign-shell.js when the
+   setting redesign.enabled is on, or for a preview when the visitor opened any page with ?rd=1 (cookie rd).
+   What it gives a page, all under html.rd:
+     1. the faces and the role tokens (copied from home-new.css and redesign-tokens.css; tests/unit/redesign-shell.test.js keeps
+        them identical)
+     2. the bridge: the old palette's 29 token names (tokens.css) mapped onto the redesign, so a page that styles through them
+        takes the new look without an edit; a page's hard-coded colours stay its owner's to change
+     3. the shared header and footer (rendered by redesign-shell.js) and the components: .rd-btn, .rd-field, .rd-check, .rd-select,
+        .rd-card, .rd-tag, .rd-sheet, .rd-toast, .rd-steps, .rd-price, .rd-empty, .rd-skeleton (see rd-kit.html)
+   The pages already built in the redesign (new.html, new-faq.html) also get this file in the mode; the shell marks them
+   html.rd-native and nothing below restyles them: the bridge only renames old tokens they never read, and every component is a
+   new rd- class.
+   Old Safari (the owner's Mac runs 15.6 at most): no inset/-inline/-block shorthands, no :has(), :focus-visible in its own rules,
+   vh before svh, hidden before clip. */
+
+/* ---------- 1. faces and tokens ---------- */
+@font-face {
+  font-family: 'Gveret Levin';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/assets/fonts/gveret-levin-400-hebrew.8c865542.woff2) format('woff2');
+  unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-400-hebrew.9fc64864.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-400-latin.0fc4b05c.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-500-hebrew.d416cd88.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-500-latin.9a7980fa.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-700-hebrew.d847084a.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-700-latin.1688f144.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-800-hebrew.9d38d158.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-800-latin.69a2ee93.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-900-hebrew.841e10ec.woff2) format('woff2');
+  unicode-range: U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F;
+}
+@font-face {
+  font-family: 'M PLUS Rounded 1c';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  size-adjust: 109.8%;
+  src: url(/assets/fonts/mplus-rounded-900-latin.54972af0.woff2) format('woff2');
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+:root {
+  /* ---------- colour: ground and ink ---------- */
+  --color-ground: #fff1de; /* the page; every section sits on it, with no section breaks */
+  --color-ink: #000000; /* text, outlines, hard shadows, the primary button */
+  --color-paper: #ffffff; /* cards, fields, sheets, the review row */
+  --color-text-muted: #5c544b; /* review captions, editor notes (7.4:1 on paper) */
+
+  /* ---------- colour: the three brand colours (the owner's, from the printed leaflet) ---------- */
+  --color-accent-yellow: #ffd37b; /* outlined highlight words ("כל המילים עליכם!"), card frames */
+  --color-accent-sky: #a4e9ff; /* the first hero panel, outlined words in the pink panel */
+  --color-accent-pink: #ff7aa9; /* the second hero panel, the wave lines, the menu icon's middle line, the catch-line offset */
+  --color-brand-pink: #ea4795; /* the logo's pink: required-field asterisk, sparkles, illustration accents */
+
+  /* ---------- colour: fields and surfaces ---------- */
+  --color-field: #e9f8fd; /* the soft field between the two waves, behind the reviews (sky lifted toward white) */
+  --color-panel-default: #9ce4fc; /* the designs panel before the strip paints it (top) */
+  --color-panel-default-mid: #d8f4fe; /* … and at 48% */
+  --color-tag: #fdf2d4; /* the small tag on a review card */
+  --color-card-hot: #ffe9f0; /* the one highlighted review card */
+  --color-tag-hot: #c8246a; /* its tag (white text, 5.4:1) */
+  --color-tape: rgba(244, 239, 230, 0.82); /* the tape on the story photos */
+  --color-scrim: rgba(0, 0, 0, 0.38); /* behind the review sheet */
+  --color-scrim-menu: rgba(0, 0, 0, 0.32); /* behind the menu */
+
+  /* ---------- colour: functional ---------- */
+  --color-error: #b3002d; /* field errors and the invalid border (6.4:1 on the ground, 7.1:1 on paper) */
+  --color-whatsapp: #25d366; /* the floating WhatsApp button only */
+
+  /* ---------- colour: each section title's offset (ink text, offset .04em in this colour) ---------- */
+  --title-offset-hero: #ff7aa9; /* on the ground; also the FAQ page's one title */
+  --title-offset-designs: #5fd0f5; /* deepened sky: #a4e9ff vanishes on the sky-tinted panel */
+  --title-offset-story: #f7b32b; /* deepened yellow: #ffd37b is too faint on the ground */
+  --title-offset-recs: #ea4795; /* the logo pink, on the sky field */
+  --title-offset-biz: #a4e9ff; /* sky, on the ground */
+
+  /* ---------- colour: per design (base = sampled from its real card; flood = the tapped view; panel = the strip's gradient) ----------
+     flood: base lifted 62% toward white (toward the ground when the base is near-grey). panel: base lifted until its luminance
+     reaches .42 (black text about 9:1), then 62% further at 48%, then the ground at the bottom. Ink on every flood is 10:1 or more. */
+  --design-paris: #fc789c;
+  --design-paris-flood: #feccd9;
+  --design-paris-panel: #fc8cab;
+  --design-paris-panel-mid: #fed3df;
+  --design-california: #9ce4fc;
+  --design-california-flood: #d9f5fe;
+  --design-california-panel: #a8e7fc;
+  --design-california-panel-mid: #def6fe;
+  --design-oasis: #f07848;
+  --design-oasis-flood: #f9ccb9;
+  --design-oasis-panel: #f49874;
+  --design-oasis-panel-mid: #fbd8ca;
+  --design-santorini: #0048a8;
+  --design-santorini-flood: #9eb9de;
+  --design-santorini-panel: #91b0da;
+  --design-santorini-panel-mid: #d5e1f1;
+  --design-dani: #f5d98f;
+  --design-dani-flood: #fbf1d4;
+  --design-dani-panel: #f6de9c;
+  --design-dani-panel-mid: #fcf2da;
+  --design-tokyo: #b03a3a;
+  --design-tokyo-flood: #e1b4b4;
+  --design-tokyo-panel: #dba4a4;
+  --design-tokyo-panel-mid: #f1dddd; /* the koi red, so a pastel red and not grey */
+  --design-seychelles: #90d8e4;
+  --design-seychelles-flood: #d5f0f5;
+  --design-seychelles-panel: #9ddde7;
+  --design-seychelles-panel-mid: #daf2f6;
+  --design-haaland: #2a52be;
+  --design-haaland-flood: #aebde6;
+  --design-haaland-panel: #9dafe1;
+  --design-haaland-panel-mid: #dae1f4;
+  --design-tarifa: #3d6b2c;
+  --design-tarifa-flood: #b5c7af;
+  --design-tarifa-panel: #a0b698;
+  --design-tarifa-panel-mid: #dbe3d8;
+  --design-brooklyn: #1878fc;
+  --design-brooklyn-flood: #a7ccfe;
+  --design-brooklyn-panel: #79b1fd;
+  --design-brooklyn-panel-mid: #cce1fe;
+
+  /* ---------- type ---------- */
+  --font-heading:
+    'Gveret Levin', 'M PLUS Rounded 1c', system-ui, sans-serif; /* one real weight, 400 */
+  --font-body: 'M PLUS Rounded 1c', system-ui, sans-serif;
+  --weight-heading: 400;
+  --weight-body: 400;
+  --weight-panel: 500; /* the sky panel, links under buttons, logo captions */
+  --weight-label: 700; /* field labels, tags, design names */
+  --weight-strong: 800; /* buttons, card titles, the pink panel, menu links, FAQ questions */
+  --weight-heavy: 900; /* the price in the tapped view; the ✕ and + glyphs */
+
+  --text-display: clamp(38px, 11vw, 76px); /* the hero headline, line-height .98 */
+  --text-section: clamp(32px, 9vw, 58px); /* section titles, line-height 1 */
+  --text-catch: clamp(32px, 8.6vw, 54px); /* "כל המילים עליכם!", line-height 1.05 */
+  --text-view-title: clamp(
+    32px,
+    8.8vw,
+    52px
+  ); /* the tapped design's name (32px under 760px tall) */
+  --text-price: clamp(28px, 7.4vw, 38px); /* the price in the tapped view */
+  --text-signature: 30px; /* the handwritten "הדר ועלמה" */
+  --text-menu: 24px;
+  --text-q: 21px; /* "ומה הקאץ׳?" */
+  --text-panel-loud: 20px; /* the pink panel, line-height 1.5 */
+  --text-card-title: 18px; /* a review card's quote; 20px from 900px */
+  --text-button-lg: 18px; /* the designs button */
+  --text-body: 17px; /* running text, line-height 1.5; panels 1.55 */
+  --text-button: 16px; /* also every input, so iOS never zooms */
+  --text-label: 15px;
+  --text-small: 14px; /* captions, the header button, the delivery note */
+  --text-micro: 13px; /* hints, stickers, field errors */
+  --leading-body: 1.5;
+  --leading-panel: 1.55;
+  --leading-heading: 1;
+  --title-offset: 0.04em; /* text-shadow: var(--title-offset) var(--title-offset) 0 <colour> */
+  --track-display: -0.02em;
+  --track-heading: -0.01em;
+  --track-button: 0.02em;
+  --measure-body: 40ch;
+  --measure-lede: 34ch;
+
+  /* ---------- space and layout ---------- */
+  --gutter: 16px; /* the side gutter at every width */
+  --column: 1040px; /* the content column from 900px: padding-inline max(16px, 50vw - 520px) */
+  --section-pad-top: 44px;
+  --section-pad-bottom: 52px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 22px;
+  --space-xl: 26px;
+  --space-2xl: 32px;
+  --space-3xl: 44px;
+  --space-4xl: 64px; /* the hero's column gap on desktop */
+  --pad-button: 16px 26px;
+  --pad-button-lg: 19px 30px;
+  --pad-button-sm: 12px 18px;
+  --pad-panel: 20px 24px 22px;
+  --pad-card: 18px;
+  --pad-field: 0 22px;
+  --field-height: 50px;
+  --tap-min: 44px;
+  --card-w: min(32vw, 150px); /* the hero deck's card; min(210px, 19vw) from 900px */
+  --strip-card-w: min(58vw, 250px); /* a design in the strip; 260px from 900px */
+  --review-card-w: 272px; /* 360px from 900px */
+  --wave-height: clamp(44px, 8vw, 96px);
+
+  /* ---------- shape ---------- */
+  --radius-pill: 999px; /* buttons, fields, stickers */
+  --radius-card: 6% / 4.26%; /* every printed card: the preview's card shape */
+  --radius-review: 16px;
+  --radius-panel: 26px; /* the hero's sky and pink panels */
+  --radius-feature: 40px; /* the designs panel, top corners only; 80px from 900px */
+  --radius-feature-lg: 80px;
+  --radius-sheet: 22px; /* a bottom sheet's top corners */
+  --radius-box: 14px; /* FAQ items, the form's thank-you, sheet images */
+  --radius-board: 8px; /* the game board in the tapped view */
+  --radius-tag: 3px;
+  --border-hair: 1px; /* the review card */
+  --border-thin: 1.5px; /* cards, fields, stickers, the menu edge, the WhatsApp ring */
+  --border-invalid: 2px;
+  --border-bold: 2.5px; /* boards, story prints, FAQ items, round ✕ buttons */
+  --border-heavy: 3px; /* the review sheet */
+  --stroke-wave: 2px; /* non-scaling */
+  --stroke-arrow: 3.35; /* the drawn arrow, matched to the 800 button type (SVG units on a 24 box) */
+  --stroke-illo: 2.2; /* illustration outlines (SVG units on a 120 box) */
+
+  /* ---------- elevation: hard ink offsets, never blur ---------- */
+  --shadow: 4px 4px 0 var(--color-ink); /* cards, boards, prints */
+  --shadow-sm: 3px 3px 0 var(--color-ink); /* FAQ items, the thank-you, the WhatsApp button, round ✕ */
+  --shadow-review: 6px 7px 0 var(--color-ink);
+  --shadow-review-hover: 8px 9px 0 var(--color-ink);
+  --shadow-review-press: 3px 4px 0 var(--color-ink);
+
+  /* ---------- focus ---------- */
+  --focus-ring: 3px solid var(--color-ink);
+  --focus-offset: 4px; /* 2px on fields, 10px around the deck */
+
+  /* ---------- motion ---------- */
+  --ease-pop: cubic-bezier(0.3, 1.4, 0.5, 1); /* a press, a hover lift */
+  --ease-flip: cubic-bezier(0.3, 1.2, 0.45, 1); /* a card turning over */
+  --ease-morph: cubic-bezier(0.3, 1.35, 0.45, 1); /* the menu icon to ✕ */
+  --ease-drawer: cubic-bezier(0.2, 0.8, 0.2, 1); /* the menu sheet */
+  --ease-sheet: cubic-bezier(0.2, 0.9, 0.3, 1.08); /* the review sheet rising */
+  --ease-reveal: cubic-bezier(
+    0.6,
+    0,
+    0.25,
+    1
+  ); /* the tapped view's colour flood (a growing circle) */
+  --ease-land: cubic-bezier(0.3, 1.25, 0.45, 1); /* the board dropping in */
+  --ease-fly: cubic-bezier(0.3, 0.9, 0.3, 1.05); /* the front card flying from the strip */
+  --ease-exit: cubic-bezier(0.5, 0, 0.7, 0.4); /* anything leaving */
+  --dur-press: 150ms;
+  --dur-fade: 200ms;
+  --dur-drawer: 280ms;
+  --dur-morph: 340ms;
+  --dur-sheet-in: 360ms;
+  --dur-sheet-out: 240ms;
+  --dur-flip: 500ms;
+  --dur-flood-in: 520ms;
+  --dur-board-in: 560ms; /* delay 120ms */
+  --dur-card-in: 640ms; /* delay 60ms; the back follows at 520ms for 480ms */
+  --dur-flood-out: 480ms; /* after the tableau leaves in 260ms, delay 120ms */
+  --marquee-speed: 30px; /* per second, toward the reading direction */
+  --marquee-resume: 1.8s; /* after a finger lifts */
+
+  /* ---------- layers ---------- */
+  --z-illo: 1;
+  --z-fab: 800;
+  --z-flood: 900;
+}
+
+/* ---------- 2. the bridge ---------- */
+html.rd:not(.rd-native) {
+  --bg: var(--color-ground);
+  --section: var(--color-paper);
+  --surface: var(--color-paper);
+  --ink: var(--color-ink);
+  --muted: var(--color-text-muted);
+  --line: var(--color-ink);
+  --sage: var(--color-ink);
+  --sage-deep: var(--color-ink);
+  --sage-deeper: var(--color-ink);
+  --sage-tint: var(--color-tag);
+  --blush: var(--color-ink);
+  --blush-tint: var(--color-tag);
+  --accent: var(--color-accent-pink);
+  --accent-deep: var(--color-brand-pink);
+  --accent-tint: var(--color-card-hot);
+  --ok: #1f7a4f;
+  --display: var(--font-heading);
+  --font: var(--font-body);
+  --h-weight: var(--weight-heading);
+  --h-spacing: var(--track-heading);
+  --sub-weight: var(--weight-body);
+  --radius: var(--radius-box);
+  --radius-pill: 999px;
+  --ease: var(--ease-pop);
+  --shadow-sm: 3px 3px 0 var(--color-ink);
+  --shadow-md: 4px 4px 0 var(--color-ink);
+  --shadow-lg: 6px 7px 0 var(--color-ink);
+}
+html.rd:not(.rd-native) body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+}
+
+/* ---------- 3a. the shared header: logo, ≡ and the order button; the menu is a sheet from the reading start ---------- */
+html.rd .rd-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: max(10px, env(safe-area-inset-top)) var(--gutter) 0;
+  font-family: var(--font-body);
+  color: var(--color-ink);
+}
+html.rd .rd-hdr .rd-start {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+html.rd .rd-hdr .rd-logo {
+  display: block;
+}
+html.rd .rd-hdr .rd-logo img {
+  display: block;
+  width: 86px;
+  height: auto;
+  margin: -6px 0 -10px 0;
+}
+html.rd .rd-hdr .rd-btn {
+  padding: var(--pad-button-sm);
+  font-size: var(--text-small);
+}
+html.rd .rd-menu-btn {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  margin-right: -8px;
+  background: transparent;
+  border: 0;
+  color: var(--color-ink);
+  cursor: pointer;
+}
+html.rd .rd-menu-btn svg {
+  width: 28px;
+  height: 28px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+}
+html.rd .rd-menu-btn .l2 {
+  stroke: var(--color-accent-pink);
+}
+/* the header a page had before stays in the page (its ids, its tests), hidden while the shell's stands in for it. The shared
+   fixed header.hdr is hidden from the first paint, so it never flashes; its pages pad the body 60-62 px to clear it, and the shell's
+   header takes that space in the flow (html.rd-hdr-swapped drops the padding when it lands) */
+html.rd [data-rd-replaced],
+html.rd:not(.rd-native) header.hdr {
+  display: none !important;
+}
+html.rd.rd-hdr-swapped body {
+  padding-top: 0;
+}
+html.rd .rd-hdr,
+html.rd .rd-hdr *,
+html.rd .rd-menu,
+html.rd .rd-menu *,
+html.rd .rd-ftr,
+html.rd [class^='rd-'],
+html.rd [class*=' rd-'],
+html.rd .rd-field *,
+html.rd .rd-select * {
+  box-sizing: border-box;
+}
+html.rd dialog.rd-menu {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
+  margin: 0;
+  width: min(86vw, 380px);
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-left: var(--border-thin) solid var(--color-ink);
+  padding: max(14px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  flex-direction: column;
+  z-index: 1000;
+}
+html.rd dialog.rd-menu[open] {
+  display: flex;
+}
+html.rd dialog.rd-menu::backdrop {
+  background: var(--color-scrim-menu);
+}
+html.rd .rd-menu .rd-x {
+  -webkit-align-self: flex-end;
+  align-self: flex-end;
+}
+html.rd .rd-menu ul {
+  list-style: none;
+  margin: 18px 0 26px;
+  padding: 0;
+}
+html.rd .rd-menu li a {
+  display: block;
+  padding: 10px 0;
+  font: var(--weight-strong) var(--text-menu) / 1.2 var(--font-body);
+  color: inherit;
+  text-decoration: none;
+}
+html.rd .rd-menu li a[aria-current='page'] {
+  text-decoration: underline;
+  text-decoration-color: var(--color-accent-pink);
+  text-underline-offset: 6px;
+}
+
+/* ---------- 3b. the shared footer ---------- */
+html.rd .rd-ftr {
+  padding: 22px var(--gutter) 34px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  font: var(--text-small) / 1.5 var(--font-body);
+  color: var(--color-ink);
+}
+html.rd .rd-ftr a {
+  color: inherit;
+  margin-left: 16px;
+}
+html.rd .rd-ftr img {
+  width: 54px;
+  height: auto;
+}
+
+/* ---------- 3c. components ---------- */
+/* buttons: black pill (primary), outlined (secondary), plain (ghost); .sm/.lg; disabled; aria-busy shows a spinner */
+html.rd .rd-btn {
+  display: -webkit-inline-flex;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--tap-min);
+  padding: var(--pad-button);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font: var(--weight-strong) var(--text-button) / 1 var(--font-body);
+  letter-spacing: var(--track-button);
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: transform var(--dur-press) var(--ease-pop);
+}
+html.rd .rd-btn > * + * {
+  margin-right: 10px; /* flex gap is Safari 14.1 */
+}
+html.rd .rd-btn.secondary {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .rd-btn.ghost {
+  background: transparent;
+  color: var(--color-ink);
+  border-color: transparent;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+html.rd .rd-btn.sm {
+  padding: var(--pad-button-sm);
+  font-size: var(--text-small);
+}
+html.rd .rd-btn.lg {
+  padding: var(--pad-button-lg);
+  font-size: var(--text-button-lg);
+}
+html.rd .rd-btn.block {
+  display: flex;
+  width: 100%;
+}
+html.rd .rd-btn:active {
+  transform: translate(2px, 2px);
+}
+html.rd .rd-btn:disabled,
+html.rd .rd-btn[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+html.rd .rd-btn[aria-busy='true'] {
+  cursor: progress;
+  pointer-events: none;
+}
+html.rd .rd-btn[aria-busy='true']::after {
+  content: '';
+  width: 1em;
+  height: 1em;
+  margin-right: 10px;
+  border: 2px solid currentColor;
+  border-left-color: transparent;
+  border-radius: 50%;
+  -webkit-animation: rd-spin 0.8s linear infinite;
+  animation: rd-spin 0.8s linear infinite;
+}
+@-webkit-keyframes rd-spin {
+  to {
+    -webkit-transform: rotate(360deg);
+  }
+}
+@keyframes rd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+html.rd .rd-btn:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: var(--focus-offset);
+}
+
+/* fields: a label above, the input, a hint or an error under it (.rd-field.invalid, or aria-invalid on the input) */
+html.rd .rd-field {
+  display: block;
+  margin: 0 0 var(--space-md);
+  font-family: var(--font-body);
+}
+html.rd .rd-field > label {
+  display: block;
+  margin-bottom: 6px;
+  font: var(--weight-label) var(--text-label) / 1.3 var(--font-body);
+}
+html.rd .rd-field .req {
+  color: var(--color-brand-pink);
+}
+html.rd .rd-field input,
+html.rd .rd-field textarea,
+html.rd .rd-select select {
+  display: block;
+  width: 100%;
+  min-height: var(--field-height);
+  padding: 0 22px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font: var(--weight-body) var(--text-button) / 1.4 var(--font-body);
+  -webkit-appearance: none;
+  appearance: none;
+}
+html.rd .rd-field textarea {
+  min-height: 120px;
+  padding: 14px 22px;
+  border-radius: var(--radius-box);
+  resize: vertical;
+}
+html.rd .rd-field input:focus,
+html.rd .rd-field textarea:focus,
+html.rd .rd-select select:focus {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+html.rd .rd-field .hint {
+  margin: 6px 0 0;
+  font-size: var(--text-micro);
+  color: var(--color-text-muted);
+}
+html.rd .rd-field .err {
+  margin: 6px 0 0;
+  font: var(--weight-label) var(--text-micro) / 1.4 var(--font-body);
+  color: var(--color-error);
+}
+html.rd .rd-field.invalid input,
+html.rd .rd-field.invalid textarea,
+html.rd .rd-field [aria-invalid='true'] {
+  border: var(--border-invalid) solid var(--color-error);
+}
+html.rd .rd-select {
+  position: relative;
+  display: block;
+}
+html.rd .rd-select::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 22px;
+  width: 8px;
+  height: 8px;
+  margin-top: -6px;
+  border: solid var(--color-ink);
+  border-width: 0 0 2px 2px;
+  transform: rotate(-45deg);
+  pointer-events: none;
+}
+
+/* a checkbox or a radio: the native input, recoloured where the browser can, beside its label */
+html.rd .rd-check {
+  display: flex;
+  align-items: flex-start;
+  min-height: var(--tap-min);
+  padding: 10px 0;
+  font: var(--weight-body) var(--text-body) / 1.4 var(--font-body);
+  cursor: pointer;
+}
+html.rd .rd-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0 12px;
+  accent-color: var(--color-ink);
+}
+
+/* a card: paper, an ink outline and a hard shadow; .hot is the pink one; a link or button card lifts under the pointer */
+html.rd .rd-card {
+  display: block;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-review);
+  box-shadow: var(--shadow-review);
+  padding: var(--pad-card);
+  text-decoration: none;
+}
+html.rd .rd-card.hot {
+  background: var(--color-card-hot);
+}
+html.rd a.rd-card,
+html.rd button.rd-card {
+  cursor: pointer;
+  transition:
+    transform var(--dur-press) var(--ease-pop),
+    box-shadow var(--dur-press);
+}
+@media (hover: hover) {
+  html.rd a.rd-card:hover,
+  html.rd button.rd-card:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow-review-hover);
+  }
+}
+
+/* tags and chips: a small label; a chip is a choice (aria-pressed) */
+html.rd .rd-tag {
+  display: inline-block;
+  background: var(--color-tag);
+  padding: 3px 10px 4px;
+  border-radius: var(--radius-tag);
+  font: var(--weight-label) var(--text-small) / 1.4 var(--font-body);
+  color: var(--color-ink);
+}
+html.rd .rd-tag.hot {
+  background: var(--color-tag-hot);
+  color: var(--color-paper);
+}
+html.rd .rd-chip {
+  display: inline-block;
+  min-height: 40px;
+  padding: 8px 16px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font: var(--weight-label) var(--text-label) / 1.4 var(--font-body);
+  cursor: pointer;
+}
+html.rd .rd-chip[aria-pressed='true'] {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+/* a bottom sheet: a <dialog class="rd-sheet">; open it with showModal() */
+html.rd dialog.rd-sheet {
+  position: fixed;
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  margin: 0 auto;
+  width: 560px;
+  max-width: 100%;
+  max-height: 88vh;
+  max-height: 88svh;
+  border: var(--border-heavy) solid var(--color-ink);
+  border-bottom: 0;
+  border-radius: var(--radius-sheet) var(--radius-sheet) 0 0;
+  padding: 16px 16px max(22px, env(safe-area-inset-bottom));
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  overflow: auto;
+  z-index: 1000;
+}
+html.rd dialog.rd-sheet::backdrop {
+  background: var(--color-scrim);
+}
+/* the round ✕ that closes a sheet or the menu */
+html.rd .rd-x {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: var(--border-bold) solid var(--color-ink);
+  border-radius: 50%;
+  background: var(--color-paper);
+  box-shadow: var(--shadow-sm);
+  color: var(--color-ink);
+  font: var(--weight-heavy) 18px/1 var(--font-body);
+  cursor: pointer;
+}
+
+/* a toast: window.dugriRd.toast(text) */
+html.rd .rd-toast {
+  position: fixed;
+  bottom: max(20px, env(safe-area-inset-bottom));
+  left: 50%;
+  z-index: 1100;
+  max-width: calc(100% - 32px);
+  padding: 12px 20px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-sm);
+  font: var(--weight-label) var(--text-label) / 1.4 var(--font-body);
+  color: var(--color-ink);
+  transform: translateX(-50%);
+  transition: opacity var(--dur-fade);
+}
+html.rd .rd-toast.out {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--dur-fade),
+    visibility 0s var(--dur-fade);
+}
+
+/* steps: an <ol class="rd-steps"> whose current <li> has aria-current="step"; done ones have .done */
+html.rd .rd-steps {
+  display: flex;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: rd-step;
+  font: var(--weight-label) var(--text-small) / 1.3 var(--font-body);
+}
+html.rd .rd-steps li {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  color: var(--color-text-muted);
+  counter-increment: rd-step;
+}
+html.rd .rd-steps li::before {
+  content: counter(rd-step);
+  display: block;
+  width: 30px;
+  height: 30px;
+  margin-bottom: 6px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: 50%;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-weight: var(--weight-strong);
+  line-height: 27px;
+}
+html.rd .rd-steps li.done::before {
+  content: '✓';
+  background: var(--color-tag);
+}
+html.rd .rd-steps li[aria-current='step'] {
+  color: var(--color-ink);
+}
+html.rd .rd-steps li[aria-current='step']::before {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+
+/* a price: <span class="rd-price"><span class="amt">199 ₪</span><s class="amt">239 ₪</s></span>; .amt keeps ₪ with its number */
+html.rd .rd-price {
+  display: inline-block;
+  font: var(--weight-heavy) var(--text-price) / 1 var(--font-body);
+  color: var(--color-ink);
+}
+html.rd .rd-price .amt {
+  unicode-bidi: isolate;
+  direction: ltr;
+  display: inline-block;
+}
+html.rd .rd-price s {
+  margin-right: 14px;
+  font-size: 0.6em;
+  font-weight: var(--weight-strong);
+  opacity: 0.7;
+}
+
+/* empty and loading */
+html.rd .rd-empty {
+  padding: var(--space-2xl) var(--gutter);
+  text-align: center;
+  color: var(--color-text-muted);
+  font: var(--weight-body) var(--text-body) / var(--leading-body) var(--font-body);
+}
+html.rd .rd-skeleton {
+  display: block;
+  min-height: 1em;
+  border-radius: var(--radius-box);
+  background: #efe3d0;
+  -webkit-animation: rd-pulse 1.4s ease-in-out infinite;
+  animation: rd-pulse 1.4s ease-in-out infinite;
+}
+@-webkit-keyframes rd-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes rd-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.rd .rd-skeleton,
+  html.rd .rd-btn[aria-busy='true']::after {
+    -webkit-animation: none;
+    animation: none;
+  }
+}
+
+/* ---------- old Safari: before 15.4 a <dialog> is an unknown element, shown unless hidden here ---------- */
+html.rd dialog:not([open]) {
+  display: none;
+}
+html.rd .dlg-bd {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.36);
+}
