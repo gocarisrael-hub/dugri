@@ -301,14 +301,6 @@ html.rd .pawn-slot {
   border-radius: var(--radius-box);
 }
 
-/* ---- the details step's recap ---- */
-html.rd .order-summary {
-  border: var(--border-hair) solid var(--color-ink);
-  border-radius: var(--radius-box);
-  background: var(--color-paper);
-  box-shadow: var(--shadow-sm);
-}
-
 /* ---- the Back / Next bar: the ground, an ink rule, black pills ---- */
 html.rd .wiz-bar {
   background: var(--color-ground);
