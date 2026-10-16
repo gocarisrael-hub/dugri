@@ -156,6 +156,7 @@ html {
 html,
 body {
   margin: 0;
+  overflow-x: hidden; /* Safari before 16 has no clip */
   overflow-x: clip;
 }
 body {
@@ -262,6 +263,7 @@ a {
 section {
   position: relative;
   padding: 44px 16px 52px;
+  overflow: hidden; /* Safari before 16 has no clip */
   overflow: clip;
 } /* no rule, no fill: the page just flows */
 h1,
@@ -385,6 +387,7 @@ header .pill {
 .deck {
   position: absolute;
   width: var(--cw);
+  height: calc(var(--cw) * 1.41);
   aspect-ratio: 400 / 564;
   border: 0;
   padding: 0;
@@ -394,7 +397,10 @@ header .pill {
 }
 .deck img {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   border-radius: var(--radius-card);
@@ -422,6 +428,7 @@ header .pill {
   top: 0;
   left: 0;
   width: var(--cw);
+  height: calc(var(--cw) * 1.41);
   aspect-ratio: 400 / 564;
   z-index: 10;
   cursor: grab;
@@ -441,7 +448,10 @@ header .pill {
 }
 .card img {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   backface-visibility: hidden;
@@ -485,7 +495,8 @@ header .pill {
   margin: 6px 16px 0;
   border-radius: 40px;
   text-align: center;
-  padding-inline: 0;
+  padding-right: 0;
+  padding-left: 0;
   padding-top: 48px;
   background: linear-gradient(
     180deg,
@@ -501,17 +512,23 @@ header .pill {
 .designs > h2,
 .designs > .lede {
   position: relative;
-  margin-inline: 16px;
+  margin-right: 16px;
+  margin-left: 16px;
 }
 .designs > .lede {
-  margin-inline: auto;
-  padding-inline: 16px;
+  margin-right: auto;
+  margin-left: auto;
+  padding-right: 16px;
+  padding-left: 16px;
   max-width: 46ch;
   text-wrap: balance;
 }
 .bgs {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   pointer-events: none;
   border-radius: inherit;
   overflow: hidden;
@@ -519,7 +536,10 @@ header .pill {
 }
 .bgs i {
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   opacity: 0;
   will-change: opacity;
 }
@@ -579,7 +599,8 @@ header .pill {
   display: grid;
   justify-items: center;
   gap: 14px;
-  padding-inline: 16px;
+  padding-right: 16px;
+  padding-left: 16px;
 }
 .order .pill {
   font-size: 18px;
@@ -593,7 +614,10 @@ header .pill {
 /* the flood: a tap fills the screen with that design's pastel and lays out its front, back and real board */
 dialog.flood {
   position: fixed;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 900;
   width: 100%;
   height: 100%;
@@ -644,7 +668,9 @@ dialog.flood::backdrop {
 } /* the board, the cards and the words sit together, centred on the screen */
 .tableau {
   position: relative;
+  width: min(84vw, 600px, 62vh * 1.414);
   width: min(84vw, 600px, 62svh * 1.414);
+  margin-bottom: calc(min(84vw, 600px, 62vh * 1.414) * 0.2);
   margin-bottom: calc(min(84vw, 600px, 62svh * 1.414) * 0.2);
 }
 .tableau .bd {
@@ -677,6 +703,7 @@ dialog.flood::backdrop {
   transform: rotate(6deg);
 }
 .tableau.solo {
+  width: min(76vw, 440px, 44vh * 1.45);
   width: min(76vw, 440px, 44svh * 1.45);
   margin-bottom: 0;
   display: flex;
@@ -725,7 +752,8 @@ dialog.flood::backdrop {
   text-align: start;
   gap: 10px;
   width: min(100%, 452px);
-  margin-inline: auto;
+  margin-right: auto;
+  margin-left: auto;
   padding-top: 12px;
   padding-bottom: max(16px, env(safe-area-inset-bottom));
 }
@@ -769,7 +797,7 @@ dialog.flood::backdrop {
   height: 6px;
   border: solid var(--color-ink);
   border-width: 0 0 2px 2px;
-  rotate: -45deg;
+  transform: rotate(-45deg);
 }
 .flood .info > .pill {
   width: min(100%, 420px);
@@ -786,10 +814,13 @@ dialog.flood::backdrop {
   opacity: 0.75;
 }
 .tableau {
+  width: min(80vw, 520px, 37vh * 1.414);
   width: min(80vw, 520px, 37svh * 1.414);
+  margin-bottom: calc(min(80vw, 520px, 37vh * 1.414) * 0.2);
   margin-bottom: calc(min(80vw, 520px, 37svh * 1.414) * 0.2);
 }
 .tableau.solo {
+  width: min(64vw, 340px, 34vh * 1.45);
   width: min(64vw, 340px, 34svh * 1.45);
 }
 .spread {
@@ -798,10 +829,13 @@ dialog.flood::backdrop {
 /* short phones (an SE, or browser bars showing): a smaller board; below 700 px the swipe hint goes */
 @media (max-height: 760px) {
   .tableau {
+    width: min(76vw, 30vh * 1.414);
     width: min(76vw, 30svh * 1.414);
+    margin-bottom: calc(min(76vw, 30vh * 1.414) * 0.2);
     margin-bottom: calc(min(76vw, 30svh * 1.414) * 0.2);
   }
   .tableau.solo {
+    width: min(56vw, 26vh * 1.45);
     width: min(56vw, 26svh * 1.45);
   }
   .flood h3 {
@@ -824,11 +858,13 @@ dialog.flood::backdrop {
 /* recommendations: Pluto's card row (white, 16 px corners, a thin black line and a hard black offset shadow, a small tag at the
    reading start), scrolling on its own in an endless loop; a hover or a touch stops it, and it can be swiped */
 .recs {
-  padding-inline: 0;
+  padding-right: 0;
+  padding-left: 0;
 }
 .recs-head {
   position: relative;
-  padding-inline: 16px;
+  padding-right: 16px;
+  padding-left: 16px;
 }
 .row {
   direction: ltr;
@@ -845,7 +881,8 @@ dialog.flood::backdrop {
   display: flex;
   gap: 20px;
   width: max-content;
-  padding-inline: 10px;
+  padding-right: 10px;
+  padding-left: 10px;
 }
 .row {
   cursor: grab;
@@ -929,10 +966,14 @@ button.rc:active {
 /* the review sheet */
 .sheet {
   position: fixed;
-  inset: auto 0 0;
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
   margin: 0 auto;
   width: min(560px, 100%);
   max-width: 100%;
+  max-height: 88vh;
   max-height: 88svh;
   border: 3px solid var(--color-ink);
   border-bottom: 0;
@@ -1007,6 +1048,9 @@ button.rc:active {
 }
 .print img {
   width: 100%;
+  height: calc(
+    var(--pw) - 16px
+  ); /* square inside the 8 px frame; aspect-ratio alone needs Safari 15 */
   aspect-ratio: 1;
   object-fit: cover;
 }
@@ -1018,7 +1062,8 @@ button.rc:active {
   height: 24px;
   margin-left: -38px;
   background: rgba(244, 239, 230, 0.82);
-  border-inline: 2px dashed rgba(0, 0, 0, 0.14);
+  border-right: 2px dashed rgba(0, 0, 0, 0.14);
+  border-left: 2px dashed rgba(0, 0, 0, 0.14);
   transform: rotate(var(--tt, -4deg));
 }
 .print.old {
@@ -1139,7 +1184,7 @@ body:has(#cookieNotice) .wa-fab {
   bottom: max(16px, env(safe-area-inset-bottom) + 10px, 46px);
 }
 .wa-fab {
-  inset-inline-end: max(16px, env(safe-area-inset-left));
+  left: max(16px, env(safe-area-inset-left));
   width: 56px;
   height: 56px;
   border-radius: 50%;
@@ -1209,11 +1254,16 @@ body:has(dialog[open]) .fab {
 .mi .l3 {
   stroke-dasharray: 8 40;
 }
-.menu-btn:hover .mi .l2,
+/* a small hello under the pointer; :focus-visible in its own rules, since Safari before 15.4 drops a whole rule that names it */
+.menu-btn:hover .mi .l2 {
+  stroke-dasharray: 20 40;
+}
 .menu-btn:focus-visible .mi .l2 {
   stroke-dasharray: 20 40;
-} /* a small hello under the pointer */
-.menu-btn:hover .mi .l3,
+}
+.menu-btn:hover .mi .l3 {
+  stroke-dasharray: 14 40;
+}
 .menu-btn:focus-visible .mi .l3 {
   stroke-dasharray: 14 40;
 }
@@ -1242,7 +1292,10 @@ header .start {
 }
 dialog.menu {
   position: fixed;
-  inset: 0 0 0 auto;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: auto;
   margin: 0;
   width: min(86vw, 380px);
   height: 100%;
@@ -1418,7 +1471,8 @@ dialog.menu .pill {
 }
 .fe {
   margin: 0;
-  padding-inline: 22px;
+  padding-right: 22px;
+  padding-left: 22px;
   font-size: 13px;
   line-height: 1.25;
   color: var(--color-error);
@@ -1443,7 +1497,7 @@ dialog.menu .pill {
   outline: none;
 }
 @media (min-width: 600px) {
-  .biz-in:has(.lead) {
+  .biz-in {
     max-width: 640px;
   }
   .lead-row {
@@ -1461,7 +1515,8 @@ footer {
 } /* the last links clear the floating buttons */
 footer a {
   display: inline-block;
-  padding-block: 10px;
+  padding-top: 10px;
+  padding-bottom: 10px;
 }
 
 /* r14: one wavy line between the story and the reviews, like Pluto's boundary between two fields, but only the line: a single smooth S
@@ -1520,7 +1575,8 @@ footer img {
   section,
   header,
   footer {
-    padding-inline: max(16px, calc(50vw - 520px));
+    padding-right: max(16px, calc(50vw - 520px));
+    padding-left: max(16px, calc(50vw - 520px));
   }
   /* the cards beside the words */
   .hero-in {
@@ -1534,8 +1590,10 @@ footer img {
     height: calc(var(--cw) * 1.41 * 1.35 + 50px);
   }
   .designs {
-    padding-inline: 0;
-    margin-inline: 20px;
+    padding-right: 0;
+    padding-left: 0;
+    margin-right: 20px;
+    margin-left: 20px;
     border-radius: 80px;
     padding-top: 64px;
   }
@@ -1780,7 +1838,8 @@ footer img {
 }
 @media (min-width: 900px) {
   .recs-head {
-    padding-inline: max(16px, calc(50vw - 520px));
+    padding-right: max(16px, calc(50vw - 520px));
+    padding-left: max(16px, calc(50vw - 520px));
   }
 }
 .illo .twk {
@@ -1804,8 +1863,7 @@ footer img {
   position: absolute;
   z-index: 1;
   left: calc(var(--cl, 0px) + var(--x) * var(--cw2, 100vw) / 100);
-  translate: -50% -50%;
-  rotate: var(--r, 0deg);
+  transform: translate(-50%, -50%) rotate(var(--r, 0deg));
   pointer-events: none;
 }
 .pl > .illo {
@@ -1824,7 +1882,8 @@ footer img {
   padding-bottom: 44px;
 }
 .faq-in {
-  margin-inline: auto;
+  margin-right: auto;
+  margin-left: auto;
 }
 /* the form: a failed send keeps what was typed and offers WhatsApp */
 .lead-err {
@@ -1871,4 +1930,43 @@ footer img {
   #order .pl {
     display: none;
   }
+}
+
+/* ---------- new-faq.html: the questions on their own page, under the same header, menu and footer ---------- */
+header .logo-a {
+  display: block;
+}
+.faq-page h1 {
+  font-size: var(--text-section);
+}
+.faq-page .faq {
+  padding-top: 36px;
+  min-height: 70vh;
+}
+.faq-more {
+  margin: 8px 0 0;
+}
+.faq-more a {
+  font-weight: var(--weight-strong);
+}
+.faq-page .faq-in > .pill {
+  justify-self: start;
+}
+
+/* ---------- old Safari (js/home-legacy.js): before 15.4 a <dialog> is an unknown element, shown unless hidden here; the script gives
+   it open/showModal/close and a backdrop */
+dialog:not([open]) {
+  display: none;
+}
+.no-dialog dialog[open] {
+  z-index: 1000;
+}
+.dlg-bd {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 999;
+  background: rgba(0, 0, 0, 0.36);
 }

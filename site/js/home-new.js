@@ -1,10 +1,8 @@
 // The redesigned homepage (new.html), DESIGN.md's "The Game Night Table": a deck that deals the real cards, an endless strip of the
 // designs that takes on each one's colour, a tapped design that floods the screen, the reviews row, the menu and the business form.
-// Ported from redesign/directions/r17.html. Live data: the designs and their names (designs.js), the price (pricing.js), the FAQ
-// (faq.js), the owner's text and photos (editor.js, by data-edit keys); the rules that turn them into what is shown are in home-data.js.
+// Ported from redesign/directions/r17.html. Live data: the designs and their names (designs.js), the price (pricing.js), the owner's text and photos (editor.js, by data-edit keys); the rules that turn them into what is shown are in home-data.js.
 import { PUBLIC_DESIGNS, syncDesignNames, loadCustomDesigns } from './designs.js';
 import { fetchPricing } from './pricing.js';
-import { initFaq } from './faq.js';
 import { track } from './analytics.js';
 import {
   homeDesigns,
@@ -17,6 +15,7 @@ import {
   sendLead,
 } from './home-data.js';
 import { initIllustrations } from './home-illos.js';
+import { initMenu, trapTab } from './home-menu.js';
 
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (id) => document.getElementById(id);
@@ -840,8 +839,17 @@ const lift = (e) => {
 };
 row.addEventListener('touchend', lift);
 row.addEventListener('touchcancel', lift);
+// Safari before 15.4 throws on :focus-visible; there any focus in the row holds it still
+const FOCUS_KB = (() => {
+  try {
+    document.querySelector(':focus-visible');
+    return ':focus-visible';
+  } catch {
+    return ':focus';
+  }
+})();
 row.addEventListener('focusin', () => {
-  kbFocus = !!row.querySelector(':focus-visible');
+  kbFocus = !!row.querySelector(FOCUS_KB);
 });
 row.addEventListener('focusout', () => {
   kbFocus = false;
@@ -890,63 +898,8 @@ sheet.addEventListener('pointerup', (e) => {
   sy0 = null;
 });
 
-/* ---------- the menu: a sheet from the reading start whose ✕ grows out of the ≡ ---------- */
-const menu = $('menu'),
-  menuBtn = $('menuBtn');
-const closeMenu = () => {
-  if (menu.open) menu.close();
-};
-menuBtn.addEventListener('click', () => {
-  const r = menuBtn.getBoundingClientRect(),
-    w = Math.min(window.innerWidth * 0.86, 380);
-  menu.style.setProperty('--mx-t', r.top + 'px');
-  menu.style.setProperty('--mx-r', Math.min(window.innerWidth - r.right, w - 44 - 16) + 'px');
-  menu.classList.remove('xs');
-  menu.showModal();
-  menuBtn.setAttribute('aria-expanded', 'true');
-  requestAnimationFrame(() => requestAnimationFrame(() => menu.classList.add('xs')));
-});
-let menuTo = null; // a link that closed the menu: focus goes to that section, not back to the ≡
-menu.addEventListener('close', () => {
-  menuBtn.setAttribute('aria-expanded', 'false');
-  if (!menuTo) menuBtn.focus({ preventScroll: true });
-});
-$('menuX').addEventListener('click', closeMenu);
-menu.addEventListener('click', (e) => {
-  if (e.target === menu) closeMenu();
-});
-menu.querySelectorAll('a').forEach((a) =>
-  a.addEventListener('click', (e) => {
-    const h = a.getAttribute('href');
-    if (!h.startsWith('#')) return;
-    e.preventDefault();
-    menuTo = h;
-    closeMenu();
-    requestAnimationFrame(() => {
-      document
-        .querySelector(h)
-        .scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' });
-      const t = document.querySelector(h + ' h2') || document.querySelector(h);
-      t.tabIndex = -1;
-      t.focus({ preventScroll: true });
-      menuTo = null;
-    });
-  })
-);
-trapTab(menu);
-// focus stays inside a sheet and visits every link and button: Tab is handled here, because Safari's own Tab skips links by default
-function trapTab(dlg) {
-  dlg.addEventListener('keydown', (e) => {
-    if (e.key !== 'Tab') return;
-    const f = [...dlg.querySelectorAll('a[href], button:not([disabled])')].filter(
-      (el) => el.offsetParent !== null || el === document.activeElement
-    );
-    if (!f.length) return;
-    e.preventDefault();
-    const i = f.indexOf(document.activeElement);
-    f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
-  });
-}
+/* ---------- the menu (home-menu.js, shared with new-faq.html) ---------- */
+initMenu(reduce);
 
 /* ---------- business enquiries: POST /api/business-lead ---------- */
 const lead = $('lead'),
@@ -1017,7 +970,6 @@ buildStrip();
 showNext('bachelorette');
 placeDeck();
 initIllustrations();
-initFaq($('faqList'));
 fetchPricing().then((p) => {
   if (p.ok) {
     price = priceText(p);
