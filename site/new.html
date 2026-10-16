@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="new.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- the redesigned homepage, private until the owner switches / to it: not linked from anywhere, and never indexed -->
+    <meta name="robots" content="noindex, nofollow" />
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+    <title>דוגרי - המשחק הכי אישי</title>
+    <meta
+      name="description"
+      content="דוגרי: משחק מסיבה אישי שכל המילים בו על בעל השמחה. מתנה למסיבת רווקות, יום הולדת, יום נישואין ופרישה."
+    />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#fff1de" />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/assets/fonts/gveret-levin-400-hebrew.8c865542.woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/css/redesign-tokens.css" />
+    <link rel="stylesheet" href="/css/home-new.css" />
+    <script src="js/editor.js" defer></script>
+    <script type="module" src="js/home-new.js"></script>
+  </head>
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="spark" viewBox="0 0 40 40">
+        <path
+          d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z"
+        />
+      </symbol>
+      <symbol id="clover" viewBox="0 0 40 40">
+        <circle cx="20" cy="11" r="8" />
+        <circle cx="29" cy="20" r="8" />
+        <circle cx="20" cy="29" r="8" />
+        <circle cx="11" cy="20" r="8" />
+        <circle cx="20" cy="20" r="4" />
+      </symbol>
+    </svg>
+
+    <header>
+      <div class="start">
+        <button
+          class="menu-btn"
+          id="menuBtn"
+          type="button"
+          aria-label="תפריט"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="menu"
+        >
+          <svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+            <path class="l1" d="M24 8H4" />
+            <path class="l2" d="M24 14H4" />
+            <path class="l3" d="M24 20H4" />
+          </svg>
+        </button>
+        <img class="logo" src="/assets/logo-pink-original.png" alt="דוגרי" />
+      </div>
+      <a class="pill" href="#order" data-ga="nav_order">הזמינו עכשיו</a>
+    </header>
+
+    <section class="hero" id="top" aria-labelledby="h1">
+      <div class="hero-in">
+        <div class="stage" id="stage">
+          <button class="deck" id="deck" type="button" aria-label="לחלק קלף מהחפיסה">
+            <img src="assets/home/cards/posttrip-b1.webp" alt="" draggable="false" /><img
+              src="assets/home/cards/birthday-b1.webp"
+              alt=""
+              draggable="false"
+            /><img src="assets/home/cards/bachelorette-b1.webp" alt="" draggable="false" />
+          </button>
+          <span class="hint" id="hint" aria-hidden="true">לגעת בחפיסה</span>
+          <p class="sr" id="said" aria-live="polite"></p>
+        </div>
+        <div class="hero-text">
+          <h1 id="h1" class="tt" data-edit="new-hero-title">דוגרי, המשחק הכי אישי</h1>
+          <p class="pn sky">
+            <b data-edit="new-hero-lead">משחק מילים אישי שכל כולו על האדם שחוגגים לו.</b>
+            <span data-edit="new-hero-body"
+              >מתחלקים לקבוצות, שולפים קלף ומתארים את המילה בלי להגיד אותה, הקבוצה שלכם צריכה לנחש
+              כמה שיותר מילים עד שהטיימר מצלצל והתור שלכם נגמר.</span
+            >
+          </p>
+          <p class="catch">
+            <span class="q" data-edit="new-hero-q">ומה הקאץ׳?</span>
+            <span class="big" data-edit="new-hero-catch">כל המילים עליכם!</span>
+          </p>
+          <p class="pn pink">
+            <span data-edit="new-hero-pink-1">פדיחות,</span>
+            <span class="y" data-edit="new-hero-pink-2">סיפורים מצחיקים,</span>
+            <span data-edit="new-hero-pink-3">יריבים מושבעים,</span>
+            <span class="y" data-edit="new-hero-pink-4">אהבה ראשונה</span>
+            <span class="b" data-edit="new-hero-pink-5">ואפילו אקסים</span>
+            <span data-edit="new-hero-pink-6">- הכל נכנס.</span>
+          </p>
+          <div class="cta">
+            <a class="pill" href="products.html" data-ga="order_started" data-ga-cta="hero"
+              ><span data-edit="new-hero-cta">בונים את המשחק</span
+              ><svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M19 12H5M11 6l-6 6 6 6" /></svg
+            ></a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="designs" id="order" aria-labelledby="h-designs">
+      <div class="bgs" id="bgs" aria-hidden="true"></div>
+      <h2 id="h-designs" class="tt" data-edit="new-designs-heading">העיצובים שלנו</h2>
+      <p class="lede" data-edit="new-designs-sub">
+        כל עיצוב מתאים לכל חגיגה&nbsp;- את הכותרת אתם כותבים
+      </p>
+      <div class="strip" id="strip" aria-label="העיצובים"></div>
+      <div class="strip-hint" aria-hidden="true">← החליקו →</div>
+      <div class="order">
+        <a class="pill" href="products.html" data-ga="order_started" data-ga-cta="designs"
+          ><span data-edit="new-designs-cta">בונים את המשחק</span
+          ><svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 12H5M11 6l-6 6 6 6" /></svg
+        ></a>
+        <a
+          class="wa-line"
+          href="https://wa.me/972552441334"
+          target="_blank"
+          rel="noopener"
+          data-ga="whatsapp_click"
+          data-ga-cta="designs"
+          data-edit="new-designs-wa"
+          >יש שאלה? דברו איתנו בוואטסאפ</a
+        >
+      </div>
+    </section>
+
+    <section class="story" id="story" aria-labelledby="h-story">
+      <div class="story-in" data-edit-scope="index.html">
+        <h2 id="h-story" class="tt" data-edit="index-story-heading">איך דוגרי נולד</h2>
+        <div class="prints" aria-hidden="true">
+          <figure class="print old">
+            <span class="tape" style="--tt: 3deg"></span
+            ><img src="assets/gallery-1.jpg" alt="" data-edit-img="index-story-photo-1" />
+          </figure>
+          <figure class="print now">
+            <span class="tape"></span
+            ><img
+              src="assets/gallery-2.jpg"
+              alt=""
+              style="object-position: 50% 62%"
+              data-edit-img="index-story-photo-2"
+            />
+          </figure>
+        </div>
+        <div class="story-copy">
+          <p data-edit="index-story-p1">
+            נעים להכיר - הדר ועלמה, חברות הכי טובות מגיל שנה והשתיים האלה בחבורה שתמיד מתכננות הכל.
+            התחלנו לתכנן את מסיבת הרווקות של שירה וחיפשנו מתנה שתגרום לערב להרגיש כאילו הוא נכתב
+            עליה וגם (!) יהיה קורע מצחוק, ולא מצאנו. אז ישבנו והמצאנו את דוגרי.
+          </p>
+          <p data-edit="index-story-p2">
+            מאז הפכנו את זה למקצוע - לוקחים את הסיפורים הכי מצחיקים, מביכים ומרגשים שלכם והופכים
+            אותם למשחק אישי אחד ויחיד. כל הזמנה שלכם מרגשת אותנו!
+          </p>
+          <p class="sign" data-edit="index-story-sign">הדר ועלמה</p>
+        </div>
+      </div>
+    </section>
+    <div class="wave w1" aria-hidden="true">
+      <svg viewBox="0 0 1200 100" preserveAspectRatio="none" focusable="false">
+        <path class="fld" d="M0 74 C 260 74 380 22 600 48 S 940 86 1200 26 L 1200 103 L 0 103 Z" />
+        <path class="ln" d="M0 74 C 260 74 380 22 600 48 S 940 86 1200 26" />
+      </svg>
+    </div>
+
+    <section class="recs" id="recs" aria-labelledby="h-recs">
+      <div class="recs-head">
+        <h2 id="h-recs" class="tt" data-edit="new-reviews-heading">ממליצים עלינו</h2>
+      </div>
+      <div class="row" id="row" aria-label="המלצות, אפשר להחליק">
+        <div class="track" id="track">
+          <div class="rc logo">
+            <span class="tag">לקוח עסקי</span
+            ><img
+              src="assets/home/logos/microsoft.webp"
+              alt="Microsoft"
+              style="height: 40px"
+              draggable="false"
+              loading="lazy"
+            />
+          </div>
+          <button class="rc hot" type="button" data-shot="assets/home/reviews/r7.jpg">
+            <span class="tag" data-edit="new-review-1-tag">מסיבת רווקות</span
+            ><span class="ttl" data-edit="new-review-1-quote"
+              >דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו</span
+            >
+          </button>
+          <button class="rcNone" type="button" data-shot="assets/home/reviews/r9.jpg">
+            <span class="tag" data-edit="new-review-2-tag">מתנה לאמא</span
+            ><span class="ttl" data-edit="new-review-2-quote"
+              >אני לא מגזימה שעה וחצי של צחוק רצוף!</span
+            >
+          </button>
+          <div class="rc logo">
+            <span class="tag">לקוח עסקי</span
+            ><img
+              src="assets/home/logos/elbit.svg"
+              alt="Elbit Systems"
+              style="height: 54px"
+              draggable="false"
+              loading="lazy"
+            />
+          </div>
+          <button class="rcNone" type="button" data-shot="assets/home/reviews/r5.jpg">
+            <span class="tag" data-edit="new-review-3-tag">מסיבת רווקות</span
+            ><span class="ttl" data-edit="new-review-3-quote"
+              >היא אמרה שזה פשוט היה הדבר הכי טוב בכל הרווקות שלה!</span
+            >
+          </button>
+          <button class="rcNone" type="button" data-shot="assets/home/reviews/r2.jpg">
+            <span class="tag" data-edit="new-review-4-tag">יום הולדת</span
+            ><span class="ttl" data-edit="new-review-4-quote"
+              >זה יצא פשוט נדיר ברמות הכי גבוהות</span
+            >
+          </button>
+          <div class="rc logo">
+            <span class="tag">לקוח עסקי</span
+            ><img
+              src="assets/home/logos/hapoalim.svg"
+              alt="בנק הפועלים"
+              style="height: 30px"
+              draggable="false"
+              loading="lazy"
+            />
+          </div>
+          <button class="rcNone" type="button" data-shot="assets/home/reviews/r6.jpg">
+            <span class="tag" data-edit="new-review-5-tag">מסיבה</span
+            ><span class="ttl" data-edit="new-review-5-quote"
+              >בסוף הערב היא אמרה שזה החלק שהיא הכי אהבה במסיבה</span
+            >
+          </button>
+          <button class="rcNone" type="button" data-shot="assets/home/reviews/r8.jpg">
+            <span class="tag" data-edit="new-review-6-tag">מתנה</span
+            ><span class="ttl" data-edit="new-review-6-quote">היה ממש כיף, כולם היו באטרף מזה</span>
+          </button>
+          <div class="rc logo">
+            <span class="tag">לקוח עסקי</span
+            ><img
+              src="assets/home/logos/hm.webp"
+              alt="H&amp;M"
+              style="height: 60px"
+              draggable="false"
+              loading="lazy"
+            />
+          </div>
+          <button class="rcNone" type="button" data-shot="assets/home/reviews/r1.jpg">
+            <span class="tag" data-edit="new-review-7-tag">מתנה לחמים</span
+            ><span class="ttl" data-edit="new-review-7-quote"
+              >החמים שלי ממש ממש התרגשו והיה מעולה</span
+            >
+          </button>
+          <button class="rcNone" type="button" data-shot="assets/home/reviews/r4.jpg">
+            <span class="tag" data-edit="new-review-8-tag">מתנה לאחות</span
+            ><span class="ttl" data-edit="new-review-8-quote"
+              >תודה לך על הטיפול האישי עם המשלוח</span
+            >
+          </button>
+          <div class="rc logo">
+            <span class="tag">לקוח עסקי</span
+            ><img
+              src="assets/home/logos/starcar.webp"
+              alt="STAR CAR ירושלים"
+              style="height: 56px"
+              draggable="false"
+              loading="lazy"
+            />
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <dialog class="sheet" id="sheet" aria-labelledby="sheetTitle">
+      <span class="grab" aria-hidden="true"></span>
+      <button class="x" type="button" id="sheetX" aria-label="סגירה">✕</button>
+      <h3 class="sr" id="sheetTitle">ההמלצה המלאה</h3>
+      <div id="sheetPic"></div>
+      <p id="sheetCap"></p>
+    </dialog>
+
+    <dialog class="flood" id="flood" aria-labelledby="floodName">
+      <button class="x" type="button" id="floodX" aria-label="סגירה">✕</button>
+      <div class="spread"><div class="tableau" id="tableau"></div></div>
+      <div class="info">
+        <h3 id="floodName"></h3>
+        <p class="pr" id="floodPrice" hidden></p>
+        <div class="inbox">
+          <p class="hd" data-edit="new-view-inbox">מה בפנים</p>
+          <ul>
+            <li data-edit="new-view-inbox-1">חפיסת קלפים מותאמת אישית</li>
+            <li data-edit="new-view-inbox-2">לוח משחק</li>
+            <li data-edit="new-view-inbox-3">חיילי משחק עם הפרצופים שלכם</li>
+            <li data-edit="new-view-inbox-4">דף חוקים</li>
+          </ul>
+        </div>
+        <a
+          class="pill"
+          href="products.html"
+          id="floodOrder"
+          data-ga="order_started"
+          data-ga-cta="design_view"
+          ><span data-edit="new-view-cta">יאללה בואו נתחיל</span
+          ><svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 12H5M11 6l-6 6 6 6" /></svg
+        ></a>
+        <p class="note" data-edit="new-view-note">מוכן תוך 4 ימי עסקים</p>
+        <span class="swipe" aria-hidden="true">החליקו למטה כדי לחזור</span>
+      </div>
+    </dialog>
+
+    <div class="wave w2" aria-hidden="true">
+      <svg viewBox="0 0 1200 100" preserveAspectRatio="none" focusable="false">
+        <path class="fld" d="M0 30 C 200 30 330 84 560 70 S 960 16 1200 58 L 1200 -3 L 0 -3 Z" />
+        <path class="ln" d="M0 30 C 200 30 330 84 560 70 S 960 16 1200 58" />
+      </svg>
+    </div>
+
+    <section class="biz" id="biz" aria-labelledby="h-biz">
+      <div class="biz-in">
+        <h2 id="h-biz" class="tt" data-edit="new-biz-heading">פניות עסקיות</h2>
+        <p class="lede" data-edit="new-biz-sub">
+          ערב צוות, יום גיבוש או מתנה לעובדים? נבנה לכם דוגרי על הצוות, עם השמות מהמשרד והבדיחות
+          הפנימיות שכולם מכירים.
+        </p>
+        <div class="logos">
+          <span data-edit="new-biz-logos">כבר שיחקו:</span
+          ><img src="assets/home/logos/microsoft.webp" alt="Microsoft" /><img
+            src="assets/home/logos/elbit.svg"
+            alt="Elbit Systems"
+          /><img src="assets/home/logos/hapoalim.svg" alt="בנק הפועלים" /><img
+            src="assets/home/logos/hm.webp"
+            alt="H&amp;M"
+          /><img src="assets/home/logos/starcar.webp" alt="STAR CAR ירושלים" />
+        </div>
+        <a
+          class="pill"
+          href="https://wa.me/972546577715?text=%D7%94%D7%99%D7%99%21%20%D7%90%D7%A0%D7%97%D7%A0%D7%95%20%D7%9E%D7%A2%D7%95%D7%A0%D7%99%D7%99%D7%A0%D7%99%D7%9D%20%D7%91%D7%94%D7%96%D7%9E%D7%A0%D7%94%20%D7%9C%D7%A2%D7%A1%D7%A7%2F%D7%90%D7%99%D7%A8%D7%95%D7%A2%20%D7%92%D7%93%D7%95%D7%9C"
+          target="_blank"
+          rel="noopener"
+          data-ga="whatsapp_click"
+          data-ga-cta="business"
+          ><span data-edit="new-biz-wa">דברו איתנו בוואטסאפ</span
+          ><svg class="wa" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"
+            /></svg
+        ></a>
+        <form class="lead" id="lead" novalidate aria-labelledby="leadHd">
+          <p class="lead-hd" id="leadHd" data-edit="new-biz-form">או השאירו פרטים ונחזור אליכם</p>
+          <div class="lead-row">
+            <div class="fld-w">
+              <label for="lName">שם<span class="req" aria-hidden="true">*</span></label
+              ><input
+                id="lName"
+                name="name"
+                autocomplete="name"
+                required
+                aria-describedby="lNameE"
+              />
+              <p class="fe" id="lNameE"></p>
+            </div>
+            <div class="fld-w">
+              <label for="lCo">חברה<span class="req" aria-hidden="true">*</span></label
+              ><input
+                id="lCo"
+                name="company"
+                autocomplete="organization"
+                required
+                aria-describedby="lCoE"
+              />
+              <p class="fe" id="lCoE"></p>
+            </div>
+            <div class="fld-w wide">
+              <label for="lTel">טלפון<span class="req" aria-hidden="true">*</span></label
+              ><input
+                id="lTel"
+                name="phone"
+                type="tel"
+                inputmode="tel"
+                autocomplete="tel"
+                dir="ltr"
+                required
+                aria-describedby="lTelE"
+              />
+              <p class="fe" id="lTelE"></p>
+            </div>
+            <div class="hp" aria-hidden="true">
+              <label for="lWeb">אתר</label
+              ><input id="lWeb" name="website" tabindex="-1" autocomplete="off" />
+            </div>
+            <button class="pill" type="submit">
+              שלחו<svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M19 12H5M11 6l-6 6 6 6" />
+              </svg>
+            </button>
+          </div>
+        </form>
+        <p
+          class="lead-ok"
+          id="leadOk"
+          role="status"
+          tabindex="-1"
+          hidden
+          data-edit="new-biz-thanks"
+        >
+          תודה! נחזור אליכם בקרוב
+        </p>
+        <p class="lead-err" id="leadErr" role="alert" tabindex="-1" hidden>
+          <span id="leadErrText">משהו השתבש ולא הצלחנו לשלוח.</span>
+          <a href="https://wa.me/972546577715" target="_blank" rel="noopener"
+            >לכתוב לנו בוואטסאפ ‹</a
+          >
+        </p>
+      </div>
+    </section>
+
+    <section class="faq" id="faq" aria-labelledby="h-faq">
+      <div class="faq-in">
+        <h2 id="h-faq" class="tt" data-edit="new-faq-heading">שאלות נפוצות</h2>
+        <div class="qa" id="faqList">
+          <details open>
+            <summary>מה זה בעצם המשחק?</summary>
+            <p>
+              משחק ניחוש מילים שמבוסס כולו עליכם. שולפים קלף ומתארים את המילה בלי להגיד אותה, הקבוצה
+              שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל. הקאץ׳ הוא שכל המילים עליכם! הכי
+              מצחיק, אישי ומרגש!
+            </p>
+          </details>
+          <details>
+            <summary>כמה מילים צריך לשלוח?</summary>
+            <p>
+              ניתן לשלוח עד 412 מילים, כמה שיותר מילים - יותר טוב! בדף הזנת המילים יש קטגוריות
+              ודוגמאות שמקלות מאוד להיזכר - אנשים, מקומות, בדיחות פנימיות, ביטויים ואקסים! לרוב לא
+              אוספים 412 מילים ולכן אנחנו משלימות מילים שיתאימו לאירוע שלכם, לפי רשימה מושלמת שהכנו
+              מראש!
+            </p>
+          </details>
+          <details>
+            <summary>מתי בדיוק מקבלים?</summary>
+            <p>
+              הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. איסוף עצמי אפשרי תוך
+              4 ימי עסקים. יש לכם תאריך אירוע קרוב? דברו איתנו בוואטסאפ. משלוח בתוספת תשלום אפשרי
+              תוך 7 ימי עסקים.
+            </p>
+          </details>
+          <details>
+            <summary>איך מזמינים ומשלמים?</summary>
+            <p>
+              בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה במייל לאיסוף
+              המילים, ומשם אנחנו מתחילים.
+            </p>
+          </details>
+          <details>
+            <summary>אפשר קצת פרטים על האיסוף עצמי?</summary>
+            <p>
+              ניתן לאסוף את החבילה מהתחייה 14, תל אביב - בימים א׳-ה׳ בין השעות 9:00-16:00. מגיעים
+              לכתובת, נכנסים בכניסה B ועולים קומה אחת במדרגות. שם תראו ״דפוס גלאור״, כנסו בדלת וקחו
+              את הדוגרי שלכם!
+            </p>
+          </details>
+        </div>
+      </div>
+    </section>
+
+    <dialog class="menu" id="menu" aria-label="תפריט">
+      <button class="x" type="button" id="menuX" aria-label="סגירת התפריט">
+        <svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+          <path class="l1" d="M24 8H4" />
+          <path class="l2" d="M24 14H4" />
+          <path class="l3" d="M24 20H4" />
+        </svg>
+      </button>
+      <nav aria-label="ניווט">
+        <ul>
+          <li><a href="#order">העיצובים</a></li>
+          <li><a href="#story">איך דוגרי נולד</a></li>
+          <li><a href="#recs">ממליצים עלינו</a></li>
+          <li><a href="#faq">שאלות נפוצות</a></li>
+          <li><a href="pickup.html">איסוף עצמי</a></li>
+          <li><a href="#biz">פניות עסקיות</a></li>
+        </ul>
+      </nav>
+      <a class="pill" href="#order">הזמינו עכשיו</a>
+    </dialog>
+
+    <a
+      class="fab wa-fab"
+      id="waFab"
+      data-ga="whatsapp_click"
+      data-ga-cta="float"
+      href="https://wa.me/972552441334?text=%D7%94%D7%99%D7%99!%20%D7%90%D7%A0%D7%99%20%D7%A8%D7%95%D7%A6%D7%94%20%D7%9C%D7%94%D7%96%D7%9E%D7%99%D7%9F%20%D7%9E%D7%A9%D7%97%D7%A7%20%D7%93%D7%95%D7%92%D7%A8%D7%99"
+      target="_blank"
+      rel="noopener"
+      aria-label="דברו איתנו בוואטסאפ"
+      ><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path
+          d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"
+        /></svg
+    ></a>
+
+    <footer>
+      <span
+        ><span class="fl"><a href="terms.html">תקנון ותנאי שימוש</a></span>
+        <span class="fl"><i class="dot">· </i><a href="#faq">שאלות נפוצות</a></span>
+        <span class="fl"><i class="dot">· </i><a href="pickup.html">איסוף עצמי</a></span></span
+      ><img src="/assets/logo-pink-original.png" alt="" />
+    </footer>
+  </body>
+</html>
