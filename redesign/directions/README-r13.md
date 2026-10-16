@@ -125,6 +125,8 @@ They use only the palette: #ffd37b, #a4e9ff, #ff7aa9, the logo pink #ea4795, ink
 9. A small 4-point star in the title's colour, with an ink line, before each title; the title stays ink.
 10. A deep plum ink, #2b1a33, instead of black for every title (14.6:1).
 
+The switch sits one row above the font chooser. Fixed after 7395c04, where it had fallen onto the chooser's row on a phone: no floating control (title switch, font chooser, WhatsApp, the `#place` palette) overlaps another or leaves the screen at 360, 390, 430, 1100 and 1440 wide, with and without `#place`, in Chromium and WebKit, and each of their buttons can be tapped.
+
 `shots/r13-titles.png` shows all ten on a phone: the hero headline, the designs title on its panel and the reviews title.
 
 In 9 the star makes each title a little longer, so the reviews title comes close to the disco ball beside it (her placement is in % of the content column).
