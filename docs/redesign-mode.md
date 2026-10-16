@@ -21,7 +21,7 @@ With the mode off, every page is byte-identical to before.
   - **`site/css/rd/chrome.css`** (D) holds old chrome shared across pages: the old header and the consent chip.
   - **Link order:** the gate links, in the mode only and each only if it exists: `redesign.css`, `css/rd/chrome.css`, `css/rd/<page>.css`, then `redesign-shell.js` (D's #679). A page's rules therefore win over the shell's at equal specificity.
   - **No faces or globals there:** `@font-face` and `@import` are refused in `css/rd/`, because the faces live in `redesign.css`.
-- **Scope every rule under `html.rd`.** `tests/unit/redesign-shell.test.js` fails on any rule in `css/rd/*.css` that isn't.
+- **Scope every rule under `html.rd`.** `tests/unit/rd-css-scope.test.js` fails on any rule in `site/css/rd/` that isn't.
 - **Build on the shell, don't repeat it.** Use its tokens (`var(--color-ink)`, `var(--radius-box)`, …). Give your own elements its components' look with `--rd-as-*` (below) instead of copying their rules.
 - **Preview in a spec** with `previewRedesign(page)` from `tests/e2e/helpers/redesign.js`. It goes through the real `?rd=1` path.
 

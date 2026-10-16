@@ -6,8 +6,8 @@
 //   4. the shell: the shared header and footer stand in for a page's own; a page places or drops them, and gives its own elements
 //      a shared component's look, from its CSS alone (--rd-header, --rd-as-btn …); a page built in the redesign is left alone;
 //      nothing runs outside the mode or twice
-//   5. every per-page stylesheet (css/rd/*.css) is scoped under html.rd, so the mode never leaks out of it
-//   6. rd-kit.html is private
+//   5. rd-kit.html is private
+// (css/rd/*.css, the pages' own stylesheets in the mode, are linted by tests/unit/rd-css-scope.test.js)
 import { describe, it, expect, beforeEach } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -190,25 +190,6 @@ describe('the shell script', () => {
     expect(t.getAttribute('role')).toBe('status');
     await new Promise((r) => setTimeout(r, 30));
     expect(t.className).toBe('rd-toast out');
-  });
-});
-
-describe('the per-page stylesheets, css/rd/*.css', () => {
-  it('scope every rule under html.rd', () => {
-    const dir = path.join(SITE, 'css/rd');
-    const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.css')) : [];
-    for (const f of files) {
-      const css = fs
-        .readFileSync(path.join(dir, f), 'utf8')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/@[a-z-]*keyframes[^{]*\{(?:[^{}]*\{[^}]*\})*\s*\}/g, '');
-      for (const m of css.matchAll(/([^{}@]+)\{[^{}]*\}/g))
-        for (const sel of m[1]
-          .split(',')
-          .map((x) => x.trim())
-          .filter(Boolean))
-          expect(sel, `${f}: ${sel}`).toMatch(/^html\.rd\b/);
-    }
   });
 });
 
