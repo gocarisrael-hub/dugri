@@ -1159,14 +1159,73 @@ button.rc:active {
   white-space: pre-line;
 }
 
+/* the site footer: the live homepage's contacts and links, on the ground */
 footer {
-  padding: 22px 16px 34px;
-  font-size: 14px;
+  padding: 30px 16px 34px;
+  border-top: var(--border-thin) solid var(--color-ink);
+  font-size: var(--text-small);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-gap: 18px 24px;
+  align-items: start;
+}
+.ft-contact {
+  grid-column: 1 / -1;
+}
+.ft-icons {
   display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  justify-content: space-between;
+}
+.ft-icon {
+  display: flex;
   align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin-left: 12px; /* flex gap is Safari 14.1 */
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: 50%;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+}
+.ft-icon.wa {
+  background: var(--color-whatsapp);
+}
+.ft-icon svg {
+  width: 23px;
+  height: 23px;
+  fill: currentColor;
+}
+.ft-icon:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+.ft-lines,
+.ft-b2b,
+.ft-tag {
+  margin: 12px 0 0;
+  line-height: 1.6;
+}
+.ft-lines > span {
+  display: block;
+}
+.ft-lines .lb,
+.ft-b2b .lb {
+  font-weight: var(--weight-strong);
+}
+.ft-lines a {
+  font-weight: var(--weight-label);
+}
+.ft-tag {
+  color: var(--color-text-muted);
+}
+.ft-links a {
+  display: block;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+.ft-logo {
+  width: 64px;
 }
 /* ---------- the floating WhatsApp (bottom left: the end side in RTL), the font chooser (bottom right, while testing) ---------- */
 .fab {
@@ -1513,11 +1572,6 @@ dialog.menu .pill {
 footer {
   padding-bottom: calc(34px + 72px + env(safe-area-inset-bottom)) !important;
 } /* the last links clear the floating buttons */
-footer a {
-  display: inline-block;
-  padding-top: 10px;
-  padding-bottom: 10px;
-}
 
 /* r14: one wavy line between the story and the reviews, like Pluto's boundary between two fields, but only the line: a single smooth S
    across the full width in the palette pink, 2 px at every width (the stroke does not scale with the box) */
@@ -1547,23 +1601,19 @@ footer a {
 .recs {
   background: var(--color-field);
 }
-footer .fl {
-  white-space: nowrap;
-}
-footer .dot {
-  font-style: normal;
-}
-@media (max-width: 899px) {
-  footer > span {
-    display: grid;
-    gap: 0;
+@media (min-width: 900px) {
+  .ft-contact {
+    grid-column: auto;
   }
-  footer .dot {
-    display: none;
+  footer {
+    grid-template-columns: 1fr auto auto;
   }
-}
-footer img {
-  width: 54px;
+  .ft-links {
+    -webkit-columns: 2;
+    columns: 2;
+    -webkit-column-gap: 32px;
+    column-gap: 32px;
+  }
 }
 
 @media (min-width: 900px) {

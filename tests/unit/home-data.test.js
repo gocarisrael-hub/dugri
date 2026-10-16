@@ -256,13 +256,15 @@ describe('new.html', () => {
     const seen = new Set();
     for (const [, key, text] of keys) {
       expect(key).toMatch(/^[a-z0-9][a-z0-9-]{0,60}$/);
-      expect(key.startsWith('new-') || key.startsWith('index-story-'), key).toBe(true);
+      // the story and the footer are the live homepage's texts, read and written through its bucket
+      expect(/^(new-|index-story-|index-footer-)/.test(key), key).toBe(true);
       if (!html.includes(`data-edit-img="${key}"`)) expect(text.trim(), key).not.toBe('');
       expect(seen.has(key), `duplicate ${key}`).toBe(false);
       seen.add(key);
     }
     // the story keys are the live homepage's, read and written through its bucket
     expect(html).toMatch(/data-edit-scope="index.html"[\s\S]*data-edit="index-story-heading"/);
+    expect(html).toMatch(/<footer class="site-ft" data-edit-scope="index.html">/);
   });
 
   it('self-hosts its fonts: every face is a real woff2, the body face sized to Rubik', () => {
@@ -317,6 +319,36 @@ describe('the reviews row', () => {
   });
 });
 
+describe('the site footer on the redesigned pages', () => {
+  it('has the live homepage footer’s links, contacts and editable texts, on both pages', () => {
+    const index = read('index.html');
+    const idxFoot = index.slice(index.indexOf('<footer>'), index.indexOf('</footer>'));
+    const testids = [...idxFoot.matchAll(/data-testid="([^"]+)"/g)].map((m) => m[1]);
+    const keys = [...idxFoot.matchAll(/data-edit="(index-footer-(?!brand)[^"]+)"/g)].map(
+      (m) => m[1]
+    );
+    expect(testids.length).toBeGreaterThanOrEqual(4);
+    for (const page of ['new.html', 'new-faq.html']) {
+      const html = read(page);
+      const foot = html.slice(html.indexOf('<footer class="site-ft"'), html.indexOf('</footer>'));
+      for (const t of testids) expect(foot, `${page} ${t}`).toContain(`data-testid="${t}"`);
+      for (const k of keys) expect(foot, `${page} ${k}`).toContain(`data-edit="${k}"`);
+      for (const href of [
+        'wordlists.html',
+        'terms.html',
+        'pickup.html',
+        'timer.html',
+        'new-faq.html',
+        'mailto:',
+        'tel:',
+        'instagram.com',
+        'wa.me',
+      ])
+        expect(foot, `${page} ${href}`).toContain(href);
+    }
+  });
+});
+
 describe('the questions page', () => {
   const home = read('new.html');
   const faq = read('new-faq.html');
@@ -343,14 +375,15 @@ describe('the questions page', () => {
     expect(js).toMatch(/initMenu\(/);
   });
 
-  it('every editable text has a new- key and a default', () => {
+  it('every editable text has a new- key (or the homepage footer’s) and a default', () => {
     const keys = [...faq.matchAll(/data-edit="([^"]+)"[^>]*>([^<]*)/g)];
-    expect(keys.map((k) => k[1]).sort()).toEqual([
-      'new-faq-cta',
-      'new-faq-heading',
-      'new-faq-more',
-      'new-faq-wa',
-    ]);
+    expect(
+      keys
+        .map((k) => k[1])
+        .filter((k) => k.startsWith('new-'))
+        .sort()
+    ).toEqual(['new-faq-cta', 'new-faq-heading', 'new-faq-more', 'new-faq-wa']);
+    for (const [, key] of keys) expect(key, key).toMatch(/^(new-faq-|index-footer-)/);
     for (const [, key, text] of keys) expect(text.trim(), key).not.toBe('');
   });
 });

@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { previewRedesign } from './helpers/redesign.js';
 
 // The redesigned homepage (new.html), private until the owner switches / to it. What these pin:
 // - the deck deals real cards, and the strip lists the live designs under their live names;
@@ -504,5 +505,34 @@ test.describe('the questions page', () => {
     expect(await page.locator('meta[name="robots"]').getAttribute('content')).toMatch(/noindex/);
     const sx = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(sx).toBe(0);
+  });
+});
+
+test.describe('the site footer', () => {
+  test('in redesign mode the homepage at / has the live footer: contacts, the business line and every link', async ({
+    page,
+  }) => {
+    await previewRedesign(page);
+    await page.goto('/');
+    await expect(page.locator('html')).toHaveClass(/\brd-native\b/); // / is new.html in the mode
+    for (const id of [
+      'footer-wordlists',
+      'footer-terms',
+      'footer-pickup',
+      'footer-faq',
+      'footer-timer',
+      'footer-b2b',
+    ])
+      await expect(page.getByTestId(id), id).toBeVisible();
+    await expect(page.locator('footer a[href^="mailto:"]')).toBeVisible();
+    await expect(page.locator('footer a[href^="tel:"]').first()).toBeVisible();
+    await page.getByTestId('footer-wordlists').click();
+    await expect(page).toHaveURL(/wordlists\.html/);
+  });
+
+  test('the questions page has the same footer', async ({ page }) => {
+    await page.goto('/new-faq.html');
+    await expect(page.getByTestId('footer-wordlists')).toHaveAttribute('href', 'wordlists.html');
+    await expect(page.getByTestId('footer-terms')).toBeVisible();
   });
 });
