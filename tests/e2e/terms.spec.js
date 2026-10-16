@@ -81,3 +81,21 @@ test.describe('the terms page', () => {
     await expect(page.locator('footer a[href*="wa.me"]')).toHaveAttribute('href', /972552441334/);
   });
 });
+
+// The footer shipped without its styles (#527), so its three contact icons drew at
+// the full width of the page. Each is a round button now, and the screen-reader
+// labels stay out of sight.
+test('the footer contact icons are buttons, not page-wide pictures', async ({ page }) => {
+  await page.goto('/terms.html');
+  const icons = page.locator('footer .foot-icon');
+  await expect(icons).toHaveCount(3);
+  for (const icon of await icons.all()) {
+    const box = await icon.boundingBox();
+    expect(box.width).toBeLessThanOrEqual(48);
+    expect(box.height).toBeLessThanOrEqual(48);
+  }
+  for (const label of await page.locator('footer .visually-hidden').all()) {
+    const box = await label.boundingBox();
+    expect(box.width).toBeLessThanOrEqual(1);
+  }
+});

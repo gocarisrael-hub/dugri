@@ -177,6 +177,110 @@
         color: var(--muted);
         font-size: 14px;
       }
+
+      /* The footer: the same contact block every storefront page carries, and
+         the same look. It shipped with this page (#527) without these rules, so
+         the three contact icons drew at the full page width. */
+      footer {
+        padding: 30px 0;
+        text-align: center;
+        font-size: 14px;
+        background: var(--ink);
+        color: #e8d7de;
+      }
+      footer a {
+        color: #fff;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      footer .tag {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #c7a9b5;
+      }
+      .foot-icons {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 16px;
+        margin-top: 18px;
+      }
+      .foot-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        color: #fff;
+        text-decoration: none;
+        box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+        transition:
+          transform 0.16s ease,
+          box-shadow 0.2s ease,
+          filter 0.2s ease;
+      }
+      .foot-icon:hover {
+        transform: translateY(-2px);
+        filter: brightness(1.06);
+        box-shadow: 0 10px 22px rgba(0, 0, 0, 0.34);
+      }
+      .foot-icon:focus-visible {
+        outline: 3px solid #fff;
+        outline-offset: 3px;
+      }
+      .foot-icon svg {
+        width: 24px;
+        height: 24px;
+        display: block;
+      }
+      .foot-icon.fi-wa {
+        background: #25d366;
+      }
+      .foot-icon.fi-call {
+        background: linear-gradient(140deg, var(--sage), var(--sage-deep));
+      }
+      .foot-icon.fi-ig {
+        background: radial-gradient(
+          circle at 30% 107%,
+          #fdf497 0%,
+          #fdf497 5%,
+          #fd5949 45%,
+          #d6249f 60%,
+          #285aeb 90%
+        );
+      }
+      .foot-contact {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 22px;
+        justify-content: center;
+        margin-top: 14px;
+        font-size: 14.5px;
+      }
+      .foot-contact a {
+        color: #fff;
+        text-decoration: none;
+        font-weight: 700;
+      }
+      .foot-contact a:hover {
+        text-decoration: underline;
+      }
+      .foot-contact .fc-label {
+        color: #c7a9b5;
+        font-weight: 600;
+      }
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
     </style>
   </head>
   <body>
