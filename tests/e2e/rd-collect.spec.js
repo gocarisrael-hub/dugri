@@ -115,3 +115,48 @@ for (const width of [320, 360, 390, 1440]) {
     await noSideScroll(page);
   });
 }
+
+// The mode-ON look for what word-bar.spec.js pins in the live (mode-off) look: the progress bar is a paper pill track
+// with a pink fill, the leaflet pink before the minimum and the logo pink after it.
+test('the word bar is a paper track with a pink fill, in both stages', async ({
+  page,
+  request,
+}) => {
+  const bar = (sel) =>
+    page.locator(sel).evaluate((el) => {
+      const fill = getComputedStyle(el);
+      const track = getComputedStyle(el.parentElement);
+      return {
+        fill: fill.backgroundColor,
+        image: fill.backgroundImage,
+        track: track.backgroundColor,
+      };
+    });
+
+  const { id, k } = await makeCollection(request);
+  await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await addWord(page, 'שקשוקה');
+  await expect(page.locator('#stage1')).toBeVisible();
+  const one = await bar('#barFill1');
+  expect(one.fill).toBe('rgb(255, 122, 169)');
+  expect(one.image).toBe('none');
+  expect(one.track).toBe('rgb(255, 255, 255)');
+
+  // past the 70-word minimum, the second stage. The free word quota would cap a fresh collection at 20, so it is lifted
+  // on this collection only (as word-bar.spec.js does).
+  const lifted = await request.patch(`/api/admin/collections/${id}?key=dugri-admin`, {
+    data: { free_limit_applies: false },
+  });
+  expect(lifted.ok()).toBe(true);
+  const words = Array.from({ length: 80 }, (_, i) => 'מילה' + (i + 1));
+  const res = await request.post(`/api/collections/${id}/words`, {
+    data: { words, added_by: 'rd' },
+  });
+  expect(res.ok()).toBe(true);
+  await page.reload();
+  await expect(page.locator('#stage2')).toBeVisible();
+  const two = await bar('#barFill2');
+  expect(two.fill).toBe('rgb(234, 71, 149)');
+  expect(two.image).toBe('none');
+  expect(two.track).toBe('rgb(255, 255, 255)');
+});
