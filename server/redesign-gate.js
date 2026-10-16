@@ -9,10 +9,14 @@
 //     that follows a ?rd=1 link can never index the variant.
 //
 // In the mode, every served page except the admin pages gets class="rd" on
-// <html>, the stylesheet /css/redesign.css and the script /js/redesign-shell.js
-// at the end of <head> (each only once it exists in site/, so the gate can ship
-// before the files do), and the home page is new.html's content, served at the
-// same URL. With the setting off and no cookie nothing here touches a byte.
+// <html>, and at the end of <head>: the stylesheet /css/redesign.css (the shell),
+// /css/rd/chrome.css (the shared header and consent chip), /css/rd/<page>.css
+// (that one page's restyle, named after the file served: how.html -> how.css),
+// and the script /js/redesign-shell.js. Each is linked only once it exists in
+// site/, so the gate ships before the files do and a page with no restyle of its
+// own simply gets none. Every rule under css/rd/ is scoped to html.rd
+// (tests/unit/rd-css-scope.test.js), so a page restyle never reaches the site
+// out of the mode. The home page is new.html's content, served at the same URL. With the setting off and no cookie nothing here touches a byte.
 
 const path = require('path');
 
@@ -21,6 +25,7 @@ const SET_COOKIE = COOKIE + '=1; Path=/; SameSite=Lax';
 const CLEAR_COOKIE = COOKIE + '=; Path=/; Max-Age=0; SameSite=Lax';
 const CSS_URL = '/css/redesign.css';
 const JS_URL = '/js/redesign-shell.js';
+const CHROME_CSS_URL = '/css/rd/chrome.css';
 const HOME_FILE = 'index.html';
 const NEW_HOME_FILE = 'new.html';
 
@@ -80,15 +85,27 @@ function addHtmlClass(html) {
   });
 }
 
-// class="rd" on <html>, then the stylesheet and the shell script as the LAST
+// The restyle of one page: /css/rd/<name>.css for site/<name>.html. Null for a
+// name that is not a plain page name, so a url can never be built from one.
+function pageCssUrl(file) {
+  const name = path.basename(String(file || ''), '.html');
+  return /^[a-z0-9][a-z0-9-]*$/i.test(name) && name !== 'chrome' ? `/css/rd/${name}.css` : null;
+}
+
+// class="rd" on <html>, then the stylesheets and the shell script as the LAST
 // things in <head>, after the page's own stylesheets so the redesign wins the
-// cascade. The urls are the bare logical ones; the caller runs the asset-hashing
-// tag rewrite afterwards, which swaps them for their hashed names. `has(url)`
-// says whether a file exists to link to.
-function apply(html, has) {
+// cascade: the shell, the shared chrome, the page's own restyle (most specific
+// last), then the script. The urls are the bare logical ones; the caller runs
+// the asset-hashing tag rewrite afterwards, which swaps them for their hashed
+// names. `has(url)` says whether a file exists to link to; `file` is the page
+// being served.
+function apply(html, has, file) {
   let out = addHtmlClass(html);
   const tags = [];
-  if (has(CSS_URL)) tags.push(`<link rel="stylesheet" href="${CSS_URL}" />`);
+  const pageCss = pageCssUrl(file);
+  for (const url of [CSS_URL, CHROME_CSS_URL, pageCss]) {
+    if (url && has(url)) tags.push(`<link rel="stylesheet" href="${url}" />`);
+  }
   if (has(JS_URL)) tags.push(`<script src="${JS_URL}" defer></script>`);
   if (tags.length) {
     const i = out.search(/<\/head>/i);
@@ -103,6 +120,8 @@ module.exports = {
   CLEAR_COOKIE,
   CSS_URL,
   JS_URL,
+  CHROME_CSS_URL,
+  pageCssUrl,
   readCookie,
   isAdminFile,
   forRequest,

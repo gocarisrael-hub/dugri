@@ -5680,8 +5680,10 @@ app.get('/llms.txt', (req, res) => {
 
 // REDESIGN MODE (server/redesign-gate.js): the setting redesign.enabled turns it
 // on for everyone, the rd=1 cookie (?rd=1 / ?rd=0) previews it in one browser.
-// In the mode a page gets class="rd", redesign.css and redesign-shell.js, and the
-// home page is new.html's content at the same URL. Admin pages are left alone.
+// In the mode a page gets class="rd", redesign.css, css/rd/chrome.css, its own
+// css/rd/<page>.css (named after the file actually served, so "/" takes
+// new.html's) and redesign-shell.js, and the home page is new.html's content at
+// the same URL. Admin pages are left alone.
 // Out of the mode, this returns the page exactly as before.
 const redesignGate = require('./redesign-gate');
 function renderPage(req, res, file, fallback) {
@@ -5698,7 +5700,7 @@ function renderPage(req, res, file, fallback) {
       noindex: gated && rd.previewOnly,
     })
   );
-  if (gated) html = redesignGate.apply(html, (url) => moduleAssets.forward.has(url));
+  if (gated) html = redesignGate.apply(html, (url) => moduleAssets.forward.has(url), source);
   // Two injections, both cheap string work on an already-in-memory page: the
   // module import map, and the owner's Meta pixel when she has set one. The
   // pixel reads its id per request rather than at boot so pasting a new one in
