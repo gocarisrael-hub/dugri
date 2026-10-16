@@ -98,8 +98,8 @@ describe('the shell script', () => {
 
   beforeEach(() => window.history.replaceState(null, '', '/pickup.html'));
 
-  it('puts the shared header and footer in place of the page’s own, which stay hidden in the DOM', () => {
-    page(OLD);
+  it('puts the shared header (and, when asked, footer) in place of the page’s own, which stay hidden in the DOM', () => {
+    page(OLD, { css: '--rd-footer: replace;' });
     run();
     const hdr = document.querySelector('.rd-hdr');
     expect(hdr.nextElementSibling.id).toBe('old');
@@ -134,7 +134,7 @@ describe('the shell script', () => {
 
   it('a page names its own header and footer when they are not header.hdr and <footer>', () => {
     page('<div id="bar">b</div><main></main><div id="foot">f</div>', {
-      css: "--rd-header-replace: '#bar'; --rd-footer-replace: '#foot';",
+      css: "--rd-header-replace: '#bar'; --rd-footer: replace; --rd-footer-replace: '#foot';",
     });
     run();
     expect(document.getElementById('bar').hasAttribute('data-rd-replaced')).toBe(true);
@@ -157,7 +157,10 @@ describe('the shell script', () => {
     expect(later.classList.contains('rd-btn')).toBe(true);
   });
 
-  it('a page without the shared header keeps its own footer', () => {
+  it('a page keeps its own footer unless it asks for the shared one: it holds the owner’s contacts', () => {
+    page(OLD);
+    run();
+    expect(document.querySelector('.rd-hdr')).not.toBe(null);
     page('<main></main><footer id="oldF">f</footer>');
     run();
     expect(document.querySelector('.rd-ftr')).toBe(null);

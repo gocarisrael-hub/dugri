@@ -5,7 +5,7 @@
 // custom properties on html.rd (read here once, at start):
 //   --rd-header: replace | top | none        the shared header in place of the page's own (default: replace, when there is one)
 //   --rd-header-replace: '<selector>'        which element is the page's own header (default 'header.hdr')
-//   --rd-footer: replace | end | none        the shared footer (default: replace, when the header was replaced)
+//   --rd-footer: replace | end | none        the shared footer (default none: a page's own footer holds the owner's contacts)
 //   --rd-footer-replace: '<selector>'        which element is the page's own footer (default 'body > footer')
 //   --rd-as-<component>: '<selectors>'       the page's own elements that take a shared component's look, e.g.
 //                                            --rd-as-btn: '.cta, .next'; the shell adds the class, now and as the page adds more
@@ -222,7 +222,6 @@
   };
 
   var body = doc.body;
-  var placed = false;
   var hMode = conf('--rd-header', 'replace');
   if (hMode !== 'none') {
     var old = pick(conf('--rd-header-replace', 'header.hdr'));
@@ -236,10 +235,9 @@
         root.className += ' rd-hdr-swapped';
       } else body.insertBefore(hdr, body.firstChild);
       mountMenu(hdr.querySelector('#rdMenuBtn'));
-      placed = true;
     }
   }
-  var fMode = conf('--rd-footer', placed ? 'replace' : 'none');
+  var fMode = conf('--rd-footer', 'none');
   if (fMode !== 'none') {
     var oldF = pick(conf('--rd-footer-replace', 'body > footer'));
     if (fMode === 'end' || oldF) {
