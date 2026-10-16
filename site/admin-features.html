@@ -257,11 +257,11 @@
         <a data-page="admin-ads.html">פרסום ואנליטיקס</a>
       </nav>
       <header>
-        <p class="kicker">Internal · פיצ׳רים בטופס ההזמנה</p>
+        <p class="kicker">Internal · העיצוב החדש ופיצ׳רים בטופס ההזמנה</p>
         <h1>פיצ׳רים</h1>
         <p>
-          הדלקה/כיבוי של יכולות בטופס ההזמנה. פיצ׳ר כבוי מוסתר לגמרי מהלקוח/ה — הטופס ממשיך לעבוד עם
-          ברירת המחדל. כל שינוי נשמר בשרת ומשפיע מיד (רענון הטופס).
+          הדלקה/כיבוי של העיצוב החדש לכל האתר ושל יכולות בטופס ההזמנה. פיצ׳ר כבוי מוסתר לגמרי
+          מהלקוח/ה — הטופס ממשיך לעבוד עם ברירת המחדל. כל שינוי נשמר בשרת ומשפיע מיד (רענון הדף).
         </p>
       </header>
 
@@ -271,6 +271,7 @@
       <div id="loadErr" class="msg" hidden></div>
 
       <div id="app" hidden>
+        <div id="siteCards"></div>
         <div id="flagCards"></div>
       </div>
 
@@ -319,20 +320,25 @@
         return (section + '-' + k).replace(/[^a-z0-9]+/gi, '-');
       }
 
-      // Friendly Hebrew names for each flag. Unknown keys (a flag added in code
-      // later) fall back to the raw id, so the list stays fully dynamic.
+      // Friendly Hebrew names for each flag, looked up as "section.key" first and
+      // then as the bare key (the features section). Unknown keys (a flag added in
+      // code later) fall back to the raw id, so the list stays fully dynamic.
       const LABELS = {
+        'redesign.enabled': 'עיצוב חדש לכל האתר',
         color_picking: 'בחירת צבע',
         font_choice: 'בחירת גופן',
         name_preview: 'תצוגה מקדימה עם שם',
         deck_proof: 'הגהת החפיסה ללקוחה',
       };
-      function labelFor(k) {
-        return LABELS[k] || k;
+      const lookup = (map, section, k) => map[section + '.' + k] || map[k];
+      function labelFor(section, k) {
+        return lookup(LABELS, section, k) || k;
       }
       // A per-flag note. font_choice depends on name_preview (the picker is nested
       // in the preview panel), so it only takes effect when name-preview is on too.
       const NOTES = {
+        'redesign.enabled':
+          'כשמופעל, כל המבקרים רואים את העיצוב החדש בכל דפי האתר, ודף הבית מתחלף בדף הבית החדש. לראות אותו רק בדפדפן שלך בלי להדליק לכולם: פתחי דף כלשהו באתר עם ?rd=1 בסוף הכתובת (ו-?rd=0 כדי לחזור). דפי הניהול לא משתנים.',
         font_choice: 'דורש שגם "תצוגה מקדימה עם שם" תהיה מופעלת — אחרת בחירת הגופן לא תוצג.',
         deck_proof:
           'מופעל כברירת מחדל. כשהוא מכובה הלקוחה כבר לא רואה את הקלפים לפני הדפוס — החפיסה מיוצרת בדיוק כמו קודם, ואת עדיין רואה את ההגהה מתוך עמוד ההזמנה.',
@@ -341,40 +347,49 @@
       // INSIDE the order form; the proof is a page she opens after it, so it says
       // where it actually shows.
       const CAPTIONS = {
+        'redesign.enabled': 'מוצג בכל דפי האתר',
         deck_proof: 'מוצג ללקוחה אחרי ההפקה',
       };
-      function captionFor(k) {
-        return CAPTIONS[k] || 'מוצג בטופס ההזמנה';
+      function captionFor(section, k) {
+        return lookup(CAPTIONS, section, k) || 'מוצג בטופס ההזמנה';
       }
 
       let state = null; // last full settings.all() response
 
-      // --- one toggle card per feature flag ------------------------------------
-      function flagCardHtml(k, eff) {
-        const id = slug('features', k);
+      // --- one toggle card per flag -------------------------------------------
+      function flagCardHtml(section, k, eff) {
+        const id = slug(section, k);
         const on = !!eff;
-        const note = NOTES[k] ? '<p class="hint">' + esc(NOTES[k]) + '</p>' : '';
+        const noteText = lookup(NOTES, section, k);
+        const note = noteText ? '<p class="hint">' + esc(noteText) + '</p>' : '';
         return (
           '<div class="card' +
           (on ? '' : ' off') +
-          '" data-section="features" data-key="' +
+          '" data-section="' +
+          esc(section) +
+          '" data-key="' +
           esc(k) +
           '" data-kind="flag" id="card-' +
           id +
           '">' +
           '<div class="card-head"><h3 class="card-title">' +
-          esc(labelFor(k)) +
-          '</h3><span class="card-id">features.' +
+          esc(labelFor(section, k)) +
+          '</h3><span class="card-id">' +
+          esc(section) +
+          '.' +
           esc(k) +
           '</span></div>' +
-          '<label class="switch"><input type="checkbox" data-section="features" data-key="' +
+          '<label class="switch"><input type="checkbox" data-section="' +
+          esc(section) +
+          '" data-key="' +
           esc(k) +
           '" data-kind="flag" data-testid="flag-' +
-          esc(k) +
+          // The features keep their bare test ids; another section is prefixed.
+          esc(section === 'features' ? k : section + '-' + k) +
           '"' +
           (on ? ' checked' : '') +
           ' /> <span>' +
-          esc(captionFor(k)) +
+          esc(captionFor(section, k)) +
           '</span></label>' +
           note +
           '<div class="actions">' +
@@ -387,8 +402,12 @@
 
       function render() {
         const { registry, effective } = state;
+        // The site-wide switch first: it changes every page, not one form field.
+        qs('siteCards').innerHTML = Object.keys(registry.redesign || {})
+          .map((k) => flagCardHtml('redesign', k, effective.redesign[k]))
+          .join('');
         qs('flagCards').innerHTML = Object.keys(registry.features)
-          .map((k) => flagCardHtml(k, effective.features[k]))
+          .map((k) => flagCardHtml('features', k, effective.features[k]))
           .join('');
       }
 
@@ -409,7 +428,7 @@
       function applyEffective(section, k, effective) {
         state.effective[section][k] = effective;
         const card = qs('card-' + slug(section, k));
-        card.outerHTML = flagCardHtml(k, effective);
+        card.outerHTML = flagCardHtml(section, k, effective);
       }
 
       async function saveCard(card) {

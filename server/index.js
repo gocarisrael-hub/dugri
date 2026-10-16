@@ -5642,8 +5642,11 @@ function seoLive() {
 }
 // Off production, the header form of noindex too, so a crawler that only reads
 // headers is told as well.
-function seoHeadFor(req, res, html, file, fallback) {
-  const indexable = seo.isIndexableHost(req.hostname);
+// A redesign PREVIEW (the rd=1 cookie with the setting off) is never indexable,
+// on any host: it is one browser's view, and a crawler that followed a ?rd=1
+// link must not keep it.
+function seoHeadFor(req, res, html, file, fallback, { noindex = false } = {}) {
+  const indexable = !noindex && seo.isIndexableHost(req.hostname);
   if (!indexable) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   return seo.headTags({
     file: file ? path.basename(file) : 'index.html',
@@ -5675,29 +5678,50 @@ app.get('/llms.txt', (req, res) => {
   res.type('text/plain; charset=utf-8').send(seo.llmsTxt(seoLive()));
 });
 
+// REDESIGN MODE (server/redesign-gate.js): the setting redesign.enabled turns it
+// on for everyone, the rd=1 cookie (?rd=1 / ?rd=0) previews it in one browser.
+// In the mode a page gets class="rd", redesign.css and redesign-shell.js, and the
+// home page is new.html's content at the same URL. Admin pages are left alone.
+// Out of the mode, this returns the page exactly as before.
+const redesignGate = require('./redesign-gate');
+function renderPage(req, res, file, fallback) {
+  const rd = redesignGate.forRequest(req, { enabled: settings.get('redesign', 'enabled') });
+  if (rd.setCookie) res.append('Set-Cookie', rd.setCookie);
+  const gated = rd.active && !redesignGate.isAdminFile(file);
+  const source = (gated && redesignGate.homeSwap(file, SITE_DIR, fs)) || file;
+  let html = fs.readFileSync(source, 'utf8');
+  if (source !== file && rd.live) html = redesignGate.dropRobotsMeta(html);
+  // The SEO tags are those of the page ASKED for: the swapped home is "/".
+  html = seo.inject(
+    html,
+    seoHeadFor(req, res, html, fallback ? null : file, fallback, {
+      noindex: gated && rd.previewOnly,
+    })
+  );
+  if (gated) html = redesignGate.apply(html, (url) => moduleAssets.forward.has(url));
+  // Two injections, both cheap string work on an already-in-memory page: the
+  // module import map, and the owner's Meta pixel when she has set one. The
+  // pixel reads its id per request rather than at boot so pasting a new one in
+  // the admin takes effect on the next page load, with no restart.
+  return metaPixel.inject(
+    moduleAssets.rewriteTags(moduleAssets.inject(html)),
+    settings.get('analytics', 'meta_pixel_id')
+  );
+}
+
 app.use((req, res, next) => {
   if (req.method !== 'GET' && req.method !== 'HEAD') return next();
   const file = resolveHtmlFile(req.path);
   if (!file) return next();
   let html;
   try {
-    html = fs.readFileSync(file, 'utf8');
+    html = renderPage(req, res, file, false);
   } catch {
     return next();
   }
-  html = seo.inject(html, seoHeadFor(req, res, html, file, false));
   res.setHeader('Cache-Control', 'no-cache');
   res.type('html');
-  // Two injections, both cheap string work on an already-in-memory page: the
-  // module import map, and the owner's Meta pixel when she has set one. The
-  // pixel reads its id per request rather than at boot so pasting a new one in
-  // the admin takes effect on the next page load, with no restart.
-  res.send(
-    metaPixel.inject(
-      moduleAssets.rewriteTags(moduleAssets.inject(html)),
-      settings.get('analytics', 'meta_pixel_id')
-    )
-  );
+  res.send(html);
 });
 
 // Static site (so /collect resolves to collect.html, etc.). HTML is served
@@ -5733,20 +5757,15 @@ app.use(
 app.get('*', (req, res) => {
   if (path.extname(req.path)) return res.status(404).type('txt').send('Not found');
   res.setHeader('Cache-Control', 'no-cache');
-  // Inject the import map here too, so the SPA fallback carries hashed module urls
-  // just like a directly-served page.
-  const raw = fs.readFileSync(path.join(SITE_DIR, 'index.html'), 'utf8');
-  const html = seo.inject(raw, seoHeadFor(req, res, raw, null, true));
+  // The same rendering as a directly-served page: the import map, so the SPA
+  // fallback carries hashed module urls; the pixel, because these extension-less
+  // paths are exactly the ones an ad links to (/sale, a vanity path in a bio, a
+  // mistyped link), so a fallback with no pixel would miss precisely the traffic
+  // it is there for; and the redesign gate, so an ad's vanity path shows the same
+  // home page as "/".
+  const html = renderPage(req, res, path.join(SITE_DIR, 'index.html'), true);
   res.type('html');
-  // …and the pixel, for the same reason. These extension-less paths are exactly
-  // the ones an ad links to (/sale, a vanity path in a bio, a mistyped link), so
-  // a fallback with no pixel would miss precisely the traffic it is there for.
-  res.send(
-    metaPixel.inject(
-      moduleAssets.rewriteTags(moduleAssets.inject(html)),
-      settings.get('analytics', 'meta_pixel_id')
-    )
-  );
+  res.send(html);
 });
 
 // An over-sized upload is rejected by body-parser with a 413 (entity.too.large)

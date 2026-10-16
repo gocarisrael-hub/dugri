@@ -61,6 +61,26 @@ test.describe('admin feature flags editor', () => {
     await expect(page.locator('#card-features-font-choice .hint')).toContainText('תצוגה מקדימה');
   });
 
+  // The site-wide redesign switch sits above the form flags, off by default. It
+  // is not SAVED here: turning it on would swap the home page under every other
+  // spec sharing this server. Its effect is pinned in tests/unit/redesign-gate.
+  test('shows the site-wide redesign switch first, off, with its own label', async ({ page }) => {
+    await page.goto(`/admin-features.html?key=${KEY}`);
+    const card = page.locator('#siteCards #card-redesign-enabled');
+    await expect(card).toBeVisible();
+    await expect(card.locator('.card-title')).toHaveText('עיצוב חדש לכל האתר');
+    await expect(card.locator('.card-id')).toHaveText('redesign.enabled');
+    await expect(card.locator('.hint')).toContainText('?rd=1');
+    const box = page.getByTestId('flag-redesign-enabled');
+    await expect(box).not.toBeChecked();
+    await expect(box).toHaveAttribute('data-section', 'redesign');
+    // The form flags keep their own section.
+    await expect(page.getByTestId('flag-color_picking')).toHaveAttribute(
+      'data-section',
+      'features'
+    );
+  });
+
   test('toggle + Save persists across a reload; Reset restores off', async ({ page }) => {
     page.on('dialog', (d) => d.accept()); // reset asks for confirmation
     await page.goto(`/admin-features.html?key=${KEY}`);
