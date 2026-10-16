@@ -1,0 +1,226 @@
+/*
+ * Dugri redesign tokens: the approved r16 direction (gate D4), named by role.
+ * Every value is copied from what redesign/directions/r16.html ships; DESIGN.md explains each one.
+ *
+ * Not linked by any page yet. It sits beside tokens.css (the live site's palette, used by 20 pages and pinned by tests)
+ * so the live pages keep their look until each one moves to the redesign; at that point this file replaces tokens.css.
+ *
+ * Fonts: the @font-face rules belong in /assets/fonts/fonts.css (self-hosted, never the Google CDN). Two rules for them:
+ *  - the heading face covers Hebrew only (unicode-range U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F), so Latin and
+ *    digits in a heading fall through to the body font;
+ *  - the body face carries size-adjust: 109.8%, so its Hebrew stands as tall as Rubik's at the same font-size.
+ *    Weights used: 400, 500, 700, 800, 900. font-synthesis stays off.
+ * Breakpoints cannot be custom properties; they are 600px (form row), 900px (desktop), max-height 760px / 700px (the tapped view).
+ */
+:root {
+  /* ---------- colour: ground and ink ---------- */
+  --color-ground: #fff1de; /* the page; every section sits on it, with no section breaks */
+  --color-ink: #000000; /* text, outlines, hard shadows, the primary button */
+  --color-paper: #ffffff; /* cards, fields, sheets, the review row */
+  --color-text-muted: #5c544b; /* review captions, editor notes (7.4:1 on paper) */
+
+  /* ---------- colour: the three brand colours (the owner's, from the printed leaflet) ---------- */
+  --color-accent-yellow: #ffd37b; /* outlined highlight words ("כל המילים עליכם!"), card frames */
+  --color-accent-sky: #a4e9ff; /* the first hero panel, outlined words in the pink panel */
+  --color-accent-pink: #ff7aa9; /* the second hero panel, the wave lines, the menu icon's middle line, the catch-line offset */
+  --color-brand-pink: #ea4795; /* the logo's pink: required-field asterisk, sparkles, illustration accents */
+
+  /* ---------- colour: fields and surfaces ---------- */
+  --color-field: #e9f8fd; /* the soft field between the two waves, behind the reviews (sky lifted toward white) */
+  --color-panel-default: #9ce4fc; /* the designs panel before the strip paints it (top) */
+  --color-panel-default-mid: #d8f4fe; /* … and at 48% */
+  --color-tag: #fdf2d4; /* the small tag on a review card */
+  --color-card-hot: #ffe9f0; /* the one highlighted review card */
+  --color-tag-hot: #c8246a; /* its tag (white text, 5.4:1) */
+  --color-tape: rgba(244, 239, 230, 0.82); /* the tape on the story photos */
+  --color-scrim: rgba(0, 0, 0, 0.38); /* behind the review sheet */
+  --color-scrim-menu: rgba(0, 0, 0, 0.32); /* behind the menu */
+
+  /* ---------- colour: functional ---------- */
+  --color-error: #b3002d; /* field errors and the invalid border (6.4:1 on the ground, 7.1:1 on paper) */
+  --color-whatsapp: #25d366; /* the floating WhatsApp button only */
+
+  /* ---------- colour: each section title's offset (ink text, offset .04em in this colour) ---------- */
+  --title-offset-hero: #ff7aa9; /* on the ground; also the FAQ page's one title */
+  --title-offset-designs: #5fd0f5; /* deepened sky: #a4e9ff vanishes on the sky-tinted panel */
+  --title-offset-story: #f7b32b; /* deepened yellow: #ffd37b is too faint on the ground */
+  --title-offset-recs: #ea4795; /* the logo pink, on the sky field */
+  --title-offset-biz: #a4e9ff; /* sky, on the ground */
+
+  /* ---------- colour: per design (base = sampled from its real card; flood = the tapped view; panel = the strip's gradient) ----------
+     flood: base lifted 62% toward white (toward the ground when the base is near-grey). panel: base lifted until its luminance
+     reaches .42 (black text about 9:1), then 62% further at 48%, then the ground at the bottom. Ink on every flood is 10:1 or more. */
+  --design-paris: #fc789c;
+  --design-paris-flood: #feccd9;
+  --design-paris-panel: #fc8cab;
+  --design-paris-panel-mid: #fed3df;
+  --design-california: #9ce4fc;
+  --design-california-flood: #d9f5fe;
+  --design-california-panel: #a8e7fc;
+  --design-california-panel-mid: #def6fe;
+  --design-oasis: #f07848;
+  --design-oasis-flood: #f9ccb9;
+  --design-oasis-panel: #f49874;
+  --design-oasis-panel-mid: #fbd8ca;
+  --design-santorini: #0048a8;
+  --design-santorini-flood: #9eb9de;
+  --design-santorini-panel: #91b0da;
+  --design-santorini-panel-mid: #d5e1f1;
+  --design-dani: #f5d98f;
+  --design-dani-flood: #fbf1d4;
+  --design-dani-panel: #f6de9c;
+  --design-dani-panel-mid: #fcf2da;
+  --design-tokyo: #b03a3a;
+  --design-tokyo-flood: #e1b4b4;
+  --design-tokyo-panel: #dba4a4;
+  --design-tokyo-panel-mid: #f1dddd; /* the koi red, so a pastel red and not grey */
+  --design-seychelles: #90d8e4;
+  --design-seychelles-flood: #d5f0f5;
+  --design-seychelles-panel: #9ddde7;
+  --design-seychelles-panel-mid: #daf2f6;
+  --design-haaland: #2a52be;
+  --design-haaland-flood: #aebde6;
+  --design-haaland-panel: #9dafe1;
+  --design-haaland-panel-mid: #dae1f4;
+  --design-tarifa: #3d6b2c;
+  --design-tarifa-flood: #b5c7af;
+  --design-tarifa-panel: #a0b698;
+  --design-tarifa-panel-mid: #dbe3d8;
+  --design-brooklyn: #1878fc;
+  --design-brooklyn-flood: #a7ccfe;
+  --design-brooklyn-panel: #79b1fd;
+  --design-brooklyn-panel-mid: #cce1fe;
+
+  /* ---------- type ---------- */
+  --font-heading:
+    'Gveret Levin', 'M PLUS Rounded 1c', system-ui, sans-serif; /* one real weight, 400 */
+  --font-body: 'M PLUS Rounded 1c', system-ui, sans-serif;
+  --weight-heading: 400;
+  --weight-body: 400;
+  --weight-panel: 500; /* the sky panel, links under buttons, logo captions */
+  --weight-label: 700; /* field labels, tags, design names */
+  --weight-strong: 800; /* buttons, card titles, the pink panel, menu links, FAQ questions */
+  --weight-heavy: 900; /* the price in the tapped view; the ✕ and + glyphs */
+
+  --text-display: clamp(38px, 11vw, 76px); /* the hero headline, line-height .98 */
+  --text-section: clamp(32px, 9vw, 58px); /* section titles, line-height 1 */
+  --text-catch: clamp(32px, 8.6vw, 54px); /* "כל המילים עליכם!", line-height 1.05 */
+  --text-view-title: clamp(
+    32px,
+    8.8vw,
+    52px
+  ); /* the tapped design's name (32px under 760px tall) */
+  --text-price: clamp(28px, 7.4vw, 38px); /* the price in the tapped view */
+  --text-signature: 30px; /* the handwritten "הדר ועלמה" */
+  --text-menu: 24px;
+  --text-q: 21px; /* "ומה הקאץ׳?" */
+  --text-panel-loud: 20px; /* the pink panel, line-height 1.5 */
+  --text-card-title: 18px; /* a review card's quote; 20px from 900px */
+  --text-button-lg: 18px; /* the designs button */
+  --text-body: 17px; /* running text, line-height 1.5; panels 1.55 */
+  --text-button: 16px; /* also every input, so iOS never zooms */
+  --text-label: 15px;
+  --text-small: 14px; /* captions, the header button, the delivery note */
+  --text-micro: 13px; /* hints, stickers, field errors */
+  --leading-body: 1.5;
+  --leading-panel: 1.55;
+  --leading-heading: 1;
+  --title-offset: 0.04em; /* text-shadow: var(--title-offset) var(--title-offset) 0 <colour> */
+  --track-display: -0.02em;
+  --track-heading: -0.01em;
+  --track-button: 0.02em;
+  --measure-body: 40ch;
+  --measure-lede: 34ch;
+
+  /* ---------- space and layout ---------- */
+  --gutter: 16px; /* the side gutter at every width */
+  --column: 1040px; /* the content column from 900px: padding-inline max(16px, 50vw - 520px) */
+  --section-pad-top: 44px;
+  --section-pad-bottom: 52px;
+  --space-2xs: 4px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 22px;
+  --space-xl: 26px;
+  --space-2xl: 32px;
+  --space-3xl: 44px;
+  --space-4xl: 64px; /* the hero's column gap on desktop */
+  --pad-button: 16px 26px;
+  --pad-button-lg: 19px 30px;
+  --pad-button-sm: 12px 18px;
+  --pad-panel: 20px 24px 22px;
+  --pad-card: 18px;
+  --pad-field: 0 22px;
+  --field-height: 50px;
+  --tap-min: 44px;
+  --card-w: min(32vw, 150px); /* the hero deck's card; min(210px, 19vw) from 900px */
+  --strip-card-w: min(58vw, 250px); /* a design in the strip; 260px from 900px */
+  --review-card-w: 272px; /* 360px from 900px */
+  --wave-height: clamp(44px, 8vw, 96px);
+
+  /* ---------- shape ---------- */
+  --radius-pill: 999px; /* buttons, fields, stickers */
+  --radius-card: 6% / 4.26%; /* every printed card: the preview's card shape */
+  --radius-review: 16px;
+  --radius-panel: 26px; /* the hero's sky and pink panels */
+  --radius-feature: 40px; /* the designs panel, top corners only; 80px from 900px */
+  --radius-feature-lg: 80px;
+  --radius-sheet: 22px; /* a bottom sheet's top corners */
+  --radius-box: 14px; /* FAQ items, the form's thank-you, sheet images */
+  --radius-board: 8px; /* the game board in the tapped view */
+  --radius-tag: 3px;
+  --border-hair: 1px; /* the review card */
+  --border-thin: 1.5px; /* cards, fields, stickers, the menu edge, the WhatsApp ring */
+  --border-invalid: 2px;
+  --border-bold: 2.5px; /* boards, story prints, FAQ items, round ✕ buttons */
+  --border-heavy: 3px; /* the review sheet */
+  --stroke-wave: 2px; /* non-scaling */
+  --stroke-arrow: 3.35; /* the drawn arrow, matched to the 800 button type (SVG units on a 24 box) */
+  --stroke-illo: 2.2; /* illustration outlines (SVG units on a 120 box) */
+
+  /* ---------- elevation: hard ink offsets, never blur ---------- */
+  --shadow: 4px 4px 0 var(--color-ink); /* cards, boards, prints */
+  --shadow-sm: 3px 3px 0 var(--color-ink); /* FAQ items, the thank-you, the WhatsApp button, round ✕ */
+  --shadow-review: 6px 7px 0 var(--color-ink);
+  --shadow-review-hover: 8px 9px 0 var(--color-ink);
+  --shadow-review-press: 3px 4px 0 var(--color-ink);
+
+  /* ---------- focus ---------- */
+  --focus-ring: 3px solid var(--color-ink);
+  --focus-offset: 4px; /* 2px on fields, 10px around the deck */
+
+  /* ---------- motion ---------- */
+  --ease-pop: cubic-bezier(0.3, 1.4, 0.5, 1); /* a press, a hover lift */
+  --ease-flip: cubic-bezier(0.3, 1.2, 0.45, 1); /* a card turning over */
+  --ease-morph: cubic-bezier(0.3, 1.35, 0.45, 1); /* the menu icon to ✕ */
+  --ease-drawer: cubic-bezier(0.2, 0.8, 0.2, 1); /* the menu sheet */
+  --ease-sheet: cubic-bezier(0.2, 0.9, 0.3, 1.08); /* the review sheet rising */
+  --ease-reveal: cubic-bezier(
+    0.6,
+    0,
+    0.25,
+    1
+  ); /* the tapped view's colour flood (a growing circle) */
+  --ease-land: cubic-bezier(0.3, 1.25, 0.45, 1); /* the board dropping in */
+  --ease-fly: cubic-bezier(0.3, 0.9, 0.3, 1.05); /* the front card flying from the strip */
+  --ease-exit: cubic-bezier(0.5, 0, 0.7, 0.4); /* anything leaving */
+  --dur-press: 150ms;
+  --dur-fade: 200ms;
+  --dur-drawer: 280ms;
+  --dur-morph: 340ms;
+  --dur-sheet-in: 360ms;
+  --dur-sheet-out: 240ms;
+  --dur-flip: 500ms;
+  --dur-flood-in: 520ms;
+  --dur-board-in: 560ms; /* delay 120ms */
+  --dur-card-in: 640ms; /* delay 60ms; the back follows at 520ms for 480ms */
+  --dur-flood-out: 480ms; /* after the tableau leaves in 260ms, delay 120ms */
+  --marquee-speed: 30px; /* per second, toward the reading direction */
+  --marquee-resume: 1.8s; /* after a finger lifts */
+
+  /* ---------- layers ---------- */
+  --z-illo: 1;
+  --z-fab: 800;
+  --z-flood: 900;
+}
