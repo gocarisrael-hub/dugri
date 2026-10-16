@@ -1,0 +1,421 @@
+/* options.html (the order wizard) in redesign mode. Loaded only in the mode, after redesign.css (docs/redesign-mode.md).
+   Two owners share this file, each in its own marked section: C (the wizard) first, A (pricing and checkout) last. Never edit
+   inside the other owner's section. The page-level settings (--rd-header, --rd-footer, --rd-as-*) live only in C's section;
+   A asks C to add its selectors to those lists.
+   Old Safari: physical sides only, no :has()/:is()/:where(), :focus-visible in rules of its own. */
+
+/* == C: wizard — options == */
+
+/* The wizard keeps its own top bar: the shell's "הזמינו עכשיו" has no place on the order form itself, and the wizard's
+   no-scroll layout is measured against the fixed nav (--nav-h) and the fixed Back/Next bar (--wizbar-h). */
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+  --rd-as-btn: '.wiz-modal-card .btn, .code-btn';
+  --rd-as-btn-arrow: '.wiz-bar .btn';
+  --rd-as-btn-secondary: '.wiz-back';
+}
+
+/* ---- the top bar: the shell header's look (logo, ≡ with its pink middle line) on the wizard's own fixed nav ---- */
+html.rd .nav {
+  background: var(--color-ground);
+  border-bottom: 0;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html.rd .nav-logo img {
+  height: 44px; /* inside the nav's fixed 60px (--nav-h) */
+}
+html.rd .nav-links a {
+  font-family: var(--font-body);
+  font-weight: var(--weight-label);
+  color: var(--color-ink);
+}
+html.rd .nav-links a.nav-cta {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-radius: var(--radius-pill);
+  box-shadow: none;
+}
+html.rd .nav-toggle {
+  width: var(--tap-min);
+  height: var(--tap-min);
+  border: 0;
+  background: transparent;
+}
+html.rd .nav-toggle span,
+html.rd .nav-toggle span::before,
+html.rd .nav-toggle span::after {
+  width: 22px;
+  height: 2.4px;
+  border-radius: 2px;
+  background: var(--color-ink);
+}
+html.rd .nav-toggle span {
+  background: var(--color-accent-pink);
+}
+
+/* ---- the step header: progress as a pill track with a pink fill ---- */
+html.rd .wiz-steplabel {
+  font: var(--weight-label) var(--text-small) / 1.3 var(--font-body);
+  color: var(--color-ink);
+}
+html.rd .bar {
+  height: 12px;
+  background: var(--color-paper);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+}
+html.rd .bar > i {
+  background: var(--color-accent-pink);
+  border-left: var(--border-thin) solid var(--color-ink);
+}
+
+/* ---- step titles: the heading face with its coloured offset ---- */
+html.rd .wiz-title {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading);
+  letter-spacing: var(--track-heading);
+  font-size: 34px;
+  line-height: 1.05;
+  text-shadow: var(--title-offset) var(--title-offset) 0 var(--title-offset-hero);
+}
+html.rd .wiz-sub {
+  color: var(--color-text-muted);
+}
+
+/* ---- the live preview: a card on the table ---- */
+html.rd .preview-card {
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-review);
+  box-shadow: var(--shadow);
+}
+html.rd .preview-stage {
+  background: var(--color-ground);
+  border-radius: var(--radius-box);
+}
+/* collapsed on the later steps the stage is only a reminder strip: no ground showing through */
+html.rd .preview-card.is-collapsed .preview-stage {
+  background: transparent;
+}
+html.rd .preview-chip .continue-summary {
+  background: var(--color-tag);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  color: var(--color-ink);
+}
+html.rd .preview-zoom-btn {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+}
+/* the front / back / board tabs, here and in the fullscreen view: chips, the chosen one in ink */
+html.rd .tab,
+html.rd .zoom-tab {
+  font: var(--weight-label) var(--text-label) / 1.2 var(--font-body);
+  color: var(--color-ink);
+  background: var(--color-paper);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  box-shadow: none;
+}
+html.rd .tab:hover {
+  background: var(--color-tag);
+}
+html.rd .tab[aria-selected='true'],
+html.rd .zoom-tab[aria-selected='true'] {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-color: var(--color-ink);
+  box-shadow: none;
+}
+
+/* ---- step 1: the design tiles ---- */
+html.rd .design {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform var(--dur-press) var(--ease-pop),
+    box-shadow var(--dur-press);
+}
+@media (hover: hover) {
+  html.rd .design:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow);
+  }
+}
+html.rd .design[aria-pressed='true'] {
+  background: var(--color-card-hot);
+  border-color: var(--color-ink);
+  box-shadow: var(--shadow);
+  outline: var(--border-thin) solid var(--color-ink);
+  outline-offset: 0;
+}
+html.rd .design .thumb {
+  border-radius: 8px;
+  background: var(--color-ground);
+}
+html.rd .design .dname {
+  font-family: var(--font-body);
+  font-weight: var(--weight-label);
+  color: var(--color-ink);
+}
+html.rd .code-box > summary {
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+html.rd .code-btn {
+  min-height: 0;
+  padding: 0 18px;
+}
+html.rd .code-msg.err {
+  color: var(--color-error);
+}
+
+/* ---- step 2: colour swatches, the chosen one ringed in ink ---- */
+html.rd .swatch {
+  border: var(--border-thin) solid var(--color-ink);
+}
+html.rd .swatch[aria-pressed='true'] {
+  box-shadow:
+    0 0 0 3px var(--color-ground),
+    0 0 0 5.5px var(--color-ink);
+}
+html.rd .swatch .cname {
+  font-family: var(--font-body);
+  color: var(--color-ink);
+}
+
+/* ---- fields: the shell's field look (pill inputs, ink outline), kept at the wizard's own heights ---- */
+html.rd .wiz-lbl {
+  font: var(--weight-label) var(--text-small) / 1.3 var(--font-body);
+  color: var(--color-ink);
+}
+html.rd .wiz-input {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  padding: 13px 20px;
+  font: var(--weight-body) var(--text-button) / 1.4 var(--font-body);
+}
+html.rd textarea.wiz-input {
+  border-radius: var(--radius-box);
+}
+html.rd .wiz-input:focus {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+html.rd .wiz-hint {
+  font-size: var(--text-micro);
+  color: var(--color-text-muted);
+}
+html.rd .custom-title-warn {
+  color: var(--color-ink);
+  background: var(--color-tag);
+  border-radius: var(--radius-tag);
+  padding: 4px 8px;
+}
+html.rd .wiz-err {
+  color: var(--color-error);
+  background: var(--color-paper);
+  border: var(--border-thin) solid var(--color-error);
+  border-radius: var(--radius-box);
+  font: var(--weight-label) var(--text-micro) / 1.4 var(--font-body);
+}
+html.rd .title-break {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-paper);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .gender-opt span {
+  font-family: var(--font-body);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+}
+html.rd .gender-opt input:checked + span {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  box-shadow: none;
+}
+
+/* the title step's font choice: chips, the chosen one in ink */
+html.rd .font-opt {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-paper);
+}
+html.rd .font-opt[aria-pressed='true'] {
+  background: var(--color-ink);
+}
+
+/* the empty preview slot on the title step */
+html.rd .preview-teaser {
+  border-color: var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-paper);
+}
+html.rd .pt-ghost {
+  border-color: var(--color-ink);
+}
+html.rd .pt-spark {
+  color: var(--color-brand-pink);
+}
+
+/* ---- the pawn step ---- */
+html.rd .pawn-count-label {
+  font-family: var(--font-body);
+  letter-spacing: 0;
+  font-weight: var(--weight-label);
+}
+html.rd .pawn-count button {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+}
+html.rd .pawn-count button[aria-pressed='true'] {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+html.rd .pawn-slot {
+  border-radius: var(--radius-box);
+}
+
+/* ---- the Back / Next bar: the ground, an ink rule, black pills ---- */
+html.rd .wiz-bar {
+  background: var(--color-ground);
+  border-top: var(--border-thin) solid var(--color-ink);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+/* the old .btn's gradient, the white press wipe and the hover shine give way to the shell's pill and its drawn arrow */
+html.rd .wiz-bar .btn,
+html.rd .wiz-modal-card .btn {
+  background: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  box-shadow: none;
+  filter: none;
+  font: var(--weight-strong) var(--text-button) / 1 var(--font-body);
+  letter-spacing: var(--track-button);
+  white-space: nowrap;
+}
+/* "צרו את המשחק" and its arrow stay on one line beside הקודם and עזרה at 360px */
+html.rd .wiz-bar .btn {
+  padding: 15px 18px;
+}
+/* under 400px the bar has no room for the arrow beside "צרו את המשחק" */
+@media (max-width: 400px) {
+  html.rd .wiz-bar .btn {
+    padding: 15px 10px;
+  }
+  html.rd .wiz-back {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+  html.rd .wiz-bar .btn.arrow::after,
+  html.rd .wiz-bar .btn.arrow:disabled::after {
+    display: none;
+  }
+}
+html.rd .wiz-bar .btn::before,
+html.rd .wiz-modal-card .btn::before,
+html.rd .wiz-modal-card .btn::after {
+  display: none;
+}
+html.rd .wiz-bar .btn::after {
+  position: static;
+  -webkit-transform: none;
+  transform: none;
+  transition: none;
+}
+@media (hover: hover) {
+  html.rd .wiz-bar .btn:hover,
+  html.rd .wiz-modal-card .btn:hover {
+    transform: none;
+    box-shadow: none;
+    filter: none;
+  }
+}
+html.rd .wiz-bar .btn:active {
+  color: var(--color-paper);
+  transform: translate(2px, 2px);
+}
+html.rd .wiz-bar .btn:disabled {
+  opacity: 0.45;
+}
+html.rd .wiz-bar .btn:disabled::after {
+  display: block;
+}
+html.rd .wiz-back {
+  font: var(--weight-strong) var(--text-button) / 1 var(--font-body);
+  color: var(--color-ink);
+  background: var(--color-paper);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .wiz-bar .wa-help--docked {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+}
+html.rd .wiz-back:hover {
+  background: var(--color-tag);
+}
+
+/* ---- the dialogs: the gender prompt, the fullscreen preview, the deck pictures ---- */
+html.rd .wiz-modal {
+  background: var(--color-scrim);
+}
+html.rd .wiz-modal-card {
+  border: var(--border-heavy) solid var(--color-ink);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-review);
+}
+html.rd .wiz-modal-msg {
+  font-family: var(--font-body);
+}
+html.rd .zoom-btn,
+html.rd .deck-view-close {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: var(--border-bold) solid var(--color-ink);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+}
+/* the fullscreen view's tab bar: a paper pill holding the chips. Centred by its left edge: the page's own
+   inset-inline-start: 50% is the RIGHT edge in RTL, so translateX(-50%) left the bar off centre, and the wider chips
+   would push it off the screen. */
+html.rd .zoom-tabs {
+  left: 50%;
+  right: auto;
+  background: var(--color-paper);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+html.rd .zoom-tab {
+  font-size: var(--text-small);
+  padding: 7px 14px;
+  border-color: transparent;
+}
+html.rd .zoom-hint {
+  font-family: var(--font-body);
+}
+
+/* == end C == */
+
+/* == A: commerce — options (pricing) == */
+/* == end A == */
