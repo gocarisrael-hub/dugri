@@ -1,0 +1,347 @@
+/* collect.html (the word collection) in redesign mode. Loaded only in the mode, after redesign.css (docs/redesign-mode.md).
+   Two owners share this file, each in its own marked section: C (the words, the design / pawns / finish tabs, sharing) first,
+   A (payment and the shipping address) last. Never edit inside the other owner's section. The page-level settings
+   (--rd-header, --rd-footer, --rd-as-*) live only in C's section; A asks C to add its selectors to those lists.
+   No --rd-as-* here on purpose: this page hides its blocks with its own .hidden class, and a shell component's display
+   would outrank it. Every rule is written against C's own ids instead.
+   Old Safari: physical sides only, no :has()/:is()/:where(), :focus-visible in rules of its own. */
+
+/* == C: word collection — collect == */
+
+/* The page keeps its own header: the logo link home and the title. The shell's header would hide the home link, which a
+   contributor uses to find the main site; the footer stays off as before. */
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+}
+
+/* ---- the header: the logo at the shell's size, the title in the heading face with its pink offset ---- */
+html.rd header .brand {
+  display: none; /* the logo above says it */
+}
+html.rd .home-link {
+  top: 12px;
+}
+html.rd .home-logo {
+  width: auto;
+  height: 44px;
+  border-radius: 0;
+}
+html.rd header {
+  padding-top: 64px;
+}
+html.rd header h1 {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading);
+  letter-spacing: var(--track-heading);
+  font-size: clamp(30px, 8vw, 44px);
+  line-height: 1.1;
+  text-wrap: balance;
+  text-shadow: var(--title-offset) var(--title-offset) 0 var(--title-offset-hero);
+}
+html.rd header .sub {
+  color: var(--color-text-muted);
+}
+
+/* ---- the owner's tab strip: the page's own underlined tabs (loud enough to find, one row down to 320px), in the body
+   face; the open one sits on the tag cream with a 3px ink rule ---- */
+html.rd .tabbar {
+  border-bottom: var(--border-thin) solid var(--color-ink);
+}
+html.rd .tabbar-btn {
+  font-family: var(--font-body);
+  font-size: var(--text-label);
+  font-weight: var(--weight-panel);
+  color: var(--color-ink);
+  border-radius: 10px 10px 0 0;
+}
+/* the rounder face runs wider than the old one: on the narrowest phones the five labels step down to stay on the screen */
+@media (max-width: 340px) {
+  html.rd .tabbar-btn {
+    font-size: 13.5px;
+  }
+}
+html.rd .tabbar-btn.on {
+  font-weight: var(--weight-strong);
+  background: var(--color-tag);
+  border-bottom-color: var(--color-ink);
+}
+
+/* ---- C's cards: paper, an ink hairline and the hard shadow ---- */
+html.rd #addCard,
+html.rd #wordsCard,
+html.rd #sharePanel,
+html.rd #helpCard,
+html.rd #designPanel,
+html.rd #pawnsPanel,
+html.rd #finishPanel,
+html.rd #ownerControls {
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-review);
+  box-shadow: var(--shadow);
+  margin: 18px 0;
+}
+html.rd #banner {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-tag);
+}
+html.rd .sec-h {
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+}
+
+/* ---- buttons in C's cards and dialogs: the shell's pills. The old press wipe (a white ::before) is switched off ---- */
+html.rd #addCard button,
+html.rd #wordsCard button,
+html.rd #sharePanel button,
+html.rd #helpCard button,
+html.rd #designPanel button,
+html.rd #pawnsPanel button,
+html.rd #finishPanel button,
+html.rd #ownerControls button,
+html.rd .close-ask-card button,
+html.rd .produce-wait-card button,
+html.rd .msg-modal-card button {
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  filter: none;
+}
+html.rd #addCard button::before,
+html.rd #wordsCard button::before,
+html.rd #sharePanel button::before,
+html.rd #helpCard button::before,
+html.rd #designPanel button::before,
+html.rd #pawnsPanel button::before,
+html.rd #finishPanel button::before,
+html.rd #ownerControls button::before,
+html.rd .close-ask-card button::before,
+html.rd .produce-wait-card button::before,
+html.rd .msg-modal-card button::before {
+  display: none;
+}
+html.rd #addCard button:active,
+html.rd #helpCard button:active,
+html.rd #designPanel button:active,
+html.rd #pawnsPanel button:active,
+html.rd #finishPanel button:active,
+html.rd #ownerControls button:active {
+  color: inherit;
+  transform: translate(2px, 2px);
+}
+/* "תנו לי רעיון" and the other soft buttons: the tag cream with an ink outline */
+html.rd button.soft {
+  background: var(--color-tag);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+}
+html.rd button.ghost {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ---- the add card: single / list / file as chips, pill inputs ---- */
+html.rd #addCard .tab {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+html.rd #addCard .tab.active {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-color: var(--color-ink);
+}
+html.rd #addCard input[type='text'],
+html.rd #helpCard input[type='text'],
+html.rd #designPanel input[type='text'],
+html.rd #pawnsPanel input[type='text'] {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  padding: 12px 18px;
+  font-size: var(--text-button);
+}
+html.rd #addCard textarea,
+html.rd #designPanel textarea {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  font-size: var(--text-button);
+}
+html.rd #addCard input[type='text']:focus,
+html.rd #addCard textarea:focus,
+html.rd #helpCard input[type='text']:focus,
+html.rd #designPanel input[type='text']:focus,
+html.rd #designPanel textarea:focus,
+html.rd #pawnsPanel input[type='text']:focus {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+html.rd .idea {
+  background: var(--color-tag);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+}
+html.rd .lock-chip {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+}
+
+/* ---- the words: progress as a pill track with a pink fill, the words as chips ---- */
+html.rd #wordsCard .bar {
+  height: 12px;
+  background: var(--color-paper);
+  border: var(--border-thin) solid var(--color-ink);
+}
+html.rd #wordsCard .bar > i {
+  background: var(--color-accent-pink);
+}
+html.rd #wordsCard .bar-stage2 > i {
+  background: var(--color-brand-pink);
+}
+html.rd .stage2-label {
+  color: var(--color-ink);
+}
+html.rd .count-pill {
+  background: var(--color-tag);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+}
+html.rd .word {
+  border: var(--border-thin) solid var(--color-ink);
+  background: var(--color-paper);
+}
+html.rd .word.held {
+  background: transparent;
+  border-style: dashed;
+}
+html.rd .word .del {
+  border: 0;
+  background: none;
+  color: var(--color-ink);
+}
+html.rd .held-block {
+  border-top-color: var(--color-ink);
+}
+
+/* ---- sharing: round icon buttons with the hard shadow ---- */
+html.rd .share-ico {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+}
+html.rd .share-ico-wa {
+  background: var(--color-whatsapp);
+  border-color: var(--color-ink);
+}
+html.rd .share-wa {
+  background: var(--color-whatsapp);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .share-copied {
+  font-family: var(--font-body);
+}
+
+/* ---- the question helper: category chips, the chosen one in ink ---- */
+html.rd #helpCard .chip {
+  border: var(--border-thin) solid var(--color-ink);
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+html.rd #helpCard .chip.active {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border-color: var(--color-ink);
+}
+html.rd .q-line input.committed {
+  background: var(--color-tag);
+}
+html.rd .howto {
+  border-top-color: var(--color-ink);
+}
+html.rd .howto summary {
+  color: var(--color-ink);
+}
+html.rd .cat {
+  background: var(--color-tag);
+  border-radius: var(--radius-box);
+}
+html.rd .cat b {
+  color: var(--color-ink);
+}
+
+/* ---- the design, pawn and finish tabs ---- */
+html.rd .prev-box {
+  background: var(--color-ground);
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-box);
+}
+html.rd .pawn-count button {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+}
+html.rd .pawn-count button[aria-pressed='true'] {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+html.rd .pawn-add {
+  border: var(--border-thin) dashed var(--color-ink);
+  color: var(--color-ink);
+}
+html.rd .pool-opt {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-paper);
+}
+html.rd .pool-opt.active {
+  background: var(--color-card-hot);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .finish-step {
+  border-bottom-color: var(--color-ink);
+}
+html.rd .sheet-err {
+  color: var(--color-error);
+}
+
+/* ---- the order link at the end: an outlined pill card ---- */
+html.rd .order-cta {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .order-cta:hover {
+  background: var(--color-tag);
+}
+
+/* ---- dialogs: close the collection, the production wait, messages; the toast ---- */
+html.rd .game-sheet,
+html.rd .msg-modal {
+  background: var(--color-scrim);
+}
+html.rd .close-ask-card,
+html.rd .produce-wait-card,
+html.rd .msg-modal-card {
+  border: var(--border-heavy) solid var(--color-ink);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-review);
+}
+html.rd .produce-wait-spin {
+  border-color: var(--color-tag);
+  border-top-color: var(--color-ink);
+}
+html.rd .toast {
+  border: var(--border-thin) solid var(--color-ink);
+  box-shadow: var(--shadow-sm);
+}
+
+/* == end C == */
+
+/* == A: commerce — collect (payment and address) == */
+/* == end A == */
