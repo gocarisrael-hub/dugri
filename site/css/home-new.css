@@ -1133,6 +1133,11 @@ footer {
     visibility 0.2s,
     bottom 0.2s;
 }
+/* the site's one-time cookie chip (js/consent.js, #cookieNotice) sits 12 px from the bottom-left corner, under this button, for its
+   ~6 seconds: the button stands just above it (the chip is ~24 px tall, plus a 10 px gap) and glides back down when it goes */
+body:has(#cookieNotice) .wa-fab {
+  bottom: max(16px, env(safe-area-inset-bottom) + 10px, 46px);
+}
 .wa-fab {
   inset-inline-end: max(16px, env(safe-area-inset-left));
   width: 56px;

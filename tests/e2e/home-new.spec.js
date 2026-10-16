@@ -272,6 +272,35 @@ test.describe('the business form', () => {
   });
 });
 
+test.describe('the cookie chip', () => {
+  test('never covers the WhatsApp button, and the button comes back down when it goes', async ({
+    page,
+  }) => {
+    await page.goto('/new.html'); // a fresh browser: the one-time chip shows
+    const chip = page.locator('#cookieNotice');
+    await expect(chip).toBeVisible();
+    const fab = page.locator('#waFab');
+    // wait for the lift's 0.2 s glide to settle
+    await expect
+      .poll(async () => (await fab.boundingBox()).y)
+      .toBeLessThan((await chip.boundingBox()).y - 8);
+    const hit = await page.evaluate(() => {
+      const at = (el) => {
+        const r = el.getBoundingClientRect();
+        return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      };
+      const fab = document.getElementById('waFab'),
+        close = document.querySelector('#cookieNotice button');
+      return { fab: !!at(fab) && !!at(fab).closest('#waFab'), close: at(close) === close };
+    });
+    expect(hit).toEqual({ fab: true, close: true });
+    const lifted = (await fab.boundingBox()).y;
+    await page.locator('#cookieNotice button').click();
+    await expect(chip).toHaveCount(0);
+    await expect.poll(async () => (await fab.boundingBox()).y).toBeGreaterThan(lifted + 20);
+  });
+});
+
 test.describe('the page', () => {
   for (const width of [360, 390, 1440]) {
     test(`never scrolls sideways at ${width} px`, async ({ page }) => {
