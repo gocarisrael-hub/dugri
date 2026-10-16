@@ -349,3 +349,160 @@ test.describe('the page', () => {
     expect(shown).toBe(0);
   });
 });
+
+test.describe('the reviews', () => {
+  test('every review is a white card with a hard shadow, its tag on a line above the quote', async ({
+    page,
+  }) => {
+    await page.goto('/new.html');
+    const cards = await page.locator('#track > button').evaluateAll((els) =>
+      els.map((e) => {
+        const cs = getComputedStyle(e);
+        const tag = e.querySelector('.tag').getBoundingClientRect();
+        const ttl = e.querySelector('.ttl').getBoundingClientRect();
+        return { bg: cs.backgroundColor, shadow: cs.boxShadow, stacked: tag.bottom <= ttl.top + 1 };
+      })
+    );
+    expect(cards.length).toBeGreaterThanOrEqual(8);
+    for (const c of cards) {
+      expect(['rgb(255, 255, 255)', 'rgb(255, 233, 240)']).toContain(c.bg); // paper, or the pink "hot" card
+      expect(c.shadow).not.toBe('none');
+      expect(c.stacked).toBe(true);
+    }
+  });
+});
+
+// The owner's Mac runs an old Safari: no WebP (so macOS 10.15 or older), no <dialog> before 15.4, no replaceChildren before 14.
+// Here a current engine is made to lack the same: every WebP comes back undecodable and the dialog API is removed.
+test.describe('in an old Safari', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      const D = window.HTMLDialogElement.prototype;
+      delete D.showModal;
+      delete D.show;
+      delete D.close;
+      delete window.Element.prototype.replaceChildren;
+    });
+    await page.route(/\.webp$/, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/webp', body: 'not a webp' })
+    );
+  });
+
+  test('every picture shows, from its JPEG or PNG twin', async ({ page }) => {
+    await page.goto('/new.html');
+    // the logos load lazily, off screen: ask for them now, so each one has had its try
+    await page
+      .locator('#track img')
+      .evaluateAll((els) => els.forEach((i) => (i.loading = 'eager')));
+    await page.waitForLoadState('networkidle');
+    const imgs = await page
+      .locator('.deck img, #strip .dz:not([aria-hidden]) img, #track img')
+      .evaluateAll((els) => els.map((i) => ({ src: i.currentSrc || i.src, w: i.naturalWidth })));
+    expect(imgs.length).toBeGreaterThan(10);
+    for (const i of imgs) {
+      expect(i.w, i.src).toBeGreaterThan(0);
+      expect(i.src).not.toMatch(/\.webp$/);
+    }
+    await openDesign(page);
+    await page.waitForLoadState('networkidle');
+    // the board is the biggest picture: give each one time to fail, swap and arrive
+    await expect
+      .poll(() =>
+        page
+          .locator('#flood img')
+          .evaluateAll((els) =>
+            els.map((i) => `${(i.currentSrc || i.src).split('/').pop()} ${i.naturalWidth > 0}`)
+          )
+      )
+      .toEqual([
+        expect.stringMatching(/^bachelorette\.jpg true$/),
+        expect.stringMatching(/^bachelorette-f1\.jpg true$/),
+        expect.stringMatching(/^bachelorette-b1\.jpg true$/),
+      ]);
+  });
+
+  test('a design, a review and the menu open and close; nothing shows while closed', async ({
+    page,
+  }) => {
+    await page.goto('/new.html');
+    expect(
+      await page.evaluate(() => document.documentElement.classList.contains('no-dialog'))
+    ).toBe(true);
+    for (const id of ['#sheet', '#flood', '#menu']) await expect(page.locator(id)).toBeHidden();
+    await openDesign(page);
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#flood')).toBeHidden();
+    await page
+      .locator('#track > button.rc')
+      .nth(2)
+      .evaluate((b) => b.click());
+    await expect(page.locator('#sheet')).toBeVisible();
+    await page.locator('#sheetX').click();
+    await expect(page.locator('#sheet')).toBeHidden();
+    await expect(page.locator('.dlg-bd')).toHaveCount(0);
+    // the dimmed page closes it too (a synthetic mouse in WebKit under load can lose a real click there; tests/unit/home-legacy.test.js
+    // pins the backdrop's own wiring)
+    await page
+      .locator('#track > button.rc')
+      .nth(2)
+      .evaluate((b) => b.click());
+    await expect(page.locator('#sheet')).toBeVisible();
+    await page.locator('.dlg-bd').dispatchEvent('click');
+    await expect(page.locator('#sheet')).toBeHidden();
+    await page.locator('#menuBtn').click();
+    await expect(page.locator('#menu')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#menu')).toBeHidden();
+    await expect(page.locator('#menuBtn')).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('the questions page shows the live questions', async ({ page }) => {
+    await page.route('**/api/faq', (route) =>
+      route.fulfill({ json: { items: [{ q: 'שאלה חיה?', a: 'תשובה חיה.' }] } })
+    );
+    await page.goto('/new-faq.html');
+    await expect(page.locator('#faqList details')).toHaveCount(1);
+    await expect(page.locator('#faqList summary')).toHaveText('שאלה חיה?');
+  });
+});
+
+test.describe('the questions page', () => {
+  test('the homepage links to it from the menu and the footer, and it shows the live FAQ', async ({
+    page,
+  }) => {
+    await page.route('**/api/faq', (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            { q: 'שאלה ראשונה?', a: 'תשובה.' },
+            { q: 'שאלה שנייה?', a: 'עוד תשובה.' },
+          ],
+        },
+      })
+    );
+    await page.goto('/new.html');
+    await expect(page.locator('#faq')).toHaveCount(0);
+    await page.locator('footer a[href="new-faq.html"]').click();
+    await expect(page).toHaveURL(/\/new-faq\.html$/);
+    await expect(page.locator('h1')).toHaveText('שאלות נפוצות');
+    await expect(page.locator('#faqList summary')).toHaveText(['שאלה ראשונה?', 'שאלה שנייה?']);
+    await page.locator('#menuBtn').click();
+    await expect(page.locator('#menu a[aria-current="page"]')).toHaveAttribute(
+      'href',
+      'new-faq.html'
+    );
+    await page.locator('#menu a[href="new.html#recs"]').click();
+    await expect(page).toHaveURL(/\/new\.html#recs$/);
+    await page.locator('#menuBtn').click();
+    await page.locator('#menu a[href="new-faq.html"]').click();
+    await expect(page).toHaveURL(/\/new-faq\.html$/);
+  });
+
+  test('is private', async ({ page }) => {
+    const res = await page.goto('/new-faq.html');
+    expect(res.headers()['x-robots-tag'] || '').toMatch(/noindex/);
+    expect(await page.locator('meta[name="robots"]').getAttribute('content')).toMatch(/noindex/);
+    const sx = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(sx).toBe(0);
+  });
+});

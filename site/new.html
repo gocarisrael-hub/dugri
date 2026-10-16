@@ -6,6 +6,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <!-- the redesigned homepage, private until the owner switches / to it: not linked from anywhere, and never indexed -->
     <meta name="robots" content="noindex, nofollow" />
+    <!-- old Safari: WebP twins, <dialog>, replaceChildren; first, so it is listening before the first picture -->
+    <script src="js/home-legacy.js"></script>
     <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
     <script>
       window.dataLayer = window.dataLayer || [];
@@ -209,7 +211,7 @@
               >דוגרי פשוט גנב את ההצגה במסיבת רווקות שלנו</span
             >
           </button>
-          <button class="rcNone" type="button" data-shot="assets/home/reviews/r9.jpg">
+          <button class="rc" type="button" data-shot="assets/home/reviews/r9.jpg">
             <span class="tag" data-edit="new-review-2-tag">מתנה לאמא</span
             ><span class="ttl" data-edit="new-review-2-quote"
               >אני לא מגזימה שעה וחצי של צחוק רצוף!</span
@@ -225,13 +227,13 @@
               loading="lazy"
             />
           </div>
-          <button class="rcNone" type="button" data-shot="assets/home/reviews/r5.jpg">
+          <button class="rc" type="button" data-shot="assets/home/reviews/r5.jpg">
             <span class="tag" data-edit="new-review-3-tag">מסיבת רווקות</span
             ><span class="ttl" data-edit="new-review-3-quote"
               >היא אמרה שזה פשוט היה הדבר הכי טוב בכל הרווקות שלה!</span
             >
           </button>
-          <button class="rcNone" type="button" data-shot="assets/home/reviews/r2.jpg">
+          <button class="rc" type="button" data-shot="assets/home/reviews/r2.jpg">
             <span class="tag" data-edit="new-review-4-tag">יום הולדת</span
             ><span class="ttl" data-edit="new-review-4-quote"
               >זה יצא פשוט נדיר ברמות הכי גבוהות</span
@@ -247,13 +249,13 @@
               loading="lazy"
             />
           </div>
-          <button class="rcNone" type="button" data-shot="assets/home/reviews/r6.jpg">
+          <button class="rc" type="button" data-shot="assets/home/reviews/r6.jpg">
             <span class="tag" data-edit="new-review-5-tag">מסיבה</span
             ><span class="ttl" data-edit="new-review-5-quote"
               >בסוף הערב היא אמרה שזה החלק שהיא הכי אהבה במסיבה</span
             >
           </button>
-          <button class="rcNone" type="button" data-shot="assets/home/reviews/r8.jpg">
+          <button class="rc" type="button" data-shot="assets/home/reviews/r8.jpg">
             <span class="tag" data-edit="new-review-6-tag">מתנה</span
             ><span class="ttl" data-edit="new-review-6-quote">היה ממש כיף, כולם היו באטרף מזה</span>
           </button>
@@ -267,13 +269,13 @@
               loading="lazy"
             />
           </div>
-          <button class="rcNone" type="button" data-shot="assets/home/reviews/r1.jpg">
+          <button class="rc" type="button" data-shot="assets/home/reviews/r1.jpg">
             <span class="tag" data-edit="new-review-7-tag">מתנה לחמים</span
             ><span class="ttl" data-edit="new-review-7-quote"
               >החמים שלי ממש ממש התרגשו והיה מעולה</span
             >
           </button>
-          <button class="rcNone" type="button" data-shot="assets/home/reviews/r4.jpg">
+          <button class="rc" type="button" data-shot="assets/home/reviews/r4.jpg">
             <span class="tag" data-edit="new-review-8-tag">מתנה לאחות</span
             ><span class="ttl" data-edit="new-review-8-quote"
               >תודה לך על הטיפול האישי עם המשלוח</span
@@ -437,54 +439,6 @@
       </div>
     </section>
 
-    <section class="faq" id="faq" aria-labelledby="h-faq">
-      <div class="faq-in">
-        <h2 id="h-faq" class="tt" data-edit="new-faq-heading">שאלות נפוצות</h2>
-        <div class="qa" id="faqList">
-          <details open>
-            <summary>מה זה בעצם המשחק?</summary>
-            <p>
-              משחק ניחוש מילים שמבוסס כולו עליכם. שולפים קלף ומתארים את המילה בלי להגיד אותה, הקבוצה
-              שלכם צריכה לנחש כמה שיותר מילים עד שהטיימר מצלצל. הקאץ׳ הוא שכל המילים עליכם! הכי
-              מצחיק, אישי ומרגש!
-            </p>
-          </details>
-          <details>
-            <summary>כמה מילים צריך לשלוח?</summary>
-            <p>
-              ניתן לשלוח עד 412 מילים, כמה שיותר מילים - יותר טוב! בדף הזנת המילים יש קטגוריות
-              ודוגמאות שמקלות מאוד להיזכר - אנשים, מקומות, בדיחות פנימיות, ביטויים ואקסים! לרוב לא
-              אוספים 412 מילים ולכן אנחנו משלימות מילים שיתאימו לאירוע שלכם, לפי רשימה מושלמת שהכנו
-              מראש!
-            </p>
-          </details>
-          <details>
-            <summary>מתי בדיוק מקבלים?</summary>
-            <p>
-              הספירה מתחילה מרגע שאתם שולחים את רשימת המילים - לא מרגע התשלום. איסוף עצמי אפשרי תוך
-              4 ימי עסקים. יש לכם תאריך אירוע קרוב? דברו איתנו בוואטסאפ. משלוח בתוספת תשלום אפשרי
-              תוך 7 ימי עסקים.
-            </p>
-          </details>
-          <details>
-            <summary>איך מזמינים ומשלמים?</summary>
-            <p>
-              בוחרים חבילה ומשלמים באתר בתשלום מאובטח. מיד אחרי התשלום מקבלים הודעה במייל לאיסוף
-              המילים, ומשם אנחנו מתחילים.
-            </p>
-          </details>
-          <details>
-            <summary>אפשר קצת פרטים על האיסוף עצמי?</summary>
-            <p>
-              ניתן לאסוף את החבילה מהתחייה 14, תל אביב - בימים א׳-ה׳ בין השעות 9:00-16:00. מגיעים
-              לכתובת, נכנסים בכניסה B ועולים קומה אחת במדרגות. שם תראו ״דפוס גלאור״, כנסו בדלת וקחו
-              את הדוגרי שלכם!
-            </p>
-          </details>
-        </div>
-      </div>
-    </section>
-
     <dialog class="menu" id="menu" aria-label="תפריט">
       <button class="x" type="button" id="menuX" aria-label="סגירת התפריט">
         <svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
@@ -498,7 +452,7 @@
           <li><a href="#order">העיצובים</a></li>
           <li><a href="#story">איך דוגרי נולד</a></li>
           <li><a href="#recs">ממליצים עלינו</a></li>
-          <li><a href="#faq">שאלות נפוצות</a></li>
+          <li><a href="new-faq.html">שאלות נפוצות</a></li>
           <li><a href="pickup.html">איסוף עצמי</a></li>
           <li><a href="#biz">פניות עסקיות</a></li>
         </ul>
@@ -524,7 +478,7 @@
     <footer>
       <span
         ><span class="fl"><a href="terms.html">תקנון ותנאי שימוש</a></span>
-        <span class="fl"><i class="dot">· </i><a href="#faq">שאלות נפוצות</a></span>
+        <span class="fl"><i class="dot">· </i><a href="new-faq.html">שאלות נפוצות</a></span>
         <span class="fl"><i class="dot">· </i><a href="pickup.html">איסוף עצמי</a></span></span
       ><img src="/assets/logo-pink-original.png" alt="" />
     </footer>
