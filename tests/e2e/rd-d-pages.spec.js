@@ -79,12 +79,6 @@ for (const path of ['/products.html', '/product.html', '/how.html', '/terms.html
     page,
   }) => {
     await page.goto(path);
-    // Until #683 makes "keep the page's own footer" the shell's default, the shell still swaps its own footer in on the
-    // pages that don't say otherwise (how and terms do). Skipped, not loosened: the case runs as soon as #683 is in.
-    test.skip(
-      (await page.locator('body > footer[data-rd-replaced]').count()) > 0,
-      'the shell still replaces this page footer (fixed by #683)'
-    );
     const footer = page.locator('body > footer:not(.rd-ftr)');
     await footer.scrollIntoViewIfNeeded();
     const look = await footer.evaluate((el) => {
@@ -110,10 +104,6 @@ for (const path of ['/products.html', '/product.html', '/how.html', '/terms.html
 
 test("chrome: pickup's short footer takes the same look, its contacts kept", async ({ page }) => {
   await page.goto('/pickup.html');
-  test.skip(
-    (await page.locator('body > footer[data-rd-replaced]').count()) > 0,
-    'the shell still replaces this page footer (fixed by #683)'
-  );
   const footer = page.locator('body > footer:not(.rd-ftr)');
   const bg = await footer.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(bg).toBe('rgba(0, 0, 0, 0)');

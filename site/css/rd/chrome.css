@@ -2,37 +2,21 @@
    (server/redesign-gate.js) links it after redesign.css on every non-admin page, in the mode only. Every rule is under html.rd
    (tests/unit/rd-css-scope.test.js), and it keeps to what Safari 15.6 reads: physical sides, no :is()/:where()/:has().
 
-   1. The shell's header and footer, guarded against the pages' own bare `header` / `footer` rules. Several old pages style
-      the element itself (how.html: `header { background: gradients; border-bottom; text-align: center; overflow: hidden }`,
-      `footer { background: ink; text-align: center }`), and those reach the shell's .rd-hdr / .rd-ftr too, because the shell
-      only sets the properties it cares about. A black footer with ink text was the visible result.
-   2. The old site footer (pages keep their own footer from B's #683, the shell's new default), the same markup on index, products, product, how and terms (pickup's is a shorter cousin): black
-      in the old look, here the cream ground with ink text. Every owner-editable contact stays exactly where it is (WhatsApp,
-      phone, email, Instagram, the business line); only the look changes. The brand line is the one heading in it, so it alone
-      is hand-lettered; the contact buttons are round outlined cut-outs and the page links are pills. Pages built in the
-      redesign (html.rd-native) have their own footer and are left alone.
-   3. The consent chip (js/consent.js), which draws itself with inline styles, so its look here needs !important. A paper pill
+   1. The consent chip (js/consent.js), which draws itself with inline styles, so its look here needs !important. A paper pill
       with an ink outline and the low hard shadow, in the body face. Its position is left to consent.js, which keeps it in the
-      bottom-left corner or lifts it above a bottom bar (#689); nothing here pins it. The native pages (new.html, new-faq.html) place it themselves (#675), so they are
-      left alone. */
+      bottom-left corner or lifts it above a bottom bar (#689); nothing here pins it. The native pages (new.html, new-faq.html)
+      place it themselves (#675), so they are left alone.
+   2. The old site footer, the same markup on products, product, how and terms (pickup's is a shorter cousin; index.html is
+      new.html in the mode). Pages keep their own footer (the shell's default since #683). Black in the old look, here the
+      cream ground with ink text. Every owner-editable contact stays exactly where it is (WhatsApp, phone, email, Instagram,
+      the business line); only the look changes. The brand line is the one heading in it, so it alone is hand-lettered; the
+      contact buttons are round outlined cut-outs and the page links are pills. Pages built in the redesign (html.rd-native)
+      have their own footer and are left alone.
 
-html.rd header.rd-hdr {
-  position: relative;
-  overflow: visible;
-  background: none;
-  border: 0;
-  box-shadow: none;
-  text-align: right;
-  margin: 0;
-}
-html.rd footer.rd-ftr {
-  background: none;
-  border: 0;
-  box-shadow: none;
-  text-align: right;
-  margin: 0;
-}
+   (The shell's own header and footer are guarded against the pages' bare header {} / footer {} rules in redesign.css since
+   #683, so nothing here repeats that.) */
 
+/* ---------- 1. the consent chip ---------- */
 html.rd:not(.rd-native) #cookieNotice {
   padding: 6px 12px !important;
   font-family: var(--font-body) !important;
