@@ -42,7 +42,24 @@ The "הסיפור שלנו" sticker is gone. The order is the title "איך דו
 - **Phone:** one column in that order.
 - **Desktop:** the title spans the width, the photos come first (right) and the text sits beside them.
 
-The new order moved three illustrations onto text: the pink star after the heading (phone and desktop) and a black star in the text (phone). Each went to the nearest spot that is clear at every width (`placefix.mjs`), keeping its kind, size and turn. Every other placement is as she left it.
+## 4b. The owner's placements (update, same day)
+
+`PLACEMENTS` is now Alma's layout from the `#place` editor, verbatim: 11 on a phone and 12 on desktop, in her positions, sizes and turns.
+
+There is a new kind, **"bstar"** ("כוכב תכלת" in the editor's palette): the 4-point star in the site's light blue `#a4e9ff` with the black outline, twinkling like the others. About half of her black stars now use it, alternating down the page:
+- **Phone:** black (hero), blue (designs), black (story).
+- **Desktop:** black, blue (hero), black (designs), blue (story).
+
+She can switch any star between the two kinds herself next time.
+
+**Overlaps, left as she placed them.** The overlap check finds these on text (her story positions match the r12 layout, from before the story reorder):
+- `pstar story 61.4, 7.8` (phone) sits on the heading "איך דוגרי נולד", between "דוגרי" and "נולד".
+- `star story 58.6, 55` (phone) sits on the first paragraph, on "ועלמה".
+- `pstar story 87.4, 14.2` (desktop) sits on "דוגרי" in the heading.
+- `popper order 12.3, 6.9` (phone) touches the end of "העיצובים שלנו" at 360 px wide only (clear at 390 and 430).
+- `cross order 83, 84.2` (phone) touches the "בונים את המשחק" button under reduced motion only (the designs become a static grid).
+
+The earlier r13 build had moved the first three; that move is undone in favour of her layout.
 
 ## 5. Menu
 
@@ -121,14 +138,12 @@ Playwright, Chromium and WebKit, phone 390×844 (touch) and desktop 1440×900 (m
   - The chooser's ‹ › and its list work.
 - **Business:** the WhatsApp link goes to 972546577715 and the phone link to +972546577715.
 - **r12's checks, rerun on r13** (phones 360/390, desktops 1100/1440, reduced motion):
-  - no illustration on content;
+  - illustrations: only the overlaps listed in 4b;
   - 0 dealt cards on the hero text;
   - options a and b fit every design;
   - the designs page shows 10 views with b's facts;
   - the editor works by mouse and by touch;
   - the review row stays still under a resting finger.
-
-One finding is left for Alma's placement: under reduced motion the designs become a static grid, and the small "+" at `order 83, 84.2` then touches the "בונים את המשחק" button on a phone.
 
 impeccable's detector reports the same accepted findings as r12: the outlined yellow and sky fills, the cream page and the hidden headings' hierarchy.
 
