@@ -1,0 +1,81 @@
+/* wordlists.html (every list that tops up a short deck) in redesign mode. Loaded only in the mode, after redesign.css
+   (docs/redesign-mode.md). C's page; one owner, so no sections.
+   Old Safari: physical sides only, no :has()/:is()/:where(), :focus-visible in rules of its own. */
+
+/* The page's sticky logo bar gives way to the shell's header (logo, ≡, the order button); its back link goes with it, as
+   the logo and the menu both lead home. */
+html.rd {
+  --rd-header: replace;
+  --rd-header-replace: 'body > .bar';
+  --rd-footer: none;
+}
+
+/* ---- the heading: the heading face with its pink offset ---- */
+html.rd header.doc {
+  padding: 26px 0 22px;
+}
+html.rd header.doc h1 {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading);
+  letter-spacing: var(--track-heading);
+  font-size: var(--text-section);
+  line-height: var(--leading-heading);
+  text-shadow: var(--title-offset) var(--title-offset) 0 var(--title-offset-hero);
+}
+html.rd header.doc .sub {
+  color: var(--color-text-muted);
+}
+
+/* ---- the search: a pill field ---- */
+html.rd .tools input {
+  min-width: 0; /* WebKit's field keeps an intrinsic width that, with the pill's padding, ran 36px off a 360px phone */
+  max-width: 100%;
+  min-height: var(--field-height);
+  padding: 0 22px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  font-family: var(--font-body);
+}
+html.rd .tools input:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ---- the contents and the messages: boxes ---- */
+html.rd nav.toc,
+html.rd .msg {
+  background: var(--color-paper);
+  border: var(--border-bold) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-sm);
+}
+html.rd nav.toc h2,
+html.rd main h2 {
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
+}
+html.rd nav.toc h2 {
+  font-size: var(--text-label);
+}
+html.rd main h2 {
+  font-size: var(--text-card-title);
+}
+
+/* ---- the words: tag-cream labels; a search hit is ink ---- */
+html.rd .words span {
+  border: 0;
+  border-radius: var(--radius-tag);
+  background: var(--color-tag);
+  padding: 3px 10px 4px;
+}
+html.rd .words span.hit {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-weight: var(--weight-label);
+}
+html.rd .note {
+  border-top: var(--border-thin) solid var(--color-ink);
+  color: var(--color-text-muted);
+}

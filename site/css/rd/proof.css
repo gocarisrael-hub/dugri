@@ -1,0 +1,88 @@
+/* proof.html (the buyer's proof of the printed deck) in redesign mode. Loaded only in the mode, after redesign.css
+   (docs/redesign-mode.md). C's page; one owner, so no sections.
+   The page keeps its own palette in local tokens (not tokens.css, so the shell's bridge never reaches it) and its own dark
+   scheme. In the mode those tokens take the redesign's light table: html.rd:root outranks the page's dark-scheme
+   :root:not([data-theme='light']).
+   Old Safari: physical sides only, no :has()/:is()/:where(), :focus-visible in rules of its own. */
+
+/* A working page reached from her mail, the cards are the content: no shop header, no footer. */
+html.rd:root {
+  --rd-header: none;
+  --rd-footer: none;
+  --paper: var(--color-ground);
+  --card: var(--color-paper);
+  --ink: var(--color-ink);
+  --muted: var(--color-text-muted);
+  --faint: var(--color-text-muted);
+  --rule: var(--color-ink);
+  --rule2: var(--color-ink);
+  --slab: var(--color-ink);
+  --slabink: var(--color-paper);
+  --ui: var(--font-body);
+  color-scheme: light;
+}
+
+/* ---- the sticky header: the eyebrow as a tag, the title in the heading face with its pink offset ---- */
+html.rd header.top {
+  border-bottom: var(--border-thin) solid var(--color-ink);
+}
+html.rd .eyebrow {
+  display: inline-block;
+  padding: 3px 10px 4px;
+  border-radius: var(--radius-tag);
+  background: var(--color-tag);
+  color: var(--color-ink);
+  font: var(--weight-label) var(--text-micro) / 1.3 var(--font-body);
+  letter-spacing: 0;
+}
+html.rd h1 {
+  font-family: var(--font-heading);
+  font-weight: var(--weight-heading);
+  letter-spacing: var(--track-heading);
+  text-shadow: var(--title-offset) var(--title-offset) 0 var(--title-offset-hero);
+}
+html.rd h2.sec {
+  font: var(--weight-strong) var(--text-card-title) / 1.3 var(--font-body);
+}
+
+/* ---- the cards: printed cards on the table, with the card's corners and a hard shadow ---- */
+html.rd .card {
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-sm);
+}
+html.rd .card:focus-visible {
+  box-shadow:
+    var(--shadow-sm),
+    0 0 0 3px var(--color-accent-pink);
+}
+
+/* ---- the enlarged card: a sheet with pill buttons ---- */
+html.rd dialog::backdrop {
+  background: var(--color-scrim);
+}
+html.rd .big {
+  border: var(--border-heavy) solid var(--color-ink);
+  border-radius: var(--radius-sheet);
+  overflow: hidden;
+  box-shadow: var(--shadow-review);
+}
+html.rd .btn {
+  min-height: var(--tap-min);
+  padding: 0 18px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  font: var(--weight-strong) var(--text-small) / 1 var(--font-body);
+}
+html.rd .btn.solid {
+  background: var(--color-ink);
+  color: var(--color-paper);
+}
+html.rd .wa {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-whatsapp);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+  font: var(--weight-strong) var(--text-small) / 1 var(--font-body);
+}
