@@ -30,14 +30,15 @@ html.rd .home-logo {
 html.rd header {
   padding-top: 64px;
 }
+/* the page title in the body face, bold, with no offset: the owner found the handwriting heading face messy on the order
+   flow (2026-10-18), as on the wizard's steps */
 html.rd header h1 {
-  font-family: var(--font-heading);
-  font-weight: var(--weight-heading);
-  letter-spacing: var(--track-heading);
-  font-size: clamp(30px, 8vw, 44px);
-  line-height: 1.1;
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
+  font-size: clamp(26px, 7vw, 36px);
+  line-height: 1.2;
   text-wrap: balance;
-  text-shadow: var(--title-offset) var(--title-offset) 0 var(--title-offset-hero);
 }
 html.rd header .sub {
   color: var(--color-text-muted);
