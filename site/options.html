@@ -2183,6 +2183,27 @@
       <!-- STEP 3 — honoree name -->
       <section class="wiz-step" data-step="3" data-testid="step-3">
         <h2 class="wiz-title" id="nameStepTitle">הכותרת על הקלפים</h2>
+        <!-- THE DESIGN SHE CHOSE, as the shop shows it. Redesign mode only (the owner,
+             2026-10-18): a buyer can now reach this step straight from the homepage,
+             without passing the product page, and needs to see what she picked. Built
+             from the same curated pictures the product page gallery shows
+             (js/design-images.js galleryFor, 'product'). Painted by paintChosenDesign;
+             it stays hidden on the live site. -->
+        <div class="chosen-design" id="chosenDesign" data-testid="chosen-design" hidden>
+          <div class="cd-head">
+            <span class="cd-lbl">העיצוב שבחרתם:</span>
+            <b class="cd-name" id="chosenDesignName" data-testid="chosen-design-name"></b>
+            <button
+              type="button"
+              class="cd-change"
+              id="chosenDesignChange"
+              data-testid="chosen-design-change"
+            >
+              החלפה
+            </button>
+          </div>
+          <div class="cd-pics" id="chosenDesignPics" data-testid="chosen-design-pics"></div>
+        </div>
         <p class="wiz-sub" id="nameStepSub">
           מה שתכתבו כאן הוא בדיוק מה שיודפס על הקלפים ועל הלוח - שם, ברכה, בדיחה פנימית, מה שתרצו.
         </p>
@@ -3769,6 +3790,7 @@
       import {
         loadDesignImages,
         deckFor,
+        galleryFor,
         previewPicture,
         previewPictures,
       } from './js/design-images.js';
@@ -6141,8 +6163,46 @@
         });
         deckImagesPromise.then(() => {
           paintDeckRow(previewCard.classList.contains('is-collapsed'));
+          paintChosenDesign();
         });
       }
+
+      /* The chosen design on the title step, in redesign mode only (see the markup).
+         Up to four of the product page's own pictures for this design, in her order;
+         a picture that fails falls back to the shipped render, or leaves. With no
+         config yet (or none at all) it shows the picker thumbnail, so the box is
+         never empty. Read from <html> each time: the mode is the server's class. */
+      const chosenDesign = document.getElementById('chosenDesign');
+      const CHOSEN_DESIGN_MAX = 4;
+      function paintChosenDesign() {
+        if (!chosenDesign) return;
+        const inMode = document.documentElement.classList.contains('rd');
+        const d = DESIGNS[designIndex];
+        if (!inMode || !d || currentStep !== 3) {
+          chosenDesign.hidden = true;
+          return;
+        }
+        const shots = galleryFor(deckImages, d, 'product').slice(0, CHOSEN_DESIGN_MAX);
+        if (!shots.length && d.thumb) shots.push({ src: d.thumb });
+        document.getElementById('chosenDesignName').textContent =
+          currentSelection().designName || '';
+        const pics = document.getElementById('chosenDesignPics');
+        pics.replaceChildren();
+        for (const shot of shots) {
+          const img = document.createElement('img');
+          img.src = shot.src;
+          img.alt = '';
+          img.decoding = 'async';
+          img.addEventListener('error', () => {
+            if (shot.fallback && img.src.indexOf(shot.fallback) === -1) img.src = shot.fallback;
+            else img.remove();
+          });
+          pics.appendChild(img);
+        }
+        chosenDesign.hidden = false;
+      }
+      const chosenDesignChange = document.getElementById('chosenDesignChange');
+      if (chosenDesignChange) chosenDesignChange.addEventListener('click', () => goStep(1));
 
       function goStep(n, opts = {}) {
         // Snap to the nearest ACTIVE step so a hidden step (2) is never landed on
@@ -6161,6 +6221,7 @@
         // whether this is really the product. paintDeckRow re-checks whether THIS
         // design has any, so switching design between steps can't strand a row.
         paintDeckRow(collapsed);
+        paintChosenDesign();
         // the colour step carries its own swipe preview carousel — but ONLY when
         // colour picking is on (the step is not reachable otherwise). Mark the
         // body only when the carousel is actually shown, so the phone layout
