@@ -470,6 +470,27 @@ function validateOrderForProduction(collection, theme, words) {
   return problems;
 }
 
+// THE ONE-LANGUAGE TITLE (the shop owner, 2026-10-18): the printed title is Hebrew OR English, never both. Digits,
+// spaces and punctuation belong to neither and are always allowed. It is what the generator already assumes: it takes
+// the title's language from its first strong letter (render_page.title_script) and sets the WHOLE title in the one
+// face for that language (title_font_for), in that direction (title_is_rtl), so the other language's letters land in a
+// face picked for the wrong script. site/js/title-language.js is the browser copy, pinned to these classes in
+// tests/unit/title-language.test.js. Other scripts are not this rule's business.
+const HEBREW_LETTERS = '\\u05D0-\\u05EA\\u05EF-\\u05F2\\uFB1D-\\uFB4F';
+const LATIN_LETTERS = 'A-Za-z\\u00C0-\\u00D6\\u00D8-\\u00F6\\u00F8-\\u024F';
+const TITLE_LANGUAGE_MESSAGE = 'כותרת בשפה אחת בלבד - עברית או אנגלית';
+const HEBREW_LETTER_RE = new RegExp('[' + HEBREW_LETTERS + ']');
+const LATIN_LETTER_RE = new RegExp('[' + LATIN_LETTERS + ']');
+
+function titleMixesLanguages(s) {
+  const t = String(s == null ? '' : s);
+  return HEBREW_LETTER_RE.test(t) && LATIN_LETTER_RE.test(t);
+}
+
+function titleLanguageMessage(s) {
+  return titleMixesLanguages(s) ? TITLE_LANGUAGE_MESSAGE : null;
+}
+
 module.exports = {
   loadThemes,
   getTheme,
@@ -502,4 +523,10 @@ module.exports = {
   stripNiqqud,
   wordNiqqudMessage,
   batchNiqqudMessage,
+  // One-language title. The classes are exported for the same pinning as EMOJI_CHARS.
+  HEBREW_LETTERS,
+  LATIN_LETTERS,
+  TITLE_LANGUAGE_MESSAGE,
+  titleMixesLanguages,
+  titleLanguageMessage,
 };

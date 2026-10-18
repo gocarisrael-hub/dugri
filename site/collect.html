@@ -3430,6 +3430,8 @@
       // blank box. Refusing tells the contributor; stripping would change her
       // word and never say so. server/validate.js enforces the same rule.
       import { hasEmoji, wordEmojiMessage, splitByEmoji, batchEmojiMessage } from './js/emoji.js';
+      // The title is in ONE language, Hebrew or English (site/js/title-language.js; the server decides).
+      import { titleLanguageMessage } from './js/title-language.js';
       // Niqqud is refused for the same kind of reason: the card faces are drawn
       // for unpointed Hebrew, so "שָׁלוֹם" prints with the marks as boxes or
       // collided onto the letter. Refused rather than silently unpointed — the
@@ -5101,9 +5103,14 @@
           showTab(btn.dataset.tab);
         });
         $('#titleSaveBtn').addEventListener('click', saveTitle);
-        // Typing only redraws the picture; nothing is stored until שמירה.
+        // Typing only redraws the picture; nothing is stored until שמירה. A title in two
+        // languages is said at once, in the field, and שמירה waits until it is one.
         $('#titleInput').addEventListener('input', () => {
           draftTitle = $('#titleInput').value;
+          const mixed = titleLanguageMessage(draftTitle);
+          $('#titleErr').textContent = mixed || '';
+          $('#titleErr').classList.toggle('hidden', !mixed);
+          $('#titleSaveBtn').disabled = !!mixed;
           schedulePreview();
         });
       })();
