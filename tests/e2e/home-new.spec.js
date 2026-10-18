@@ -75,6 +75,32 @@ test.describe('the deck and the designs', () => {
 });
 
 test.describe('a tapped design', () => {
+  test('its order button goes straight to the wizard’s title step on that design, and is counted', async ({
+    page,
+  }) => {
+    await page.goto('/new.html');
+    await openDesign(page, 'marriage');
+    // the analytics queue is gone once the page navigates: keep a copy of it as the click finishes bubbling
+    await page.evaluate(() =>
+      window.addEventListener('click', () =>
+        sessionStorage.setItem('dl', JSON.stringify(window.dataLayer.map((a) => Array.from(a))))
+      )
+    );
+    await page.locator('#floodOrder').click();
+    await expect(page).toHaveURL(/\/options\.html\?design=marriage&step=2$/);
+    await expect(page.locator('#nameStepTitle')).toBeVisible();
+    await expect(page.locator('.design[data-design-id="marriage"]')).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    const dl = JSON.parse(await page.evaluate(() => sessionStorage.getItem('dl')));
+    expect(dl).toContainEqual([
+      'event',
+      'order_started',
+      expect.objectContaining({ cta: 'design_view', design: 'marriage' }),
+    ]);
+  });
+
   test('is a modal: focus moves in, Tab stays inside, Esc closes and focus returns', async ({
     page,
   }) => {
@@ -84,7 +110,7 @@ test.describe('a tapped design', () => {
     await expect(page.locator('#floodName')).toHaveText('פריז');
     await expect(page.locator('#floodOrder')).toHaveAttribute(
       'href',
-      'product.html?design=bachelorette'
+      'options.html?design=bachelorette&step=2'
     );
     for (let i = 0; i < 6; i++) {
       await page.keyboard.press('Tab');

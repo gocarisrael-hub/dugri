@@ -181,7 +181,9 @@ export function homeDesigns(designs) {
       fronts,
       back,
       board,
-      href: `product.html?design=${encodeURIComponent(d.id)}`,
+      // the design view's order button skips the product page: straight into the wizard on this design, at its title
+      // step, with the same params as the product page's own buy button (js/product.js)
+      href: `options.html?design=${encodeURIComponent(d.id)}&step=2`,
       deal: !!back && !NOT_DEALT.has(d.id),
     });
   }
