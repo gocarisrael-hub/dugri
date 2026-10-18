@@ -21,7 +21,9 @@
       var m = WEBP.exec(img.currentSrc || img.src || '');
       if (!m) return;
       img.removeAttribute('srcset');
-      img.src = m[1] + (m[2] === 'logos' ? '.png' : '.jpg');
+      // a card the screen wanted sharp keeps its sharp JPEG twin; boards and logos have 1x twins only
+      img.src =
+        m[1] + (m[3] && m[2] === 'cards' ? m[3] : '') + (m[2] === 'logos' ? '.png' : '.jpg');
     },
     true
   );
