@@ -13,9 +13,12 @@ import {
   leadFieldError,
   LEAD_MESSAGES,
   sendLead,
+  autoDealAllowed,
+  AUTO_DEAL_MS,
 } from './home-data.js';
 import { initIllustrations } from './home-illos.js';
 import { initMenu, trapTab } from './home-menu.js';
+import { initZoom } from './home-zoom.js';
 
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (id) => document.getElementById(id);
@@ -108,7 +111,7 @@ const spot = (g) => ({
   r: rnd(-13, 13),
 });
 
-function deal(want) {
+function deal(want, auto) {
   const k = want || nextKey;
   if (!k || !D[k]) return;
   const g = geo(),
@@ -137,7 +140,7 @@ function deal(want) {
   el.style.zIndex = String(++z);
   cards.push(c);
   bind(c);
-  said.textContent = `קלף מהעיצוב ${D[k].name}`;
+  if (!auto) said.textContent = `קלף מהעיצוב ${D[k].name}`;
   showNext();
   if (reduce) {
     Object.assign(c, to);
@@ -415,6 +418,38 @@ deckBtn.addEventListener('click', () => {
   deal();
   if (++dealt === 1) track('deck_deal', {});
 });
+// every AUTO_DEAL_MS the deck deals one card by itself, unless autoDealAllowed says to leave the table alone. It never
+// focuses anything and never scrolls, and a screen reader hears nothing (only a card you deal is announced).
+let heroSeen = false,
+  lastTouch = 0,
+  autoT = 0;
+const touched = () => {
+  lastTouch = window.performance.now();
+};
+['pointerdown', 'keydown', 'wheel'].forEach((ev) =>
+  stage.addEventListener(ev, touched, { passive: true })
+);
+function autoTick() {
+  autoT = setTimeout(autoTick, AUTO_DEAL_MS);
+  const ok = autoDealAllowed({
+    reduce,
+    pageHidden: document.hidden,
+    heroOnScreen: heroSeen,
+    dialogOpen: !!document.querySelector('dialog[open]'),
+    holding: cards.some((c) => c.held),
+    sinceTouch: window.performance.now() - lastTouch,
+  });
+  if (ok) deal(null, true);
+}
+function startAutoDeal() {
+  if (reduce || autoT) return;
+  autoT = setTimeout(autoTick, AUTO_DEAL_MS);
+}
+if (window.IntersectionObserver)
+  new window.IntersectionObserver((es) => {
+    heroSeen = es[es.length - 1].isIntersecting;
+  }).observe(stage);
+else heroSeen = true;
 
 /* ---------- designs: an endless strip that leans with swipe speed; the panel takes on the centred design's colour ---------- */
 const strip = $('strip'),
@@ -534,6 +569,10 @@ function startStrip() {
 /* ---------- the tapped view: a modal dialog in the design's colour, its front and back landing on its board ---------- */
 const flood = $('flood'),
   tableau = $('tableau');
+// the board and the cards zoom together under the fingers; reset on every open and close
+const zoom = initZoom(flood, flood.querySelector('.spread'), {
+  isPicture: (t) => !!(t && t.closest && t.closest('.tableau img')),
+});
 let openFrom = null,
   openId = null;
 function fillFlood(d) {
@@ -555,6 +594,7 @@ function openDesign(btn, x, y) {
   if (!d) return;
   openFrom = btn;
   openId = d.id;
+  zoom.reset();
   fillFlood(d);
   flood.showModal();
   track('design_open', { design: d.id });
@@ -630,6 +670,7 @@ function closeDesign() {
     flood.getAnimations({ subtree: true }).forEach((a) => a.cancel());
     flood.classList.remove('closing');
     flood.close();
+    zoom.reset();
     tableau.innerHTML = '';
     openId = null;
     openFrom.focus({ preventScroll: true });
@@ -670,6 +711,7 @@ flood.addEventListener('pointerdown', (e) => {
 flood.addEventListener('pointerup', (e) => {
   const dy = fy0 == null ? 0 : e.clientY - fy0;
   fy0 = null;
+  if (zoom.busy()) return; // a pinch, a pan or a zoomed view: never a tap-to-close or a swipe down
   if (dy > 70) return closeDesign();
   if (Math.abs(dy) < 8 && !e.target.closest('.tableau img, .pill, .x, .pr')) closeDesign();
 });
@@ -999,6 +1041,7 @@ window.addEventListener('load', () => {
   startStrip();
   startRow();
   setTimeout(() => deal(), reduce ? 0 : 450);
+  startAutoDeal();
 });
 let lastW = window.innerWidth;
 window.addEventListener('resize', () => {

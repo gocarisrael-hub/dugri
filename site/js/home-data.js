@@ -225,3 +225,23 @@ export async function sendLead(
     return { state: 'error' };
   }
 }
+
+/* ---------- the hero deck's auto-deal ---------- */
+// How often the deck deals a card by itself, and how long after the visitor last touched the table it waits before it does.
+export const AUTO_DEAL_MS = 8000;
+/**
+ * Whether the deck may deal a card by itself now: never under reduced motion, never while the page is in the background or
+ * the hero is off screen, never while a dialog (a design, the reviews sheet, the menu) is open or a card is held, and not
+ * until AUTO_DEAL_MS have passed since the visitor last touched the table.
+ */
+export function autoDealAllowed({
+  reduce,
+  pageHidden,
+  heroOnScreen,
+  dialogOpen,
+  holding,
+  sinceTouch,
+}) {
+  if (reduce || pageHidden || !heroOnScreen || dialogOpen || holding) return false;
+  return !(sinceTouch < AUTO_DEAL_MS);
+}

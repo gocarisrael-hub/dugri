@@ -855,6 +855,39 @@ dialog.flood::backdrop {
   }
 }
 
+/* the view's rows hug their content (dialog.flood's own "1fr auto" outranked the plain .flood rule, so the board's row took
+   every spare pixel and pushed the name, the price and the button to the bottom). On a phone the pictures sit at the top
+   and the info follows right under them, so it is on screen sooner; on a computer the two stay centred together. */
+dialog.flood {
+  grid-template-rows: auto auto;
+  align-content: start;
+}
+/* a tall phone has room to spare: half of it goes above the pictures, so the view is not top-heavy */
+@media (max-width: 899px) {
+  .flood .spread {
+    padding-top: min(120px, max(66px, calc(66px + (100vh - 760px) / 2)));
+    padding-top: min(120px, max(66px, calc(66px + (100svh - 760px) / 2)));
+  }
+}
+@media (min-width: 900px) {
+  dialog.flood {
+    align-content: center;
+  }
+}
+/* the pictures zoom under the fingers (js/home-zoom.js): the zoomed layer rides over the info, under the close button */
+.flood .spread {
+  position: relative;
+  z-index: 1;
+  cursor: zoom-in;
+}
+.flood.zoomed .spread {
+  z-index: 4;
+  cursor: grab;
+}
+.flood.zoomed .swipe {
+  visibility: hidden;
+}
+
 /* recommendations: Pluto's card row (white, 16 px corners, a thin black line and a hard black offset shadow, a small tag at the
    reading start), scrolling on its own in an endless loop; a hover or a touch stops it, and it can be swiped */
 .recs {

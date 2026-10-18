@@ -487,6 +487,8 @@ test.describe('the questions page', () => {
     await expect(page).toHaveURL(/\/new-faq\.html$/);
     await expect(page.locator('h1')).toHaveText('שאלות נפוצות');
     await expect(page.locator('#faqList summary')).toHaveText(['שאלה ראשונה?', 'שאלה שנייה?']);
+    // the menu is bound by a module script: a click before the page has loaded is lost under a busy machine
+    await page.waitForLoadState('load');
     await page.locator('#menuBtn').click();
     await expect(page.locator('#menu a[aria-current="page"]')).toHaveAttribute(
       'href',
@@ -494,6 +496,7 @@ test.describe('the questions page', () => {
     );
     await page.locator('#menu a[href="new.html#recs"]').click();
     await expect(page).toHaveURL(/\/new\.html#recs$/);
+    await page.waitForLoadState('load');
     await page.locator('#menuBtn').click();
     await page.locator('#menu a[href="new-faq.html"]').click();
     await expect(page).toHaveURL(/\/new-faq\.html$/);
