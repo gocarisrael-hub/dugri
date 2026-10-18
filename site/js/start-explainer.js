@@ -145,6 +145,12 @@
     return !(event.metaKey || event.ctrlKey || event.shiftKey || event.altKey);
   }
 
+  // True in redesign mode, where the click goes straight to the wizard with no briefing in between.
+  function skipsBriefing(doc) {
+    var root = doc && doc.documentElement;
+    return !!(root && root.classList && root.classList.contains('rd'));
+  }
+
   // The continue button must go wherever the TRIGGER currently points — read live at
   // open time, because product.js rewrites #pdpBuy.href to
   // options.html?design=<id>&step=2 only once its ?design resolves. Falls back to the
@@ -663,6 +669,11 @@
       var trigger = e.target.closest && e.target.closest('a[data-start-explainer]');
       if (!trigger) return;
       if (!isPlainClick(e)) return; // ⌘/ctrl/middle click → let the browser have it
+      // Redesign mode has no briefing (the owner removed it, 2026-10-18): the click is left to the anchor, so it goes
+      // straight to the trigger's own href, exactly where "יאללה, מתחילים" would have taken it. Read at click time,
+      // because the mode is the server's class on <html> (server/redesign-gate.js). ?explainer=1 still opens the
+      // sheet, so the owner can reach its copy in edit mode.
+      if (skipsBriefing(document)) return;
       e.preventDefault(); // NOT stopPropagation: analytics.js still logs order_started
       open(trigger);
     });
@@ -673,6 +684,7 @@
   var api = {
     isPlainClick: isPlainClick,
     resolveContinueHref: resolveContinueHref,
+    skipsBriefing: skipsBriefing,
     focusablesIn: focusablesIn,
     nextFocusIndex: nextFocusIndex,
     WA_HREF: WA_HREF,

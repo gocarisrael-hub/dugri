@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { previewRedesign } from './helpers/redesign.js';
 
 // The 4-step order explainer (site/js/start-explainer.js): a FULL-PAGE briefing
 // that precedes the order wizard. It must
@@ -552,6 +553,36 @@ test.describe('the explainer guards the other wizard entrances', () => {
     await page.getByTestId('order-now').click();
     await expect(page).toHaveURL(/products\.html/);
     await expect(page.getByTestId(OVERLAY)).toHaveCount(0);
+  });
+});
+
+// Redesign mode has no briefing (owner, 2026-10-18): the CTA goes straight where "יאללה, מתחילים" would have gone,
+// so nothing waits on a sheet that is never shown. Gated in the script, not hidden by CSS: hiding it would leave the
+// click swallowed and the shopper on the product page.
+test.describe('in redesign mode there is no briefing', () => {
+  test.beforeEach(({ page }) => previewRedesign(page));
+
+  test('the product page CTA goes straight to the wizard, design preselection intact', async ({
+    page,
+  }) => {
+    await page.goto('/product.html?design=bachelorette');
+    await expect(page.locator('html')).toHaveClass(/(^|\s)rd(\s|$)/);
+    const buy = page.getByTestId('pdp-buy');
+    await expect
+      .poll(() => buy.getAttribute('href'))
+      .toBe('options.html?design=bachelorette&step=2');
+    const [req] = await Promise.all([
+      page.waitForRequest((r) => r.isNavigationRequest() && r.url().includes('options.html')),
+      buy.click(),
+    ]);
+    expect(new URL(req.url()).search).toBe('?design=bachelorette&step=2');
+    await expect(page).toHaveURL(/options\.html/);
+    await expect(page.getByTestId(OVERLAY)).toHaveCount(0);
+  });
+
+  test('?explainer=1 still opens it, so the owner can edit its copy', async ({ page }) => {
+    await page.goto('/product.html?design=bachelorette&explainer=1');
+    await expect(page.getByTestId(OVERLAY)).toBeVisible();
   });
 });
 

@@ -68,6 +68,23 @@ describe('resolveContinueHref — the briefing never loses the wizard target', (
   });
 });
 
+describe('skipsBriefing — redesign mode goes straight to the wizard', () => {
+  function docWith(cls) {
+    const d = document.implementation.createHTMLDocument('');
+    if (cls) d.documentElement.className = cls;
+    return d;
+  }
+  it('is true when <html> carries the mode class', () => {
+    expect(sx.skipsBriefing(docWith('rd'))).toBe(true);
+    expect(sx.skipsBriefing(docWith('js rd'))).toBe(true);
+  });
+  it('is false without it, so the default site keeps its briefing', () => {
+    expect(sx.skipsBriefing(docWith(''))).toBe(false);
+    expect(sx.skipsBriefing(docWith('rdx'))).toBe(false);
+    expect(sx.skipsBriefing(null)).toBe(false);
+  });
+});
+
 describe('nextFocusIndex — the Tab trap wraps at both ends', () => {
   it('advances and wraps forward', () => {
     expect(sx.nextFocusIndex(3, 0, false)).toBe(1);
