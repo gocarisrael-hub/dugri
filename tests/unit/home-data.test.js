@@ -153,7 +153,7 @@ describe('the designs come from the live catalog', () => {
     ]);
     expect(list).toHaveLength(1);
     expect(list[0].name).toBe('שם חדש');
-    expect(list[0].href).toBe('product.html?design=bachelorette');
+    expect(list[0].href).toBe('options.html?design=bachelorette&step=2');
   });
 
   it('uses the approved single cards and boards, and every one of those files exists', () => {
