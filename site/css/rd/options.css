@@ -72,14 +72,13 @@ html.rd .bar > i {
   border-left: var(--border-thin) solid var(--color-ink);
 }
 
-/* ---- step titles: the heading face with its coloured offset ---- */
+/* ---- step titles: one clean heading in the heading face; the owner found the coloured offset messy (2026-10-18) ---- */
 html.rd .wiz-title {
   font-family: var(--font-heading);
   font-weight: var(--weight-heading);
   letter-spacing: var(--track-heading);
   font-size: 34px;
   line-height: 1.05;
-  text-shadow: var(--title-offset) var(--title-offset) 0 var(--title-offset-hero);
 }
 html.rd .wiz-sub {
   color: var(--color-text-muted);
@@ -95,9 +94,10 @@ html.rd .preview-stage {
   background: var(--color-ground);
   border-radius: var(--radius-box);
 }
-/* collapsed on the later steps the stage is only a reminder strip: no ground showing through */
-html.rd .preview-card.is-collapsed .preview-stage {
-  background: transparent;
+/* Collapsed on the later steps (title, pawns, details) the preview was only a reminder strip ("עיצוב פריז · צבע מקורי");
+   the owner removed it there (2026-10-18). The design was chosen two steps back and the title step shows the real card. */
+html.rd .preview-card.is-collapsed {
+  display: none;
 }
 html.rd .preview-chip .continue-summary {
   background: var(--color-tag);
@@ -415,7 +415,29 @@ html.rd .zoom-hint {
   font-family: var(--font-body);
 }
 
+/* ---- owner removals (2026-10-18): helper lines she found unnecessary; the page and its default look keep them ---- */
+/* the title step's "מה שתכתבו כאן הוא בדיוק מה שיודפס…" and the preview's "כך זה ייראה עם השם:" */
+html.rd #nameStepSub,
+html.rd .name-preview-lbl {
+  display: none;
+}
+html.rd [data-step='3'] .wiz-title {
+  margin-bottom: 14px; /* the line under it is gone; keep the heading off the field's label */
+}
+/* the pawns step's "נסיר את הרקע אוטומטית…" and "הסרת הרקע והעיבוד… בבית הדפוס"; the ChatGPT tip stays */
+html.rd .pawn-hint,
+html.rd .pawn-tip [data-edit='options-photos-tip-shop'] {
+  display: none;
+}
+
 /* == end C == */
 
 /* == A: commerce — options (pricing) == */
+/* Written by C for A while A's session was down (owner feedback 2026-10-18, relayed by the integrator); A owns it from here.
+   The owner removed the price from the wizard: the "החל מ- 199 ₪" pill at the top of every step, and the order recap box
+   above the details step's fields. The price is still on the product pages and at checkout. */
+html.rd .plan-pill,
+html.rd .order-summary {
+  display: none;
+}
 /* == end A == */
