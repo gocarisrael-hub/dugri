@@ -2480,8 +2480,7 @@
                was being asked. What she wants to know here is that she is done
                once she picks: the rest happens without her. -->
           <small class="muted" id="poolHint" data-edit="collect-sheet-pool-hint"
-            >בחרו את הרשימה שממנה נשלים לכם מילים עד לחפיסה מלאה (הכמות המדויקת מופיעה במונה למעלה -
-            חבילה מלאה של קלפים, למשחק ארוך וכיפי יותר)</small
+            >בחרו את רשימת המילים ממנה נשלים לכם לחפיסה מלאה</small
           >
           <small class="muted hidden" id="poolHintSent" data-edit="collect-sheet-pool-hint-sent"
             >מהרשימה המסומנת השלמנו את המילים עד לחפיסה מלאה.</small
@@ -2786,7 +2785,7 @@
           <div class="stage2-label" id="stage2Label"></div>
           <div class="bar bar-stage2"><i id="barFill2"></i></div>
         </div>
-        <small class="muted" id="countHint">היעד: לפחות 70 מילים</small>
+        <small class="muted" id="countHint"></small>
         <div class="words" id="wordsWrap" style="margin-top: 12px">
           <span class="muted" id="emptyWords">עוד אין מילים - היו הראשונים!</span>
         </div>
@@ -2811,10 +2810,9 @@
            wants to invite more people. There is only one link now and it is the
            managing one — see friendsUrl() for what that costs and why. -->
       <div class="card share hidden" data-panel="words" id="sharePanel">
-        <div class="sec-h" data-edit="collect-share-heading">📨 שתפו עם החברות</div>
+        <div class="sec-h" data-edit="collect-share-heading">שתפו עם חברות</div>
         <p class="muted" data-edit="collect-share-hint">
-          שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה. זה אותו קישור שקיבלתם במייל, וכל מי
-          שיפתח אותו יוכל גם להוסיף מילים וגם לנהל את האיסוף:
+          שלחו את הקישור הזה לכל מי שמכיר/ה את בעל/ת השמחה שיעזרו באיסוף המילים.
         </p>
         <!-- Two icon buttons and no visible link (the owner's call: a long URL
              in a box was noise). The link itself still lives in #friendsLink, a
@@ -2914,8 +2912,8 @@
         <details class="howto">
           <summary data-edit="collect-howto-summary">איך אוספים מילים טובות 👇</summary>
           <p class="muted" style="margin: 10px 0" data-edit="collect-howto-body">
-            זה החלק הכי כיף - וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. מינימום 70
-            מילים, וכמה שיותר יותר טוב.
+            זה החלק הכי כיף - וגם הכי קל כשיש כיוון. עברו על הקטגוריות, כתבו כל מה שעולה. כמה שיותר
+            מילים, יותר טוב.
           </p>
           <div class="cats">
             <div class="cat">
@@ -5449,8 +5447,8 @@
         // about.
         if (state.free_limit_locked) applyFreeLimit(true);
         else applyDeckFull(atMax);
-        // Stage 2 kicks in once the 70-word minimum is met: the pill/hint reframe
-        // around the max and the bar swaps to one scaled to MAX_WORDS.
+        // Stage 2 kicks in once the 70-word goal is met: the pill reframes around
+        // the max and the bar swaps to one scaled to MAX_WORDS.
         const stage2 = n >= WORD_GOAL;
         // Never display a fraction over the cap: show the count capped at the max.
         $('#count').textContent = Math.min(n, MAX_WORDS);
@@ -5458,26 +5456,15 @@
           ? ' מילים · מקסימום'
           : stage2
             ? ' / ' + MAX_WORDS + ' מילים'
-            : ' / ' + WORD_GOAL + ' מילים · מינימום';
+            : ' / ' + WORD_GOAL + ' מילים';
+        // No running commentary under the bar (the owner removed it, 2026-10-18): the pill and the bar say how far
+        // along the list is. The line speaks only when it has news: the deck is full (the field is closed), or, below,
+        // the collection is locked for payment.
         $('#countHint').textContent = atMax
           ? 'הגעתם למקסימום של ' +
             MAX_WORDS +
             ' מילים - יש לכם משחק מפוצץ! אפשר לסגור ולהתחיל להפיק.'
-          : stage2
-            ? 'יש כבר ' +
-              n +
-              ' מילים - מעולה! מכאן מתחיל הכיף האמיתי: ככל שיש יותר מילים, המשחק יותר מצחיק ומפתיע. אפשר עד ' +
-              MAX_WORDS +
-              ', ומה שלא תשלימו - נשלים לכם לפי סוג האירוע.'
-            : n >= 50
-              ? 'חצי דרך! עוד ' + (WORD_GOAL - n) + ' עד המינימום (אפשר עד ' + MAX_WORDS + ')'
-              : 'עוד ' +
-                (WORD_GOAL - n) +
-                ' עד המינימום של ' +
-                WORD_GOAL +
-                ' (אפשר עד ' +
-                MAX_WORDS +
-                ')';
+          : '';
         // Two-stage bar. Stage 1 (n < WORD_GOAL) fills toward the 70-word
         // minimum. At 70 it's replaced by Stage 2 — a new bar scaled to
         // MAX_WORDS, so 70/412 ≈ ⅙ of the standard deck already filled — that
@@ -5486,13 +5473,9 @@
         $('#stage2').classList.toggle('hidden', !stage2);
         $('#barFill1').style.width = Math.min(100, (n / WORD_GOAL) * 100) + '%';
         $('#barFill2').style.width = Math.min(100, (n / MAX_WORDS) * 100) + '%';
-        // Render-driven Stage-2 label: a message that stays true across the whole
-        // 100→MAX_WORDS range (never claims the "first quarter" is still just full at
-        // 400 words), and flips to a max-reached framing at/over the cap so it
-        // doesn't contradict the "reached maximum" hint.
-        $('#stage2Label').textContent = atMax
-          ? 'הגעתם למקסימום - יש לכם משחק מפוצץ!'
-          : 'המינימום מאחוריכם - ממשיכים למקסימום (' + MAX_WORDS + ')';
+        // The Stage-2 label is empty on the way up (no commentary, as with the hint
+        // above) and speaks only at/over the cap, where it agrees with the hint.
+        $('#stage2Label').textContent = atMax ? 'הגעתם למקסימום - יש לכם משחק מפוצץ!' : '';
 
         // Locked: replace the "keep going" hint written above, which would
         // otherwise sit directly under a disabled input telling them to add more.
@@ -5562,9 +5545,8 @@
         payBtn.classList.toggle('hidden', !isOwner);
       }
 
-      // The counter's ordinary copy urges "another 50 to the minimum" — true, but
-      // actively wrong to say next to a disabled input. While locked the hint says
-      // what is actually happening instead. The pill/bar keep measuring toward the
+      // A disabled input with nothing under it reads as a fault. While locked the
+      // hint says what is actually happening. The pill/bar keep measuring toward the
       // real product goal (that goal has not changed), and neither names the quota.
       function applyLockedCounterCopy() {
         $('#countHint').textContent = isOwner

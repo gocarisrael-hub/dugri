@@ -800,14 +800,14 @@ test('below 70 words: Stage-1 bar is scaled to the 70-word minimum', async ({ pa
   await liftFreeQuota(page);
   // Stage 1 frames the 70-word minimum (not the 412 max) below the goal.
   await expect(page.locator('.count-pill')).toContainText('/ 70');
-  await expect(page.locator('.count-pill')).toContainText('מינימום');
+  await expect(page.locator('.count-pill')).not.toContainText('מינימום');
   await expect(page.locator('#stage1')).toBeVisible();
   await expect(page.locator('#stage2')).toBeHidden();
   await page.fill('#wordInput', 'מילה אחת');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
   await expect(page.locator('#countMax')).toContainText('/ 70');
-  await expect(page.locator('#countHint')).toContainText('70');
+  await expect(page.locator('#countHint')).toHaveText('');
   // one word = 1/70 ≈ 1.43% of a 70-word Stage-1 bar
   const width = await page.locator('#barFill1').evaluate((el) => el.style.width);
   expect(parseFloat(width)).toBeCloseTo(100 / 70, 1);
