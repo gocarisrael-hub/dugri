@@ -4421,10 +4421,15 @@ def title_block(box, lines, fill, outline, font_path, outline_w, arch, shadow,
     # share a left edge instead of centering each line independently (japanese).
     left_align = align == "left"
     right_align = align == "right"
+    # Under direction="rtl" SVG's "start" is the run's RIGHT edge and "end" its LEFT
+    # one, so a flush edge names the opposite anchor for a Hebrew title. Kept as
+    # "start" for an RTL line pinned at offset 0, the run grows BACKWARDS off the
+    # front of its path and Chrome drops every glyph: japanese (align "left")
+    # previewed and printed a Hebrew title as nothing at all.
     if left_align:
-        path_anchor = 'startOffset="0" text-anchor="start"'
+        path_anchor = 'startOffset="0" text-anchor="%s"' % ("end" if rtl else "start")
     elif right_align:
-        path_anchor = 'startOffset="100%" text-anchor="end"'
+        path_anchor = 'startOffset="100%%" text-anchor="%s"' % ("start" if rtl else "end")
     else:
         path_anchor = 'startOffset="50%" text-anchor="middle"'
     # Synthetic italic: Chrome obliques the upright font when the theme's real
