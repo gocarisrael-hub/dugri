@@ -304,6 +304,44 @@ html.rd .pool-opt.active {
 }
 html.rd .finish-step {
   border-bottom-color: var(--color-ink);
+  justify-content: space-between;
+}
+/* The finish tab, the owner's round of 2026-10-18. The warning above the checklist is red: after sending, nothing moves. */
+html.rd #finishHint {
+  color: var(--color-error);
+  font-weight: var(--weight-label);
+}
+/* Each review row is its label and a button only: no summary of the value. She wants the buyer to OPEN each one and look,
+   so the button is an inviting pill with an eye, not a small link. */
+html.rd .finish-step .finish-val {
+  display: none;
+}
+html.rd .finish-step button[data-goto] {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 8px 18px;
+  background: var(--color-tag);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  box-shadow: var(--shadow-sm);
+  font-size: 15px;
+  font-weight: var(--weight-strong);
+}
+html.rd .finish-step button[data-goto]::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  background: currentColor;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z'/%3E%3Ccircle cx='12' cy='12' r='3'/%3E%3C/svg%3E")
+    center / contain no-repeat;
+}
+html.rd .finish-step button[data-goto]:hover {
+  background: var(--color-card-hot);
 }
 html.rd .sheet-err {
   color: var(--color-error);

@@ -166,3 +166,40 @@ test('the word bar is a paper track with a pink fill, in both stages', async ({
   expect(two.image).toBe('none');
   expect(two.track).toBe('rgb(255, 255, 255)');
 });
+
+// The finish tab, the owner's round of 2026-10-18: the warning is red, the review rows carry no value text, and each
+// row's button is an inviting pill with an eye. The live site keeps the summary and the plain link.
+test('the finish tab: a red warning, and review rows that are a label and an inviting button', async ({
+  page,
+  request,
+}) => {
+  const { id, k } = await makeCollection(request);
+  await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await page.locator('.tabbar-btn[data-tab="finish"]').click();
+  await expect(page.locator('#finishHint')).toBeVisible();
+  expect(await page.locator('#finishHint').evaluate((el) => getComputedStyle(el).color)).toBe(
+    'rgb(179, 0, 45)'
+  );
+  await expect(page.getByTestId('finish-title-val')).toBeHidden();
+  await expect(page.getByTestId('finish-pawns-val')).toBeHidden();
+  for (const id of ['finish-go-design', 'finish-go-pawns']) {
+    const btn = page.getByTestId(id);
+    await expect(btn).toBeVisible();
+    const look = await btn.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const icon = getComputedStyle(el, '::after');
+      return {
+        radius: cs.borderTopLeftRadius,
+        shadow: cs.boxShadow,
+        icon: icon.content,
+        w: icon.width,
+      };
+    });
+    expect(look.radius).toBe('999px');
+    expect(look.shadow).toContain('3px 3px 0px');
+    expect(look.icon).toBe('""');
+    expect(look.w).toBe('20px');
+  }
+  await page.getByTestId('finish-go-design').click();
+  await expect(page.getByTestId('title-input')).toBeVisible();
+});
