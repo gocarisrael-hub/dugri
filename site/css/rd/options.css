@@ -431,6 +431,70 @@ html.rd .pawn-tip [data-edit='options-photos-tip-shop'] {
   display: none;
 }
 
+/* ---- the chosen design on the title step (owner, 2026-10-18): a compact box with the shop's own pictures of it ---- */
+html.rd .chosen-design {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden; /* the picture strip scrolls inside; the step never does */
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  background: var(--color-paper);
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow-sm);
+}
+/* the step is a flex item of main.wrap; at min-width:auto it would grow to the strip's full width */
+html.rd .wiz-step {
+  min-width: 0;
+  max-width: 100%;
+}
+html.rd .chosen-design[hidden] {
+  display: none;
+}
+html.rd .cd-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+html.rd .cd-lbl {
+  color: var(--color-text-muted);
+}
+html.rd .cd-name {
+  font-weight: var(--weight-strong);
+}
+html.rd .cd-change {
+  margin-right: auto; /* RTL: pushed to the far (left) end */
+  padding: 4px 12px;
+  background: var(--color-tag);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: var(--weight-label);
+  cursor: pointer;
+}
+html.rd .cd-pics {
+  min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+html.rd .cd-pics img {
+  flex: 0 0 auto;
+  display: block;
+  height: 72px;
+  width: auto;
+  max-width: 140px;
+  object-fit: cover;
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: 6px;
+  background: var(--color-ground);
+}
+
 /* == end C == */
 
 /* == A: commerce — options (pricing) == */
