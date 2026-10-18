@@ -1202,3 +1202,72 @@ def test_an_order_from_before_still_prints_the_composed_title():
     cfg = config.theme("birthday-boys-basketball")
     assert config.title_lines(cfg, "דני", {"AGE": "30"}, gender="male") == ["דני בן 30"]
     assert config.title_lines(cfg, "שירה", {"AGE": "30"}, gender="female") == ["שירה בת 30"]
+
+
+def test_title_block_flush_edge_anchor_follows_direction():
+    # A left- or right-aligned title pins the run's flush EDGE to the end of its
+    # path. Under direction="rtl" SVG's "start" is the run's RIGHT edge, so an RTL
+    # line keeps the side it is flush to only with the opposite anchor. japanese
+    # (align "left") wrote "start" for Hebrew too, the run grew off the front of
+    # its path, and the preview and the deck carried no title at all.
+    import render_page as rp
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")
+    box = {"x0": 0, "y0": 0, "x1": 600, "y1": 200}
+
+    def anchor(align, rtl):
+        body = rp.title_block(box, ["שירה 40" if rtl else "Shira 40"], "#000", "#000",
+                              font, 0.0, 0.0, False, rtl=rtl, align=align)
+        start = body.index("<textPath")
+        return body[start:body.index(">", start)]
+
+    assert 'startOffset="0" text-anchor="start"' in anchor("left", False)
+    assert 'startOffset="0" text-anchor="end"' in anchor("left", True)
+    assert 'startOffset="100%" text-anchor="end"' in anchor("right", False)
+    assert 'startOffset="100%" text-anchor="start"' in anchor("right", True)
+    # centred titles are symmetric and stay as they were
+    assert 'startOffset="50%" text-anchor="middle"' in anchor("center", True)
+
+
+def test_title_block_flush_hebrew_title_is_drawn_in_raster():
+    # The SEMANTICS behind the anchor test above, through the real rasterizer: a
+    # Hebrew title aligned left or right puts ink on the card, on the side it is
+    # aligned to. Before the fix the left-aligned one rendered blank. Chrome-
+    # guarded like the RTL raster test above.
+    import subprocess
+    import tempfile
+
+    from PIL import Image
+
+    import render_page as rp
+
+    if not os.path.exists(rp.CHROME):
+        return
+
+    font = os.path.join(config.HERE, "Cafe-Regular.ttf")
+    box = {"x0": 20, "y0": 0, "x1": 580, "y1": 200}
+    tmp = tempfile.mkdtemp(prefix="dugri-test-flush-")
+
+    def ink(align):
+        body = rp.title_block(box, ["שירה חוגגת 40"], "#000", "#000", font,
+                              0.0, 0.0, False, rtl=True, align=align)
+        svg = ('<svg xmlns="http://www.w3.org/2000/svg" width="600" height="200" '
+               'viewBox="0 0 600 200"><rect width="600" height="200" fill="#fff"/>'
+               "<style>" + rp.font_face("TitleFont", font) + "</style>" + body + "</svg>")
+        svg_p = os.path.join(tmp, align + ".svg")
+        png_p = os.path.join(tmp, align + ".png")
+        with open(svg_p, "w", encoding="utf-8") as f:
+            f.write(svg)
+        subprocess.run([rp.CHROME, "--headless", "--disable-gpu",
+                        "--force-device-scale-factor=1", f"--screenshot={png_p}",
+                        "--window-size=600,200", svg_p], check=True,
+                       stderr=subprocess.DEVNULL)
+        im = Image.open(png_p).convert("L")
+        return im.point(lambda v: 255 if v < 128 else 0).getbbox()
+
+    left, right = ink("left"), ink("right")
+    assert left is not None, "a left-aligned Hebrew title must be drawn"
+    assert right is not None, "a right-aligned Hebrew title must be drawn"
+    # flush to the side it is aligned to, inside the box
+    assert left[0] <= box["x0"] + 12 and left[2] <= box["x1"] + 2, left
+    assert right[2] >= box["x1"] - 12 and right[0] >= box["x0"] - 2, right
