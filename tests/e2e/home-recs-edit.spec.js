@@ -7,6 +7,7 @@ import { test, expect } from '@playwright/test';
 //   (the occasion until she writes one) under her screenshot;
 // - in edit mode the caption, the screenshot and the logo's name show in the card to be edited, an emptied card stays
 //   (faded) to be filled again, the row holds still and a card does not open;
+// - the spare cards (reviews 9-12, logos 6-8) are hidden until the owner fills one (a logo needs its picture as well);
 // - the business text leads with the gift, and the design view has no swipe hint.
 
 const OVERRIDES = {
@@ -18,6 +19,13 @@ const OVERRIDES = {
   'new-logo-1': { img: 'assets/home/logos/hm.webp' },
   'new-logo-1-name': { text: 'חברה חדשה' },
   'new-logo-2-name': { text: '' },
+  // two spare cards filled: a review with no screenshot yet, and a logo with its picture; a third, a logo given only a
+  // name, stays hidden until it has a picture too
+  'new-review-9-quote': { text: 'המלצה חדשה בכרטיס פנוי' },
+  'new-review-9-tag': { text: 'יום הולדת' },
+  'new-logo-6-name': { text: 'בלי תמונה עדיין' },
+  'new-logo-7-name': { text: 'לוגו חדש' },
+  'new-logo-7': { img: 'assets/home/logos/elbit.svg' },
 };
 
 test.beforeEach(async ({ page }) => {
@@ -44,9 +52,9 @@ test.describe('the recommendations take the owner’s edits', () => {
     page,
   }) => {
     await page.goto('/new.html');
-    // the reviews: 8 a copy, one emptied
-    await expect.poll(() => shown(copies(page, 'button.rc .ttl'))).toBe(7 * 3);
-    await expect(copies(page, 'button.rc .ttl')).toHaveCount(8 * 3);
+    // the reviews: 8 and 4 spares a copy; one emptied, one spare filled
+    await expect.poll(() => shown(copies(page, 'button.rc .ttl'))).toBe(8 * 3);
+    await expect(copies(page, 'button.rc .ttl')).toHaveCount(12 * 3);
     const quotes = await copies(page, 'button.rc .ttl').allTextContents();
     expect(quotes.filter((q) => q === 'ציטוט חדש מהאדמין')).toHaveLength(3);
     expect(
@@ -57,10 +65,10 @@ test.describe('the recommendations take the owner’s edits', () => {
         (els) => els.filter((e) => e.getAttribute('src') === 'assets/home/reviews/r1.jpg').length
       )
     ).toBe(3 + 3); // review 7's own screenshot, and review 3's new one
-    // the logos: 5 a copy, one emptied; the first is the new picture under its new name
-    await expect.poll(() => shown(copies(page, '.rc.logo img'))).toBe(4 * 3);
+    // the logos: 5 and 3 spares a copy; one emptied, one spare filled, one spare named but with no picture yet
+    await expect.poll(() => shown(copies(page, '.rc.logo img'))).toBe(5 * 3);
     const logo1 = await copies(page, '.rc.logo img').evaluateAll((els) =>
-      els.filter((e, i) => i % 5 === 0).map((e) => [e.getAttribute('src'), e.alt])
+      els.filter((e, i) => i % 8 === 0).map((e) => [e.getAttribute('src'), e.alt])
     );
     expect(logo1).toEqual(Array(3).fill(['assets/home/logos/hm.webp', 'חברה חדשה']));
     // nothing in the row is a gap: the row still loops over whole copies
@@ -101,7 +109,7 @@ test.describe('the recommendations take the owner’s edits', () => {
     await page.goto('/new.html?edit=1&key=dugri-admin');
     await expect(page.locator('html')).toHaveClass(/dugri-editing/);
     const real = page.locator('#track > :not([aria-hidden])');
-    await expect(real).toHaveCount(13);
+    await expect(real).toHaveCount(20);
     for (const sel of [
       '[data-edit="new-review-3-cap"]',
       '[data-edit-img="new-review-3-shot"]',
@@ -109,7 +117,8 @@ test.describe('the recommendations take the owner’s edits', () => {
     ])
       await expect(page.locator(sel)).toBeVisible();
     await expect(page.locator('[data-edit="new-review-2-quote"]')).toBeVisible(); // emptied, and still there to fill
-    await expect(page.locator('#track > .rc-empty:not([aria-hidden])')).toHaveCount(2);
+    // the two emptied cards and the five spares still empty (logo 6 has a name but no picture), each there to be filled
+    await expect(page.locator('#track > .rc-empty:not([aria-hidden])')).toHaveCount(7);
     // the row does not drift under the owner's cursor, and a card does not open
     await page.locator('#recs').scrollIntoViewIfNeeded();
     const sl = await page.locator('#row').evaluate((r) => r.scrollLeft);
@@ -117,6 +126,28 @@ test.describe('the recommendations take the owner’s edits', () => {
     expect(await page.locator('#row').evaluate((r) => r.scrollLeft)).toBe(sl);
     await page.locator('[data-edit="new-review-4-quote"]').click();
     await expect(page.locator('#sheet')).not.toHaveAttribute('open', '');
+  });
+});
+
+test.describe('a spare card', () => {
+  test('once filled, shows in the row and opens on its caption alone until it has a screenshot', async ({
+    page,
+  }) => {
+    await page.goto('/new.html');
+    const card = page.locator('#track button.rc:not([aria-hidden])', {
+      hasText: 'המלצה חדשה בכרטיס פנוי',
+    });
+    await expect(card).toBeVisible();
+    await card.evaluate((b) => b.click());
+    await expect(page.locator('#sheet')).toHaveAttribute('open', '');
+    await expect(page.locator('#sheetPic img')).toHaveCount(0);
+    await expect(page.locator('#sheetCap')).toHaveText('יום הולדת');
+    // the filled logo shows; a spare still empty, or named with no picture, does not
+    await expect(
+      page.locator('#track .rc.logo:not([aria-hidden]) img[alt="לוגו חדש"]')
+    ).toBeVisible();
+    for (const k of ['new-logo-6-name', 'new-logo-8-name', 'new-review-10-quote'])
+      await expect(page.locator(`[data-edit="${k}"]`).locator('xpath=..')).toBeHidden();
   });
 });
 

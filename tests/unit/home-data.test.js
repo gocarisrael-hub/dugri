@@ -258,9 +258,13 @@ describe('new.html', () => {
       expect(key).toMatch(/^[a-z0-9][a-z0-9-]{0,60}$/);
       // the story and the footer are the live homepage's texts, read and written through its bucket
       expect(/^(new-|index-story-|index-footer-)/.test(key), key).toBe(true);
-      // a review's caption ships empty on purpose: until the owner writes one, its sheet shows the occasion
+      // a review's caption ships empty on purpose (until the owner writes one, its sheet shows the occasion), and so do the
+      // spare cards' texts (reviews 9-12, logos 6-8): an empty spare stays hidden until she fills it
       const mayBeEmpty =
-        html.includes(`data-edit-img="${key}"`) || /^new-review-\d+-cap$/.test(key);
+        html.includes(`data-edit-img="${key}"`) ||
+        /^new-review-\d+-cap$/.test(key) ||
+        /^new-review-(9|1[0-2])-(tag|quote)$/.test(key) ||
+        /^new-logo-[6-8]-name$/.test(key);
       if (!mayBeEmpty) expect(text.trim(), key).not.toBe('');
       expect(seen.has(key), `duplicate ${key}`).toBe(false);
       seen.add(key);
@@ -316,9 +320,9 @@ describe('the reviews row', () => {
 
   it('every review and logo is a card: class rc, never a stray class name that leaves a bare grey button', () => {
     const cls = [...track.matchAll(/<(?:button|div) class="([^"]*)"/g)].map((m) => m[1]);
-    expect(cls.length).toBe(13); // 8 reviews, 5 logos
+    expect(cls.length).toBe(20); // 8 reviews and 4 spares, 5 logos and 3 spares
     for (const c of cls) expect(c.split(' ')[0], c).toBe('rc');
-    expect(cls.filter((c) => c.startsWith('rc hot') || c === 'rc')).toHaveLength(8);
+    expect(cls.filter((c) => c.startsWith('rc hot') || c === 'rc')).toHaveLength(12);
   });
 });
 

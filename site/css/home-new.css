@@ -901,9 +901,26 @@ html.dugri-editing .rc .lname {
   font-size: 13px;
   opacity: 0.75;
 }
-html.dugri-editing .rc .cap:empty::before {
+html.dugri-editing .rc .cap:empty::before,
+html.dugri-editing .rc .ttl:empty::before,
+html.dugri-editing .rc .tag:empty::before,
+html.dugri-editing .rc .lname:empty::before {
   content: 'שם · תאריך';
   opacity: 0.5;
+}
+html.dugri-editing .rc .ttl:empty::before {
+  content: 'ציטוט חדש';
+}
+html.dugri-editing .rc .tag:empty::before {
+  content: 'אירוע';
+}
+html.dugri-editing .rc .lname:empty::before {
+  content: 'שם החברה';
+}
+html.dugri-editing .rc .ttl:empty,
+html.dugri-editing .rc .tag:empty {
+  min-width: 4em;
+  min-height: 1.2em;
 }
 html.dugri-editing .rc .shot {
   display: block;

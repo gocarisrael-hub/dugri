@@ -783,6 +783,8 @@ const editing = () =>
   /[?&]edit=1(&|$)/.test(window.location.search);
 // The owner's edits reach the two copies too: every text, the screenshot and the logo. A review whose quote she empties,
 // or a logo whose name she empties, leaves the row (all three copies); the logo's name is its picture's alt text.
+// The spare cards at the end of the row ship empty, so they show only once she fills one (a logo needs its picture too).
+const SLOT = /\/slot\.svg$/;
 const mirror = () => {
   trackEl.querySelectorAll('[data-edit-mirror]').forEach((m) => {
     const src = trackEl.querySelector(`[data-edit="${m.dataset.editMirror}"]`);
@@ -796,7 +798,9 @@ const mirror = () => {
   const edit = editing();
   [...trackEl.children].forEach((c) => {
     const name = c.querySelector('.lname'),
-      empty = !(c.querySelector('.ttl') || name).textContent.trim();
+      empty =
+        !(c.querySelector('.ttl') || name).textContent.trim() ||
+        (!!name && SLOT.test(c.querySelector('img').getAttribute('src')));
     if (name) c.querySelector('img').alt = name.textContent.trim();
     c.hidden = empty && !edit;
     c.classList.toggle('rc-empty', empty);
@@ -810,10 +814,13 @@ trackEl.addEventListener('click', (e) => {
   const b = e.target.closest('button.rc');
   if (!b || dragged || editing()) return;
   sheetFrom = b;
-  const img = new window.Image();
-  img.src = b.querySelector('.shot').getAttribute('src');
+  const img = new window.Image(),
+    shot = b.querySelector('.shot').getAttribute('src');
+  img.src = shot;
   img.alt = `ההמלצה המלאה: ${b.querySelector('.ttl').textContent}`;
-  sheetPic.replaceChildren(img);
+  if (SLOT.test(shot))
+    sheetPic.replaceChildren(); // a filled spare card with no screenshot yet: the caption alone
+  else sheetPic.replaceChildren(img);
   // the caption under the screenshot: the owner's name · date line, or the occasion until she writes one
   sheetCap.textContent =
     b.querySelector('.cap').textContent.trim() || b.querySelector('.tag').textContent;
