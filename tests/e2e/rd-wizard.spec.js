@@ -54,17 +54,21 @@ test('the wizard runs to a created collection in the mode, in its own bar and th
   await expect(page.locator('nav.nav')).toBeVisible();
   await expect(page.locator('.rd-hdr')).toHaveCount(0);
 
-  // Next is the black pill with the drawn arrow, Back the outlined one; the step title is in the heading face
+  // Next is the black pill with the drawn arrow, Back the outlined one
   const next = page.getByTestId('next-btn');
   await expect(next).toHaveClass(/\brd-btn\b/);
   await expect(next).toHaveClass(/\barrow\b/);
   await expect(page.getByTestId('back-btn')).toHaveClass(/\bsecondary\b/);
   expect(await next.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe('rgb(0, 0, 0)');
-  expect(
-    await page
-      .locator('[data-step="1"] .wiz-title')
-      .evaluate((el) => getComputedStyle(el).fontFamily)
-  ).toContain('Gveret Levin');
+  // the step title is a clean bold heading in the body face, not the handwriting one (the owner's call)
+  const title = await page.locator('[data-step="1"] .wiz-title').evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { family: cs.fontFamily, weight: Number(cs.fontWeight), shadow: cs.textShadow };
+  });
+  expect(title.family).toContain('M PLUS Rounded 1c');
+  expect(title.family).not.toContain('Gveret Levin');
+  expect(title.weight).toBeGreaterThanOrEqual(700);
+  expect(title.shadow).toBe('none');
 
   // the chosen design tile is marked, not just outlined like the rest
   const chosen = page.locator('.design[aria-pressed="true"]');

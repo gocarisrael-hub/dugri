@@ -72,13 +72,14 @@ html.rd .bar > i {
   border-left: var(--border-thin) solid var(--color-ink);
 }
 
-/* ---- step titles: one clean heading in the heading face; the owner found the coloured offset messy (2026-10-18) ---- */
+/* ---- step titles: one clean heading in the body face, bold. The owner found the handwriting heading face messy on the
+   wizard (2026-10-18), so the steps drop it and its coloured offset; the marketing pages keep it. ---- */
 html.rd .wiz-title {
-  font-family: var(--font-heading);
-  font-weight: var(--weight-heading);
-  letter-spacing: var(--track-heading);
-  font-size: 34px;
-  line-height: 1.05;
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
+  font-size: 28px;
+  line-height: 1.15;
 }
 html.rd .wiz-sub {
   color: var(--color-text-muted);

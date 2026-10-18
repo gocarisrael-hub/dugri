@@ -4,7 +4,7 @@ import { previewRedesign } from './helpers/redesign.js';
 // The word collection (collect.html) in redesign mode: css/rd/collect.css, C's section (docs/redesign-mode.md).
 // The page's HTML and logic are untouched; this checks the restyle keeps it working and on the screen:
 // - a word can be added, by the owner and by a contributor, and shows as a chip;
-// - the page keeps its own header (the home link a contributor uses), with the title in the heading face;
+// - the page keeps its own header (the home link a contributor uses), with the title in the bold body face;
 // - what the page hides with its own .hidden class stays hidden;
 // - the owner's five tabs stay on one line, and nothing scrolls sideways, from 320px to 1440px.
 
@@ -53,13 +53,19 @@ test('the owner adds a word in the mode; the page keeps its own header and its h
   await expect(page.locator('html')).toHaveClass(/(^|\s)rd(\s|$)/);
   await expect(page.locator('link[href*="/css/rd/collect"]')).toHaveCount(1);
 
-  // its own header: the home link stays, the shell's header is not added; the title is in the heading face
+  // its own header: the home link stays, the shell's header is not added; the title is in the body face, bold, with no
+  // offset (the owner found the handwriting face messy on the order flow)
   await expect(page.getByTestId('home-link')).toBeVisible();
   await expect(page.locator('.rd-hdr')).toHaveCount(0);
   await expect(page.locator('#title')).toContainText('ליאת');
-  expect(await page.locator('#title').evaluate((el) => getComputedStyle(el).fontFamily)).toContain(
-    'Gveret Levin'
-  );
+  const h1 = await page.locator('#title').evaluate((el) => {
+    const cs = getComputedStyle(el);
+    return { family: cs.fontFamily, weight: Number(cs.fontWeight), shadow: cs.textShadow };
+  });
+  expect(h1.family).toContain('M PLUS Rounded 1c');
+  expect(h1.family).not.toContain('Gveret Levin');
+  expect(h1.weight).toBeGreaterThanOrEqual(700);
+  expect(h1.shadow).toBe('none');
 
   // the owner's tabs, and the words card as a cut-out card
   await expect(page.getByTestId('tabs')).toBeVisible();
