@@ -5,19 +5,84 @@
 // The single cards and boards the owner approved in the redesign (DESIGN.md, "Shapes"): cut from the live deck sheets and
 // print templates, each card's frame evened to 10.78% of its width. They live in assets/home/, keyed by the live design id.
 // `color` is the design's main colour, sampled from its real card; the panel and the tapped view derive from it.
+// `sharp`: the widths of each card's sharper twin, <name>@2x.webp, as [fronts, back] (the 400 px card stays the src). Each twin is
+// as wide as its source really holds: 800 from a print template, ~576 from a 2000 px deck sheet (8 cards a sheet), never upscaled.
 // A design that is public but missing here still shows, from its own live pictures (a custom design's template card).
 export const DESIGN_ART = {
-  bachelorette: { color: '#fc789c', fronts: 8, back: true, board: true, board2x: true },
-  birthday: { color: '#9ce4fc', fronts: 1, back: true, board: true, board2x: true },
-  grapefruit: { color: '#f07848', fronts: 1, back: true, board: true, board2x: true },
-  marriage: { color: '#0048a8', fronts: 1, back: true, board: true, board2x: true },
-  'daniel-amit': { color: '#f5d98f', fronts: 8, back: true, board: true, board2x: true },
+  bachelorette: {
+    color: '#fc789c',
+    fronts: 8,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [576, 800],
+  },
+  birthday: {
+    color: '#9ce4fc',
+    fronts: 1,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [800, 800],
+  },
+  grapefruit: {
+    color: '#f07848',
+    fronts: 1,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [800, 576],
+  },
+  marriage: {
+    color: '#0048a8',
+    fronts: 1,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [800, 800],
+  },
+  'daniel-amit': {
+    color: '#f5d98f',
+    fronts: 8,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [576, 576],
+  },
   // the koi red of its art, so its panel and tapped view are a pastel red and not grey
-  japanese: { color: '#b03a3a', fronts: 1, back: true, board: true, board2x: true },
-  posttrip: { color: '#90d8e4', fronts: 8, back: true, board: true, board2x: true },
-  'football-boys': { color: '#2a52be', fronts: 8, back: true, board: true, board2x: true },
-  tarifa: { color: '#3d6b2c', fronts: 1, back: true, board: true, board2x: true },
-  kids: { color: '#1878fc', fronts: 1, back: true, board: true, board2x: false }, // its board has no 2000 px source
+  japanese: {
+    color: '#b03a3a',
+    fronts: 1,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [800, 636],
+  },
+  posttrip: {
+    color: '#90d8e4',
+    fronts: 8,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [576, 576],
+  },
+  'football-boys': {
+    color: '#2a52be',
+    fronts: 8,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [576, 576],
+  },
+  tarifa: {
+    color: '#3d6b2c',
+    fronts: 1,
+    back: true,
+    board: true,
+    board2x: true,
+    sharp: [800, 800],
+  },
+  kids: { color: '#1878fc', fronts: 1, back: true, board: true, board2x: false, sharp: [800, 576] }, // its board has no 2000 px source
 };
 // The approved order on the strip; designs the admin adds later follow, in the shop's order.
 export const DESIGN_ORDER = [
@@ -64,6 +129,16 @@ export function panelColors(h) {
   let f = 0.12;
   while (f < 0.9 && luminance(mix(h, f, to)) < 0.42) f += 0.03;
   return [mix(h, f, to), mix(h, f + (1 - f) * 0.62, to)];
+}
+
+const CARD_W = 400;
+/** The srcset for one of the page's own card pictures, '' for any other picture (a custom design's template card). */
+export function cardSrcset(src) {
+  const m = /^assets\/home\/cards\/(.+)-(f\d+|b1)\.webp$/.exec(src || '');
+  const art = m && DESIGN_ART[m[1]];
+  if (!art || !art.sharp) return '';
+  const w = art.sharp[m[2] === 'b1' ? 1 : 0];
+  return `${src} ${CARD_W}w, ${src.replace(/\.webp$/, '@2x.webp')} ${w}w`;
 }
 
 /**

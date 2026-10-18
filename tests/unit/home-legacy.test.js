@@ -51,6 +51,17 @@ describe('a WebP that will not decode', () => {
     expect(img.getAttribute('src')).toMatch(/\/assets\/home\/boards\/tarifa\.jpg$/);
   });
 
+  it('keeps a card the screen wanted sharp sharp: its @2x JPEG twin', () => {
+    const img = failImg(
+      '/assets/home/cards/japanese-f1@2x.webp',
+      '/assets/home/cards/japanese-f1.webp 400w, /assets/home/cards/japanese-f1@2x.webp 800w'
+    );
+    expect(img.hasAttribute('srcset')).toBe(false);
+    expect(img.getAttribute('src')).toBe(
+      'http://localhost:3000/assets/home/cards/japanese-f1@2x.jpg'
+    );
+  });
+
   it('leaves every other picture alone, and a failing twin too, so nothing loops', () => {
     expect(failImg('/content-uploads/x.webp').getAttribute('src')).toBe('/content-uploads/x.webp');
     expect(failImg('/assets/home/cards/kids-f1.jpg').getAttribute('src')).toBe(
@@ -63,7 +74,7 @@ describe('a WebP that will not decode', () => {
     let n = 0;
     for (const sub of ['cards', 'boards', 'logos']) {
       for (const f of fs.readdirSync(path.join(dir, sub))) {
-        if (!f.endsWith('.webp') || f.includes('@2x')) continue;
+        if (!f.endsWith('.webp') || (f.includes('@2x') && sub !== 'cards')) continue; // cards keep a sharp twin too
         const twin = f.replace(/\.webp$/, sub === 'logos' ? '.png' : '.jpg');
         expect(fs.existsSync(path.join(dir, sub, twin)), `${sub}/${twin}`).toBe(true);
         n++;

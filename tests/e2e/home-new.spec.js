@@ -417,8 +417,9 @@ test.describe('in an old Safari', () => {
       )
       .toEqual([
         expect.stringMatching(/^bachelorette\.jpg true$/),
-        expect.stringMatching(/^bachelorette-f1\.jpg true$/),
-        expect.stringMatching(/^bachelorette-b1\.jpg true$/),
+        // on a 2x/3x screen the cards fall back to their sharp JPEG twins
+        expect.stringMatching(/^bachelorette-f1(@2x)?\.jpg true$/),
+        expect.stringMatching(/^bachelorette-b1(@2x)?\.jpg true$/),
       ]);
   });
 

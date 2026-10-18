@@ -15,6 +15,7 @@ import {
   sendLead,
   autoDealAllowed,
   AUTO_DEAL_MS,
+  cardSrcset,
 } from './home-data.js';
 import { initIllustrations } from './home-illos.js';
 import { initMenu, trapTab } from './home-menu.js';
@@ -23,6 +24,14 @@ import { initZoom } from './home-zoom.js';
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const $ = (id) => document.getElementById(id);
 const rnd = (a, b) => a + Math.random() * (b - a);
+// a card picture with its sharper twin for 2x/3x screens; `sizes` is how wide the page draws it
+const cardImg = (src, sizes, attrs) => {
+  const set = cardSrcset(src);
+  return `<img src="${esc(src)}"${set ? ` srcset="${esc(set)}" sizes="${sizes}"` : ''} ${attrs}>`;
+};
+const DECK_SIZES = '(min-width: 900px) 210px, 150px',
+  STRIP_SIZES = '(min-width: 900px) 340px, (min-width: 431px) 250px, 58vw', // 340: the still three-column grid
+  VIEW_SIZES = '170px';
 const shuffle = (a) => {
   a = a.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -75,9 +84,14 @@ function showNext(force) {
     force && D[force] && D[force].deal ? force : opts[(Math.random() * opts.length) | 0] || keys[0];
   const [a, b, top] = deckBtn.children,
     under = shuffle(keys.filter((k) => k !== nextKey));
-  a.src = D[under[0] || nextKey].back;
-  b.src = D[under[1] || under[0] || nextKey].back;
-  top.src = D[nextKey].back;
+  const put = (img, src) => {
+    img.sizes = DECK_SIZES;
+    img.srcset = cardSrcset(src);
+    img.src = src;
+  };
+  put(a, D[under[0] || nextKey].back);
+  put(b, D[under[1] || under[0] || nextKey].back);
+  put(top, D[nextKey].back);
 }
 // the deck on the right, the pile one short toss to its left, the pair centred on the table
 const geo = () => {
@@ -120,7 +134,7 @@ function deal(want, auto) {
   const el = document.createElement('div');
   el.className = 'card down';
   el.setAttribute('aria-hidden', 'true');
-  el.innerHTML = `<div class="in"><img class="f" src="${esc(front(k))}" alt="" draggable="false"><img class="b" src="${esc(D[k].back)}" alt="" draggable="false"></div>`;
+  el.innerHTML = `<div class="in">${cardImg(front(k), DECK_SIZES, 'class="f" alt="" draggable="false"')}${cardImg(D[k].back, DECK_SIZES, 'class="b" alt="" draggable="false"')}</div>`;
   stage.appendChild(el);
   const c = {
     el,
@@ -473,7 +487,7 @@ function buildStrip() {
   strip.innerHTML = Array.from({ length: COPIES * N }, (_, j) => {
     const d = designs[j % N],
       real = ((j / N) | 0) === MID;
-    return `<button class="dz" type="button" data-k="${esc(d.id)}"${real ? '' : ' tabindex="-1" aria-hidden="true"'} aria-label="${esc(d.name)}: לראות את הקלפים והלוח"><div class="tilt"><img src="${esc(d.fronts[0])}" alt="" draggable="false" loading="${real ? 'eager' : 'lazy'}"></div><span class="nm">${esc(d.name)}</span></button>`;
+    return `<button class="dz" type="button" data-k="${esc(d.id)}"${real ? '' : ' tabindex="-1" aria-hidden="true"'} aria-label="${esc(d.name)}: לראות את הקלפים והלוח"><div class="tilt">${cardImg(d.fronts[0], STRIP_SIZES, `alt="" draggable="false" loading="${real ? 'eager' : 'lazy'}"`)}</div><span class="nm">${esc(d.name)}</span></button>`;
   }).join('');
   bgs.innerHTML = designs
     .map((d) => {
@@ -583,8 +597,8 @@ function fillFlood(d) {
     (d.board
       ? `<img class="bd" src="${esc(d.board.src)}"${d.board.srcset ? ` srcset="${esc(d.board.srcset)}" sizes="(min-width: 650px) 520px, 80vw"` : ''} alt="הלוח של ${esc(d.name)}">`
       : '') +
-    `<img class="fc fr" src="${esc(d.fronts[0])}" alt="קלף מהעיצוב ${esc(d.name)}">` +
-    (d.back ? `<img class="fc bk" src="${esc(d.back)}" alt="גב הקלף של ${esc(d.name)}">` : '');
+    cardImg(d.fronts[0], VIEW_SIZES, `class="fc fr" alt="קלף מהעיצוב ${esc(d.name)}"`) +
+    (d.back ? cardImg(d.back, VIEW_SIZES, `class="fc bk" alt="גב הקלף של ${esc(d.name)}"`) : '');
   $('floodOrder').href = d.href;
   $('floodOrder').dataset.gaDesign = d.id;
   stampPrice();

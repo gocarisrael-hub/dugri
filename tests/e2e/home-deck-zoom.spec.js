@@ -212,3 +212,44 @@ test.describe('a tapped design on a phone', () => {
       expect(note.y + note.height).toBeLessThanOrEqual(h);
     });
 });
+
+// the strip's cards were 400 px pictures drawn ~250 CSS px wide: on a 3x phone, stretched about 1.9 times
+for (const dpr of [3, 1])
+  test.describe(`the designs' cards at ${dpr}x`, () => {
+    test.use({ deviceScaleFactor: dpr, viewport: { width: 390, height: 844 } });
+    test('are drawn from a picture at least as wide as the screen draws them (up to 2x)', async ({
+      page,
+    }) => {
+      await page.goto('/new.html');
+      const tiles = page.locator('#strip .dz:not([aria-hidden]) img');
+      await expect(tiles.first()).toBeVisible();
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('#strip .dz:not([aria-hidden]) img')].every(
+          (i) => i.complete && i.naturalWidth
+        )
+      );
+      // the file's own pixels (an <img> with a srcset reports naturalWidth already divided by the density it picked)
+      const got = await tiles.evaluateAll((els) =>
+        Promise.all(
+          els.map(
+            (i) =>
+              new Promise((ok) => {
+                const probe = new window.Image();
+                probe.onload = () =>
+                  ok({ src: i.currentSrc, nat: probe.naturalWidth, css: i.clientWidth });
+                probe.src = i.currentSrc;
+              })
+          )
+        )
+      );
+      expect(got.length).toBeGreaterThan(0);
+      for (const g of got) {
+        expect(g.nat, g.src).toBeGreaterThanOrEqual(g.css * Math.min(dpr, 2));
+        if (dpr > 1) expect(g.src).toMatch(/@2x\.webp$/);
+        else expect(g.src).toMatch(/-f1\.webp$/); // a 1x screen keeps the light 400 px picture
+      }
+      // the tapped view's cards ask for theirs too
+      await page.locator('#strip .dz:not([aria-hidden])').first().click();
+      await expect(page.locator('#tableau .fr')).toHaveAttribute('srcset', /@2x\.webp \d+w$/);
+    });
+  });
