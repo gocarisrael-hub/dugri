@@ -1159,6 +1159,17 @@ function refuseEmojiTitle(res, { title, name } = {}) {
   return true;
 }
 
+// The one-language refusal for the printed title (validate.titleMixesLanguages): Hebrew or English, not both. The
+// wizard and the collection page say so in the field (site/js/title-language.js); this is the authority behind them.
+// Only the buyer's own doors check it — the admin edit screen is the owner's, and she may set what she likes. Returns
+// true when it has already sent the 400.
+function refuseMixedTitle(res, title) {
+  const message = validate.titleLanguageMessage(title);
+  if (!message) return false;
+  res.status(400).json({ error: 'title_language', field: 'custom_title', message });
+  return true;
+}
+
 // The wizard's report of HOW THIS BUYER ARRIVED: two raw strings, capped here and
 // parsed on our server into the touch to freeze on the order. Null for anything
 // that is not a plain object — a string, an array — and null too when the parse
@@ -1202,6 +1213,7 @@ app.post('/api/collections', (req, res) => {
   // Refuse an emoji BEFORE the collection exists. Once it is stored the buyer has
   // moved on to paying, and the next person to look at the title is the printer.
   if (refuseEmojiTitle(res, { title: b.custom_title, name })) return;
+  if (refuseMixedTitle(res, title)) return;
   const c = db.createCollection(name, {
     email: b.email,
     phone: b.phone,
@@ -3169,6 +3181,7 @@ app.put('/api/collections/:id/title', express.json({ limit: '8kb' }), (req, res)
   // an emoji cannot be drawn onto the printed card, and the buyer should hear
   // about it in the one place she can still fix it.
   if (refuseEmojiTitle(res, { title })) return;
+  if (refuseMixedTitle(res, title)) return;
   const stored = db.setCustomTitleForOwner(req.params.id, req.query.k, title);
   if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   res.json({ ok: true, custom_title: stored });

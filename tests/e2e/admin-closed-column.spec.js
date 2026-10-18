@@ -4,7 +4,9 @@ const KEY = 'dugri-admin';
 
 // Unique per call so the parallel device projects (which share one server + JSON
 // store) never collide on a honoree name.
-const uniq = (prefix) => `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+// Digits, not base-36: a title is Hebrew OR English (server/validate.js titleMixesLanguages), and a Latin suffix on a
+// Hebrew title is refused.
+const uniq = (prefix) => `${prefix}-${Math.random().toString().slice(2, 10)}`;
 
 async function seed(request, { name, words = ['א', 'ב'], close = false }) {
   const create = await request.post('/api/collections', {

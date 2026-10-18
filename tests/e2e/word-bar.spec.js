@@ -46,9 +46,11 @@ test('stage 1 (<70 words): bar is scaled to the 70-word minimum', async ({ page,
   // Stage-1 bar shown, stage-2 hidden.
   await expect(page.locator('#stage1')).toBeVisible();
   await expect(page.locator('#stage2')).toBeHidden();
-  // Pill frames the 70-word minimum, not the max.
+  // Pill frames the 70-word goal, not the max, and no longer calls it a minimum (owner, 2026-10-18).
   await expect(page.locator('#countMax')).toContainText('/ ' + WORD_GOAL);
-  await expect(page.locator('#countMax')).toContainText('מינימום');
+  await expect(page.locator('#countMax')).not.toContainText('מינימום');
+  // No running commentary under the bar.
+  await expect(page.locator('#countHint')).toHaveText('');
   await expect(page.locator('.count-pill')).not.toContainText(String(MAX_WORDS));
   // 40 / 70 ≈ 57% on the stage-1 bar.
   const w = await barWidth(page.locator('#barFill1'));
@@ -67,9 +69,9 @@ test('crossing to exactly 70 words: stage-2 bar replaces stage-1, ~⅙ full', as
   // The swap happened: stage-1 gone, the new stage-2 bar is shown.
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
-  // Label is render-driven and true across the whole 70→412 range.
-  await expect(page.locator('#stage2Label')).toContainText('ממשיכים למקסימום');
-  await expect(page.locator('#stage2Label')).toContainText(String(MAX_WORDS));
+  // No commentary on the way up: the label and the hint stay empty until the cap.
+  await expect(page.locator('#stage2Label')).toHaveText('');
+  await expect(page.locator('#countHint')).toHaveText('');
   // Pill now frames the max.
   await expect(page.locator('#countMax')).toContainText('/ ' + MAX_WORDS);
   await expect(page.locator('#countMax')).not.toContainText('מינימום');

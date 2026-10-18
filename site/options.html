@@ -3758,6 +3758,9 @@
       // and the buyer would only find out when the parcel opened. See
       // site/js/emoji.js; server/validate.js is the authority behind it.
       import { hasEmoji, titleEmojiMessage } from './js/emoji.js';
+      // ...and it is in ONE language, Hebrew or English: the generator sets the whole title in the
+      // one face its first letter picks (site/js/title-language.js; server/validate.js decides).
+      import { titleMixesLanguages, titleLanguageMessage } from './js/title-language.js';
       import { track } from './js/analytics.js';
       import { sendEvent, currentTouch } from './js/attribution.js';
       import { initCarousel } from './js/carousel.js';
@@ -4999,15 +5002,18 @@
       const TITLE_REQUIRED_ERR = 'כתבו כותרת כדי להמשיך';
       function refreshTitleError() {
         if (!customTitleErr) return;
-        const msg = titleEmojiMessage(customTitle) || (hasCustomTitle() ? '' : TITLE_REQUIRED_ERR);
+        const msg =
+          titleEmojiMessage(customTitle) ||
+          titleLanguageMessage(customTitle) ||
+          (hasCustomTitle() ? '' : TITLE_REQUIRED_ERR);
         customTitleErr.hidden = !msg;
         if (msg) customTitleErr.textContent = msg;
       }
       // True when the title is clean enough to move on. Emptiness is handled by
       // validateStep (which needs hasCustomTitle anyway); this is only about the
-      // emoji, so the two reasons stay separately answerable.
+      // emoji and the one-language rule, so the reasons stay separately answerable.
       function customTitleOk() {
-        return !hasEmoji(customTitle);
+        return !hasEmoji(customTitle) && !titleMixesLanguages(customTitle);
       }
       if (customTitleInput) {
         customTitleInput.addEventListener('input', () => {
@@ -5806,8 +5812,8 @@
         }
         nextBtn.disabled = disabled;
         if (currentStep === 3) {
-          // The emoji refusal is the only thing that can disable "הבא" while the
-          // box has text in it, so it must be visible whenever the step is.
+          // The emoji and one-language refusals are the only things that can disable
+          // "הבא" while the box has text in it, so they must be visible whenever the step is.
           refreshTitleError();
         }
         if (currentStep === 4) refreshStep5Errors();
