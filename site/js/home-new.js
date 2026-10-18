@@ -770,37 +770,71 @@ for (let i = 0; i < 2; i++)
       e.dataset.editMirror = e.dataset.edit;
       e.removeAttribute('data-edit');
     });
+    k.querySelectorAll('[data-edit-img]').forEach((e) => {
+      e.dataset.editImgMirror = e.dataset.editImg;
+      e.removeAttribute('data-edit-img');
+    });
     if (k.tagName === 'BUTTON') k.tabIndex = -1;
     trackEl.appendChild(k);
   });
-// the owner's edits to a review reach its two copies too
-const mirror = () =>
+// in the content editor (?edit=1) the row holds still, a card does not open, and an emptied card stays to be filled again
+const editing = () =>
+  document.documentElement.classList.contains('dugri-editing') ||
+  /[?&]edit=1(&|$)/.test(window.location.search);
+// The owner's edits reach the two copies too: every text, the screenshot and the logo. A review whose quote she empties,
+// or a logo whose name she empties, leaves the row (all three copies); the logo's name is its picture's alt text.
+const mirror = () => {
   trackEl.querySelectorAll('[data-edit-mirror]').forEach((m) => {
     const src = trackEl.querySelector(`[data-edit="${m.dataset.editMirror}"]`);
     if (src) m.textContent = src.textContent;
   });
+  trackEl.querySelectorAll('[data-edit-img-mirror]').forEach((m) => {
+    const src = trackEl.querySelector(`[data-edit-img="${m.dataset.editImgMirror}"]`);
+    if (src && m.getAttribute('src') !== src.getAttribute('src'))
+      m.setAttribute('src', src.getAttribute('src'));
+  });
+  const edit = editing();
+  [...trackEl.children].forEach((c) => {
+    const name = c.querySelector('.lname'),
+      empty = !(c.querySelector('.ttl') || name).textContent.trim();
+    if (name) c.querySelector('img').alt = name.textContent.trim();
+    c.hidden = empty && !edit;
+    c.classList.toggle('rc-empty', empty);
+  });
+  pos = copyW(); // runs after the editor's overlay (never during this module's first pass), so the row is set up by now
+  setPos();
+};
 let sheetFrom = null,
   dragged = false;
 trackEl.addEventListener('click', (e) => {
   const b = e.target.closest('button.rc');
-  if (!b || dragged) return;
+  if (!b || dragged || editing()) return;
   sheetFrom = b;
   const img = new window.Image();
-  img.src = b.dataset.shot;
+  img.src = b.querySelector('.shot').getAttribute('src');
   img.alt = `ההמלצה המלאה: ${b.querySelector('.ttl').textContent}`;
   sheetPic.replaceChildren(img);
-  sheetCap.textContent = b.querySelector('.tag').textContent;
+  // the caption under the screenshot: the owner's name · date line, or the occasion until she writes one
+  sheetCap.textContent =
+    b.querySelector('.cap').textContent.trim() || b.querySelector('.tag').textContent;
   sheet.showModal();
   if (!reduce)
     sheet.animate([{ transform: 'translateY(100%)' }, { transform: 'none' }], {
       duration: 360,
       easing: 'cubic-bezier(.2, .9, .3, 1.08)',
     });
-  track('review_open', { review: b.dataset.shot.split('/').pop() });
+  track('review_open', { review: img.src.split('/').pop() });
 });
 // three copies side by side; the scroll is kept inside the middle one, so the row never ends. It drifts toward the reading
 // direction unless a finger, a mouse or focus is on it, or it is off screen
-const copyW = () => trackEl.children[one.length].offsetLeft - one[0].offsetLeft || 1;
+// one copy's width: from the first card still shown to its twin in the next copy
+const copyW = () => {
+  const i = Math.max(
+    0,
+    one.findIndex((c) => !c.hidden)
+  );
+  return trackEl.children[one.length + i].offsetLeft - one[i].offsetLeft || 1;
+};
 let pos = 0,
   seen = false,
   rowT = 0,
@@ -820,7 +854,16 @@ const setPos = () => {
 function tickRow(t) {
   const dt = Math.min(64, t - (rowT || t));
   rowT = t;
-  if (!hovering && !touching && !kbFocus && !mdrag && seen && !document.hidden && !sheet.open) {
+  if (
+    !hovering &&
+    !touching &&
+    !kbFocus &&
+    !mdrag &&
+    seen &&
+    !document.hidden &&
+    !sheet.open &&
+    !editing()
+  ) {
     pos -= dt * 0.03;
     wrap();
     setPos();

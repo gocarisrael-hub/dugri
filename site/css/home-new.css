@@ -732,11 +732,6 @@ dialog.flood::backdrop {
   margin: 0;
   font-size: 16px;
 }
-@media (min-width: 900px) {
-  .flood .swipe {
-    display: none;
-  }
-}
 .flood .x {
   box-shadow: none !important;
 }
@@ -808,11 +803,6 @@ dialog.flood::backdrop {
   font-size: 14px !important;
   opacity: 0.8;
 }
-.flood .swipe {
-  font: var(--weight-strong) 12px/1 var(--font-body);
-  letter-spacing: 0.03em;
-  opacity: 0.75;
-}
 .tableau {
   width: min(80vw, 520px, 37vh * 1.414);
   width: min(80vw, 520px, 37svh * 1.414);
@@ -826,7 +816,7 @@ dialog.flood::backdrop {
 .spread {
   padding-top: 66px;
 }
-/* short phones (an SE, or browser bars showing): a smaller board; below 700 px the swipe hint goes */
+/* short phones (an SE, or browser bars showing): a smaller board; below 700 px the info packs tighter */
 @media (max-height: 760px) {
   .tableau {
     width: min(76vw, 30vh * 1.414);
@@ -843,9 +833,6 @@ dialog.flood::backdrop {
   }
 }
 @media (max-height: 700px) {
-  .flood .swipe {
-    display: none;
-  }
   .flood .info {
     gap: 8px;
   }
@@ -868,6 +855,17 @@ dialog.flood {
     padding-top: min(120px, max(66px, calc(66px + (100vh - 760px) / 2)));
     padding-top: min(120px, max(66px, calc(66px + (100svh - 760px) / 2)));
   }
+  /* the owner's call: the info halfway between right under the pictures and the foot of the screen. The room left over is
+     shared evenly above and below it */
+  dialog.flood {
+    grid-template-rows: auto 1fr auto 1fr;
+  }
+  .flood .spread {
+    grid-row: 1;
+  }
+  .flood .info {
+    grid-row: 3;
+  }
 }
 @media (min-width: 900px) {
   dialog.flood {
@@ -884,8 +882,38 @@ dialog.flood {
   z-index: 4;
   cursor: grab;
 }
-.flood.zoomed .swipe {
-  visibility: hidden;
+
+/* what the content editor needs in each card, unseen by visitors: a review's caption (shown under its screenshot in the
+   sheet) and the screenshot itself, a logo's name (its alt text). In edit mode they show in the card to be edited, and a
+   card the owner emptied stays, faded, so it can be filled again */
+#track > [hidden], /* a card the owner emptied: .rc's own display would otherwise keep it on screen */
+.rc .cap,
+.rc .shot,
+.rc .lname {
+  display: none;
+}
+html.dugri-editing .rc .cap,
+html.dugri-editing .rc .lname {
+  display: block;
+  min-width: 6em;
+  min-height: 1.3em;
+  margin-top: 6px;
+  font-size: 13px;
+  opacity: 0.75;
+}
+html.dugri-editing .rc .cap:empty::before {
+  content: 'שם · תאריך';
+  opacity: 0.5;
+}
+html.dugri-editing .rc .shot {
+  display: block;
+  width: 64px;
+  height: auto;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+html.dugri-editing .rc-empty {
+  opacity: 0.45;
 }
 
 /* recommendations: Pluto's card row (white, 16 px corners, a thin black line and a hard black offset shadow, a small tag at the

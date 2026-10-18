@@ -5,7 +5,7 @@ import { test, expect } from '@playwright/test';
 // - it waits while a design is open, while the hero is off screen, and never deals by itself under reduced motion;
 // - in a tapped design, a pinch or a double-tap zooms the board and the cards; a zoomed view is not closed by a tap,
 //   Esc and the ✕ still close it, and the next open starts unzoomed; the board asks for its sharper source when zoomed;
-// - the name, the price and the button sit right under the pictures, on screen without scrolling.
+// - the name, the price and the button sit halfway between the pictures and the foot of the screen, all on screen.
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
@@ -197,18 +197,21 @@ test.describe('a tapped design on a phone', () => {
     [375, 667],
     [360, 740],
   ])
-    test(`shows the name high and the button and the time on screen at ${w}x${h}`, async ({
+    test(`sets the info halfway between the pictures and the foot of the screen at ${w}x${h}`, async ({
       page,
     }) => {
       await page.setViewportSize({ width: w, height: h });
       await page.goto('/new.html');
       await openDesign(page);
       await page.waitForTimeout(900);
-      const fr = await page.locator('#tableau .fr').boundingBox();
-      const name = await page.locator('#floodName').boundingBox();
+      // the owner's call: halfway between right under the pictures and the bottom of the screen
+      const spread = await page.locator('#flood .spread').boundingBox();
+      const info = await page.locator('#flood .info').boundingBox();
+      const under = spread.y + spread.height,
+        foot = h - info.height;
+      expect(Math.abs(info.y - (under + foot) / 2)).toBeLessThanOrEqual(2);
+      expect(info.y - under).toBeGreaterThan(10); // not right under the pictures any more
       const note = await page.locator('#flood .note').boundingBox();
-      expect(name.y).toBeLessThan(h * 0.52);
-      expect(name.y - (fr.y + fr.height)).toBeLessThan(40); // right under the cards, no empty band between
       expect(note.y + note.height).toBeLessThanOrEqual(h);
     });
 });

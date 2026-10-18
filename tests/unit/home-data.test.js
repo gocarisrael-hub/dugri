@@ -258,7 +258,10 @@ describe('new.html', () => {
       expect(key).toMatch(/^[a-z0-9][a-z0-9-]{0,60}$/);
       // the story and the footer are the live homepage's texts, read and written through its bucket
       expect(/^(new-|index-story-|index-footer-)/.test(key), key).toBe(true);
-      if (!html.includes(`data-edit-img="${key}"`)) expect(text.trim(), key).not.toBe('');
+      // a review's caption ships empty on purpose: until the owner writes one, its sheet shows the occasion
+      const mayBeEmpty =
+        html.includes(`data-edit-img="${key}"`) || /^new-review-\d+-cap$/.test(key);
+      if (!mayBeEmpty) expect(text.trim(), key).not.toBe('');
       expect(seen.has(key), `duplicate ${key}`).toBe(false);
       seen.add(key);
     }
