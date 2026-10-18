@@ -14,7 +14,9 @@ import { test, expect } from '@playwright/test';
 // so the table must not show them as blank rows, and the dialog must not imply
 // their title box is what prints.
 const KEY = 'dugri-admin';
-const uniq = (p) => `${p}-${Math.random().toString(36).slice(2, 10)}`;
+// Digits, not base-36: a title is Hebrew OR English (server/validate.js titleMixesLanguages), and a Latin suffix on a
+// Hebrew title is refused.
+const uniq = (p) => `${p}-${Math.random().toString().slice(2, 10)}`;
 
 const rowFor = (page, text) => page.locator('tbody tr', { hasText: text }).first();
 
