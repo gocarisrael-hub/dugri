@@ -1,4 +1,5 @@
-// Commerce's own pages in redesign mode (site/css/rd/{pickup,pay-success,pay-done,partner,coupons}.css): each one gets
+// Commerce's pages in redesign mode (site/css/rd/{pickup,pay-success,pay-done,partner,coupons}.css, and A's sections of
+// the shared files: product.css (the buy box) and collect.css (the checkout)): each one gets
 // its restyle, nothing scrolls sideways at a phone or desktop width, what a page hides stays hidden (a shell class sets
 // display, which would otherwise outrank the hidden attribute), and the money steps on them still work in the mode.
 // Outside the mode none of these files is linked; that half is the gate's own test (redesign-gate).
@@ -6,7 +7,11 @@ import { test, expect } from '@playwright/test';
 import { previewRedesign } from './helpers/redesign.js';
 
 const KEY = 'dugri-admin';
-const uniq = (p) => p + Date.now().toString(36).toUpperCase().slice(-6);
+// The time alone can repeat: two projects run the same test in parallel, and a code made twice is a 409.
+const uniq = (p) =>
+  p +
+  Date.now().toString(36).toUpperCase().slice(-6) +
+  Math.random().toString(36).slice(2, 5).toUpperCase();
 
 // Writes coupons, which other specs read: one project only, like partner-coupons.spec.js.
 const ONLY = 'Desktop Chrome';
@@ -67,6 +72,7 @@ test('each page is in the mode with its own restyle, and nothing scrolls sideway
   await mockSummary(page);
   const partner = await makePartner(request, uniq('RDW'));
   const pages = [
+    ['product', '/product.html?design=bachelorette'],
     ['pickup', '/pickup.html'],
     ['pay-success', '/pay-success.html?c=abc&k=tok'],
     ['pay-done', '/pay-done.html?error=1'],
@@ -155,4 +161,141 @@ test('coupons: the owner creates a coupon from the form in the mode', async ({
   await page.fill('#pct', '10');
   await page.click('#submitBtn');
   await expect(page.locator('tbody tr').filter({ hasText: code })).toHaveCount(1);
+});
+
+test("product.html's buy box: the ink pill without the old glow, the price in the body face, and buying still starts", async ({
+  page,
+}) => {
+  await page.goto('/product.html?design=bachelorette');
+  const buy = page.getByTestId('pdp-buy');
+  await expect.poll(() => buy.getAttribute('href')).toBe('options.html?design=bachelorette&step=2');
+  await expect(buy).toHaveClass(/rd-btn/);
+  await expect(page.locator('.pdp-head h1')).toHaveClass(/rd-title/);
+  // The old .btn sheen and press wipe are off the pill.
+  for (const pseudo of ['::before', '::after']) {
+    const display = await buy.evaluate((el, p) => getComputedStyle(el, p).display, pseudo);
+    expect(display, pseudo).toBe('none');
+  }
+  const face = await page.locator('#pdpPriceNow').evaluate((el) => getComputedStyle(el).fontFamily);
+  expect(face).not.toMatch(/Gveret/);
+
+  // The money path: in the mode there is no start explainer (#692), the pill goes straight to the wizard with the design.
+  const [req] = await Promise.all([
+    page.waitForRequest((r) => r.isNavigationRequest() && r.url().includes('options.html')),
+    buy.click(),
+  ]);
+  expect(new URL(req.url()).search).toBe('?design=bachelorette&step=2');
+});
+
+// The owner's prices, pinned so the totals are known (a body without versions fails isValidPricing and is ignored).
+const PRICING = {
+  store: { now: 79, was: 129 },
+  sale: { on: false },
+  versions: {
+    pdf: { enabled: true, price: 79 },
+    pickup: { enabled: true, price: 149 },
+    delivery: { enabled: true, price: 199 },
+    custom: { enabled: true, price: 599 },
+  },
+};
+
+// A's section of collect.css: the checkout. The top pay card, the pay panel, the bar and the payment window.
+async function makeCollection(request) {
+  const res = await request.post('/api/collections', {
+    data: {
+      honoree_name: 'ליאת',
+      email: 'rd@example.com',
+      phone: '0521234567',
+      design: 'פריז',
+      theme: 'bachelorette',
+      extra_fields: {},
+      custom_title: 'ליאת חוגגת 40',
+      buyer_name: 'דנה כהן',
+    },
+  });
+  expect(res.ok()).toBe(true);
+  const { id, owner_token: k } = await res.json();
+  return { id, k };
+}
+
+// The e2e server has no card credentials, so every pay control is hidden; the checkout's look is about the owner who
+// can pay. Same switch as collect.spec.js's enableCardButton.
+async function checkoutReady(page) {
+  await page.route('**/api/collections/*', async (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    const body = await (await route.fetch()).json();
+    body.card_enabled = true;
+    return route.fulfill({ json: body });
+  });
+  await page.route('**/api/pricing', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(PRICING),
+    })
+  );
+}
+
+test('collect.html checkout in the mode: the pay pill sits inside its card, nothing scrolls sideways, and paying still opens the payment window', async ({
+  page,
+  request,
+}) => {
+  await checkoutReady(page);
+  const { id, k } = await makeCollection(request);
+  await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await page.getByTestId('tab-pay').click();
+
+  const top = page.getByTestId('pay-top');
+  await expect(top).toBeVisible();
+  const topRadius = await top.evaluate((el) =>
+    parseFloat(getComputedStyle(el).borderTopLeftRadius)
+  );
+  expect(topRadius).toBeGreaterThan(0);
+
+  await page.locator('#payPanel > summary').click();
+  const btn = page.locator('#cardPayBtn');
+  await expect(btn).toBeVisible();
+  // The old gradient, glow pulse and light sweep are off; the button is the ink pill.
+  const look = await btn.evaluate((el) => ({
+    image: getComputedStyle(el).backgroundImage,
+    anim: getComputedStyle(el).animationName,
+    sweep: getComputedStyle(el, '::after').display,
+  }));
+  expect(look).toEqual({ image: 'none', anim: 'none', sweep: 'none' });
+
+  for (const width of [360, 390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    // The old button was width:100% on top of the card's inset and ran past the card's edge, clipped.
+    const [b, card] = await Promise.all([
+      btn.boundingBox(),
+      page.locator('#payPanel').boundingBox(),
+    ]);
+    expect(b.x, `pay pill's left at ${width}`).toBeGreaterThanOrEqual(card.x + 8);
+    expect(b.x + b.width, `pay pill's right at ${width}`).toBeLessThanOrEqual(
+      card.x + card.width - 8
+    );
+    expect(b.width, `pay pill fills its card at ${width}`).toBeGreaterThan(card.width - 48);
+    await noSidewaysScroll(page, `collect checkout at ${width}`);
+  }
+
+  // The copies stepper still prices the order: two copies of the PDF.
+  await page.getByTestId('qty-plus').click();
+  await expect(page.locator('#payTotal')).toHaveText('158');
+  await page.getByTestId('qty-minus').click();
+  await expect(page.locator('#payTotal')).toHaveText('79');
+
+  // The money path: the pill asks pay/init and opens its page in the payment window.
+  const frameUrl = new URL('/terms.html', page.url()).href;
+  await page.route('**/api/collections/*/pay/init', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ url: frameUrl }),
+    })
+  );
+  await btn.click();
+  await expect(page.locator('#payModal')).toBeVisible();
+  await expect(page.locator('#payFrame')).toHaveAttribute('src', frameUrl);
+  await page.locator('#payModalClose').click();
+  await expect(page.locator('#payModal')).toBeHidden();
 });
