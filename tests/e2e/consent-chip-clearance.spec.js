@@ -40,11 +40,21 @@ for (const width of [390, 360]) {
       .toBe(false);
     // …and the chip is still a working control of its own.
     expect(await centreHit(page, '#cookieNotice button')).toBe('self');
-    // Not floating mid-screen: it stands just above the bar.
-    const bar = await page.locator('.wiz-bar').boundingBox();
-    const c = await chip.boundingBox();
-    expect(c.y + c.height).toBeLessThanOrEqual(bar.y);
-    expect(bar.y - (c.y + c.height)).toBeLessThanOrEqual(24);
+    // Not floating mid-screen: it stands just above the bar. Read as one settled state, polled: the
+    // chip is re-placed on a timer, so a single read can land between the bar appearing and the chip
+    // catching up to it.
+    const wizBar = page.locator('.wiz-bar');
+    await expect(async () => {
+      const bar = await wizBar.boundingBox();
+      const c = await chip.boundingBox();
+      expect(c.y + c.height).toBeLessThanOrEqual(bar.y);
+      expect(bar.y - (c.y + c.height)).toBeLessThanOrEqual(24);
+    }).toPass({ timeout: 5000 });
+    // It gets there in one jump. A slide from the corner spends its frames lying across the bar's top
+    // edge, which is the overlap this exists to end.
+    expect(await chip.evaluate((el) => getComputedStyle(el).transitionProperty)).not.toMatch(
+      /bottom|all/
+    );
   });
 }
 
