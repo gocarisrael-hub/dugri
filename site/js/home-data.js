@@ -66,9 +66,10 @@ export const DESIGN_ART = {
     board2x: true,
     sharp: [576, 576],
   },
+  // one front: cut from the template card that prints (thin red line, patterned frame); fronts 2-8 exist only on the volume
   'football-boys': {
     color: '#2a52be',
-    fronts: 8,
+    fronts: 1,
     back: true,
     board: true,
     board2x: true,
