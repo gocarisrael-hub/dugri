@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
+import { openCheckout, showCheckout } from './helpers/checkout.js';
 
 // The e2e server defaults every buyer-wizard feature flag OFF; this spec relies
 // on the (now gated) wizard features, so stub GET /api/features to ALL_ON — the
@@ -102,34 +103,21 @@ async function withCardEnabled(page) {
   });
 }
 
-// THE CHECKOUT IS ON THE תשלום TAB (the four-tab collection page). A buyer gets
-// there by tapping the tab, or by pressing any pay button — the sticky bar, the
-// top card, the free-quota CTA — every one of which switches to it. A test has to
-// do the same: a panel on a tab that is not showing is display:none, and clicking
-// through that would be testing something no buyer can do.
-//
-// The tab strip is the OWNER's; a contributor's page has none, so the click is
-// conditional and this helper works on both.
+// THE CHECKOUT is the pay panel. A buyer reaches it by pressing any pay button —
+// the sticky bar, the top card, the free-quota CTA — or, when no pay card is up
+// (closed before paying, or card payment off), by the תשלום tab, which is down
+// otherwise (the owner, 2026-10-19). A test has to do the same: a panel that is
+// not showing is display:none, and clicking through that would be testing
+// something no buyer can do. helpers/checkout.js takes whichever way in the page
+// offers; a contributor's page offers none, so both helpers work on it too.
+// openPayPanel leaves the panel EXPANDED; showPayTab leaves it as the way in did
+// (the bar expands it, the tab does not).
 async function openPayPanel(page) {
-  await showPayTab(page);
-  // `> summary` (a DIRECT child), not a descendant: the panel also contains the
-  // collapsed "יישובים חריגים" note, which carries a <summary> of its own, so a
-  // bare `#payPanel summary` matches two elements and fails strict mode.
-  await page.locator('#payPanel > summary').click();
+  await openCheckout(page);
 }
 
-// WAIT for the tab, never just look: the strip appears when the owner's state
-// lands, so a point-in-time isVisible() is a race — it wins on a warm local
-// server and loses on a fresh CI one, and losing means clicking nothing and then
-// waiting out the timeout on a panel that was never shown. A contributor's page
-// has no strip at all, so the wait is allowed to expire and the click skipped.
 async function showPayTab(page) {
-  const tab = page.getByTestId('tab-pay');
-  const shown = await tab
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .then(() => true)
-    .catch(() => false);
-  if (shown) await tab.click();
+  await showCheckout(page);
 }
 
 // CLOSING IS ATTESTED NOW. The sign-off tab carries a tick — "I went over the
@@ -443,7 +431,7 @@ test('owner pay panel: select delivery → address fields appear + total 199', a
   await createCollection(page, 'Shira');
 
   // Owner sees the pay panel; it's collapsed by default — open it first.
-  await showPayTab(page); // the checkout lives on the תשלום tab
+  await showPayTab(page);
   await expect(page.locator('#payPanel')).toBeVisible();
   await expect(page.locator('#payTotal')).toBeHidden();
   await openPayPanel(page);
@@ -587,16 +575,16 @@ test('owner pay panel is collapsed by default and opens on the summary button', 
   page,
 }) => {
   await createCollection(page, 'Shira');
-  await showPayTab(page); // the checkout lives on the תשלום tab
+  await showPayTab(page);
   const panel = page.locator('#payPanel');
   await expect(panel).toBeVisible();
   // Collapsed by default: the inner options are hidden behind one button.
   await expect(page.locator('#payOpts')).toBeHidden();
   await expect(page.locator('#payPanel > summary')).toContainText('שלמו וקבלו את המשחק');
   // Click the summary → options reveal; click again → collapse.
-  await openPayPanel(page);
+  await page.locator('#payPanel > summary').click();
   await expect(page.locator('#payOpts')).toBeVisible();
-  await openPayPanel(page);
+  await page.locator('#payPanel > summary').click();
   await expect(page.locator('#payOpts')).toBeHidden();
 });
 
@@ -630,7 +618,7 @@ test('the pay bar carries the price, sticks to the screen and opens the checkout
   await expect(bar).toBeVisible();
   // The amount is the panel's own number, not a second computation of it.
   await expect(page.getByTestId('pay-bar-amount')).toHaveText('199 ₪');
-  await showPayTab(page); // the checkout lives on the תשלום tab
+  // (Read off the panel while it is not on screen: the bar is the way to it.)
   await expect(page.locator('#payTotal')).toHaveText('199');
 
   // STICKY: still on screen at the foot of a long page, which is the whole point.
@@ -640,6 +628,7 @@ test('the pay bar carries the price, sticks to the screen and opens the checkout
   // …and it opens the checkout rather than pointing at it.
   await expect(page.locator('#payPanel')).not.toHaveAttribute('open', '');
   await page.getByTestId('pay-bar-btn').click();
+  await expect(page.locator('#payPanel')).toBeVisible();
   await expect(page.locator('#payPanel')).toHaveAttribute('open', '');
 });
 
@@ -670,12 +659,12 @@ test('the top pay card states the price on arrival and opens the checkout', asyn
   // One price, three places: the panel's total, the bar, and this card.
   await expect(page.getByTestId('pay-top-amount')).toHaveText('199 ₪');
   await expect(page.getByTestId('pay-bar-amount')).toHaveText('199 ₪');
-  await showPayTab(page); // the checkout lives on the תשלום tab
   await expect(page.locator('#payTotal')).toHaveText('199');
 
   // It IS the checkout, not a signpost to it.
   await expect(page.locator('#payPanel')).not.toHaveAttribute('open', '');
   await page.getByTestId('pay-top-btn').click();
+  await expect(page.locator('#payPanel')).toBeVisible();
   await expect(page.locator('#payPanel')).toHaveAttribute('open', '');
 });
 
@@ -1091,14 +1080,16 @@ test('?pay=1 (the order email pay button) opens the checkout on arrival', async 
   await createCollection(page, 'Shira');
   const url = new URL(page.url());
 
-  // Same page WITHOUT the flag: the panel is there but collapsed.
-  await showPayTab(page); // the checkout lives on the תשלום tab
-  await expect(page.locator('#payPanel')).toBeVisible();
+  // Same page WITHOUT the flag: she lands on her words, the checkout not on
+  // screen and folded shut.
+  await expect(page.getByTestId('pay-bar')).toBeVisible();
+  await expect(page.locator('#payPanel')).toBeHidden();
   await expect(page.locator('#payPanel')).not.toHaveAttribute('open', /.*/);
 
   await page.goto(url.pathname + url.search + '&pay=1');
   const panel = page.locator('#payPanel');
   await expect(panel).toHaveAttribute('open', /.*/);
+  await expect(panel).toBeVisible();
   // Scrolled to for real, not merely expanded somewhere down the page: the
   // version options are on screen. (The pay button itself sits below the fold on
   // a phone — the panel is taller than the viewport — which is why the arrival
@@ -1118,7 +1109,7 @@ test('?pay=1 on an ALREADY-PAID order does not force a dead panel open', async (
 
   await page.goto(url.pathname + url.search + '&pay=1');
   await expect(page.locator('#paidCard')).toBeVisible();
-  await showPayTab(page); // the checkout lives on the תשלום tab
+  await showPayTab(page);
   await expect(page.locator('#payPanel')).toBeHidden();
 });
 
@@ -1143,7 +1134,7 @@ test('after payment: pay panel + reminder disappear, סיום card takes over', 
 
   await page.reload();
   // Pay panel + both pay CTAs gone; the "keep adding, then סיום" card is shown.
-  await showPayTab(page); // the checkout lives on the תשלום tab
+  await showPayTab(page);
   await expect(page.locator('#payPanel')).toBeHidden();
   await expect(page.getByTestId('pay-bar')).toBeHidden();
   await expect(page.getByTestId('pay-top')).toBeHidden();
@@ -1182,7 +1173,7 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
     },
   });
   await createCollection(page, 'Shira');
-  await showPayTab(page); // the checkout lives on the תשלום tab
+  await showPayTab(page);
   const panel = page.locator('#payPanel');
   await expect(panel).toContainText('דיגיטלי (PDF)');
   await expect(panel).toContainText('מורידים, מדפיסים לבד');

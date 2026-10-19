@@ -2,6 +2,7 @@
 // (`.pay-collapse > :not(.pay-summary)`), so it ran 32px past the card's edge and the card's overflow:hidden cut it off,
 // and with the notes after it hidden it sat flush on the card's rounded bottom edge.
 import { test, expect } from '@playwright/test';
+import { openCheckout } from './helpers/checkout.js';
 
 async function makeCollection(request) {
   const res = await request.post('/api/collections', {
@@ -37,8 +38,7 @@ for (const width of [360, 390]) {
     await enableCard(page);
     const { id, k } = await makeCollection(request);
     await page.goto(`/collect.html?c=${id}&k=${k}`);
-    await page.getByTestId('tab-pay').click();
-    await page.locator('#payPanel > summary').click();
+    await openCheckout(page);
 
     const pill = page.locator('#cardPayBtn');
     await expect(pill).toBeVisible();

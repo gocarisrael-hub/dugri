@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { showCheckout } from './helpers/checkout.js';
 
 // GETTING OUT OF A PAID CHECKOUT, when the payment frame is on a DIFFERENT
 // ADDRESS from the page around it.
@@ -80,9 +81,9 @@ async function openPayment(page, frameUrl) {
       body: JSON.stringify({ url: frameUrl }),
     })
   );
-  // The checkout lives on its own tab, and is a collapsed <details> inside it —
-  // its button has no size until both are open. This is the buyer's own route.
-  await page.getByTestId('tab-pay').click();
+  // The checkout is a <details> its pay bar opens — its button has no size until
+  // it is shown and open. This is the buyer's own route.
+  await showCheckout(page);
   const panel = page.locator('#payPanel');
   await expect(panel).toBeVisible();
   if (!(await panel.evaluate((el) => el.open))) {

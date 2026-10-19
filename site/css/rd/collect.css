@@ -56,7 +56,7 @@ html.rd .tabbar-btn {
   color: var(--color-ink);
   border-radius: 10px 10px 0 0;
 }
-/* the rounder face runs wider than the old one: on the narrowest phones the five labels step down to stay on the screen */
+/* the rounder face runs wider than the old one: on the narrowest phones the labels (four, five with the fallback תשלום tab) step down to stay on the screen */
 @media (max-width: 340px) {
   html.rd .tabbar-btn {
     font-size: 13.5px;
