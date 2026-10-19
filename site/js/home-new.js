@@ -1082,7 +1082,8 @@ fetchPricing().then((p) => {
     if (openId) stampPrice();
   }
 });
-// the public designs she added and the admin's names: re-render once they have answered (each gives up on its own after 2.5 s)
+// the public designs she added, the admin's names and the designs she hid (they leave PUBLIC_DESIGNS): re-render once
+// they have answered (each gives up on its own after 2.5 s)
 loadCustomDesigns().then(async (extra) => {
   await syncDesignNames(() => {}, { lists: [PUBLIC_DESIGNS, extra] });
   const next = homeDesigns([...PUBLIC_DESIGNS, ...extra]);

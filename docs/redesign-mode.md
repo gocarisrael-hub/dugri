@@ -31,7 +31,7 @@ For the redesign, this table overrides `docs/agent-partition.md` where they diff
 
 | Page                                             | Page-level owner                                   | Other sections                                         |
 | ------------------------------------------------ | -------------------------------------------------- | ------------------------------------------------------ |
-| products.html, design-codes.html                 | B                                                  | none                                                   |
+| products.html                                    | B                                                  | none                                                   |
 | product.html                                     | B (gallery, title note, sections, related designs) | A: the buy box (`.pdp-head`, `.pdp-price`, `.pdp-buy`) |
 | options.html, collect.html                       | C (the wizard, the word collection)                | A: the checkout sections                               |
 | pickup.html, pay pages, partner, coupons         | A                                                  | none                                                   |

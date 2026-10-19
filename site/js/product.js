@@ -19,8 +19,9 @@
 // the freshly-injected nodes.
 //
 // Everything is defensive: a missing/invalid ?design falls back to the first
-// public design and never throws. Private designs aren't in PUBLIC_DESIGNS so
-// they can't be deep-linked here.
+// public design and never throws. A design the owner hid from the site isn't in
+// PUBLIC_DESIGNS, so it can't be deep-linked here; one she hides while this page
+// is open sends the visitor to the shop once /api/design-names says so (dropHidden).
 
 import {
   PUBLIC_DESIGNS,
@@ -815,7 +816,10 @@ function boot() {
   // syncDesignNames updates the CATALOG first, so anything read from it after this
   // point (a gallery slide's label/alt, a rebuilt carousel) carries the renamed
   // value too; the callback then re-stamps the nodes already painted.
-  syncDesignNames((names) => applyDesignNames(currentDesign, names));
+  syncDesignNames((names, changed, fields, hidden) => {
+    applyDesignNames(currentDesign, names);
+    dropHidden(hidden);
+  });
 
   // Independently overlay the owner's per-design image overrides (store/gallery
   // pictures). Timeout-bounded + fail-safe: a slow/failed fetch never blocks the
@@ -889,7 +893,23 @@ function switchToDesign(d) {
   // syncDesignNames updates the CATALOG first, so anything read from it after this
   // point (a gallery slide's label/alt, a rebuilt carousel) carries the renamed
   // value too; the callback then re-stamps the nodes already painted.
-  syncDesignNames((names) => applyDesignNames(d, names));
+  syncDesignNames((names, changed, fields, hidden) => {
+    applyDesignNames(d, names);
+    dropHidden(hidden);
+  });
+}
+
+// The designs the owner hid from the site (syncDesignNames): this page's own design
+// sends the visitor to the shop; any other leaves the related rail.
+function dropHidden(hidden) {
+  if (!hidden || !hidden.length) return;
+  if (currentDesign && hidden.includes(currentDesign.id)) {
+    window.location.replace('products.html');
+    return;
+  }
+  for (let i = relatedCatalog.length - 1; i >= 0; i--)
+    if (hidden.includes(relatedCatalog[i].id)) relatedCatalog.splice(i, 1);
+  if (currentDesign) renderRelated(currentDesign);
 }
 
 // Write "<price> ₪" into `el` as its OWN isolated run: on this RTL page a bare

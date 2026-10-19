@@ -165,19 +165,6 @@ html.rd .design .dname {
   font-weight: var(--weight-label);
   color: var(--color-ink);
 }
-html.rd .code-box > summary {
-  font-family: var(--font-body);
-  color: var(--color-ink);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-html.rd .code-btn {
-  min-height: 0;
-  padding: 0 18px;
-}
-html.rd .code-msg.err {
-  color: var(--color-error);
-}
 
 /* ---- step 2: colour swatches, the chosen one ringed in ink ---- */
 html.rd .swatch {

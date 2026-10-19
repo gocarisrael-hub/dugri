@@ -88,11 +88,11 @@ export const THEME_EXTRA_FIELDS = {
 
 /**
  * Visibility per generator theme, mirroring each theme's `visibility` field in
- * `generator/themes.json` ("public" | "private"). Inlined here (rather than
- * fetched) so the public design lists can filter without a round-trip. A private
- * theme's design is hidden from the public grid and only revealed with a valid
- * access code. Keep in sync with themes.json if a theme's visibility changes;
- * any theme absent here defaults to public.
+ * `generator/themes.json` ("public" | "private"). This is the FIRST-PAINT
+ * FALLBACK, not the truth: the owner shows or hides a design in the admin, and the
+ * live answer arrives via syncDesignNames → applyHiddenDesigns, which takes a
+ * hidden design off every page. A page that never hears back keeps these, so the
+ * shop is never blanked by a failed fetch. Any theme absent here defaults to public.
  */
 export const VISIBILITY_BY_THEME = {
   'trip comeback': 'public',
@@ -252,19 +252,44 @@ export const DESIGNS = Object.entries(GENERATED).map(([id, g]) => ({
   // storefront uses it only to size the picture box (js/product.js galleryAspect,
   // products.html gridAspect) — nothing else branches on it.
   portrait: !!g.portrait,
-  // Visibility from the mapped theme (themes.json). Private designs are hidden
-  // from the public grid until unlocked with an access code; `public` is the
-  // convenient boolean the public lists filter on.
+  // Visibility from the mapped theme (themes.json): `public` is whether the design
+  // is shown on the site, the boolean every buyer-facing list filters on. The live
+  // value lands later (applyHiddenDesigns).
   visibility: visibilityForDesign(id),
   public: isPublicDesign(id),
 }));
 
 /**
- * The PUBLIC subset of DESIGNS — private designs (theme visibility "private")
- * filtered out. This is what the public design lists (options.html grid,
- * products.html gallery) render. Admin/order code paths use the full DESIGNS.
+ * The designs shown on the site — what the buyer-facing lists render. Admin code
+ * paths use the full DESIGNS. Starts from the bundle's visibility and loses any
+ * design the owner hid once /api/design-names answers (applyHiddenDesigns), so a
+ * list built after that never holds one.
  */
 export const PUBLIC_DESIGNS = DESIGNS.filter((d) => d.public);
+
+/**
+ * Take the designs the owner hid from the site off the catalog: each one's
+ * `public` turns false (every list holding the same objects sees it) and it leaves
+ * PUBLIC_DESIGNS. Only ever HIDES: a design the bundle has hidden is never shown by
+ * this, and an empty or malformed list changes nothing.
+ *
+ * @param {string[]} hidden  design ids, as /api/design-names sends them
+ * @returns {string[]} the ids that were shown and are now hidden
+ */
+export function applyHiddenDesigns(hidden) {
+  const ids = Array.isArray(hidden) ? hidden.filter((x) => typeof x === 'string') : [];
+  const changed = [];
+  for (const d of DESIGNS) {
+    if (!ids.includes(d.id) || !d.public) continue;
+    d.public = false;
+    d.visibility = 'private';
+    changed.push(d.id);
+  }
+  for (let i = PUBLIC_DESIGNS.length - 1; i >= 0; i--) {
+    if (!PUBLIC_DESIGNS[i].public) PUBLIC_DESIGNS.splice(i, 1);
+  }
+  return changed;
+}
 
 /**
  * Write the admin's current display names onto the catalog objects themselves.
@@ -356,8 +381,10 @@ export function applyThemeFields(fields, list = DESIGNS) {
  *   `names`  — an admin "rename template" (themes.json display_he)
  *   `fields` — the theme's live `extra_fields` / `language` / `name_form`, i.e.
  *              which inputs the order wizard must ask for
- * Returns `{ names, fields }`; names is `{ <id>: name }` of non-empty strings,
- * fields is `{ <id>: {...} }` of plain objects (both `{}` when absent).
+ *   `hidden` — the built-in designs the owner hid from the site
+ * Returns `{ names, fields, hidden }`; names is `{ <id>: name }` of non-empty
+ * strings, fields is `{ <id>: {...} }` of plain objects (both `{}` when absent),
+ * hidden is an array of ids (`[]` when absent).
  *
  * BUYER-FACING, so it MUST never block or break a page: an AbortController caps
  * the request at `timeoutMs` (~2.5s) and EVERY failure path — no fetch, network
@@ -366,7 +393,7 @@ export function applyThemeFields(fields, list = DESIGNS) {
  * `fetchImpl` is injectable for tests.
  */
 export async function fetchDesignMeta({ fetchImpl, timeoutMs = 2500 } = {}) {
-  const empty = { names: {}, fields: {} };
+  const empty = { names: {}, fields: {}, hidden: [] };
   const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return empty;
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
@@ -392,7 +419,10 @@ export async function fetchDesignMeta({ fetchImpl, timeoutMs = 2500 } = {}) {
         if (typeof id === 'string' && meta && typeof meta === 'object') fields[id] = meta;
       }
     }
-    return { names, fields };
+    const hidden = Array.isArray(data && data.hidden)
+      ? data.hidden.filter((id) => typeof id === 'string')
+      : [];
+    return { names, fields, hidden };
   } catch {
     return empty;
   } finally {
@@ -432,16 +462,20 @@ export async function fetchDesignNames(opts) {
  * already syncs names gets a catalog whose fields are current too — the order
  * wizard reads its inputs straight off those objects.
  *
- * @param {(names: Record<string,string>, changed: string[], fields: object) => void} [restamp]
+ * @param {(names: Record<string,string>, changed: string[], fields: object, hidden: string[]) => void} [restamp]
  *        re-stamp already-painted nodes; called even when nothing changed, so a
  *        page can also apply a name map it holds for late-arriving custom designs
- *        — and so a page can re-render anything derived from `fields`
+ *        — and so a page can re-render anything derived from `fields`. `hidden` is
+ *        the designs the owner hid that the page may already have painted: it
+ *        takes them off.
  * @param {{lists?: Array<Array<object>>, fetchImpl?: Function, timeoutMs?: number}} [opts]
  *        `lists` are the catalogs to write onto (default: the built-in DESIGNS)
  * @returns {Promise<Record<string,string>>} the fetched name map (`{}` on any failure)
  */
 export async function syncDesignNames(restamp, { lists, fetchImpl, timeoutMs } = {}) {
-  const { names, fields } = await fetchDesignMeta({ fetchImpl, timeoutMs });
+  const { names, fields, hidden } = await fetchDesignMeta({ fetchImpl, timeoutMs });
+  // first, so nothing below (or the page's restamp) ever works on a hidden design
+  const hiddenNow = applyHiddenDesigns(hidden);
   const targets = Array.isArray(lists) && lists.length ? lists : [DESIGNS];
   const changed = [];
   for (const list of targets) {
@@ -453,7 +487,7 @@ export async function syncDesignNames(restamp, { lists, fetchImpl, timeoutMs } =
     // not make them relabel tiles.
     applyThemeFields(fields, list);
   }
-  if (typeof restamp === 'function') restamp(names, changed, fields);
+  if (typeof restamp === 'function') restamp(names, changed, fields, hiddenNow);
   return names;
 }
 

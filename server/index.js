@@ -1214,6 +1214,20 @@ app.post('/api/collections', (req, res) => {
   // moved on to paying, and the next person to look at the title is the printer.
   if (refuseEmojiTitle(res, { title: b.custom_title, name })) return;
   if (refuseMixedTitle(res, title)) return;
+  // Agent B: only a design shown on the site can be ordered. The wizard sends the
+  // design's generator theme; one the owner hid (templates.shownOnSite), or one
+  // that doesn't exist, is refused here, so a hand-made request can't order what
+  // the site no longer offers. An order with no theme at all is left as it was.
+  const orderTheme = String(b.theme == null ? '' : b.theme).trim();
+  if (orderTheme) {
+    // the same themes view the storefront's lists are built from (/api/design-names)
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+    const entry = Object.prototype.hasOwnProperty.call(themes, orderTheme)
+      ? themes[orderTheme]
+      : null; // never an inherited key ('__proto__', 'constructor')
+    if (!entry || !templates.shownOnSite(entry))
+      return res.status(400).json({ error: 'design not available' });
+  }
   const c = db.createCollection(name, {
     email: b.email,
     phone: b.phone,
@@ -1456,8 +1470,8 @@ function couponRateOk(key) {
   }
   return true;
 }
-// The client key every IP-keyed limiter counts by — preview, coupon validation,
-// design-code validation and /api/track — in a form the client cannot choose.
+// The client key every IP-keyed limiter counts by — preview, coupon validation
+// and /api/track — in a form the client cannot choose.
 //
 // It used to be req.ip, and that was bypassable. `trust proxy` is true, so
 // Express reads req.ip as the LEFTMOST X-Forwarded-For entry; proxies APPEND, so
@@ -2685,19 +2699,6 @@ app.delete('/api/admin/collections/:id', (req, res) => {
 // server/routes/commerce.js.
 commerceRoutes.registerCoupons(app, { requireAdmin, db });
 
-// Agent B: design access codes + the in-store check, in server/routes/catalog.js.
-catalogRoutes.registerDesignCodes(app, {
-  requireAdmin,
-  couponRateOk,
-  clientKey,
-  path,
-  __dirname,
-  pathToFileURL,
-  TEMPLATE_ROOT,
-  db,
-  templates,
-});
-
 // Agent A: the checkout's coupon preview, in server/routes/commerce.js.
 commerceRoutes.registerCouponValidate(app, { db, couponRateOk, clientKey });
 
@@ -2987,12 +2988,12 @@ app.get('/api/collections/:id/pawn-card', async (req, res) => {
 app.get('/api/pawn-base', async (req, res) => {
   const theme = String(req.query.theme || '').trim();
   const entry = validate.getTheme(theme);
-  // A design that is not on the shop floor has no wizard to serve, so this says
-  // the same "unknown" about it as about a name nobody ever registered: a public
-  // route that rendered a withdrawn design's card would be a way to read one.
-  // `in_store`, not `visibility` — a design unlocked by an access code IS on sale,
-  // and its buyer reaches this step like any other.
-  if (!entry || !templates.inStore(entry)) return res.status(400).json({ error: 'unknown theme' });
+  // A design hidden from the site (templates.shownOnSite) has no wizard to serve,
+  // so this says the same "unknown" about it as about a name nobody ever
+  // registered: a public route that rendered a hidden design's card would be a way
+  // to read one.
+  if (!entry || !templates.shownOnSite(entry))
+    return res.status(400).json({ error: 'unknown theme' });
   // THE LIMIT IS CHECKED BEFORE ANY WORK, INCLUDING THE STAMP — and that is the
   // one place this route parts company with /api/preview above, deliberately.
   // The stamp is five synchronous statSync calls, and the cache cannot be read
@@ -5678,7 +5679,12 @@ app.get('/sitemap.xml', async (req, res) => {
   let designIds = [];
   try {
     const mod = await import(pathToFileURL(path.join(SITE_DIR, 'js', 'designs.js')).href);
-    designIds = (mod.PUBLIC_DESIGNS || []).map((d) => d && d.id).filter(Boolean);
+    // never a design the owner hid from the site (templates.shownOnSite)
+    const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+    const hidden = (d) =>
+      Object.prototype.hasOwnProperty.call(themes, d.theme) &&
+      !templates.shownOnSite(themes[d.theme]);
+    designIds = (mod.PUBLIC_DESIGNS || []).filter((d) => d && d.id && !hidden(d)).map((d) => d.id);
   } catch {
     /* static pages only */
   }

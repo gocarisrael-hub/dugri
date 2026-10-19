@@ -97,10 +97,11 @@ test.describe('B8: order inputs carry no example-value placeholders', () => {
     }
   });
 
-  test('the functional design-code placeholder is intentionally kept', async ({ page }) => {
+  test('the design picker has no code box: design codes are gone', async ({ page }) => {
     await page.goto('/options.html');
-    // this one is an instruction, not an example value — it stays.
-    await expect(page.getByTestId('design-code-input')).toHaveAttribute('placeholder', 'קוד עיצוב');
+    await expect(page.getByTestId('design-list')).toBeVisible();
+    await expect(page.locator('#designCode, .code-box')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText('יש לך קוד');
   });
 
   test('the title box keeps an accessible name of its own', async ({ page }) => {

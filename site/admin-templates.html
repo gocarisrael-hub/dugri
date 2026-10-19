@@ -820,14 +820,14 @@
             </label>
           </div>
           <label
-            >נראות (visibility)
+            >מוצג באתר
             <span class="hint"
-              >ברירת מחדל: ציבורי — התבנית תופיע בחנות. בחרו "פרטי" רק אם היא מוסתרת עד קוד
-              גישה.</span
+              >ברירת מחדל: כן — העיצוב יופיע באתר. "לא" מסתיר אותו מכל האתר: דף הבית, החנות, דף
+              העיצוב ובחירת העיצוב בהזמנה.</span
             >
             <select name="visibility">
-              <option value="public">ציבורי (public)</option>
-              <option value="private">פרטי (private)</option>
+              <option value="public">כן</option>
+              <option value="private">לא</option>
             </select>
           </label>
           <label
@@ -2326,10 +2326,12 @@
           calib.href =
             'admin-bench.html?key=' + encodeURIComponent(key) + '&tpl=' + encodeURIComponent(t.key);
           head.append(name, slug, calib);
-          if (t.visibility === 'private') {
+          // the owner's one switch (server/templates.js shownOnSite)
+          const shown = t.visibility !== 'private' && t.in_store !== false;
+          if (!shown) {
             const b = document.createElement('span');
             b.className = 'tpl-badge priv';
-            b.textContent = 'פרטית';
+            b.textContent = 'לא מוצג באתר';
             head.append(b);
           }
           if (!t.calibrated) {
@@ -2383,7 +2385,7 @@
           head.append(redetectBtn);
           card.append(head);
 
-          // Editable settings (language / name_form / extra_fields / visibility).
+          // Editable settings (shown on the site / language / name_form / extra_fields).
           const settings = document.createElement('details');
           settings.className = 'tpl-settings';
           const summary = document.createElement('summary');
@@ -2413,20 +2415,10 @@
             wrap.append(sel);
             return wrap;
           };
-          // IS IT FOR SALE — deliberately its own switch, not a third visibility
-          // value. `visibility` answers "once it IS on sale, open grid or access
-          // code only"; this answers "is it on sale at all". Off removes it from
-          // the storefront for everyone, code holders included, while leaving the
-          // owner able to generate an order for it from here.
-          grid.append(
-            mkSelect(
-              'in_store',
-              ['כן', 'לא'],
-              t.in_store === false ? 'לא' : 'כן',
-              'בחנות (in_store)'
-            )
-          );
-          grid.append(mkSelect('visibility', ['public', 'private'], t.visibility));
+          // SHOWN ON THE SITE — the owner's one switch. "לא" hides the design from
+          // every page (home, shop, its page, the wizard) and the order route
+          // refuses it. The server writes both stored fields from it (`shown`).
+          grid.append(mkSelect('shown', ['כן', 'לא'], shown ? 'כן' : 'לא', 'מוצג באתר'));
           grid.append(mkSelect('language', ['hebrew', 'english'], t.language || ''));
           // Asset layout. Switching it re-points every SVG path, so the server
           // drops `calibrated` back to false and the template has to be calibrated
@@ -2733,7 +2725,7 @@
           return;
         }
 
-        // Save the editable settings (visibility / language / name_form /
+        // Save the editable settings (shown on the site / language / name_form /
         // extra_fields / the card TITLE).
         const settingsBtn = e.target.closest('.tpl-settings-save');
         if (settingsBtn) {
@@ -2742,9 +2734,9 @@
           for (const el of card.querySelectorAll('.tpl-settings [data-field]')) {
             patch[el.dataset.field] = el.value;
           }
-          // in_store is shown as כן/לא but stored as a boolean — send what the
-          // server validates, not the label the owner read.
-          if ('in_store' in patch) patch.in_store = patch.in_store !== 'לא';
+          // shown is read as כן/לא but sent as a boolean — what the server
+          // validates, not the label the owner read.
+          if ('shown' in patch) patch.shown = patch.shown !== 'לא';
           // The title goes as the LIST — one entry per rendered line, which is what
           // the generator stacks. The server derives title_text from it, so the
           // two can never drift apart.

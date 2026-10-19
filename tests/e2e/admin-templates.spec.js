@@ -76,7 +76,9 @@ test.describe('admin templates — status view (read-only)', () => {
     await expect(ch.locator('.repl-input')).toHaveCount(1);
     // NEW: a delete button + a settings editor (visibility/language/name_form/extra_fields).
     await expect(card.locator('.tpl-delete-btn')).toBeVisible();
-    await expect(card.locator('.tpl-settings select[data-field="visibility"]')).toHaveCount(1);
+    // the owner's one switch, "מוצג באתר" (the old visibility/in-store pair is gone)
+    await expect(card.locator('.tpl-settings select[data-field="shown"]')).toHaveCount(1);
+    await expect(card.locator('.tpl-settings select[data-field="visibility"]')).toHaveCount(0);
     await expect(card.locator('.tpl-settings select[data-field="language"]')).toHaveCount(1);
     await expect(card.locator('.tpl-settings input[data-field="extra_fields"]')).toHaveCount(1);
     // The upload form offers a visibility choice (public default).
@@ -335,7 +337,10 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     );
   });
 
-  test('rename works through the UI and keeps the slug stable', async ({ page }) => {
+  test('rename works through the UI and keeps the slug stable', async ({ page, request }) => {
+    // the name every other spec sees for this design comes back when this test ends, or a
+    // homepage spec running after it in the same run reads 'שם מבחן E2E'
+    const nameBefore = readThemes().bachelorette.display_he;
     await page.goto(`/admin-templates.html?key=${KEY}`);
     const card = page.locator('.tpl-card[data-key="bachelorette"]');
     await expect(card).toBeVisible();
@@ -356,6 +361,12 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     const themes = readThemes();
     expect(themes.bachelorette.display_he).toBe('שם מבחן E2E');
     expect(themes.bachelorette.slug).toBe('bachelorette');
+
+    const back = await request.post(`/api/admin/templates/bachelorette/rename?key=${KEY}`, {
+      data: { display_he: nameBefore },
+    });
+    expect(back.ok()).toBe(true);
+    expect(readThemes().bachelorette.display_he).toBe(nameBefore);
   });
 
   test('replacing an SVG on a CALIBRATED template requires confirm; cancel aborts', async ({
@@ -433,24 +444,33 @@ test.describe('admin templates — mutations (fixture only, single project)', ()
     }).toPass();
   });
 
-  test('editing settings (visibility → private) persists and shows the private badge', async ({
+  test('the "מוצג באתר" switch writes both stored fields, both ways, and badges a hidden design', async ({
     page,
   }) => {
-    await page.goto(`/admin-templates.html?key=${KEY}`);
-    const card = page.locator('.tpl-card[data-key="bachelorette"]');
-    await expect(card).toBeVisible();
+    // The fixture-only sentinel, never a real design: hiding bachelorette here would take it
+    // off every page for the specs running alongside. The sentinel starts hidden (private)
+    // and has no art, so showing it for a moment reaches no storefront list.
+    const sel = `.tpl-card[data-key="${FIXTURE_SENTINEL}"]`;
+    const flip = async (to) => {
+      await page.goto(`/admin-templates.html?key=${KEY}`);
+      const card = page.locator(sel);
+      await expect(card).toBeVisible();
+      await card.locator('.tpl-settings summary').click();
+      await card.locator('select[data-field="shown"]').selectOption(to);
+      await card.locator('.tpl-settings-save').click();
+      await expect(page.locator(sel + ' .tpl-msg.ok')).toBeVisible();
+    };
+    await flip('כן');
+    expect(readThemes()[FIXTURE_SENTINEL]).toMatchObject({ visibility: 'public', in_store: true });
+    await expect(page.locator(sel + ' .tpl-badge.priv')).toHaveCount(0);
 
-    await card.locator('.tpl-settings summary').click();
-    await card.locator('select[data-field="visibility"]').selectOption('private');
-    await card.locator('.tpl-settings-save').click();
-
-    // Reloads: the fixture themes.json now has bachelorette private, and the card
-    // shows the "פרטית" badge.
-    await expect(page.locator('.tpl-card[data-key="bachelorette"] .tpl-badge.priv')).toBeVisible();
-    const themes = readThemes();
-    expect(themes.bachelorette.visibility).toBe('private');
-    // identity untouched
-    expect(themes.bachelorette.slug).toBe('bachelorette');
+    await flip('לא');
+    expect(readThemes()[FIXTURE_SENTINEL]).toMatchObject({
+      visibility: 'private',
+      in_store: false,
+    });
+    await expect(page.locator(sel + ' .tpl-badge.priv')).toHaveText('לא מוצג באתר');
+    expect(readThemes()[FIXTURE_SENTINEL].slug).toBe(FIXTURE_SENTINEL); // identity untouched
   });
 
   test('deleting an IN-USE template is refused (guard) — the template survives', async ({

@@ -164,7 +164,6 @@ describe('the allowlist fails closed', () => {
     for (const p of [
       '/api/admin/content/all',
       '/api/admin/playbook',
-      '/api/admin/design-codes',
       '/api/admin/stock',
       '/api/admin/unsubscribed',
     ]) {

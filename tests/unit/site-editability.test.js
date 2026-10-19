@@ -126,7 +126,6 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'options-photos-tip-shop',
       'options-photos-tip-fix',
       'options-step4-title',
-      'options-code-summary',
     ],
   };
   for (const [page, keys] of Object.entries(EXPECT)) {

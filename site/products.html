@@ -704,8 +704,8 @@
     </footer>
 
     <!-- Store grid: one clean product card per design, single source of truth =
-         js/designs.js (PUBLIC_DESIGNS excludes private designs, hidden until
-         unlocked with an access code in the order flow). Each card shows ONE
+         js/designs.js (PUBLIC_DESIGNS: the designs shown on the site; one the
+         owner hides leaves the grid once /api/design-names answers). Each card shows ONE
          image and links to the design's detail page (product.html?design=<id>),
          which hosts the multi-photo gallery. -->
     <script type="module">
@@ -971,7 +971,15 @@
       // card built AFTER this (a custom design joining the grid) starts from the
       // renamed value instead of the bundled default. `designNames` is still kept
       // for the ids the map covers but the catalog doesn't (late customs).
-      Promise.all([syncDesignNames(null, { lists: [allDesigns] }), loadContentNames])
+      // A design the owner hid from the site leaves the grid (the callback runs
+      // before the names below are applied).
+      const dropHidden = (names, changed, fields, hidden) => {
+        if (!hidden || !hidden.length) return;
+        for (let i = allDesigns.length - 1; i >= 0; i--)
+          if (hidden.includes(allDesigns[i].id)) allDesigns.splice(i, 1);
+        renderGrid(currentMap);
+      };
+      Promise.all([syncDesignNames(dropHidden, { lists: [allDesigns] }), loadContentNames])
         .then(([names, contentOv]) => {
           designNames = names || {};
           const ov = {};

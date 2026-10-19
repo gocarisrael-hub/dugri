@@ -59,7 +59,7 @@
  * the end away from "הבא". Nothing can be covered, at any step and any scroll
  * position, because the bar is opaque and the page already reserves its height.
  * That is worth more than the corner: the wizard is where the buyer taps, and a
- * floating button there was landing on the design-code box and (as
+ * floating button there was landing on the box under the design grid and (as
  * tests/e2e/wizard-noscroll.spec.js had already written down) on half of the
  * first gender option.
  */

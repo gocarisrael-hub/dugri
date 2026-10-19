@@ -223,7 +223,8 @@ describe('GET /api/admin/designs — merged built-in + template catalog', () => 
     const { byId } = await load();
     // The admin is where those states are FIXED, so hiding them here is the bug.
     expect(byId['hidden-one']).toMatchObject({ public: false, visibility: 'private' });
-    expect(byId['off-store']).toMatchObject({ inStore: false, public: true });
+    // `public` is the owner's one switch (shown on the site): off the shop floor is hidden too
+    expect(byId['off-store']).toMatchObject({ inStore: false, public: false });
     expect(byId['my-custom'].inStore).toBe(true);
   });
 

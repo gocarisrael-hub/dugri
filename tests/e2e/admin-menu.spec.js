@@ -18,7 +18,6 @@ const KEY = 'dugri-admin';
 // SPA fallback, which answers 200 with the landing page for anything it does not
 // recognise.
 const OFF_THE_MENU = [
-  { path: '/design-codes.html', title: 'דוגרי · קודי עיצוב' },
   { path: '/admin-designs.html', title: 'עיצובים — דוגרי (ניהול)' },
   { path: '/admin-playbook.html', title: 'פלייבוק — דוגרי (ניהול)' },
 ];
