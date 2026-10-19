@@ -1,0 +1,109 @@
+/* pay-success.html in the redesign (Agent A, Commerce). Linked by the gate in redesign mode only; every rule is under html.rd.
+   The page has no header of its own: the shell's goes on top, so the buyer has a way home. No footer either; none is added. */
+html.rd {
+  --rd-header: top;
+  --rd-footer: none;
+  --rd-as-title: '.done h1';
+  --rd-as-box: '.orderno, .facts';
+  --rd-as-card: '.summary';
+  --rd-as-btn: '.done .back';
+  --rd-as-btn-secondary: '.done .wa';
+}
+
+/* The body is a centred grid for the page's one column; the shell's header must span the top, not become a grid cell. */
+html.rd body {
+  display: block;
+  padding: 0 0 calc(40px + env(safe-area-inset-bottom, 0px));
+}
+html.rd .done {
+  margin: 0 auto;
+  padding: var(--space-lg) var(--gutter) 0;
+  box-sizing: border-box;
+}
+html.rd .mark {
+  border: var(--border-bold) solid var(--color-ink);
+  box-shadow: var(--shadow);
+}
+html.rd .done h1.rd-title {
+  font-size: var(--text-section);
+  margin: 0 0 var(--space-sm);
+}
+html.rd .lead {
+  color: var(--color-ink);
+}
+
+/* The order number: a box, a label and the reference in the body face. */
+html.rd .orderno.rd-box {
+  display: none;
+  padding: var(--space-sm) var(--space-md);
+}
+html.rd .orderno.rd-box.shown {
+  display: -webkit-flex;
+  display: flex;
+}
+html.rd .orderno .lbl {
+  color: var(--color-text-muted);
+  font-size: var(--text-micro);
+}
+html.rd .orderno .val {
+  font-weight: var(--weight-heavy);
+}
+html.rd .orderno .copied {
+  color: var(--color-ink);
+}
+
+/* What they bought: a review card; its inner lines are ink. */
+html.rd .summary.rd-card {
+  display: none;
+  padding: 0;
+  overflow: hidden;
+  margin: 0 0 var(--space-xl);
+}
+html.rd .summary.rd-card.shown {
+  display: block;
+}
+html.rd .summary h2 {
+  color: var(--color-ink);
+  font: var(--weight-label) var(--text-label) / 1.2 var(--font-body);
+  letter-spacing: 0;
+  border-bottom: var(--border-hair) solid var(--color-ink);
+}
+html.rd .shot {
+  background: var(--color-tag);
+  border-bottom: var(--border-hair) solid var(--color-ink);
+}
+html.rd .rows p + p {
+  border-top-color: var(--color-ink);
+}
+html.rd .rows .k,
+html.rd .rows .desc,
+html.rd .shot .skel {
+  color: var(--color-text-muted);
+}
+
+html.rd .facts.rd-box {
+  padding: 0;
+}
+html.rd .facts p + p {
+  border-top: var(--border-hair) solid var(--color-ink);
+}
+
+/* The two ways on: the black pill, then the outlined one. */
+html.rd .done .back.rd-btn {
+  display: -webkit-flex;
+  display: flex;
+  width: 100%;
+  box-shadow: none;
+  font-size: var(--text-button-lg);
+}
+html.rd .done .back.rd-btn:hover {
+  transform: none;
+}
+html.rd .done .wa.rd-btn {
+  width: 100%;
+  margin-top: var(--space-sm);
+}
+html.rd .done .wa.rd-btn:hover {
+  background: var(--color-paper);
+  color: var(--color-ink);
+}

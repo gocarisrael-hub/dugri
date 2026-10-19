@@ -1,0 +1,102 @@
+/* pickup.html in the redesign (Agent A, Commerce). Linked by the gate in redesign mode only; every rule is under html.rd.
+   The page keeps its own footer: it carries the help lines, WhatsApp and email. Said explicitly, whatever the shell's
+   default is. */
+html.rd {
+  --rd-footer: none;
+  --rd-as-title: '.hero h1, .card h2';
+  --rd-as-box: '.card';
+  --rd-as-btn-secondary: '.map-links a';
+}
+
+/* No fills or rules between sections: the page flows on the ground. */
+html.rd .hero {
+  background: none;
+  border-bottom: 0;
+  padding: var(--space-2xl) 0 var(--space-md);
+}
+html.rd .hero h1.rd-title {
+  font-size: var(--text-section);
+}
+html.rd .hero .lede {
+  color: var(--color-ink);
+  max-width: 34ch;
+}
+html.rd .wrap {
+  padding: 0 var(--gutter);
+}
+
+/* The cards are boxes; the titles inside them are a size down from a section title, and rotate the offset colours. */
+html.rd .card.rd-box {
+  margin: 0 0 var(--space-lg);
+}
+html.rd .card h2.rd-title {
+  font-size: 28px;
+  margin-bottom: var(--space-sm);
+}
+html.rd [data-testid='pickup-address'] h2 {
+  --rd-title-offset: var(--title-offset-designs);
+}
+html.rd [data-testid='pickup-hours'] h2 {
+  --rd-title-offset: var(--title-offset-story);
+}
+html.rd [data-testid='pickup-bring'] h2 {
+  --rd-title-offset: var(--title-offset-recs);
+}
+html.rd [data-testid='pickup-find'] h2 {
+  --rd-title-offset: var(--title-offset-biz);
+}
+html.rd .addr .sub,
+html.rd table.hours td.closed,
+html.rd figure.route figcaption {
+  color: var(--color-text-muted);
+}
+
+/* The callout is the one thing to read first: a pink panel, ink text, no outline (the hero panels' look). */
+html.rd .callout {
+  background: var(--color-accent-pink);
+  border: 0;
+  border-radius: var(--radius-panel);
+  padding: 20px 24px 22px;
+  margin: 0 0 var(--space-lg);
+}
+
+/* Map links: secondary pills, wrapping with margins (flex gap needs Safari 14.1). */
+html.rd .map-links {
+  gap: 0;
+  margin-top: var(--space-md);
+}
+html.rd .map-links a.rd-btn {
+  margin: 0 0 var(--space-sm) var(--space-sm);
+  font-size: var(--text-label);
+}
+
+html.rd table.hours th,
+html.rd table.hours td {
+  border-bottom-color: var(--color-ink);
+}
+
+html.rd ul.bring li::before {
+  color: var(--color-ink);
+}
+html.rd ol.steps li::before {
+  border: var(--border-bold) solid var(--color-ink);
+  background: var(--color-accent-yellow);
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+}
+html.rd figure.route img {
+  border: var(--border-bold) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  box-shadow: var(--shadow);
+}
+
+/* The page's own footer (help lines) sits on the ground with no rule. */
+html.rd body > footer {
+  background: none;
+  border-top: 0;
+  padding: var(--space-md) 0 var(--space-lg);
+}
+html.rd body > footer a {
+  color: var(--color-ink);
+  font-weight: var(--weight-label);
+}

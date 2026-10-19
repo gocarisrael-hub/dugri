@@ -383,4 +383,130 @@ html.rd .toast {
 /* == end C == */
 
 /* == A: commerce — collect (payment and address) == */
+/* A's blocks: the top pay card (#payTop), the checkout (#payPanel), the sticky pay bar (#payBar), the payment window
+   (#payModal), and the add-delivery card on the sign-off tab (.ship-collapse) with the card that replaces it once paid
+   (#shipDoneCard). Written against the page's own ids like C's section, for the same reason: they hide with .hidden. */
+
+/* ---- the cards: C's look, paper, an ink hairline and the hard shadow ---- */
+html.rd #payPanel,
+html.rd .ship-collapse,
+html.rd #shipDoneCard {
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-review);
+  box-shadow: var(--shadow);
+  margin: 18px 0;
+}
+
+/* ---- the top pay card: still the ink block that says the amount, now a box with corners. Its shadow is pink, because
+   an ink shadow under an ink block can't be seen ---- */
+html.rd #payTop {
+  border-radius: var(--radius-review);
+  box-shadow: 4px 4px 0 var(--color-accent-pink);
+  margin: 18px 0;
+}
+html.rd .pay-top-amt,
+html.rd .pay-bar-amt {
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+}
+
+/* ---- buttons on ink (the top card, the sticky bar): the paper pill. The old press wipe is switched off ---- */
+html.rd .pay-top-go,
+html.rd .pay-bar-go {
+  border: var(--border-thin) solid var(--color-paper);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+  filter: none;
+}
+html.rd .pay-top-go::before,
+html.rd .pay-bar-go::before,
+html.rd #payPanel button::before,
+html.rd .ship-collapse button::before {
+  display: none;
+}
+
+/* ---- buttons in the checkout and the add-delivery card: the shell's pills ---- */
+html.rd #payPanel button,
+html.rd .ship-collapse button {
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  filter: none;
+}
+
+/* The card-pay button is the large ink pill. Off: the gradient, the pulsing glow, the light sweep and the hover lift (a
+   glow and a soft-shadow move). The shell's press, a squash, is the one left. The old one is width:100% on top of the
+   card's 16px inset, so it ran 32px past the card and was clipped; this one fills the inset (a button doesn't stretch
+   at width:auto, hence the calc). */
+html.rd #cardPayBtn {
+  display: block;
+  width: calc(100% - 32px);
+  margin: 18px 16px 16px;
+  padding: var(--pad-button-lg);
+  border: var(--border-thin) solid var(--color-ink);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-size: var(--text-button-lg);
+  font-weight: var(--weight-strong);
+  letter-spacing: 0;
+  box-shadow: none;
+  animation: none;
+  transition: transform var(--dur-press) var(--ease-pop);
+}
+html.rd #cardPayBtn::after {
+  display: none;
+}
+html.rd #cardPayBtn:hover {
+  background: var(--color-ink);
+  transform: none;
+}
+html.rd #cardPayBtn:active {
+  color: var(--color-paper);
+  transform: scale(0.96);
+}
+html.rd #cardPayBtn:disabled {
+  box-shadow: none;
+}
+
+/* The copies stepper: one ink-outlined pill with the − and + flat inside it, not two pills in a frame */
+html.rd #qtyRow .stepper {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  background: var(--color-paper);
+}
+html.rd #qtyRow .stepper button {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font-weight: var(--weight-heavy);
+  transform: none;
+}
+html.rd #qtyRow .stepper button:disabled {
+  color: var(--color-text-muted);
+  opacity: 0.45;
+}
+html.rd #qtyRow .qty-val {
+  border-left: var(--border-hair) solid var(--color-ink);
+  border-right: var(--border-hair) solid var(--color-ink);
+}
+
+/* ---- the payment window: the shell's sheet, a heavy ink outline with the review card's shadow, and the round ✕ ---- */
+html.rd .pay-modal {
+  background: var(--color-scrim);
+}
+html.rd .pay-modal-card {
+  border: var(--border-heavy) solid var(--color-ink);
+  border-radius: var(--radius-sheet);
+  box-shadow: var(--shadow-review);
+}
+html.rd .pay-modal-x {
+  border: var(--border-thin) solid var(--color-ink);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+}
 /* == end A == */

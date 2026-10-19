@@ -118,3 +118,51 @@ html.rd .pdp-store-cta .btn.ghost {
   text-underline-offset: 5px;
 }
 /* == end B == */
+
+/* == A: Commerce — product.html's buy box (.pdp-head, .pdp-price, .pdp-buy) == */
+/* The title takes .rd-title and the buy link .rd-btn from B's lists above. The title is the design's name, set a size
+   under a section title; the price is in the body face at the price weight (prices are never in the heading face). */
+html.rd .pdp-head h1.rd-title {
+  font-size: var(--text-view-title);
+}
+html.rd .pdp-price .now {
+  font-family: var(--font-body);
+  font-weight: var(--weight-heavy);
+  font-size: var(--text-price);
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--color-ink);
+}
+html.rd .pdp-price .was {
+  font-family: var(--font-body);
+  color: var(--color-text-muted);
+}
+
+/* The buy link is the large ink pill, full width on a phone. The old .btn decorations stay off it: the white sheen and the
+   press wipe are a glow and a second press effect, the hover lift is a soft-shadow move, and the press would turn the
+   label dark on the black pill. The shell's press (a squash) is the one left. */
+html.rd #pdpBuy.rd-btn {
+  font-size: var(--text-button-lg);
+  padding: var(--pad-button-lg);
+  box-shadow: none;
+  border: var(--border-thin) solid var(--color-ink);
+  filter: none;
+}
+html.rd #pdpBuy.rd-btn::before,
+html.rd #pdpBuy.rd-btn::after {
+  display: none;
+}
+html.rd #pdpBuy.rd-btn:hover {
+  transform: none;
+  box-shadow: none;
+  filter: none;
+}
+html.rd #pdpBuy.rd-btn:active {
+  color: var(--color-paper);
+  transform: scale(0.96);
+}
+html.rd .pdp-buy-note {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+/* == end A == */
