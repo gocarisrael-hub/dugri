@@ -99,7 +99,7 @@ test.describe('the recommendations take the owner’s edits', () => {
     await expect(page.locator('#sheetCap')).toHaveText('מסיבת רווקות');
     await expect(page.locator('#sheetPic img')).toHaveAttribute(
       'src',
-      'assets/home/reviews/r7.jpg'
+      'assets/home/reviews/r10.jpg'
     );
   });
 

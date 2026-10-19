@@ -324,6 +324,42 @@ describe('the reviews row', () => {
     for (const c of cls) expect(c.split(' ')[0], c).toBe('rc');
     expect(cls.filter((c) => c.startsWith('rc hot') || c === 'rc')).toHaveLength(12);
   });
+
+  it('runs in the owner’s order, with her texts, and every screenshot it points at exists', () => {
+    // each card by the key it is edited under, in the order the row shows them
+    const keys = [...track.matchAll(/data-edit(?:-img)?="(new-(?:review|logo)-\d+)(?:-tag)?"/g)]
+      .map((m) => m[1])
+      .filter((k, i, all) => all.indexOf(k) === i);
+    expect(keys.slice(0, 13)).toEqual([
+      'new-logo-1',
+      'new-review-1',
+      'new-review-2',
+      'new-logo-2',
+      'new-review-4',
+      'new-review-3',
+      'new-logo-3',
+      'new-review-5',
+      'new-review-6',
+      'new-logo-4',
+      'new-review-7',
+      'new-review-8',
+      'new-logo-5',
+    ]);
+    const text = (key) => {
+      const m = track.match(new RegExp(`data-edit="${key}"\\s*>([^<]*)<`));
+      return m && m[1].trim();
+    };
+    expect(text('new-review-1-quote')).toBe('זה היה מרגש ברמות - באמת מדהים!');
+    expect(text('new-review-4-quote')).toBe('עשיתם לנו את הערב היה מושלם');
+    expect(text('new-review-5-tag')).toBe('מסיבת אירוסין');
+    expect(text('new-review-5-quote')).toBe('ישבנו על המשחק שעות ונהנינו בטירוף');
+    expect(text('new-review-8-tag')).toBe('יום הולדת עגול');
+    expect(text('new-review-8-quote')).toBe('זה יצא פשוט נדיר ברמות הכי גבוהות');
+    expect(text('new-logo-5-name')).toBe('סטאר הפקות');
+    const shots = [...track.matchAll(/src="(assets\/home\/reviews\/[^"]+)"/g)].map((m) => m[1]);
+    expect(shots.length).toBe(8);
+    for (const f of shots) expect(fs.existsSync(path.join(SITE, f)), f).toBe(true);
+  });
 });
 
 describe('the site footer on the redesigned pages', () => {
