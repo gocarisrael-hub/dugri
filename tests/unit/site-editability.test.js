@@ -121,7 +121,7 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'options-step2-sub',
       'options-photos-title',
       // The pawn step's two later lines: what arrives (bold) and the tip under
-      // the grid (print shop + the black-background fix).
+      // the grid (print shop + the contrasting-background fix).
       'options-photos-cut',
       'options-photos-tip-shop',
       'options-photos-tip-fix',
