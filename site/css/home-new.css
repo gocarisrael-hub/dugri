@@ -1279,7 +1279,6 @@ footer {
   box-shadow: none;
 }
 .ft-lines,
-.ft-b2b,
 .ft-tag {
   margin: 12px 0 0;
   line-height: 1.6;
@@ -1287,8 +1286,7 @@ footer {
 .ft-lines > span {
   display: block;
 }
-.ft-lines .lb,
-.ft-b2b .lb {
+.ft-lines .lb {
   font-weight: var(--weight-strong);
 }
 .ft-lines a {

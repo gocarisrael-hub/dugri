@@ -539,7 +539,7 @@ test.describe('the questions page', () => {
 });
 
 test.describe('the site footer', () => {
-  test('in redesign mode the homepage at / has the live footer: contacts, the business line and every link', async ({
+  test('in redesign mode the homepage at / has the live footer: contacts and every link', async ({
     page,
   }) => {
     await previewRedesign(page);
@@ -551,7 +551,6 @@ test.describe('the site footer', () => {
       'footer-pickup',
       'footer-faq',
       'footer-timer',
-      'footer-b2b',
     ])
       await expect(page.getByTestId(id), id).toBeVisible();
     await expect(page.locator('footer a[href^="mailto:"]')).toBeVisible();
@@ -565,4 +564,22 @@ test.describe('the site footer', () => {
     await expect(page.getByTestId('footer-wordlists')).toHaveAttribute('href', 'wordlists.html');
     await expect(page.getByTestId('footer-terms')).toBeVisible();
   });
+
+  for (const path of ['/new.html', '/new-faq.html'])
+    test(`${path}: no business line (the page has its own section), the tag line right under the icons`, async ({
+      page,
+    }) => {
+      await page.goto(path);
+      const contact = page.locator('footer .ft-contact');
+      await expect(contact).toBeVisible();
+      await expect(page.getByTestId('footer-b2b')).toHaveCount(0);
+      await expect(page.locator('footer')).not.toContainText('לעסקים');
+      expect(
+        await contact.evaluate((c) => [...c.children].map((e) => e.className.split(' ')[0]))
+      ).toEqual(['ft-icons', 'ft-tag', 'ft-lines']);
+      // and on screen too: icons, then the tag line, then the phone and mail
+      const y = async (sel) => (await contact.locator(sel).boundingBox()).y;
+      expect(await y('.ft-tag')).toBeGreaterThan(await y('.ft-icons'));
+      expect(await y('.ft-lines')).toBeGreaterThan(await y('.ft-tag'));
+    });
 });
