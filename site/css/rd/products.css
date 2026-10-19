@@ -130,3 +130,18 @@ html.rd .store-fallback .btn {
   border-radius: var(--radius-pill);
 }
 /* == end B == */
+
+/* == C: the store card's photo fills its frame (owner, 2026-10-19; C by the integrator's leave) == */
+/* The owner's store photos are 5:4, the frame was the A4 sheet's 1.414, so every photo stood between two white bands.
+   The frame takes the photos' shape, and an uploaded photo covers it: a 5:4 one exactly, an odd one cropped to the
+   frame. Cropped low (75%): in a portrait or square shot the cards stand at the bottom, so the top gives way first,
+   and both cards stay whole. A shipped render (a design with no uploads, /assets/designs/…) is an A4 sheet of cards
+   and stays whole. */
+html.rd .product-card__media {
+  aspect-ratio: 5 / 4;
+}
+html.rd .product-card__media img[src*='/content-uploads/'] {
+  object-fit: cover;
+  object-position: 50% 75%;
+}
+/* == end C == */
