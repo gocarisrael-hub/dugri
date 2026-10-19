@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { previewRedesign } from './helpers/redesign.js';
 
-// B's pages in redesign mode: products.html, product.html (the page and its catalog parts) and design-codes.html, restyled from
+// B's pages in redesign mode: products.html and product.html (the page and its catalog parts), restyled from
 // css/rd/<page>.css alone (docs/redesign-mode.md). What these pin, at 360, 390 and 1440:
-// - with the mode on: the shared header stands in for the shop's (none on the staff page); the page title has the coloured
+// - with the mode on: the shared header stands in for the shop's; the page title has the coloured
 //   offset; each design is a card of the game table's kind (paper, an ink outline, a hard shadow); the page's own footer, with
 //   the owner's contacts, stays; nothing scrolls sideways;
 // - with the mode off: the page is as it was: no rd class, the old header, no card shadow from the redesign.
@@ -79,25 +79,11 @@ for (const width of WIDTHS) {
         await expect(page.locator('body > footer')).toBeVisible();
         expect(await sideways(page)).toBe(0);
       });
-
-      test('the staff codes page keeps its own top and takes the controls', async ({ page }) => {
-        await page.goto('/design-codes.html?key=dugri-admin');
-        await expect(page.locator('.panel').first()).toBeVisible();
-        await expect(page.locator('.rd-hdr')).toHaveCount(0);
-        await expect(page.locator('.panel').first()).toHaveClass(/\brd-box\b/);
-        await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 241, 222)');
-        await expect(page.locator('#code')).toHaveCSS('border-radius', '999px');
-        expect(await sideways(page)).toBe(0);
-      });
     });
 
     test.describe('with the mode off', () => {
       test('every page is as it was', async ({ page }) => {
-        for (const url of [
-          '/products.html',
-          '/product.html?design=bachelorette',
-          '/design-codes.html?key=dugri-admin',
-        ]) {
+        for (const url of ['/products.html', '/product.html?design=bachelorette']) {
           await page.goto(url);
           await expect(page.locator('html')).not.toHaveClass(/(^|\s)rd(\s|$)/);
           await expect(

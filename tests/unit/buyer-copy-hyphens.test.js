@@ -191,9 +191,7 @@ describe('the exemptions are real, not an accident of the check', () => {
   });
 
   it('does not touch the admin screens, which the owner kept as they are', () => {
-    const admin = fs
-      .readdirSync(path.join(ROOT, 'site'))
-      .filter((f) => /^admin-.*\.html$/.test(f) || f === 'design-codes.html');
+    const admin = fs.readdirSync(path.join(ROOT, 'site')).filter((f) => /^admin-.*\.html$/.test(f));
     expect(admin.length).toBeGreaterThan(0);
     // None of them is in scope...
     for (const f of admin) expect(BUYER_FILES).not.toContain(`site/${f}`);

@@ -1454,10 +1454,17 @@
         // the rail's design objects, then this callback re-stamps the cards that
         // were already painted. Fail-soft: {} on timeout/error changes nothing and
         // the built-in names stand. `railNames` is kept because a CUSTOM design
-        // can join the rail after this resolves.
+        // can join the rail after this resolves. A design the owner hid from the
+        // site leaves the rail.
         syncDesignNames(
-          (names) => {
+          (names, changed, fields, hidden) => {
             railNames = names || {};
+            if (hidden && hidden.length) {
+              for (let i = railDesigns.length - 1; i >= 0; i--)
+                if (hidden.includes(railDesigns[i].id)) railDesigns.splice(i, 1);
+              paintRail();
+              applyRailImages();
+            }
             applyRailNames();
           },
           { lists: [railDesigns] }

@@ -139,6 +139,7 @@ describe('catalog available', () => {
     expect(body).toEqual({
       names: templates.designDisplayNames(themes, publicDesigns),
       fields: templates.designThemeFields(themes, publicDesigns),
+      hidden: [], // every shipped theme is shown
     });
     // Not vacuous: the built-in names really came through.
     expect(body.names.bachelorette).toBe('NAME:bachelorette');
@@ -231,7 +232,7 @@ describe('catalog cannot be loaded', () => {
   it('GET /api/design-names fails soft to empty maps', async () => {
     const r = await fetch(base + '/api/design-names');
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ names: {}, fields: {} });
+    expect(await r.json()).toEqual({ names: {}, fields: {}, hidden: [] });
   });
 
   it('GET /api/custom-designs fails soft to an empty list, not to every theme', async () => {

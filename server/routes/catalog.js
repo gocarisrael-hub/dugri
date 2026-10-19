@@ -69,124 +69,6 @@ function loadDesignsModule({ path, __dirname, pathToFileURL }) {
   return loading;
 }
 
-// The design -> theme map, the in-store check and the private-design access codes.
-function registerDesignCodes(
-  app,
-  {
-    requireAdmin,
-    couponRateOk,
-    clientKey,
-    path,
-    __dirname,
-    pathToFileURL,
-    TEMPLATE_ROOT,
-    db,
-    templates,
-  }
-) {
-  // A design id -> its generator theme key. A CUSTOM design is its own theme (the
-  // themes.json key IS the design id); a BUILT-IN one is mapped by THEME_BY_DESIGN
-  // in site/js/designs.js. That module is ESM, so it is imported once and cached —
-  // a miss just means "unknown", never a thrown route.
-  let _themeByDesign = null;
-  async function loadThemeByDesign() {
-    if (_themeByDesign) return _themeByDesign;
-    try {
-      const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
-      _themeByDesign = mod.THEME_BY_DESIGN || {};
-    } catch {
-      _themeByDesign = {};
-    }
-    return _themeByDesign;
-  }
-
-  /**
-   * Is this DESIGN offered in the shop? Unknown ids answer true: the flag exists to
-   * let the owner withdraw something deliberately, so it must never be the reason a
-   * design nobody registered stops working.
-   *
-   * Synchronous on purpose — the callers are request paths that cannot await — so
-   * it uses the cached map and falls back to treating the design id as its own
-   * theme key, which is exactly right for a custom design.
-   */
-  function designIsInStore(designId) {
-    const id = String(designId || '');
-    if (!id) return true;
-    try {
-      const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT)) || {};
-      const key = (_themeByDesign && _themeByDesign[id]) || id;
-      const entry = themes[key];
-      return entry ? templates.inStore(entry) : true;
-    } catch {
-      return true;
-    }
-  }
-  // Warm the map at boot so the synchronous check above can see built-in designs.
-  loadThemeByDesign();
-
-  // --- Private-design access codes (admin CRUD) ----------------------------
-  // Mirrors the coupon admin routes. An access code unlocks a PRIVATE design in
-  // the order flow (see POST /api/design-code/validate). All gated by ADMIN_KEY.
-
-  // Admin: list all design access codes.
-  app.get('/api/admin/design-codes', (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    res.json({ design_codes: db.listDesignCodes() });
-  });
-
-  // Admin: create an access code. 400 on invalid input or a duplicate code.
-  app.post('/api/admin/design-codes', (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    const b = req.body || {};
-    const dc = db.createDesignCode({
-      code: b.code,
-      design_id: b.design_id,
-      valid_until: b.valid_until,
-    });
-    if (dc && dc.error) return res.status(400).json({ error: dc.error });
-    res.status(201).json({ design_code: dc });
-  });
-
-  // Admin: toggle an access code's active flag. 404 when the id is unknown.
-  app.post('/api/admin/design-codes/:id', (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    const active = !!(req.body && req.body.active);
-    const dc = db.setDesignCodeActive(req.params.id, active);
-    if (!dc) return res.status(404).json({ error: 'not found' });
-    res.json({ design_code: dc });
-  });
-
-  // Admin: delete an access code. 404 when the id is unknown.
-  app.delete('/api/admin/design-codes/:id', (req, res) => {
-    if (!requireAdmin(req, res)) return;
-    if (!db.deleteDesignCode(req.params.id)) return res.status(404).json({ error: 'not found' });
-    res.json({ ok: true });
-  });
-
-  // PUBLIC design-code validation: the client enters an access code in the order
-  // flow to unlock a PRIVATE design. Public (no owner token — a fresh visitor is
-  // choosing a design), but rate-limited per client IP like the coupon oracle to
-  // blunt code enumeration. Only the unlocked design id is ever leaked. On failure
-  // it returns a GENERIC { valid:false } with NO reason — distinguishing not_found
-  // from inactive/expired would turn this into an enumeration oracle (an attacker
-  // learns which codes exist). Detailed reasons stay internal (db.validateDesignCode).
-  app.post('/api/design-code/validate', (req, res) => {
-    if (!couponRateOk('designcode:' + clientKey(req))) {
-      return res.status(429).json({ error: 'too many attempts' });
-    }
-    const r = db.validateDesignCode(req.body && req.body.code);
-    if (!r.valid) return res.json({ valid: false });
-    // A design taken OFF the shop floor is off it for everyone. An access code
-    // chooses how an on-sale private design is reached; it is not a way past
-    // "this is not for sale yet", or withdrawing a design would still leave it
-    // orderable by every code already handed out. Reads as an invalid code
-    // rather than "valid but unavailable", so a withdrawn design leaks nothing.
-    if (!designIsInStore(r.design_id)) return res.json({ valid: false });
-    db.incrementDesignCodeUses(req.body && req.body.code);
-    res.json({ valid: true, design: r.design_id });
-  });
-}
-
 // Template upload, create, list, rename, settings, delete and single-asset replace.
 function registerTemplateOnboarding(
   app,
@@ -814,20 +696,30 @@ function registerStorefrontTemplates(
   app.get('/api/design-names', async (req, res) => {
     let names = {};
     let fields = {};
+    let hidden = [];
     try {
       const mod = await loadDesignsModule({ path, __dirname, pathToFileURL });
-      // PUBLIC subset only — a private/access-gated design's name must never leak to
-      // anonymous visitors. themes.json is read through an mtime cache so this hot
-      // endpoint doesn't hit disk on every products.html / product.html load.
-      const publicDesigns = mod.PUBLIC_DESIGNS || [];
+      // themes.json is read through an mtime cache so this hot endpoint doesn't hit
+      // disk on every products.html / product.html load.
       const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
-      names = templates.designDisplayNames(themes, publicDesigns);
-      fields = templates.designThemeFields(themes, publicDesigns);
+      // `hidden`: the BUILT-IN designs the owner hid from the site (templates.shownOnSite).
+      // The bundle lists every built-in as shown, so each storefront page drops these
+      // once this answers; a page that never hears back keeps showing them. A built-in
+      // whose theme has no entry here is left shown, as the bundle has it. Names and
+      // fields go out for the shown designs only.
+      const own = (k) => Object.prototype.hasOwnProperty.call(themes, k);
+      hidden = (mod.PUBLIC_DESIGNS || [])
+        .filter((d) => d.theme && own(d.theme) && !templates.shownOnSite(themes[d.theme]))
+        .map((d) => d.id);
+      const shown = (mod.PUBLIC_DESIGNS || []).filter((d) => !hidden.includes(d.id));
+      names = templates.designDisplayNames(themes, shown);
+      fields = templates.designThemeFields(themes, shown);
     } catch {
       names = {};
       fields = {};
+      hidden = [];
     }
-    res.json({ names, fields });
+    res.json({ names, fields, hidden });
   });
 
   // --- Custom designs: uploaded templates that become storefront products -------
@@ -867,12 +759,7 @@ function registerStorefrontTemplates(
       for (const key of Object.keys(themes || {})) {
         const t = themes[key] || {};
         if (builtIn.has(key)) continue; // a built-in design's theme, not a custom product
-        // Taken off the shop floor entirely — not in the grid, and NOT unlockable
-        // with an access code either. That is the difference from `visibility`
-        // below, which only chooses HOW an on-sale design is reached. The owner can
-        // still generate an order for it from the admin.
-        if (!templates.inStore(t)) continue;
-        if ((t.visibility || 'public') !== 'public') continue; // owner hid it
+        if (!templates.shownOnSite(t)) continue; // the owner hid it from the site
         if (!templates.isSafeSlug(key)) continue;
         const img = {};
         for (const slot of CUSTOM_SLOTS) {
@@ -1349,7 +1236,6 @@ function registerPromo(app, { settings, promo }) {
 
 module.exports = {
   registerAdminDesigns,
-  registerDesignCodes,
   registerTemplateOnboarding,
   registerTemplateAssets,
   registerTemplateRevert,

@@ -113,6 +113,18 @@ function slotsForBuiltIn(d) {
   return out;
 }
 
+// The visibility fields both kinds report. `public` is the owner's one switch
+// (shown on the site or not); `visibility` and `inStore` are the two stored fields
+// it is made of, kept for the admin pages that still show them.
+function visibilityOf(entry) {
+  const shown = entry ? templates.shownOnSite(entry) : true;
+  return {
+    visibility: entry && entry.visibility === 'private' ? 'private' : 'public',
+    public: shown,
+    inStore: templates.inStore(entry),
+  };
+}
+
 // `themes` is the CURRENT themes.json view (shipped + owner overlay), so the name
 // reported here is the one the owner set — see the display-name rule in
 // server/templates.js. Passing null falls back to the built-in catalog name.
@@ -132,12 +144,12 @@ function builtInDesign(d, siteDir, themes) {
     name: templates.displayNameForDesign(themes, d),
     theme: d.theme,
     custom: false,
-    visibility: d.visibility,
-    public: d.public,
-    // A built-in design is always on the shop floor; only a template can be taken
-    // off it (themes.json in_store), so this is reported for BOTH kinds and the UI
-    // needs no per-kind branch.
-    inStore: true,
+    // The owner's one switch (templates.shownOnSite), read from the design's LIVE
+    // theme entry for a built-in exactly as for a template; a built-in whose theme
+    // has no entry is shown, as the bundle has it. `public` is that switch.
+    ...visibilityOf(
+      Object.prototype.hasOwnProperty.call(themes || {}, d.theme) ? themes[d.theme] : null
+    ),
     // The picker thumbnail, or null when the file isn't on disk — the UI shows its
     // "no thumbnail" placeholder rather than a broken <img>.
     thumb: summary.present.includes('thumb.webp') ? builtInAssetRel(d.id, 'thumb.webp') : null,
@@ -201,9 +213,7 @@ function templateDesign(key, entry, templateRoot, themes) {
     // the generator theme, so there is no slug↔id table to keep in sync.
     theme: key,
     custom: true,
-    visibility: entry.visibility === 'private' ? 'private' : 'public',
-    public: (entry.visibility || 'public') !== 'private',
-    inStore: templates.inStore(entry),
+    ...visibilityOf(entry),
     thumb: slots.front || slots.back || slots.board || null,
     slots,
     source: {

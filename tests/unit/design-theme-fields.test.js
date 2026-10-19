@@ -234,7 +234,7 @@ describe('fetchDesignMeta — never blocks or breaks the wizard', () => {
   });
 
   it('resolves to EMPTY maps on every failure path (never rejects)', async () => {
-    const empty = { names: {}, fields: {} };
+    const empty = { names: {}, fields: {}, hidden: [] };
     expect(await fetchDesignMeta({ fetchImpl: async () => ({ ok: false, status: 500 }) })).toEqual(
       empty
     );
@@ -272,7 +272,7 @@ describe('fetchDesignMeta — never blocks or breaks the wizard', () => {
         }),
       timeoutMs: 20,
     });
-    expect(meta).toEqual({ names: {}, fields: {} });
+    expect(meta).toEqual({ names: {}, fields: {}, hidden: [] });
   });
 
   it('fetchDesignNames still returns just the names map', async () => {

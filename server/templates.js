@@ -65,18 +65,25 @@ const NAME_FORMS = ['hebrew', 'english', 'english-caps'];
 // The two name-script languages a theme can require (themes.json `language`).
 const LANGUAGES = ['hebrew', 'english'];
 /**
- * Is this template offered in the shop at all?
- *
- * SEPARATE from `visibility`, and the distinction matters: `visibility` decides
- * whether a design that IS on sale sits in the open grid or is unlocked with an
- * access code, so using it to mean "not launched yet" quietly left the design
- * orderable by anyone holding a code.
- *
- * Absent = true, so every template written before this flag existed keeps
- * behaving exactly as it did.
+ * The stored `in_store` flag (absent = true, so every template written before it
+ * existed keeps behaving as it did). Read it through shownOnSite: on its own it
+ * is only half of the owner's one switch.
  */
 function inStore(entry) {
   return !(entry && entry.in_store === false);
+}
+
+/**
+ * THE owner's one switch, "מוצג באתר": is this design shown on the site? A theme
+ * carries two older fields, `visibility` ('public' | 'private') and `in_store`,
+ * from when 'private' meant "unlocked with an access code". Codes are gone, so a
+ * design is shown only when BOTH say so; either one off hides it everywhere (the
+ * homepage, the shop, its page, the wizard) and the order route refuses it. A
+ * design once set private therefore stays hidden: nothing turns public by itself.
+ * The admin writes both fields together (settings patch `shown`).
+ */
+function shownOnSite(entry) {
+  return !!entry && entry.visibility !== 'private' && inStore(entry);
 }
 
 // The two storefront visibilities a theme can carry (themes.json `visibility`).
@@ -2924,17 +2931,18 @@ function updateTemplateSettings({ root, key, patch }) {
     }
     changed.visibility = vis;
   }
-  // IS IT FOR SALE AT ALL — a different question from `visibility`, which asks
-  // "once it IS for sale, is it in the open grid or unlocked by an access code".
-  // Conflating the two meant taking a design off the shop floor also handed it to
-  // anyone holding a code. `in_store:false` removes it from the storefront
-  // outright; the owner can still generate an order for it from the admin, which
-  // is what makes it usable for testing a design before launch.
-  //
   // ABSENT MEANS TRUE. Every template that predates this is for sale exactly as
-  // it was, and nothing has to be backfilled.
+  // it was, and nothing has to be backfilled. See shownOnSite.
   if ('in_store' in p) {
     changed.in_store = !(p.in_store === false || p.in_store === 'false' || p.in_store === 0);
+  }
+  // The owner's one switch (shownOnSite): it writes BOTH older fields, so a design
+  // shown is public and in store, and a design hidden is neither. Wins over either
+  // field sent alongside it.
+  if ('shown' in p) {
+    const shown = !(p.shown === false || p.shown === 'false' || p.shown === 0);
+    changed.visibility = shown ? 'public' : 'private';
+    changed.in_store = shown;
   }
   if ('extra_fields' in p) {
     changed.extra_fields = normalizeExtraFields(p.extra_fields);
@@ -4091,6 +4099,7 @@ function boundaryFromContentType(contentType) {
 
 module.exports = {
   inStore,
+  shownOnSite,
   isSafeSlug,
   isSafeThemeKey,
   NAME_FORMS,

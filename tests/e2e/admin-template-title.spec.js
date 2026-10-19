@@ -252,7 +252,7 @@ test.describe('admin templates — the title editor', () => {
     await page.goto(`/admin-templates.html?key=${KEY}`);
     await openSettings(page);
     const card = page.locator('.tpl-card[data-key="nameless"]');
-    await card.locator('select[data-field="visibility"]').selectOption('private');
+    await card.locator('select[data-field="shown"]').selectOption('לא');
     await card.locator('.tpl-settings-save').click();
     // The confirmation lands on the card that SURVIVES the list reload.
     await expect(page.locator('.tpl-card[data-key="nameless"] .tpl-msg.ok')).toContainText('נשמרו');

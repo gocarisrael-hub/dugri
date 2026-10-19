@@ -615,6 +615,11 @@
         align-items: stretch;
         gap: 12px;
       }
+      /* a design the owner hid from the site: the tile's own display would
+         otherwise keep it on screen */
+      .design[hidden] {
+        display: none;
+      }
       .design {
         flex: 0 1 130px;
         max-width: 150px;
@@ -1212,62 +1217,6 @@
       .wiz-input:focus {
         outline: none;
         border-color: var(--ink);
-      }
-      /* "יש לך קוד?" access-code box under the design grid (unobtrusive). */
-      .code-box {
-        max-width: 440px;
-        margin: 0 auto;
-        text-align: center;
-      }
-      .code-box > summary {
-        line-height: 1.2;
-      }
-      .code-box > summary {
-        cursor: pointer;
-        font-weight: 700;
-        font-size: 13.5px;
-        color: var(--sage-deeper);
-        list-style: none;
-      }
-      .code-box > summary::-webkit-details-marker {
-        display: none;
-      }
-      .code-row {
-        display: flex;
-        gap: 8px;
-        margin-top: 10px;
-      }
-      .code-input {
-        margin: 0;
-        flex: 1 1 auto;
-      }
-      .code-btn {
-        font: inherit;
-        font-weight: 800;
-        white-space: nowrap;
-        border: none;
-        border-radius: var(--radius);
-        padding: 0 18px;
-        background: var(--sage);
-        color: #fff;
-        cursor: pointer;
-      }
-      .code-btn:disabled {
-        opacity: 0.5;
-        cursor: default;
-      }
-      .code-msg {
-        margin-top: 8px;
-        font-size: 13px;
-        font-weight: 700;
-        min-height: 16px;
-      }
-      .code-msg.ok {
-        color: var(--ink);
-        font-weight: 800;
-      }
-      .code-msg.err {
-        color: #c0143c;
       }
       /* gender choice on the name step - a two-option segmented control */
       .gender-group {
@@ -2130,26 +2079,6 @@
           role="group"
           aria-label="עיצובים"
         ></div>
-        <!-- Access code for a PRIVATE design: a client given a code unlocks their
-             hidden design and orders it at standard pricing. -->
-        <details class="code-box" data-testid="design-code-box">
-          <summary data-edit="options-code-summary">יש לך קוד?</summary>
-          <div class="code-row">
-            <input
-              type="text"
-              id="designCode"
-              class="wiz-input code-input"
-              data-testid="design-code-input"
-              autocomplete="off"
-              placeholder="קוד עיצוב"
-              aria-label="קוד עיצוב"
-            />
-            <button type="button" id="designCodeBtn" class="code-btn" data-testid="design-code-btn">
-              פתחו עיצוב
-            </button>
-          </div>
-          <p class="code-msg" id="designCodeMsg" data-testid="design-code-msg" hidden></p>
-        </details>
       </section>
 
       <!-- STEP 2 — color + add-ons -->
@@ -4353,9 +4282,9 @@
 
       /* ---- build design thumbnails ---- */
       const designList = document.getElementById('designList');
-      // Buttons keyed by design id so an unlock (access code) can reveal a
-      // private tile. Private tiles are built but hidden — keeping DESIGNS
-      // indices stable so all the index-based state below stays correct.
+      // Buttons keyed by design id (the rename callback re-stamps them). A design
+      // the owner hides is built but hidden — keeping DESIGNS indices stable so all
+      // the index-based state below stays correct.
       const designButtons = new Map();
       function addDesignTile(d, i) {
         const btn = document.createElement('button');
@@ -4366,7 +4295,7 @@
         btn.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
         btn.setAttribute('aria-label', d.name);
         btn.innerHTML = '<div class="thumb"></div><div class="dname">' + d.name + '</div>';
-        // Private designs stay hidden until unlocked with a valid access code.
+        // A design the owner hides from the site is never offered.
         if (!d.public) btn.hidden = true;
         designButtons.set(d.id, btn);
         designList.appendChild(btn);
@@ -4494,8 +4423,23 @@
       // is idempotent, and skipping it is what would leave the buyer looking at
       // inputs the owner removed (or missing ones she added).
       syncDesignNames(
-        (names, changed) => {
+        (names, changed, fields, hidden) => {
           renderExtraFields();
+          // A design the owner hid from the site leaves the picker. If it was the
+          // one selected, the first shown design takes its place and a shopper past
+          // the picker is sent back to it, so she never orders what is no longer
+          // offered (the order route would refuse it).
+          if (hidden && hidden.length) {
+            for (const id of hidden) {
+              const btn = designButtons.get(id);
+              if (btn) btn.hidden = true;
+            }
+            if (DESIGNS[designIndex] && hidden.includes(DESIGNS[designIndex].id)) {
+              const first = DESIGNS.findIndex((d) => d.public);
+              if (first >= 0) selectDesign(first);
+              if (currentStep > 1) goStep(1);
+            }
+          }
           if (!changed.length) return;
           for (const d of DESIGNS) {
             const btn = designButtons.get(d.id);
@@ -4515,73 +4459,6 @@
         },
         { lists: [DESIGNS] }
       );
-
-      /* ---- private-design access code ("יש לך קוד?") ---- */
-      // Validate a code against the server; on success reveal that (hidden)
-      // private design's tile and select it so the client orders it normally.
-      const codeInput = document.getElementById('designCode');
-      const codeBtn = document.getElementById('designCodeBtn');
-      const codeMsg = document.getElementById('designCodeMsg');
-      const unlocked = new Set(); // design ids already revealed this session
-
-      function showCodeMsg(text, ok) {
-        codeMsg.textContent = text;
-        codeMsg.className = 'code-msg ' + (ok ? 'ok' : 'err');
-        codeMsg.hidden = false;
-      }
-
-      // Reveal a design tile by id and select it. Returns false if that id isn't
-      // a real design in this catalog (e.g. a code points at an unknown design).
-      function unlockDesign(id) {
-        const idx = DESIGNS.findIndex((d) => d.id === id);
-        if (idx < 0) return false;
-        const btn = designButtons.get(id);
-        if (btn) btn.hidden = false;
-        unlocked.add(id);
-        selectDesign(idx);
-        return true;
-      }
-
-      async function submitDesignCode() {
-        const code = (codeInput.value || '').trim();
-        if (!code) {
-          showCodeMsg('הזינו קוד', false);
-          return;
-        }
-        codeBtn.disabled = true;
-        try {
-          const r = await fetch('/api/design-code/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ code }),
-          });
-          if (r.status === 429) {
-            showCodeMsg('יותר מדי ניסיונות, נסו שוב עוד רגע', false);
-            return;
-          }
-          const data = await r.json().catch(() => ({}));
-          if (data && data.valid && unlockDesign(data.design)) {
-            showCodeMsg('העיצוב נפתח!', true);
-            codeInput.value = '';
-          } else {
-            showCodeMsg('קוד לא תקין', false);
-          }
-        } catch {
-          showCodeMsg('שגיאה, נסו שוב', false);
-        } finally {
-          codeBtn.disabled = false;
-        }
-      }
-
-      if (codeBtn) codeBtn.addEventListener('click', submitDesignCode);
-      if (codeInput) {
-        codeInput.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault();
-            submitDesignCode();
-          }
-        });
-      }
 
       // How many rows of design tiles a phone screen has room for above the fixed
       // Back/Next bar. Two is what the layout has always shown; the catalog growing
@@ -7601,7 +7478,7 @@
       /* ---- init ---- */
       // Set when the URL named a design this wizard could NOT select (an id that
       // isn't in the catalog at all — e.g. /api/custom-designs failed — or a
-      // PRIVATE design that needs its access code). designIndex then still points
+      // design the owner hid from the site). designIndex then still points
       // at the first design, which is NOT what the shopper asked for, so a deep
       // link like ?design=<unknown>&step=2 must never sail past the design picker
       // into checkout: goStep is clamped back to step 1 below and the shopper picks
@@ -7627,10 +7504,9 @@
         const cId = params.get('color');
         if (dId) {
           const di = DESIGNS.findIndex((d) => d.id === dId);
-          // Only auto-select a design from the URL when it's PUBLIC. A private
-          // design must be unlocked with its access code (submitDesignCode ->
-          // unlockDesign); a shared ?design=<private id> link must never bypass
-          // that and reveal it. Treat a private id as if it weren't supplied.
+          // Only auto-select a design from the URL when it's shown on the site: a
+          // shared ?design=<hidden id> link must never reveal a design the owner
+          // hid. Treat a hidden id as if it weren't supplied.
           if (di >= 0 && DESIGNS[di].public) designIndex = di;
           else urlDesignUnresolved = true;
         }

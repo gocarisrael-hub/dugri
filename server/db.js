@@ -15,8 +15,6 @@ const validate = require('./validate');
 const reminders = require('./reminders');
 // Agent D's store block (server/stores/platform.js), spread into `db` below.
 const platformStore = require('./stores/platform');
-// Agent B's store blocks (server/stores/catalog.js), spread into `db` below.
-const catalogStore = require('./stores/catalog');
 const commerceStore = require('./stores/commerce');
 // The friend coupon's pure rules (code format, email, dates, admin sums), handed
 // to commerceStore.friendCouponsBlock below. Requires nothing but node's crypto.
@@ -61,7 +59,6 @@ const DEFAULTS = {
   // Friend coupons — personal single-use codes for people who add words. Kept
   // apart from `coupons` (see friendCouponsBlock in server/stores/commerce.js).
   friend_coupons: [],
-  design_codes: [],
   order_seq: 0,
   // Physical stock — see the block near stockSnapshot. Absent in every file
   // written before this existed, which is why nothing here may assume its shape.
@@ -3364,9 +3361,6 @@ const db = {
   // Agent D: reminder + order-notified state, in server/stores/platform.js.
   ...platformStore({ _db, saveDb, nowIso, reminders, effectiveStatus, REMINDER_AFTER_MS }),
 
-  // Agent B: design access codes (create), in server/stores/catalog.js.
-  ...catalogStore.designCodesCreate({ _db, saveDb, normCode, uid, nowIso }),
-
   // Agent A: the physical stock, in server/stores/commerce.js.
   ...commerceStore.stockBlock({
     _db,
@@ -3377,9 +3371,6 @@ const db = {
     SUPPLY_DEFAULTS,
     INITIAL_BOARD_STOCK,
   }),
-
-  // Agent B: design access codes (the rest), in server/stores/catalog.js.
-  ...catalogStore.designCodesManage({ _db, saveDb, normCode, todayStrIsrael }),
 };
 
 module.exports = db;

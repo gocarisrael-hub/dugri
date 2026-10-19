@@ -84,7 +84,6 @@ const DISALLOW = [
   '/collect',
   '/coupons',
   '/dashboard',
-  '/design-codes',
   '/partner',
   '/pay',
   '/proof',

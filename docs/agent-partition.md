@@ -33,13 +33,11 @@ Designs, gallery/images, templates and their artwork, themes, storefront carouse
 
 - `server/templates.js`, `server/template-store.js`, `server/design-catalog.js`, `server/design-images.js`, `server/image-thumbs.js`, `server/promo.js`; `scripts/tokenize-svg.mjs`, `render-design-assets.mjs`, `product-thumbs.mjs` (need `magick`), `backup-templates.mjs`, `icon-contact-sheet.py`, `icon-clearance-proof.py`
 - `site/js/designs.js` (+ `designs.generated.js` — BUILD OUTPUT, never hand-edit), `site/js/design-images.js`, `site/js/carousel.js`, `site/js/lazy-media.js`, `site/js/pinch-zoom.js`, `site/js/promo.js`
-- Pages: `products.html`, `index.html` (catalog/carousel), `admin-designs.html`, `admin-images.html`, `admin-templates.html`, `admin-newgame.html`, `design-codes.html`
-- **`server/routes/catalog.js`** (split out of `index.js`): `/api/admin/designs`, `/api/admin/design-codes*` + `/api/design-code/validate` (with the design → theme map and `designIsInStore`), `/api/admin/templates` upload/create/list/rename/settings/delete + `/assets/:role` (replace, read, remove) + `/revert`, `/api/design-names`, `/api/custom-designs`, `/api/template-asset/*`, `/api/admin/templates/:key/asset-svg/:role`, `/api/template-image/*`, `/api/admin/promo/image`, `/api/design-images` + `/api/admin/design-images/*`, `/design-img/*`, `/design-thumb/*`, `/api/promo`. Edit these there, not in `index.js` (see "Splitting the monolith"). `saveGalleryUpload` comes back to `index.js` as a return value, because C's photo-fallback upload uses it.
-- **`server/stores/catalog.js`** (split out of `db.js`): the private-design access codes, as two factories (`designCodesCreate`, `designCodesManage`) because the block is split around A's stock block.
+- Pages: `products.html`, `index.html` (catalog/carousel), `admin-designs.html`, `admin-images.html`, `admin-templates.html`, `admin-newgame.html`
+- **`server/routes/catalog.js`** (split out of `index.js`): `/api/admin/designs`, `/api/admin/templates` upload/create/list/rename/settings/delete + `/assets/:role` (replace, read, remove) + `/revert`, `/api/design-names`, `/api/custom-designs`, `/api/template-asset/*`, `/api/admin/templates/:key/asset-svg/:role`, `/api/template-image/*`, `/api/admin/promo/image`, `/api/design-images` + `/api/admin/design-images/*`, `/design-img/*`, `/design-thumb/*`, `/api/promo`. Edit these there, not in `index.js` (see "Splitting the monolith"). `saveGalleryUpload` comes back to `index.js` as a return value, because C's photo-fallback upload uses it.
 - Still in `index.js`, owned by C: `/api/admin/templates/:key/typefit`, `/entry` (the calibration screen's reads) and `/redetect`.
 - CSS: `site/css/tokens.css`, `site/css/carousel.css`
 - In `index.js`: the designs/templates/preview region, `/api/design-names`, `/api/design-images*`, `/api/admin/templates*` (upload, artwork/asset SVGs, fonts), `/api/custom-designs`, `/api/template-image/*`, `/api/promo` + `/api/admin/promo/*`
-- In `db.js`: the design-codes block
 - Tests: `design-*`, `custom-designs*`, `storefront-custom-designs`, `colors`, `page-tint`, `carousel`, `color-step-carousel`, `marquee`, `reviews`, `gallery-weight`, `image-thumbs`, `picture-letterbox`, `pinch-zoom`, `product-portrait`, `products`, `promo*`, `render-design-assets`, `backup-templates`, `templates-store`, `admin-templates*`, `admin-template-fonts`, `template-alt-fonts`, `template-read-asset`, `admin-designs*`, `admin-images`
 - NOTE: B owns template artwork and assets; C owns how they are rendered (generator, template editor). Coordinate on changes that span both.
 
@@ -116,7 +114,7 @@ Planned order:
    here by proximity: they mutate the order record, `applyOrderReady` is already passed INTO
    `server/routes/commerce.js` for the ready-batch press, and only their side effects (the customer
    email and the SMS) are D's. Assign them with A's next slice.
-2. **B — Catalog & Design** (done: routes + design-codes store). Left in `index.js` on purpose: the
+2. **B — Catalog & Design** (done: routes; the design-codes store was later removed with the feature). Left in `index.js` on purpose: the
    calibration routes that sit inside B's templates region (`/typefit`, `/entry`, `/redetect`) are
    C's and move with C's slice. Two comments that describe B routes (the "REMOVE an optional asset"
    note above `TYPEFIT_TIMEOUT_MS`, the "REVERT a shipped template" note above `/redetect`) were
