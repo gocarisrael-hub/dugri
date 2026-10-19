@@ -8,7 +8,7 @@ import { test, expect } from '@playwright/test';
 // - in edit mode the caption, the screenshot and the logo's name show in the card to be edited, an emptied card stays
 //   (faded) to be filled again, the row holds still and a card does not open;
 // - the spare cards (reviews 9-12, logos 6-8) are hidden until the owner fills one (a logo needs its picture as well);
-// - the business text leads with the gift, and the design view has no swipe hint.
+// - the business text leads with the gift; the design view has no swipe hint and gives its 4 days as self-pickup.
 
 const OVERRIDES = {
   'new-review-2-quote': { text: '' },
@@ -166,5 +166,15 @@ test.describe('the owner’s copy', () => {
     await tile.click();
     await expect(page.locator('#flood')).toHaveAttribute('open', '');
     await expect(page.locator('#flood')).not.toContainText('החליקו למטה');
+  });
+
+  test('the design view says the 4 days are for self-pickup', async ({ page }) => {
+    await page.goto('/new.html');
+    const tile = page.locator('#strip .dz:not([aria-hidden])').first();
+    await tile.scrollIntoViewIfNeeded();
+    await tile.click();
+    await expect(page.locator('#flood [data-edit="new-view-note"]')).toHaveText(
+      'מוכן תוך 4 ימי עסקים לאיסוף עצמי'
+    );
   });
 });
