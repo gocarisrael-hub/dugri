@@ -3742,6 +3742,33 @@
       </button>
       <div id="deckViewTrack"></div>
       <div class="deck-view-dots" id="deckViewDots"></div>
+      <!-- Desktop arrows, for the chosen design's pictures in redesign mode only
+           (css/rd/options.css shows them on a fine pointer). Inline SVG, never ‹ ›:
+           those characters are mirrored on an RTL page. -->
+      <button
+        class="deck-view-nav deck-view-prev"
+        type="button"
+        id="deckViewPrev"
+        data-testid="deck-view-prev"
+        aria-label="התמונה הקודמת"
+        hidden
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M9 5l7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" />
+        </svg>
+      </button>
+      <button
+        class="deck-view-nav deck-view-next"
+        type="button"
+        id="deckViewNext"
+        data-testid="deck-view-next"
+        aria-label="התמונה הבאה"
+        hidden
+      >
+        <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+          <path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.4" />
+        </svg>
+      </button>
     </div>
 
     <script type="module">
@@ -5952,6 +5979,8 @@
       const deckViewTrack = document.getElementById('deckViewTrack');
       const deckViewDots = document.getElementById('deckViewDots');
       const deckViewClose = document.getElementById('deckViewClose');
+      const deckViewPrev = document.getElementById('deckViewPrev');
+      const deckViewNext = document.getElementById('deckViewNext');
       // The picture's accessible name — admin-only labels, never drawn on screen.
       const DECK_A11Y = {
         deckFronts: 'שמונת הקלפים',
@@ -6085,18 +6114,41 @@
        *  reappear here, and every survivor's position is its position NOW. */
       function openDeckView(fromSlide) {
         const slides = deckSlides();
-        if (!slides.length || !deckView) return;
+        if (!slides.length) return;
         const index = Math.max(0, slides.indexOf(fromSlide));
+        const shots = slides.map((s) => ({
+          src: s.dataset.deckSrc,
+          alt: DECK_A11Y[s.dataset.deckKey] || '',
+        }));
+        if (openPhotoViewer(shots, index, { label: 'תמונות החפיסה' }))
+          track('open_deck_view', { index });
+      }
+
+      /** The one fullscreen photo viewer on this page, shared by the deck row and the
+       *  chosen design's pictures. `shots` is [{src, alt?, fallback?}]; `arrows` adds
+       *  the prev/next buttons (shown on a fine pointer by css/rd/options.css).
+       *  Returns false when there is nothing to show. */
+      function openPhotoViewer(shots, index, { label, arrows = false } = {}) {
+        if (!shots.length || !deckView) return false;
         deckViewOpener = document.activeElement;
+        deckView.setAttribute('aria-label', label || 'תמונות');
         deckViewTrack.replaceChildren();
-        for (const rowSlide of slides) {
+        for (const shot of shots) {
           const slide = document.createElement('div');
           const img = document.createElement('img');
-          img.src = rowSlide.dataset.deckSrc;
-          img.alt = DECK_A11Y[rowSlide.dataset.deckKey] || '';
+          img.src = shot.src;
+          img.alt = shot.alt || '';
+          if (shot.fallback) {
+            img.addEventListener('error', () => {
+              if (img.src.indexOf(shot.fallback) === -1) img.src = shot.fallback;
+            });
+          }
           slide.appendChild(img);
           deckViewTrack.appendChild(slide);
         }
+        const navs = arrows && shots.length > 1;
+        deckViewPrev.hidden = !navs;
+        deckViewNext.hidden = !navs;
         deckView.hidden = false;
         document.body.style.overflow = 'hidden';
         // Built AFTER the overlay is visible: a carousel measured while its
@@ -6110,14 +6162,16 @@
           dotsInto: deckViewDots,
           // Slideshow mode adds arrows by default; the product page's viewer turns
           // them off for the same reason. Unstyled, they landed across the close
-          // button. Swipe and the dots cover it.
+          // button. The page's own #deckViewPrev/#deckViewNext are placed for it.
           arrows: false,
         });
-        if (index > 0 && deckViewApi && deckViewApi.goTo) deckViewApi.goTo(index);
+        const at = Math.max(0, Math.min(shots.length - 1, index | 0));
+        // Not smooth: she asked for THIS picture, not a ride past the ones before it.
+        if (at > 0 && deckViewApi && deckViewApi.goTo) deckViewApi.goTo(at, false);
         deckViewPinch = initPinchZoom(deckView, { imgSelector: 'img' });
         document.addEventListener('keydown', onDeckViewKey);
         deckViewClose.focus();
-        track('open_deck_view', { index });
+        return true;
       }
 
       function closeDeckView() {
@@ -6132,14 +6186,54 @@
         deckViewTrack.replaceChildren();
         deckViewDots.replaceChildren();
         deckView.hidden = true;
+        deckViewPrev.hidden = true;
+        deckViewNext.hidden = true;
         document.body.style.overflow = '';
         document.removeEventListener('keydown', onDeckViewKey);
         if (deckViewOpener && typeof deckViewOpener.focus === 'function') deckViewOpener.focus();
       }
 
-      function onDeckViewKey(e) {
-        if (e.key === 'Escape') closeDeckView();
+      function stepDeckView(dir) {
+        if (!deckViewApi) return;
+        if (deckViewPinch) deckViewPinch.reset(); // the next picture opens at fit
+        if (dir > 0) deckViewApi.next();
+        else deckViewApi.prev();
       }
+
+      function onDeckViewKey(e) {
+        if (e.key === 'Escape') {
+          closeDeckView();
+          return;
+        }
+        // Arrows anywhere while it is open, mapped visually (RTL: left is the next
+        // picture). The track handles its own when it has focus, and says so.
+        if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.defaultPrevented) {
+          e.preventDefault();
+          const rtl = getComputedStyle(deckView).direction === 'rtl';
+          stepDeckView((e.key === 'ArrowLeft') === rtl ? 1 : -1);
+          return;
+        }
+        // A modal keeps the focus: Tab cycles through the viewer's own controls.
+        if (e.key === 'Tab') {
+          const stops = Array.from(
+            deckView.querySelectorAll('button, [tabindex]:not([tabindex="-1"])')
+          ).filter((el) => !el.hidden && el.getClientRects().length);
+          if (!stops.length) return;
+          const first = stops[0];
+          const last = stops[stops.length - 1];
+          const inside = deckView.contains(document.activeElement);
+          if (e.shiftKey && (!inside || document.activeElement === first)) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && (!inside || document.activeElement === last)) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+
+      deckViewPrev.addEventListener('click', () => stepDeckView(-1));
+      deckViewNext.addEventListener('click', () => stepDeckView(1));
 
       if (deckRow) {
         deckRow.addEventListener('click', (e) => {
@@ -6171,9 +6265,15 @@
          Up to four of the product page's own pictures for this design, in her order;
          a picture that fails falls back to the shipped render, or leaves. With no
          config yet (or none at all) it shows the picker thumbnail, so the box is
-         never empty. Read from <html> each time: the mode is the server's class. */
+         never empty. Each picture is a button that opens the page's photo viewer
+         (#deckView) on every picture of the design, not just these four. Read from
+         <html> each time: the mode is the server's class. */
       const chosenDesign = document.getElementById('chosenDesign');
       const CHOSEN_DESIGN_MAX = 4;
+      // Every picture of the design, in the gallery's order: the box shows the first
+      // few, and a tap on any of them opens the viewer on ALL of them (owner,
+      // 2026-10-19).
+      let chosenShots = [];
       function paintChosenDesign() {
         if (!chosenDesign) return;
         const inMode = document.documentElement.classList.contains('rd');
@@ -6182,24 +6282,45 @@
           chosenDesign.hidden = true;
           return;
         }
-        const shots = galleryFor(deckImages, d, 'product').slice(0, CHOSEN_DESIGN_MAX);
-        if (!shots.length && d.thumb) shots.push({ src: d.thumb });
-        document.getElementById('chosenDesignName').textContent =
-          currentSelection().designName || '';
+        chosenShots = galleryFor(deckImages, d, 'product');
+        if (!chosenShots.length && d.thumb) chosenShots = [{ src: d.thumb }];
+        const name = currentSelection().designName || '';
+        document.getElementById('chosenDesignName').textContent = name;
         const pics = document.getElementById('chosenDesignPics');
         pics.replaceChildren();
-        for (const shot of shots) {
+        chosenShots.slice(0, CHOSEN_DESIGN_MAX).forEach((shot, i) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'cd-pic';
+          btn.dataset.index = String(i);
+          btn.dataset.testid = 'chosen-design-pic';
+          btn.setAttribute('aria-label', `תמונה ${i + 1} מתוך ${chosenShots.length} - הגדלה`);
           const img = document.createElement('img');
           img.src = shot.src;
           img.alt = '';
           img.decoding = 'async';
           img.addEventListener('error', () => {
             if (shot.fallback && img.src.indexOf(shot.fallback) === -1) img.src = shot.fallback;
-            else img.remove();
+            else btn.remove();
           });
-          pics.appendChild(img);
-        }
+          btn.appendChild(img);
+          pics.appendChild(btn);
+        });
         chosenDesign.hidden = false;
+      }
+      if (chosenDesign) {
+        document.getElementById('chosenDesignPics').addEventListener('click', (e) => {
+          const btn = e.target.closest('.cd-pic');
+          if (!btn) return;
+          const index = Number(btn.dataset.index) || 0;
+          const name = document.getElementById('chosenDesignName').textContent;
+          const shots = chosenShots.map((shot, i) => ({
+            ...shot,
+            alt: `${name} - תמונה ${i + 1}`,
+          }));
+          if (openPhotoViewer(shots, index, { label: `תמונות העיצוב ${name}`, arrows: true }))
+            track('open_chosen_design_view', { index });
+        });
       }
       const chosenDesignChange = document.getElementById('chosenDesignChange');
       if (chosenDesignChange) chosenDesignChange.addEventListener('click', () => goStep(1));

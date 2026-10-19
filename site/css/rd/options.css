@@ -483,8 +483,21 @@ html.rd .cd-pics {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
-html.rd .cd-pics img {
+/* each picture is a button that opens the photo viewer (#deckView) on it */
+html.rd .cd-pic {
   flex: 0 0 auto;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 6px;
+  cursor: zoom-in;
+}
+html.rd .cd-pic:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+html.rd .cd-pics img {
   display: block;
   height: 72px;
   width: auto;
@@ -493,6 +506,44 @@ html.rd .cd-pics img {
   border: var(--border-hair) solid var(--color-ink);
   border-radius: 6px;
   background: var(--color-ground);
+}
+
+/* the viewer's arrows: the chosen design's pictures, desktop only (a phone swipes) */
+html.rd .deck-view-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 3;
+  width: 48px;
+  height: 48px;
+  margin-top: -24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: var(--border-thin) solid rgba(255, 255, 255, 0.4);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  cursor: pointer;
+}
+html.rd .deck-view-nav:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+/* physical sides, not inline: in RTL the next picture is to the left */
+html.rd .deck-view-prev {
+  right: 14px;
+}
+html.rd .deck-view-next {
+  left: 14px;
+}
+html.rd .deck-view-nav[hidden] {
+  display: none;
+}
+@media (hover: none), (pointer: coarse) {
+  html.rd .deck-view-nav {
+    display: none;
+  }
 }
 
 /* == end C == */
