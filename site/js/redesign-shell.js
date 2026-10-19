@@ -110,12 +110,13 @@
   // ---------- 3, 4. header and footer ----------
   // In the mode / is the redesigned homepage (new.html): its sections are the designs (#order), the story, the reviews, business
   var LINKS = [
-    ['/#order', 'העיצובים'],
-    ['how.html', 'איך זה עובד'],
-    ['/#recs', 'ממליצים עלינו'],
-    ['new-faq.html', 'שאלות נפוצות'],
-    ['pickup.html', 'איסוף עצמי'],
-    ['/#biz', 'פניות עסקיות'],
+    // [href, label, the nav_click target GA reports it under (the same names as the homepage's own menu)]
+    ['/#order', 'העיצובים', 'designs'],
+    ['how.html', 'איך זה עובד', 'how'],
+    ['/#recs', 'ממליצים עלינו', 'recs'],
+    ['new-faq.html', 'שאלות נפוצות', 'faq'],
+    ['pickup.html', 'איסוף עצמי', 'pickup'],
+    ['/#biz', 'פניות עסקיות', 'biz'],
   ];
   var here = (location.pathname.split('/').pop() || '').toLowerCase();
   var ICON =
@@ -131,10 +132,10 @@
     return (
       '<div class="rd-start">' +
       '<button class="rd-menu-btn" id="rdMenuBtn" type="button" aria-label="תפריט" aria-haspopup="dialog"' +
-      ' aria-expanded="false" aria-controls="rdMenu">' +
+      ' aria-expanded="false" aria-controls="rdMenu" data-ga="menu_open">' +
       ICON +
       '</button>' +
-      '<a class="rd-logo" href="/"><img src="/assets/logo-pink-original.png" alt="דוגרי, לעמוד הבית" /></a>' +
+      '<a class="rd-logo" href="/" data-ga="nav_click" data-ga-target="home" data-ga-where="header"><img src="/assets/logo-pink-original.png" alt="דוגרי, לעמוד הבית" /></a>' +
       '</div>' +
       '<a class="rd-btn" href="/#order" data-ga="nav_order">הזמינו עכשיו</a>'
     );
@@ -145,21 +146,38 @@
     for (var i = 0; i < LINKS.length; i++) {
       var cur = LINKS[i][0] === here ? ' aria-current="page"' : '';
       items +=
-        '<li><a href="' + esc(LINKS[i][0]) + '"' + cur + '>' + esc(LINKS[i][1]) + '</a></li>';
+        '<li><a href="' +
+        esc(LINKS[i][0]) +
+        '" data-ga="nav_click" data-ga-target="' +
+        LINKS[i][2] +
+        '" data-ga-where="menu"' +
+        cur +
+        '>' +
+        esc(LINKS[i][1]) +
+        '</a></li>';
     }
     return (
       '<button class="rd-x" type="button" id="rdMenuX" aria-label="סגירת התפריט">✕</button>' +
       '<nav aria-label="ניווט"><ul>' +
       items +
       '</ul></nav>' +
-      '<a class="rd-btn block" href="/#order">הזמינו עכשיו</a>'
+      '<a class="rd-btn block" href="/#order" data-ga="nav_order" data-ga-where="menu">הזמינו עכשיו</a>'
     );
   }
 
+  var foot = function (target) {
+    return ' data-ga="nav_click" data-ga-target="' + target + '" data-ga-where="footer"';
+  };
   function footerHtml() {
     return (
-      '<span><a href="terms.html">תקנון ותנאי שימוש</a><a href="new-faq.html">שאלות נפוצות</a>' +
-      '<a href="pickup.html">איסוף עצמי</a></span>' +
+      '<span><a href="terms.html"' +
+      foot('terms') +
+      '>תקנון ותנאי שימוש</a><a href="new-faq.html"' +
+      foot('faq') +
+      '>שאלות נפוצות</a>' +
+      '<a href="pickup.html"' +
+      foot('pickup') +
+      '>איסוף עצמי</a></span>' +
       '<img src="/assets/logo-pink-original.png" alt="" />'
     );
   }

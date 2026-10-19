@@ -330,16 +330,20 @@ describe('the site footer on the redesigned pages', () => {
   it('has the live homepage footer’s links, contacts and editable texts, on both pages', () => {
     const index = read('index.html');
     const idxFoot = index.slice(index.indexOf('<footer>'), index.indexOf('</footer>'));
-    const testids = [...idxFoot.matchAll(/data-testid="([^"]+)"/g)].map((m) => m[1]);
-    const keys = [...idxFoot.matchAll(/data-edit="(index-footer-(?!brand)[^"]+)"/g)].map(
+    // all but the business line: the redesigned pages have a business section of their own
+    const testids = [...idxFoot.matchAll(/data-testid="([^"]+)"/g)]
+      .map((m) => m[1])
+      .filter((t) => t !== 'footer-b2b');
+    const keys = [...idxFoot.matchAll(/data-edit="(index-footer-(?!brand|b2b)[^"]+)"/g)].map(
       (m) => m[1]
     );
-    expect(testids.length).toBeGreaterThanOrEqual(4);
+    expect(testids.length).toBeGreaterThanOrEqual(3);
     for (const page of ['new.html', 'new-faq.html']) {
       const html = read(page);
       const foot = html.slice(html.indexOf('<footer class="site-ft"'), html.indexOf('</footer>'));
       for (const t of testids) expect(foot, `${page} ${t}`).toContain(`data-testid="${t}"`);
       for (const k of keys) expect(foot, `${page} ${k}`).toContain(`data-edit="${k}"`);
+      expect(foot, `${page} b2b`).not.toMatch(/footer-b2b|לעסקים/);
       for (const href of [
         'wordlists.html',
         'terms.html',
@@ -376,7 +380,7 @@ describe('the questions page', () => {
     expect(faq).not.toMatch(/href="#/); // no section of this page to jump to: every menu link is new.html#…
     for (const id of ['order', 'story', 'recs', 'biz'])
       expect(faq).toContain(`href="new.html#${id}"`);
-    expect(faq).toMatch(/href="new-faq\.html" aria-current="page"/);
+    expect(faq).toMatch(/href="new-faq\.html"\s+aria-current="page"/);
     const js = read('js/new-faq.js');
     expect(js).toMatch(/initFaq\(/);
     expect(js).toMatch(/initMenu\(/);
