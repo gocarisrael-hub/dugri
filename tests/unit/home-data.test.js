@@ -178,6 +178,15 @@ describe('the designs come from the live catalog', () => {
     }
   });
 
+  it('ships no card fronts beyond what each design shows (a dropped front leaves no file behind)', () => {
+    const cards = fs.readdirSync(path.join(SITE, 'assets/home/cards'));
+    for (const [id, art] of Object.entries(DESIGN_ART)) {
+      const fronts = cards.filter((f) => new RegExp(`^${id}-f\\d+(@2x)?\\.(webp|jpg)$`).test(f));
+      const nums = [...new Set(fronts.map((f) => +f.match(/-f(\d+)/)[1]))].sort((a, b) => a - b);
+      expect(nums, id).toEqual(Array.from({ length: art.fronts }, (_, i) => i + 1));
+    }
+  });
+
   it('shows a public custom design it has no art for from its own template card', () => {
     const [d] = homeDesigns([
       custom('new-one', 'חדש', {

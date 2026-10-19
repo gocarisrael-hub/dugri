@@ -588,10 +588,24 @@ header .pill {
   margin-top: 32px;
   font: 700 15px/1 var(--font-body);
 }
+/* one arrow at the left end, pointing left: an SVG, since a glyph arrow mirrors in RTL */
 .strip-hint {
   position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font: var(--weight-strong) 13px/1 var(--font-body);
   letter-spacing: 0.04em;
+}
+.strip-hint svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .order {
   position: relative;
@@ -1552,6 +1566,13 @@ dialog.menu .pill {
   height: 22px;
   fill: currentColor;
   flex: none;
+}
+/* "לפניות עסקיות בוואטסאפ" needs ~209px: on a 320 phone the standard side padding left 204 and it wrapped */
+@media (max-width: 359px) {
+  .biz .pill {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
 }
 .biz-in {
   max-width: 560px;
