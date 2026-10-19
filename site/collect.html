@@ -2169,9 +2169,12 @@
       </header>
 
       <!-- FOUR TABS, one job each — the owner's layout: "מילים · העיצוב · חיילי
-           המשחק · תשלום". The payment is on all of them AND has one of its own:
-           the sticky bar and the CTA card carry no tab and never leave, while
-           the תשלום tab holds the checkout itself.
+           המשחק · תשלום". The payment is on all of them: the sticky bar and the
+           CTA card carry no tab and never leave, and both open the checkout (the
+           pay panel) in place of the current tab. The תשלום tab itself shows only
+           when neither card does (closed before paying, or card payment off), as
+           the one way left to the checkout; the owner dropped it otherwise as
+           clutter (2026-10-19).
            OWNER ONLY. A contributor arrives from a WhatsApp group to add a word;
            three of these four tabs are not hers, and a tab strip advertising them
            would be three dead ends. She sees the page exactly as she does today,
@@ -5062,10 +5065,10 @@
       }
       // ---- the tab strip ------------------------------------------------------
       // One tab is showing at any moment and the rest are `hidden`. The PAYMENT is
-      // the exception the owner asked for twice over: it is a tab of its own AND
-      // the sticky bar at the foot, which lives outside every panel and therefore
-      // never leaves — so wherever she is, the price and the way to pay it are on
-      // screen.
+      // the exception: the sticky bar at the foot and the top card live outside
+      // every panel and therefore never leave — so wherever she is, the price and
+      // the way to pay it are on screen. The checkout they open is the 'pay'
+      // panel, shown through showTab('pay') whether or not its tab button is up.
       let currentTab = 'words';
       function showTab(name) {
         currentTab = name;
@@ -5718,9 +5721,16 @@
           // checkout that answers nothing, on the one page she keeps coming back
           // to for days after paying. If she is standing on it when the payment
           // lands, she is moved to the sign-off tab, which is what is left to do.
+          // UNPAID, the tab is up only when the pay cards are not: the top card
+          // and the sticky bar already open this checkout from every tab, and the
+          // owner dropped the tab as clutter (2026-10-19). Without them (closed
+          // before paying, or card payment off) the tab is the only way in, so it
+          // stays. Hiding the button leaves the panel alone: a buyer already on
+          // the checkout stays there.
+          const payCards = open && !paid && cardEnabled;
           const payTab = document.querySelector('#tabs .tabbar-btn[data-tab="pay"]');
           if (payTab) {
-            payTab.hidden = paid;
+            payTab.hidden = paid || payCards;
             if (paid && currentTab === 'pay') showTab('finish');
           }
           // Paid: drop the pay panel + the pay bar, and put a prominent
@@ -5729,11 +5739,11 @@
           $('#payPanel').classList.toggle('hidden', paid);
           // Only prompt them to pay when there's actually a working pay button
           // (card configured). Otherwise the bar would advertise a dead panel.
-          $('#payBar').classList.toggle('hidden', !(open && !paid && cardEnabled));
+          $('#payBar').classList.toggle('hidden', !payCards);
           // The top card is the same CTA on the same condition — never one
           // without the other, or the page would offer to take a payment in one
           // place while the other says the checkout is dead.
-          $('#payTop').classList.toggle('hidden', !(open && !paid && cardEnabled));
+          $('#payTop').classList.toggle('hidden', !payCards);
           // …and the moment its visibility changes, so does how much room the
           // page and the WhatsApp button have to leave for it.
           syncPayBarHeight();
@@ -6885,7 +6895,7 @@
         // to the viewport instead — on a phone the open panel is taller than the
         // screen, and centering it pushes the version options off the top.
         const openPayPanel = (block = 'center') => {
-          // The checkout lives on the תשלום tab, so SHOW that tab first: every
+          // The checkout is the 'pay' panel, so SHOW that panel first: every
           // one of the callers below is a button that means "pay now", and a
           // panel opened on a tab she is not looking at is a button that does
           // nothing. The sticky bar is on every tab precisely so this can be

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
+import { openCheckout } from './helpers/checkout.js';
 
 // "יישובים חריגים" — the collapsed note listing the localities where delivery
 // takes longer than the estimate printed beside it.
@@ -99,13 +100,7 @@ async function createCollection(page, title = 'Shira') {
 }
 
 async function openPayPanel(page) {
-  const tab = page.getByTestId('tab-pay');
-  const shown = await tab
-    .waitFor({ state: 'visible', timeout: 5000 })
-    .then(() => true)
-    .catch(() => false);
-  if (shown) await tab.click();
-  await page.locator('#payPanel > summary').click();
+  await openCheckout(page);
   // Only a resolved payload paints the option list; until then applyPricing
   // hides the whole box and the note legitimately is not there yet.
   await expect(page.locator('html')).toHaveAttribute('data-sale', 'on');
@@ -187,10 +182,7 @@ test.describe('in the checkout, under the delivery tick', () => {
   test('a failed pricing fetch promises nothing', async ({ page }) => {
     await page.route('**/api/pricing', (route) => route.abort('failed'));
     await createCollection(page);
-    const tab = page.getByTestId('tab-pay');
-    await tab.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
-    await tab.click().catch(() => {});
-    await page.locator('#payPanel > summary').click();
+    await openCheckout(page);
     // No estimate we could not read: the note is absent even though the markup
     // for it is on the page.
     await expect(noteAt(page, 'ship-toggle')).toBeHidden();

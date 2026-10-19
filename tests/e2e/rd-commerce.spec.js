@@ -5,6 +5,7 @@
 // Outside the mode none of these files is linked; that half is the gate's own test (redesign-gate).
 import { test, expect } from '@playwright/test';
 import { previewRedesign } from './helpers/redesign.js';
+import { openCheckout } from './helpers/checkout.js';
 
 const KEY = 'dugri-admin';
 // The time alone can repeat: two projects run the same test in parallel, and a code made twice is a 409.
@@ -243,7 +244,7 @@ test('collect.html checkout in the mode: the pay pill sits inside its card, noth
   await checkoutReady(page);
   const { id, k } = await makeCollection(request);
   await page.goto(`/collect.html?c=${id}&k=${k}`);
-  await page.getByTestId('tab-pay').click();
+  await openCheckout(page);
 
   const top = page.getByTestId('pay-top');
   await expect(top).toBeVisible();
@@ -252,7 +253,6 @@ test('collect.html checkout in the mode: the pay pill sits inside its card, noth
   );
   expect(topRadius).toBeGreaterThan(0);
 
-  await page.locator('#payPanel > summary').click();
   const btn = page.locator('#cardPayBtn');
   await expect(btn).toBeVisible();
   // The old gradient, glow pulse and light sweep are off; the button is the ink pill.

@@ -160,12 +160,12 @@ async function withCardEnabled(page) {
 // the same trick collect.spec.js uses — because these tests are about what the
 // page RENDERS in that state, not about how it got there.
 async function enableCardButton(page) {
-  const ctl = { paid: false };
+  const ctl = { paid: false, card: true };
   await page.route('**/api/collections/*', async (route) => {
     if (route.request().method() !== 'GET') return route.continue();
     const resp = await route.fetch();
     const body = await resp.json();
-    body.card_enabled = true;
+    body.card_enabled = ctl.card;
     if (ctl.paid) body.paid = true;
     return route.fulfill({ json: body });
   });
@@ -204,25 +204,26 @@ test('the tabs open her photos and her card, one section at a time', async ({ pa
   await expect(view).toHaveCount(0);
 });
 
-// THE PAYMENT IS EVERYWHERE. It is a tab of its own AND the sticky bar at the
-// foot — "any payment is also a section and also in every section", as the owner
-// put it. A price that only exists on one tab is a price she has to go looking
-// for, on the one page where she is deciding whether to pay at all.
-test('the pay bar stays on screen in every tab, and the pay tab holds the checkout', async ({
-  page,
-}) => {
+// THE PAYMENT IS EVERYWHERE: the sticky bar at the foot and the top card are on
+// every tab — "any payment is also a section and also in every section", as the
+// owner put it. A price that only exists on one tab is a price she has to go
+// looking for, on the one page where she is deciding whether to pay at all. With
+// the bar up, the תשלום tab of its own is down (the owner, 2026-10-19: clutter);
+// the bar opens the same checkout the tab did.
+test('the pay bar stays on screen in every tab, and opens the checkout', async ({ page }) => {
   const { url } = await createCollection(page);
   await withCardEnabled(page);
   await page.goto(url);
 
   const bar = page.locator('#payBar');
   await expect(bar).toBeVisible();
-  for (const tab of ['design', 'pawns', 'pay', 'words']) {
+  await expect(page.getByTestId('tab-pay')).toBeHidden();
+  for (const tab of ['design', 'pawns', 'finish', 'words']) {
     await page.getByTestId('tab-' + tab).click();
     await expect(bar).toBeVisible();
   }
 
-  await page.getByTestId('tab-pay').click();
+  await page.getByTestId('pay-bar-btn').click();
   await expect(page.getByTestId('pay-top')).toBeVisible();
   await expect(page.locator('#payPanel')).toBeVisible();
   // …and the words are not underneath it.
@@ -873,9 +874,11 @@ test('the collection cannot be closed until she confirms she went over it', asyn
 
 // The payment tab is the one thing on this page that stops being a question the
 // moment it is answered. Leaving it up sends her back to a checkout that has
-// nothing left to take.
+// nothing left to take. The tab is up before payment only where the pay cards are
+// not (here: card payment off, the fallback), so that is where this starts.
 test('the payment tab disappears once the order is paid', async ({ page }) => {
   const ctl = await enableCardButton(page);
+  ctl.card = false;
   const { url, id, k } = await createCollection(page);
   await page.request.post(`/api/collections/${id}/order`, {
     data: { owner_token: k, version: 'pickup' },

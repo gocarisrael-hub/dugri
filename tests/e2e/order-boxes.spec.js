@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
+import { openCheckout } from './helpers/checkout.js';
 
 // SEVERAL PRINTED COPIES: A BOX EACH, OR ALL IN ONE BOX.
 //
@@ -85,9 +86,7 @@ async function createCollection(page, name) {
   await page.fill('#buyerNameInput', 'דנה כהן');
   await page.getByTestId('next-btn').click();
   await page.waitForURL(/collect\.html\?c=.+&k=.+/);
-  await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
-  await page.getByTestId('tab-pay').click();
-  await page.locator('#payPanel > summary').click();
+  await openCheckout(page);
   const url = new URL(page.url());
   return { id: url.searchParams.get('c'), k: url.searchParams.get('k') };
 }
@@ -208,9 +207,7 @@ test('an order from before the choice: fee once, and no choice is sent', async (
   expect(placed.ok()).toBeTruthy();
   legacyView = true;
   await page.reload();
-  await page.getByTestId('tab-pay').waitFor({ state: 'visible' });
-  await page.getByTestId('tab-pay').click();
-  await page.locator('#payPanel > summary').click();
+  await openCheckout(page);
   await expect(page.getByTestId('qty-val')).toHaveText('3');
 
   await page.locator('input[name="payVersion"][value="pickup"]').check();
