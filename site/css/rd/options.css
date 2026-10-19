@@ -313,6 +313,18 @@ html.rd .wiz-bar .btn {
     display: none;
   }
 }
+/* On a wide screen Next is a button, not a bar (owner, 2026-10-19): it keeps its own width and sits beside הקודם at
+   the far end, instead of stretching across the gap. A phone keeps the stretched button, its thumb-sized target. */
+@media (min-width: 700px) {
+  html.rd .wiz-bar .btn {
+    flex: 0 0 auto;
+    min-width: 190px;
+    padding: 15px 34px;
+  }
+  html.rd .wiz-back {
+    margin-inline-start: auto; /* RTL: pushes הקודם and הבא together to the left end, עזרה stays on the right */
+  }
+}
 html.rd .wiz-bar .btn::before,
 html.rd .wiz-modal-card .btn::before,
 html.rd .wiz-modal-card .btn::after {
@@ -418,7 +430,7 @@ html.rd .pawn-tip [data-edit='options-photos-tip-shop'] {
   display: none;
 }
 
-/* ---- the chosen design on the title step (owner, 2026-10-18): a compact box with the shop's own pictures of it ---- */
+/* ---- the chosen design on the title step (owner, 2026-10-18): a box with the shop's own pictures of it ---- */
 html.rd .chosen-design {
   min-width: 0;
   max-width: 100%;
@@ -463,36 +475,112 @@ html.rd .cd-change {
   font-weight: var(--weight-label);
   cursor: pointer;
 }
+/* The pictures are the homepage's prints (new.html, "איך דוגרי נולד"; css/home-new.css .print): a white paper frame
+   with a deep bottom, the ink outline, the hard shadow, a strip of tape and a small alternating tilt. Two to a row and
+   the rest a swipe away (owner, 2026-10-19: "bigger, in the homepage's vintage style"). The homepage's slow drift is
+   left out: this is a form step, and nothing here should move while she types. */
 html.rd .cd-pics {
+  --cdw: clamp(136px, 40vw, 196px);
   min-width: 0;
+  contain: inline-size; /* the prints scroll inside the column; they never widen the step to fit them all */
   display: flex;
-  gap: 8px;
+  gap: 18px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  /* room for the tape above and the tilt and shadow around each print, which the scroller would otherwise clip */
+  padding: 16px 8px 14px;
+}
+html.rd .cd-pics::-webkit-scrollbar {
+  display: none;
 }
 /* each picture is a button that opens the photo viewer (#deckView) on it */
 html.rd .cd-pic {
+  position: relative;
   flex: 0 0 auto;
   display: block;
-  padding: 0;
+  width: var(--cdw);
+  margin: 0;
+  padding: 7px 7px 22px;
+  background: var(--color-paper);
   border: 0;
-  background: none;
-  border-radius: 6px;
+  border-radius: 0;
+  outline: 2.5px solid var(--color-ink);
+  outline-offset: -1px;
+  box-shadow: var(--shadow);
+  scroll-snap-align: start;
+  rotate: 3deg;
   cursor: zoom-in;
 }
+html.rd .cd-pic:nth-child(even) {
+  rotate: -3deg;
+}
+html.rd .cd-pic::before {
+  content: '';
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  width: 58px;
+  height: 20px;
+  margin-left: -29px;
+  background: rgba(244, 239, 230, 0.82);
+  border-right: 2px dashed rgba(0, 0, 0, 0.14);
+  border-left: 2px dashed rgba(0, 0, 0, 0.14);
+  rotate: -4deg;
+}
+html.rd .cd-pic:nth-child(even)::before {
+  rotate: 3deg;
+}
 html.rd .cd-pic:focus-visible {
-  outline: 2px solid var(--color-ink);
-  outline-offset: 2px;
+  outline: 3px solid var(--color-ink);
+  outline-offset: 3px;
 }
 html.rd .cd-pics img {
   display: block;
-  height: 72px;
-  width: auto;
-  max-width: 140px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 5 / 4; /* the shop's photos are 5:4 (the store card frame, #702); others fill it */
   object-fit: cover;
-  border: var(--border-hair) solid var(--color-ink);
-  border-radius: 6px;
   background: var(--color-ground);
+}
+
+/* the live preview's arrows, either side of its dots (built by the page in this mode only); the views go round */
+html.rd .np-nav {
+  display: flex;
+  direction: ltr; /* the filmstrip's direction: the card is on the left, so next is the right-hand arrow */
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 12px;
+}
+html.rd .np-nav[hidden] {
+  display: none;
+}
+html.rd .np-nav .name-preview-dots {
+  margin-top: 0;
+}
+html.rd .np-arrow {
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+html.rd .np-arrow:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+html.rd .np-arrow:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
 }
 
 /* the viewer's arrows: the chosen design's pictures, desktop only (a phone swipes) */

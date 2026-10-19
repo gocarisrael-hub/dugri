@@ -2145,15 +2145,14 @@
              no default behind it to fall back to.
              The title auto-fits, so a long one just prints smaller — the live
              preview below shows the exact result so the buyer can self-correct.
-             The hint states the LINE-BREAK rule up front rather than waiting for
-             #customTitleWarn to fire at 18 characters: the fitter sizes a title
-             by its widest line and caps it by the box height divided by the line
-             count, so breaking a long single line in two roughly halves the
-             width it has to fit and buys back size. That is the one thing about
-             this box a buyer cannot guess, and by the time the warning appears
-             she has usually already decided her title reads badly. (Short titles
-             are height-bound, where a break shrinks instead — hence "ארוכה",
-             not "always".) -->
+             The hint is one short line (the owner, 2026-10-19: the longer one
+             explaining the LINE-BREAK rule went unread). The rule itself is said
+             by #customTitleWarn once a title is long, with the break offered as a
+             button: the fitter sizes a title by its widest line and caps it by
+             the box height divided by the line count, so breaking a long single
+             line in two roughly halves the width it has to fit and buys back
+             size. (Short titles are height-bound, where a break shrinks instead —
+             hence "ארוכה", not "always".) -->
         <label class="wiz-field" id="customTitleField" data-testid="custom-title-field">
           <span class="wiz-lbl" data-edit="options-customtitle-label">הכותרת שתודפס על הקלפים</span>
           <textarea
@@ -2170,8 +2169,7 @@
             class="wiz-hint"
             data-testid="custom-title-hint"
             data-edit="options-customtitle-hint"
-            >אפשר בשתי שורות, וזה משתלם: הכותרת מתאימה את עצמה לקלף, כך שכותרת ארוכה בשורה אחת תודפס
-            קטנה - וירידת שורה באמצע בדרך כלל תגדיל אותה. ההצצה למטה מראה בדיוק איך זה ייראה.</span
+            >כותרת ארוכה יוצאת קטנה יותר. ההצצה למטה מראה בדיוק איך זה ייראה.</span
           >
           <span
             class="wiz-hint custom-title-warn"
@@ -5604,6 +5602,7 @@
         });
         // one lone view needs no navigation control
         namePreviewDots.hidden = npViews.length < 2;
+        if (npNav) npNav.hidden = npViews.length < 2;
       }
 
       function npGoTo(i) {
@@ -5613,8 +5612,70 @@
         npMarkDots();
         npMarkActiveView();
       }
+      // Redesign mode goes round (the owner, 2026-10-19): past the last view is the first and before the first is the
+      // last, by swipe or arrow. The track holds each view once, so a wrap cannot slide on through: it jumps to the
+      // far end without the transition and slides the view in a little from the side the move came from, which reads
+      // as one more step the same way rather than a rewind across every view in between. The live site stops at the
+      // ends, as it always has.
+      const npEndless = document.documentElement.classList.contains('rd');
       function npAdjacent(dir) {
-        npGoTo(Math.min(npViews.length - 1, Math.max(0, npIndex + dir)));
+        const n = npViews.length;
+        if (!npEndless || n < 2) {
+          npGoTo(Math.min(n - 1, Math.max(0, npIndex + dir)));
+          return;
+        }
+        const to = (((npIndex + dir) % n) + n) % n;
+        if (to === npIndex + dir) {
+          npGoTo(to);
+          return;
+        }
+        namePreviewImgs.style.transition = 'none';
+        npGoTo(to);
+        void namePreviewImgs.offsetWidth; // commit the jump before the transition comes back
+        namePreviewImgs.style.transition = '';
+        const still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!still && namePreviewImgs.animate) {
+          const at = 'translateX(-' + to * 100 + '%)';
+          namePreviewImgs.animate(
+            [
+              { transform: at + ' translateX(' + dir * 14 + '%)', opacity: 0.2 },
+              { transform: at, opacity: 1 },
+            ],
+            { duration: 280, easing: 'ease-out' }
+          );
+        }
+      }
+
+      // The arrows either side of the dots, redesign mode only, built here so the live page's markup stays as it is.
+      // The row is LTR like the filmstrip (card on the left), so "next" is the right-hand arrow and points right.
+      // They sit outside the dots' tablist: an arrow is not a tab.
+      const npNav = npEndless && namePreviewDots ? document.createElement('div') : null;
+      if (npNav) {
+        npNav.className = 'np-nav';
+        npNav.hidden = true;
+        const arrow = (dir, label, testid, path) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'np-arrow';
+          b.dataset.testid = testid;
+          b.setAttribute('aria-label', label);
+          b.innerHTML =
+            '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">' +
+            '<path d="' +
+            path +
+            '" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+          b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            npAdjacent(dir);
+          });
+          return b;
+        };
+        namePreviewDots.before(npNav);
+        npNav.append(
+          arrow(-1, 'התצוגה הקודמת', 'name-preview-prev', 'M15 6l-6 6 6 6'),
+          namePreviewDots,
+          arrow(1, 'התצוגה הבאה', 'name-preview-next', 'M9 6l6 6-6 6')
+        );
       }
 
       // Recompute the present views, show/hide their figures, rebuild the dots and
