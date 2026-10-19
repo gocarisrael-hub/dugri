@@ -718,14 +718,16 @@ test.describe('pawn photos: the helper copy', () => {
   // in the chain — so the step has to say where the real background removal is
   // made, and what to do when the preview looks wrong. Both are one-line answers
   // to the two things she would otherwise message about.
-  test('the tip names the print shop and the black-background fix', async ({ page }) => {
+  test('the tip names the print shop and the contrasting-background fix', async ({ page }) => {
     await toPawnStep(page);
     const tip = page.getByTestId('pawn-tip');
     await expect(tip).toBeVisible();
     await expect(tip).toContainText('בבית הדפוס');
     await expect(tip).toContainText('ChatGPT');
     await expect(tip).toContainText('רקע');
-    await expect(tip).toContainText('שחור');
+    // a background opposite to the photo's colours (owner, 2026-10-19), no longer "black"
+    await expect(tip).toContainText('בצבע נגדי לצבעי התמונה');
+    await expect(tip).not.toContainText('שחור');
 
     // …and it must NOT promise that the print shop does the cutting. It doesn't —
     // the buyer does, and an earlier draft of this tip said otherwise. The claim
