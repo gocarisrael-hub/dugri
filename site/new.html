@@ -66,6 +66,7 @@
           aria-haspopup="dialog"
           aria-expanded="false"
           aria-controls="menu"
+          data-ga="menu_open"
         >
           <svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
             <path class="l1" d="M24 8H4" />
@@ -575,7 +576,13 @@
         </p>
         <p class="lead-err" id="leadErr" role="alert" tabindex="-1" hidden>
           <span id="leadErrText">משהו השתבש ולא הצלחנו לשלוח.</span>
-          <a href="https://wa.me/972546577715" target="_blank" rel="noopener"
+          <a
+            href="https://wa.me/972546577715"
+            target="_blank"
+            rel="noopener"
+            data-ga="whatsapp_click"
+            data-ga-cta="business"
+            data-ga-where="lead-error"
             >לכתוב לנו בוואטסאפ ‹</a
           >
         </p>
@@ -592,15 +599,39 @@
       </button>
       <nav aria-label="ניווט">
         <ul>
-          <li><a href="#order">העיצובים</a></li>
-          <li><a href="#story">איך דוגרי נולד</a></li>
-          <li><a href="#recs">ממליצים עלינו</a></li>
-          <li><a href="new-faq.html">שאלות נפוצות</a></li>
-          <li><a href="pickup.html">איסוף עצמי</a></li>
-          <li><a href="#biz">פניות עסקיות</a></li>
+          <li>
+            <a href="#order" data-ga="nav_click" data-ga-target="designs" data-ga-where="menu"
+              >העיצובים</a
+            >
+          </li>
+          <li>
+            <a href="#story" data-ga="nav_click" data-ga-target="story" data-ga-where="menu"
+              >איך דוגרי נולד</a
+            >
+          </li>
+          <li>
+            <a href="#recs" data-ga="nav_click" data-ga-target="recs" data-ga-where="menu"
+              >ממליצים עלינו</a
+            >
+          </li>
+          <li>
+            <a href="new-faq.html" data-ga="nav_click" data-ga-target="faq" data-ga-where="menu"
+              >שאלות נפוצות</a
+            >
+          </li>
+          <li>
+            <a href="pickup.html" data-ga="nav_click" data-ga-target="pickup" data-ga-where="menu"
+              >איסוף עצמי</a
+            >
+          </li>
+          <li>
+            <a href="#biz" data-ga="nav_click" data-ga-target="biz" data-ga-where="menu"
+              >פניות עסקיות</a
+            >
+          </li>
         </ul>
       </nav>
-      <a class="pill" href="#order">הזמינו עכשיו</a>
+      <a class="pill" href="#order" data-ga="nav_order" data-ga-where="menu">הזמינו עכשיו</a>
     </dialog>
 
     <a
@@ -668,20 +699,68 @@
         <p class="ft-lines">
           <span
             ><span class="lb" data-edit="index-footer-wa-label">וואטסאפ / טלפון:</span>
-            <a href="tel:+972552441334" dir="ltr">0552441334</a></span
+            <a
+              href="tel:+972552441334"
+              dir="ltr"
+              data-ga="contact_click"
+              data-ga-channel="call"
+              data-ga-where="footer"
+              >0552441334</a
+            ></span
           >
           <span
             ><span class="lb" data-edit="index-footer-mail-label">מייל:</span>
-            <a href="mailto:dugri.israel@gmail.com">dugri.israel@gmail.com</a></span
+            <a
+              href="mailto:dugri.israel@gmail.com"
+              data-ga="contact_click"
+              data-ga-channel="email"
+              data-ga-where="footer"
+              >dugri.israel@gmail.com</a
+            ></span
           >
         </p>
       </div>
       <nav class="ft-links" aria-label="קישורים">
-        <a href="new-faq.html" data-testid="footer-faq">שאלות נפוצות</a>
-        <a href="pickup.html" data-testid="footer-pickup">איסוף עצמי</a>
-        <a href="wordlists.html" data-testid="footer-wordlists">רשימות המילים</a>
-        <a href="timer.html" data-testid="footer-timer">טיימר למשחק</a>
-        <a href="terms.html" data-testid="footer-terms">תקנון ותנאי שימוש</a>
+        <a
+          href="new-faq.html"
+          data-ga="nav_click"
+          data-ga-target="faq"
+          data-ga-where="footer"
+          data-testid="footer-faq"
+          >שאלות נפוצות</a
+        >
+        <a
+          href="pickup.html"
+          data-ga="nav_click"
+          data-ga-target="pickup"
+          data-ga-where="footer"
+          data-testid="footer-pickup"
+          >איסוף עצמי</a
+        >
+        <a
+          href="wordlists.html"
+          data-ga="nav_click"
+          data-ga-target="wordlists"
+          data-ga-where="footer"
+          data-testid="footer-wordlists"
+          >רשימות המילים</a
+        >
+        <a
+          href="timer.html"
+          data-ga="nav_click"
+          data-ga-target="timer"
+          data-ga-where="footer"
+          data-testid="footer-timer"
+          >טיימר למשחק</a
+        >
+        <a
+          href="terms.html"
+          data-ga="nav_click"
+          data-ga-target="terms"
+          data-ga-where="footer"
+          data-testid="footer-terms"
+          >תקנון ותנאי שימוש</a
+        >
       </nav>
       <img class="ft-logo" src="/assets/logo-pink-original.png" alt="" />
     </footer>
