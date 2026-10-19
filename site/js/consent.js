@@ -45,7 +45,7 @@
     'pointer-events:auto;position:fixed;left:12px;bottom:12px;display:flex;align-items:center;' +
       'gap:6px;font-size:11px;line-height:1.4;padding:4px 9px;border-radius:999px;' +
       'background:rgba(44,26,41,.9);color:#fff;box-shadow:0 4px 12px rgba(0,0,0,.2);' +
-      'transition:opacity .4s ease,bottom .2s ease'
+      'transition:opacity .4s ease'
   );
 
   var text = document.createElement('span');
@@ -79,6 +79,8 @@
   // sticky footer inside one (the start explainer's continue button) already
   // lifts itself clear of the corner. Measured again while the chip is up,
   // because a page may draw its bar after this script runs, or change it.
+  // The move is a jump, not a slide: a chip easing up from the corner spends
+  // its frames lying across the bar's top edge, the overlap this exists to end.
   var BASE_BOTTOM = 12;
   var BAR_MAX = 200;
   function barUnderChip() {
