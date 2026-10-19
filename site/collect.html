@@ -2018,9 +2018,14 @@
       .card-pay-btn {
         position: relative;
         overflow: hidden;
-        width: 100%;
-        /* breathing room so the button doesn't crowd the copy above it */
+        /* The pay card insets every child 16px a side (`.pay-collapse > :not(.pay-summary)`), so a plain 100% ran 32px
+           past the card and was cut off by its overflow:hidden. Full width minus that inset; a button doesn't stretch at
+           width:auto. */
+        width: calc(100% - 32px);
+        /* breathing room so the button doesn't crowd the copy above it, and off the card's rounded bottom edge (the
+           notes after it are hidden whenever it shows) */
         margin-top: 18px;
+        margin-bottom: 16px;
         padding: 21px 18px;
         border: none;
         border-radius: var(--radius-pill);

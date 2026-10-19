@@ -437,13 +437,10 @@ html.rd .ship-collapse button {
 }
 
 /* The card-pay button is the large ink pill. Off: the gradient, the pulsing glow, the light sweep and the hover lift (a
-   glow and a soft-shadow move). The shell's press, a squash, is the one left. The old one is width:100% on top of the
-   card's 16px inset, so it ran 32px past the card and was clipped; this one fills the inset (a button doesn't stretch
-   at width:auto, hence the calc). */
+   glow and a soft-shadow move). The shell's press, a squash, is the one left. Its width and margins inside the card are
+   the page's own (.card-pay-btn in collect.html). */
 html.rd #cardPayBtn {
   display: block;
-  width: calc(100% - 32px);
-  margin: 18px 16px 16px;
   padding: var(--pad-button-lg);
   border: var(--border-thin) solid var(--color-ink);
   background: var(--color-ink);
