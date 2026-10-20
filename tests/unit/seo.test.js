@@ -232,6 +232,19 @@ describe('seo routes (app)', () => {
       expect(fs.readFileSync(path.join(site, 'js', f), 'utf8'), f).not.toMatch(/'how\.html'/);
   });
 
+  // new.html is the homepage in redesign mode: it carries its own og:title/description/type, and seo.js adds og:image and
+  // og:url as it does for the old homepage, so a shared link previews in WhatsApp either way.
+  it('the redesigned homepage carries its Open Graph tags', async () => {
+    const html = fs.readFileSync(path.join(serverDir, '..', 'site', 'new.html'), 'utf8');
+    const og = (p) => (html.match(new RegExp(`property="og:${p}"\\s+content="([^"]+)"`)) || [])[1];
+    expect(og('title')).toBe((html.match(/<title>([^<]+)<\/title>/) || [])[1]);
+    expect(og('description')).toMatch(/משחק מסיבה/);
+    expect(og('type')).toBe('website');
+    const head = seo.headTags({ file: 'index.html', query: {}, indexable: true, html });
+    expect(head).toContain('property="og:image"');
+    expect(head).toContain('property="og:url" content="https://dugri-israel.co.il/"');
+  });
+
   it('llms.txt answers with the brand brief', async () => {
     const r = await get('/llms.txt', PROD);
     expect(r.status).toBe(200);
