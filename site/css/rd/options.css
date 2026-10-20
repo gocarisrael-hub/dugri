@@ -536,12 +536,21 @@ html.rd .cd-pic:focus-visible {
   outline: 3px solid var(--color-ink);
   outline-offset: 3px;
 }
+/* The window is the shop photos' own 5:4 (37 of the 40 are, #702), so those fill it edge to edge with nothing cut. An
+   odd one (the 4:3, the square and the 5:6 portrait shots) is cropped to it from the top first, #702's 50% 75%: the
+   cards stand at the bottom of those shots, so the board and both cards stay whole where centring cut the cards.
+   The photos' studio backdrop darkens toward its corners, so on the white paper the photo had no edge of its own,
+   just a soft grey ring that read as a blurred inner shadow (owner, 2026-10-20). A hairline of ink drawn on the
+   photo's own edge gives it the crisp edge a print has. No blur anywhere: the frame's shadow is the hard --shadow. */
 html.rd .cd-pics img {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 5 / 4; /* the shop's photos are 5:4 (the store card frame, #702); others fill it */
+  aspect-ratio: 5 / 4;
   object-fit: cover;
+  object-position: 50% 75%;
+  outline: 1px solid var(--color-ink);
+  outline-offset: -1px;
   background: var(--color-ground);
 }
 
