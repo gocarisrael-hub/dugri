@@ -12,7 +12,7 @@
    contributor uses to find the main site; the footer stays off as before. */
 html.rd {
   --rd-header: none;
-  --rd-footer: end; /* B: the site's footer (new.html's) at the end */
+  --rd-footer: none;
 }
 
 /* ---- the header: the logo at the shell's size, the title in the heading face with its pink offset ---- */

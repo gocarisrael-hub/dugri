@@ -139,9 +139,10 @@ describe('which pages carry it', () => {
   const setting = (f) => (read(`css/rd/${f}.css`).match(/--rd-footer:\s*([a-z]+)/) || [])[1];
   it('replaces the old footer on the store, a design page and the terms; follows pickup’s own help; ends the rest', () => {
     for (const f of ['products', 'product', 'terms']) expect(setting(f), f).toBe('replace');
-    for (const f of ['pickup', 'wordlists', 'collect']) expect(setting(f), f).toBe('end');
+    for (const f of ['pickup', 'wordlists']) expect(setting(f), f).toBe('end');
     // deliberately none: a payment return, a partner link, an unsubscribe, a proof, the kiosk timer, the wizard's fixed bar
     for (const f of [
+      'collect',
       'pay-done',
       'pay-success',
       'partner',

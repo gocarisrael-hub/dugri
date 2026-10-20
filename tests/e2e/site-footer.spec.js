@@ -3,7 +3,7 @@ import { previewRedesign } from './helpers/redesign.js';
 
 // One footer in redesign mode: new.html's, on every page the shell gives it to (js/redesign-shell.js, the B block of
 // css/redesign.css). The store, a design page and the terms show it in place of their own; pickup keeps its help above it; the
-// word lists and a buyer's collection end with it. On a wide screen its three groups sit centred, as new.html's do, and the
+// word lists end with it (a buyer's collection does not: its checkout has a fixed pay bar). On a wide screen its three groups sit centred, as new.html's do, and the
 // business section above new.html's footer is centred too. tests/unit/site-footer.test.js pins the markup and rules.
 
 test.beforeEach(async ({ page }) => {
@@ -20,7 +20,6 @@ const PAGES = [
   ['/terms.html', 'replace'],
   ['/pickup.html', 'end'],
   ['/wordlists.html', 'end'],
-  ['/collect.html', 'end'],
 ];
 
 for (const width of [390, 1440]) {
