@@ -278,6 +278,33 @@ test('collect.html checkout in the mode: the pay pill sits inside its card, noth
     await noSidewaysScroll(page, `collect checkout at ${width}`);
   }
 
+  // The copies row is a quiet row of the card: no tinted box (the page's accent frame, pink in the mode), and a small,
+  // light stepper whose tap target still reaches past the visible round.
+  await page.locator('#qtyRow').scrollIntoViewIfNeeded();
+  const copies = await page.locator('#qtyRow').evaluate((row) => {
+    const cs = (el) => getComputedStyle(el);
+    const plus = row.querySelector('#qtyPlus');
+    const r = plus.getBoundingClientRect();
+    // 4px outside the round's edge, still on the button's hit area (the row is in view: off-screen this is null)
+    const reach = document.elementFromPoint(r.left - 4, r.top + r.height / 2);
+    return {
+      bg: cs(row).backgroundColor,
+      side: cs(row).borderLeftWidth,
+      size: [r.width, r.height],
+      glyph: cs(plus).fontWeight,
+      value: cs(row.querySelector('#qtyVal')).fontWeight,
+      reach: reach === plus,
+    };
+  });
+  expect(copies).toEqual({
+    bg: 'rgba(0, 0, 0, 0)',
+    side: '0px',
+    size: [30, 30],
+    glyph: '400',
+    value: '400',
+    reach: true,
+  });
+
   // The copies stepper still prices the order: two copies of the PDF.
   await page.getByTestId('qty-plus').click();
   await expect(page.locator('#payTotal')).toHaveText('158');
