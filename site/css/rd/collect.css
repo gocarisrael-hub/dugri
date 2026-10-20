@@ -467,28 +467,57 @@ html.rd #cardPayBtn:disabled {
   box-shadow: none;
 }
 
-/* The copies stepper: one ink-outlined pill with the − and + flat inside it, not two pills in a frame */
+/* The copies row: a quiet row of the pay card, not a tinted box. The page frames it (and the box choice that hangs off
+   it) in the accent colour, which the mode paints pink; here it is the card's own ground with a hairline above. */
+html.rd #qtyRow {
+  border: 0;
+  border-top: var(--border-hair) solid rgba(0, 0, 0, 0.14);
+  background: transparent;
+  padding-inline: 0;
+}
+html.rd .box-opt {
+  border: 0;
+  background: transparent;
+  padding-inline: 0;
+}
+/* The stepper: two small outlined rounds and the number between them, all in the body weight. A round shows 30px; its
+   ::after reaches 5px past it, so the tap target stays 40px on a phone. */
 html.rd #qtyRow .stepper {
-  border: var(--border-thin) solid var(--color-ink);
-  border-radius: var(--radius-pill);
-  overflow: hidden;
-  background: var(--color-paper);
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
 }
 html.rd #qtyRow .stepper button {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
+  position: relative;
+  /* the page's buttons clip, which would cut the ::after's reach back to the round */
+  overflow: visible;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: 50%;
+  background: var(--color-paper);
   color: var(--color-ink);
-  font-weight: var(--weight-heavy);
+  font-family: inherit;
+  font-size: 18px;
+  font-weight: var(--weight-body);
   transform: none;
+}
+html.rd #qtyRow .stepper button::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
 }
 html.rd #qtyRow .stepper button:disabled {
   color: var(--color-text-muted);
   opacity: 0.45;
 }
 html.rd #qtyRow .qty-val {
-  border-left: var(--border-hair) solid var(--color-ink);
-  border-right: var(--border-hair) solid var(--color-ink);
+  min-width: 28px;
+  border: 0;
+  font-weight: var(--weight-body);
 }
 
 /* ---- the payment window: the shell's sheet, a heavy ink outline with the review card's shadow, and the round ✕ ---- */
