@@ -1321,7 +1321,14 @@
         transition:
           opacity 0.2s ease,
           transform 0.2s ease;
-        z-index: 200;
+        /* UNDER every sheet and dialog (game sheet 80, pawn view 90, message
+           dialog 100, the friend-coupon sheet 120), above the bars, the WhatsApp
+           help and the cookie chip (75). It was 200, and the friend sheet opens
+           right after a friend's first word, so "נוספה מילה ✓" lay over the
+           sheet's send button for its whole life. Every toast is raised from the
+           page itself (adding or editing a word), never from inside an overlay,
+           so none is lost behind one. */
+        z-index: 76;
         pointer-events: none;
       }
       .toast.show {

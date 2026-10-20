@@ -56,6 +56,42 @@ html.rd .nav-toggle span {
   background: var(--color-accent-pink);
 }
 
+/* ---- no desktop link row: the ≡ menu at every width, like the shell header ----
+   The wizard's own nav fanned its links out into a row from 641px up (options.html's
+   max-width:640px query is where they fold into the ≡ drawer), which is the old site's
+   header — the shell header is a logo and a ≡ at every width. So in the mode the drawer
+   rules hold at every width. The nav itself stays: it is fixed and the no-scroll layout is
+   measured against it (--nav-h). */
+html.rd .nav-toggle {
+  display: flex;
+}
+html.rd .nav-links {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  margin: 0;
+  padding: 8px 14px 14px;
+  background: var(--color-ground);
+  border-bottom: var(--border-thin) solid var(--color-ink);
+  box-shadow: var(--shadow-sm);
+  display: none;
+}
+html.rd .nav-links.open {
+  display: flex;
+}
+html.rd .nav-links a {
+  padding: 13px 10px;
+}
+html.rd .nav-links a.nav-cta {
+  margin-top: 6px;
+  text-align: center;
+  justify-content: center;
+}
+
 /* ---- the step header: progress as a pill track with a pink fill ---- */
 html.rd .wiz-steplabel {
   font: var(--weight-label) var(--text-small) / 1.3 var(--font-body);
