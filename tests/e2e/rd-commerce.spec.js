@@ -1,8 +1,9 @@
-// Commerce's pages in redesign mode (site/css/rd/{pickup,pay-success,pay-done,partner,coupons}.css, and A's sections of
+// Commerce's pages in redesign mode (site/css/rd/{pickup,pay-success,pay-done,partner}.css, and A's sections of
 // the shared files: product.css (the buy box) and collect.css (the checkout)): each one gets
 // its restyle, nothing scrolls sideways at a phone or desktop width, what a page hides stays hidden (a shell class sets
 // display, which would otherwise outrank the hidden attribute), and the money steps on them still work in the mode.
-// Outside the mode none of these files is linked; that half is the gate's own test (redesign-gate).
+// Outside the mode none of these files is linked; that half is the gate's own test (redesign-gate). coupons.html, the
+// owner's coupon desk, is exempt from the mode like the admin pages, so it stays the plain tool in it.
 import { test, expect } from '@playwright/test';
 import { previewRedesign } from './helpers/redesign.js';
 import { openCheckout } from './helpers/checkout.js';
@@ -78,7 +79,6 @@ test('each page is in the mode with its own restyle, and nothing scrolls sideway
     ['pay-success', '/pay-success.html?c=abc&k=tok'],
     ['pay-done', '/pay-done.html?error=1'],
     ['partner', `/partner.html?t=${partner.report_token}`],
-    ['coupons', `/coupons.html?key=${KEY}`],
   ];
   for (const width of [360, 390, 1440]) {
     await page.setViewportSize({ width, height: 900 });
@@ -151,7 +151,15 @@ test('partner: a working report shows no empty message box, and its numbers are 
   await expect(page.locator('#err')).toBeVisible();
 });
 
-test('coupons: the owner creates a coupon from the form in the mode', async ({
+test('coupons.html is not restyled in the mode: no html.rd, no css/rd links', async ({ page }) => {
+  await page.goto(`/coupons.html?key=${KEY}`);
+  await expect(page.locator('#createPanel')).toBeVisible();
+  await expect(page.locator('html')).not.toHaveClass(/(^|\s)rd(\s|$)/);
+  await expect(page.locator('link[href*="/css/rd/"]')).toHaveCount(0);
+  await expect(page.locator('script[src*="redesign-shell"]')).toHaveCount(0);
+});
+
+test('with the mode on, coupons stays the plain owner tool: the owner creates a coupon from the form', async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name !== ONLY, 'writes shared coupon state — one project only');

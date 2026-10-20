@@ -8,7 +8,7 @@
 //     anyone else, and a page served to a preview is always noindex, so a crawler
 //     that follows a ?rd=1 link can never index the variant.
 //
-// In the mode, every served page except the admin pages gets class="rd" on
+// In the mode, every served page except the exempt ones (isExemptFile) gets class="rd" on
 // <html>, and at the end of <head>: the stylesheet /css/redesign.css (the shell),
 // /css/rd/chrome.css (the shared header and consent chip), /css/rd/<page>.css
 // (that one page's restyle, named after the file served: how.html -> how.css),
@@ -34,9 +34,16 @@ function readCookie(header) {
   return m ? m[1].trim() : null;
 }
 
-// The admin pages stay exactly as they are, in or out of the mode.
-function isAdminFile(file) {
-  return /^admin(?:[-.]|$)/.test(path.basename(String(file || '')));
+// Pages the mode never touches, in or out of it:
+//   • the admin pages (admin.html, admin-*.html);
+//   • the owner's other key-gated tools, which are admin pages without the
+//     prefix: the coupon manager and the dashboard;
+//   • rd-kit.html, the shell's own component sheet, which links the shell
+//     itself — injecting it again would load the shell twice.
+const EXEMPT_FILES = new Set(['coupons.html', 'dashboard.html', 'rd-kit.html']);
+function isExemptFile(file) {
+  const name = path.basename(String(file || ''));
+  return /^admin(?:[-.]|$)/.test(name) || EXEMPT_FILES.has(name);
 }
 
 // What this request gets. `enabled` is the live setting.
@@ -123,7 +130,7 @@ module.exports = {
   CHROME_CSS_URL,
   pageCssUrl,
   readCookie,
-  isAdminFile,
+  isExemptFile,
   forRequest,
   homeSwap,
   dropRobotsMeta,

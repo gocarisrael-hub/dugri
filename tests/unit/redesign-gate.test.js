@@ -61,12 +61,29 @@ describe('the gate, as pure functions', () => {
     });
   });
 
-  it('knows the admin pages', () => {
-    for (const f of ['admin.html', 'admin-features.html', '/x/site/admin-ads.html']) {
-      expect(gate.isAdminFile(f)).toBe(true);
+  it('knows the pages it never touches', () => {
+    for (const f of [
+      'admin.html',
+      'admin-features.html',
+      '/x/site/admin-ads.html',
+      'coupons.html',
+      '/x/site/dashboard.html',
+      'rd-kit.html',
+    ]) {
+      expect(gate.isExemptFile(f)).toBe(true);
     }
-    for (const f of ['index.html', 'new.html', 'administrator-guide.html', 'products.html']) {
-      expect(gate.isAdminFile(f)).toBe(false);
+    for (const f of [
+      'index.html',
+      'new.html',
+      'administrator-guide.html',
+      'products.html',
+      'collect.html',
+      'proof.html',
+      'partner.html',
+      'pay-success.html',
+      'unsubscribe.html',
+    ]) {
+      expect(gate.isExemptFile(f)).toBe(false);
     }
   });
 
@@ -354,6 +371,28 @@ describe('the gate, served', () => {
     const after = await get('/admin-features.html', 'rd=1');
     expect(after.body).toBe(before);
     expect(isRd(after.body)).toBe(false);
+  });
+
+  // The owner's key-gated tools without the admin- prefix stay as they are too.
+  for (const page of ['/coupons.html', '/dashboard.html']) {
+    it(`${page} is untouched, setting on and cookie set`, async () => {
+      const before = (await get(page)).body;
+      settings.set('redesign', 'enabled', true);
+      const after = await get(page, 'rd=1');
+      expect(after.body).toBe(before);
+      expect(isRd(after.body)).toBe(false);
+      expect(after.body).not.toContain('/css/rd/');
+      // (the import map lists every script on every page, so look for the tag)
+      expect(after.body).not.toMatch(/<script[^>]+redesign-shell/);
+    });
+  }
+
+  // The kit links the shell itself; the gate must not link it a second time.
+  it('rd-kit.html loads the shell once', async () => {
+    settings.set('redesign', 'enabled', true);
+    const r = await get('/rd-kit.html', 'rd=1');
+    expect(r.body.match(/<link[^>]+redesign(?:\.[0-9a-f]+)?\.css/g)).toHaveLength(1);
+    expect(r.body.match(/<script[^>]+redesign-shell(?:\.[0-9a-f]+)?\.js/g)).toHaveLength(1);
   });
 
   it('HTML stays no-cache in every mode', async () => {

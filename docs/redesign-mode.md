@@ -9,7 +9,7 @@ The redesign ("The Game Night Table") reaches the whole site through a mode, not
 
 **What the gate does.** D's gate (`server/redesign-gate.js`) then:
 
-- adds `class="rd"` to `<html>` on every non-admin page;
+- adds `class="rd"` to `<html>` on every page except the exempt ones: the admin pages, the owner's key-gated `coupons.html` and `dashboard.html`, and `rd-kit.html` (which links the shell itself);
 - links `/css/redesign.css` and `/js/redesign-shell.js`;
 - serves `new.html` at `/`.
 
