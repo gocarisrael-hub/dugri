@@ -22,7 +22,7 @@ for (const width of WIDTHS) {
         await previewRedesign(page);
       });
 
-      test('the store: its title, its cards and the shop’s footer', async ({ page }) => {
+      test('the store: its title, its cards and the site’s footer', async ({ page }) => {
         await page.goto('/products.html');
         await expect(page.locator('.product-card').first()).toBeVisible();
         await expect(page.locator('head link[href*="/css/rd/products."]')).toHaveCount(1);
@@ -48,8 +48,9 @@ for (const width of WIDTHS) {
               new Set([...d.children].map((c) => Math.round(c.getBoundingClientRect().top))).size
           );
         expect(rows).toBe(1);
-        await expect(page.locator('body > footer .foot-icons')).toBeVisible();
-        await expect(page.locator('.rd-ftr')).toHaveCount(0);
+        // the site's footer (new.html's) in place of the store's own
+        await expect(page.locator('footer.rd-ftr .ft-icons')).toBeVisible();
+        await expect(page.locator('body > footer:not(.rd-ftr)')).toBeHidden();
         expect(await sideways(page)).toBe(0);
       });
 
@@ -76,7 +77,8 @@ for (const width of WIDTHS) {
         // A's selectors in the page-level lists: its title and its button take the shared look
         await expect(page.locator('.pdp-head h1')).toHaveClass(/\brd-title\b/);
         await expect(page.locator('#pdpBuy')).toHaveClass(/\brd-btn\b/);
-        await expect(page.locator('body > footer')).toBeVisible();
+        await expect(page.locator('footer.rd-ftr')).toBeVisible();
+        await expect(page.locator('body > footer:not(.rd-ftr)')).toBeHidden();
         expect(await sideways(page)).toBe(0);
       });
     });

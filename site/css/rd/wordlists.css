@@ -7,7 +7,7 @@
 html.rd {
   --rd-header: replace;
   --rd-header-replace: 'body > .bar';
-  --rd-footer: none;
+  --rd-footer: end; /* B: the site's footer (new.html's) at the end */
 }
 
 /* ---- the heading: the heading face with its pink offset ---- */

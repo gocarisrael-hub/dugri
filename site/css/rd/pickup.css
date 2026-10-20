@@ -2,7 +2,7 @@
    The page keeps its own footer: it carries the help lines, WhatsApp and email. Said explicitly, whatever the shell's
    default is. */
 html.rd {
-  --rd-footer: none;
+  --rd-footer: end; /* B: the site's footer after the page's own (which holds the pickup help) */
   --rd-as-title: '.hero h1, .card h2';
   --rd-as-box: '.card';
   --rd-as-btn-secondary: '.map-links a';
