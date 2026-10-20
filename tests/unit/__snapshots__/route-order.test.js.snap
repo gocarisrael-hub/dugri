@@ -149,6 +149,7 @@ exports[`route registration order > matches the pinned table 1`] = `
   "GET /api/admin/photo-fallback",
   "GET /api/admin/photo-fallback/default/:slot",
   "POST /api/admin/photo-fallback",
+  "POST /api/admin/photo-fallback/variant",
   "DELETE /api/admin/photo-fallback",
   "GET /api/stats/orders",
   "GET /api/admin/content/all",

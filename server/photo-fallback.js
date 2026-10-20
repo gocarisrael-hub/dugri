@@ -24,7 +24,14 @@
 // render into the photo card the same way, so the restriction costs nothing here.
 //
 // Persisted shape (DATA_DIR/photo-fallback.json) — deviations only:
-//   { "slots": { "1": "/content-uploads/<hash>.<ext>", "3": "..." } }
+//   { "slots": { "1": "/content-uploads/<hash>.<ext>", "3": "..." },
+//     "variants": { "3": { "original": "/content-uploads/…", "centred": "/content-uploads/…" } } }
+//
+// `slots` is the ONLY key the generator reads, and it always holds the file in
+// use. `variants` exists only for a slot whose upload was auto-centred
+// (generator/pawn_normalise.py, run by the upload route): it remembers both
+// files so the owner can switch to her original and back. A slot without an
+// entry there was stored as uploaded.
 //
 // THE GENERATOR READS THIS FILE. generator/config.py:photo_fallback_paths()
 // consults it before falling back to the shipped set, mapping a stored
@@ -32,7 +39,9 @@
 // docs/photo-fallback-overrides.md for that contract — changing the shape here
 // changes what production prints.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
+const { execFile } = require('child_process');
 const { backupFile } = require('./store-backup');
 
 const DATA_DIR = process.env.DATA_DIR || __dirname;
@@ -68,20 +77,30 @@ function load() {
   } catch {
     /* missing / unreadable — start empty, exactly as the sibling stores do */
   }
-  return { slots: {} };
+  return { slots: {}, variants: {} };
 }
 
 // Drop anything that is not a known slot pointing at one of our own uploads.
 // Applied on LOAD as well as on write, so a hand-edited or restored file can
 // never introduce an off-origin path.
 function sanitize(raw) {
-  const out = { slots: {} };
+  const out = { slots: {}, variants: {} };
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   const slots = raw.slots;
   if (!slots || typeof slots !== 'object' || Array.isArray(slots)) return out;
   for (const slot of SLOTS) {
     const v = slots[slot];
     if (imgOk(v)) out.slots[slot] = String(v);
+  }
+  // A variant pair survives only whole, only for a slot that is set, and only
+  // while the slot holds one of its two files — anything else is a pair that no
+  // longer describes what prints.
+  const variants = raw.variants && typeof raw.variants === 'object' ? raw.variants : {};
+  for (const slot of Object.keys(out.slots)) {
+    const v = variants[slot];
+    if (!v || !imgOk(v.original) || !imgOk(v.centred) || v.original === v.centred) continue;
+    if (out.slots[slot] !== v.original && out.slots[slot] !== v.centred) continue;
+    out.variants[slot] = { original: String(v.original), centred: String(v.centred) };
   }
   return out;
 }
@@ -91,7 +110,11 @@ function save() {
   // content.js/design-images.js) — otherwise the first write throws ENOENT.
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const tmp = `${FILE}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(_store, null, 2), 'utf8');
+  // `variants` is written only when there is one, so a store with no
+  // auto-centred upload stays byte-for-byte the shape it always was.
+  const out = { slots: _store.slots };
+  if (Object.keys(_store.variants).length) out.variants = _store.variants;
+  fs.writeFileSync(tmp, JSON.stringify(out, null, 2), 'utf8');
   fs.renameSync(tmp, FILE);
 }
 
@@ -106,23 +129,77 @@ function getSlot(slot) {
   return s ? _store.slots[s] || null : null;
 }
 
+/** Every file a slot holds on to: the one in use and both variants. */
+function slotFiles(s) {
+  const v = _store.variants[s];
+  return [_store.slots[s], v && v.original, v && v.centred].filter(Boolean);
+}
+
 /**
- * Point a slot at an uploaded image. Returns `{ prev }` — the path this
- * displaced, so the caller can reclaim it when nothing else references it.
- * Throws on a bad slot or a path we did not produce.
+ * Point a slot at an uploaded image. Returns `{ prev, displaced }`: `prev` is
+ * the file it used before, and `displaced` every file the slot no longer holds
+ * (the old variant pair included), so the caller can reclaim each one when
+ * nothing else references it. Throws on a bad slot or a path we did not produce.
+ *
+ * `variants` ({ original, centred }) records an auto-centred upload: `imgPath`
+ * must be one of the two. Omitted, the slot holds the upload as it came.
  */
-function setSlot(slot, imgPath) {
+function setSlot(slot, imgPath, variants = null) {
   const s = slotOk(slot);
   if (!s) throw new Error('bad slot');
   if (!imgOk(imgPath)) throw new Error('bad image path');
+  if (variants) {
+    if (!imgOk(variants.original) || !imgOk(variants.centred)) throw new Error('bad image path');
+    if (imgPath !== variants.original && imgPath !== variants.centred) {
+      throw new Error('the slot must hold one of its variants');
+    }
+  }
+  const before = slotFiles(s);
   const prev = _store.slots[s] || null;
+  _store.slots[s] = String(imgPath);
+  if (variants && variants.original !== variants.centred) {
+    _store.variants[s] = { original: String(variants.original), centred: String(variants.centred) };
+  } else {
+    delete _store.variants[s];
+  }
+  const after = new Set(slotFiles(s));
   // Re-pointing a slot at the image it already holds is a no-op, NOT a
   // displacement — returning it as `prev` would have the caller reclaim the file
   // the slot still uses.
-  if (prev === imgPath) return { prev: null };
-  _store.slots[s] = String(imgPath);
+  if (prev === imgPath && before.every((f) => after.has(f))) {
+    save();
+    return { prev: null, displaced: [] };
+  }
   save();
-  return { prev };
+  return {
+    prev: prev === imgPath ? null : prev,
+    displaced: [...new Set(before)].filter((f) => !after.has(f)),
+  };
+}
+
+/**
+ * Switch an auto-centred slot between the owner's ORIGINAL upload and the
+ * CENTRED copy. Nothing is deleted either way — both files stay referenced, so
+ * switching back is always possible. Returns `{ img }`, or `{ error }` when the
+ * slot has no pair to switch between.
+ */
+function useVariant(slot, which) {
+  const s = slotOk(slot);
+  if (!s) return { error: 'bad slot' };
+  const v = _store.variants[s];
+  if (!v) return { error: 'this pawn has no centred copy to switch with' };
+  if (which !== 'original' && which !== 'centred')
+    return { error: 'use must be original or centred' };
+  _store.slots[s] = v[which];
+  save();
+  return { img: v[which] };
+}
+
+/** The `{ original, centred }` pair of an auto-centred slot, or null. */
+function getVariants(slot) {
+  const s = slotOk(slot);
+  const v = s && _store.variants[s];
+  return v ? { ...v } : null;
 }
 
 /**
@@ -133,10 +210,12 @@ function resetSlot(slot) {
   const s = slotOk(slot);
   if (!s) throw new Error('bad slot');
   const prev = _store.slots[s] || null;
-  if (!prev) return { prev: null };
+  if (!prev) return { prev: null, displaced: [] };
+  const displaced = [...new Set(slotFiles(s))];
   delete _store.slots[s];
+  delete _store.variants[s];
   save();
-  return { prev };
+  return { prev, displaced };
 }
 
 /**
@@ -148,7 +227,73 @@ function resetSlot(slot) {
 function isImageReferenced(imgPath) {
   const target = String(imgPath || '');
   if (!target) return false;
-  return SLOTS.some((s) => _store.slots[s] === target);
+  return SLOTS.some((s) => slotFiles(s).includes(target));
+}
+
+// ---- auto-centring an upload ------------------------------------------------
+// A pawn is drawn into its slot by its CANVAS, on the site and in print alike, so
+// an upload cropped tight on two sides prints off-centre and too big (the
+// owner's green and gold pawns, 2026-10-20). generator/pawn_normalise.py trims it
+// to its ink and pads it centred onto a square; see that file for the rule.
+// Run ONCE at upload, on the stored file, so the site and the print keep reading
+// the same bytes — never at render, where two implementations could drift.
+const NORMALISE_SCRIPT = path.join(__dirname, '..', 'generator', 'pawn_normalise.py');
+const NORMALISE_TIMEOUT_MS = 60000;
+
+/**
+ * Centre the uploaded image at `file`. Resolves `{ buf, reason }`: `buf` is the
+ * centred PNG, or null when the image was left as it is (a photo with no
+ * transparency, something Pillow cannot read, or a Python that failed). Never
+ * rejects — a broken normaliser must not cost the owner her upload, so every
+ * failure comes back as "keep the original" with the reason.
+ *
+ * Asynchronous on purpose: a synchronous spawn stalls every request the server
+ * is handling for as long as Pillow takes (see the redetect job's history).
+ * `runner` is injectable for tests: (bin, args, opts, cb) like execFile.
+ */
+function normaliseUpload(file, { pythonBin = 'python3', runner = execFile } = {}) {
+  return new Promise((resolve) => {
+    let dir;
+    try {
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-pawn-'));
+    } catch (e) {
+      resolve({ buf: null, reason: 'no temp dir: ' + e.message });
+      return;
+    }
+    const out = path.join(dir, 'centred.png');
+    const done = (r) => {
+      fs.rmSync(dir, { recursive: true, force: true });
+      resolve(r);
+    };
+    runner(
+      pythonBin,
+      [NORMALISE_SCRIPT, file, out],
+      { timeout: NORMALISE_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+      (err, stdout) => {
+        if (err) return done({ buf: null, reason: 'normaliser failed: ' + err.message });
+        let info = {};
+        try {
+          info = JSON.parse(
+            String(stdout || '')
+              .trim()
+              .split('\n')
+              .pop() || '{}'
+          );
+        } catch {
+          return done({ buf: null, reason: 'normaliser said nothing readable' });
+        }
+        if (!info.normalised)
+          return done({ buf: null, reason: String(info.reason || 'left as is') });
+        let buf = null;
+        try {
+          buf = fs.readFileSync(out);
+        } catch (e) {
+          return done({ buf: null, reason: 'no output: ' + e.message });
+        }
+        done({ buf, reason: String(info.reason || 'centred') });
+      }
+    );
+  });
 }
 
 /** Timestamped copy of the store file, for the admin backup flow. */
@@ -161,6 +306,9 @@ module.exports = {
   getSlot,
   setSlot,
   resetSlot,
+  useVariant,
+  getVariants,
+  normaliseUpload,
   isImageReferenced,
   slotOk,
   imgOk,

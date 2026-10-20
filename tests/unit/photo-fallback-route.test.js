@@ -253,4 +253,101 @@ describe('photo-card fallback pawn routes', () => {
     );
     expect(content.isImageReferenced(json.img)).toBe(false); // not a content image
   });
+  // ---- auto-centring at upload --------------------------------------------
+  // The route runs generator/pawn_normalise.py on the stored upload (its own
+  // pytest covers the image rule). Stubbed here: this unit job is Node-only, and
+  // what is under test is what the ROUTE does with each answer.
+  async function withNormaliser(answer, fn) {
+    const real = photoFallback.normaliseUpload;
+    const seen = [];
+    photoFallback.normaliseUpload = async (file) => {
+      seen.push({ file, existed: fs.existsSync(file) });
+      return answer;
+    };
+    try {
+      await fn(seen);
+    } finally {
+      photoFallback.normaliseUpload = real;
+    }
+  }
+
+  it('an upload that can be centred prints the centred copy and keeps the original', async () => {
+    for (const s of ['1', '2', '3', '4']) await resetPawn(s);
+    const centredBytes = pngWith('centred-copy');
+    await withNormaliser({ buf: centredBytes, reason: 'centred' }, async (seen) => {
+      const { res, json } = await uploadPawn({ slot: '3', bytes: pngWith('tight-crop') });
+      expect(res.status).toBe(200);
+      // The normaliser was handed the ORIGINAL, already on disk.
+      expect(seen).toHaveLength(1);
+      expect(seen[0].existed).toBe(true);
+      expect(json.centred).toBe(true);
+      expect(json.img).not.toBe(json.original);
+      expect(fs.readFileSync(uploadFile(json.img))).toEqual(centredBytes);
+      expect(fs.existsSync(uploadFile(json.original))).toBe(true);
+
+      const three = (await (await fetch(url())).json()).slots.find((s) => s.slot === '3');
+      expect(three).toMatchObject({
+        img: json.img,
+        original: json.original,
+        centred: json.img,
+        using: 'centred',
+      });
+      // What the generator reads: the centred file in `slots`.
+      const onDisk = JSON.parse(fs.readFileSync(path.join(dataDir, 'photo-fallback.json'), 'utf8'));
+      expect(onDisk.slots['3']).toBe(json.img);
+
+      // Switch to the original, and back. Nothing is deleted either way.
+      const sw = async (use) =>
+        fetch(url('/variant'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slot: '3', use }),
+        });
+      expect((await sw('original')).status).toBe(200);
+      let now = (await (await fetch(url())).json()).slots.find((s) => s.slot === '3');
+      expect(now).toMatchObject({ img: json.original, using: 'original' });
+      expect(fs.existsSync(uploadFile(json.img))).toBe(true);
+      expect((await sw('centred')).status).toBe(200);
+      now = (await (await fetch(url())).json()).slots.find((s) => s.slot === '3');
+      expect(now.using).toBe('centred');
+      expect((await sw('sideways')).status).toBe(400);
+
+      // Reset gives up BOTH files.
+      await resetPawn('3');
+      expect(fs.existsSync(uploadFile(json.img))).toBe(false);
+      expect(fs.existsSync(uploadFile(json.original))).toBe(false);
+    });
+  });
+
+  it('a picture the normaliser leaves alone is stored exactly as uploaded', async () => {
+    await withNormaliser(
+      { buf: null, reason: 'opaque border (a photo, not sticker art)' },
+      async () => {
+        const bytes = pngWith('a-photo');
+        const { json } = await uploadPawn({ slot: '2', bytes });
+        expect(json.centred).toBe(false);
+        expect(json.img).toBe(json.original);
+        expect(json.reason).toMatch(/opaque/);
+        const two = (await (await fetch(url())).json()).slots.find((s) => s.slot === '2');
+        expect(two).toMatchObject({ img: json.img, original: null, using: null });
+        // No variant pair, so there is nothing to switch to.
+        const res = await fetch(url('/variant'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slot: '2', use: 'original' }),
+        });
+        expect(res.status).toBe(400);
+        await resetPawn('2');
+      }
+    );
+  });
+
+  it('the variant switch is admin-gated', async () => {
+    const res = await fetch(url('/variant', null), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ slot: '1', use: 'original' }),
+    });
+    expect(res.status).toBe(403);
+  });
 });

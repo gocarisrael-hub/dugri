@@ -50,7 +50,7 @@ describe('photo-fallback override store', () => {
   });
 
   it('stores an override and persists it across a reload', () => {
-    expect(store.setSlot('2', A)).toEqual({ prev: null });
+    expect(store.setSlot('2', A)).toEqual({ prev: null, displaced: [] });
     expect(store.getSlot('2')).toBe(A);
     expect(read()).toEqual({ slots: { 2: A } });
 
@@ -62,7 +62,7 @@ describe('photo-fallback override store', () => {
 
   it('replacing a slot reports the displaced path so the caller can reclaim it', () => {
     store.setSlot('1', A);
-    expect(store.setSlot('1', B)).toEqual({ prev: A });
+    expect(store.setSlot('1', B)).toEqual({ prev: A, displaced: [A] });
     expect(store.getSlot('1')).toBe(B);
   });
 
@@ -70,18 +70,18 @@ describe('photo-fallback override store', () => {
     // Reporting it as displaced would have the caller delete the file the slot
     // still points at.
     store.setSlot('1', A);
-    expect(store.setSlot('1', A)).toEqual({ prev: null });
+    expect(store.setSlot('1', A)).toEqual({ prev: null, displaced: [] });
     expect(store.getSlot('1')).toBe(A);
   });
 
   it('reset REMOVES the override rather than storing a copy of the default', () => {
     store.setSlot('3', A);
-    expect(store.resetSlot('3')).toEqual({ prev: A });
+    expect(store.resetSlot('3')).toEqual({ prev: A, displaced: [A] });
     expect(store.getSlot('3')).toBe(null);
     // Absent, not null-valued: absence is what "use the shipped pawn" means.
     expect(read().slots['3']).toBe(undefined);
     // Resetting an already-default slot is a no-op, not an error.
-    expect(store.resetSlot('3')).toEqual({ prev: null });
+    expect(store.resetSlot('3')).toEqual({ prev: null, displaced: [] });
   });
 
   it('refuses a path this server did not produce', () => {
@@ -138,5 +138,62 @@ describe('photo-fallback override store', () => {
     fs.writeFileSync(file, 'not json at all', 'utf8');
     store._reload();
     expect(store.getAll()).toEqual({});
+  });
+  // ---- auto-centred uploads: the original and the centred copy, both kept ----
+  const C = '/content-uploads/cccccccccccccccc.png';
+
+  it('an auto-centred slot keeps both files and prints the centred one', () => {
+    expect(store.setSlot('3', C, { original: A, centred: C })).toEqual({
+      prev: null,
+      displaced: [],
+    });
+    expect(store.getSlot('3')).toBe(C);
+    expect(store.getVariants('3')).toEqual({ original: A, centred: C });
+    // The generator reads `slots` only, so what prints is the centred file.
+    expect(read().slots).toEqual({ 3: C });
+    expect(read().variants).toEqual({ 3: { original: A, centred: C } });
+    // Both files are referenced, so neither is reclaimed while the slot holds them.
+    expect(store.isImageReferenced(A)).toBe(true);
+    expect(store.isImageReferenced(C)).toBe(true);
+  });
+
+  it('switching to the original and back changes what prints and deletes nothing', () => {
+    store.setSlot('3', C, { original: A, centred: C });
+    expect(store.useVariant('3', 'original')).toEqual({ img: A });
+    expect(read().slots).toEqual({ 3: A });
+    expect(store.isImageReferenced(C)).toBe(true);
+    expect(store.useVariant('3', 'centred')).toEqual({ img: C });
+    expect(read().slots).toEqual({ 3: C });
+    expect(store.useVariant('2', 'original').error).toBeTruthy(); // no pair there
+    expect(store.useVariant('3', 'sideways').error).toBeTruthy();
+  });
+
+  it('replacing or resetting an auto-centred slot gives up BOTH of its files', () => {
+    store.setSlot('3', C, { original: A, centred: C });
+    expect(store.setSlot('3', B).displaced.sort()).toEqual([A, C].sort());
+    expect(store.getVariants('3')).toBe(null);
+    store.setSlot('3', C, { original: A, centred: C });
+    expect(store.resetSlot('3').displaced.sort()).toEqual([A, C].sort());
+    expect(read()).toEqual({ slots: {} });
+  });
+
+  it('a variant pair that no longer matches its slot is dropped on load', () => {
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        slots: { 1: A, 2: B },
+        // 1: the slot holds neither file of its pair. 2: a half pair. 4: no slot.
+        variants: {
+          1: { original: B, centred: C },
+          2: { original: B },
+          4: { original: A, centred: C },
+        },
+      })
+    );
+    store._reload();
+    expect(store.getVariants('1')).toBe(null);
+    expect(store.getVariants('2')).toBe(null);
+    expect(store.getVariants('4')).toBe(null);
+    expect(store.getAll()).toEqual({ 1: A, 2: B });
   });
 });

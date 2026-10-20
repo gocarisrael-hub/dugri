@@ -165,6 +165,11 @@
         font-size: 13px;
         color: var(--ink-soft, #6b6b6b);
       }
+      .item[data-pawn] .note {
+        margin: 8px 0 4px;
+        font-size: 12px;
+        color: var(--ink-soft, #6b6b6b);
+      }
       .item {
         border: 1px solid var(--line);
         border-radius: var(--radius);
@@ -833,6 +838,15 @@
         const preview = src
           ? `<img class="preview" alt="${esc(PAWN_LABEL[Number(s.slot) - 1] || s.slot)}" src="${esc(src)}" onerror="this.style.visibility='hidden'" />`
           : '<div class="preview preview-empty">אפשר להעלות חייל משלכם</div>';
+        // An upload is centred automatically (the server keeps both files). The
+        // preview above is the file that prints; this switches between the two.
+        const variant = s.original
+          ? s.using === 'centred'
+            ? `<p class="note">מורכז אוטומטית בעיגול.</p>
+               <button class="ghost" data-act="pawn-variant" data-use="original">השתמשו בתמונה המקורית</button>`
+            : `<p class="note">התמונה המקורית, כפי שהועלתה.</p>
+               <button class="ghost" data-act="pawn-variant" data-use="centred">מרכזו אוטומטית</button>`
+          : '';
         return `
           <div class="item" data-pawn="${esc(s.slot)}">
             <h3>${esc(PAWN_LABEL[Number(s.slot) - 1] || s.slot)} ${badge}</h3>
@@ -841,6 +855,7 @@
               <button data-act="pawn-upload">${s.img ? 'החלף תמונה' : 'העלה תמונה'}</button>
               <button class="ghost" data-act="pawn-reset" ${s.img ? '' : 'disabled'}>איפוס</button>
             </div>
+            ${variant}
             <input type="file" accept="image/png,image/jpeg,image/webp" hidden />
             <div class="status"></div>
           </div>`;
@@ -885,12 +900,27 @@
         }
       }
 
+      async function switchPawn(itemEl, use) {
+        try {
+          await api('/api/admin/photo-fallback/variant', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ slot: itemEl.dataset.pawn, use }),
+          });
+          await loadPawns();
+        } catch (e) {
+          setStatus(itemEl.querySelector('.status'), 'ההחלפה נכשלה: ' + e.message, 'err');
+        }
+      }
+
       qs('pawnsList').addEventListener('click', (e) => {
         const item = e.target.closest('.item[data-pawn]');
         if (!item) return;
-        const act = (e.target.closest('button') || {}).dataset?.act;
+        const btn = e.target.closest('button') || {};
+        const act = btn.dataset?.act;
         if (act === 'pawn-upload') item.querySelector('input[type="file"]').click();
         if (act === 'pawn-reset') resetPawn(item);
+        if (act === 'pawn-variant') switchPawn(item, btn.dataset.use);
       });
       qs('pawnsList').addEventListener('change', (e) => {
         const item = e.target.closest('.item[data-pawn]');
