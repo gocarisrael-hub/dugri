@@ -127,6 +127,10 @@ test('pay-done at the top level after a failure: no way back unless one was stor
   await page.goto('/pay-done.html?error=1');
   await expect(page.locator('#msg')).toHaveText('התשלום לא הושלם');
   await expect(page.locator('#back')).toBeHidden();
+  // Never a dead end: the logo and the shell's outlined pills for home and WhatsApp (pay-done.spec.js has the rest).
+  await expect(page.locator('#logo')).toBeVisible();
+  await expect(page.locator('#homeLink')).toHaveClass(/rd-btn/);
+  await expect(page.locator('#waLink')).toHaveClass(/rd-btn/);
 
   await page.evaluate(() => sessionStorage.setItem('dugri:payReturn', '/collect.html?c=x'));
   await page.reload();
@@ -390,5 +394,31 @@ test('collect.html checkout in the mode: the choices are quiet rows of the card 
     // Drawn controls, not the browser's; the ticked one is filled ink.
     expect(look.radio).toBe('none');
     expect(look.tickBg).toBe('rgb(0, 0, 0)');
+  }
+});
+
+// "שאלה? דברו איתנו בוואטסאפ" on its pill in one line at a narrow phone, on both pages that carry it. The shell's pill
+// sides left it too little room at 360 and it broke onto two lines.
+test('the WhatsApp pill on pay-done and pay-success keeps its words on one line at 360', async ({
+  page,
+}) => {
+  await mockSummary(page);
+  await page.setViewportSize({ width: 360, height: 800 });
+  for (const [url, sel] of [
+    ['/pay-done.html?error=1', '#waLink'],
+    ['/pay-success.html?c=abc&k=tok', '#waBtn'],
+  ]) {
+    await page.goto(url);
+    const pill = page.locator(sel);
+    await expect(pill).toHaveClass(/rd-btn/);
+    const m = await pill.evaluate((a) => {
+      const s = a.querySelector('span');
+      return {
+        h: s.getBoundingClientRect().height,
+        lh: parseFloat(getComputedStyle(s).lineHeight),
+      };
+    });
+    expect(m.h, `${url}: the label is one line`).toBeLessThan(m.lh * 1.5);
+    await noSidewaysScroll(page, url);
   }
 });
