@@ -68,3 +68,18 @@ describe('foreign-server detection', () => {
     expect(servesRunToken({ templates: [{ key: FIXTURE_SENTINEL }] }, OUR_TOKEN)).toBe(false);
   });
 });
+
+describe('the Mobile Safari spec list', () => {
+  it('names only spec files that exist, and the project runs exactly those', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const { default: config, WEBKIT_SPECS } = await import('../../playwright.config.js');
+    const dir = path.resolve(process.cwd(), 'tests/e2e');
+    const specs = fs.readdirSync(dir).filter((f) => f.endsWith('.spec.js'));
+    for (const name of WEBKIT_SPECS) expect(specs, name).toContain(name + '.spec.js');
+    const safari = config.projects.find((p) => p.name === 'Mobile Safari');
+    expect(safari.use.browserName).toBe('webkit');
+    const matched = specs.filter((f) => safari.testMatch.test(path.join(dir, f))).sort();
+    expect(matched).toEqual(WEBKIT_SPECS.map((n) => n + '.spec.js').sort());
+  });
+});
