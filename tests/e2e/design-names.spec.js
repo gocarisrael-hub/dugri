@@ -98,14 +98,14 @@ test.describe('design-name propagation to the storefront', () => {
     await expect(relCard).toHaveAttribute('data-label', CUSTOM);
   });
 
-  test('grid and detail show the SAME name when both overrides are set (inline edit wins)', async ({
+  test('the ADMIN name wins on the grid and the detail page over a stored inline name edit', async ({
     page,
   }) => {
     const ADMIN = 'שם אדמין';
     const INLINE = 'שם אינליין';
     await stubNames(page, { bachelorette: ADMIN });
-    // The inline content-edit name override (product-<id>-name, saved on the
-    // product.html page) is served on every /api/content read.
+    // An inline content-edit name (product-<id>-name) saved before names moved to the
+    // admin is still served by /api/content on both envs: it must not win.
     await page.route('**/api/content**', (route) =>
       route.fulfill({
         status: 200,
@@ -115,12 +115,17 @@ test.describe('design-name propagation to the storefront', () => {
     );
 
     await page.goto('/products.html');
-    await expect(
-      page.locator('.product-card[data-design-id="bachelorette"] .product-name')
-    ).toHaveText(INLINE);
+    const card = page.locator('.product-card[data-design-id="bachelorette"] .product-name');
+    await expect(card).toHaveText(ADMIN);
 
     await page.goto('/product.html?design=bachelorette');
-    await expect(page.locator('#pdpTitle')).toHaveText(INLINE);
+    await expect(page.locator('#pdpTitle')).toHaveText(ADMIN);
+    await expect(page).toHaveTitle(new RegExp(ADMIN));
+    // and the title is not an inline-edit field: names change in the admin only
+    await expect(page.locator('#pdpTitle')).not.toHaveAttribute('data-edit', /.*/);
+    // the stored edit never shows, even after every fetch has settled
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('body')).not.toContainText(INLINE);
   });
 
   test('a slow /api/design-names does NOT delay content overrides / editor binding', async ({

@@ -84,13 +84,13 @@ describe('legacyFieldKey — the pre-namespacing design-agnostic shared key', ()
 });
 
 describe('overrideKeys — per-design content-override keys', () => {
-  it('encodes the design id into name/about/photos keys (kebab, page-shared)', () => {
+  it('encodes the design id into about/photos keys (kebab, page-shared)', () => {
+    // no name key: a design's name comes only from the admin (/api/design-names)
     expect(overrideKeys('bachelorette')).toEqual({
-      name: 'product-bachelorette-name',
       about: 'product-bachelorette-about',
       photos: 'product-bachelorette-photos',
     });
-    // derived from fieldKey, so name/about/photos match the field derivation
+    // derived from fieldKey, so about/photos match the field derivation
     expect(overrideKeys('japanese').about).toBe(fieldKey('japanese', 'about'));
     // every key stays within the server's key shape (alnum start, kebab, ≤61)
     const KEY_RE = /^[a-z0-9][a-z0-9-]{0,60}$/;
