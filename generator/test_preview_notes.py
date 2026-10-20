@@ -237,3 +237,43 @@ def test_a_theme_whose_font_draws_its_title_gets_no_such_note():
     with tb.Store() as tmp:
         out = _run(tmp)
         assert not _notes_for(out, "title"), out.get("notes")
+
+
+# --- the SECOND title face draws what the first cannot ----------------------
+#
+# דני (daniel-amit) is an English-language design whose title face, haglos, has
+# no Hebrew, and whose title_font_alt, Gan CLM Bold, does. A Hebrew title is set
+# in Gan CLM Bold and the order prints it (build.py checks title_font_for). The
+# preview checked title_font alone and told the owner that order was refused.
+
+
+def _latin_title_with_hebrew_alt(alt="Cafe Regular.ttf"):
+    _latin_title_font()
+    _patch_theme(language="english", title_font_alt=alt)
+
+
+def test_a_hebrew_title_the_alt_face_draws_gets_no_note():
+    if not _chrome():
+        print("  (skipped: no Chrome)")
+        return
+    with tb.Store() as tmp:
+        _latin_title_with_hebrew_alt()
+        cfg = config.theme("demo")
+        lines = config.title_lines(cfg, "שירה", {})
+        # The premise: the primary face really cannot draw this title.
+        assert rp.title_font_gaps(config.font_path("demo", "MrDafoe-Regular.ttf"), lines)
+        # ...and the order path accepts it, through the alt.
+        rp.assert_title_drawable(rp.title_font_for("demo", lines, cfg), lines, theme="demo")
+        out = _run(tmp)
+        assert not _notes_for(out, "title"), out.get("notes")
+
+
+def test_an_alt_face_that_cannot_draw_the_title_still_says_so():
+    if not _chrome():
+        print("  (skipped: no Chrome)")
+        return
+    with tb.Store() as tmp:
+        _latin_title_with_hebrew_alt(alt="MrDafoe-Regular.ttf")
+        out = _run(tmp)
+        notes = _notes_for(out, "title")
+        assert len(notes) == 1 and notes[0]["code"] == pv.NOTE_FONT_GAPS, out.get("notes")
