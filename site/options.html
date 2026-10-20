@@ -6237,6 +6237,11 @@
           img.src = shot.src;
           img.alt = '';
           img.decoding = 'async';
+          // the window takes the photo's own shape, so it shows whole (css/rd/options.css)
+          img.addEventListener('load', () => {
+            if (img.naturalWidth && img.naturalHeight)
+              img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+          });
           img.addEventListener('error', () => {
             if (shot.fallback && img.src.indexOf(shot.fallback) === -1) img.src = shot.fallback;
             else btn.remove();

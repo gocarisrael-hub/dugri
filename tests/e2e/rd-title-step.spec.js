@@ -185,12 +185,17 @@ test('on a wide screen הבא is a button beside הקודם; a phone keeps the w
 
 // ---- the prints' photos fill their window (owner, 2026-10-20) ----
 // Solid fixtures of known shapes, read back in pixels from the page, so a declared style cannot pass for a painted one.
-// The 5:4 photo is plain red; the portrait one is red with a blue band (the cards) low down, at 60%..80% of its height,
-// standing where the cards stand in the owner's portrait and square shots.
+// The 5:4 photo is plain red. The odd ones (a 5:6 portrait and a square, the shapes of קליפורניה's and דני's shots)
+// are red with a blue strip along their very top and their very foot, so any crop at all takes a strip off.
 const RED = [220, 0, 0];
 const BLUE = [0, 0, 220];
 const PHOTO_54 = '/content-uploads/cccccccccccccccc.png';
 const PHOTO_PORTRAIT = '/content-uploads/dddddddddddddddd.png';
+const PHOTO_SQUARE = '/content-uploads/eeeeeeeeeeeeeeee.png';
+const EDGES = [
+  [0, 0.05],
+  [0.95, 1],
+];
 const isRed = ([r, g, b]) => r > 180 && g < 60 && b < 60;
 const isBlue = ([r, g, b]) => b > 180 && r < 60 && g < 60;
 
@@ -214,8 +219,8 @@ function pngChunk(type, data) {
   crc.writeUInt32BE((c ^ -1) >>> 0);
   return Buffer.concat([len, typed, crc]);
 }
-// a w×h PNG, red, with rows from band[0] to band[1] (fractions of the height) blue
-function photoPng(w, h, band = null) {
+// a w×h PNG, red, with the rows in each [from, to] band (fractions of the height) blue
+function photoPng(w, h, bands = []) {
   const ihdr = Buffer.alloc(13);
   ihdr.writeUInt32BE(w, 0);
   ihdr.writeUInt32BE(h, 4);
@@ -223,7 +228,7 @@ function photoPng(w, h, band = null) {
   ihdr[9] = 2;
   const raw = Buffer.alloc(h * (1 + w * 3));
   for (let y = 0; y < h; y++) {
-    const [r, g, b] = band && y >= band[0] * h && y < band[1] * h ? BLUE : RED;
+    const [r, g, b] = bands.some(([a, z]) => y >= a * h && y < z * h) ? BLUE : RED;
     const off = y * (1 + w * 3);
     for (let x = 0; x < w; x++) raw.set([r, g, b], off + 1 + x * 3);
   }
@@ -238,15 +243,20 @@ function photoPng(w, h, band = null) {
 async function toTitleStepWithPhotos(page) {
   const pngs = {
     [PHOTO_54]: photoPng(500, 400),
-    [PHOTO_PORTRAIT]: photoPng(400, 480, [0.6, 0.8]),
+    [PHOTO_PORTRAIT]: photoPng(400, 480, EDGES),
+    [PHOTO_SQUARE]: photoPng(450, 450, EDGES),
   };
   await page.route('**/api/design-images*', (route) =>
     route.fulfill({
       json: {
         images: {
           japanese: {
-            base: { store: { img: PHOTO_54 }, front: { img: PHOTO_PORTRAIT } },
-            order: ['store', 'front'],
+            base: {
+              store: { img: PHOTO_54 },
+              front: { img: PHOTO_PORTRAIT },
+              back: { img: PHOTO_SQUARE },
+            },
+            order: ['store', 'front', 'back'],
           },
         },
       },
@@ -260,15 +270,15 @@ async function toTitleStepWithPhotos(page) {
   );
   await toTitleStep(page);
   const imgs = page.locator('.cd-pic img');
-  // her two photos lead (the order puts them first); the shipped renders follow
-  await expect(imgs.nth(1)).toBeVisible();
-  for (const i of [0, 1]) {
+  // her three photos lead (the order puts them first); a shipped render may follow
+  await expect(imgs.nth(2)).toBeVisible();
+  for (const i of [0, 1, 2]) {
     await expect
       .poll(() => imgs.nth(i).evaluate((el) => el.complete && el.naturalWidth > 0))
       .toBe(true);
   }
   await page.evaluate(() =>
-    Promise.all([...document.querySelectorAll('.cd-pic img')].slice(0, 2).map((i) => i.decode()))
+    Promise.all([...document.querySelectorAll('.cd-pic img')].slice(0, 3).map((i) => i.decode()))
   );
 }
 
@@ -334,24 +344,66 @@ for (const width of [390, 1440]) {
   });
 }
 
-test('an odd (portrait) photo fills its window and keeps the cards at its foot whole', async ({
+test("no crop: every print's window is its own photo's shape, the photo whole and edge to edge", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 390, height: 900 });
   await toTitleStepWithPhotos(page);
-  // cropped from the top first (#702's 50% 75%): the window shows 25%..92% of the photo, so the blue band (60%..80%)
-  // sits at 52%..83% of the window with red below it. Centred, the window ended at 83% and cut the band at its foot.
-  const { px } = await photoPixels(page, 1, [
-    [0.05, 0.5],
-    [0.95, 0.5],
-    [0.5, 0.06],
-    [0.5, 0.68],
-    [0.5, 0.92],
-  ]);
-  const [left, right, top, band, foot] = px;
-  for (const [name, p] of Object.entries({ left, right, top, foot }))
-    expect(isRed(p), `${name} is the photo: ${p}`).toBe(true);
-  expect(isBlue(band), `the cards are in the window: ${band}`).toBe(true);
+  const prints = await page.locator('.cd-pic img').evaluateAll((imgs) =>
+    imgs.map((el) => {
+      const w = el.offsetWidth;
+      const h = el.offsetHeight;
+      // the painted photo's size under the image's object-fit
+      const nw = el.naturalWidth;
+      const nh = el.naturalHeight;
+      const fit = getComputedStyle(el).objectFit;
+      const k = fit === 'contain' ? Math.min(w / nw, h / nh) : Math.max(w / nw, h / nh);
+      return { natural: nw / nh, window: w / h, w, h, paintedW: nw * k, paintedH: nh * k };
+    })
+  );
+  expect(prints.length).toBeGreaterThanOrEqual(3);
+  prints.forEach((p, i) => {
+    expect(
+      Math.abs(p.window / p.natural - 1),
+      `print ${i}: window ${p.window}, photo ${p.natural}`
+    ).toBeLessThan(0.01);
+    // the painted photo is the window: no band beside it and nothing past it
+    expect(Math.abs(p.paintedW / p.w - 1), `print ${i} width`).toBeLessThan(0.01);
+    expect(Math.abs(p.paintedH / p.h - 1), `print ${i} height`).toBeLessThan(0.01);
+  });
+  // and in pixels: the blue strips along the very top and foot of the portrait and the square are both on screen
+  for (const index of [1, 2]) {
+    const { px } = await photoPixels(page, index, [
+      [0.5, 0.02],
+      [0.5, 0.5],
+      [0.5, 0.98],
+    ]);
+    const [top, middle, foot] = px;
+    expect(isBlue(top), `print ${index}: the photo's top strip is in the window: ${top}`).toBe(
+      true
+    );
+    expect(isRed(middle), `print ${index}: ${middle}`).toBe(true);
+    expect(isBlue(foot), `print ${index}: the photo's foot strip is in the window: ${foot}`).toBe(
+      true
+    );
+  }
+});
+
+test('the prints stand on one line, each as tall as its photo', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toTitleStepWithPhotos(page);
+  const rows = await page
+    .locator('.cd-pic')
+    .evaluateAll((btns) =>
+      btns
+        .slice(0, 3)
+        .map((b) => ({ bottom: b.offsetTop + b.offsetHeight, h: b.offsetHeight, w: b.offsetWidth }))
+    );
+  // equal widths, the portrait print the tallest, and every print's foot on the same line
+  expect(new Set(rows.map((r) => r.w)).size).toBe(1);
+  expect(rows[1].h).toBeGreaterThan(rows[2].h);
+  expect(rows[2].h).toBeGreaterThan(rows[0].h);
+  for (const r of rows) expect(Math.abs(r.bottom - rows[0].bottom)).toBeLessThanOrEqual(1); // px rounding
 });
 
 test('the prints are crisp: no blur on the frame, the photo, the tape or the box', async ({
