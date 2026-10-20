@@ -55,8 +55,8 @@ describe('the markup', () => {
     const { ftr } = runShell();
     expect(flat(ftr.innerHTML)).toBe(
       flat(
-        new DOMParser().parseFromString(`<footer>${newHtmlFooter()}</footer>`, 'text/html').body
-          .firstElementChild.innerHTML
+        new window.DOMParser().parseFromString(`<footer>${newHtmlFooter()}</footer>`, 'text/html')
+          .body.firstElementChild.innerHTML
       )
     );
     expect(ftr.querySelector('[data-edit], [data-edit-img], [data-edit-scope]')).toBe(null);
