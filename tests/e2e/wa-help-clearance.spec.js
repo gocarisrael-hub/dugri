@@ -143,10 +143,11 @@ for (const [label, size] of [
   });
 }
 
-test('collect: the help button steps above the pay bar when it is up', async ({
-  page,
-  request,
-}) => {
+// It used to float ABOVE the pay bar, lifted by the bar's measured height; the
+// share buttons, the card-pay pill and the order button still scrolled under it.
+// While the bar is up it now rides INSIDE it (js/wa-help.js, the wizard's docked
+// style), so nothing is ever under it. wa-help-avoid.spec.js scrolls the page.
+test('collect: the help button rides in the pay bar when it is up', async ({ page, request }) => {
   const { id, owner_token } = await seedCollection(request);
   await page.setViewportSize(PHONE);
   await page.goto(`/collect.html?c=${id}&k=${owner_token}`);
@@ -158,29 +159,17 @@ test('collect: the help button steps above the pay bar when it is up', async ({
   // what is under test is where the button goes WHILE it is there.
   await bar.evaluate((el) => el.classList.remove('hidden'));
   await expect(bar).toBeVisible();
+  await expect(help).toHaveClass(/wa-help--docked/);
 
-  // Polled, not read once: the lift travels bar -> ResizeObserver ->
-  // --pay-bar-h -> layout, so a single read can land a frame early and see the
-  // button still at the floor. What must be true is where it ENDS UP.
-  await expect
-    .poll(
-      () =>
-        page.evaluate(() => {
-          const wa = document.querySelector('[data-testid="wa-help"]').getBoundingClientRect();
-          const b = document.querySelector('[data-testid="pay-bar"]').getBoundingClientRect();
-          return Math.round(b.top - wa.bottom);
-        }),
-      { message: 'the help button must sit above the pay bar' }
-    )
-    .toBeGreaterThanOrEqual(0);
-
+  const [h, b] = await Promise.all([help.boundingBox(), bar.boundingBox()]);
+  expect(h.x).toBeGreaterThanOrEqual(b.x - 1);
+  expect(h.y).toBeGreaterThanOrEqual(b.y - 1);
+  expect(h.x + h.width).toBeLessThanOrEqual(b.x + b.width + 1);
+  expect(h.y + h.height).toBeLessThanOrEqual(b.y + b.height + 1);
   // ...and clear of the pay button itself, the one thing the page exists to get
   // pressed.
-  const [h, go] = await Promise.all([
-    help.boundingBox(),
-    page.getByTestId('pay-bar-btn').boundingBox(),
-  ]);
-  expect(intersects(h, go)).toBe(false);
+  const go = await page.getByTestId('pay-bar-btn').boundingBox();
+  expect(intersects(h, go), 'help overlaps the pay button').toBe(false);
 });
 
 // It was a 90x44 pill with a label. Smaller, and on a phone the icon alone.

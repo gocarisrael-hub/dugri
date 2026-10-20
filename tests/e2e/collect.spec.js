@@ -712,10 +712,16 @@ test('the pay bar never buries the WhatsApp help button', async ({ page }) => {
   await page.getByTestId('wa-help').click({ trial: true, timeout: 5000 });
 });
 
-// A taller bar must push the help button further up, not slide under it. The
-// copy is owner-editable, so this is a real state, not a hypothetical: the
-// offset is the bar's MEASURED height for exactly this reason.
-test('a wrapped pay-bar label lifts the WhatsApp button with it', async ({ page }) => {
+// A taller bar must not leave the help button under it or on its controls. The
+// copy is owner-editable, so this is a real state, not a hypothetical. This used
+// to assert the button ends up ABOVE the bar: the help floated over the page and
+// was lifted by the bar's MEASURED height (--pay-bar-h). Now js/wa-help.js docks
+// it INSIDE the bar while the bar shows, so it must stay inside the taller bar,
+// clear of the amount and the pay button, and go back to its own spot when the
+// bar goes (the undock is the half that regresses quietly).
+test('a wrapped pay-bar label: the WhatsApp button stays inside the taller bar', async ({
+  page,
+}) => {
   // A phone: the width where a longer label actually wraps and makes the bar
   // taller. On a desktop viewport the same string fits on one line and this
   // would pass without testing anything.
@@ -737,21 +743,61 @@ test('a wrapped pay-bar label lifts the WhatsApp button with it', async ({ page 
     .poll(async () => bar.evaluate((el) => el.getBoundingClientRect().height))
     .toBeGreaterThan(before);
 
-  // Polled, not read once: the lift travels label -> ResizeObserver ->
-  // --pay-bar-h -> layout, so a single read can land a frame early and see the
-  // button still at the old height's offset. What must be true is that it ENDS
-  // UP clear, which is what a buyer's thumb meets.
+  // Polled, not read once: the bar grows over a layout pass. What must be true is
+  // where the button ENDS UP, which is what a buyer's thumb meets.
+  const place = () =>
+    page.evaluate(() => {
+      const help = document.querySelector('[data-testid="wa-help"]');
+      const box = (sel) => document.querySelector(sel).getBoundingClientRect();
+      const wa = help.getBoundingClientRect();
+      const meets = (b) =>
+        !(wa.right <= b.left || b.right <= wa.left || wa.bottom <= b.top || b.bottom <= wa.top);
+      const b = box('[data-testid="pay-bar"]');
+      const inside =
+        wa.left >= b.left - 1 &&
+        wa.right <= b.right + 1 &&
+        wa.top >= b.top - 1 &&
+        wa.bottom <= b.bottom + 1;
+      return {
+        inside,
+        onPayButton: meets(box('[data-testid="pay-bar-btn"]')),
+        onAmount: meets(box('[data-testid="pay-bar-amount"]')),
+      };
+    });
   await expect
-    .poll(
-      async () =>
-        page.evaluate(() => {
-          const wa = document.querySelector('[data-testid="wa-help"]').getBoundingClientRect();
-          const b = document.querySelector('[data-testid="pay-bar"]').getBoundingClientRect();
-          return Math.round(b.top - wa.bottom);
-        }),
-      { message: 'the help button must sit above the taller bar' }
+    .poll(place, {
+      message: 'the help button must sit inside the taller bar, on none of its controls',
+    })
+    .toEqual({ inside: true, onPayButton: false, onAmount: false });
+
+  // The bar goes (paid, or the cards come down): the help is back in its original
+  // parent, at its original spot, floating again. "Original" is read from the page
+  // as served, not from anything the docking script leaves behind.
+  const served = await page.evaluate(async () => {
+    const html = await (await fetch(location.href)).text();
+    const doc = new window.DOMParser().parseFromString(html, 'text/html');
+    const help = doc.querySelector('[data-testid="wa-help"]');
+    const next = help.nextElementSibling;
+    return {
+      parent: help.parentElement.tagName + '#' + help.parentElement.id,
+      next: next ? next.tagName + '#' + next.id : null,
+    };
+  });
+  await page.evaluate(() => document.getElementById('payBar').classList.add('hidden'));
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const help = document.querySelector('[data-testid="wa-help"]');
+        const next = help.nextElementSibling;
+        return {
+          parent: help.parentElement.tagName + '#' + help.parentElement.id,
+          next: next ? next.tagName + '#' + next.id : null,
+          docked: help.classList.contains('wa-help--docked'),
+          position: getComputedStyle(help).position,
+        };
+      })
     )
-    .toBeGreaterThanOrEqual(0);
+    .toEqual({ ...served, docked: false, position: 'fixed' });
 });
 
 test('card disabled: no dead pay CTA, neutral note instead, and no top nag', async ({ page }) => {

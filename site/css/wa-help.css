@@ -54,9 +54,11 @@
     0 0 0 3px rgba(255, 255, 255, 0.92),
     0 10px 26px rgba(0, 0, 0, 0.32);
 }
-/* DOCKED — the wizard's variant. A page with a bar already fixed to the bottom
- * doesn't need a second floating thing above it: the help rides IN the bar, at
- * the end away from "הבא". Nothing can be covered, at any step and any scroll
+/* DOCKED. A page with a bar already fixed to the bottom doesn't need a second
+ * floating thing above it: the help rides IN the bar. The wizard puts it there
+ * in its markup, at the end away from "הבא"; the word-collection page docks it
+ * into its pay bar with js/wa-help.js while that bar shows, and lets it float
+ * again when the bar goes. Nothing can be covered, at any step and any scroll
  * position, because the bar is opaque and the page already reserves its height.
  * That is worth more than the corner: the wizard is where the buyer taps, and a
  * floating button there was landing on the box under the design grid and (as
