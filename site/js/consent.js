@@ -32,10 +32,16 @@
 
   // A transparent, click-through wrapper pins the visible pill in the
   // bottom-left corner without intercepting clicks on the rest of the page.
+  // Its layer is 75: over the short bars fixed to the foot of a page (the
+  // friend bar 56, the WhatsApp help 60, the wizard bar 70), which it stands
+  // clear of anyway (below), and UNDER everything that takes over the screen,
+  // the lowest of which is collect's closing confirmation at 80 (the photo
+  // viewers and the friend sheet are 120, the start explainer 9000). Above
+  // those it floated over their backdrops and took their taps.
   var wrap = document.createElement('div');
   wrap.setAttribute(
     'style',
-    'position:fixed;left:0;bottom:0;z-index:9999;pointer-events:none;font-family:inherit'
+    'position:fixed;left:0;bottom:0;z-index:75;pointer-events:none;font-family:inherit'
   );
 
   var bar = document.createElement('div');
