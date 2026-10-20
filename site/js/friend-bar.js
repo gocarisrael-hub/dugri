@@ -59,6 +59,40 @@ function track(name, params) {
   if (typeof gtag === 'function') gtag('event', name, params);
 }
 
+// In redesign mode (html.rd, set by the gate) the bar and sheet take the shell's look, like the pay bar and the payment
+// window they sit beside: the bar an ink strip with the paper pill, the sheet a heavy ink-outlined sheet with rounded top
+// corners, the shell's pill field and ink pill, the round ✕, and the body face throughout. Outside the mode none of
+// these match.
+const RD_CSS = `
+html.rd #friendBar{background:var(--color-ink);font-family:var(--font-body);box-shadow:0 -4px 0 var(--color-accent-pink)}
+html.rd #friendBar .fb-main{font-weight:var(--weight-strong)}
+html.rd #friendBar .fb-small{font-weight:var(--weight-body)}
+html.rd #friendBar button.fb-go{border:var(--border-thin) solid var(--color-paper);border-radius:var(--radius-pill);
+  background:var(--color-paper);color:var(--color-ink);font-family:var(--font-body);font-weight:var(--weight-strong);
+  padding:var(--pad-button-sm)}
+html.rd #friendBar button.fb-go::before,html.rd #friendSheet button.fs-go::before{display:none}
+html.rd #friendSheet{background:var(--color-scrim)}
+html.rd #friendSheet .fs-card{border:var(--border-heavy) solid var(--color-ink);border-bottom:0;
+  border-radius:var(--radius-sheet) var(--radius-sheet) 0 0;box-shadow:none;font-family:var(--font-body)}
+html.rd #friendSheet h2{font-family:var(--font-heading);font-weight:400}
+html.rd #friendSheet label.fs-label{font-weight:var(--weight-label)}
+html.rd #friendSheet input[type=email]{min-height:var(--field-height);padding:0 22px;border:var(--border-thin) solid var(--color-ink);
+  border-radius:var(--radius-pill);font-family:var(--font-body)}
+html.rd #friendSheet input[type=email]:focus{outline:var(--focus-ring);outline-offset:2px}
+html.rd #friendSheet .fs-err{color:var(--color-error)}
+html.rd #friendSheet .fs-consent input{-webkit-appearance:none;appearance:none;width:20px;height:20px;margin-top:1px;
+  border:var(--border-thin) solid var(--color-ink);border-radius:6px;background:var(--color-paper) center/12px 12px no-repeat}
+html.rd #friendSheet .fs-consent input:checked{background-color:var(--color-ink);background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6.2l2.6 2.6L10 3.4' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+html.rd #friendSheet .fs-consent input:focus-visible{outline:2px solid var(--color-ink);outline-offset:2px}
+html.rd #friendSheet button.fs-go{border-radius:var(--radius-pill);background:var(--color-ink);font-family:var(--font-body);
+  font-weight:var(--weight-strong);font-size:var(--text-button-lg);padding:var(--pad-button-lg)}
+html.rd #friendSheet button.fs-x{top:14px;inset-inline-end:14px;width:40px;height:40px;padding:0;
+  border:var(--border-thin) solid var(--color-ink);border-radius:50%;background:var(--color-paper);box-shadow:var(--shadow-sm);
+  font-size:20px}
+html.rd #friendSheet .fs-code{border:2px dashed var(--color-ink);border-radius:var(--radius-box);background:var(--color-tag);
+  font-family:var(--font-body);font-weight:var(--weight-heavy)}
+`;
+
 const CSS = `
 #friendBar{position:fixed;inset-inline:0;bottom:0;z-index:56;display:flex;align-items:center;gap:12px;
   background:#141414;color:#fff;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));
@@ -92,7 +126,7 @@ const CSS = `
 #friendSheet .fs-code{display:block;margin:4px auto 18px;width:max-content;max-width:100%;border:2px dashed var(--accent,#b7a389);
   background:#f6f1e8;padding:12px 24px;font-size:24px;letter-spacing:3px;direction:ltr;font-weight:400}
 @media (prefers-reduced-motion: reduce){#friendBar{transition:none}}
-`;
+${RD_CSS}`;
 
 function el(tag, attrs = {}, text) {
   const n = document.createElement(tag);
