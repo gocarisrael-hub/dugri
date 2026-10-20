@@ -3,7 +3,9 @@
 // (tests/unit/home-data.test.js). The page itself is js/home-new.js.
 
 // The single cards and boards the owner approved in the redesign (DESIGN.md, "Shapes"): cut from the live deck sheets and
-// print templates, each card's frame evened to 10.78% of its width. They live in assets/home/, keyed by the live design id.
+// print templates, each card's frame evened to 10.78% of its width. The cards that must match the print exactly (football-boys,
+// daniel-amit, posttrip, and grapefruit's back) are cut whole from the template card or the print render instead, outline and
+// frame as printed. They live in assets/home/, keyed by the live design id.
 // `color` is the design's main colour, sampled from its real card; the panel and the tapped view derive from it.
 // `sharp`: the widths of each card's sharper twin, <name>@2x.webp, as [fronts, back] (the 400 px card stays the src). Each twin is
 // as wide as its source really holds: 800 from a print template, ~576 from a 2000 px deck sheet (8 cards a sheet), never upscaled.
@@ -41,9 +43,10 @@ export const DESIGN_ART = {
     board2x: true,
     sharp: [800, 800],
   },
+  // one front, from the template card that prints; the old cuts of fronts 2-8 had a heavier outline and older lettering
   'daniel-amit': {
     color: '#f5d98f',
-    fronts: 8,
+    fronts: 1,
     back: true,
     board: true,
     board2x: true,
@@ -58,9 +61,10 @@ export const DESIGN_ART = {
     board2x: true,
     sharp: [800, 636],
   },
+  // one front, from the print render (its template card is not public); the old cuts had a heavier outline and frame colour
   posttrip: {
     color: '#90d8e4',
-    fronts: 8,
+    fronts: 1,
     back: true,
     board: true,
     board2x: true,
