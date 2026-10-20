@@ -2026,6 +2026,10 @@
            notes after it are hidden whenever it shows) */
         margin-top: 18px;
         margin-bottom: 16px;
+        /* Scrolled to (a focus, a tap that brings it into view), it lands clear of what is pinned to the bottom: the pay
+           bar and the friend bar, and the WhatsApp help button lifted above them (--wa-help-bottom plus its 56px).
+           Without this it stopped flush with the viewport's foot, half under the bar. */
+        scroll-margin-bottom: calc(var(--wa-help-bottom, 16px) + 56px + 12px);
         padding: 21px 18px;
         border: none;
         border-radius: var(--radius-pill);

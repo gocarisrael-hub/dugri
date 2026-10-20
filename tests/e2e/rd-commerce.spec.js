@@ -206,6 +206,8 @@ const PRICING = {
     delivery: { enabled: true, price: 199 },
     custom: { enabled: true, price: 599 },
   },
+  // Without a fee the delivery tick is not offered.
+  delivery_fee: 39,
 };
 
 // A's section of collect.css: the checkout. The top pay card, the pay panel, the bar and the payment window.
@@ -333,4 +335,60 @@ test('collect.html checkout in the mode: the pay pill sits inside its card, noth
   await expect(page.locator('#payFrame')).toHaveAttribute('src', frameUrl);
   await page.locator('#payModalClose').click();
   await expect(page.locator('#payModal')).toBeHidden();
+});
+
+test('collect.html checkout in the mode: the choices are quiet rows of the card at one width, with drawn controls', async ({
+  page,
+  request,
+}) => {
+  await checkoutReady(page);
+  const { id, k } = await makeCollection(request);
+  await page.goto(`/collect.html?c=${id}&k=${k}`);
+  await openCheckout(page);
+  // The PDF is offered first and picked by default; delivery is a tick on the printed game.
+  await page.locator('.pay-opt:has(input[value="pickup"])').click();
+  await page.locator('#shipOpt').click();
+  await expect(page.locator('#addressForm')).toBeVisible();
+
+  for (const width of [390, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const look = await page.evaluate(() => {
+      const cs = (el) => getComputedStyle(el);
+      const box = (sel) => {
+        const el = document.querySelector(sel);
+        const r = el.getBoundingClientRect();
+        return {
+          bg: cs(el).backgroundColor,
+          side: cs(el).borderLeftWidth,
+          left: Math.round(r.left),
+          right: Math.round(r.right),
+        };
+      };
+      const price = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().left);
+      return {
+        opt: box('.pay-opt.active'),
+        tick: box('#shipOpt'),
+        addr: box('#addressForm'),
+        optPrice: price('.pay-opt.active .opt-price'),
+        tickPrice: price('#shipPrice'),
+        radio: cs(document.querySelector('.pay-opt.active input')).appearance,
+        tickBg: cs(document.querySelector('#shipToggle')).backgroundColor,
+      };
+    });
+    // No tinted, outlined boxes: the card's own ground, no side frame.
+    for (const k of ['opt', 'tick', 'addr']) {
+      expect(look[k].bg, `${k} at ${width}`).toBe('rgba(0, 0, 0, 0)');
+      expect(look[k].side, `${k} at ${width}`).toBe('0px');
+    }
+    // The tick is as wide as the option above it (it was indented 18px), and both prices end on one edge.
+    expect(look.tick.left, `tick's edge at ${width}`).toBe(look.opt.left);
+    expect(look.tick.right, `tick's edge at ${width}`).toBe(look.opt.right);
+    expect(
+      Math.abs(look.tickPrice - look.optPrice),
+      `prices' edge at ${width}`
+    ).toBeLessThanOrEqual(1);
+    // Drawn controls, not the browser's; the ticked one is filled ink.
+    expect(look.radio).toBe('none');
+    expect(look.tickBg).toBe('rgb(0, 0, 0)');
+  }
 });

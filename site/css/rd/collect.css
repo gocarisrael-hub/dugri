@@ -467,6 +467,103 @@ html.rd #cardPayBtn:disabled {
   box-shadow: none;
 }
 
+/* ---- the choices in the checkout: quiet rows of the card, like the copies row below them. The page draws each
+   version and the delivery tick as a tinted, outlined box (and indents the tick 18px, which left it narrower than the
+   option above it); here they are the card's own ground with a hairline between, at one width ---- */
+html.rd .pay-opt,
+html.rd .pay-addon {
+  border: 0;
+  border-top: var(--border-hair) solid rgba(0, 0, 0, 0.14);
+  border-radius: 0;
+  background: transparent;
+  padding: 12px 0;
+  margin-inline-start: 0;
+}
+html.rd .pay-opt:hover,
+html.rd .pay-addon:hover,
+html.rd .pay-opt.active,
+html.rd .pay-addon.active {
+  border-color: rgba(0, 0, 0, 0.14);
+  background: transparent;
+}
+html.rd .pay-opts > .odd-note {
+  margin-inline-start: 0;
+}
+/* The tick's body takes the row like an option's does (the page gives only .pay-opt's that), so both prices end on
+   the same edge */
+html.rd .pay-addon .opt-body {
+  flex: 1;
+}
+html.rd .pay-opt .opt-title,
+html.rd .pay-addon .opt-title {
+  font-weight: var(--weight-label);
+}
+html.rd .pay-opt .opt-price,
+html.rd .pay-addon .opt-price {
+  color: var(--color-ink);
+  font-weight: var(--weight-strong);
+}
+
+/* The radios and ticks: drawn, not the browser's. A 20px round or a rounded square with a thin ink outline; chosen, the
+   round takes an ink dot and the square fills ink with a paper tick. */
+html.rd #payPanel input[type='radio'],
+html.rd #payPanel input[type='checkbox'],
+html.rd .ship-collapse input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0;
+  border: var(--border-thin) solid var(--color-ink);
+  background: var(--color-paper) center / 12px 12px no-repeat;
+  cursor: pointer;
+}
+html.rd #payPanel input[type='radio'] {
+  border-radius: 50%;
+}
+html.rd #payPanel input[type='radio']:checked {
+  background: var(--color-ink);
+  box-shadow: inset 0 0 0 4px var(--color-paper);
+}
+html.rd #payPanel input[type='checkbox'],
+html.rd .ship-collapse input[type='checkbox'] {
+  border-radius: 6px;
+}
+html.rd #payPanel input[type='checkbox']:checked,
+html.rd .ship-collapse input[type='checkbox']:checked {
+  background-color: var(--color-ink);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2 6.2l2.6 2.6L10 3.4' fill='none' stroke='%23fff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+html.rd #payPanel input[type='radio']:focus-visible,
+html.rd #payPanel input[type='checkbox']:focus-visible,
+html.rd .ship-collapse input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+html.rd #payPanel input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* The delivery address: fields of the card under a hairline, not a square grey panel inside it */
+html.rd .addr-form {
+  border: 0;
+  border-top: var(--border-hair) solid rgba(0, 0, 0, 0.14);
+  background: transparent;
+  padding: 12px 0 0;
+}
+html.rd .addr-form .addr-head {
+  border: 0;
+  padding: 0;
+  font-family: var(--font-body);
+  font-weight: var(--weight-label);
+  letter-spacing: 0;
+}
+html.rd .addr-form input[type='text'] {
+  background: var(--color-paper);
+}
+
 /* The copies row: a quiet row of the pay card, not a tinted box. The page frames it (and the box choice that hangs off
    it) in the accent colour, which the mode paints pink; here it is the card's own ground with a hairline above. */
 html.rd #qtyRow {
