@@ -484,6 +484,9 @@ html.rd .cd-pics {
   min-width: 0;
   contain: inline-size; /* the prints scroll inside the column; they never widen the step to fit them all */
   display: flex;
+  /* a print is as tall as its photo (below), so a portrait one stands taller; they stand on one line, like prints
+     propped along a shelf, rather than being stretched to the tallest with blank paper under the shorter ones */
+  align-items: flex-end;
   gap: 18px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -536,12 +539,21 @@ html.rd .cd-pic:focus-visible {
   outline: 3px solid var(--color-ink);
   outline-offset: 3px;
 }
+/* The window is the photo's own shape, so every photo shows whole, edge to edge, with nothing cut and no bands
+   (owner, 2026-10-20: "too big or too small for the frame"). The page sets each window's aspect-ratio from its photo
+   once it loads (paintChosenDesign); until then it is 5:4, the shape of 37 of the shop's 40 photos (#702), so the
+   common print does not jump. `cover` only absorbs the sub-pixel rounding between the two.
+   The photos' studio backdrop darkens toward its corners, so on the white paper a photo had no edge of its own, just
+   a soft grey ring that read as a blurred inner shadow. A hairline of ink on the photo's own edge gives it the crisp
+   edge a print has. No blur anywhere: the frame's shadow is the hard --shadow. */
 html.rd .cd-pics img {
   display: block;
   width: 100%;
   height: auto;
-  aspect-ratio: 5 / 4; /* the shop's photos are 5:4 (the store card frame, #702); others fill it */
+  aspect-ratio: 5 / 4;
   object-fit: cover;
+  outline: 1px solid var(--color-ink);
+  outline-offset: -1px;
   background: var(--color-ground);
 }
 
