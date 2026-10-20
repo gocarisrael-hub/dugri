@@ -16,6 +16,8 @@ const baseURL = E2E_BASE_URL;
 //     the redesign's pages. The owner's iPhone bugs of 2026-10-20 (the title step's photos, the
 //     arrows, the focus ring) were WebKit layout divergences that every Chromium
 //     check passed.
+//   rd-options-nav, collect-toast-layer — the wizard's top bar folding into the
+//     menu in the mode, and collect's word toast staying under its sheets (#730).
 // tests/unit/e2e-harness.test.js fails if a name here stops matching a file, so a
 // rename cannot quietly take a spec off WebKit.
 export const WEBKIT_SPECS = [
@@ -25,6 +27,8 @@ export const WEBKIT_SPECS = [
   'home-round-1019',
   'home-recs-marks',
   'site-footer',
+  'rd-options-nav',
+  'collect-toast-layer',
 ];
 
 export default defineConfig({
