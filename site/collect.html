@@ -2029,7 +2029,8 @@
         margin-bottom: 16px;
         /* Scrolled to (a focus, a tap that brings it into view), it lands clear of what is pinned to the bottom: the pay
            bar and the friend bar, and the WhatsApp help button lifted above them (--wa-help-bottom plus its 56px).
-           Without this it stopped flush with the viewport's foot, half under the bar. */
+           Without this it stopped flush with the viewport's foot, half under the bar. While the help is docked INSIDE
+           the pay bar (js/wa-help.js) it is not above the bar, so only the bars count (the rule after this one). */
         scroll-margin-bottom: calc(var(--wa-help-bottom, 16px) + 56px + 12px);
         padding: 21px 18px;
         border: none;
@@ -2049,6 +2050,9 @@
           transform 0.12s var(--ease),
           box-shadow 0.2s var(--ease);
         animation: payPulse 2.6s var(--ease) infinite;
+      }
+      html:has(.wa-help--docked) .card-pay-btn {
+        scroll-margin-bottom: calc(var(--pay-bar-h, 0px) + var(--friend-bar-h, 0px) + 12px);
       }
       /* A slow light sweep across the face. Pure paint (no layout, no transform
          on the button itself), so the tap target stays exactly where it is. */
