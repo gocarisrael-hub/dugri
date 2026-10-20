@@ -222,10 +222,19 @@ def _font_gap_note(cfg, theme, title_lines):
     Reported here rather than per-surface because it is a property of the theme
     and its title, not of any one render: every surface that carries the title
     is wrong in the same way.
+
+    The face checked is the one the order checks: ``title_font_for`` picks the
+    second title face (``title_font_alt``) when the title is in the other
+    script. Checking ``title_font`` alone told the owner a Hebrew title on דני
+    (haglos, Latin only, beside Gan CLM Bold) would be refused, while the order
+    printed it in Gan CLM Bold without complaint.
     """
-    font = config.font_path(theme, cfg.get("title_font") or "")
-    if not cfg.get("title_font") or not os.path.exists(font):
+    if not cfg.get("title_font"):
         return None                     # a missing font is _assets' complaint
+    try:
+        font = rp.title_font_for(theme, title_lines, cfg)
+    except RuntimeError:
+        return None                     # same: resolve_title_font names the file
     gaps = rp.title_font_gaps(font, title_lines)
     if not gaps:
         return None
