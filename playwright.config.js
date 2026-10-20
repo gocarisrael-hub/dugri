@@ -12,8 +12,8 @@ const baseURL = E2E_BASE_URL;
 // The specs the Mobile Safari project runs (see the project below for why the
 // list is short). Each one measures GEOMETRY on a page buyers see on an iPhone:
 //   pawn-card-alignment — the pawn card's photos land on their printed cut-lines;
-//   rd-title-step, rd-commerce, home-round-1019, home-recs-marks — the redesign's
-//     pages. The owner's iPhone bugs of 2026-10-20 (the title step's photos, the
+//   rd-title-step, rd-commerce, home-round-1019, home-recs-marks, site-footer —
+//     the redesign's pages. The owner's iPhone bugs of 2026-10-20 (the title step's photos, the
 //     arrows, the focus ring) were WebKit layout divergences that every Chromium
 //     check passed.
 // tests/unit/e2e-harness.test.js fails if a name here stops matching a file, so a
@@ -24,6 +24,7 @@ export const WEBKIT_SPECS = [
   'rd-commerce',
   'home-round-1019',
   'home-recs-marks',
+  'site-footer',
 ];
 
 export default defineConfig({
