@@ -526,7 +526,17 @@ describe('the illustrations', () => {
         expect(w).toBeGreaterThan(0);
       }
     }
-    expect(PLACEMENTS.m).toHaveLength(15);
+    expect(PLACEMENTS.m).toHaveLength(14);
     expect(PLACEMENTS.d).toHaveLength(23);
+  });
+
+  it('puts nothing under the reviews row, and the disco ball beside its heading', () => {
+    for (const bp of ['m', 'd']) {
+      const recs = PLACEMENTS[bp].filter(([, sec]) => sec === 'recs');
+      // below the row (the bottom fifth of the section) nothing reads as a lone + on a phone
+      if (bp === 'm') expect(recs.filter(([, , , y]) => y > 80)).toEqual([]);
+      const [disco] = recs.filter(([kind]) => kind === 'disco');
+      expect(disco[3]).toBeLessThan(25); // level with the heading
+    }
   });
 });
