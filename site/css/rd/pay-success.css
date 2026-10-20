@@ -102,6 +102,8 @@ html.rd .done .back.rd-btn:hover {
 html.rd .done .wa.rd-btn {
   width: 100%;
   margin-top: var(--space-sm);
+  /* The shell's 26px sides left "שאלה? דברו איתנו בוואטסאפ" too little room at 360, and it broke onto two lines */
+  padding-inline: 18px;
 }
 html.rd .done .wa.rd-btn:hover {
   background: var(--color-paper);
