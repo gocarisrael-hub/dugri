@@ -1310,6 +1310,10 @@
       .wiz-hint[hidden] {
         display: none;
       }
+      /* the title field's hint is two lines, each its own editable text */
+      .custom-title-hint > span {
+        display: block;
+      }
       /* Non-blocking "may print small" note for a long custom title (F7). Amber,
          advisory — never a hard block; the live preview is the real safety net. */
       .title-break {
@@ -2130,7 +2134,49 @@
               החלפה
             </button>
           </div>
-          <div class="cd-pics" id="chosenDesignPics" data-testid="chosen-design-pics"></div>
+          <!-- A row of the photos that scrolls sideways: a swipe on a phone, the wheel or these arrows on a wide
+               screen (css/rd/options.css). Physical sides: in RTL the next photo is to the left. -->
+          <div class="cd-strip">
+            <button
+              type="button"
+              class="cd-arrow cd-prev"
+              id="chosenDesignPrev"
+              data-testid="chosen-design-prev"
+              aria-label="התמונה הקודמת"
+              hidden
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                <path
+                  d="M9 6l6 6-6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+            <div class="cd-pics" id="chosenDesignPics" data-testid="chosen-design-pics"></div>
+            <button
+              type="button"
+              class="cd-arrow cd-next"
+              id="chosenDesignNext"
+              data-testid="chosen-design-next"
+              aria-label="התמונה הבאה"
+              hidden
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false">
+                <path
+                  d="M15 6l-6 6 6 6"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2.5"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </div>
         </div>
         <p class="wiz-sub" id="nameStepSub">
           מה שתכתבו כאן הוא בדיוק מה שיודפס על הקלפים ועל הלוח - שם, ברכה, בדיחה פנימית, מה שתרצו.
@@ -2144,14 +2190,14 @@
              no default behind it to fall back to.
              The title auto-fits, so a long one just prints smaller — the live
              preview below shows the exact result so the buyer can self-correct.
-             The hint is one short line (the owner, 2026-10-19: the longer one
-             explaining the LINE-BREAK rule went unread). The rule itself is said
-             by #customTitleWarn once a title is long, with the break offered as a
-             button: the fitter sizes a title by its widest line and caps it by
+             The hint is two short lines (the owner, 2026-10-20): a line break makes
+             the title bigger, and the peek below shows exactly what prints. It is
+             said before anything is typed; #customTitleWarn says it again once a
+             title is long, with the break offered as a button: the fitter sizes a title by its widest line and caps it by
              the box height divided by the line count, so breaking a long single
              line in two roughly halves the width it has to fit and buys back
-             size. (Short titles are height-bound, where a break shrinks instead —
-             hence "ארוכה", not "always".) -->
+             size. (Short titles are height-bound, where a break shrinks instead,
+             which is why the warning offers the break only on a long title.) -->
         <label class="wiz-field" id="customTitleField" data-testid="custom-title-field">
           <span class="wiz-lbl" data-edit="options-customtitle-label">הכותרת שתודפס על הקלפים</span>
           <textarea
@@ -2164,11 +2210,11 @@
             required
             aria-label="הכותרת שתודפס על הקלפים"
           ></textarea>
-          <span
-            class="wiz-hint"
-            data-testid="custom-title-hint"
-            data-edit="options-customtitle-hint"
-            >כותרת ארוכה יוצאת קטנה יותר. ההצצה למטה מראה בדיוק איך זה ייראה.</span
+          <!-- Two lines, each its own editable text: an override is set as plain text, so one key cannot carry a
+               line break. The first line keeps the key the single line had. -->
+          <span class="wiz-hint custom-title-hint" data-testid="custom-title-hint"
+            ><span data-edit="options-customtitle-hint">ניתן לרדת שורה להגדלת הכותרת!</span>
+            <span data-edit="options-customtitle-hint-2">הצצה למטה מראה בדיוק מה תקבלו</span></span
           >
           <span
             class="wiz-hint custom-title-warn"
@@ -3744,6 +3790,7 @@
         loadDesignImages,
         deckFor,
         galleryFor,
+        srcsetFor,
         previewPicture,
         previewPictures,
       } from './js/design-images.js';
@@ -4438,6 +4485,10 @@
             }
           }
           if (!changed.length) return;
+          // the title step's "העיצוב שבחרתם" box took the name when it was painted, which can be before this lands
+          const cdName = document.getElementById('chosenDesignName');
+          if (cdName && cdName.textContent)
+            cdName.textContent = currentSelection().designName || '';
           for (const d of DESIGNS) {
             const btn = designButtons.get(d.id);
             if (!btn) continue;
@@ -6207,6 +6258,12 @@
          <html> each time: the mode is the server's class. */
       const chosenDesign = document.getElementById('chosenDesign');
       const CHOSEN_DESIGN_MAX = 4;
+      // the photos' width on screen, css/rd/options.css --cdw
+      const CHOSEN_PIC_SIZES = '(max-width: 432px) 74vw, 320px';
+      // A wide screen's arrows: shown only where there is somewhere to go. In RTL the row starts at the right and
+      // scrollLeft runs negative toward the left, which is where the next photo is.
+      const chosenPrev = document.getElementById('chosenDesignPrev');
+      const chosenNext = document.getElementById('chosenDesignNext');
       // Every picture of the design, in the gallery's order: the box shows the first
       // few, and a tap on any of them opens the viewer on ALL of them (owner,
       // 2026-10-19).
@@ -6233,22 +6290,68 @@
           btn.dataset.testid = 'chosen-design-pic';
           btn.setAttribute('aria-label', `תמונה ${i + 1} מתוך ${chosenShots.length} - הגדלה`);
           const img = document.createElement('img');
-          img.src = shot.src;
           img.alt = '';
           img.decoding = 'async';
-          // the window takes the photo's own shape, so it shows whole (css/rd/options.css)
+          // the window takes the photo's own shape, so it shows whole (css/rd/options.css), and the photo appears
+          // only once it is all there
           img.addEventListener('load', () => {
             if (img.naturalWidth && img.naturalHeight)
               img.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+            img.classList.add('is-loaded');
+            syncChosenArrows();
           });
           img.addEventListener('error', () => {
+            // a failing srcset candidate is not retried from src, so the fallback goes in without one
+            img.removeAttribute('srcset');
+            img.removeAttribute('sizes');
             if (shot.fallback && img.src.indexOf(shot.fallback) === -1) img.src = shot.fallback;
             else btn.remove();
           });
+          // THE RIGHT-SIZED FILE, NOT THE CAMERA ORIGINAL. These are the owner's uploads, 2600-3000 px and up to
+          // 800 KB of baseline JPEG each, and a baseline JPEG paints top down as it arrives: on a phone's
+          // connection every photo was a thin strip at the top of an empty window for many seconds (owner,
+          // 2026-10-20, "אן בי איי"). The server's width ladder (js/design-images.js srcsetFor) is what the
+          // shop pages already use. sizes is the --cdw width, and goes in before srcset (js/lazy-media.js).
+          const srcset = srcsetFor(shot.src);
+          if (srcset) {
+            img.sizes = CHOSEN_PIC_SIZES;
+            img.srcset = srcset;
+          }
+          img.src = shot.src;
           btn.appendChild(img);
           pics.appendChild(btn);
         });
         chosenDesign.hidden = false;
+        pics.scrollLeft = 0;
+        requestAnimationFrame(syncChosenArrows);
+      }
+      function syncChosenArrows() {
+        const pics = document.getElementById('chosenDesignPics');
+        if (!pics || !chosenPrev || !chosenNext) return;
+        const room = pics.scrollWidth - pics.clientWidth;
+        const at = Math.abs(pics.scrollLeft);
+        chosenPrev.hidden = at < 2;
+        chosenNext.hidden = room - at < 2;
+      }
+      function stepChosenPics(dir) {
+        const pics = document.getElementById('chosenDesignPics');
+        const first = pics && pics.querySelector('.cd-pic');
+        if (!first) return;
+        const gap = parseFloat(getComputedStyle(pics).columnGap) || 0;
+        const reduce =
+          window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        pics.scrollBy({
+          left: -dir * (first.offsetWidth + gap),
+          behavior: reduce ? 'auto' : 'smooth',
+        });
+      }
+      if (chosenPrev && chosenNext) {
+        chosenPrev.addEventListener('click', () => stepChosenPics(-1));
+        chosenNext.addEventListener('click', () => stepChosenPics(1));
+        document
+          .getElementById('chosenDesignPics')
+          .addEventListener('scroll', syncChosenArrows, { passive: true });
+        window.addEventListener('resize', syncChosenArrows);
       }
       if (chosenDesign) {
         document.getElementById('chosenDesignPics').addEventListener('click', (e) => {

@@ -78,15 +78,25 @@ test('a short title is left alone entirely', async ({ page }) => {
   await expect(page.getByTestId('custom-title-break')).toBeHidden();
 });
 
-test('the standing hint is one short line, said before anything is typed', async ({ page }) => {
-  // The owner cut it down so it gets read (2026-10-19): a long title prints smaller, and the peek below shows how.
-  // The line-break advice is no longer in it. That lives in the warning above, which fires on a long title and
-  // offers the break as a button (first test in this file).
+test('the standing hint is two short lines, said before anything is typed', async ({ page }) => {
+  // The owner's two lines (2026-10-20): a line break makes the title bigger, and the peek below shows exactly what
+  // prints. Each line is its own editable text, so an edit to one cannot flatten the other into it.
   await toTitleStep(page);
   const hint = page.getByTestId('custom-title-hint');
   await expect(hint).toBeVisible();
-  await expect(hint).toHaveText('כותרת ארוכה יוצאת קטנה יותר. ההצצה למטה מראה בדיוק איך זה ייראה.');
-  await expect(hint).not.toContainText('ירידת שורה');
+  const lines = hint.locator('[data-edit]');
+  await expect(lines).toHaveText([
+    'ניתן לרדת שורה להגדלת הכותרת!',
+    'הצצה למטה מראה בדיוק מה תקבלו',
+  ]);
+  await expect(lines.nth(0)).toHaveAttribute('data-edit', 'options-customtitle-hint');
+  await expect(lines.nth(1)).toHaveAttribute('data-edit', 'options-customtitle-hint-2');
+  // two lines on screen, not one run (both read in one frame: the step slides in as it appears)
+  const [a, b] = await lines.evaluateAll((els) =>
+    els.map((el) => el.getBoundingClientRect().toJSON())
+  );
+  expect(b.top).toBeGreaterThanOrEqual(a.bottom - 1);
+  await expect(hint).not.toContainText('ייראה');
   // …and it says it while the box is still empty, not only after a long title.
   await expect(page.locator('#customTitleInput')).toHaveValue('');
   await expect(page.getByTestId('custom-title-warn')).toBeHidden();
