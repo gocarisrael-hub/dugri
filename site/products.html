@@ -718,11 +718,6 @@
       import { fetchPricing, applySale, restampSale, PRICING_FALLBACK } from './js/pricing.js';
       import { loadDesignImages, galleryFor, srcsetFor, SIZES } from './js/design-images.js';
       import { defer, watchTrack } from './js/lazy-media.js';
-      // Reuse the detail page's override helpers so the grid and PDP can never
-      // diverge on how a saved (possibly blank) name override is resolved. product.js
-      // only auto-boots when a #galleryTrack exists (PDP only), so importing it here
-      // for the pure helpers has no side effects.
-      import { overrideKeys, overrideText } from './js/product.js';
 
       // Owner-editable store price. The grid renders IMMEDIATELY with the launch
       // defaults (never blank / never blocked), then a timeout-bounded fetch overlays
@@ -736,14 +731,13 @@
       const allDesigns = DESIGNS.slice();
       let currentMap = {}; // last resolved design-images gallery config
 
-      // Storefront names by precedence: the owner's inline content-edit name
-      // (product-<id>-name) WINS over the admin template rename (/api/design-names →
-      // themes.json display_he), which wins over the built-in catalog name. Both maps
-      // fill in async (fail-safe {} on error) — the grid ships with built-in names.
+      // Storefront names: the admin name (/api/design-names → themes.json display_he)
+      // over the built-in catalog name, the same on every surface. An inline content
+      // edit saved earlier under product-<id>-name is ignored: names change only in the
+      // admin. The map fills in async (fail-safe {}), so the grid ships with built-in names.
       let designNames = {}; // admin design-names
-      let nameOverrides = {}; // inline content-edit names (non-empty)
       function resolvedName(d) {
-        return nameOverrides[d.id] || designNames[d.id] || d.name;
+        return designNames[d.id] || d.name;
       }
 
       // Stamp a `.product-price` flex row: a `.now` current price first, then a
@@ -954,19 +948,11 @@
         }
       }
 
-      // The owner's inline content-edit names live on the product.html content page
-      // (product-<id>-name). Fetch that page's overrides so a name edited on a detail
-      // page also renames the grid card. Fail-safe: {} on any error.
-      const loadContentNames = fetch('/api/content?page=product.html')
-        .then((r) => (r.ok ? r.json() : { overrides: {} }))
-        .then((data) => (data && data.overrides) || {})
-        .catch(() => ({}));
-
       // First paint from the shipped renders + built-in names — never blocks on the
       // network, so the grid always renders.
       renderGrid({});
 
-      // Overlay the owner-editable names (content override > admin name), fail-soft.
+      // Overlay the admin names, fail-soft.
       // syncDesignNames also writes the live names onto the catalog objects, so a
       // card built AFTER this (a custom design joining the grid) starts from the
       // renamed value instead of the bundled default. `designNames` is still kept
@@ -979,16 +965,10 @@
           if (hidden.includes(allDesigns[i].id)) allDesigns.splice(i, 1);
         renderGrid(currentMap);
       };
-      Promise.all([syncDesignNames(dropHidden, { lists: [allDesigns] }), loadContentNames])
-        .then(([names, contentOv]) => {
+      syncDesignNames(dropHidden, { lists: [allDesigns] })
+        .then((names) => {
           designNames = names || {};
-          const ov = {};
-          for (const d of allDesigns) {
-            const c = overrideText(contentOv, overrideKeys(d.id).name);
-            if (c != null && String(c).trim() !== '') ov[d.id] = c;
-          }
-          nameOverrides = ov;
-          if (Object.keys(designNames).length || Object.keys(nameOverrides).length) applyNames();
+          if (Object.keys(designNames).length) applyNames();
         })
         .catch(() => {});
 

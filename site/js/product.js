@@ -74,9 +74,10 @@ const UPLOAD_PATH_RE = /^\/content-uploads\/[a-f0-9]{16}\.(webp|jpe?g|png)$/;
 export function fieldKey(id, field) {
   return `product-${id}-${field}`;
 }
+// No `name` key: a design's name comes only from the admin (/api/design-names), so an inline
+// edit saved earlier under product-<id>-name is ignored and the title is not editable here.
 export function overrideKeys(id) {
   return {
-    name: fieldKey(id, 'name'),
     about: fieldKey(id, 'about'),
     photos: fieldKey(id, 'photos'),
   };
@@ -466,14 +467,10 @@ function wireBack() {
 function renderInfo(d, overrides) {
   const keys = overrideKeys(d.id);
 
-  // Title: tag it editable per-design and show the saved override if any.
+  // Title: the design's name; the admin name lands on it in applyDesignNames.
   const title = document.getElementById('pdpTitle');
-  const nameOv = overrideText(overrides, keys.name);
-  const name = nameOv != null ? nameOv : d.name;
-  if (title) {
-    title.setAttribute('data-edit', keys.name);
-    title.textContent = name;
-  }
+  const name = d.name;
+  if (title) title.textContent = name;
   document.title = `${name} · דוגרי`;
 
   const now = document.getElementById('pdpPriceNow');
@@ -618,12 +615,6 @@ function onPhotosChanged(e) {
 // (the core render used the defaults). Idempotent; safe to call with {}.
 function applyTextOverrides(d, overrides) {
   const keys = overrideKeys(d.id);
-  const title = document.getElementById('pdpTitle');
-  const nameOv = overrideText(overrides, keys.name);
-  if (title && nameOv != null) {
-    title.textContent = nameOv;
-    document.title = `${nameOv} · דוגרי`;
-  }
   const about = document.getElementById('pdpAbout');
   const aboutOv = overrideText(overrides, keys.about);
   if (about && aboutOv != null) about.textContent = aboutOv;
@@ -657,21 +648,14 @@ function applyPerDesignFields(d, overrides) {
 // template rename → themes.json display_he) as the BASE name layer: the main
 // title, the browser tab, and every related-rail card. Runs INDEPENDENTLY of the
 // content-override fetch (so a slow /api/design-names never delays content
-// overrides / the editor), yet the per-design inline content override
-// (product-<id>-name) still WINS: the main title is only set here when NO content
-// name override is currently applied, and applyTextOverrides (content) overrides
-// this base whenever it runs with an override present — so the outcome is the same
-// regardless of which fetch resolves first. Fail-soft: an empty map leaves every
+// overrides / the editor). The admin name always wins: a product-<id>-name content
+// override saved before names moved to the admin is ignored, so this page, the grid
+// and the homepage show the same name. Fail-soft: an empty map leaves every
 // built-in catalog name untouched.
 function applyDesignNames(d, names) {
   const map = names || {};
   const main = map[d.id];
-  // Respect an already-applied inline content name override (it wins over the
-  // admin rename); currentOverrides is {} until /api/content resolves, so when
-  // this runs first the title takes the rename and applyTextOverrides later
-  // re-asserts the content override on top.
-  const contentName = overrideText(currentOverrides, overrideKeys(d.id).name);
-  if (main && contentName == null) {
+  if (main) {
     const title = document.getElementById('pdpTitle');
     if (title) title.textContent = main;
     document.title = `${main} · דוגרי`;
@@ -783,11 +767,11 @@ function boot() {
 
   // THEN overlay the per-design content overrides + the owner-editable names as
   // TWO INDEPENDENT, fail-soft fetches — never chained. The content-override path
-  // (name/about text, curated photos, and the editor binding via notifyInjected)
+  // (about text, curated photos, and the editor binding via notifyInjected)
   // applies the instant /api/content resolves, exactly as before this feature, so
   // a slow/down /api/design-names can NEVER delay it. The design-name overlay
   // applies whenever syncDesignNames resolves (capped ~2.5s, {} on timeout/error);
-  // it defers to a content name override so precedence holds either resolve order.
+  // the content path never touches the name, so the order they resolve in is moot.
   // applyOverridesToPage runs SYNCHRONOUSLY when the editor marks ready (see
   // loadOverrides), i.e. before edit mode captures per-field baselines — so a
   // legacy-inherited value is in the DOM first and never reads as unsaved.
@@ -811,8 +795,7 @@ function boot() {
     applySale(p.sale);
   });
 
-  // Overlay the owner-editable design names (independent, fail-soft) — see the
-  // note above; a name override applied here defers to a content name override.
+  // Overlay the admin design names (independent, fail-soft) — see the note above.
   // syncDesignNames updates the CATALOG first, so anything read from it after this
   // point (a gallery slide's label/alt, a rebuilt carousel) carries the renamed
   // value too; the callback then re-stamps the nodes already painted.
