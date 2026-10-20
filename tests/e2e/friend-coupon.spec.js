@@ -84,6 +84,17 @@ test.describe('the bar on a friend’s collect link', () => {
     expect(shown[0].params).toEqual({ collection_id: id });
   });
 
+  test('outside the redesign mode the bar keeps its own square look', async ({ page, request }) => {
+    const { id } = await makeParty(request);
+    await page.goto(`/collect.html?c=${id}`);
+    await addWord(page, uniq('word'));
+    await expect(bar(page)).toBeInViewport();
+    const radius = await page
+      .getByTestId('friend-bar-go')
+      .evaluate((el) => getComputedStyle(el).borderTopLeftRadius);
+    expect(radius).toBe('0px');
+  });
+
   test('× hides it for good on this browser', async ({ page, request }) => {
     const { id } = await makeParty(request);
     await page.goto(`/collect.html?c=${id}`);

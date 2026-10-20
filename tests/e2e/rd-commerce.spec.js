@@ -422,3 +422,44 @@ test('the WhatsApp pill on pay-done and pay-success keeps its words on one line 
     await noSidewaysScroll(page, url);
   }
 });
+
+// The friend coupon's bar and sheet (js/friend-bar.js, which carries its own styles) in the mode: the ink bar with the
+// paper pill, and the shell's sheet with its pill field, ink pill and round ✕. Outside the mode friend-coupon.spec.js
+// checks they keep their own look.
+test('collect.html friend bar and sheet in the mode take the shell look', async ({
+  page,
+  request,
+}) => {
+  const r = await request.post('/api/collections', { data: { honoree_name: 'שירה' } });
+  const { id } = await r.json();
+  await page.goto(`/collect.html?c=${id}`);
+  await page.locator('#wordInput').fill(uniq('מילה'));
+  await page.locator('#addBtn').click();
+  await expect(page.getByTestId('friend-bar')).toBeInViewport();
+
+  const pill = (sel) =>
+    page.locator(sel).evaluate((el) => ({
+      radius: parseFloat(getComputedStyle(el).borderTopLeftRadius),
+      face: getComputedStyle(el).fontFamily,
+    }));
+  const go = await pill('[data-testid="friend-bar-go"]');
+  expect(go.radius).toBeGreaterThan(20);
+  expect(go.face).toMatch(/M PLUS Rounded/);
+
+  await page.getByTestId('friend-bar-go').click();
+  const look = await page.locator('#friendSheet').evaluate((sheet) => {
+    const cs = (sel) => getComputedStyle(sheet.querySelector(sel));
+    return {
+      corner: parseFloat(cs('.fs-card').borderTopLeftRadius),
+      frame: parseFloat(cs('.fs-card').borderTopWidth),
+      field: parseFloat(cs('input[type=email]').borderTopLeftRadius),
+      send: parseFloat(cs('button.fs-go').borderTopLeftRadius),
+      x: cs('button.fs-x').borderTopLeftRadius,
+    };
+  });
+  expect(look.corner).toBeGreaterThan(0);
+  expect(look.frame).toBeGreaterThanOrEqual(2);
+  expect(look.field).toBeGreaterThan(20);
+  expect(look.send).toBeGreaterThan(20);
+  expect(look.x).toBe('50%');
+});
