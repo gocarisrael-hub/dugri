@@ -122,6 +122,9 @@ const GLYPH_ORDER = `(() => {
   if (!row) return 'NO ROW';
   const out = [];
   const walk = (n) => {
+    // The checkout's breakdown line (.pay-math) shares the total's row and carries amounts of its own; this measures
+    // the price pair, so the line is not walked. Its amounts are .amt runs, isolated on their own.
+    if (n.nodeType === 1 && n.classList.contains('pay-math')) return;
     if (n.nodeType === 3 && n.textContent.trim()) {
       const r = document.createRange();
       for (let i = 0; i < n.textContent.length; i++) {
