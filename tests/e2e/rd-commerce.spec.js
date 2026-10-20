@@ -463,4 +463,14 @@ test('collect.html friend bar and sheet in the mode take the shell look', async 
   expect(look.field).toBeGreaterThan(20);
   expect(look.send).toBeGreaterThan(20);
   expect(look.x).toBe('50%');
+  // The sheet lies over the cookie chip (#720), in the mode as outside it (consent-chip-layer.spec.js).
+  const chip = await page.evaluate(() => {
+    const el = document.getElementById('cookieNotice');
+    if (!el) return 'no chip';
+    const r = el.getBoundingClientRect();
+    return !!document
+      .elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      .closest('#friendSheet');
+  });
+  expect(chip, 'the sheet covers the cookie chip').toBe(true);
 });

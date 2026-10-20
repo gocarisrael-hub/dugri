@@ -99,9 +99,22 @@ for (const width of [360, 390]) {
         pill: r('#cardPayBtn').bottom,
         bar: r('#payBar').top,
         help: r('.wa-help').top,
+        docked: document.querySelector('.wa-help').classList.contains('wa-help--docked'),
+        margin: parseFloat(
+          getComputedStyle(document.querySelector('#cardPayBtn')).scrollMarginBottom
+        ),
+        bars: ['--pay-bar-h', '--friend-bar-h']
+          .map(
+            (v) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(v)) || 0
+          )
+          .reduce((a, b) => a + b, 0),
       };
     });
     expect(m.pill, 'the pill ends above the pay bar').toBeLessThanOrEqual(m.bar);
     expect(m.pill, 'the pill ends above the help button').toBeLessThanOrEqual(m.help);
+    // The help rides INSIDE the bar while the bar is up (js/wa-help.js), so the pill's clearance is the bars alone,
+    // not a floating help button's height on top.
+    expect(m.docked, 'the help is docked in the pay bar').toBe(true);
+    expect(m.margin, "the pill's clearance is the bars plus 12px").toBeCloseTo(m.bars + 12, 0);
   });
 }
