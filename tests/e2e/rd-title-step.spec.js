@@ -3,10 +3,14 @@ import zlib from 'node:zlib';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
 import { previewRedesign } from './helpers/redesign.js';
 
-// The title step in redesign mode, the owner's round of 2026-10-19:
-//  - the chosen design's pictures are the homepage's prints (new.html "איך דוגרי נולד"): bigger, a white paper frame,
-//    the ink outline, a strip of tape, a small tilt;
-//  - the live preview (card → back → board, whichever are on offer) goes round both ways, by swipe and by the arrows beside its dots;
+// The title step in redesign mode.
+//  - the chosen design's photos are just the photos (owner, 2026-10-20: no paper frame, no tape, no tilt, no outline),
+//    big, in a row that scrolls sideways: a swipe on a phone, the arrows on a wide screen. Each shows whole, its window
+//    the photo's own shape;
+//  - each photo is the right-sized file from the server's width ladder, and shows only once it has fully arrived: the
+//    camera originals painted top down on a phone's connection, a strip at the top of an empty window ("אן בי איי");
+//  - the live preview (card → back → board, whichever are on offer) is smaller, and goes round both ways, by swipe and
+//    by the arrows beside its dots;
 //  - on a wide screen "הבא" is a button beside "הקודם", not a bar across the gap. A phone keeps the stretched one.
 // The live site keeps its look: the preview stops at the ends and has no arrows (wizard-preview-visual.spec.js).
 
@@ -47,60 +51,66 @@ const swipe = async (page, fromX, toX) => {
   await vp.dispatchEvent('pointerup', { clientX: toX, clientY: 200 });
 };
 
-async function toTitleStep(page, { live = false } = {}) {
+async function toTitleStep(page, { live = false, waitUntil = 'load' } = {}) {
   if (!live) await previewRedesign(page);
   await mockPreview(page);
-  await page.goto('/options.html?design=japanese&step=3');
+  await page.goto('/options.html?design=japanese&step=3', { waitUntil });
   await expect(page.getByTestId('step-3')).toBeVisible();
 }
 
-test('the chosen design shows big taped prints, and they never widen the step', async ({
-  page,
-}) => {
-  await toTitleStep(page);
-  const pic = page.getByTestId('chosen-design-pic').first();
-  await expect(pic).toBeVisible();
-  const look = await pic.evaluate((el) => {
-    const cs = getComputedStyle(el);
-    const tape = getComputedStyle(el, '::before');
-    const img = el.querySelector('img').getBoundingClientRect();
-    return {
-      bg: cs.backgroundColor,
-      outline: parseFloat(cs.outlineWidth),
-      shadow: cs.boxShadow,
-      rotate: cs.rotate,
-      tape: tape.content,
-      imgW: img.width,
-      imgH: img.height,
-    };
-  });
-  expect(look.bg).toBe('rgb(255, 255, 255)'); // the paper frame
-  expect(look.outline).toBeGreaterThanOrEqual(2);
-  expect(look.shadow).not.toBe('none');
-  expect(look.rotate).not.toBe('none');
-  expect(look.tape).not.toBe('none');
-  // the old strip was 72 px tall; a print is at least 136 px wide on any screen
-  expect(look.imgW).toBeGreaterThanOrEqual(120);
-  expect(look.imgH).toBeGreaterThan(90);
+for (const width of [360, 390, 1440]) {
+  test(`at ${width}: the chosen design's photos are just the photos, big, and never widen the step`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await toTitleStepWithPhotos(page);
+    const pic = page.getByTestId('chosen-design-pic').first();
+    await expect(pic).toBeVisible();
+    const look = await pic.evaluate((el) => {
+      const cs = getComputedStyle(el);
+      const img = el.querySelector('img');
+      const ics = getComputedStyle(img);
+      return {
+        bg: cs.backgroundColor,
+        padding: cs.padding,
+        outline: cs.outlineStyle === 'none' ? 0 : parseFloat(cs.outlineWidth),
+        shadow: cs.boxShadow,
+        rotate: cs.rotate,
+        tape: getComputedStyle(el, '::before').content,
+        imgOutline: ics.outlineStyle === 'none' ? 0 : parseFloat(ics.outlineWidth),
+        imgShadow: ics.boxShadow,
+        imgW: img.getBoundingClientRect().width,
+      };
+    });
+    // no frame of any kind: no paper, no padding round the photo, no ink line, no shadow, no tilt, no tape
+    expect(look).toMatchObject({
+      bg: 'rgba(0, 0, 0, 0)',
+      padding: '0px',
+      outline: 0,
+      shadow: 'none',
+      rotate: 'none',
+      tape: 'none',
+      imgOutline: 0,
+      imgShadow: 'none',
+    });
+    // bigger than the prints were (at most 196 px wide, less their paper)
+    expect(look.imgW).toBeGreaterThanOrEqual(220);
 
-  // neighbouring prints lean opposite ways
-  const second = await page
-    .getByTestId('chosen-design-pic')
-    .nth(1)
-    .evaluate((el) => getComputedStyle(el).rotate);
-  expect(second).not.toBe(look.rotate);
-
-  // the strip scrolls inside the box: the box is no wider than the step, and the page does not scroll sideways
-  const fits = await page.evaluate(() => {
-    const box = document.getElementById('chosenDesign').getBoundingClientRect();
-    const step = document.querySelector('[data-step="3"]').getBoundingClientRect();
-    return {
-      inStep: box.width <= step.width + 1,
-      noSideScroll: document.documentElement.scrollWidth <= window.innerWidth,
-    };
+    // the row scrolls inside the box: the box is no wider than the step, and the page does not scroll sideways
+    const fits = await page.evaluate(() => {
+      const box = document.getElementById('chosenDesign').getBoundingClientRect();
+      const step = document.querySelector('[data-step="3"]').getBoundingClientRect();
+      const row = document.getElementById('chosenDesignPics');
+      return {
+        inStep: box.width <= step.width + 1,
+        noSideScroll: document.documentElement.scrollWidth <= window.innerWidth,
+        rowScrolls:
+          row.scrollWidth > row.clientWidth + 1 && getComputedStyle(row).overflowX === 'auto',
+      };
+    });
+    expect(fits).toEqual({ inStep: true, noSideScroll: true, rowScrolls: true });
   });
-  expect(fits).toEqual({ inStep: true, noSideScroll: true });
-});
+}
 
 test('the live preview goes round both ways, by swipe and by arrow', async ({ page }) => {
   await toTitleStep(page);
@@ -183,7 +193,7 @@ test('on a wide screen הבא is a button beside הקודם; a phone keeps the w
   expect(nb.width).toBeGreaterThan(bb.width * 1.5);
 });
 
-// ---- the prints' photos fill their window (owner, 2026-10-20) ----
+// ---- the photos fill their window (owner, 2026-10-20) ----
 // Solid fixtures of known shapes, read back in pixels from the page, so a declared style cannot pass for a painted one.
 // The 5:4 photo is plain red. The odd ones (a 5:6 portrait and a square, the shapes of קליפורניה's and דני's shots)
 // are red with a blue strip along their very top and their very foot, so any crop at all takes a strip off.
@@ -240,7 +250,7 @@ function photoPng(w, h, bands = []) {
   ]);
 }
 
-async function toTitleStepWithPhotos(page) {
+async function toTitleStepWithPhotos(page, { srcsets } = {}) {
   const pngs = {
     [PHOTO_54]: photoPng(500, 400),
     [PHOTO_PORTRAIT]: photoPng(400, 480, EDGES),
@@ -259,6 +269,7 @@ async function toTitleStepWithPhotos(page) {
             order: ['store', 'front', 'back'],
           },
         },
+        ...(srcsets ? { srcsets } : {}),
       },
     })
   );
@@ -282,7 +293,7 @@ async function toTitleStepWithPhotos(page) {
   );
 }
 
-// Colours at points of a print's photo, given as fractions across and down the photo's own (tilted) box.
+// Colours at points of a photo, given as fractions across and down the photo's own box.
 async function photoPixels(page, index, pts) {
   const img = page.locator('.cd-pic img').nth(index);
   await img.scrollIntoViewIfNeeded();
@@ -389,44 +400,66 @@ test("no crop: every print's window is its own photo's shape, the photo whole an
   }
 });
 
-test('the prints stand on one line, each as tall as its photo', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  await toTitleStepWithPhotos(page);
-  const rows = await page
-    .locator('.cd-pic')
-    .evaluateAll((btns) =>
-      btns
-        .slice(0, 3)
-        .map((b) => ({ bottom: b.offsetTop + b.offsetHeight, h: b.offsetHeight, w: b.offsetWidth }))
-    );
-  // equal widths, the portrait print the tallest, and every print's foot on the same line
-  expect(new Set(rows.map((r) => r.w)).size).toBe(1);
-  expect(rows[1].h).toBeGreaterThan(rows[2].h);
-  expect(rows[2].h).toBeGreaterThan(rows[0].h);
-  for (const r of rows) expect(Math.abs(r.bottom - rows[0].bottom)).toBeLessThanOrEqual(1); // px rounding
-});
-
-test('the prints are crisp: no blur on the frame, the photo, the tape or the box', async ({
+test('a wide screen steps through the row with arrows, shown only where there is somewhere to go', async ({
   page,
 }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toTitleStepWithPhotos(page);
+  const prev = page.getByTestId('chosen-design-prev');
+  const next = page.getByTestId('chosen-design-next');
+  await expect(prev).toHaveAttribute('aria-label', 'התמונה הקודמת');
+  await expect(next).toHaveAttribute('aria-label', 'התמונה הבאה');
+  // at the start (the right, in RTL) there is only a way on, and it is the left-hand arrow
+  await expect(next).toBeVisible();
+  await expect(prev).toBeHidden();
+  const row = page.getByTestId('chosen-design-pics');
+  const at = () => row.evaluate((el) => Math.abs(el.scrollLeft));
+  // a click scrolls smoothly: read the arrows only once the row has stopped
+  const settle = () =>
+    expect
+      .poll(async () => {
+        const a = await at();
+        await page.waitForTimeout(120);
+        return Math.abs((await at()) - a);
+      })
+      .toBeLessThan(1);
+  const nb = await next.boundingBox();
+  const rb = await row.boundingBox();
+  expect(nb.x + nb.width / 2).toBeLessThan(rb.x + rb.width / 2);
+  await next.click();
+  await settle();
+  expect(await at()).toBeGreaterThan(100);
+  await expect(prev).toBeVisible();
+  const pb = await prev.boundingBox();
+  expect(pb.x + pb.width / 2).toBeGreaterThan(rb.x + rb.width / 2);
+  // on to the end: the way on goes away
+  for (let i = 0; i < 6 && (await next.isVisible()); i++) {
+    await next.click();
+    await settle();
+  }
+  await expect(next).toBeHidden();
+  await prev.click();
+  await settle();
+  await expect(next).toBeVisible();
+});
+
+test('a phone swipes: no arrows', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await toTitleStepWithPhotos(page);
+  for (const id of ['chosen-design-prev', 'chosen-design-next'])
+    await expect(page.getByTestId(id)).toBeHidden();
+});
+
+test('the photos are crisp: no blur anywhere in the box', async ({ page }) => {
   await toTitleStepWithPhotos(page);
   const looks = await page.evaluate(() => {
     const btn = document.querySelector('.cd-pic');
     const img = btn.querySelector('img');
-    const read = (el, pseudo) => {
-      const cs = getComputedStyle(el, pseudo);
+    const read = (el) => {
+      const cs = getComputedStyle(el);
       return { filter: cs.filter, backdrop: cs.backdropFilter, shadow: cs.boxShadow };
     };
-    return {
-      frame: read(btn),
-      tape: read(btn, '::before'),
-      photo: read(img),
-      box: read(document.getElementById('chosenDesign')),
-      photoEdge: {
-        style: getComputedStyle(img).outlineStyle,
-        width: parseFloat(getComputedStyle(img).outlineWidth),
-      },
-    };
+    return { pic: read(btn), photo: read(img), box: read(document.getElementById('chosenDesign')) };
   });
   // each shadow's third length is its blur radius
   const blurs = (shadow) =>
@@ -437,12 +470,86 @@ test('the prints are crisp: no blur on the frame, the photo, the tape or the box
           .split(',')
           .map((s) => parseFloat((s.match(/-?[\d.]+px/g) || [])[2] || '0'));
   for (const [name, l] of Object.entries(looks)) {
-    if (name === 'photoEdge') continue;
     expect(l.filter, `${name} filter`).toBe('none');
     expect(l.backdrop, `${name} backdrop-filter`).toBe('none');
     for (const b of blurs(l.shadow)) expect(b, `${name} shadow blur`).toBe(0);
   }
-  expect(looks.frame.shadow).not.toBe('none'); // the hard shadow is still there
-  // the photo has an edge of its own: a hairline of ink, not the studio backdrop fading into the paper
-  expect(looks.photoEdge).toEqual({ style: 'solid', width: 1 });
+});
+
+// ---- "אן בי איי": on a phone every photo was a strip at the top of an empty window (owner, 2026-10-20) ----
+// The box loaded the owner's camera originals (2600-3000 px baseline JPEGs, up to 800 KB each), and a baseline JPEG
+// paints top down as it arrives. Two halves to the fix, one test each: the file asked for is the right-sized rung of
+// the server's width ladder, and a photo still arriving is not shown at all.
+test('each photo is the right-sized file from the width ladder, not the camera original', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const rungs = [200, 400, 800, 1200, 1600];
+  const ladder = (name) => rungs.map((w) => `/design-img/r1/${w}/${name} ${w}w`).join(', ');
+  const asked = [];
+  await page.route('**/design-img/**', (route) => {
+    asked.push(new URL(route.request().url()).pathname);
+    route.fulfill({ contentType: 'image/png', body: photoPng(500, 400) });
+  });
+  await toTitleStepWithPhotos(page, {
+    srcsets: {
+      'cccccccccccccccc.png': ladder('cccccccccccccccc.png'),
+      'dddddddddddddddd.png': ladder('dddddddddddddddd.png'),
+      'eeeeeeeeeeeeeeee.png': ladder('eeeeeeeeeeeeeeee.png'),
+    },
+  });
+  const srcs = await page
+    .locator('.cd-pic img')
+    .evaluateAll((imgs) => imgs.slice(0, 3).map((i) => ({ src: i.currentSrc, sizes: i.sizes })));
+  for (const { src, sizes } of srcs) {
+    // a rung sized to the screen (a phone at 3x takes 1200), never the camera original under /content-uploads
+    expect(new URL(src).pathname).toMatch(/^\/design-img\/r1\/(200|400|800|1200)\//);
+    expect(sizes).toContain('320px');
+  }
+  expect(asked.length).toBeGreaterThanOrEqual(3);
+});
+
+test('a photo still arriving is not shown: the window waits, then shows it whole', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  let release;
+  const held = new Promise((r) => (release = r));
+  await page.route('**/content-uploads/cccccccccccccccc.png', async (route) => {
+    await held;
+    route.fulfill({ contentType: 'image/png', body: photoPng(500, 400) });
+  });
+  await page.route('**/api/design-images*', (route) =>
+    route.fulfill({
+      json: {
+        images: { japanese: { base: { store: { img: PHOTO_54 } }, order: ['store'] } },
+      },
+    })
+  );
+  // the held photo holds the page's load event too
+  await toTitleStep(page, { waitUntil: 'domcontentloaded' });
+  const img = page.locator('.cd-pic img').first();
+  await expect(img).toBeAttached();
+  // still arriving: nothing of it on screen
+  await page.waitForTimeout(300);
+  expect(await img.evaluate((el) => el.complete)).toBe(false);
+  expect(await img.evaluate((el) => getComputedStyle(el).opacity)).toBe('0');
+  release();
+  await expect.poll(() => img.evaluate((el) => getComputedStyle(el).opacity)).toBe('1');
+});
+
+test('the live preview is smaller: the card at most 280px, the board at most 480px', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await toTitleStep(page);
+  await page.getByTestId('custom-title-input').fill('ליאת חוגגת 40');
+  await expect(page.getByTestId('name-preview-dot-back')).toBeVisible();
+  const vp = page.getByTestId('name-preview-viewport');
+  await expect.poll(async () => (await vp.boundingBox()).width).toBeLessThanOrEqual(280);
+  expect((await vp.boundingBox()).width).toBeGreaterThanOrEqual(240); // still a card you can read
+  if (await page.getByTestId('name-preview-dot-board').count()) {
+    await page.getByTestId('name-preview-dot-board').click();
+    await expect.poll(async () => (await vp.boundingBox()).width).toBeLessThanOrEqual(480);
+  }
 });

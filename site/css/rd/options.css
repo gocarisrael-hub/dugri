@@ -475,86 +475,128 @@ html.rd .cd-change {
   font-weight: var(--weight-label);
   cursor: pointer;
 }
-/* The pictures are the homepage's prints (new.html, "איך דוגרי נולד"; css/home-new.css .print): a white paper frame
-   with a deep bottom, the ink outline, the hard shadow, a strip of tape and a small alternating tilt. Two to a row and
-   the rest a swipe away (owner, 2026-10-19: "bigger, in the homepage's vintage style"). The homepage's slow drift is
-   left out: this is a form step, and nothing here should move while she types. */
-html.rd .cd-pics {
-  --cdw: clamp(136px, 40vw, 196px);
+/* The pictures are just the photos, big, in a row that scrolls sideways: a swipe on a phone, the wheel or the arrows
+   on a wide screen (owner, 2026-10-20: no paper frame, no tape, no tilt, no outline; bigger). The first photo is most
+   of the row's width on a phone, so the next one peeking in says there is more. */
+html.rd .cd-strip {
+  position: relative;
   min-width: 0;
-  contain: inline-size; /* the prints scroll inside the column; they never widen the step to fit them all */
+}
+/* The step shrink-wraps to its content (.wiz-step's auto margins in main.wrap's column), and with the photo row
+   contained that content is the title field: 283px on a wide screen, too narrow for a photo bigger than the prints
+   were. So the title step is given its own width: the whole column on a phone, 600px on a wide screen. */
+html.rd .wiz-step[data-step='3'] {
+  width: min(100%, 600px);
+}
+html.rd .cd-pics {
+  --cdw: clamp(220px, 74vw, 320px);
+  min-width: 0;
+  contain: inline-size; /* the photos scroll inside the column; they never widen the step to fit them all */
   display: flex;
-  /* a print is as tall as its photo (below), so a portrait one stands taller; they stand on one line, like prints
-     propped along a shelf, rather than being stretched to the tallest with blank paper under the shorter ones */
-  align-items: flex-end;
-  gap: 18px;
+  align-items: center; /* a portrait photo stands taller than a landscape one; they share a centre line */
+  gap: 12px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
-  scroll-snap-type: x proximity;
+  scroll-snap-type: x mandatory;
   scrollbar-width: none;
-  /* room for the tape above and the tilt and shadow around each print, which the scroller would otherwise clip */
-  padding: 16px 8px 14px;
 }
 html.rd .cd-pics::-webkit-scrollbar {
   display: none;
 }
-/* each picture is a button that opens the photo viewer (#deckView) on it */
+/* each photo is a button that opens the photo viewer (#deckView) on it */
 html.rd .cd-pic {
-  position: relative;
   flex: 0 0 auto;
   display: block;
   width: var(--cdw);
   margin: 0;
-  padding: 7px 7px 22px;
-  background: var(--color-paper);
+  padding: 0;
+  background: none;
   border: 0;
   border-radius: 0;
-  outline: 2.5px solid var(--color-ink);
-  outline-offset: -1px;
-  box-shadow: var(--shadow);
+  box-shadow: none;
   scroll-snap-align: start;
-  rotate: 3deg;
   cursor: zoom-in;
-}
-html.rd .cd-pic:nth-child(even) {
-  rotate: -3deg;
-}
-html.rd .cd-pic::before {
-  content: '';
-  position: absolute;
-  top: -11px;
-  left: 50%;
-  width: 58px;
-  height: 20px;
-  margin-left: -29px;
-  background: rgba(244, 239, 230, 0.82);
-  border-right: 2px dashed rgba(0, 0, 0, 0.14);
-  border-left: 2px dashed rgba(0, 0, 0, 0.14);
-  rotate: -4deg;
-}
-html.rd .cd-pic:nth-child(even)::before {
-  rotate: 3deg;
 }
 html.rd .cd-pic:focus-visible {
   outline: 3px solid var(--color-ink);
-  outline-offset: 3px;
+  outline-offset: -3px;
 }
 /* The window is the photo's own shape, so every photo shows whole, edge to edge, with nothing cut and no bands
    (owner, 2026-10-20: "too big or too small for the frame"). The page sets each window's aspect-ratio from its photo
    once it loads (paintChosenDesign); until then it is 5:4, the shape of 37 of the shop's 40 photos (#702), so the
-   common print does not jump. `cover` only absorbs the sub-pixel rounding between the two.
-   The photos' studio backdrop darkens toward its corners, so on the white paper a photo had no edge of its own, just
-   a soft grey ring that read as a blurred inner shadow. A hairline of ink on the photo's own edge gives it the crisp
-   edge a print has. No blur anywhere: the frame's shadow is the hard --shadow. */
+   row does not jump. `cover` only absorbs the sub-pixel rounding between the two.
+   The photo is shown once it has fully arrived: a baseline JPEG paints from the top down as it loads, and a
+   half-arrived one is a strip at the top of an empty window. Until then the window is the ground colour. */
 html.rd .cd-pics img {
   display: block;
   width: 100%;
   height: auto;
   aspect-ratio: 5 / 4;
   object-fit: cover;
-  outline: 1px solid var(--color-ink);
-  outline-offset: -1px;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+html.rd .cd-pics img.is-loaded {
+  opacity: 1;
+}
+html.rd .cd-pic:has(img:not(.is-loaded)) {
   background: var(--color-ground);
+}
+@media (prefers-reduced-motion: reduce) {
+  html.rd .cd-pics img {
+    transition: none;
+  }
+}
+/* the arrows: a wide screen only (a phone swipes), over the row's ends, and only where there is somewhere to go */
+html.rd .cd-arrow {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+html.rd .cd-prev {
+  right: 6px; /* RTL: the row starts at the right */
+}
+html.rd .cd-next {
+  left: 6px;
+}
+html.rd .cd-arrow[hidden] {
+  display: none;
+}
+html.rd .cd-arrow:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+html.rd .cd-arrow:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 3px;
+}
+@media (max-width: 699px) {
+  html.rd .cd-arrow {
+    display: none;
+  }
+}
+
+/* the live preview, smaller (owner, 2026-10-20): the card and its back at 280px, the landscape board at 480px. The
+   card's title and words still read at that size. */
+html.rd .name-preview-viewport {
+  max-width: 280px;
+}
+html.rd .name-preview-viewport.is-board-view {
+  max-width: min(100%, 480px);
 }
 
 /* the live preview's arrows, either side of its dots (built by the page in this mode only); the views go round */
