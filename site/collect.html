@@ -14,6 +14,7 @@
       gtag('consent', 'default', { analytics_storage: 'denied' });
     </script>
     <script src="js/consent.js" defer></script>
+    <script src="js/wa-help.js" defer></script>
     <script type="module" src="js/analytics.js"></script>
     <meta name="robots" content="noindex" />
     <title>דוגרי · אוספים מילים</title>
@@ -8040,7 +8041,9 @@
            is owner-editable and a longer label wraps it taller, at which point a
            hard-coded offset would put the help button under it. 0 when there is
            no bar, which is every contributor and every paid order. The owner's
-           rule: the WhatsApp button is available always. */
+           rule: the WhatsApp button is available always. While the bar shows,
+           js/wa-help.js docks the help inside it, so this offset is for the
+           friend bar and the moment before the dock. */
         --wa-help-bottom: calc(16px + var(--pay-bar-h, 0px) + var(--friend-bar-h, 0px));
       }
     </style>
