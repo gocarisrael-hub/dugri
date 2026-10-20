@@ -5702,13 +5702,13 @@ app.get('/llms.txt', (req, res) => {
 // In the mode a page gets class="rd", redesign.css, css/rd/chrome.css, its own
 // css/rd/<page>.css (named after the file actually served, so "/" takes
 // new.html's) and redesign-shell.js, and the home page is new.html's content at
-// the same URL. Admin pages are left alone.
+// the same URL. Admin pages and the other exempt ones (isExemptFile) are left alone.
 // Out of the mode, this returns the page exactly as before.
 const redesignGate = require('./redesign-gate');
 function renderPage(req, res, file, fallback) {
   const rd = redesignGate.forRequest(req, { enabled: settings.get('redesign', 'enabled') });
   if (rd.setCookie) res.append('Set-Cookie', rd.setCookie);
-  const gated = rd.active && !redesignGate.isAdminFile(file);
+  const gated = rd.active && !redesignGate.isExemptFile(file);
   const source = (gated && redesignGate.homeSwap(file, SITE_DIR, fs)) || file;
   let html = fs.readFileSync(source, 'utf8');
   if (source !== file && rd.live) html = redesignGate.dropRobotsMeta(html);
