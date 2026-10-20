@@ -64,7 +64,6 @@
     { page: 'index.html', label: 'בית' },
     { page: 'options.html', label: 'הזמנה' },
     { page: 'collect.html', label: 'איסוף מילים' },
-    { page: 'how.html', label: 'איך זה עובד' },
     { page: 'products.html', label: 'מוצרים' },
     { page: 'product.html', label: 'מוצר' },
     { page: 'timer.html', label: 'טיימר' },
@@ -176,7 +175,7 @@
 
   // The page name is the html filename that the server actually serves for this
   // URL. The server maps extension-less routes to "<name>.html" (express.static
-  // extensions:['html'] — e.g. "/how" -> how.html), so we must do the same or the
+  // extensions:['html'] — e.g. "/terms" -> terms.html), so we must do the same or the
   // wrong page's overrides load. Rules: an explicit ".html" tail is taken as-is; a
   // bare "/" (empty last segment) is the homepage; an extension-less segment
   // becomes "<segment>.html"; any other real asset extension falls back to home.
@@ -191,7 +190,7 @@
   }
 
   // Resolve the page identity from the SERVED DOCUMENT itself, not the URL. Each
-  // page carries <meta name="dugri:page" content="how.html">, so a vanity/unknown
+  // page carries <meta name="dugri:page" content="terms.html">, so a vanity/unknown
   // route the server answers with index.html (its catch-all) correctly reads as
   // index.html — and a real page served at its extension-less path reads as its
   // own file. Falls back to the URL heuristic if the meta is missing.

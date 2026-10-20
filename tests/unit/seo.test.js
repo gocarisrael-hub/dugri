@@ -208,6 +208,30 @@ describe('seo routes (app)', () => {
     expect(x).toMatch(/product\.html\?design=[a-z]/);
   });
 
+  // how.html was retired (2026-10-20): its address answers 301 to the homepage, with the
+  // query (an ad's utm/fbclid) kept, and no sitemap, llms.txt or page links to it.
+  it('the retired how page redirects home and is listed nowhere', async () => {
+    for (const p of ['/how.html', '/how', '/how.html?utm_source=ig&fbclid=x']) {
+      const r = await fetch(base + p, {
+        redirect: 'manual',
+        headers: { 'x-forwarded-host': PROD },
+      });
+      expect(r.status, p).toBe(301);
+      const q = p.indexOf('?');
+      expect(r.headers.get('location'), p).toBe('/' + (q === -1 ? '' : p.slice(q)));
+    }
+    expect(await (await get('/sitemap.xml', PROD)).text()).not.toMatch(/how\.html/);
+    expect(await (await get('/llms.txt', PROD)).text()).not.toMatch(/how\.html/);
+    const site = path.join(serverDir, '..', 'site');
+    expect(fs.existsSync(path.join(site, 'how.html'))).toBe(false);
+    for (const f of fs.readdirSync(site).filter((n) => n.endsWith('.html')))
+      expect(fs.readFileSync(path.join(site, f), 'utf8'), f).not.toMatch(
+        /href="\/?how(\.html)?["#?]/
+      );
+    for (const f of ['redesign-shell.js', 'editor.js'])
+      expect(fs.readFileSync(path.join(site, 'js', f), 'utf8'), f).not.toMatch(/'how\.html'/);
+  });
+
   it('llms.txt answers with the brand brief', async () => {
     const r = await get('/llms.txt', PROD);
     expect(r.status).toBe(200);

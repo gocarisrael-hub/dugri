@@ -6,7 +6,7 @@
 // that does not exist.
 import { test, expect } from '@playwright/test';
 
-const PAGES = ['/index.html', '/products.html', '/product.html', '/how.html'];
+const PAGES = ['/index.html', '/products.html', '/product.html'];
 
 test.describe('the footer link', () => {
   for (const path of PAGES) {

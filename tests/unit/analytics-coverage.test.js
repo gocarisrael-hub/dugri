@@ -21,7 +21,6 @@ const BUYER_PAGES = [
   'product.html',
   'options.html',
   'collect.html',
-  'how.html',
   'pay-success.html',
 ];
 

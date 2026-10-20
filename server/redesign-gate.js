@@ -11,7 +11,7 @@
 // In the mode, every served page except the exempt ones (isExemptFile) gets class="rd" on
 // <html>, and at the end of <head>: the stylesheet /css/redesign.css (the shell),
 // /css/rd/chrome.css (the shared header and consent chip), /css/rd/<page>.css
-// (that one page's restyle, named after the file served: how.html -> how.css),
+// (that one page's restyle, named after the file served: terms.html -> terms.css),
 // and the script /js/redesign-shell.js. Each is linked only once it exists in
 // site/, so the gate ships before the files do and a page with no restyle of its
 // own simply gets none. Every rule under css/rd/ is scoped to html.rd

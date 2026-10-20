@@ -440,7 +440,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(select).toBeVisible();
     // The picker lists every editable page and starts on the current one — plus
     // one entry for the order-explainer POPUP, which has no page of its own.
-    await expect(select.locator('option')).toHaveCount(8);
+    await expect(select.locator('option')).toHaveCount(7);
     await expect(select).toHaveValue('index.html?edit=1&key=dugri-admin');
     // The "reset to default" button was REMOVED; the import-from-staging button is present.
     await expect(page.locator('[data-role="reset"]')).toHaveCount(0);
@@ -520,8 +520,10 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(page.getByText('מצב עריכה')).toBeVisible();
 
     // Selecting a page navigates there carrying ?edit=1&key so edit mode persists.
-    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
-    await expect(page).toHaveURL(/how\.html\?edit=1&key=dugri-admin/);
+    await page
+      .locator('[data-role="pageselect"]')
+      .selectOption('products.html?edit=1&key=dugri-admin');
+    await expect(page).toHaveURL(/products\.html\?edit=1&key=dugri-admin/);
     await expect(page.getByText('מצב עריכה')).toBeVisible(); // landed already editing
   });
 
@@ -640,7 +642,9 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
       n.textContent = 'עריכה שלא נשמרה';
     });
     page.once('dialog', (d) => d.dismiss());
-    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
+    await page
+      .locator('[data-role="pageselect"]')
+      .selectOption('products.html?edit=1&key=dugri-admin');
 
     // Stayed on index (no navigation), the select snapped back, and the error shows.
     await expect(page).toHaveURL(/index\.html\?edit=1/);
@@ -668,8 +672,10 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     // Accepting the discard-and-switch confirm navigates to the picked page, still
     // in edit mode — the picker is never left permanently dead by a stuck failure.
     page.once('dialog', (d) => d.accept());
-    await page.locator('[data-role="pageselect"]').selectOption('how.html?edit=1&key=dugri-admin');
-    await expect(page).toHaveURL(/how\.html\?edit=1&key=dugri-admin/);
+    await page
+      .locator('[data-role="pageselect"]')
+      .selectOption('products.html?edit=1&key=dugri-admin');
+    await expect(page).toHaveURL(/products\.html\?edit=1&key=dugri-admin/);
     await expect(page.getByText('מצב עריכה')).toBeVisible();
   });
 

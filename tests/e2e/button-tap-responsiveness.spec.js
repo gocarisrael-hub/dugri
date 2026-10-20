@@ -12,14 +12,7 @@ import { test, expect } from '@playwright/test';
 //      paints immediately.
 
 // Every page that inlines its own .btn block (index.html has the canonical copy).
-const PAGES = [
-  '/index.html',
-  '/how.html',
-  '/product.html',
-  '/products.html',
-  '/options.html',
-  '/timer.html',
-];
+const PAGES = ['/index.html', '/product.html', '/products.html', '/options.html', '/timer.html'];
 
 // Read the canonical `.btn` cascade off a throwaway probe element. Products.html
 // only ever renders a `.btn` inside JS-injected fallback markup, so a static

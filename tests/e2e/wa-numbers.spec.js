@@ -64,7 +64,7 @@ test('the product page’s WhatsApp goes to support', async ({ page }) => {
 // then correct by construction, and a general link that quietly picks up the
 // owner's number still fails here.
 test('no page carries the owner’s number on a GENERAL contact link', async ({ page }) => {
-  for (const path of ['/index.html', '/how.html', '/collect.html', '/options.html']) {
+  for (const path of ['/index.html', '/collect.html', '/options.html']) {
     await page.goto(path);
     const hrefs = await page
       .locator('a[href*="wa.me"]:not([data-ga-where="b2b-band"]):not([data-testid="b2b-wa"])')

@@ -112,7 +112,6 @@
   var LINKS = [
     // [href, label, the nav_click target GA reports it under (the same names as the homepage's own menu)]
     ['/#order', 'העיצובים', 'designs'],
-    ['how.html', 'איך זה עובד', 'how'],
     ['/#recs', 'ממליצים עלינו', 'recs'],
     ['new-faq.html', 'שאלות נפוצות', 'faq'],
     ['pickup.html', 'איסוף עצמי', 'pickup'],

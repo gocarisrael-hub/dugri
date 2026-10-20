@@ -87,10 +87,10 @@ test('the redesign shell counts its menu', async ({ page }) => {
   await page.waitForLoadState('load');
   await holdLinks(page);
   await page.locator('#rdMenuBtn').click();
-  await page.locator('#rdMenu a[href="how.html"]').click();
+  await page.locator('#rdMenu a[href="pickup.html"]').click();
   await page.locator('#rdMenu .rd-btn').evaluate((a) => a.click());
   const got = await events(page);
   expect(got).toContainEqual(['menu_open', {}]);
-  expect(got).toContainEqual(['nav_click', { target: 'how', where: 'menu' }]);
+  expect(got).toContainEqual(['nav_click', { target: 'pickup', where: 'menu' }]);
   expect(got).toContainEqual(['nav_order', { where: 'menu' }]);
 });

@@ -182,7 +182,6 @@ describe('the page picker lists every editable page', () => {
       'index.html',
       'options.html',
       'collect.html',
-      'how.html',
       'products.html',
       'product.html',
       'timer.html',
@@ -228,7 +227,7 @@ describe('buildToolbar — Save/Save&Exit buttons + page picker', () => {
   });
 
   it('builds a page picker whose options are correct ?edit=1&key=… URLs', () => {
-    const bar = editor.buildToolbar('how.html', 'secret');
+    const bar = editor.buildToolbar('products.html', 'secret');
     const select = bar.querySelector('[data-role="pageselect"]');
     const opts = Array.from(select.options);
     // one option per editable page, each value keeps edit mode + key
@@ -238,8 +237,8 @@ describe('buildToolbar — Save/Save&Exit buttons + page picker', () => {
       )
     );
     // the CURRENT page starts selected
-    expect(select.value).toBe('how.html?edit=1&key=secret');
-    expect(opts.find((o) => o.selected).value).toBe('how.html?edit=1&key=secret');
+    expect(select.value).toBe('products.html?edit=1&key=secret');
+    expect(opts.find((o) => o.selected).value).toBe('products.html?edit=1&key=secret');
   });
 
   // Two entries share index.html — the page and the popup that opens on it. Which

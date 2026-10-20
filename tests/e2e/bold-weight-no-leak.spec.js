@@ -31,8 +31,8 @@ const BASELINE = JSON.parse(
 );
 
 // The pages the reviewer counted the most newly-heavier declarations on
-// (options 27, collect 27, how 23) plus the storefront, which is all prices.
-const PAGES = ['/options.html', '/collect.html', '/how.html', '/products.html'];
+// (options 27, collect 27; how.html, the third, is retired) plus the storefront, which is all prices.
+const PAGES = ['/options.html', '/collect.html', '/products.html'];
 
 const ONLY = 'Desktop Chrome';
 

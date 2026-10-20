@@ -57,7 +57,6 @@ function isIndexableHost(hostname) {
 const PUBLIC_PAGES = [
   { file: 'index.html', path: '/', priority: '1.0' },
   { file: 'products.html', path: '/products.html', priority: '0.9' },
-  { file: 'how.html', path: '/how.html', priority: '0.8' },
   { file: 'options.html', path: '/options.html', priority: '0.8' },
   { file: 'product.html', path: '/product.html', priority: '0.7' },
   { file: 'wordlists.html', path: '/wordlists.html', priority: '0.6' },
@@ -346,7 +345,6 @@ function llmsTxt({ price, faq }) {
     '',
     `- [דף הבית](${base}/): מה זה דוגרי, ביקורות ושאלות נפוצות`,
     `- [העיצובים](${base}/products.html): כל עיצובי המשחק`,
-    `- [איך זה עובד](${base}/how.html)`,
     `- [הזמנה](${base}/options.html)`,
     `- [רשימות מילים](${base}/wordlists.html): רעיונות למילים`,
     `- [איסוף עצמי](${base}/pickup.html)`,

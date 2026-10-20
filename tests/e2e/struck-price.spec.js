@@ -80,7 +80,6 @@ for (const [where, url] of [
   ['the home page rail', '/index.html'],
   ['the product grid', '/products.html'],
   ['the product page', '/product.html?design=bachelorette'],
-  ['how-it-works', '/how.html', '.hero-cta a.btn'],
   ['the order wizard', '/options.html?plan=base', '[data-testid="plan-pill"]'],
 ]) {
   test(`every struck price on ${where} carries its own ₪`, async ({ page }) => {
@@ -151,7 +150,6 @@ for (const [where, url, sel] of [
   ['the home page rail', '/index.html', '.home-prod-price'],
   ['the product grid', '/products.html', '.product-price'],
   ['the product page', '/product.html?design=bachelorette', '.pdp-price'],
-  ['how-it-works', '/how.html', '.hero-cta a.btn'],
   ['the order wizard', '/options.html?plan=base', '[data-testid="plan-pill"]'],
 ]) {
   test(`the ₪ sits at the right-hand end of the price on ${where}`, async ({ page }) => {
