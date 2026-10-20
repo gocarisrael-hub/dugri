@@ -54,6 +54,29 @@ describe('forward arrows on customer pages', () => {
     expect(bad).toEqual([]);
   });
 
+  // One glyph for going back (the owner's ask, 2026-10-20): a back link that ends in an arrow ends in "›", never "→" or "←",
+  // so "חזרה לאתר ›" and "חזרה לדוגרי ›" read the same.
+  const BACK_LABEL_ENDING_IN_ARROW = />([^<>]*חזרה[^<>]*?)\s*([‹›←→<>])\s*<\/(a|button)\b/g;
+  it.each(pages)('%s: a back link that ends in an arrow ends in "›"', (page) => {
+    const html = fs.readFileSync(path.join(siteDir, page), 'utf8');
+    const other = [...html.matchAll(BACK_LABEL_ENDING_IN_ARROW)]
+      .filter((m) => m[2] !== '›')
+      .map((m) => m[0]);
+    expect(other).toEqual([]);
+  });
+  it('the back links with an arrow are the terms, the word lists and the timer, all "›"', () => {
+    const found = pages.flatMap((page) =>
+      [
+        ...fs.readFileSync(path.join(siteDir, page), 'utf8').matchAll(BACK_LABEL_ENDING_IN_ARROW),
+      ].map((m) => `${page}: ${m[1].trim()} ${m[2]}`)
+    );
+    expect(found.sort()).toEqual([
+      'terms.html: חזרה לאתר ›',
+      'timer.html: חזרה לדוגרי ›',
+      'wordlists.html: חזרה לאתר ›',
+    ]);
+  });
+
   it('would catch the old timer back link, and lets a correct one through', () => {
     const sample = [
       '<a href="index.html">חזרה לדוגרי ←</a>',
