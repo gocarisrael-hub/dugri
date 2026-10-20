@@ -38,6 +38,34 @@ volume so it survives a redeploy.
 - A missing, empty or corrupt file means "no overrides" — it must never raise.
   This file not existing is the normal state.
 
+### Auto-centred uploads (`variants`)
+
+A pawn is drawn into its slot by its CANVAS ("xMidYMid meet", on the site and in
+print), so an upload cropped tight on some sides prints off-centre. The upload
+route therefore runs `generator/pawn_normalise.py` on every new pawn: it trims
+the picture to its ink and pads it, centred, onto a square transparent canvas
+(ink long side 0.85 of the canvas, downscale only, max 2048 px). A picture
+with no real transparency (a photo) is stored as uploaded.
+
+When it centred something, both files are kept:
+
+```text
+{
+  "slots":    { "3": "/content-uploads/<centred>.png" },
+  "variants": { "3": { "original": "/content-uploads/<as uploaded>.png",
+                       "centred":  "/content-uploads/<centred>.png" } }
+}
+```
+
+- `slots` is still the only key the generator reads, and it always names the
+  file in use. Print and site keep reading the same bytes.
+- `variants` is present only for an auto-centred slot (and absent from the file
+  when no slot has one). The admin's "השתמשו בתמונה המקורית" / "מרכזו
+  אוטומטית" button (`POST /api/admin/photo-fallback/variant`) switches `slots`
+  between the two; neither file is deleted while the slot holds the pair.
+- Replacing or resetting the slot gives up both files (reclaimed only when no
+  other store references them).
+
 ## What the generator needs to do
 
 `config.photo_fallback_paths(theme)` currently returns the shipped

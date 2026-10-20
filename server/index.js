@@ -5443,10 +5443,15 @@ app.get('/api/admin/photo-fallback', (req, res) => {
   const overrides = photoFallback.getAll();
   const slots = photoFallback.SLOTS.map((slot) => {
     const img = overrides[slot] || null;
+    // An auto-centred upload carries both files; `using` says which one prints.
+    const variants = photoFallback.getVariants(slot);
     return {
       slot,
       img,
       overridden: !!img,
+      original: variants ? variants.original : null,
+      centred: variants ? variants.centred : null,
+      using: variants ? (img === variants.centred ? 'centred' : 'original') : null,
       // The shipped pawn is not under site/, so it cannot be linked directly —
       // it is served by the route below.
       shipped: '/api/admin/photo-fallback/default/' + slot,
@@ -5478,7 +5483,7 @@ app.post(
     next();
   },
   express.raw({ type: () => true, limit: CONTENT_IMAGE_UPLOAD_LIMIT }),
-  (req, res) => {
+  async (req, res) => {
     const saved = saveGalleryUpload(req, res);
     if (!saved) return;
     const slot = photoFallback.slotOk(saved.fields.slot);
@@ -5487,19 +5492,52 @@ app.post(
       reclaimPawn(saved.img);
       return res.status(400).json({ error: 'bad slot' });
     }
-    const { prev } = photoFallback.setSlot(slot, saved.img);
-    if (prev) reclaimPawn(prev);
-    res.json({ ok: true, slot, img: saved.img });
+    // AUTO-CENTRE, then keep both. The upload is stored as it came (that is
+    // `saved.img`) and a centred copy is made from it; the slot uses the centred
+    // one, and the original stays referenced so the admin can switch back. A
+    // picture the normaliser leaves alone (a photo, or a failure) is stored
+    // exactly as before this existed.
+    const original = saved.img;
+    const { buf, reason } = await photoFallback.normaliseUpload(
+      path.join(content._uploadDir, original.split('/').pop()),
+      { pythonBin: PYTHON_BIN }
+    );
+    let centred = null;
+    if (buf) {
+      try {
+        centred = content.saveImageBytes(buf).path;
+      } catch {
+        centred = null; // e.g. over the size cap: keep the original, as uploaded
+      }
+    }
+    const img = centred && centred !== original ? centred : original;
+    const { displaced } = photoFallback.setSlot(
+      slot,
+      img,
+      img === centred ? { original, centred } : null
+    );
+    for (const p of displaced) reclaimPawn(p);
+    res.json({ ok: true, slot, img, original, centred: img === centred, reason });
   }
 );
+
+// Admin: switch an auto-centred pawn between its centred copy and the owner's
+// original upload. JSON { slot, use: 'original' | 'centred' }.
+app.post('/api/admin/photo-fallback/variant', express.json({ limit: '4kb' }), (req, res) => {
+  if (!requireAdmin(req, res)) return;
+  const b = req.body || {};
+  const r = photoFallback.useVariant(b.slot, b.use);
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.json({ ok: true, slot: photoFallback.slotOk(b.slot), img: r.img });
+});
 
 // Admin: revert one slot to its shipped pawn. JSON { slot }.
 app.delete('/api/admin/photo-fallback', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const slot = photoFallback.slotOk((req.body || {}).slot);
   if (!slot) return res.status(400).json({ error: 'bad slot' });
-  const { prev } = photoFallback.resetSlot(slot);
-  if (prev) reclaimPawn(prev);
+  const { displaced } = photoFallback.resetSlot(slot);
+  for (const p of displaced) reclaimPawn(p);
   res.json({ ok: true, slot });
 });
 
