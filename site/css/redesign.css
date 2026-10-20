@@ -525,25 +525,121 @@ html.rd .rd-menu li a[aria-current='page'] {
 }
 
 /* ---------- 3b. the shared footer ---------- */
-html.rd .rd-ftr {
-  padding: 22px var(--gutter) 34px;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  font: var(--text-small) / 1.5 var(--font-body);
-  color: var(--color-ink);
+/* ---- B (Catalog & Design): the site footer, new.html's on every page (js/redesign-shell.js renders its markup) ---- */
+/* site-footer:start copied from css/home-new.css, scoped to the shell's footer; tests/unit/site-footer.test.js fails if they drift */
+html.rd:not(.rd-native) body > footer.rd-ftr {
+  padding: 30px 16px 34px;
+  border-top: var(--border-thin) solid var(--color-ink);
+  font-size: var(--text-small);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-gap: 18px 24px;
+  align-items: start;
 }
-html.rd .rd-ftr a {
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-contact {
+  grid-column: 1 / -1;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-icons {
+  display: flex;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 46px;
+  margin-left: 12px; /* flex gap is Safari 14.1 */
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: 50%;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-icon.wa {
+  background: var(--color-whatsapp);
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-icon svg {
+  width: 23px;
+  height: 23px;
+  fill: currentColor;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-icon:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-lines,
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-tag {
+  margin: 12px 0 0;
+  line-height: 1.6;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-lines > span {
+  display: block;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-lines .lb {
+  font-weight: var(--weight-strong);
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-lines a {
+  font-weight: var(--weight-label);
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-tag {
+  color: var(--color-text-muted);
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-links a {
+  display: block;
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-logo {
+  width: 64px;
+}
+/* site-footer:end */
+/* site-footer-wide:start */
+@media (min-width: 900px) {
+  html.rd:not(.rd-native) body > footer.rd-ftr .ft-contact {
+    grid-column: auto;
+  }
+  html.rd:not(.rd-native) body > footer.rd-ftr {
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+    grid-column-gap: 72px;
+  }
+  html.rd:not(.rd-native) body > footer.rd-ftr .ft-links {
+    -webkit-columns: 2;
+    columns: 2;
+    -webkit-column-gap: 32px;
+    column-gap: 32px;
+  }
+}
+/* site-footer-wide:end */
+/* what new.html's page rules give its footer and a shell page's do not. The prefix is one class heavier than css/rd/chrome.css's
+   old-footer rules (html.rd:not(.rd-native) body > footer), which also match this footer and would otherwise restyle it */
+html.rd:not(.rd-native) body > footer.rd-ftr {
+  padding-bottom: calc(
+    34px + 72px + env(safe-area-inset-bottom)
+  ); /* the last links clear the floating buttons */
+  font-family: var(--font-body);
+  color: var(--color-ink);
+  text-align: right;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr a {
   color: inherit;
   font-weight: var(--weight-body);
   text-decoration: underline;
-  margin-left: 16px;
 }
-html.rd .rd-ftr img {
-  width: 54px;
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-icon {
+  text-decoration: none;
+}
+html.rd:not(.rd-native) body > footer.rd-ftr .ft-logo {
+  display: block;
   height: auto;
 }
+@media (min-width: 900px) {
+  html.rd:not(.rd-native) body > footer.rd-ftr {
+    padding-right: max(16px, calc(50vw - 520px));
+    padding-left: max(16px, calc(50vw - 520px));
+  }
+}
+/* ---- end B ---- */
 
 /* ---------- 3c. components ---------- */
 /* buttons: black pill (primary), outlined (secondary), plain (ghost); .sm/.lg; disabled; aria-busy shows a spinner */

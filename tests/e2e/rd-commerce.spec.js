@@ -96,9 +96,10 @@ test('pickup keeps its own footer with the help lines, and its map links are the
   page,
 }) => {
   await page.goto('/pickup.html');
-  const footer = page.locator('body > footer');
-  // One footer, the page's own: not replaced by the shell's, and not hidden.
+  const footer = page.locator('body > footer:not(.rd-ftr)');
+  // The page's own footer, not replaced by the shell's and not hidden; the site's footer follows it (site-footer.spec.js).
   await expect(footer).toHaveCount(1);
+  await expect(page.locator('body > footer').last()).toHaveClass('rd-ftr');
   await expect(footer).not.toHaveAttribute('data-rd-replaced', '');
   await expect(footer).toBeVisible();
   await expect(footer).toContainText('0552441334');

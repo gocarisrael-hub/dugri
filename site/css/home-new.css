@@ -1252,7 +1252,8 @@ button.rc:active {
 }
 
 /* the site footer: the live homepage's contacts and links, on the ground */
-footer {
+/* site-footer:start (the same rules style the shell's footer on every other page: css/redesign.css, tests/unit/site-footer.test.js) */
+.site-ft {
   padding: 30px 16px 34px;
   border-top: var(--border-thin) solid var(--color-ink);
   font-size: var(--text-small);
@@ -1317,6 +1318,7 @@ footer {
 .ft-logo {
   width: 64px;
 }
+/* site-footer:end */
 /* ---------- the floating WhatsApp (bottom left: the end side in RTL), the font chooser (bottom right, while testing) ---------- */
 .fab {
   position: fixed;
@@ -1698,12 +1700,15 @@ footer {
 .recs {
   background: var(--color-field);
 }
+/* site-footer-wide:start the three groups as one, centred on the page */
 @media (min-width: 900px) {
   .ft-contact {
     grid-column: auto;
   }
-  footer {
-    grid-template-columns: 1fr auto auto;
+  .site-ft {
+    grid-template-columns: auto auto auto;
+    justify-content: center;
+    grid-column-gap: 72px;
   }
   .ft-links {
     -webkit-columns: 2;
@@ -1712,6 +1717,7 @@ footer {
     column-gap: 32px;
   }
 }
+/* site-footer-wide:end */
 
 @media (min-width: 900px) {
   :root {
@@ -1780,6 +1786,21 @@ footer {
   }
   .faq-in {
     max-width: 760px;
+  }
+  /* business enquiries: the column centred on the page like the sections above, its words and logos centred in it; the form
+     keeps its labels at the reading start */
+  .biz-in {
+    margin-right: auto;
+    margin-left: auto;
+    justify-items: center;
+    text-align: center;
+  }
+  .biz .logos {
+    justify-content: center;
+  }
+  .biz .lead {
+    justify-self: stretch;
+    text-align: right;
   }
 }
 @media (prefers-reduced-motion: reduce) {

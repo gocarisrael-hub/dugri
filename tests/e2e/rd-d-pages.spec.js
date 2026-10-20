@@ -33,36 +33,8 @@ test('chrome: the consent chip is a paper pill with an ink line, and still close
   await expect(chip).toHaveCount(0);
 });
 
-// The old site footer, restyled once in chrome.css for every page that carries it: the cream ground instead of black, ink
-// text, and every owner-editable contact still there and reachable.
-// (index.html is not here: in the mode it serves new.html, which has its own footer.)
-for (const path of ['/products.html', '/product.html', '/terms.html']) {
-  test(`chrome: the old footer on ${path} is on the ground, with every contact`, async ({
-    page,
-  }) => {
-    await page.goto(path);
-    const footer = page.locator('body > footer:not(.rd-ftr)');
-    await footer.scrollIntoViewIfNeeded();
-    const look = await footer.evaluate((el) => {
-      const s = getComputedStyle(el);
-      return { bg: s.backgroundColor, color: s.color };
-    });
-    expect(look.bg).toBe('rgba(0, 0, 0, 0)');
-    expect(look.color).toBe('rgb(0, 0, 0)');
-    for (const sel of ['.fi-wa', 'a[href^="tel:"]', '.fi-ig', 'a[href^="mailto:"]']) {
-      await expect(footer.locator(sel).first()).toBeVisible();
-    }
-    for (const icon of await footer.locator('.foot-icon').all()) {
-      const box = await icon.boundingBox();
-      expect(box.width).toBeLessThanOrEqual(48);
-      expect(box.width).toBeGreaterThanOrEqual(44);
-    }
-    if (path !== '/terms.html') {
-      await expect(footer.getByTestId('footer-b2b')).toBeVisible();
-    }
-    expect(await noSidewaysScroll(page)).toBe(0);
-  });
-}
+// The old site footer: the store, a design page and the terms now show the site's footer (new.html's) in place of their own,
+// tests/e2e/site-footer.spec.js; pickup keeps its short footer above the site's, below.
 
 test("chrome: pickup's short footer takes the same look, its contacts kept", async ({ page }) => {
   await page.goto('/pickup.html');

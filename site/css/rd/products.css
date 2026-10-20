@@ -1,8 +1,10 @@
 /* == B: catalog — products.html, the store == */
 /* The store in redesign mode (docs/redesign-mode.md): a page title with the coloured offset, and each design a card of the game
    table's kind (paper, an ink outline, the hard shadow, a lift under the pointer) with its sale tag, round controls and a heavy price.
-   The page's markup and its scripts (catalog, carousel) are untouched. The site footer is shared chrome (css/rd/chrome.css). */
+   The page's markup and its scripts (catalog, carousel) are untouched. The footer is the site's (new.html's), from the shell, in
+   place of the page's own. */
 html.rd {
+  --rd-footer: replace;
   --rd-as-title: '.store-head h1';
   --rd-as-card: '.product-card';
 }

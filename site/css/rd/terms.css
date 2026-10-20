@@ -8,7 +8,7 @@
 
 html.rd {
   --rd-header: none;
-  --rd-footer: none;
+  --rd-footer: replace; /* B: the site's footer (new.html's) in place of the page's own */
   --rd-as-title: 'header.doc h1';
   --rd-as-box: 'nav.toc';
 }

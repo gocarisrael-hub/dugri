@@ -37,15 +37,16 @@ test.describe('the shell on a page not built in the redesign', () => {
     await expect(page.locator('header.hdr')).toBeVisible();
   });
 
-  test('the shared header stands in for the page’s own, the page keeps its footer, and takes the new ground', async ({
+  test('the shared header stands in for the page’s own, the page keeps its footer with the site’s after it, and takes the new ground', async ({
     page,
   }) => {
     await page.goto('/pickup.html');
     await expect(page.locator('.rd-hdr')).toBeVisible();
     await expect(page.locator('header.hdr')).toHaveCount(1);
     await expect(page.locator('header.hdr')).toBeHidden();
-    await expect(page.locator('.rd-ftr')).toHaveCount(0);
-    await expect(page.locator('body > footer')).toBeVisible();
+    await expect(page.locator('body > footer:not(.rd-ftr)')).toBeVisible();
+    await expect(page.locator('body > footer.rd-ftr')).toBeVisible();
+    await expect(page.locator('body > footer').last()).toHaveClass('rd-ftr');
     await expect(page.locator('body')).toHaveCSS('background-color', 'rgb(255, 241, 222)');
     await expect(page.locator('body')).toHaveCSS('padding-top', '0px');
     expect(await sideways(page)).toBe(0);
