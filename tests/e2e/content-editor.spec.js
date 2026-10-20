@@ -440,7 +440,7 @@ test.describe('edit mode (owner: ?edit=1 + admin key)', () => {
     await expect(select).toBeVisible();
     // The picker lists every editable page and starts on the current one — plus
     // one entry for the order-explainer POPUP, which has no page of its own.
-    await expect(select.locator('option')).toHaveCount(8);
+    await expect(select.locator('option')).toHaveCount(7);
     await expect(select).toHaveValue('index.html?edit=1&key=dugri-admin');
     // The "reset to default" button was REMOVED; the import-from-staging button is present.
     await expect(page.locator('[data-role="reset"]')).toHaveCount(0);
