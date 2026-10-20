@@ -112,7 +112,6 @@ describe('the shell script', () => {
     );
     expect([...document.querySelectorAll('#rdMenu a')].map((a) => a.getAttribute('href'))).toEqual([
       '/#order',
-      'how.html',
       '/#recs',
       'new-faq.html',
       'pickup.html',

@@ -70,7 +70,7 @@
 
   // CLEAR OF A BOTTOM BAR. The corner is only free on a page with nothing fixed
   // to the foot of the screen. The order wizard's Back/Next bar, the word
-  // collection's pay bar and how.html's order bar all sit there, and on the
+  // collection's pay bar both sit there, and on the
   // wizard at 390 px the chip lay over "הבא", so a first-time buyer's tap could
   // land on the chip. So the chip stands just above whatever short bar is FIXED
   // to the bottom under it, found by asking what is on top at the foot of the

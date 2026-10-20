@@ -25,7 +25,6 @@ beforeAll(async () => {
 
 const PAGES = [
   'index.html',
-  'how.html',
   'products.html',
   'product.html',
   'collect.html',
@@ -67,7 +66,6 @@ describe('representative NEW owner-editable keys are present on each page', () =
       // "every design fits every celebration" — reworded from the site, no deploy
       'index-products-sub',
     ],
-    'how.html': ['how-nav-designs', 'how-nav-how', 'how-footer-brand', 'how-footer-mail-label'],
     'products.html': [
       'products-nav-shop',
       'products-footer-brand',

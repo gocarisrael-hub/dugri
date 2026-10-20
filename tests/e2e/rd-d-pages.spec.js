@@ -16,48 +16,10 @@ const fontOf = (loc) => loc.evaluate((el) => getComputedStyle(el).fontFamily);
 const linked = (page, name) =>
   page.locator(`link[rel="stylesheet"][href^="/css/rd/${name}."]`).count();
 
-test('how: the shell header and footer, kit titles and arrow buttons, the order links unchanged', async ({
-  page,
-}) => {
-  await page.goto('/how.html');
-  expect(await linked(page, 'how')).toBe(1);
-  expect(await linked(page, 'chrome')).toBe(1);
-  await expect(page.locator('header.rd-hdr')).toBeVisible();
-  await expect(page.locator('body > nav.nav')).toBeHidden();
-  // The page keeps its own footer, with its contacts, in the shared old-footer look (chrome.css).
-  await expect(page.locator('footer.rd-ftr')).toHaveCount(0);
-  await expect(page.locator('body > footer .foot-icon.fi-wa')).toBeVisible();
-
-  const h1 = page.locator('#top h1');
-  await expect(h1).toHaveClass(/\brd-title\b/);
-  expect(await fontOf(h1)).toContain('Gveret Levin');
-  // Body text in the round sans, never the heading face (the Two Faces Rule).
-  expect(await fontOf(page.locator('.step h3').first())).toContain('M PLUS Rounded 1c');
-
-  const cta = page.locator('#top .hero-cta .btn').first();
-  await expect(cta).toHaveClass(/\brd-btn\b/);
-  await expect(cta).toHaveClass(/\barrow\b/);
-  await expect(cta).toHaveAttribute('href', 'products.html');
-  // The kit's arrow, not the page's old shine: a static, unskewed mask.
-  const arrow = await cta.evaluate((el) => {
-    const s = getComputedStyle(el, '::after');
-    return { position: s.position, transform: s.transform, mask: s.webkitMaskImage || s.maskImage };
-  });
-  expect(arrow.position).toBe('static');
-  expect(arrow.transform).toBe('none');
-  expect(arrow.mask).toContain('svg');
-
-  // Content is simply there: no scroll-triggered entrance leaves a box invisible.
-  for (const el of await page.locator('.step, .item').all()) {
-    expect(await el.evaluate((n) => getComputedStyle(n).opacity)).toBe('1');
-  }
-  expect(await noSidewaysScroll(page)).toBe(0);
-});
-
 test('chrome: the consent chip is a paper pill with an ink line, and still closes', async ({
   page,
 }) => {
-  await page.goto('/how.html');
+  await page.goto('/terms.html');
   const chip = page.locator('#cookieNotice');
   await expect(chip).toBeVisible();
   const look = await chip.evaluate((el) => {
@@ -74,7 +36,7 @@ test('chrome: the consent chip is a paper pill with an ink line, and still close
 // The old site footer, restyled once in chrome.css for every page that carries it: the cream ground instead of black, ink
 // text, and every owner-editable contact still there and reachable.
 // (index.html is not here: in the mode it serves new.html, which has its own footer.)
-for (const path of ['/products.html', '/product.html', '/how.html', '/terms.html']) {
+for (const path of ['/products.html', '/product.html', '/terms.html']) {
   test(`chrome: the old footer on ${path} is on the ground, with every contact`, async ({
     page,
   }) => {
@@ -95,7 +57,7 @@ for (const path of ['/products.html', '/product.html', '/how.html', '/terms.html
       expect(box.width).toBeLessThanOrEqual(48);
       expect(box.width).toBeGreaterThanOrEqual(44);
     }
-    if (path !== '/how.html' && path !== '/terms.html') {
+    if (path !== '/terms.html') {
       await expect(footer.getByTestId('footer-b2b')).toBeVisible();
     }
     expect(await noSidewaysScroll(page)).toBe(0);

@@ -35,7 +35,7 @@ const SURFACES = [
 // description that shows up in search results and in the note under the buy
 // button, where it read as the delivery time for whatever she was buying. The
 // printed game is the headline product now, so these quote its time instead.
-const STOREFRONT = ['index.html', 'how.html', 'product.html'];
+const STOREFRONT = ['index.html', 'product.html'];
 
 // Whitespace in HTML wraps: index.html has the answer split across two source
 // lines, so "תוך\n              4 ימי עסקים" is the same sentence. Collapse

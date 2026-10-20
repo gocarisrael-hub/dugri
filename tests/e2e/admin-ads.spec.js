@@ -218,7 +218,7 @@ test.describe('the ad report', () => {
       page,
       `/index.html?utm_source=instagram&utm_medium=paid&utm_campaign=${campaign}`
     );
-    for (const p of ['/products.html', '/how.html', '/index.html']) await page.goto(p);
+    for (const p of ['/products.html', '/terms.html', '/index.html']) await page.goto(p);
 
     await page.goto(`/admin-ads.html?key=${KEY}`);
     await expect(rowFor(page, campaign).locator('td').nth(4)).toHaveText('1');

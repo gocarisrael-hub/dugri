@@ -5631,6 +5631,17 @@ app.get(['/admin-analytics.html', '/admin-analytics'], (req, res) => {
   res.redirect(301, '/admin-ads.html' + (q === -1 ? '' : req.originalUrl.slice(q)));
 });
 
+// ---- B (Catalog & Design): how.html is gone ----
+// The owner retired the "how it works" page (2026-10-20); the homepage explains
+// the game. Its address is in search results, old ads and shared links, so it
+// answers 301 to the homepage instead of a 404. The query survives so an ad's
+// utm/fbclid tags still attribute the visit.
+app.get(['/how.html', '/how'], (req, res) => {
+  const q = req.originalUrl.indexOf('?');
+  res.redirect(301, '/' + (q === -1 ? '' : req.originalUrl.slice(q)));
+});
+// ---- end B ----
+
 // SEARCH AND AI VISIBILITY (server/seo.js): robots.txt, sitemap.xml, llms.txt,
 // and the canonical / noindex / JSON-LD tags injected into every page below.
 // Indexable only on the production domain (seo.isIndexableHost) — staging and

@@ -117,8 +117,8 @@
 .was {
   text-decoration: line-through;
   /* Dimmed from whatever colour it sits on, NOT a fixed grey: this price rides
-     inside the dark CTA buttons on how.html as well as on white product cards,
-     and --muted would all but vanish on the dark one. On white, 0.6 of --ink is
+     on a dark button as well as on a white product card, and --muted would all
+     but vanish on a dark one. On white, 0.6 of --ink is
      --muted anyway, which is what the cards used before. */
   opacity: 0.6;
   font-weight: 400;

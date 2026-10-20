@@ -156,7 +156,7 @@ test.describe('at the checkout', () => {
 // so it is looked up long after the wizard is done and the confirmation mail has
 // been buried. It sits beside the terms because both are the small print someone
 // goes hunting for rather than reads on the way past.
-const FOOTER_PAGES = ['/index.html', '/products.html', '/product.html', '/how.html'];
+const FOOTER_PAGES = ['/index.html', '/products.html', '/product.html'];
 
 test.describe('the footer link', () => {
   for (const path of FOOTER_PAGES) {

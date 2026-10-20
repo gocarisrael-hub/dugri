@@ -17,14 +17,7 @@ const SITE = path.join(__dirname, '..', '..', 'site');
 const read = (f) => fs.readFileSync(path.join(SITE, f), 'utf8');
 
 // Every page that prints a struck price.
-const PAGES = [
-  'index.html',
-  'how.html',
-  'products.html',
-  'product.html',
-  'collect.html',
-  'options.html',
-];
+const PAGES = ['index.html', 'products.html', 'product.html', 'collect.html', 'options.html'];
 
 describe('the struck price is styled in exactly one place', () => {
   const tokens = read(path.join('css', 'tokens.css'));
@@ -57,12 +50,11 @@ describe('the struck price is styled in exactly one place', () => {
   });
 
   // A container that spaces its children itself must zero the struck price's
-  // own margin, or the gap doubles. These are the four that do.
+  // own margin, or the gap doubles. These are the three that do.
   it.each([
     ['products.html', '--was-gap: 0'],
     ['product.html', '--was-gap: 0'],
     ['collect.html', '--was-gap: 0'],
-    ['how.html', '--was-gap: 0'],
   ])('%s zeroes --was-gap on the row that supplies its own gap', (page, needle) => {
     expect(read(page)).toContain(needle);
   });
