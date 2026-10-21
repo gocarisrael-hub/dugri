@@ -33,7 +33,7 @@ const cardImg = (src, sizes, attrs) => {
 };
 const DECK_SIZES = '(min-width: 900px) 210px, 150px',
   STRIP_SIZES = '(min-width: 900px) 340px, (min-width: 431px) 250px, 58vw', // 340: the still three-column grid
-  VIEW_SIZES = '170px';
+  VIEW_SIZES = '(min-width: 650px) 24vh, 170px'; // a card is 31% of the board (48% with no board), and the board follows the window's height
 const shuffle = (a) => {
   a = a.slice();
   for (let i = a.length - 1; i > 0; i--) {
@@ -599,7 +599,7 @@ function fillFlood(d) {
   tableau.className = 'tableau' + (d.board ? '' : ' solo');
   tableau.innerHTML =
     (d.board
-      ? `<img class="bd" src="${esc(d.board.src)}"${d.board.srcset ? ` srcset="${esc(d.board.srcset)}" sizes="(min-width: 650px) 520px, 80vw"` : ''}${d.board.fallback ? ` data-fallback="${esc(d.board.fallback)}"` : ''} alt="הלוח של ${esc(d.name)}">`
+      ? `<img class="bd" src="${esc(d.board.src)}"${d.board.srcset ? ` srcset="${esc(d.board.srcset)}" sizes="(min-width: 650px) and (min-height: 1530px) 800px, (min-width: 650px) 53vh, 80vw"` : ''}${d.board.fallback ? ` data-fallback="${esc(d.board.fallback)}"` : ''} alt="הלוח של ${esc(d.name)}">`
       : '') +
     cardImg(d.fronts[0], VIEW_SIZES, `class="fc fr" alt="קלף מהעיצוב ${esc(d.name)}"`) +
     (d.back ? cardImg(d.back, VIEW_SIZES, `class="fc bk" alt="גב הקלף של ${esc(d.name)}"`) : '');

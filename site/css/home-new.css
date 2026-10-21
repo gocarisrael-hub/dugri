@@ -822,15 +822,17 @@ dialog.flood::backdrop {
   font-size: 14px !important;
   opacity: 0.8;
 }
+/* the window's height sets the pictures' size, up to an 800 px board: on the owner's 3440x1440 screen (1 device pixel per CSS
+   pixel) a 520 px board drew its cards ~185 px wide and their hairlines soft; more source pixels cannot fix that, size does */
 .tableau {
-  width: min(80vw, 520px, 37vh * 1.414);
-  width: min(80vw, 520px, 37svh * 1.414);
-  margin-bottom: calc(min(80vw, 520px, 37vh * 1.414) * 0.2);
-  margin-bottom: calc(min(80vw, 520px, 37svh * 1.414) * 0.2);
+  width: min(80vw, 800px, 37vh * 1.414);
+  width: min(80vw, 800px, 37svh * 1.414);
+  margin-bottom: calc(min(80vw, 800px, 37vh * 1.414) * 0.2);
+  margin-bottom: calc(min(80vw, 800px, 37svh * 1.414) * 0.2);
 }
 .tableau.solo {
-  width: min(64vw, 340px, 34vh * 1.45);
-  width: min(64vw, 340px, 34svh * 1.45);
+  width: min(64vw, 460px, 34vh * 1.45);
+  width: min(64vw, 460px, 34svh * 1.45);
 }
 .spread {
   padding-top: 66px;
