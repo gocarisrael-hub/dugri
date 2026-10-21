@@ -6979,18 +6979,49 @@
         });
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
         const optsBox = $('#payOpts');
-        // In the redesign the delivery tick is drawn as the printed game's own
-        // add-on, nested under it, so it moves up to sit straight beneath that
-        // game (its remote-towns footnote with it), ahead of the pickup note and
-        // the custom design. Moved in the DOM rather than reordered in CSS, so the
-        // keyboard and a screen reader meet it where it is seen. The live page
-        // keeps its order.
+        // In the redesign the printed game is one product with its delivery as an
+        // add-on, so everything that belongs to it sits straight under it: the
+        // tick (and its remote-towns footnote), the pickup note, and — once the
+        // tick is on — the address. Only radios may live in a radiogroup, so the
+        // box is split rather than the add-on pushed into the group:
+        //   [radiogroup: PDF, the printed game] [the game's add-on, notes,
+        //   address] [radiogroup: the custom design]
+        // all still inside #payOpts, so every branch that hides the box hides
+        // them too. Native radios group by name, so the arrow keys still run
+        // across all three. Moved in the DOM rather than reordered in CSS, so the
+        // keyboard and a screen reader meet each piece where it is seen. The live
+        // page keeps its order.
         if (document.documentElement.classList.contains('rd')) {
           const printed = optsBox.querySelector('input[value="pickup"]');
-          const ship = $('#shipOpt');
-          const shipNote = optsBox.querySelector('[data-where="ship-toggle"]');
-          if (printed && ship)
-            printed.closest('.pay-opt').after(...[ship, shipNote].filter(Boolean));
+          const custom = optsBox.querySelector('input[value="custom"]');
+          if (printed && custom) {
+            const group = (cls, label) => {
+              const el = document.createElement('div');
+              el.className = cls;
+              if (label) {
+                el.setAttribute('role', 'radiogroup');
+                el.setAttribute('aria-label', label);
+              }
+              return el;
+            };
+            const versions = group('pay-group', optsBox.getAttribute('aria-label'));
+            const extras = group('pay-extras');
+            extras.id = 'printedExtras';
+            const more = group('pay-group', 'עיצוב אישי');
+            versions.append(...optsBox.querySelectorAll(':scope > .pay-opt:not(.pay-opt-custom)'));
+            extras.append(
+              ...[
+                $('#shipOpt'),
+                optsBox.querySelector('[data-where="ship-toggle"]'),
+                optsBox.querySelector('.pickup-note'),
+                $('#addressForm'),
+              ].filter(Boolean)
+            );
+            more.append(custom.closest('.pay-opt'));
+            optsBox.removeAttribute('role');
+            optsBox.removeAttribute('aria-label');
+            optsBox.prepend(versions, extras, more);
+          }
         }
         const addressForm = $('#addressForm');
         const payErr = $('#payErr');
@@ -7116,19 +7147,6 @@
           }
           const canShip = isEnabled('delivery');
           const canCollect = isEnabled('pickup');
-          console.log(
-            'SYNCSHIP ' +
-              JSON.stringify({
-                canShip,
-                canCollect,
-                resolved: pricingResolved,
-                ok: pricingOk,
-                dv: JSON.stringify((pricing.versions || {}).delivery || null),
-                checked:
-                  (document.querySelector('input[name=\"payVersion\"]:checked') || {}).value ||
-                  null,
-              })
-          );
           const printedPicked =
             (document.querySelector('input[name="payVersion"]:checked') || {}).value === 'pickup';
           opt.classList.toggle('hidden', !(canShip && printedPicked));
