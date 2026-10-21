@@ -533,9 +533,29 @@ html.rd #shipOpt .opt-note {
   font-size: 12px;
   margin-top: 2px;
 }
-html.rd .pay-opts > .odd-note[data-where='ship-toggle'] {
+html.rd #printedExtras > .odd-note[data-where='ship-toggle'] {
   margin-top: -6px;
   margin-inline-start: 30px;
+}
+
+/* The checkout's own split (collect.html): the versions' radiogroup, the printed game's add-on with its notes and the
+   address, then the custom design in a radiogroup of its own. Each part stacks like the box it came out of; the
+   address, now inside the inset box, drops the inset it carried as a direct child of the card. While delivery is
+   ticked the pickup note has nothing to say, so it goes. */
+html.rd #payOpts > .pay-group,
+html.rd #printedExtras {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+html.rd #printedExtras > .pickup-note {
+  margin-inline-start: 0;
+}
+html.rd #printedExtras > #addressForm {
+  margin: 0;
+}
+html.rd #shipOpt.active ~ .pickup-note {
+  display: none;
 }
 
 /* The coupon: one quiet row that opens to the field (collect.html wires the fold; the live page hides the toggle). The

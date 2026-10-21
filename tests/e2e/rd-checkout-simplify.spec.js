@@ -61,14 +61,15 @@ async function makeCoupon(request) {
   return code;
 }
 
-// The ids of #payOpts' children that are shown, in DOM order (the order the keyboard and a screen reader take).
+// The checkout's pieces that are shown, in DOM order (the order the keyboard and a screen reader take): the versions,
+// the delivery tick, the pickup note and the address.
 const order = (page) =>
-  page.locator('#payOpts').evaluate((box) =>
-    Array.from(box.children)
+  page.locator('#payPanel').evaluate((panel) =>
+    Array.from(panel.querySelectorAll('.pay-opt, #shipOpt, .pickup-note, #addressForm'))
       .filter((el) => el.getClientRects().length)
       .map(
         (el) =>
-          el.id || (el.querySelector('input[name="payVersion"]') || {}).value || el.dataset.testid
+          (el.querySelector('input[name="payVersion"]') || {}).value || el.id || el.dataset.testid
       )
   );
 
@@ -90,11 +91,32 @@ test.describe('redesign', () => {
     // Straight under the game it adds to, ahead of the pickup note and the custom design.
     expect(await order(page)).toEqual(['pdf', 'pickup', 'shipOpt', 'pickup-details', 'custom']);
 
+    // Only radios in a radiogroup: the versions' group holds PDF and the printed game, the custom design has its own,
+    // and the tick, the notes and the address sit between them in neither. All of it is still inside #payOpts, so the
+    // branches that hide the box (prices loading or failed, orders closed) hide it all.
+    const groups = await page.locator('#payOpts').evaluate((box) => ({
+      role: box.getAttribute('role'),
+      groups: Array.from(box.querySelectorAll('[role="radiogroup"]')).map((g) => ({
+        label: g.getAttribute('aria-label'),
+        radios: Array.from(g.querySelectorAll('input')).map((i) => i.type + ':' + i.value),
+      })),
+      extrasInside:
+        !!box.querySelector('#printedExtras #shipToggle') && !!box.querySelector('#addressForm'),
+    }));
+    expect(groups).toEqual({
+      role: null,
+      groups: [
+        { label: 'בחירת גרסה', radios: ['radio:pdf', 'radio:pickup'] },
+        { label: 'עיצוב אישי', radios: ['radio:custom'] },
+      ],
+      extrasInside: true,
+    });
+
     for (const width of [390, 1440]) {
       await page.setViewportSize({ width, height: 900 });
       const look = await page.evaluate(() => {
         const ship = document.getElementById('shipOpt');
-        const game = ship.previousElementSibling;
+        const game = document.querySelector('input[value="pickup"]').closest('.pay-opt');
         const r = (el) => el.getBoundingClientRect();
         const cs = (el, p) => getComputedStyle(el, p);
         const title = ship.querySelector('.opt-title');
@@ -128,6 +150,26 @@ test.describe('redesign', () => {
     await expect(page.locator('#shipToggle')).toBeChecked();
     await expect(page.locator('#addressForm')).toBeVisible();
     await expect(page.locator('#payTotal')).toHaveText('238');
+    // The address comes straight under the add-on, and the pickup note, which has nothing to say now, goes.
+    expect(await order(page)).toEqual(['pdf', 'pickup', 'shipOpt', 'addressForm', 'custom']);
+    const [tick, addr] = await Promise.all([
+      page.locator('#shipOpt').boundingBox(),
+      page.locator('#addressForm').boundingBox(),
+    ]);
+    expect(addr.y - (tick.y + tick.height)).toBeLessThan(30);
+    // Unticked, the note is back.
+    await page.locator('#shipOpt').click();
+    await expect(page.getByTestId('pickup-details')).toBeVisible();
+    await expect(page.locator('#addressForm')).toBeHidden();
+    await page.locator('#shipOpt').click();
+
+    // The split does not break the versions apart for the keyboard: the radios share a name, so the arrow keys
+    // still run from the printed game to the custom design.
+    await page.locator('input[value="pickup"]').focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('input[value="custom"]')).toBeChecked();
+    await expect(page.locator('#shipOpt')).toBeHidden();
+    await page.locator('.pay-opt:has(input[value="pickup"])').click();
 
     // The PDF has nothing to ship: the add-on goes with the game.
     await page.locator('.pay-opt:has(input[value="pdf"])').click();
@@ -190,7 +232,7 @@ test.describe('redesign', () => {
   });
 });
 
-test('live: the delivery tick keeps its place after the versions, and the coupon field stays open', async ({
+test('live: the delivery tick, the pickup note and the address keep their places, and the coupon field stays open', async ({
   page,
   request,
 }) => {
@@ -200,6 +242,16 @@ test('live: the delivery tick keeps its place after the versions, and the coupon
   await openCheckout(page);
   await page.locator('.pay-opt:has(input[value="pickup"])').click();
   expect(await order(page)).toEqual(['pdf', 'pickup', 'pickup-details', 'custom', 'shipOpt']);
+  await expect(page.locator('#payOpts')).toHaveAttribute('role', 'radiogroup');
+  await page.locator('#shipOpt').click();
+  expect(await order(page)).toEqual([
+    'pdf',
+    'pickup',
+    'pickup-details',
+    'custom',
+    'shipOpt',
+    'addressForm',
+  ]);
   await expect(page.getByTestId('coupon-toggle')).toBeHidden();
   await expect(page.locator('#couponInput')).toBeVisible();
   await expect(page.locator('#couponApplyBtn')).toBeVisible();
