@@ -17,6 +17,14 @@
     function (e) {
       var img = e.target;
       if (!img || img.tagName !== 'IMG') return;
+      // an uploaded design's rendered picture (a WebP from /home-art/) goes back to its template picture
+      var fb = img.getAttribute('data-fallback');
+      if (fb && /\/home-art\//.test(img.currentSrc || img.src || '')) {
+        img.removeAttribute('srcset');
+        img.removeAttribute('data-fallback');
+        img.src = fb;
+        return;
+      }
       // only a WebP is swapped, so a missing twin cannot loop; home-new.js may point the same <img> at another WebP later
       var m = WEBP.exec(img.currentSrc || img.src || '');
       if (!m) return;

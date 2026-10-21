@@ -140,3 +140,20 @@ describe('the rest', () => {
     expect(() => acorn.parse(SRC, { ecmaVersion: 5, sourceType: 'script' })).not.toThrow();
   });
 });
+
+describe('an uploaded design’s rendered picture that will not load', () => {
+  it('goes back to its template picture, srcset dropped, once', () => {
+    const img = document.createElement('img');
+    img.setAttribute('src', '/home-art/brand-new/0123456789abcdef/front-400.webp');
+    img.setAttribute('srcset', '/home-art/brand-new/0123456789abcdef/front-400.webp 400w');
+    img.setAttribute('data-fallback', '/api/template-image/brand-new/front');
+    document.body.appendChild(img);
+    img.dispatchEvent(new window.Event('error'));
+    expect(img.getAttribute('src')).toBe('/api/template-image/brand-new/front');
+    expect(img.hasAttribute('srcset')).toBe(false);
+    expect(img.hasAttribute('data-fallback')).toBe(false);
+    // the template picture failing too leaves it alone: nothing loops
+    img.dispatchEvent(new window.Event('error'));
+    expect(img.getAttribute('src')).toBe('/api/template-image/brand-new/front');
+  });
+});

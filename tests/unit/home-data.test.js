@@ -24,6 +24,8 @@ import {
   leadOutcome,
   sendLead,
   LEAD_MESSAGES,
+  cardSrcset,
+  pictureFallback,
 } from '../../site/js/home-data.js';
 import { ILL, PLACEMENTS } from '../../site/js/home-illos.js';
 import * as acorn from 'acorn';
@@ -538,5 +540,62 @@ describe('the illustrations', () => {
       const [disco] = recs.filter(([kind]) => kind === 'disco');
       expect(disco[3]).toBeLessThan(25); // level with the heading
     }
+  });
+});
+
+// An uploaded design's pictures rendered by the server (server/home-art.js), handed over by /api/custom-designs as `home`.
+describe('an uploaded design with art the server rendered', () => {
+  const REV = '0123456789abcdef';
+  const url = (id, role, w) => `/home-art/${id}/${REV}/${role}-${w}.webp`;
+  const set = (id, role, ws) => ws.map((w) => `${url(id, role, w)} ${w}w`).join(', ');
+  const home = (id, roles = ['front', 'back', 'board']) =>
+    Object.fromEntries(
+      roles.map((r) => {
+        const ws = r === 'board' ? [1200, 2000, 3000] : [400, 800, 1200];
+        return [r, { src: url(id, r, ws[0]), srcset: set(id, r, ws) }];
+      })
+    );
+  const img = (id) => ({
+    front: `/api/template-image/${id}/front`,
+    back: `/api/template-image/${id}/back`,
+  });
+
+  it('shows the rendered front, back and board, each with its srcset and its template picture as the fallback', () => {
+    const [d] = homeDesigns([
+      { ...custom('brand-new', 'חדש', img('brand-new')), home: home('brand-new') },
+    ]);
+    expect(d.fronts).toEqual([url('brand-new', 'front', 400)]);
+    expect(d.back).toBe(url('brand-new', 'back', 400));
+    expect(d.board).toEqual({
+      src: url('brand-new', 'board', 1200),
+      srcset: set('brand-new', 'board', [1200, 2000, 3000]),
+      fallback: '',
+    });
+    expect(cardSrcset(d.fronts[0])).toBe(set('brand-new', 'front', [400, 800, 1200]));
+    expect(pictureFallback(d.fronts[0])).toBe('/api/template-image/brand-new/front');
+    expect(pictureFallback(d.back)).toBe('/api/template-image/brand-new/back');
+    expect(d.deal).toBe(true);
+  });
+
+  it('wins over a hand cut (the render follows the owner’s edits; a hand cut goes stale), but not where it has nothing', () => {
+    const [d] = homeDesigns([
+      {
+        ...custom('grapefruit', 'אואזיס', img('grapefruit')),
+        home: home('grapefruit', ['front', 'back']),
+      },
+    ]);
+    expect(d.fronts).toEqual([url('grapefruit', 'front', 400)]);
+    expect(d.back).toBe(url('grapefruit', 'back', 400));
+    // no board render (the template has none): the hand-cut board stays
+    expect(d.board.src).toBe('assets/home/boards/grapefruit.webp');
+  });
+
+  it('leaves a built-in design on its hand cut, and a custom one without `home` as it was', () => {
+    const [b] = homeDesigns([{ ...builtIn('birthday', 'קליפורניה'), home: home('birthday') }]);
+    expect(b.fronts).toEqual(['assets/home/cards/birthday-f1.webp']);
+    const [c] = homeDesigns([custom('other-new', 'אחר', img('other-new'))]);
+    expect(c.fronts).toEqual(['/api/template-image/other-new/front']);
+    expect(cardSrcset(c.fronts[0])).toBe('');
+    expect(pictureFallback(c.fronts[0])).toBe('');
   });
 });

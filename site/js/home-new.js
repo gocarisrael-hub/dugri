@@ -16,6 +16,7 @@ import {
   autoDealAllowed,
   AUTO_DEAL_MS,
   cardSrcset,
+  pictureFallback,
 } from './home-data.js';
 import { initIllustrations } from './home-illos.js';
 import { initMenu, trapTab } from './home-menu.js';
@@ -26,8 +27,9 @@ const $ = (id) => document.getElementById(id);
 const rnd = (a, b) => a + Math.random() * (b - a);
 // a card picture with its sharper twin for 2x/3x screens; `sizes` is how wide the page draws it
 const cardImg = (src, sizes, attrs) => {
-  const set = cardSrcset(src);
-  return `<img src="${esc(src)}"${set ? ` srcset="${esc(set)}" sizes="${sizes}"` : ''} ${attrs}>`;
+  const set = cardSrcset(src),
+    fb = pictureFallback(src);
+  return `<img src="${esc(src)}"${set ? ` srcset="${esc(set)}" sizes="${sizes}"` : ''}${fb ? ` data-fallback="${esc(fb)}"` : ''} ${attrs}>`;
 };
 const DECK_SIZES = '(min-width: 900px) 210px, 150px',
   STRIP_SIZES = '(min-width: 900px) 340px, (min-width: 431px) 250px, 58vw', // 340: the still three-column grid
@@ -87,6 +89,8 @@ function showNext(force) {
   const put = (img, src) => {
     img.sizes = DECK_SIZES;
     img.srcset = cardSrcset(src);
+    if (pictureFallback(src)) img.dataset.fallback = pictureFallback(src);
+    else delete img.dataset.fallback;
     img.src = src;
   };
   put(a, D[under[0] || nextKey].back);
@@ -595,7 +599,7 @@ function fillFlood(d) {
   tableau.className = 'tableau' + (d.board ? '' : ' solo');
   tableau.innerHTML =
     (d.board
-      ? `<img class="bd" src="${esc(d.board.src)}"${d.board.srcset ? ` srcset="${esc(d.board.srcset)}" sizes="(min-width: 650px) 520px, 80vw"` : ''} alt="הלוח של ${esc(d.name)}">`
+      ? `<img class="bd" src="${esc(d.board.src)}"${d.board.srcset ? ` srcset="${esc(d.board.srcset)}" sizes="(min-width: 650px) 520px, 80vw"` : ''}${d.board.fallback ? ` data-fallback="${esc(d.board.fallback)}"` : ''} alt="הלוח של ${esc(d.name)}">`
       : '') +
     cardImg(d.fronts[0], VIEW_SIZES, `class="fc fr" alt="קלף מהעיצוב ${esc(d.name)}"`) +
     (d.back ? cardImg(d.back, VIEW_SIZES, `class="fc bk" alt="גב הקלף של ${esc(d.name)}"`) : '');
@@ -1089,7 +1093,10 @@ loadCustomDesigns().then(async (extra) => {
   const next = homeDesigns([...PUBLIC_DESIGNS, ...extra]);
   const same =
     next.length === designs.length &&
-    next.every((d, i) => d.id === designs[i].id && d.name === designs[i].name);
+    next.every(
+      (d, i) =>
+        d.id === designs[i].id && d.name === designs[i].name && d.fronts[0] === designs[i].fronts[0]
+    );
   if (same) return;
   designs = next;
   D = byId();

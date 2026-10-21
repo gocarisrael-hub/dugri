@@ -141,3 +141,39 @@ describe('themeForDesign accepts a design object', () => {
     expect(themeForDesign({ id: 'nope' })).toBe(null);
   });
 });
+
+// The homepage's rendered pictures (server/home-art.js) ride along as `home`, and only URLs of that exact shape survive:
+// new.html writes them into <img src/srcset>, so a payload pointing anywhere else must not reach the page.
+describe('loadCustomDesigns — the homepage’s rendered pictures', () => {
+  const REV = '0123456789abcdef';
+  const u = (role, w) => `/home-art/football-boys/${REV}/${role}-${w}.webp`;
+  const good = {
+    front: { src: u('front', 400), srcset: `${u('front', 400)} 400w, ${u('front', 1200)} 1200w` },
+    board: { src: u('board', 1200), srcset: `${u('board', 1200)} 1200w` },
+  };
+  const withHome = (home) => ({ designs: [{ ...PAYLOAD.designs[0], home }] });
+
+  it('keeps a well-formed `home`', async () => {
+    expect((await loadOne(withHome(good))).home).toEqual(good);
+  });
+
+  it('is null when the server sent none', async () => {
+    expect((await loadOne()).home).toBeNull();
+  });
+
+  it('drops a picture whose src or srcset points anywhere else, and the whole of it without a front', async () => {
+    const bad = {
+      ...good,
+      board: { src: 'https://evil.example/x.webp', srcset: '' },
+      back: { src: u('back', 400), srcset: `${u('back', 400)} 400w, javascript:alert(1) 800w` },
+    };
+    const d = await loadOne(withHome(bad));
+    expect(Object.keys(d.home)).toEqual(['front']);
+    const noFront = await loadOne(withHome({ board: good.board }));
+    expect(noFront.home).toBeNull();
+    const otherSlug = await loadOne(
+      withHome({ front: { src: '/home-art/../../x/' + REV + '/front-400.webp', srcset: '' } })
+    );
+    expect(otherSlug.home).toBeNull();
+  });
+});

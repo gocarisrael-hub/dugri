@@ -672,7 +672,7 @@ function sanitizeSvgForDom(svg) {
 // Design names, custom designs and the template picture/asset routes.
 function registerStorefrontTemplates(
   app,
-  { requireAdmin, fs, path, __dirname, pathToFileURL, TEMPLATE_ROOT, templates }
+  { requireAdmin, fs, path, __dirname, pathToFileURL, TEMPLATE_ROOT, templates, homeArt }
 ) {
   // Public: the LIVE, owner-editable per-design metadata the storefront and the
   // buyer wizard must not bake into their bundle —
@@ -792,11 +792,26 @@ function registerStorefrontTemplates(
           name_form: typeof t.name_form === 'string' && t.name_form ? t.name_form : null,
           img,
         });
+        // the homepage's pictures of it, rendered by the generator (server/home-art.js), once they exist for its
+        // artwork as it is now; until then the page shows `img` and the render is queued
+        const home = homeArt ? homeArt.artFor(key, t) : null;
+        if (home) out[out.length - 1].home = home;
       }
     } catch {
       out = [];
     }
     res.json({ designs: out });
+  });
+
+  // Public: one file of a design's homepage art. The URL carries the artwork's revision, so the bytes behind it never
+  // change: cached for a year. Every part of the path is shape-checked (server/home-art.js fileFor), so no traversal.
+  app.get('/home-art/:slug/:rev/:file', (req, res) => {
+    const file = homeArt ? homeArt.fileFor(req.params.slug, req.params.rev, req.params.file) : null;
+    if (!file) return res.status(404).type('txt').send('Not found');
+    res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(file);
   });
 
   // Public: serve a custom design's picture — the template's FILLED SVG for the

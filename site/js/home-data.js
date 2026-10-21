@@ -10,6 +10,8 @@
 // `sharp`: the widths of each card's sharper twin, <name>@2x.webp, as [fronts, back] (the 400 px card stays the src). Each twin is
 // as wide as its source really holds: 800 from a print template, ~576 from a 2000 px deck sheet (8 cards a sheet), never upscaled.
 // A design that is public but missing here still shows, from its own live pictures (a custom design's template card).
+// An uploaded (custom) design's pictures rendered by the server through the generator (server/home-art.js; `home` on
+// /api/custom-designs) win over both, once they exist: they are the print render, and they follow the owner's edits.
 export const DESIGN_ART = {
   bachelorette: {
     color: '#fc789c',
@@ -137,8 +139,19 @@ export function panelColors(h) {
 }
 
 const CARD_W = 400;
-/** The srcset for one of the page's own card pictures, '' for any other picture (a custom design's template card). */
+// An uploaded design's pictures rendered by the server (server/home-art.js, on /api/custom-designs as `home`): their
+// srcsets, and the template picture to fall back to if one will not load (an old Safari without WebP). Filled by
+// homeDesigns(), keyed by the picture's src.
+const RENDERED = new Map();
+/** The template picture to show instead of a rendered one that failed to load; '' for every other picture. */
+export function pictureFallback(src) {
+  const r = RENDERED.get(src);
+  return (r && r.fallback) || '';
+}
+/** The srcset for one of the page's own card pictures or a rendered one, '' for any other picture (a template card). */
 export function cardSrcset(src) {
+  const r = RENDERED.get(src);
+  if (r) return r.srcset || '';
   const m = /^assets\/home\/cards\/(.+)-(f\d+|b1)\.webp$/.exec(src || '');
   const art = m && DESIGN_ART[m[1]];
   if (!art || !art.sharp) return '';
@@ -177,6 +190,23 @@ export function homeDesigns(designs) {
       back = d.img.back || null;
       if (d.img.board) board = { src: d.img.board, srcset: '' };
     } else continue; // a built-in design's live picture is a sheet of eight, not a card; it needs its art added here first
+    // An uploaded design whose art the server has rendered through the generator: its print render, at every width the
+    // page needs, and current with the design as the owner last changed it — so it wins over a hand cut, which goes
+    // stale the day she edits the design. A role it has no render for keeps what was there.
+    const home = d.custom && d.home && d.home.front && d.home.front.src ? d.home : null;
+    if (home) {
+      const img = d.img || {};
+      const take = (role, was) => {
+        const r = home[role];
+        if (!r || !r.src) return null;
+        RENDERED.set(r.src, { srcset: r.srcset || '', fallback: img[role] || was || '' });
+        return r.src;
+      };
+      fronts = [take('front', fronts[0])];
+      back = take('back', back) || back;
+      const bd = take('board', board && board.src);
+      if (bd) board = { src: bd, srcset: home.board.srcset || '', fallback: pictureFallback(bd) };
+    }
     seen.add(d.id);
     const color = (art && art.color) || (HEX_RE.test(d.accent || '') ? d.accent : FALLBACK_COLOR);
     out.push({
