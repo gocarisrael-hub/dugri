@@ -95,6 +95,10 @@ for (const mode of ['live', 'redesign']) {
       if (await page.locator('#couponRemoveBtn').isVisible())
         await page.locator('#couponRemoveBtn').click();
       if (coupon.code) {
+        // The redesign folds the field behind a row until it is asked for.
+        const fold = page.getByTestId('coupon-toggle');
+        if ((await fold.isVisible()) && (await fold.getAttribute('aria-expanded')) === 'false')
+          await fold.click();
         await page.fill('#couponInput', coupon.code);
         await page.locator('#couponApplyBtn').click();
         await expect(page.locator('#couponMsg')).toContainText('הנחה');

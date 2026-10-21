@@ -504,6 +504,71 @@ html.rd .pay-addon .opt-price {
   font-weight: var(--weight-strong);
 }
 
+/* The delivery tick is the printed game's add-on, not a fourth choice: the page moves it to straight under that game
+   (collect.html, at the checkout's setup), and here it hangs off the game's row with no rule of its own, indented to the
+   game's text, one size down, with its price beside the words ("+ שלחו לי עד הבית · 39 ₪") rather than on the prices'
+   edge, which belongs to the versions. Its remote-towns footnote takes the same indent. */
+html.rd #shipOpt {
+  border-top: 0;
+  margin-top: -10px;
+  margin-inline-start: 30px;
+  padding: 0 0 12px;
+}
+html.rd #shipOpt .opt-title {
+  justify-content: flex-start;
+  gap: 6px;
+  font-size: 14px;
+}
+html.rd #shipOpt .opt-title::before {
+  content: '+';
+}
+html.rd #shipOpt .opt-price {
+  font-weight: var(--weight-label);
+}
+html.rd #shipOpt .opt-price::before {
+  content: '· ';
+  font-weight: var(--weight-body);
+}
+html.rd #shipOpt .opt-note {
+  font-size: 12px;
+  margin-top: 2px;
+}
+html.rd .pay-opts > .odd-note[data-where='ship-toggle'] {
+  margin-top: -6px;
+  margin-inline-start: 30px;
+}
+
+/* The coupon: one quiet row that opens to the field (collect.html wires the fold; the live page hides the toggle). The
+   field's own label is left to screen readers once the row has said it. */
+html.rd #couponToggle {
+  display: inline-block;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--color-ink);
+  font-size: 14px;
+  font-weight: var(--weight-label);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+html.rd #couponToggle:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+html.rd #couponBox:not(.open) #couponBody {
+  display: none;
+}
+html.rd #couponBody .fld {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
 /* The radios and ticks: drawn, not the browser's. A 20px round or a rounded square with a thin ink outline; chosen, the
    round takes an ink dot and the square fills ink with a paper tick. */
 html.rd #payPanel input[type='radio'],

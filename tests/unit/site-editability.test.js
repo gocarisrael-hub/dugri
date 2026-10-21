@@ -97,6 +97,7 @@ describe('representative NEW owner-editable keys are present on each page', () =
       'collect-ver-custom-title',
       'collect-ver-custom-note',
       'collect-ver-custom-note2',
+      'collect-coupon-toggle', // the redesign's coupon row ("יש לכם קוד קופון?")
     ],
     // The self-pickup page. Its hours are a TABLE of tagged cells rather than a
     // picture of a timetable, so the owner can correct one closing time from the
