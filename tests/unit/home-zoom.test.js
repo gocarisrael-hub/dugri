@@ -103,16 +103,30 @@ describe('the cards have sharp twins for 2x and 3x screens', () => {
     ...(a.back ? [`assets/home/cards/${id}-b1.webp`] : []),
   ]);
   it.each(all)('%s', (src) => {
-    const set = cardSrcset(src).split(', ');
-    expect(set).toHaveLength(2);
-    const [one, two] = set.map((c) => c.split(' '));
+    const [one, ...twins] = cardSrcset(src)
+      .split(', ')
+      .map((c) => c.split(' '));
     expect(one).toEqual([src, '400w']);
-    const file = path.join(CARDS, path.basename(two[0]));
-    expect(two[0]).toBe(src.replace('.webp', '@2x.webp'));
-    expect(webpWidth(file)).toBe(Number(two[1].replace('w', '')));
-    expect(Number(two[1].replace('w', ''))).toBeGreaterThan(400);
     expect(webpWidth(path.join(CARDS, path.basename(src)))).toBe(400);
-    expect(fs.existsSync(file.replace('.webp', '.jpg'))).toBe(true);
+    expect(twins.length).toBeGreaterThanOrEqual(1);
+    let last = 400;
+    twins.forEach(([url, w], i) => {
+      // @2x, then @3x: each a real file, as wide as it claims and wider than the rung below
+      expect(url).toBe(src.replace('.webp', `@${i + 2}x.webp`));
+      const width = Number(w.replace('w', ''));
+      expect(webpWidth(path.join(CARDS, path.basename(url)))).toBe(width);
+      expect(width).toBeGreaterThan(last);
+      last = width;
+    });
+    // old Safari's JPEG twin: the @2x one serves every sharper rung
+    expect(fs.existsSync(path.join(CARDS, path.basename(src).replace('.webp', '@2x.jpg')))).toBe(
+      true
+    );
+  });
+  it('gives the cards cut from a vector source a 1200 px rung for a zoomed view', () => {
+    for (const id of ['bachelorette', 'birthday', 'marriage', 'tarifa'])
+      for (const side of ['f1', 'b1'])
+        expect(cardSrcset(`assets/home/cards/${id}-${side}.webp`)).toMatch(/@3x\.webp 1200w$/);
   });
   it('gives no srcset to a picture that is not one of the page’s own cards', () => {
     expect(cardSrcset('/api/template-image/brand-new/front')).toBe('');

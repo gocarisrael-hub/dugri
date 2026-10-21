@@ -7,8 +7,11 @@
 // daniel-amit, posttrip, and grapefruit's back) are cut whole from the template card or the print render instead, outline and
 // frame as printed. They live in assets/home/, keyed by the live design id.
 // `color` is the design's main colour, sampled from its real card; the panel and the tapped view derive from it.
-// `sharp`: the widths of each card's sharper twin, <name>@2x.webp, as [fronts, back] (the 400 px card stays the src). Each twin is
-// as wide as its source really holds: 800 from a print template, ~576 from a 2000 px deck sheet (8 cards a sheet), never upscaled.
+// `sharp`: each card's sharper twins as [fronts, back], each a list of widths for <name>@2x.webp and <name>@3x.webp (the 400 px
+// card stays the src). Each twin is as wide as its source really holds, never upscaled: 800 and 1200 from a vector source (a print
+// template or the shop's own vector sheet), 576 from a 2000 px deck sheet or a 598 px print render.
+// `board3x`: the board also has a 3000 px <id>@3x.webp, re-rendered from the shop's vector board (the approved board's own pixels
+// kept only where it was edited by hand), for a zoomed-in view.
 // A design that is public but missing here still shows, from its own live pictures (a custom design's template card).
 // An uploaded (custom) design's pictures rendered by the server through the generator (server/home-art.js; `home` on
 // /api/custom-designs) win over both, once they exist: they are the print render, and they follow the owner's edits.
@@ -19,7 +22,11 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [576, 800],
+    board3x: true,
+    sharp: [
+      [800, 1200],
+      [800, 1200],
+    ],
   },
   birthday: {
     color: '#9ce4fc',
@@ -27,7 +34,11 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [800, 800],
+    board3x: true,
+    sharp: [
+      [800, 1200],
+      [800, 1200],
+    ],
   },
   grapefruit: {
     color: '#f07848',
@@ -35,7 +46,7 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [800, 576],
+    sharp: [[800, 1200], [576]],
   },
   marriage: {
     color: '#0048a8',
@@ -43,7 +54,11 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [800, 800],
+    board3x: true,
+    sharp: [
+      [800, 1200],
+      [800, 1200],
+    ],
   },
   // one front, from the template card that prints; the old cuts of fronts 2-8 had a heavier outline and older lettering
   'daniel-amit': {
@@ -52,7 +67,7 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [576, 576],
+    sharp: [[576], [576]],
   },
   // the koi red of its art, so its panel and tapped view are a pastel red and not grey
   japanese: {
@@ -61,7 +76,8 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [800, 636],
+    board3x: true,
+    sharp: [[800, 1200], [636]],
   },
   // one front, from the print render (its template card is not public); the old cuts had a heavier outline and frame colour
   posttrip: {
@@ -70,7 +86,8 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [576, 576],
+    board3x: true,
+    sharp: [[576], [576]],
   },
   // one front: cut from the template card that prints (thin red line, patterned frame); fronts 2-8 exist only on the volume
   'football-boys': {
@@ -79,7 +96,7 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [576, 576],
+    sharp: [[576], [576]],
   },
   tarifa: {
     color: '#3d6b2c',
@@ -87,9 +104,19 @@ export const DESIGN_ART = {
     back: true,
     board: true,
     board2x: true,
-    sharp: [800, 800],
+    sharp: [
+      [800, 1200],
+      [800, 1200],
+    ],
   },
-  kids: { color: '#1878fc', fronts: 1, back: true, board: true, board2x: false, sharp: [800, 576] }, // its board has no 2000 px source
+  kids: {
+    color: '#1878fc',
+    fronts: 1,
+    back: true,
+    board: true,
+    board2x: false,
+    sharp: [[800, 1200], [576]],
+  }, // its board has no 2000 px source
 };
 // The approved order on the strip; designs the admin adds later follow, in the shop's order.
 export const DESIGN_ORDER = [
@@ -155,8 +182,10 @@ export function cardSrcset(src) {
   const m = /^assets\/home\/cards\/(.+)-(f\d+|b1)\.webp$/.exec(src || '');
   const art = m && DESIGN_ART[m[1]];
   if (!art || !art.sharp) return '';
-  const w = art.sharp[m[2] === 'b1' ? 1 : 0];
-  return `${src} ${CARD_W}w, ${src.replace(/\.webp$/, '@2x.webp')} ${w}w`;
+  const twins = art.sharp[m[2] === 'b1' ? 1 : 0];
+  return [`${src} ${CARD_W}w`]
+    .concat(twins.map((w, i) => `${src.replace(/\.webp$/, `@${i + 2}x.webp`)} ${w}w`))
+    .join(', ');
 }
 
 /**
@@ -181,7 +210,10 @@ export function homeDesigns(designs) {
         const src = `${ART}boards/${d.id}.webp`;
         board = {
           src,
-          srcset: art.board2x ? `${src} 1200w, ${ART}boards/${d.id}@2x.webp 2000w` : '',
+          srcset: art.board2x
+            ? `${src} 1200w, ${ART}boards/${d.id}@2x.webp 2000w` +
+              (art.board3x ? `, ${ART}boards/${d.id}@3x.webp 3000w` : '')
+            : '',
         };
       }
     } else if (d.custom && d.img && d.img.front) {

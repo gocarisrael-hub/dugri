@@ -11,7 +11,7 @@
   var root = doc.documentElement;
 
   // 1. WebP: error events do not bubble, so listen in the capture phase, from before the first <img> is parsed
-  var WEBP = /^(.*\/assets\/home\/(cards|boards|logos)\/[^/?#]+?)(@2x)?\.webp(\?.*)?$/;
+  var WEBP = /^(.*\/assets\/home\/(cards|boards|logos)\/[^/?#]+?)(@[23]x)?\.webp(\?.*)?$/;
   doc.addEventListener(
     'error',
     function (e) {
@@ -29,9 +29,9 @@
       var m = WEBP.exec(img.currentSrc || img.src || '');
       if (!m) return;
       img.removeAttribute('srcset');
-      // a card the screen wanted sharp keeps its sharp JPEG twin; boards and logos have 1x twins only
+      // a card the screen wanted sharp keeps a sharp JPEG twin (@2x; the @3x zoom rung has none); boards and logos have 1x twins only
       img.src =
-        m[1] + (m[3] && m[2] === 'cards' ? m[3] : '') + (m[2] === 'logos' ? '.png' : '.jpg');
+        m[1] + (m[3] && m[2] === 'cards' ? '@2x' : '') + (m[2] === 'logos' ? '.png' : '.jpg');
     },
     true
   );

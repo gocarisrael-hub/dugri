@@ -62,6 +62,17 @@ describe('a WebP that will not decode', () => {
     );
   });
 
+  it('sends a failed zoom rung to the sharp JPEG it has: @2x for a card, the 1x JPEG for a board', () => {
+    const card = failImg(
+      '/assets/home/cards/birthday-f1@3x.webp',
+      '/assets/home/cards/birthday-f1.webp 400w, /assets/home/cards/birthday-f1@2x.webp 800w, /assets/home/cards/birthday-f1@3x.webp 1200w'
+    );
+    expect(card.src).toBe('http://localhost:3000/assets/home/cards/birthday-f1@2x.jpg');
+    expect(failImg('/assets/home/boards/birthday@3x.webp').src).toBe(
+      'http://localhost:3000/assets/home/boards/birthday.jpg'
+    );
+  });
+
   it('leaves every other picture alone, and a failing twin too, so nothing loops', () => {
     expect(failImg('/content-uploads/x.webp').getAttribute('src')).toBe('/content-uploads/x.webp');
     expect(failImg('/assets/home/cards/kids-f1.jpg').getAttribute('src')).toBe(
@@ -74,8 +85,11 @@ describe('a WebP that will not decode', () => {
     let n = 0;
     for (const sub of ['cards', 'boards', 'logos']) {
       for (const f of fs.readdirSync(path.join(dir, sub))) {
-        if (!f.endsWith('.webp') || (f.includes('@2x') && sub !== 'cards')) continue; // cards keep a sharp twin too
-        const twin = f.replace(/\.webp$/, sub === 'logos' ? '.png' : '.jpg');
+        // cards keep a sharp twin too; the zoom-only @3x rungs fall back to the @2x (cards) or 1x (boards) JPEG
+        if (!f.endsWith('.webp') || (f.includes('@2x') && sub !== 'cards')) continue;
+        const twin = f
+          .replace(/@3x\.webp$/, sub === 'cards' ? '@2x.webp' : '.webp')
+          .replace(/\.webp$/, sub === 'logos' ? '.png' : '.jpg');
         expect(fs.existsSync(path.join(dir, sub, twin)), `${sub}/${twin}`).toBe(true);
         n++;
       }
