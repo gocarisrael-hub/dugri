@@ -171,7 +171,7 @@ def test_board_and_backs_render_paths_wire_rtl():
         config.font_path = lambda name, fn: font
         rp.font_face = lambda name, path, weight=None: ""
         rp.title_block = spy_title_block
-        build.render_svg = lambda svg_text, w, h, out_png: out_png
+        build.render_svg = lambda svg_text, w, h, out_png, **kw: out_png
 
         # Hebrew theme -> both surfaces must be RTL.
         config.theme = lambda name: make_cfg("hebrew")
@@ -444,7 +444,7 @@ def test_custom_title_routes_through_board_title_block():
         config.font_path = lambda name, fn: font
         rp.font_face = lambda name, path, weight=None: ""
         rp.title_block = spy_title_block
-        build.render_svg = lambda svg_text, w, h, out_png: out_png
+        build.render_svg = lambda svg_text, w, h, out_png, **kw: out_png
 
         # The override lines the CALLER computes (config.title_lines override path)
         # are what build passes to render_board; assert render_board hands them on.

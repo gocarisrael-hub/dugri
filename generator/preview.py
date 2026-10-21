@@ -42,6 +42,10 @@ PLACEHOLDER_WORDS = ["מסיבה", "חברים", "ריקודים", "צחוקים
 # render itself is full-res; we only down-sample the delivered image).
 CARD_MAX_W = 700
 BOARD_MAX_W = 1000
+# Chrome's device scale factor for a buyer preview: a 299px card comes back
+# 598px wide, then capped to CARD_MAX_W. A caller asking for its OWN scale (the
+# homepage art, server/home-art.js) gets the full-resolution PNG, uncapped.
+DEFAULT_SCALE = 2
 
 
 def pawn_slots(theme):
@@ -274,8 +278,13 @@ def _sample_card_index(recipe):
     return 0
 
 
-def _downscale(png_path, max_w):
-    """Down-sample a PNG in place to at most ``max_w`` wide (keeps aspect)."""
+def _downscale(png_path, max_w, full_res=False):
+    """Down-sample a PNG in place to at most ``max_w`` wide (keeps aspect).
+
+    ``full_res`` skips it: a caller that chose its own scale wants every pixel
+    of it, and capping a 1500px card back to 700 would make the scale moot."""
+    if full_res:
+        return
     img = Image.open(png_path)
     if img.width > max_w:
         h = round(img.height * max_w / img.width)
@@ -300,8 +309,21 @@ def _crop_card(full_png, cell, viewbox, out_png):
     return out_png
 
 
+def _scales(scale, board_scale):
+    """``(card_scale, board_scale, full_res)`` for one preview run.
+
+    Neither given is the buyer preview, byte for byte as before: scale 2, capped.
+    Either given means the caller picked its resolution, so nothing is capped and
+    the board follows ``scale`` unless it has its own."""
+    full_res = scale is not None or board_scale is not None
+    card = DEFAULT_SCALE if scale is None else scale
+    board = card if board_scale is None else board_scale
+    return card, board, full_res
+
+
 def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
-                         all_fronts=False, with_board=True):
+                         all_fronts=False, with_board=True, scale=None,
+                         board_scale=None):
     """The v2 preview: the front card(s), the back, and the board.
 
     A BUYER preview renders the theme's FIRST front only: the fronts differ by
@@ -317,6 +339,7 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
     out = {}
     notes = []
     paths = []
+    card_scale, board_scale, full_res = _scales(scale, board_scale)
     if all_fronts and len(fronts) > 1:
         # Showing every front is an ENHANCEMENT for calibration. It must never
         # cost the owner their preview: this render is heavier than a single
@@ -327,7 +350,8 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
         try:
             paths = rp.render_fronts_strip(
                 theme, fronts, list(PLACEHOLDER_WORDS), title_lines,
-                os.path.join(workdir, "fronts"), word_font=word_font)
+                os.path.join(workdir, "fronts"), word_font=word_font,
+                scale=card_scale)
         except Exception as exc:  # noqa: BLE001 - any failure degrades, none propagates
             print(f"all-fronts preview failed, falling back to one card: {exc}",
                   file=sys.stderr)
@@ -340,7 +364,7 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
             _note(notes, "cards", NOTE_FAILED, str(exc))
     if paths:
         for path in paths:
-            _downscale(path, CARD_MAX_W)
+            _downscale(path, CARD_MAX_W, full_res)
         # Keyed by front number so the admin UI can label each image with the
         # front it belongs to; "card" stays the first one so every existing
         # caller keeps working unchanged.
@@ -351,15 +375,16 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
         card_png = rp.render_single_card(
             theme, config.card_path(theme, front), list(PLACEHOLDER_WORDS),
             title_lines, os.path.join(workdir, "card.png"), front_index=front,
-            word_font=word_font)
-        _downscale(card_png, CARD_MAX_W)
+            word_font=word_font, scale=card_scale)
+        _downscale(card_png, CARD_MAX_W, full_res)
     out["card"] = card_png
 
     board_clean = config.clean_path(theme, "board")
     if with_board and os.path.exists(board_clean):
         board_png = buildmod.render_board(
-            theme, board_clean, title_lines, os.path.join(workdir, "board.png"))
-        _downscale(board_png, BOARD_MAX_W)
+            theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
+            scale=board_scale)
+        _downscale(board_png, BOARD_MAX_W, full_res)
         out["board"] = board_png
         # Same test build.render_board itself makes ("if not bd": no board slot
         # -> print the clean board untouched), so the note cannot claim a title
@@ -381,8 +406,8 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
         back_png = rp.render_single_card(
             theme, back_path, [], title_lines,
             os.path.join(workdir, "back.png"), kind="back", word_font=word_font,
-            back_index=bi)
-        _downscale(back_png, CARD_MAX_W)
+            back_index=bi, scale=card_scale)
+        _downscale(back_png, CARD_MAX_W, full_res)
         out["back"] = back_png
         if not rp.back_draws_title(theme, back_path, back_index=bi):
             _note(notes, "back", NOTE_NO_TITLE,
@@ -397,7 +422,7 @@ def _preview_single_card(theme, cfg, title_lines, workdir, word_font=None,
 
 def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
             custom_title=None, calibration=None, with_board=True,
-            gender=None):
+            gender=None, scale=None, board_scale=None):
     """Render a preview and return ``{"card": path, "board": path, "back": path}``.
 
     ``board`` and ``back`` are included only when the theme has that artwork; the
@@ -440,6 +465,14 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                   approval step before a deck is printed, so it takes the same
                   argument production does — a girl's preview must show בת for
                   the same reason her printed cards must.
+    scale         Chrome's device scale factor for the card and back (None: the
+                  buyer preview's 2, capped to CARD_MAX_W/BOARD_MAX_W). Setting
+                  it, or ``board_scale``, returns full-resolution PNGs, uncapped:
+                  the homepage art renders each design once at ~5 and makes its
+                  own size ladder from that.
+    board_scale   the same for the board, several times the card's width (a
+                  1123px board against a 299px card), so it usually wants less;
+                  it follows ``scale`` when not given.
     """
     # Install BEFORE the first config.theme() read: render_page/build re-read the
     # config themselves, and they must all see the same overridden values.
@@ -468,7 +501,8 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                 _preview_single_card(theme, cfg, title_lines, workdir,
                                      word_font=word_font,
                                      all_fronts=bool(calibration),
-                                     with_board=with_board), gap_note)
+                                     with_board=with_board, scale=scale,
+                                     board_scale=board_scale), gap_note)
 
         recipe = _recipe(cfg)
         # BELT AND BRACES. The theme config said "legacy sheet", but the recipe
@@ -485,9 +519,11 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
                 _preview_single_card(theme, cfg, title_lines, workdir,
                                      word_font=word_font,
                                      all_fronts=bool(calibration),
-                                     with_board=with_board), gap_note)
+                                     with_board=with_board, scale=scale,
+                                     board_scale=board_scale), gap_note)
 
         idx = _sample_card_index(recipe)
+        card_scale, sheet_board_scale, full_res = _scales(scale, board_scale)
 
         # Fill only the sample card with placeholder words; the rest stay blank (we
         # crop away everything but this one card anyway).
@@ -496,13 +532,14 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
 
         fronts = config.clean_path(theme, "fronts")
         full_png = os.path.join(workdir, "front_full.png")
-        rp.render(theme, fronts, words_by_card, title_lines, full_png, word_font=word_font)
+        rp.render(theme, fronts, words_by_card, title_lines, full_png, word_font=word_font,
+                  scale=card_scale)
 
         card_png = _crop_card(
             full_png, recipe["cards"][idx]["cell"], recipe["viewBox"],
             os.path.join(workdir, "card.png"),
         )
-        _downscale(card_png, CARD_MAX_W)
+        _downscale(card_png, CARD_MAX_W, full_res)
 
         out = {"card": card_png}
         notes = []
@@ -511,8 +548,9 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if with_board and os.path.exists(board_clean):
             board_png = buildmod.render_board(
                 theme, board_clean, title_lines, os.path.join(workdir, "board.png"),
+                scale=sheet_board_scale,
             )
-            _downscale(board_png, BOARD_MAX_W)
+            _downscale(board_png, BOARD_MAX_W, full_res)
             out["board"] = board_png
             if not cfg.get("board"):
                 _note(notes, "board", NOTE_NO_TITLE,
@@ -530,12 +568,13 @@ def preview(theme, name, extra_fields=None, word_font=None, workdir=None,
         if os.path.exists(backs_clean):
             try:
                 back_full = os.path.join(workdir, "back_full.png")
-                buildmod.render_backs(theme, backs_clean, title_lines, back_full)
+                buildmod.render_backs(theme, backs_clean, title_lines, back_full,
+                                      scale=card_scale)
                 back_png = _crop_card(
                     back_full, recipe["cards"][idx]["cell"], recipe["viewBox"],
                     os.path.join(workdir, "back.png"),
                 )
-                _downscale(back_png, CARD_MAX_W)
+                _downscale(back_png, CARD_MAX_W, full_res)
                 out["back"] = back_png
                 # Same test build.render_backs itself makes ("if not bk": no back
                 # slot -> print the clean backs untouched).
@@ -618,7 +657,17 @@ def main():
                     help="skip the game board entirely (card + back only). The "
                          "board is the most expensive image in a preview, so a "
                          "caller that will not show it should not pay to render it")
+    ap.add_argument("--scale", type=float, default=None, metavar="S",
+                    help="Chrome's device scale factor for the card and back "
+                         "(default 2, capped to %dpx). Given, the PNGs come back "
+                         "at full resolution, uncapped" % CARD_MAX_W)
+    ap.add_argument("--board-scale", type=float, default=None, metavar="S",
+                    help="the same for the board (default: --scale). Given, "
+                         "nothing is capped")
     args = ap.parse_args()
+    for flag, val in (("--scale", args.scale), ("--board-scale", args.board_scale)):
+        if val is not None and not 0 < val <= 8:
+            ap.error(f"{flag} must be above 0 and at most 8")
 
     calibration = None
     if args.calibration:
@@ -667,6 +716,7 @@ def main():
         word_font=args.word_font, workdir=args.out_dir,
         custom_title=args.title, calibration=calibration,
         with_board=not args.no_board, gender=args.gender,
+        scale=args.scale, board_scale=args.board_scale,
     )
     # The server parses this JSON line to locate the produced PNGs.
     print(json.dumps(imgs))

@@ -5298,8 +5298,11 @@ def build_single_card_svg(theme, clean_svg, words, title_lines, front_index=None
 
 def render_single_card(theme, clean_svg, words, title_lines, out_png,
                        front_index=None, word_font=None, kind="word", photos=None,
-                       back_index=None, deck_pitch=None):
-    """Screenshot one card to ``out_png`` (the preview path)."""
+                       back_index=None, deck_pitch=None, scale=2):
+    """Screenshot one card to ``out_png`` (the preview path).
+
+    ``scale`` is Chrome's device scale factor: the PNG is ``scale`` times the
+    card's CSS size. 2 is the buyer preview; the homepage art asks for more."""
     svg = build_single_card_svg(theme, clean_svg, words, title_lines,
                                 front_index=front_index, word_font=word_font,
                                 kind=kind, photos=photos, back_index=back_index,
@@ -5308,7 +5311,7 @@ def render_single_card(theme, clean_svg, words, title_lines, out_png,
     with open(svg_path, "w", encoding="utf-8") as f:
         f.write(svg)
     w, h = dims(clean_svg)
-    chrome.screenshot(svg_path, out_png, w, h, scale=2, what="the preview card")
+    chrome.screenshot(svg_path, out_png, w, h, scale=scale, what="the preview card")
     return out_png
 
 
@@ -5512,12 +5515,13 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     return svg.replace("</svg>", body + "</svg>")
 
 
-def render(theme, clean_svg, words_by_card, title_lines, out_png, word_font=None):
+def render(theme, clean_svg, words_by_card, title_lines, out_png, word_font=None,
+           scale=2):
     svg = build_page(theme, clean_svg, words_by_card, title_lines, word_font=word_font)
     svg_path = out_png.replace(".png", ".svg")
     open(svg_path, "w", encoding="utf-8").write(svg)
     w, h = dims(clean_svg)
-    chrome.screenshot(svg_path, out_png, w, h, scale=2,
+    chrome.screenshot(svg_path, out_png, w, h, scale=scale,
                       what=f"the page {os.path.basename(clean_svg)}")
     return out_png
 
