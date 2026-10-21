@@ -127,6 +127,23 @@ test.describe('a tapped design zooms', () => {
     expect(await zoomScale(page)).toBeCloseTo(4, 1);
     await expect(page.locator('#flood')).toHaveAttribute('open', '');
     await expect(page.locator('#tableau .bd')).not.toHaveAttribute('sizes', sizes0);
+    // and once zoomed it is drawn from a file as sharp as the zoomed size needs, up to the 3000 px rung (the first design has one)
+    await expect
+      .poll(() => page.locator('#tableau .bd').evaluate((i) => i.currentSrc))
+      .toMatch(/boards\/bachelorette@[23]x\.webp$/);
+    const zoomed = await page.locator('#tableau .bd').evaluate(
+      (i) =>
+        new Promise((ok) => {
+          const probe = new window.Image();
+          probe.onload = () =>
+            ok({
+              nat: probe.naturalWidth,
+              need: i.getBoundingClientRect().width * window.devicePixelRatio,
+            });
+          probe.src = i.currentSrc;
+        })
+    );
+    expect(zoomed.nat).toBeGreaterThanOrEqual(Math.min(zoomed.need * 0.95, 3000));
     // on a zoomed view a finger dragging down pans the pictures; it is not the swipe down that closes the view
     const ty0 = await page
       .locator('#flood .spread')
@@ -253,6 +270,6 @@ for (const dpr of [3, 1])
       }
       // the tapped view's cards ask for theirs too
       await page.locator('#strip .dz:not([aria-hidden])').first().click();
-      await expect(page.locator('#tableau .fr')).toHaveAttribute('srcset', /@2x\.webp \d+w$/);
+      await expect(page.locator('#tableau .fr')).toHaveAttribute('srcset', /@[23]x\.webp \d+w$/);
     });
   });

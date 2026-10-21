@@ -18,6 +18,8 @@ const baseURL = E2E_BASE_URL;
 //     check passed.
 //   rd-options-nav, collect-toast-layer — the wizard's top bar folding into the
 //     menu in the mode, and collect's word toast staying under its sheets (#730).
+//   home-view-size — the tapped design's view sized by the window on a computer;
+//     the owner reads it in Safari on a 1x display.
 // tests/unit/e2e-harness.test.js fails if a name here stops matching a file, so a
 // rename cannot quietly take a spec off WebKit.
 export const WEBKIT_SPECS = [
@@ -29,6 +31,7 @@ export const WEBKIT_SPECS = [
   'site-footer',
   'rd-options-nav',
   'collect-toast-layer',
+  'home-view-size',
 ];
 
 export default defineConfig({
