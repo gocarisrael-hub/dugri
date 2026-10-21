@@ -1851,6 +1851,10 @@
       .coupon-box {
         margin-top: 10px;
       }
+      /* The fold is the redesign's (css/rd/collect.css); this page keeps the field open. */
+      .coupon-toggle {
+        display: none;
+      }
       .coupon-box .fld {
         font-size: 13px;
         margin-bottom: 5px;
@@ -3042,7 +3046,7 @@
             <input type="radio" name="payVersion" value="pickup" />
             <span class="opt-body">
               <span class="opt-title"
-                ><span data-edit="collect-ver-pickup-title">משחק מוכן ומודפס</span
+                ><span data-edit="collect-ver-pickup-title">דוגרי אישי</span
                 ><span class="opt-price"><span class="amt">199 ₪</span></span></span
               >
               <span class="opt-note" data-edit="collect-ver-pickup-note"
@@ -3198,28 +3202,51 @@
           </div>
         </div>
 
-        <div class="coupon-box">
-          <label class="fld" for="couponInput" data-edit="collect-coupon-label">קוד קופון</label>
-          <div class="row">
-            <input type="text" id="couponInput" placeholder="הזינו קוד קופון" autocomplete="off" />
-            <button
-              type="button"
-              class="ghost"
-              id="couponApplyBtn"
-              data-edit="collect-coupon-apply"
-            >
-              החל קופון
-            </button>
-          </div>
-          <div class="coupon-msg" id="couponMsg" role="status" aria-live="polite"></div>
+        <!-- In the redesign the field folds behind one quiet row: a coupon is the
+             exception at checkout, and an open field reads as "everyone else has a
+             code". It opens on a click, and opens by itself whenever a code is in
+             play (applied, or carried in from a link). The live page hides the
+             toggle and keeps the field open, as it always was. -->
+        <div class="coupon-box" id="couponBox">
           <button
             type="button"
-            class="coupon-remove hidden"
-            id="couponRemoveBtn"
-            data-edit="collect-coupon-remove"
+            class="coupon-toggle"
+            id="couponToggle"
+            aria-expanded="false"
+            aria-controls="couponBody"
+            data-testid="coupon-toggle"
+            data-edit="collect-coupon-toggle"
           >
-            הסירו קופון
+            יש לכם קוד קופון?
           </button>
+          <div class="coupon-body" id="couponBody">
+            <label class="fld" for="couponInput" data-edit="collect-coupon-label">קוד קופון</label>
+            <div class="row">
+              <input
+                type="text"
+                id="couponInput"
+                placeholder="הזינו קוד קופון"
+                autocomplete="off"
+              />
+              <button
+                type="button"
+                class="ghost"
+                id="couponApplyBtn"
+                data-edit="collect-coupon-apply"
+              >
+                החל קופון
+              </button>
+            </div>
+            <div class="coupon-msg" id="couponMsg" role="status" aria-live="polite"></div>
+            <button
+              type="button"
+              class="coupon-remove hidden"
+              id="couponRemoveBtn"
+              data-edit="collect-coupon-remove"
+            >
+              הסירו קופון
+            </button>
+          </div>
         </div>
 
         <!-- Copies of the same deck. One control for the whole order — the words
@@ -6952,6 +6979,19 @@
         });
         const opts = Array.from(document.querySelectorAll('.pay-opt'));
         const optsBox = $('#payOpts');
+        // In the redesign the delivery tick is drawn as the printed game's own
+        // add-on, nested under it, so it moves up to sit straight beneath that
+        // game (its remote-towns footnote with it), ahead of the pickup note and
+        // the custom design. Moved in the DOM rather than reordered in CSS, so the
+        // keyboard and a screen reader meet it where it is seen. The live page
+        // keeps its order.
+        if (document.documentElement.classList.contains('rd')) {
+          const printed = optsBox.querySelector('input[value="pickup"]');
+          const ship = $('#shipOpt');
+          const shipNote = optsBox.querySelector('[data-where="ship-toggle"]');
+          if (printed && ship)
+            printed.closest('.pay-opt').after(...[ship, shipNote].filter(Boolean));
+        }
         const addressForm = $('#addressForm');
         const payErr = $('#payErr');
         const priceErr = $('#priceLoadErr');
@@ -7560,6 +7600,21 @@
           // A personal friend code is single-use: once a paid order has spent it.
           used: 'הקופון הזה כבר נוצל',
         };
+        // The fold over the field (drawn only in the redesign; the live page hides
+        // the toggle and ignores .open). openCoupon only ever opens: it runs when a
+        // code comes into play, so a code she has never sits behind the row.
+        const couponBox = $('#couponBox');
+        const couponToggle = $('#couponToggle');
+        function setCouponOpen(open) {
+          couponBox.classList.toggle('open', open);
+          couponToggle.setAttribute('aria-expanded', String(open));
+        }
+        const openCoupon = () => setCouponOpen(true);
+        couponToggle.onclick = () => {
+          const open = !couponBox.classList.contains('open');
+          setCouponOpen(open);
+          if (open) couponInput.focus();
+        };
         function setCouponMsg(text, kind) {
           couponMsg.textContent = text || '';
           couponMsg.className = 'coupon-msg' + (kind ? ' ' + kind : '');
@@ -7588,6 +7643,7 @@
             });
             if (r.valid) {
               appliedCoupon = { code, discount_pct: r.discount_pct };
+              openCoupon();
               couponInput.disabled = true;
               couponApply.classList.add('hidden');
               couponRemove.classList.remove('hidden');
@@ -7629,6 +7685,7 @@
           const carried = carriedCoupon();
           if (carried && !isPaid() && !appliedCoupon) {
             couponInput.value = carried;
+            openCoupon();
             couponApply.click();
           }
         }

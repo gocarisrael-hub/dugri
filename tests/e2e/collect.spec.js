@@ -1225,7 +1225,7 @@ test('pay panel shows the new version names and prices', async ({ page }) => {
   await expect(panel).toContainText('מורידים, מדפיסים לבד');
   // ONE printed game, priced once; delivery is the tick beneath it, priced at the
   // shipping fee alone.
-  await expect(panel).toContainText('משחק מוכן ומודפס');
+  await expect(panel).toContainText('דוגרי אישי');
   await expect(panel).toContainText('מוכן תוך כ-4 ימי עסקים · איסוף מבית דפוס גלאור, ת״א');
   await expect(panel).toContainText('149 ₪');
   await expect(panel).toContainText('שלחו לי עד הבית');

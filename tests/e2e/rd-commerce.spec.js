@@ -369,13 +369,10 @@ test('collect.html checkout in the mode: the choices are quiet rows of the card 
           right: Math.round(r.right),
         };
       };
-      const price = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().left);
       return {
         opt: box('.pay-opt.active'),
         tick: box('#shipOpt'),
         addr: box('#addressForm'),
-        optPrice: price('.pay-opt.active .opt-price'),
-        tickPrice: price('#shipPrice'),
         radio: cs(document.querySelector('.pay-opt.active input')).appearance,
         tickBg: cs(document.querySelector('#shipToggle')).backgroundColor,
       };
@@ -385,13 +382,9 @@ test('collect.html checkout in the mode: the choices are quiet rows of the card 
       expect(look[k].bg, `${k} at ${width}`).toBe('rgba(0, 0, 0, 0)');
       expect(look[k].side, `${k} at ${width}`).toBe('0px');
     }
-    // The tick is as wide as the option above it (it was indented 18px), and both prices end on one edge.
+    // The tick runs to the option's far edge; its indent on the near side and its price beside its words are the
+    // add-on's look (rd-checkout-simplify.spec.js).
     expect(look.tick.left, `tick's edge at ${width}`).toBe(look.opt.left);
-    expect(look.tick.right, `tick's edge at ${width}`).toBe(look.opt.right);
-    expect(
-      Math.abs(look.tickPrice - look.optPrice),
-      `prices' edge at ${width}`
-    ).toBeLessThanOrEqual(1);
     // Drawn controls, not the browser's; the ticked one is filled ink.
     expect(look.radio).toBe('none');
     expect(look.tickBg).toBe('rgb(0, 0, 0)');
