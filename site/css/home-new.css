@@ -575,6 +575,11 @@ header .pill {
   will-change: transform;
   transform-origin: 50% 85%;
 }
+/* an uploaded design's pictures rendered by the server (/home-art/): a print render is a little taller than the page's
+   400:564 card (its bleed), so it is cut to fill the card's box, centred, the way the hand-cut print renders were */
+img[src^='/home-art/'] {
+  object-fit: cover;
+}
 .dz img {
   width: 100%;
   aspect-ratio: 400 / 564;

@@ -495,6 +495,23 @@ export async function syncDesignNames(restamp, { lists, fetchImpl, timeoutMs } =
 // path — defense in depth so a custom-design payload can never inject an off-origin
 // image URL into the storefront.
 const TEMPLATE_IMAGE_RE = /^\/api\/template-image\/[a-z0-9]+(?:-[a-z0-9]+)*\/(front|back|board)$/;
+// The homepage's rendered pictures of a custom design (server/home-art.js): /home-art/<slug>/<rev>/<role>-<width>.webp.
+const HOME_ART_RE =
+  /^\/home-art\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{16}\/(front|back|board)-\d{3,4}\.webp$/;
+/** A custom design's `home` art from /api/custom-designs, kept only where every URL is one of ours; null otherwise. */
+function homeArtFrom(home) {
+  if (!home || typeof home !== 'object') return null;
+  const out = {};
+  for (const role of ['front', 'back', 'board']) {
+    const r = home[role];
+    if (!r || typeof r.src !== 'string' || !HOME_ART_RE.test(r.src)) continue;
+    const parts = typeof r.srcset === 'string' ? r.srcset.split(', ') : [];
+    if (!parts.every((p) => /^\S+ \d{3,4}w$/.test(p) && HOME_ART_RE.test(p.split(' ')[0])))
+      continue;
+    out[role] = { src: r.src, srcset: parts.join(', ') };
+  }
+  return out.front ? out : null;
+}
 // A safe design id / slug (lowercase kebab) — mirrors the server's isSafeSlug.
 const SAFE_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -563,6 +580,8 @@ export async function loadCustomDesigns({ fetchImpl, timeoutMs = 2500 } = {}) {
           ? d.extra_fields.filter((k) => typeof k === 'string')
           : [],
         language: d.language === 'english' ? 'english' : 'hebrew',
+        // the homepage's rendered pictures, when the server has them (new.html only)
+        home: homeArtFrom(d.home),
       });
     }
     return out;
