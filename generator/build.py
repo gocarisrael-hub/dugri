@@ -40,17 +40,17 @@ def svg_dims(svg):
     return w, h, vb
 
 
-def render_svg(svg_text, w, h, out_png):
+def render_svg(svg_text, w, h, out_png, scale=2):
     p = out_png.replace(".png", ".svg")
     open(p, "w", encoding="utf-8").write(svg_text)
     # font_wait on: this is the production board/back render, so its title must
     # not fall back to a default face while the embedded @font-face loads.
-    chrome.screenshot(p, out_png, w, h, scale=2, font_wait=True,
+    chrome.screenshot(p, out_png, w, h, scale=scale, font_wait=True,
                       what=f"the board/back {os.path.basename(out_png)}")
     return out_png
 
 
-def render_board(theme, board_clean, title_lines, out_png):
+def render_board(theme, board_clean, title_lines, out_png, scale=2):
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     bd, ts = cfg.get("board"), cfg["title_style"]
@@ -66,7 +66,7 @@ def render_board(theme, board_clean, title_lines, out_png):
     raw_board = open(board_clean, encoding="utf-8").read()
     board_svg = svg_rings.align_ring_discs(raw_board) if cfg.get("fix_ring_discs") else raw_board
     if not bd:  # theme has no personalized board title -> use the clean board as-is
-        return render_svg(board_svg, w, h, out_png)
+        return render_svg(board_svg, w, h, out_png, scale=scale)
     frac = bd["frac"]
     title_font = rp.title_font_for(theme, title_lines, cfg)
     box = {k: (frac[k] * vb[2] if "x" in k else frac[k] * vb[3]) for k in frac}
@@ -83,17 +83,19 @@ def render_board(theme, board_clean, title_lines, out_png):
                                   bold_w=ts.get("bold_w"),
                                   leading=rp.board_leading(ts),
                                   one_block=bool(ts.get("one_block")))
-    return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png)
+    return render_svg(svg.replace("</svg>", body + "</svg>"), w, h, out_png,
+                      scale=scale)
 
 
-def render_backs(theme, backs_clean, title_lines, out_png):
+def render_backs(theme, backs_clean, title_lines, out_png, scale=2):
     """Overlay the centered title on each of the 8 clean backs."""
     cfg = config.theme(theme)
     config.ensure_calibrated(cfg)
     w, h, vb = svg_dims(backs_clean)
     bk, ts = cfg.get("back"), cfg["title_style"]
     if not bk:  # theme has no personalized back title -> use the clean backs as-is
-        return render_svg(open(backs_clean, encoding="utf-8").read(), w, h, out_png)
+        return render_svg(open(backs_clean, encoding="utf-8").read(), w, h, out_png,
+                          scale=scale)
     frac = bk["frac"]
     title_font = rp.title_font_for(theme, title_lines, cfg)
     recipe = config.load_recipe(cfg["recipe"])
@@ -117,7 +119,8 @@ def render_backs(theme, backs_clean, title_lines, out_png):
                                    bold_w=ts.get("bold_w"),
                                    leading=rp.back_leading(ts, bk),
                                    one_block=bool(ts.get("one_block"))))
-    return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png)
+    return render_svg(svg.replace("</svg>", "".join(body) + "</svg>"), w, h, out_png,
+                      scale=scale)
 
 
 def build_pdf(theme, fronts, board, csvp, name, out_pdf, backs=None,

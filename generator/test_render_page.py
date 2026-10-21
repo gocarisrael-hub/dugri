@@ -1558,7 +1558,7 @@ def test_geometric_text_style_on_all_render_paths():
     captured = []
     saved = build.render_svg
     try:
-        build.render_svg = lambda svg_text, w, h, out_png: captured.append(svg_text) or out_png
+        build.render_svg = lambda svg_text, w, h, out_png, **kw: captured.append(svg_text) or out_png
         board = config.clean_path("birthday-girls", "board")
         backs = config.clean_path("birthday-girls", "backs")
         build.render_board("birthday-girls", board, ["Alma's", "B-day"], "/tmp/b.png")
@@ -1603,7 +1603,7 @@ def test_back_size_overrides_back_title_size():
     saved_tb, saved_rs = rp.title_block, build.render_svg
     try:
         rp.title_block = spy
-        build.render_svg = lambda svg_text, w, h, out_png: out_png
+        build.render_svg = lambda svg_text, w, h, out_png, **kw: out_png
         backs = config.clean_path("birthday-girls", "backs")
         build.render_backs("birthday-girls", backs, ["Alma's", "B-day"], "/tmp/k.png")
     finally:
