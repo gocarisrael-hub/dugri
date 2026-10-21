@@ -18,9 +18,16 @@ import zlib from 'node:zlib';
 
 const require = createRequire(import.meta.url);
 const serverDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'server');
-const { createHomeArt, enabled, sampleFor, boardScaleFor, LADDER } = require(
-  path.join(serverDir, 'home-art.js')
-);
+const {
+  createHomeArt,
+  enabled,
+  sampleFor,
+  boardScaleFor,
+  LADDER,
+  RETRY_MS,
+  MAX_TRIES,
+  RENDER_ENV,
+} = require(path.join(serverDir, 'home-art.js'));
 
 // a real (tiny-bodied) PNG of a given size: the module reads the width from its header
 function png(file, w, h) {
@@ -61,7 +68,7 @@ async function settle(art) {
   for (let i = 0; i < 200 && !art.idle(); i++) await tick();
 }
 
-function rig({ fail = () => false, board = true, slowRender } = {}) {
+function rig({ fail = () => false, board = true, slowRender, clock } = {}) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-home-art-'));
   const fp = { value: 'a' };
   const calls = [];
@@ -70,6 +77,7 @@ function rig({ fail = () => false, board = true, slowRender } = {}) {
   const art = createHomeArt({
     dataDir,
     on: true,
+    now: clock ? () => clock.t : undefined,
     fingerprint: () => fp.value,
     log: () => {},
     render: async (job) => {
@@ -232,15 +240,68 @@ describe('home art: a design’s art follows its artwork', () => {
     expect(s.maxLive()).toBe(1);
   });
 
-  it('remembers a failed render for that design and rev, and tries again after the next change', async () => {
-    const s = rig({ fail: () => true });
-    s.art.artFor('broken', {});
-    await settle(s.art);
-    for (let i = 0; i < 3; i++) s.art.artFor('broken', {});
-    await settle(s.art);
+  it('remembers a failed render: no retry for RETRY_MS, and at most MAX_TRIES for that design and rev, however often asked', async () => {
+    const clock = { t: 1e12 };
+    const s = rig({ fail: () => true, clock });
+    const ask = async (n) => {
+      for (let i = 0; i < n; i++) s.art.artFor('broken', {});
+      await settle(s.art);
+    };
+    await ask(50);
     expect(s.calls).toHaveLength(1);
     expect(s.art.artFor('broken', {})).toBeNull();
-    expect(s.art.state('broken', s.art.revFor('broken', {})).failed).toBe(true);
+    clock.t += RETRY_MS - 1;
+    await ask(50);
+    expect(s.calls).toHaveLength(1);
+    for (let i = 0; i < 10; i++) {
+      clock.t += RETRY_MS;
+      await ask(50);
+    }
+    expect(s.calls).toHaveLength(MAX_TRIES);
+    expect(s.art.state('broken', s.art.revFor('broken', {})).tries).toBe(MAX_TRIES);
+  });
+
+  it('a render yields to the buyers’ previews: one Chrome slot, a slot wait under its timeout, a low priority', async () => {
+    const spawned = [];
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-home-art-'));
+    const { EventEmitter } = await import('node:events');
+    const art = createHomeArt({
+      dataDir,
+      on: true,
+      log: () => {},
+      fingerprint: () => 'a',
+      resize: async (src, dest) => (fs.copyFileSync(src, dest), true),
+      spawnRender: (bin, args, opts) => {
+        spawned.push({ bin, args, opts });
+        const child = new EventEmitter();
+        child.stdout = new EventEmitter();
+        child.stderr = new EventEmitter();
+        // no pid: the priority call is skipped, as where it is not permitted
+        setTimeout(() => {
+          const outDir = args[3];
+          fs.mkdirSync(outDir, { recursive: true });
+          png(path.join(outDir, 'card.png'), 1495, 2080);
+          child.stdout.emit('data', JSON.stringify({ card: path.join(outDir, 'card.png') }) + '\n');
+          child.emit('close', 0);
+        }, 0);
+        return child;
+      },
+    });
+    art.artFor('my-custom', { language: 'english' });
+    await settle(art);
+    expect(spawned).toHaveLength(1);
+    const [{ args, opts }] = spawned;
+    expect(args[0]).toMatch(/generator[\\/]preview\.py$/);
+    expect(args.slice(1, 3)).toEqual(['my-custom', 'Ben']);
+    expect(args).toEqual(
+      expect.arrayContaining(['--scale', '5', '--board-scale', '--gender', 'male'])
+    );
+    expect(opts.env.DUGRI_CHROME_MAX_CONCURRENT).toBe('1');
+    expect(Number(opts.env.DUGRI_CHROME_SLOT_WAIT_S)).toBeLessThan(120);
+    expect(opts.env).toMatchObject(RENDER_ENV);
+    expect(art.artFor('my-custom', { language: 'english' }).front.srcset).toContain(
+      'front-1200.webp 1200w'
+    );
   });
 
   it('serves only files shaped like its own URLs', async () => {
@@ -287,11 +348,18 @@ describe('home art: the routes', () => {
           visibility: 'public',
           language: 'english',
         },
+        // hidden from the site: never rendered, whatever a visitor asks
+        'hidden-one': { slug: 'hidden-one', display_he: 'מוסתר', visibility: 'private' },
       })
     );
-    const filled = path.join(root, 'resources', 'canva', 'templates', 'my-custom', 'filled');
-    fs.mkdirSync(filled, { recursive: true });
-    fs.writeFileSync(path.join(filled, 'fronts.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    for (const slug of ['my-custom', 'hidden-one']) {
+      const filled = path.join(root, 'resources', 'canva', 'templates', slug, 'filled');
+      fs.mkdirSync(filled, { recursive: true });
+      fs.writeFileSync(
+        path.join(filled, 'fronts.svg'),
+        '<svg xmlns="http://www.w3.org/2000/svg"/>'
+      );
+    }
     const prevData = process.env.DATA_DIR;
     process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-home-art-data-'));
     const templates = require(path.join(serverDir, 'templates.js'));
@@ -328,6 +396,13 @@ describe('home art: the routes', () => {
       expect((await fetch(base + '/home-art/my-custom/..%2F..%2Fx/front-400.webp')).status).toBe(
         404
       );
+      // a visitor cannot make it render anything else: not a hidden design, not by asking for files, not by asking again
+      for (let i = 0; i < 20; i++) {
+        await fetch(base + '/api/custom-designs');
+        await fetch(base + '/home-art/hidden-one/0123456789abcdef/front-400.webp');
+      }
+      await settle(s.art);
+      expect(s.calls.map((c) => c.slug)).toEqual(['my-custom']);
     } finally {
       server.close();
       if (prevData === undefined) delete process.env.DATA_DIR;

@@ -18,18 +18,27 @@
 //
 // ── INVARIANT 2: a render is ONE at a time, and never on a buyer's path ─────────────────────────────────────────────
 // A render is a Chrome run of ~15 s and ~2 GB at this scale. Jobs wait in a queue of one; a request never waits for a
-// render — it gets the template picture until the art is there.
+// render — it gets the template picture until the art is there. A render YIELDS to the buyers' previews, which share the
+// generator's Chrome slots (generator/chrome.py: a flock over DUGRI_CHROME_MAX_CONCURRENT files, scanned from slot 0):
+// it is spawned allowed ONE slot, so it never holds more than one and a buyer skips past it to the next; it gives up
+// waiting for that slot before its own timeout (a busy box costs it a retry, not a buyer a slot); and it runs at a low
+// CPU priority, which the Chrome it starts inherits.
 //
-// ── INVARIANT 3: failure is PER DESIGN AND REV, and never worse than today ──────────────────────────────────────────
-// A failed render (an uncalibrated template, a timeout, a crash) is remembered for that (design, rev) for the life of
-// the process, so it is not retried in a loop; the next change to the design is a new rev and tries again. Until then
-// the page shows the template picture, exactly as before this module existed.
+// /api/custom-designs is public, so what a visitor can make it do is bounded: it only ever asks about the PUBLIC custom
+// designs themes.json lists, for the rev the server computes from their files (nothing in a request picks a design or a
+// rev); each (design, rev) is queued at most once at a time; and /home-art/ serves files, it never renders.
+//
+// ── INVARIANT 3: failure is PER DESIGN AND REV, bounded, and never worse than today ─────────────────────────────────
+// A failed render (an uncalibrated template, a timeout, a busy box) is remembered for that (design, rev): it is tried
+// again only after RETRY_MS, and at most MAX_TRIES times in the life of the process; the next change to the design is
+// a new rev and starts over. Until then the page shows the template picture, exactly as before this module existed.
 //
 // OFF unless HOME_ART=on, or NODE_ENV=production with HOME_ART unset (the deployed image): a local server and the E2E
 // suite never spawn these renders.
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const { spawn } = require('child_process');
 const { spawnGenerator, killGenerator } = require('./generator-proc');
 
@@ -52,6 +61,13 @@ const RESIZE_TIMEOUT_MS = 30000;
 // How long a design's fingerprint is trusted before it is stat'ed again. /api/custom-designs is a public, hot route
 // and a fingerprint stats every file of the template.
 const FINGERPRINT_TTL_MS = 10000;
+// A failed (design, rev): tried again after this long, at most this many times in all.
+const RETRY_MS = 30 * 60 * 1000;
+const MAX_TRIES = 3;
+// Yielding to the buyers' previews (see INVARIANT 2): one Chrome slot, a slot wait shorter than RENDER_TIMEOUT_MS, and
+// a low CPU priority (19 is the lowest).
+const RENDER_ENV = { DUGRI_CHROME_MAX_CONCURRENT: '1', DUGRI_CHROME_SLOT_WAIT_S: '90' };
+const RENDER_NICE = 15;
 
 // One fixed sample per name language — the name the print renders on the homepage already carry (האלאנד's "Ben's
 // B-day"). A constant so it can become an admin field per design later without changing anything else.
@@ -115,10 +131,10 @@ function createHomeArt(o) {
   const on = typeof o.on === 'boolean' ? o.on : enabled();
   const now = o.now || Date.now;
   const log = o.log || ((m) => console.log('[home-art] ' + m));
-  const render = o.render || defaultRender;
+  const render = o.render || ((job) => defaultRender(job, o.spawnRender || spawnGenerator));
   const resize = o.resize || defaultResize;
   const fpCache = new Map(); // slug -> { at, fp }
-  const failed = new Set(); // `${slug}@${rev}`
+  const failed = new Map(); // `${slug}@${rev}` -> { tries, at }
   const queued = new Set(); // `${slug}@${rev}` waiting or running
   const queue = [];
   let running = false;
@@ -180,7 +196,9 @@ function createHomeArt(o) {
 
   function enqueue(slug, rev, theme) {
     const key = `${slug}@${rev}`;
-    if (failed.has(key) || queued.has(key)) return;
+    if (queued.has(key)) return;
+    const f = failed.get(key);
+    if (f && (f.tries >= MAX_TRIES || now() - f.at < RETRY_MS)) return;
     queued.add(key);
     queue.push({ slug, rev, theme, key });
     pump();
@@ -192,7 +210,8 @@ function createHomeArt(o) {
     const job = queue.shift();
     build(job)
       .catch((e) => {
-        failed.add(job.key);
+        const f = failed.get(job.key);
+        failed.set(job.key, { tries: (f ? f.tries : 0) + 1, at: now() });
         log(
           `${job.slug}: no art for rev ${job.rev}: ${String((e && e.message) || e).slice(0, 300)}`
         );
@@ -276,6 +295,7 @@ function createHomeArt(o) {
     // for tests and the admin: what is known about a design right now
     state: (slug, rev) => ({
       failed: failed.has(`${slug}@${rev}`),
+      tries: (failed.get(`${slug}@${rev}`) || { tries: 0 }).tries,
       queued: queued.has(`${slug}@${rev}`),
     }),
     idle: () => !running && !queue.length,
@@ -297,7 +317,7 @@ function pngWidth(file) {
 }
 
 /** preview.py at high resolution; resolves its { card, back, board } PNG paths. */
-function defaultRender({ slug, outDir, sample, scale, boardScale }) {
+function defaultRender({ slug, outDir, sample, scale, boardScale }, spawnRender) {
   return new Promise((resolve, reject) => {
     fs.mkdirSync(outDir, { recursive: true });
     const args = [PREVIEW_SCRIPT, slug, sample.name, outDir];
@@ -312,7 +332,16 @@ function defaultRender({ slug, outDir, sample, scale, boardScale }) {
     );
     let child;
     try {
-      child = spawnGenerator(PYTHON_BIN, args, { cwd: REPO_ROOT });
+      child = spawnRender(PYTHON_BIN, args, {
+        cwd: REPO_ROOT,
+        env: { ...process.env, ...RENDER_ENV },
+      });
+      try {
+        // before Python has started Chrome (it imports first), so every process of the render inherits it
+        if (child && child.pid) os.setPriority(child.pid, RENDER_NICE);
+      } catch {
+        /* not permitted here: it still holds only one slot */
+      }
     } catch (e) {
       return reject(e);
     }
@@ -359,4 +388,15 @@ function defaultResize(src, dest, width) {
   });
 }
 
-module.exports = { createHomeArt, enabled, sampleFor, boardScaleFor, REV, LADDER, SAMPLE };
+module.exports = {
+  createHomeArt,
+  enabled,
+  sampleFor,
+  boardScaleFor,
+  REV,
+  LADDER,
+  SAMPLE,
+  RETRY_MS,
+  MAX_TRIES,
+  RENDER_ENV,
+};
