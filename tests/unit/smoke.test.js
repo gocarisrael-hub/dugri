@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { runSmoke } from '../../scripts/smoke.mjs';
+import http from 'node:http';
+import { runSmoke, isRedesignPage } from '../../scripts/smoke.mjs';
 
 // Boot the REAL Express app in-process against an isolated temp DATA_DIR and
 // with NO PeleCard credentials, then run the live smoke script against it. This
@@ -84,5 +85,67 @@ describe('runSmoke against the live app', () => {
     await expect(
       runSmoke('http://127.0.0.1:1', { readyTimeoutMs: 200, readyIntervalMs: 50 })
     ).rejects.toThrow(/SMOKE FAILED/);
+  });
+});
+
+// The redesign switch (settings redesign.enabled) is on in staging and
+// production, and there "/" serves new.html. Smoke runs after every deploy, so
+// it has to pass in both modes and still tell the two home pages apart.
+describe('runSmoke in the redesign mode', () => {
+  let settings;
+  beforeAll(() => {
+    settings = require(path.join(__dirname, '..', '..', 'server', 'settings.js'));
+    settings.set('redesign', 'enabled', true);
+  });
+  afterAll(() => settings.reset('redesign', 'enabled'));
+
+  it('passes against the live app with the switch on', async () => {
+    // Not vacuous: the home page really is the redesign one here.
+    const home = await (await fetch(baseUrl + '/')).text();
+    expect(isRedesignPage(home)).toBe(true);
+    expect(home).not.toContain('המתנה הכי אישית');
+    await expect(runSmoke(baseUrl, { adminKey: ADMIN_KEY })).resolves.toBe(true);
+  });
+});
+
+describe('the home-page marker follows the mode', () => {
+  // A stand-in server that serves one body for every path.
+  async function serve(body) {
+    const srv = http.createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      res.end(body);
+    });
+    await new Promise((resolve) => srv.listen(0, '127.0.0.1', resolve));
+    return { srv, url: `http://127.0.0.1:${srv.address().port}` };
+  }
+
+  it('fails a redesign page that carries only the classic home marker', async () => {
+    const { srv, url } = await serve('<html lang="he" class="rd"><title>המתנה הכי אישית</title>');
+    try {
+      await expect(runSmoke(url, { readyTimeoutMs: 500 })).rejects.toThrow(
+        /\[static-page\] .*\/ — missing expected marker "המשחק הכי אישי" \(redesign mode\)/
+      );
+    } finally {
+      srv.close();
+    }
+  });
+
+  it('fails a classic page that carries only the redesign home marker', async () => {
+    const { srv, url } = await serve('<html lang="he"><title>המשחק הכי אישי</title>');
+    try {
+      await expect(runSmoke(url, { readyTimeoutMs: 500 })).rejects.toThrow(
+        /missing expected marker "המתנה הכי אישית" \(classic mode\)/
+      );
+    } finally {
+      srv.close();
+    }
+  });
+
+  it('reads the mode from the <html> tag only', () => {
+    expect(isRedesignPage('<html lang="he" dir="rtl" class="rd">')).toBe(true);
+    expect(isRedesignPage("<html class='x rd y'>")).toBe(true);
+    expect(isRedesignPage('<html lang="he"><body class="rd">')).toBe(false);
+    expect(isRedesignPage('<html class="rdx">')).toBe(false);
+    expect(isRedesignPage('no html tag')).toBe(false);
   });
 });
