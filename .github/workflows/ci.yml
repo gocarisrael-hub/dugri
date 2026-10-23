@@ -80,18 +80,37 @@ jobs:
         run: cd server && (npm ci || npm install)
       # Cache the browser binaries so runs don't re-download them each time (keyed
       # on the resolved Playwright version). On a cache hit `install` skips the
-      # download; `install-deps` still installs the system libs (fast). A miss adds
-      # about ten minutes, which is what used to push a whole run past its cap.
+      # download. A miss adds about ten minutes, which is what used to push a
+      # whole run past its cap.
       - name: Cache Playwright browsers
         id: playwright-cache
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
           key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+      # The browsers' system libraries are a separate ~119 MB of apt packages that
+      # the cache above does not hold. A slow mirror once stalled that download
+      # until the job cap cancelled the shard, three runs in a row (#737), so the
+      # .debs are cached too. The key carries the runner image version, which
+      # moves weekly with its package updates; an older cache still restores and
+      # apt fetches only what changed.
+      - name: Runner image version
+        id: runner-image
+        run: echo "id=$ImageOS-$ImageVersion" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright system packages
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-debs
+          key: pw-apt-${{ steps.runner-image.outputs.id }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: pw-apt-
+      # The script caps each attempt and retries once on another mirror; see its
+      # header. The step cap is a backstop above its two attempts, so a stalled
+      # mirror fails here in minutes and the job's 20 minutes stay for the tests.
+      - name: Install Playwright system dependencies
+        timeout-minutes: 10
+        run: scripts/ci-playwright-deps.sh
       - name: Install Playwright browsers
-        run: |
-          npx playwright install-deps chromium webkit
-          npx playwright install chromium webkit
+        run: npx playwright install chromium webkit
       - name: E2E tests (iPhone 14 + Desktop Chrome + Mobile Safari)
         run: npx playwright test --project="iPhone 14" --project="Desktop Chrome" --project="Mobile Safari" --shard=${{ matrix.shard }}/4
 
