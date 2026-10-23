@@ -22,6 +22,7 @@ const {
   createHomeArt,
   enabled,
   sampleFor,
+  SAMPLE_TITLE,
   boardScaleFor,
   LADDER,
   RETRY_MS,
@@ -165,10 +166,39 @@ describe('home art: a design’s art follows its artwork', () => {
   });
 
   it('renders with the sample name of the design’s language and its extra fields', async () => {
-    r.art.artFor('my-custom', { language: 'hebrew', extra_fields: ['AGE', 'NOPE'] });
+    r.art.artFor('my-custom', {
+      language: 'hebrew',
+      extra_fields: ['AGE', 'NOPE'],
+      title_lines: ['{NAME} {AGE}'],
+    });
     await settle(r.art);
     expect(r.calls[0].sample).toEqual({ name: 'נועה', gender: 'female', fields: { AGE: '30' } });
     expect(sampleFor({ language: 'english' }).name).toBe('Ben');
+  });
+
+  it('a design with no title template gets a sample title in its language, so its card is not left untitled', () => {
+    // חנוכה on production: uploaded after buyers began typing the title, so its template is [""]
+    for (const none of [undefined, [], [''], ['  ', ''], [null]]) {
+      expect(sampleFor({ language: 'hebrew', title_lines: none }).title, String(none)).toBe(
+        SAMPLE_TITLE.hebrew
+      );
+      expect(sampleFor({ language: 'english', title_lines: none }).title).toBe(
+        SAMPLE_TITLE.english
+      );
+    }
+    expect(sampleFor({}).title).toBe(SAMPLE_TITLE.hebrew); // the site's default language
+    expect(SAMPLE_TITLE.hebrew).toMatch(/[\u0590-\u05FF]/);
+    expect(SAMPLE_TITLE.english).toMatch(/^[\x20-\x7E\n]+$/);
+    // a template prints its own title; a sample on top would replace it
+    expect(sampleFor({ language: 'hebrew', title_lines: ['', '{NAME}'] })).not.toHaveProperty(
+      'title'
+    );
+  });
+
+  it('a new sample title is a new rev, so a design rendered untitled is rendered again', () => {
+    expect(r.art.revFor('my-custom', { title_lines: [''] })).not.toBe(
+      r.art.revFor('my-custom', { title_lines: ['{NAME}'] })
+    );
   });
 
   it('a change to the design is a new rev: the old art is no longer handed out, the new is rendered, the old swept', async () => {
@@ -296,6 +326,8 @@ describe('home art: a design’s art follows its artwork', () => {
     expect(args).toEqual(
       expect.arrayContaining(['--scale', '5', '--board-scale', '--gender', 'male'])
     );
+    // no title template: the sample title, one `=`-joined token
+    expect(args).toContain('--title=' + SAMPLE_TITLE.english);
     expect(opts.env.DUGRI_CHROME_MAX_CONCURRENT).toBe('1');
     expect(Number(opts.env.DUGRI_CHROME_SLOT_WAIT_S)).toBeLessThan(120);
     expect(opts.env).toMatchObject(RENDER_ENV);

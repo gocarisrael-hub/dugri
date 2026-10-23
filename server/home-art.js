@@ -77,6 +77,9 @@ const SAMPLE = {
 };
 // Sample values for a title's extra fields, so a title like "{NAME} {AGE}" renders whole.
 const SAMPLE_FIELDS = { AGE: '30', YEARS: '10', NAME1: 'נועה', NAME2: 'בן' };
+// The title for a design with no title template (one uploaded since the buyer types the title, e.g. חנוכה): without
+// it the render prints no title at all. In the design's language, the sample name's; two lines, like the templates'.
+const SAMPLE_TITLE = { english: "Ben's\nParty", hebrew: 'החגיגה\nשל נועה' };
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const REV_RE = /^[a-f0-9]{16}$/;
@@ -91,12 +94,17 @@ function enabled(env = process.env) {
 /** What the render is given for a theme: the sample name, gender and extra fields. */
 function sampleFor(theme) {
   const t = theme || {};
-  const s = SAMPLE[t.language === 'english' ? 'english' : 'hebrew'];
+  const lang = t.language === 'english' ? 'english' : 'hebrew';
+  const s = SAMPLE[lang];
   const fields = {};
   for (const k of Array.isArray(t.extra_fields) ? t.extra_fields : []) {
     if (Object.prototype.hasOwnProperty.call(SAMPLE_FIELDS, k)) fields[k] = SAMPLE_FIELDS[k];
   }
-  return { name: s.name, gender: s.gender, fields };
+  const out = { name: s.name, gender: s.gender, fields };
+  // [""] is no template too: config.title_lines would substitute it to one blank line
+  const lines = Array.isArray(t.title_lines) ? t.title_lines : [];
+  if (!lines.some((l) => String(l == null ? '' : l).trim())) out.title = SAMPLE_TITLE[lang];
+  return out;
 }
 
 /** The board's scale for ~BOARD_TARGET_W px, from the board SVG's own CSS width; 3 when it cannot be read. */
@@ -322,6 +330,8 @@ function defaultRender({ slug, outDir, sample, scale, boardScale }, spawnRender)
     fs.mkdirSync(outDir, { recursive: true });
     const args = [PREVIEW_SCRIPT, slug, sample.name, outDir];
     for (const [k, v] of Object.entries(sample.fields)) args.push('--field', `${k}=${v}`);
+    // `=`-joined, one token, as server/index.js passes a buyer's title
+    if (sample.title) args.push('--title=' + sample.title);
     args.push(
       '--gender',
       sample.gender,
@@ -396,6 +406,7 @@ module.exports = {
   REV,
   LADDER,
   SAMPLE,
+  SAMPLE_TITLE,
   RETRY_MS,
   MAX_TRIES,
   RENDER_ENV,
