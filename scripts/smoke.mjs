@@ -24,10 +24,23 @@ const PAGES = [
   { path: '/timer.html', marker: 'טיימר' },
 ];
 
+// The marker instead, for a page served in the redesign mode (<html class="rd">,
+// server/redesign-gate.js). There "/" is new.html, not index.html. Every other
+// page above keeps its marker in the mode; tests/unit/smoke.test.js runs the
+// list with the mode on and off.
+const RD_MARKERS = { '/': 'המשחק הכי אישי' };
+
 // Readiness poll budget: a fresh deploy may not accept connections for a few
 // seconds. Poll GET / until 200 before running the real checks.
 const READY_TIMEOUT_MS = 90_000;
 const READY_INTERVAL_MS = 3_000;
+
+// True when the server served the page in the redesign mode: its <html> tag
+// carries the class "rd".
+export function isRedesignPage(html) {
+  const tag = /<html\b[^>]*>/i.exec(html);
+  return !!tag && /\bclass\s*=\s*["'][^"']*\brd\b/i.test(tag[0]);
+}
 
 function fail(check, url, detail) {
   throw new Error(`SMOKE FAILED [${check}] ${url}${detail ? ' — ' + detail : ''}`);
@@ -112,8 +125,11 @@ export async function runSmoke(baseUrl, opts = {}) {
     const res = await fetchOrFail('static-page', url);
     if (res.status !== 200) fail('static-page', url, `expected 200, got ${res.status}`);
     const body = await res.text();
-    if (!body.includes(page.marker)) {
-      fail('static-page', url, `missing expected marker "${page.marker}"`);
+    const rd = isRedesignPage(body);
+    const marker = (rd && RD_MARKERS[page.path]) || page.marker;
+    if (!body.includes(marker)) {
+      const mode = rd ? 'redesign mode' : 'classic mode';
+      fail('static-page', url, `missing expected marker "${marker}" (${mode})`);
     }
   }
 
