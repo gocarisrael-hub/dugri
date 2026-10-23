@@ -88,8 +88,8 @@ test.describe('redesign', () => {
     await expect(printed.locator('.opt-title')).toContainText('דוגרי אישי');
     await printed.click();
 
-    // Straight under the game it adds to, ahead of the pickup note and the custom design.
-    expect(await order(page)).toEqual(['pdf', 'pickup', 'shipOpt', 'pickup-details', 'custom']);
+    // Under the game it adds to (after the game's own pickup note), ahead of the custom design.
+    expect(await order(page)).toEqual(['pdf', 'pickup', 'pickup-details', 'shipOpt', 'custom']);
 
     // Only radios in a radiogroup: the versions' group holds PDF and the printed game, the custom design has its own,
     // and the tick, the notes and the address sit between them in neither. All of it is still inside #payOpts, so the
@@ -174,6 +174,72 @@ test.describe('redesign', () => {
     // The PDF has nothing to ship: the add-on goes with the game.
     await page.locator('.pay-opt:has(input[value="pdf"])').click();
     await expect(page.locator('#shipOpt')).toBeHidden();
+  });
+
+  test("the pickup note is the printed game's footnote: under its line, above the add-on, and it opens in place", async ({
+    page,
+    request,
+  }) => {
+    await checkoutReady(page);
+    const { id, k } = await makeCollection(request);
+    await page.goto(`/collect.html?c=${id}&k=${k}`);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await openCheckout(page);
+    await page.locator('.pay-opt:has(input[value="pickup"])').click();
+    const note = page.getByTestId('pickup-details');
+    const link = note.locator('summary');
+    const place = () =>
+      page.evaluate(() => {
+        const r = (el) => el.getBoundingClientRect();
+        const game = document.querySelector('input[value="pickup"]').closest('.pay-opt');
+        const line = game.querySelector('.opt-note');
+        const summary = document.querySelector('[data-testid="pickup-details"] > summary');
+        const ship = document.getElementById('shipOpt');
+        return {
+          // from the game's description line to the link, and from the whole note to the add-on
+          underLine: Math.round(r(summary).top - r(line).bottom),
+          aboveShip: Math.round(r(ship).top - r(summary.parentElement).bottom),
+          // on the game's text (RTL: the right edge)
+          rail: Math.round(r(line).right - r(summary).right),
+          linkTop: Math.round(r(summary).top),
+          shipTop: Math.round(r(ship).top),
+          // one line at a phone, the ▾ with it
+          oneLine: r(summary).height < 24,
+        };
+      });
+    const shut = await place();
+    expect(shut.underLine).toBeGreaterThanOrEqual(0);
+    expect(shut.underLine).toBeLessThan(16);
+    expect(shut.aboveShip).toBeGreaterThanOrEqual(0);
+    expect(shut.aboveShip).toBeLessThan(16);
+    expect(shut.rail).toBe(0);
+    expect(shut.oneLine).toBe(true);
+
+    // Opened, the details unfold right there and push the add-on down; the link does not move.
+    await link.click();
+    await expect(note.getByText('בית הדפוס גלאור')).toBeVisible();
+    const open = await place();
+    expect(open.linkTop).toBe(shut.linkTop);
+    expect(open.shipTop).toBeGreaterThan(shut.shipTop + 60);
+    expect(open.aboveShip).toBeLessThan(16);
+
+    // Delivery ticked: the note goes and the add-on takes its place under the game's line.
+    await page.locator('#shipOpt').click();
+    await expect(note).toBeHidden();
+    const ticked = await page.evaluate(() => {
+      const line = document
+        .querySelector('input[value="pickup"]')
+        .closest('.pay-opt')
+        .querySelector('.opt-note');
+      return Math.round(
+        document.getElementById('shipOpt').getBoundingClientRect().top -
+          line.getBoundingClientRect().bottom
+      );
+    });
+    expect(ticked).toBeGreaterThanOrEqual(0);
+    expect(ticked).toBeLessThan(16);
+    await page.locator('#shipOpt').click();
+    await expect(note).toBeVisible();
   });
 
   test('the coupon folds behind one row; the row is a button that says whether it is open', async ({

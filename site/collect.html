@@ -6984,8 +6984,9 @@
         // tick (and its remote-towns footnote), the pickup note, and — once the
         // tick is on — the address. Only radios may live in a radiogroup, so the
         // box is split rather than the add-on pushed into the group:
-        //   [radiogroup: PDF, the printed game] [the game's add-on, notes,
-        //   address] [radiogroup: the custom design]
+        //   [radiogroup: PDF, the printed game] [the game's pickup note, its
+        //   add-on and that one's note, the address] [radiogroup: the custom
+        //   design]
         // all still inside #payOpts, so every branch that hides the box hides
         // them too. Native radios group by name, so the arrow keys still run
         // across all three. Moved in the DOM rather than reordered in CSS, so the
@@ -7011,9 +7012,9 @@
             versions.append(...optsBox.querySelectorAll(':scope > .pay-opt:not(.pay-opt-custom)'));
             extras.append(
               ...[
+                optsBox.querySelector('.pickup-note'),
                 $('#shipOpt'),
                 optsBox.querySelector('[data-where="ship-toggle"]'),
-                optsBox.querySelector('.pickup-note'),
                 $('#addressForm'),
               ].filter(Boolean)
             );
