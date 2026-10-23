@@ -540,8 +540,10 @@ html.rd #printedExtras > .odd-note[data-where='ship-toggle'] {
 
 /* The checkout's own split (collect.html): the versions' radiogroup, the printed game's add-on with its notes and the
    address, then the custom design in a radiogroup of its own. Each part stacks like the box it came out of; the
-   address, now inside the inset box, drops the inset it carried as a direct child of the card. While delivery is
-   ticked the pickup note has nothing to say, so it goes. */
+   address, now inside the inset box, drops the inset it carried as a direct child of the card.
+   The pickup note comes first, straight under the game's own line and on its text, so it reads as that line's
+   footnote and opens in place, pushing the add-on down. While delivery is ticked it has nothing to say, so it goes,
+   and the add-on takes its place under the game. */
 html.rd #payOpts > .pay-group,
 html.rd #printedExtras {
   display: flex;
@@ -549,13 +551,30 @@ html.rd #printedExtras {
   gap: 10px;
 }
 html.rd #printedExtras > .pickup-note {
-  margin-inline-start: 0;
+  margin-top: -10px;
+  margin-inline-start: 30px;
+}
+/* On that narrower rail the link can wrap; as the page's inline-flex the ▾ was left stranded at the far edge, so here
+   the summary is plain text with the ▾ trailing its last word, one size down to keep it on one line at a phone. */
+html.rd #printedExtras > .pickup-note > summary {
+  display: block;
+  font-size: 12px;
+}
+html.rd #printedExtras > .pickup-note > summary::after {
+  display: inline-block;
+  margin-inline-start: 5px;
+}
+html.rd #printedExtras > .pickup-note + #shipOpt {
+  margin-top: 0;
 }
 html.rd #printedExtras > #addressForm {
   margin: 0;
 }
-html.rd #shipOpt.active ~ .pickup-note {
+html.rd #printedExtras:has(> #shipOpt.active) > .pickup-note {
   display: none;
+}
+html.rd #printedExtras:has(> #shipOpt.active) > #shipOpt {
+  margin-top: -10px;
 }
 
 /* The coupon: one quiet row that opens to the field (collect.html wires the fold; the live page hides the toggle). The
