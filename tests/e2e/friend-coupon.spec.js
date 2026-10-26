@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { ALL_ON, stubFeatures } from './feature-flags.js';
+import { previewRedesign } from './helpers/redesign.js';
 
 // THE FRIEND COUPON, as the people involved meet it: a friend adds a word on a
 // shared collect link and is offered a personal code; the email's link lands a
@@ -62,7 +63,7 @@ test.describe('the bar on a friend’s collect link', () => {
     await expect(bar(page)).toContainText('יש לנו מתנה קטנה בשבילכם');
     await expect(page.getByTestId('friend-bar-go')).toHaveText('תראו לי');
     await expect(page.getByTestId('friend-bar-x')).toHaveAttribute('aria-label', 'סגירה');
-    // The percent is revealed only in the sheet, never on the bar.
+    // The percent is never on the bar (nor on the sheet's headline: only once the code is sent).
     await expect(bar(page)).not.toContainText('%');
 
     // Up, in view, and not over the word box once she has scrolled to it.
@@ -227,11 +228,13 @@ test.describe('the sheet', () => {
     await page.getByTestId('friend-bar-go').click();
 
     const sheet = page.getByTestId('friend-sheet');
-    await expect(sheet.locator('h2')).toHaveText('5% הנחה, רק לכם');
+    await expect(sheet.locator('h2')).toHaveText('הנחה, רק לכם');
+    await expect(sheet.locator('h2')).not.toContainText('%');
     await expect(sheet).toContainText('השאירו מייל ונשלח לכם קופון אישי לשימוש אחד.');
     await expect(sheet.locator('label[for="friendEmail"]')).toHaveText('מייל');
     await expect(sheet).toContainText('אשמח לקבל מדי פעם עדכונים ומבצעים מדוגרי');
-    await expect(page.getByTestId('friend-consent')).not.toBeChecked();
+    // Ticked from the start: the owner's decision.
+    await expect(page.getByTestId('friend-consent')).toBeChecked();
     const send = page.getByTestId('friend-send');
     await expect(send).toHaveText('שלחו לי את הקופון');
     await expect(send).toBeDisabled();
@@ -246,7 +249,16 @@ test.describe('the sheet', () => {
     const address = uniq('noa.') + '@example.com';
     await email.fill(address);
     await expect(send).toBeEnabled();
+    const issued = page.waitForRequest(
+      (r) => r.url().endsWith('/api/friend-coupon') && r.method() === 'POST'
+    );
     await send.click();
+    // Left untouched, the box sends her consent.
+    expect((await issued).postDataJSON()).toMatchObject({
+      email: address,
+      collection_id: id,
+      marketing_consent: true,
+    });
 
     // No mail server here, so the code itself is the confirmation.
     const confirm = page.getByTestId('friend-confirm');
@@ -318,6 +330,57 @@ test.describe('the sheet', () => {
     await expect(confirm).not.toContainText('הקופון בדרך');
     await expect(confirm).not.toContainText('שלחנו');
     await expect(page.getByTestId('friend-code')).toHaveCount(0);
+  });
+
+  test('unticking the consent box sends marketing_consent: false', async ({ page, request }) => {
+    const { id } = await makeParty(request);
+    const posted = [];
+    await page.route('**/api/friend-coupon', (route) => {
+      if (route.request().method() !== 'POST') return route.continue();
+      posted.push(route.request().postDataJSON());
+      return route.fulfill({
+        json: { ok: true, created: true, emailed: true, code: 'DANA5-K7Q2', percent: 5 },
+      });
+    });
+    await page.goto(`/collect.html?c=${id}`);
+    await addWord(page, uniq('word'));
+    await page.getByTestId('friend-bar-go').click();
+    const consent = page.getByTestId('friend-consent');
+    await expect(consent).toBeChecked();
+    await consent.uncheck();
+    await expect(consent).not.toBeChecked();
+    await page.getByTestId('friend-email').fill('dana@example.com');
+    await page.getByTestId('friend-send').click();
+    await expect(page.getByTestId('friend-confirm')).toBeVisible();
+    expect(posted).toHaveLength(1);
+    expect(posted[0]).toMatchObject({ email: 'dana@example.com', marketing_consent: false });
+  });
+
+  test('in the redesign mode the consent box opens ticked and draws its tick', async ({
+    page,
+    request,
+  }) => {
+    await previewRedesign(page);
+    const { id } = await makeParty(request);
+    await page.goto(`/collect.html?c=${id}`);
+    await expect(page.locator('html')).toHaveClass(/\brd\b/);
+    await addWord(page, uniq('word'));
+    await page.getByTestId('friend-bar-go').click();
+    const consent = page.getByTestId('friend-consent');
+    await expect(consent).toBeChecked();
+    await expect(page.getByTestId('friend-sheet').locator('h2')).toHaveText('הנחה, רק לכם');
+    // The mode hides the native box (appearance:none) and paints the tick itself,
+    // so a checked box must carry the tick image on first open.
+    const look = () =>
+      consent.evaluate((el) => ({
+        appearance: getComputedStyle(el).appearance,
+        tick: getComputedStyle(el).backgroundImage,
+      }));
+    const on = await look();
+    expect(on.appearance).toBe('none');
+    expect(on.tick).toContain('svg');
+    await consent.uncheck();
+    expect((await look()).tick).toBe('none');
   });
 });
 
