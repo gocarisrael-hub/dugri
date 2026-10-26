@@ -2,9 +2,11 @@
 //
 // A FRIEND — someone who opened a shared collect link (?c= with no owner token)
 // and added a word — sees a black bar slide up: "אהבתם?". Tapping "תראו לי"
-// opens a sheet that reveals the percent (never on the bar) and asks for an
-// email; the server issues a personal single-use code and mails it
-// (POST /api/friend-coupon, server/routes/commerce.js).
+// opens a sheet that asks for an email (the percent shows on neither the bar
+// nor the sheet's headline, only once the code is sent); the server issues a
+// personal single-use code and mails it (POST /api/friend-coupon,
+// server/routes/commerce.js). The sheet's marketing-consent box starts ticked
+// (the owner's decision); unticking it sends marketing_consent: false.
 //
 // Who never sees it:
 //   - the collection's owner, recognised as THE BROWSER THAT CREATED IT: the
@@ -259,7 +261,6 @@ export function initFriendBar({ collectionId, fetchImpl } = {}) {
 
   function openSheet() {
     closeSheet();
-    const percent = offer && offer.percent;
     sheet = el('div', { id: 'friendSheet', 'data-testid': 'friend-sheet' });
     const card = el('div', {
       class: 'fs-card',
@@ -283,7 +284,7 @@ export function initFriendBar({ collectionId, fetchImpl } = {}) {
     });
 
     const form = el('form', { novalidate: true });
-    const title = el('h2', { id: 'friendSheetTitle' }, percent + '% הנחה, רק לכם');
+    const title = el('h2', { id: 'friendSheetTitle' }, 'הנחה, רק לכם');
     const lead = el('p', {}, 'השאירו מייל ונשלח לכם קופון אישי לשימוש אחד.');
     const label = el('label', { class: 'fs-label', for: 'friendEmail' }, 'מייל');
     const input = el('input', {
@@ -297,7 +298,11 @@ export function initFriendBar({ collectionId, fetchImpl } = {}) {
     });
     const err = el('div', { class: 'fs-err', role: 'alert', 'data-testid': 'friend-err' });
     const consentRow = el('label', { class: 'fs-consent' });
-    const consent = el('input', { type: 'checkbox', 'data-testid': 'friend-consent' });
+    const consent = el('input', {
+      type: 'checkbox',
+      checked: true,
+      'data-testid': 'friend-consent',
+    });
     consentRow.append(consent, el('span', {}, 'אשמח לקבל מדי פעם עדכונים ומבצעים מדוגרי'));
     const send = el(
       'button',
