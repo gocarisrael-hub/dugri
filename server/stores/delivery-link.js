@@ -75,7 +75,50 @@ function deliveryLinkBlock({
     };
   }
 
+  // Mark every unresolved window on a shipping record abandoned, the way
+  // db.abandonPaySessions does for an order's own: `resolved` means only "no
+  // longer in flight", and a session is still found by its token.
+  function abandonSessions(holder) {
+    if (!holder || !Array.isArray(holder.sessions)) return;
+    for (const s of holder.sessions) {
+      if (s && !s.resolved) {
+        s.resolved = true;
+        s.abandoned_at = nowIso();
+      }
+    }
+  }
+
   return {
+    // Which link a window was opened for, stamped on its session at pay time,
+    // so a charge that settles later can be told apart from one made on a link
+    // the owner has since replaced.
+    tagDeliveryLinkSession(id, paramToken, linkToken) {
+      const c = this.getCollection(id);
+      const sh = c && c.order && c.order.shipping;
+      const list =
+        sh && sh.pelecard && Array.isArray(sh.pelecard.sessions) ? sh.pelecard.sessions : [];
+      const s = list.find((x) => x.token === paramToken);
+      if (!s) return false;
+      s.link_token = linkToken;
+      saveDb();
+      return true;
+    },
+
+    // Should a paid link book the courier by itself? Only when the money came
+    // through the link that is LIVE: not one she cancelled, not one she replaced
+    // with another, and not on a collection she cancelled. In every other case
+    // the charge still settles (the money was taken), but the decision to send a
+    // van is hers again. Returns null to book, or the reason not to. Read BEFORE
+    // markShippingPaid.
+    deliveryLinkAutoBook(c, session) {
+      const link = c && c.order && c.order.shipping && c.order.shipping.link;
+      if (!link) return 'no link';
+      if (c.cancelled) return 'collection cancelled';
+      if (link.cancelled_at) return 'link cancelled';
+      if (!session || session.link_token !== link.token) return 'link replaced';
+      return null;
+    },
+
     // Can the owner make this offer, and what does it cost by default? ONE place,
     // so the admin dialog, the create route and the customer's charge cannot
     // disagree. Null for an unknown collection.
@@ -100,6 +143,9 @@ function deliveryLinkBlock({
       else if (sh && sh.paid) reason = 'paid';
       else if (order.version === 'delivery') reason = 'already delivery';
       else if (order.version === 'pdf') reason = 'digital';
+      // A bespoke order is priced and delivered by arrangement, and
+      // markShippingPaid would overwrite its 'custom' version with 'delivery'.
+      else if (order.version === 'custom') reason = 'custom';
       else if (status === 'open') reason = 'open';
       return {
         eligible: !reason,
@@ -120,13 +166,23 @@ function deliveryLinkBlock({
       if (!state.eligible) return { error: state.reason };
       const n = Number(amount);
       if (!Number.isInteger(n) || n < 1 || n > LINK_MAX_AMOUNT) return { error: 'invalid amount' };
-      const prev = c.order.shipping && !c.order.shipping.paid ? c.order.shipping.pelecard : null;
+      const prevSh = c.order.shipping && !c.order.shipping.paid ? c.order.shipping : null;
+      const prev = prevSh ? prevSh.pelecard : null;
+      // The windows opened for the record being replaced are no longer in flight
+      // as far as we are concerned. A provider window cannot be closed from here,
+      // so a charge made in one still SETTLES (it is found by its token and
+      // verified against its own amount) — but it no longer books a courier on
+      // its own (see the settle path, deliveryLinkAutoBook).
+      abandonSessions(prev);
       c.order.shipping = {
         // `fee` is what the charge is made and verified for (shipping/init's own
         // field), so the amount she set IS the fee: shippingPriceKey, the
         // Tranzila match and markShippingPaid's convergence all read it.
         fee: n,
-        address: null,
+        // Kept across a replace: a charge still landing from the old window
+        // converges the order with the address its customer gave there (the
+        // next payment on the new link overwrites it anyway).
+        address: (prevSh && prevSh.address) || null,
         requested_at: null,
         paid: false,
         paid_at: null,
@@ -152,6 +208,7 @@ function deliveryLinkBlock({
       if (sh.paid) return { error: 'paid' };
       if (!sh.link.cancelled_at) {
         sh.link.cancelled_at = nowIso();
+        abandonSessions(sh.pelecard);
         saveDb();
       }
       return summary(sh);
@@ -194,7 +251,8 @@ function deliveryLinkBlock({
           !sh.paid &&
           status !== 'cancelled' &&
           c.order.version !== 'delivery' &&
-          c.order.version !== 'pdf',
+          c.order.version !== 'pdf' &&
+          c.order.version !== 'custom',
         address: sh.paid ? sh.address : null,
       };
     },

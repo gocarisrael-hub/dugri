@@ -1190,6 +1190,13 @@
         <button type="button" class="act" id="dl-cancel" data-testid="dl-cancel">בטל קישור</button>
       </div>
       <p class="muted" id="dl-status" data-testid="dl-status"></p>
+      <!-- A provider's window cannot be closed from here: a customer who already
+           opened the payment on the old link can still pay there, at its amount.
+           That charge is kept, but books no courier by itself. -->
+      <p class="muted" id="dl-window-note" data-testid="dl-window-note" hidden>
+        שימו לב: אם הלקוח/ה כבר פתח/ה את חלון התשלום בקישור הקודם, עדיין אפשר לשלם בו את הסכום
+        הקודם. תשלום כזה נשמר, אבל לא נפתח לו משלוח ב-HFD אוטומטית.
+      </p>
       <p class="err" id="dl-err" data-testid="dl-err" hidden></p>
       <div class="row">
         <button type="button" class="act" id="dl-close">סגור</button>
@@ -1668,7 +1675,7 @@
         if (!o || !o.paid) return false;
         if (o.shipping && o.shipping.link) return true;
         if (c.status !== 'closed' && c.status !== 'expired') return false;
-        return o.version !== 'delivery' && o.version !== 'pdf';
+        return o.version !== 'delivery' && o.version !== 'pdf' && o.version !== 'custom';
       }
       function deliveryLinkButton(c) {
         const b = document.createElement('button');
@@ -1699,6 +1706,7 @@
         dlEl('dl-live').hidden = !live;
         dlEl('dl-url').value = st.url || '';
         dlEl('dl-make').hidden = !(st.eligible || live);
+        dlEl('dl-window-note').hidden = !(link && !link.paid);
         dlEl('dl-create').textContent = live ? 'צור קישור חדש (מחליף את הקיים)' : 'צור קישור';
         if (!dlEl('dl-amount').value) {
           dlEl('dl-amount').value = live ? link.amount : st.default_fee || '';
@@ -1714,7 +1722,9 @@
           if (h) {
             status += h.ok
               ? ' · נפתח משלוח ב-HFD ' + (h.shipments || []).join(', ')
-              : ' · HFD לא פתחה משלוח: ' + (h.message || h.error) + ' (לנסות שוב: שלח ל-HFD)';
+              : h.error === 'not booked'
+                ? ' · ' + h.message
+                : ' · HFD לא פתחה משלוח: ' + (h.message || h.error) + ' (לנסות שוב: שלח ל-HFD)';
           }
         } else if (live) {
           status =

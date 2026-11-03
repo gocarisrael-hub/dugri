@@ -22,6 +22,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
 
 const ADMIN_KEY = 'test-admin-key';
+const STAFF_KEY = 'test-staff-key';
 const HFD_HOST = 'https://api.hfd.example';
 const FEE = 39;
 const BASE_URL = 'https://test.dugri.example';
@@ -50,6 +51,7 @@ const jsonRes = (obj) => ({
 beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-dlink-'));
   process.env.ADMIN_KEY = ADMIN_KEY;
+  process.env.STAFF_KEY = STAFF_KEY;
   process.env.PELECARD_TERMINAL = '0962210';
   process.env.PELECARD_USER = 'peletest';
   process.env.PELECARD_PASSWORD = 'secret';
@@ -203,6 +205,21 @@ describe('who may get a link', () => {
     const r = await call('POST', admin(open.id), { amount: 39 });
     expect(r.status).toBe(409);
     expect(r.body.error).toBe('open');
+  });
+
+  it('the staff key is refused on every method and spelling, and changes nothing', async () => {
+    const c = closedPaidPickup();
+    const asStaff = (p) => '/api/admin/collections/' + c.id + '/' + p + '?key=' + STAFF_KEY;
+    for (const spelling of ['delivery-link', 'DELIVERY-LINK', 'Delivery-Link', 'delivery-link/']) {
+      for (const method of ['GET', 'POST', 'DELETE']) {
+        const r = await call(method, asStaff(spelling), method === 'POST' ? { amount: 39 } : null);
+        expect(r.status, method + ' ' + spelling).toBe(403);
+        expect(r.body.reason).toBe('staff');
+      }
+    }
+    expect(db.getCollection(c.id).order.shipping).toBeUndefined();
+    // …and the owner still can.
+    expect((await call('POST', admin(c.id), { amount: 39 })).status).toBe(201);
   });
 
   it('is owner-only: no key, no link', async () => {
@@ -531,5 +548,111 @@ describe('the sticker sheet', () => {
     await settle();
     expect(mine()).toMatchObject({ kind: 'delivery', shipment_number: '987654', missing_boxes: 0 });
     expect(app.pickupStickerOrders().some((s) => s.order_no === c.order_no)).toBe(false);
+  });
+});
+
+// A link the owner stood down is not a decision to ship any more. A provider's
+// window cannot be closed from here, so a charge made in an earlier window still
+// SETTLES — the money was taken — but no courier is booked by itself, and she is
+// told so.
+describe('a charge from a link she cancelled or replaced', () => {
+  // Opens a window on the CURRENT link and returns that window's session token.
+  async function openWindow(id) {
+    const r = await call('POST', '/api/delivery-link/' + linkToken(id) + '/pay', {
+      address: ADDRESS,
+      phone: PHONE,
+    });
+    expect(r.status).toBe(200);
+    return sessionToken(id);
+  }
+  async function chargeSession(token, amount, txId) {
+    nextGetTx = {
+      StatusCode: '000',
+      ResultData: {
+        TransactionId: txId,
+        ShvaResult: '000',
+        AdditionalDetailsParamX: token,
+        DebitTotal: amount * 100,
+        DebitApproveNumber: '8601011',
+      },
+    };
+    const r = await call('POST', '/api/payment/callback', { ResultData: { TransactionId: txId } });
+    await settle();
+    return r;
+  }
+  const creates = () => hfdCalls.filter((x) => x.url.includes('/shipments/create'));
+
+  it('cancelled: the open window is marked abandoned, the late charge settles, no van, she is told', async () => {
+    const c = closedPaidPickup();
+    await call('POST', admin(c.id), { amount: 39 });
+    const old = await openWindow(c.id);
+    await call('DELETE', admin(c.id));
+    const s = db.getCollection(c.id).order.shipping.pelecard.sessions.find((x) => x.token === old);
+    expect(s.resolved).toBe(true);
+    expect(s.abandoned_at).toBeTruthy();
+
+    expect((await chargeSession(old, 39, 'late-1')).status).toBe(200);
+    const order = db.getCollection(c.id).order;
+    expect(order.shipping.paid).toBe(true);
+    expect(order.charged_total).toBe(199 + 39);
+    expect(creates()).toHaveLength(0);
+    expect(order.shipping.link.hfd_auto).toMatchObject({ ok: false, error: 'not booked' });
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].subject).toContain('לא נפתח משלוח');
+    expect(alerts[0].lines.join('\n')).toContain('הקישור בוטל');
+    expect(alerts[0].lines.join('\n')).toContain(c.order_no);
+  });
+
+  it('replaced: a charge on the OLD link’s window settles but books nothing; the old address is kept', async () => {
+    const c = closedPaidPickup();
+    await call('POST', admin(c.id), { amount: 39 });
+    const old = await openWindow(c.id);
+    await call('POST', admin(c.id), { amount: 39 });
+    const sessions = db.getCollection(c.id).order.shipping.pelecard.sessions;
+    expect(sessions.find((x) => x.token === old).abandoned_at).toBeTruthy();
+
+    await chargeSession(old, 39, 'late-2');
+    const order = db.getCollection(c.id).order;
+    expect(order.shipping.paid).toBe(true);
+    expect(order.version).toBe('delivery');
+    expect(order.address).toMatchObject({ street: ADDRESS.street, city: ADDRESS.city });
+    expect(creates()).toHaveLength(0);
+    expect(alerts[0].lines.join('\n')).toContain('קישור ישן');
+  });
+
+  it('replaced: the NEW link’s own window still books as usual', async () => {
+    const c = closedPaidPickup();
+    await call('POST', admin(c.id), { amount: 39 });
+    await openWindow(c.id);
+    await call('POST', admin(c.id), { amount: 30 });
+    const fresh = await openWindow(c.id);
+    await chargeSession(fresh, 30, 'new-1');
+    expect(creates()).toHaveLength(1);
+    expect(db.getCollection(c.id).order.shipping.link.hfd_auto.ok).toBe(true);
+  });
+
+  it('a cancelled collection: the charge settles, no van', async () => {
+    const c = closedPaidPickup();
+    await call('POST', admin(c.id), { amount: 39 });
+    const t = await openWindow(c.id);
+    db.cancelCollection(c.id);
+    await chargeSession(t, 39, 'late-3');
+    expect(db.getCollection(c.id).order.shipping.paid).toBe(true);
+    expect(creates()).toHaveLength(0);
+    expect(alerts[0].lines.join('\n')).toContain('ההזמנה מבוטלת');
+  });
+});
+
+describe('a bespoke (custom) order', () => {
+  it('gets no link — its version would be overwritten by the conversion', async () => {
+    const c = db.createCollection('מיוחדת', { phone: '0501111111' });
+    db.setOrder(c.id, c.owner_token, { version: 'custom' }, { admin: true });
+    db.markPaid(c.id, { method: 'pelecard', charged_total: 599 });
+    db.closeCollection(c.id, c.owner_token);
+    expect(db.deliveryLinkState(c.id)).toMatchObject({ eligible: false, reason: 'custom' });
+    const r = await call('POST', admin(c.id), { amount: 39 });
+    expect(r.status).toBe(409);
+    expect(r.body.error).toBe('custom');
+    expect(db.getCollection(c.id).order.version).toBe('custom');
   });
 });

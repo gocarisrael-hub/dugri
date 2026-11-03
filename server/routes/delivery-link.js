@@ -36,6 +36,7 @@ function registerDeliveryLink(app, { requireAdmin, db, publicBaseUrl, cardEnable
     paid: 'המשלוח כבר שולם בקישור.',
     'already delivery': 'זו כבר הזמנת משלוח.',
     digital: 'זו הזמנה דיגיטלית — אין מה לשלוח.',
+    custom: 'זו הזמנה מיוחדת — המשלוח שלה מסוכם ישירות, לא בקישור.',
     open: 'האיסוף עדיין פתוח — הלקוח/ה יכול/ה להוסיף משלוח בעצמו/ה בדף האיסוף.',
     'invalid amount': 'הסכום צריך להיות מספר שלם וחיובי.',
     'no link': 'אין קישור פעיל להזמנה הזו.',

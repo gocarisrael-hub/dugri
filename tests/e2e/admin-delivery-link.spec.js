@@ -105,6 +105,8 @@ test('the owner makes, copies and cancels a link from a closed pickup row', asyn
   expect(posted).toEqual([30]);
   await expect(page.getByTestId('dl-url')).toHaveValue(/add-delivery\.html\?t=/);
   await expect(page.getByTestId('dl-status')).toContainText('30 ₪');
+  // A window already open on an earlier link can still charge its amount.
+  await expect(page.getByTestId('dl-window-note')).toBeVisible();
 
   await page.getByTestId('dl-copy').click();
   await expect(page.getByTestId('dl-status')).toContainText('הועתק');
@@ -118,11 +120,12 @@ test('the owner makes, copies and cancels a link from a closed pickup row', asyn
   await expect(page.getByTestId('dl-status')).toContainText('בוטל');
 });
 
-test('no link button on an open collection or a delivery order', async ({ page }) => {
+test('no link button on an open collection, a delivery or a bespoke order', async ({ page }) => {
   const open = uniq('פתוח');
   const deliv = uniq('משלוח');
   await injectRows(page, [
     row(open, { version: 'pickup' }, { status: 'open' }),
+    row(uniq('מיוחדת'), { version: 'custom' }),
     row(deliv, {
       version: 'delivery',
       address: { street: 'הרצל 5', city: 'תל אביב', postal: '6100000' },

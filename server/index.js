@@ -1392,7 +1392,12 @@ const STAFF_ALLOWED = [
 // …minus the money that lives INSIDE an allowed prefix. Creating a bespoke
 // order mints a 599 ₪ charge and a payment link, which is the owner's business
 // however much it looks like an order operation.
-const STAFF_DENIED = [/^\/api\/admin\/collections\/[^/]+\/custom$/];
+const STAFF_DENIED = [
+  /^\/api\/admin\/collections\/[^/]+\/custom$/,
+  // The add-delivery payment link: a price, a charge and a link to it, all of
+  // it the owner's — reading it as much as making or cancelling it.
+  /^\/api\/admin\/collections\/[^/]+\/delivery-link$/,
+];
 
 // Match against a NORMALISED path, because Express does not route on the exact
 // bytes: with the default settings `/CUSTOM` and `/custom/` both reach the
@@ -4237,7 +4242,7 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
 // (delivery-link pay) alike. ONE place records the session, so both settle
 // through the same kind:'shipping' branch of settleVerifiedPayment, verified
 // against the same `fee`.
-async function openShippingWindow(res, { c, provider, base, shipping, failure }) {
+async function openShippingWindow(res, { c, provider, base, shipping, failure, linkToken }) {
   const charged = shipping.fee;
   // A Tranzila token carries this environment (tranzila.newSessionToken), so a
   // sweep on the shared terminal can tell its own charges from the other's.
@@ -4257,6 +4262,9 @@ async function openShippingWindow(res, { c, provider, base, shipping, failure })
       priceKey: db.shippingPriceKey(shipping),
       feeAtInit: Number(shipping.fee) || 0,
     });
+    // An add-delivery link's window remembers WHICH link it was opened for, so
+    // a charge that lands after the owner replaced the link books no courier.
+    if (linkToken) db.tagDeliveryLinkSession(c.id, paramToken, linkToken);
     res.json({ url, charged });
   } catch (e) {
     // The SAME 502 body as the order's own pay/init, so without naming the stage
@@ -4315,6 +4323,7 @@ app.post('/api/delivery-link/:token/pay', async (req, res) => {
     provider,
     base,
     shipping: staged.shipping,
+    linkToken: staged.shipping.link.token,
     failure:
       'delivery-link pay failed for ' +
       staged.shipping.fee +
@@ -4500,6 +4509,10 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
     // Bought through the owner's add-delivery link (server/stores/delivery-link.js)
     // rather than the buyer's own card on collect.html. Read before the write.
     const viaLink = !!c.order.shipping.link;
+    // …and whether that link is still the one she stands behind. A cancelled or
+    // replaced link, or a cancelled collection, still SETTLES (the money was
+    // taken) but books no van by itself. Read before markShippingPaid.
+    const skipBooking = viaLink ? db.deliveryLinkAutoBook(c, session) : null;
     const marked = db.markShippingPaid(c.id, {
       method,
       transactionId,
@@ -4517,7 +4530,7 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
       // Only on the real unpaid->paid transition (`marked`), so a replayed or
       // duplicate notify can never book a second van; bookHfdShipments' own
       // per-box guard is the second line behind this one.
-      if (marked) onDeliveryLinkPaid(c.id, session.charged_total);
+      if (marked) onDeliveryLinkPaid(c.id, session.charged_total, skipBooking);
     } else {
       onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
     }
@@ -4598,9 +4611,27 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
 // Fire-and-forget off the settle path: a courier that refuses, errors or is not
 // configured leaves the order paid and converted, she gets an alert naming the
 // order and why, and the manual שלח ל-HFD button on its row is the retry.
-function onDeliveryLinkPaid(id, amountCharged) {
+const DELIVERY_LINK_SKIP = {
+  'link cancelled': 'הקישור בוטל לפני שהתשלום נקלט',
+  'link replaced': 'התשלום הגיע מקישור ישן שהוחלף בקישור חדש',
+  'collection cancelled': 'ההזמנה מבוטלת',
+};
+function onDeliveryLinkPaid(id, amountCharged, skip) {
   Promise.resolve()
-    .then(() => bookHfdShipments(id))
+    .then(() =>
+      skip
+        ? {
+            status: 409,
+            body: {
+              error: 'not booked',
+              message:
+                'לא נפתח משלוח אוטומטית: ' +
+                (DELIVERY_LINK_SKIP[skip] || skip) +
+                '. להחליט ידנית אם לשלוח',
+            },
+          }
+        : bookHfdShipments(id)
+    )
     .catch((e) => ({ status: 500, body: { error: (e && e.message) || String(e) } }))
     .then((r) => {
       const booked = r.status === 200;
@@ -4626,12 +4657,12 @@ function onDeliveryLinkPaid(id, amountCharged) {
             (body.message || body.error || r.status)
         );
       }
-      reportDeliveryLinkPaid(id, amountCharged, { booked, numbers, body });
+      reportDeliveryLinkPaid(id, amountCharged, { booked, numbers, body, skip });
     })
     .catch((e) => console.error('[delivery-link] paid notice failed: ' + ((e && e.message) || e)));
 }
 
-function reportDeliveryLinkPaid(id, amountCharged, { booked, numbers, body }) {
+function reportDeliveryLinkPaid(id, amountCharged, { booked, numbers, body, skip }) {
   const c = db.getCollection(id);
   if (!c || !c.order) return;
   const a = c.order.address || {};
@@ -4645,16 +4676,21 @@ function reportDeliveryLinkPaid(id, amountCharged, { booked, numbers, body }) {
     'טלפון לשליח: ' + (a.phone || c.owner_phone || '—'),
     booked
       ? 'נפתח משלוח ב-HFD: ' + numbers.join(', ') + '. ההזמנה מופיעה בדף המדבקות כהזמנת משלוח.'
-      : 'המשלוח ב-HFD לא נפתח: ' +
-        (body.message || body.error || 'שגיאה') +
-        '. התשלום נשמר. אפשר לנסות שוב בכפתור "שלח ל-HFD" בשורת ההזמנה.',
+      : skip
+        ? body.message +
+          '. התשלום נשמר וההזמנה היא הזמנת משלוח; לשליחה: כפתור "שלח ל-HFD" בשורת ההזמנה.'
+        : 'המשלוח ב-HFD לא נפתח: ' +
+          (body.message || body.error || 'שגיאה') +
+          '. התשלום נשמר. אפשר לנסות שוב בכפתור "שלח ל-HFD" בשורת ההזמנה.',
     base && ADMIN_KEY
       ? 'לוח ההזמנות: ' + base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY)
       : '',
   ].filter(Boolean);
   const subject = booked
     ? 'שולם משלוח בקישור ונפתח משלוח ב-HFD'
-    : 'שולם משלוח בקישור, אבל HFD לא פתחה משלוח';
+    : skip
+      ? 'שולם משלוח בקישור שבוטל או הוחלף — לא נפתח משלוח'
+      : 'שולם משלוח בקישור, אבל HFD לא פתחה משלוח';
   // Email, then WhatsApp: the same escalation as every other owner alert on the
   // payment path. A failed HFD booking that reaches nobody is a parcel nobody
   // sends.
