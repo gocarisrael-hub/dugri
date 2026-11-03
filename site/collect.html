@@ -933,6 +933,120 @@
         opacity: 0.45;
         cursor: default;
       }
+      /* THE DESIGN SWITCH: a strip that snaps a card to the middle, the
+         neighbours peeking in at each side so it reads as swipeable. Native RTL
+         scrolling — the first design on the right, a swipe to the left moves on —
+         so no arrow or scrollLeft sign has to be got right by hand. */
+      .dsw {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 22px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+      .dsw.hidden {
+        display: none;
+      }
+      .dsw-strip {
+        display: flex;
+        gap: 12px;
+        overflow-x: auto;
+        scroll-snap-type: x mandatory;
+        overscroll-behavior-x: contain;
+        scrollbar-width: none;
+        /* half the strip minus half a card on each side, so the first and the
+           last design can both sit in the middle */
+        padding: 6px calc(50% - var(--dsw-w) / 2) 10px;
+        /* in vw, not %: a percentage means the strip's width in the padding and
+           its CONTENT box's width in the card, and the two disagree */
+        --dsw-w: min(42vw, 170px);
+      }
+      .dsw-strip::-webkit-scrollbar {
+        display: none;
+      }
+      .dsw-card {
+        flex: none;
+        width: var(--dsw-w);
+        scroll-snap-align: center;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+        cursor: pointer;
+        opacity: 0.55;
+        transform: scale(0.92);
+        transition:
+          opacity 0.2s ease,
+          transform 0.2s ease;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .dsw-card.focus {
+        opacity: 1;
+        transform: none;
+      }
+      .dsw-card:focus-visible {
+        outline: 2px solid var(--sage);
+        outline-offset: 2px;
+      }
+      .dsw-pic {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 223.92 / 312;
+        background: var(--section);
+        border: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+      }
+      .dsw-pic img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+      .dsw-pic img:not([src]) {
+        visibility: hidden;
+      }
+      .dsw-card.current .dsw-pic {
+        border: 2px solid var(--ink);
+      }
+      .dsw-busy {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .dsw-card.has-card .dsw-busy {
+        display: none;
+      }
+      .dsw-nm {
+        font-size: 14px;
+        font-weight: 700;
+        text-align: center;
+      }
+      .dsw-tag {
+        font-size: 12px;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+      .dsw-foot {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 44px;
+      }
+      .dsw-foot .sheet-save {
+        align-self: center;
+      }
+      .dsw-here {
+        font-weight: 700;
+      }
       /* The pool chooser. Full-width rows rather than a <select>: there are only a
          few, each is a promise about what her cards will say, and a native select
          on a phone hides all but the chosen one behind a tap. */
@@ -2294,6 +2408,36 @@
           <button type="button" id="titleSaveBtn" class="sheet-save" data-testid="title-save">
             שמירה
           </button>
+        </div>
+
+        <!-- THE DESIGN SWITCH. Every design the site offers, each drawn with HER
+             title by the same render as the card above, so swiping is choosing
+             between the decks she could actually get. Rendered lazily — the card
+             in the middle and its two neighbours, one at a time, after the swipe
+             settles — because each one is a Chrome run on the server. Same door
+             and the same lock as the title: open until the collection is closed
+             for production, paid or not (every design costs the same). -->
+        <div class="dsw hidden" id="designSwitch" data-testid="design-switch">
+          <div class="sec-h dsw-h" data-edit="collect-dsw-heading">רוצים עיצוב אחר?</div>
+          <small class="muted" data-edit="collect-dsw-hint"
+            >החליקו כדי לראות את הכותרת שלכם על כל עיצוב</small
+          >
+          <div
+            class="dsw-strip"
+            id="dswStrip"
+            role="listbox"
+            aria-label="העיצובים"
+            data-testid="design-strip"
+          ></div>
+          <div class="dsw-foot">
+            <button type="button" id="dswChoose" class="sheet-save" data-testid="design-choose">
+              בחרו בעיצוב הזה
+            </button>
+            <span class="dsw-here hidden" id="dswHere" data-testid="design-is-current"
+              >✓ זה העיצוב שלכם</span
+            >
+          </div>
+          <div class="sheet-err hidden" id="dswErr" role="alert" data-testid="design-err"></div>
         </div>
       </section>
 
@@ -4416,6 +4560,8 @@
         const img = $('#prevImg');
         const fail = $('#prevFail');
         if (!previewSpec) return;
+        // this render's inputs, fixed now: a design switch can land while it draws
+        const spec = { ...previewSpec };
         const seq = ++previewSeq;
         box.classList.add('busy');
         fail.classList.add('hidden');
@@ -4423,7 +4569,7 @@
           const r = await fetch('/api/preview', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ...previewSpec, title: titleValue() || null, board: false }),
+            body: JSON.stringify({ ...spec, title: titleValue() || null, board: false }),
           }).then((res) => (res.ok ? res.json() : Promise.reject(new Error(res.status))));
           // A stale render (she typed again while this one was drawing) must not
           // overwrite the newer card.
@@ -4434,6 +4580,7 @@
             // being drawn smaller than the space it was given.
             img.addEventListener('load', () => box.classList.add('has-card'), { once: true });
             img.src = r.card;
+            dswSeed(r.card, spec.theme);
           }
         } catch (e) {
           if (seq !== previewSeq) return;
@@ -4891,9 +5038,307 @@
             previewSpec = null;
           }
         }
-        if (previewSpec) renderPreview();
+        if (previewSpec) await renderPreview();
         else $('#prevFail').classList.remove('hidden');
+        // AFTER the card above: the strip's card for her current design is that
+        // same render (seeded from it, and a cache hit on the server), so asking
+        // for both at once would be two Chrome runs for one picture.
+        loadDesignSwitch();
       }
+
+      // ---- the design switch ----------------------------------------------------
+      // The list is the SERVER's (GET .../designs): the designs the site offers
+      // right now, by their live names, the current one marked. Each card is drawn
+      // by GET .../design-card — the same render as the card above, from the STORED
+      // title — lazily: only the card in the middle and its two neighbours, one
+      // request at a time, once the swipe has settled. The pictures are kept per
+      // (design, saved title), so swiping back is free here, and the server keeps
+      // them too (its key adds the artwork revision).
+      let dswList = null;
+      let dswLoaded = false;
+      let dswFocus = null;
+      let dswTimer = null;
+      let dswBusy = false;
+      let dswQueue = [];
+      let dswSaving = false;
+      const dswCards = new Map();
+      const dswFailed = new Set();
+      function dswKey(designId) {
+        return designId + '\u0000' + savedTitle();
+      }
+      function dswCurrent() {
+        return (dswList || []).find((d) => d.current) || null;
+      }
+      async function loadDesignSwitch() {
+        if (dswLoaded || !isOwner) return;
+        dswLoaded = true;
+        try {
+          const r = await api('/designs?k=' + encodeURIComponent(ownerToken));
+          dswList = Array.isArray(r.designs) ? r.designs : null;
+        } catch (e) {
+          dswList = null; // no strip rather than a broken one
+        }
+        paintDesignStrip();
+        if (dswPending) dswSeed(dswPending.card, dswPending.theme);
+        dswPending = null;
+        renderDesignSwitch();
+        const cur = dswCurrent();
+        if (cur) dswCentre(cur.id, false);
+      }
+      // The current design's card IS the card above when that one shows the saved
+      // title — keep it, so the strip never asks for a picture already on screen.
+      let dswPending = null;
+      function dswSeed(card, theme) {
+        if (!card || draftTitle !== null) return;
+        if (!dswList) {
+          // drawn before the list arrived: kept for loadDesignSwitch
+          dswPending = { card, theme };
+          return;
+        }
+        const cur = dswCurrent();
+        if (!cur || cur.theme !== theme) return;
+        dswCards.set(dswKey(cur.id), card);
+        paintDswCard(cur.id);
+      }
+      function dswEl(designId) {
+        return $('#dswStrip').querySelector('[data-id="' + CSS.escape(designId) + '"]');
+      }
+      function paintDesignStrip() {
+        const strip = $('#dswStrip');
+        strip.textContent = '';
+        for (const d of dswList || []) {
+          const el = document.createElement('div');
+          el.className = 'dsw-card';
+          el.dataset.id = d.id;
+          el.setAttribute('role', 'option');
+          el.setAttribute('tabindex', '0');
+          el.setAttribute('data-testid', 'design-option');
+          const pic = document.createElement('div');
+          pic.className = 'dsw-pic';
+          const img = document.createElement('img');
+          img.alt = d.name;
+          const busy = document.createElement('span');
+          busy.className = 'dsw-busy';
+          busy.textContent = d.name;
+          pic.append(img, busy);
+          const nm = document.createElement('span');
+          nm.className = 'dsw-nm';
+          nm.textContent = d.name;
+          const tag = document.createElement('span');
+          tag.className = 'dsw-tag hidden';
+          el.append(pic, nm, tag);
+          strip.append(el);
+          paintDswCard(d.id);
+        }
+        paintDswMarks();
+      }
+      // Which card is hers and which this order cannot move to — redrawn after a
+      // switch without throwing away the pictures.
+      function paintDswMarks() {
+        for (const d of dswList || []) {
+          const el = dswEl(d.id);
+          if (!el) continue;
+          el.classList.toggle('current', !!d.current);
+          el.setAttribute('aria-selected', d.current ? 'true' : 'false');
+          const tag = el.querySelector('.dsw-tag');
+          const text = d.current ? 'העיצוב שלכם' : !d.ok ? 'צריך כותרת משלכם' : '';
+          tag.textContent = text;
+          tag.classList.toggle('hidden', !text);
+        }
+      }
+      function paintDswCard(designId) {
+        const el = dswEl(designId);
+        if (!el) return;
+        const img = el.querySelector('img');
+        const card = dswCards.get(dswKey(designId));
+        if (card) {
+          if (img.getAttribute('src') !== card) img.src = card;
+          el.classList.add('has-card');
+        } else {
+          img.removeAttribute('src');
+          el.classList.remove('has-card');
+        }
+      }
+      function renderDesignSwitch() {
+        const box = $('#designSwitch');
+        const open = !!state && state.status === 'open';
+        const show = open && !!dswList && dswList.length > 1;
+        box.classList.toggle('hidden', !show);
+        if (!show) return;
+        const d = (dswList || []).find((x) => x.id === dswFocus) || null;
+        const here = !d || d.current;
+        $('#dswHere').classList.toggle('hidden', !here);
+        const btn = $('#dswChoose');
+        btn.classList.toggle('hidden', here);
+        btn.disabled = dswSaving || !d || !d.ok;
+        const err = $('#dswErr');
+        if (d && !d.ok && d.reason) {
+          err.textContent = d.reason;
+          err.classList.remove('hidden');
+        } else if (!err.dataset.sticky) {
+          err.classList.add('hidden');
+        }
+      }
+      function dswReduceMotion() {
+        return !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+      }
+      // Measured in pixels off the two rectangles, so it is the same sum in either
+      // direction and in every engine.
+      function dswCentre(designId, smooth) {
+        const strip = $('#dswStrip');
+        const el = dswEl(designId);
+        if (!el) return;
+        const s = strip.getBoundingClientRect();
+        const r = el.getBoundingClientRect();
+        const by = r.left + r.width / 2 - (s.left + s.width / 2);
+        // To an ABSOLUTE offset, not scrollBy: a relative smooth scroll is added to
+        // wherever the compositor thinks the strip is, which right after an
+        // instant scroll is the old place — Chromium then animated a card that was
+        // already centred straight back off the middle. (Both engines count RTL
+        // scrollLeft the standard way, from 0 at the start going negative.)
+        strip.scrollTo({
+          left: strip.scrollLeft + by,
+          behavior: smooth && !dswReduceMotion() ? 'smooth' : 'auto',
+        });
+        dswSetFocus(designId);
+      }
+      // The card nearest the middle of the strip, once the swipe has settled.
+      function dswSettle() {
+        const strip = $('#dswStrip');
+        const s = strip.getBoundingClientRect();
+        const mid = s.left + s.width / 2;
+        let best = null;
+        let gap = Infinity;
+        for (const el of strip.children) {
+          const r = el.getBoundingClientRect();
+          const g = Math.abs(r.left + r.width / 2 - mid);
+          if (g < gap) {
+            gap = g;
+            best = el.dataset.id;
+          }
+        }
+        if (best) dswSetFocus(best);
+      }
+      function dswSetFocus(designId) {
+        dswFocus = designId;
+        for (const el of $('#dswStrip').children) {
+          el.classList.toggle('focus', el.dataset.id === designId);
+        }
+        const err = $('#dswErr');
+        delete err.dataset.sticky;
+        renderDesignSwitch();
+        dswAsk();
+      }
+      // THE RENDERS: the card in the middle first, then the one each side. A new
+      // settle replaces the queue rather than adding to it, so a fast swipe across
+      // eight designs costs the three it stops on, never the eight it passed.
+      function dswAsk() {
+        const list = dswList || [];
+        const at = list.findIndex((d) => d.id === dswFocus);
+        if (at < 0) return;
+        dswQueue = [list[at], list[at + 1], list[at - 1]]
+          .filter(Boolean)
+          .map((d) => d.id)
+          .filter((x) => !dswCards.has(dswKey(x)) && !dswFailed.has(dswKey(x)));
+        dswPump();
+      }
+      async function dswPump() {
+        if (dswBusy) return;
+        const next = dswQueue.shift();
+        if (!next) return;
+        dswBusy = true;
+        const key = dswKey(next);
+        try {
+          const r = await api(
+            '/design-card?design=' +
+              encodeURIComponent(next) +
+              '&k=' +
+              encodeURIComponent(ownerToken)
+          );
+          if (r && r.card) dswCards.set(key, r.card);
+        } catch (e) {
+          // A failed card stays its name on a blank; it is asked again when she
+          // comes back to it after a title change, never in a loop.
+          dswFailed.add(key);
+        } finally {
+          dswBusy = false;
+        }
+        if (key === dswKey(next)) paintDswCard(next);
+        dswPump();
+      }
+      async function chooseDesign() {
+        const d = (dswList || []).find((x) => x.id === dswFocus);
+        if (!d || d.current || !d.ok || dswSaving) return;
+        const err = $('#dswErr');
+        err.classList.add('hidden');
+        dswSaving = true;
+        renderDesignSwitch();
+        const from = (dswCurrent() || {}).id || null;
+        try {
+          const r = await api('/design?k=' + encodeURIComponent(ownerToken), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ design: d.id }),
+          });
+          track('design_switch', { from, to: r.id });
+          for (const x of dswList) x.current = x.id === r.id;
+          // EVERYTHING DRAWN FROM THE DESIGN follows it. The card above: from the
+          // strip's own picture at once when it has one, then the render, which the
+          // server answers from the same cache.
+          if (state) state.theme = r.theme;
+          if (previewSpec) previewSpec.theme = r.theme;
+          const have = dswCards.get(dswKey(r.id));
+          if (have && draftTitle === null) $('#prevImg').src = have;
+          renderPreview();
+          // The pawn card is drawn on the design's own artwork: drop the one on
+          // screen so the photos tab draws the new design next time it opens.
+          forgetPawnCard();
+          paintDswMarks();
+          // …and the rest of the page (the idea prompts follow the theme) from
+          // what the server now holds.
+          refresh();
+        } catch (e) {
+          err.textContent =
+            (e.body && e.body.message) ||
+            (e.status === 409
+              ? 'האיסוף נסגר - אי אפשר להחליף עיצוב'
+              : e.status === 400
+                ? 'העיצוב הזה לא זמין כרגע'
+                : 'לא הצלחנו להחליף, נסו שוב');
+          err.dataset.sticky = '1';
+          err.classList.remove('hidden');
+          if (e.status === 409) refresh();
+        } finally {
+          dswSaving = false;
+          renderDesignSwitch();
+        }
+      }
+      (function wireDesignSwitch() {
+        const strip = $('#dswStrip');
+        if (!strip) return;
+        // Debounced: a swipe fires dozens of scroll events and only where it STOPS
+        // is a question worth a render.
+        strip.addEventListener(
+          'scroll',
+          () => {
+            clearTimeout(dswTimer);
+            dswTimer = setTimeout(dswSettle, 160);
+          },
+          { passive: true }
+        );
+        const pick = (e) => {
+          const el = e.target.closest('.dsw-card');
+          if (el && el.dataset.id !== dswFocus) dswCentre(el.dataset.id, true);
+        };
+        strip.addEventListener('click', pick);
+        strip.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            pick(e);
+          }
+        });
+        $('#dswChoose').addEventListener('click', chooseDesign);
+      })();
 
       // What the design and photo tabs show, from `state`. Called on every render
       // of the owner's state, so a collection that closes while she is looking at
@@ -4921,6 +5366,8 @@
         $('#photosLabelSent').classList.toggle('hidden', open);
         $('#photosHint').classList.toggle('hidden', !open);
         $('#sheetClosedNote').classList.toggle('hidden', open);
+        // The design switch closes with the title: the same lock, the same moment.
+        renderDesignSwitch();
         renderPlayers();
         renderPawns();
         loadPoolOptions();
@@ -5094,6 +5541,12 @@
           // one on screen so the photos tab renders the new title next time she
           // opens it, instead of promising her a card with the old name on it.
           forgetPawnCard();
+          // The strip's cards carry the title too: every one of them is now a card
+          // of the old title, so they go blank and the ones in view are asked again.
+          if (dswList) {
+            for (const d of dswList) paintDswCard(d.id);
+            dswAsk();
+          }
         } catch (e) {
           // The server's own Hebrew message when it has one (the emoji refusal
           // names the problem far better than a generic failure would), and her

@@ -51,6 +51,8 @@ const { makeRateLimiter, makePreviewCache } = require('./preview-cache');
 const generatorProc = require('./generator-proc');
 const proof = require('./proof');
 const deckJobs = require('./deck-jobs');
+// Agent C: which designs a buyer may move her order to (the collection page's strip).
+const designSwitch = require('./design-switch');
 // First-party ad attribution: which campaign produced which paid order.
 const attribution = require('./attribution');
 // The server's own copy of a sale, sent to Meta so a blocked browser cannot
@@ -3197,6 +3199,152 @@ app.put('/api/collections/:id/title', express.json({ limit: '8kb' }), (req, res)
   const stored = db.setCustomTitleForOwner(req.params.id, req.query.k, title);
   if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
   res.json({ ok: true, custom_title: stored });
+});
+
+// ---- the buyer MOVES her deck to another design (the design tab's strip) -------
+// Same door as the title above, on purpose: the owner token (?k=), and open until
+// she closes the collection for production. Paid or not makes no difference: the
+// owner's rule is that every design costs the same here, so a switch never
+// charges or refunds. server/design-switch.js holds which designs qualify.
+async function switchableDesigns() {
+  const mod = await import(pathToFileURL(path.join(SITE_DIR, 'js', 'designs.js')).href);
+  // the same themes view POST /api/collections checks an order's theme against
+  const themes = templates.loadThemesCached(templates.themesPathFor(TEMPLATE_ROOT));
+  const list = designSwitch.availableDesigns({
+    publicDesigns: mod.PUBLIC_DESIGNS,
+    themeByDesign: mod.THEME_BY_DESIGN,
+    themes,
+    templates,
+  });
+  return { list, themes };
+}
+
+// The designs she can move to, the current one marked. Owner-token gated: it
+// reads the order (whether a legacy order fits a design), and nobody else is
+// offered the switch.
+app.get('/api/collections/:id/designs', async (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  try {
+    const { list, themes } = await switchableDesigns();
+    res.json({
+      open: db.effectiveStatus(c) === 'open',
+      designs: designSwitch.designsForCollection(c, list, { themes, validate }),
+    });
+  } catch (e) {
+    console.error('design list failed:', (e && e.message) || e);
+    res.status(500).json({ error: 'design list failed' });
+  }
+});
+
+// Body: { design } — a design id from the list above.
+app.put('/api/collections/:id/design', express.json({ limit: '2kb' }), async (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  if (db.effectiveStatus(c) !== 'open') {
+    return res.status(409).json({ error: 'closed', message: 'האיסוף נסגר והמשחק בהפקה' });
+  }
+  const wanted = String((req.body || {}).design || '').trim();
+  let found;
+  try {
+    found = await switchableDesigns();
+  } catch (e) {
+    console.error('design list failed:', (e && e.message) || e);
+    return res.status(500).json({ error: 'design list failed' });
+  }
+  const pick = found.list.find((d) => d.id === wanted) || null;
+  // Hidden, unknown or never offered: one answer, the one the order route gives.
+  if (!pick) return res.status(400).json({ error: 'design not available' });
+  const misfit =
+    pick.theme === c.theme
+      ? null
+      : designSwitch.designMisfit(c, found.themes[pick.theme], validate);
+  if (misfit) return res.status(400).json({ error: 'design_misfit', message: misfit });
+  const stored = db.setDesignForOwner(req.params.id, req.query.k, {
+    design: pick.name,
+    theme: pick.theme,
+  });
+  if (stored === 'forbidden') return res.status(403).json({ error: 'forbidden' });
+  res.json({ ok: true, id: pick.id, design: stored.design, theme: stored.theme });
+});
+
+// ONE design's card with HER title, for the strip. The same render the tab's main
+// preview gets from POST /api/preview (runPreview, card only, no board), from the
+// STORED order — so what she swipes past is what that design would print for her.
+//
+// Its own cache, longer-lived than the public preview's five minutes and sized
+// for a strip per order, keyed exactly as POST /api/preview keys the same inputs:
+// the design, the title and name inputs, the word font and the template's artwork
+// revision. Swiping back over a design is free, and a rename or an artwork swap is
+// a new key. The result is also put in the preview's own cache under that key, so
+// the tab's main picture after a switch is a hit, not a second render. One render
+// per key however many ask at once (single flight), and the generator's own
+// Chrome slots bound the rest; the page asks for at most the card on screen and
+// its two neighbours, one at a time.
+const designCardCache = makePreviewCache({
+  max: Number(process.env.DESIGN_CARD_CACHE_MAX || 120),
+  ttlMs: Number(process.env.DESIGN_CARD_CACHE_TTL_MS || 30 * 60 * 1000),
+});
+const designCardInFlight = new Map();
+app.get('/api/collections/:id/design-card', async (req, res) => {
+  const c = db.getCollection(req.params.id);
+  if (!c || c.owner_token !== req.query.k) return res.status(403).json({ error: 'forbidden' });
+  const wanted = String(req.query.design || '').trim();
+  let pick = null;
+  try {
+    pick = (await switchableDesigns()).list.find((d) => d.id === wanted) || null;
+  } catch {
+    pick = null;
+  }
+  // (availableDesigns only lists a design whose theme has an entry to render from)
+  if (!pick) return res.status(400).json({ error: 'design not available' });
+  const rawWordFont = c.word_font ? String(c.word_font) : '';
+  const inputs = {
+    theme: pick.theme,
+    name: c.honoree_name || '',
+    extraFields: c.extra_fields || {},
+    customTitle: db.sanitizeCustomTitle(c.custom_title),
+    gender: c.gender === 'male' || c.gender === 'female' ? c.gender : null,
+    withBoard: false,
+  };
+  // the very key POST /api/preview builds for these inputs (its word font raw)
+  const key = previewCache.key({
+    ...inputs,
+    wordFont: rawWordFont,
+    calibration: null,
+    assets: templateFingerprint(pick.theme),
+  });
+  const hit = designCardCache.get(key);
+  if (hit) return res.json({ id: pick.id, card: hit.card });
+  const shared = previewCache.get(key);
+  if (shared && shared.card) {
+    designCardCache.set(key, shared);
+    return res.json({ id: pick.id, card: shared.card });
+  }
+  let job = designCardInFlight.get(key);
+  if (!job) {
+    if (!previewRate.ok('preview:' + clientKey(req))) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    const options = wordFontOptions();
+    const wordFont = options.some((o) => o.file === rawWordFont) ? rawWordFont : null;
+    job = runPreview({ ...inputs, wordFont })
+      .then((imgs) => {
+        designCardCache.set(key, imgs);
+        previewCache.set(key, imgs);
+        return imgs;
+      })
+      .finally(() => designCardInFlight.delete(key));
+    designCardInFlight.set(key, job);
+  }
+  try {
+    const imgs = await job;
+    res.json({ id: pick.id, card: imgs.card });
+  } catch (e) {
+    const status = generatorStatus(String((e && e.message) || e));
+    if (status === 503) res.setHeader('Retry-After', '5');
+    res.status(status).json({ error: 'preview failed' });
+  }
 });
 
 // A cutout part is named after the original it belongs to: "cut:pawn0" carries the
