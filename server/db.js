@@ -3371,6 +3371,9 @@ const db = {
     SUPPLY_DEFAULTS,
     INITIAL_BOARD_STOCK,
   }),
+
+  // Agent A: the owner's entries on the revenue page, in server/stores/commerce.js.
+  ...commerceStore.revenueBlock({ _db, saveDb, nowIso }),
 };
 
 module.exports = db;

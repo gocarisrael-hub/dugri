@@ -56,6 +56,8 @@ exports[`route registration order > matches the pinned table 1`] = `
   "GET /api/partner/:token",
   "POST /api/admin/coupons/:id",
   "DELETE /api/admin/coupons/:id",
+  "GET /api/admin/revenue",
+  "PUT /api/admin/revenue/charges/:index",
   "POST /api/collections/:id/coupon/validate",
   "GET /api/friend-coupon",
   "POST /api/friend-coupon",

@@ -1219,6 +1219,87 @@ function registerPricing(app, { db }) {
   });
 }
 
+// THE OWNER'S MONTHLY REVENUE (site/admin-revenue.html): revenue, charges, orders
+// and copies per month — Tranzila from the terminal's own report, PeleCard from
+// our orders — and the terminal charges no site order accounts for, where she
+// types how many copies each was. server/revenue.js holds the rules.
+//
+// OWNER ONLY: neither path is on the staff allow-list in index.js, so the staff
+// key gets 403 here like on every other money route.
+function registerRevenue(app, { requireAdmin, db, tranzila, revenue }) {
+  const report = revenue.createRevenueReport({
+    tranzila,
+    currentTtlMs:
+      Number(process.env.REVENUE_REPORT_TTL_MS) > 0
+        ? Number(process.env.REVENUE_REPORT_TTL_MS)
+        : 2 * 60 * 1000,
+  });
+  // The first month the terminal is read for. Staging went live on it in
+  // September 2026 (those rows show as excluded), production on 2026-10-05.
+  const TRANZILA_FROM = /^\d{4}-\d{2}$/.test(process.env.REVENUE_TRANZILA_FROM || '')
+    ? process.env.REVENUE_TRANZILA_FROM
+    : '2026-09';
+
+  app.get('/api/admin/revenue', async (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.set('Cache-Control', 'no-store');
+    const collections = db.revenueCollections();
+    const to = revenue.israelMonth(new Date());
+    let from = TRANZILA_FROM;
+    for (const c of collections) {
+      const at = c && c.order && c.order.paid && c.order.paid_at;
+      const m = at ? revenue.israelMonth(at) : null;
+      if (m && m < from) from = m;
+    }
+    const configured = tranzila.isConfigured();
+    let rows = null;
+    let error = null;
+    if (configured) {
+      try {
+        rows = await report.rowsFor(TRANZILA_FROM, to);
+      } catch (e) {
+        // Never a silent "no rows": the page says the report failed and counts
+        // Tranzila-paid site orders from the store instead (no B2B).
+        error = String((e && e.message) || e).slice(0, 200);
+        console.error('[revenue] tranzila report failed: ' + error);
+      }
+    }
+    const env = tranzila.envTag();
+    const result = revenue.monthlyRevenue({
+      rows,
+      collections,
+      overrides: db.revenueOverrides(),
+      env,
+      tokenEnv: tranzila.tokenEnv,
+      findOrderNo: (token) => {
+        const m = db.findPaySession(token);
+        return m && m.collection ? m.collection.order_no || m.collection.id : null;
+      },
+      from,
+      to,
+    });
+    res.json({
+      ...result,
+      tranzila: { configured, error, from: TRANZILA_FROM },
+      env,
+      test_discount_pct: revenue.TEST_DISCOUNT_PCT,
+      generated_at: new Date().toISOString(),
+    });
+  });
+
+  // The owner's entry for one terminal charge: { copies } (a whole number, or
+  // null to clear) and/or { excluded } (true / false, or null for the default).
+  app.put('/api/admin/revenue/charges/:index', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    res.set('Cache-Control', 'no-store');
+    const index = String(req.params.index || '');
+    if (!/^\d{1,15}$/.test(index)) return res.status(400).json({ error: 'bad index' });
+    const clean = revenue.cleanOverride(req.body || {});
+    if (clean.error) return res.status(400).json({ error: clean.error });
+    res.json({ index, entry: db.setRevenueOverride(index, clean.override) });
+  });
+}
+
 module.exports = {
   registerStickersAndStock,
   registerReadyBatchAndHfd,
@@ -1228,4 +1309,5 @@ module.exports = {
   registerOrder,
   registerStatsOrders,
   registerPricing,
+  registerRevenue,
 };

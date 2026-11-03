@@ -662,4 +662,39 @@ function stockBlock({
   };
 }
 
-module.exports = { couponsBlock, friendCouponsBlock, stockBlock };
+// The owner's entries on the revenue page (site/admin-revenue.html), keyed by
+// Tranzila transaction index: how many copies a charge typed straight into the
+// terminal was (B2B — no site order says), and whether a charge is left out of the
+// totals (a test). Absent from every store written before it existed.
+function revenueBlock({ _db, saveDb, nowIso }) {
+  const entries = () => {
+    if (!_db.revenue_charges || typeof _db.revenue_charges !== 'object') _db.revenue_charges = {};
+    return _db.revenue_charges;
+  };
+  return {
+    revenueOverrides() {
+      return entries();
+    },
+    // `override` is already validated (server/revenue.js cleanOverride). A null
+    // value clears that field; an entry left with nothing in it is removed.
+    setRevenueOverride(index, override) {
+      const all = entries();
+      const cur = { ...(all[index] || {}) };
+      for (const [k, v] of Object.entries(override)) {
+        if (v === null) delete cur[k];
+        else cur[k] = v;
+      }
+      delete cur.updated_at;
+      if (Object.keys(cur).length) all[index] = { ...cur, updated_at: nowIso() };
+      else delete all[index];
+      saveDb();
+      return all[index] || null;
+    },
+    // The collections the revenue table is built from, read as they are.
+    revenueCollections() {
+      return _db.collections;
+    },
+  };
+}
+
+module.exports = { couponsBlock, friendCouponsBlock, stockBlock, revenueBlock };

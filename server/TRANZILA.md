@@ -204,6 +204,25 @@ the owner. Messages carry
 order numbers, transaction indexes and amounts: no tokens, card data or keys.
 With no alert channel configured at all, the alert is written to the log.
 
+## The revenue page
+
+`site/admin-revenue.html` (owner key only, linked from the dashboard) reads the
+same Reports API per month through `server/revenue.js`: approved charges minus
+refunds by transaction date, matched to site orders by the index the settle path
+stored on them. Charges that match no order (B2B, typed into the terminal) get a
+copies field the owner fills once. Months before the switch come from PeleCard
+orders in our own store; PeleCard charges made outside the site are not included.
+
+Row shapes read from production on 2026-11-03: a charge is `txn_type` `DEBIT`,
+`tranmode` `A`; a refund has an EMPTY `txn_type` and `tranmode` `C<index of the
+charge>` (e.g. `C123456`) with a positive `amount`; `amount` is agorot and
+`transaction_date` is the Israel date.
+
+| Variable                | Value                                                            |
+| ----------------------- | ---------------------------------------------------------------- |
+| `REVENUE_TRANZILA_FROM` | _optional_, `2026-09`: the first month the terminal is read for  |
+| `REVENUE_REPORT_TTL_MS` | _optional_, 120000: how long the current month's rows are reused |
+
 ## Apple Pay and Google Pay
 
 They appear as buttons on Tranzila's own page, inside the same pay modal, and

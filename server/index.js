@@ -9,6 +9,7 @@ const express = require('express');
 const db = require('./db');
 const pelecard = require('./pelecard');
 const tranzila = require('./tranzila');
+const revenue = require('./revenue');
 const { createSweeper, positiveNumber, alertFooter } = require('./tranzila-sweep');
 const { paymentClientIp, trustedClientIp } = require('./payment-client-ip');
 const notify = require('./notify');
@@ -2698,6 +2699,9 @@ app.delete('/api/admin/collections/:id', (req, res) => {
 // Agent A: the admin coupon routes and the partner report, in
 // server/routes/commerce.js.
 commerceRoutes.registerCoupons(app, { requireAdmin, db });
+
+// Agent A: the owner's monthly revenue and copies, in server/routes/commerce.js.
+commerceRoutes.registerRevenue(app, { requireAdmin, db, tranzila, revenue });
 
 // Agent A: the checkout's coupon preview, in server/routes/commerce.js.
 commerceRoutes.registerCouponValidate(app, { db, couponRateOk, clientKey });
