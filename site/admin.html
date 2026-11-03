@@ -626,6 +626,52 @@
       dialog#edit::backdrop {
         background: rgba(35, 32, 28, 0.45);
       }
+      /* The add-delivery link dialog (openDeliveryLink): one small form. */
+      dialog#dlink {
+        border: 1px solid #e4ddd0;
+        border-radius: 16px;
+        padding: 16px 18px;
+        width: min(440px, 94vw);
+        background: #fff;
+        color: #23201c;
+      }
+      dialog#dlink::backdrop {
+        background: rgba(35, 32, 28, 0.45);
+      }
+      #dlink h2 {
+        font-size: 17px;
+        font-weight: 900;
+        margin: 0 0 6px;
+      }
+      #dlink .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 10px 0;
+        flex-wrap: wrap;
+      }
+      /* `display: flex` outranks the UA's [hidden] rule. */
+      #dlink .row[hidden] {
+        display: none;
+      }
+      #dlink input {
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid #e4ddd0;
+        border-radius: 9px;
+        padding: 7px 9px;
+      }
+      #dlink #dl-amount {
+        width: 90px;
+      }
+      #dlink #dl-url {
+        flex: 1;
+        min-width: 0;
+        direction: ltr;
+      }
+      #dlink .err {
+        color: #b3261e;
+      }
       #edit .head {
         display: flex;
         justify-content: space-between;
@@ -1116,6 +1162,47 @@
       </div>
     </dialog>
 
+    <!-- An "add delivery" payment link for an order already closed for production
+         (server/stores/delivery-link.js). One dialog reused by every row:
+         openDeliveryLink() fills it from GET /api/admin/collections/:id/delivery-link.
+         The owner copies the link and sends it herself. -->
+    <dialog id="dlink" data-testid="dlink" data-money>
+      <h2 id="dl-title">קישור להוספת משלוח</h2>
+      <p class="muted" id="dl-hint">
+        הלקוח/ה ממלא/ת כתובת וטלפון ומשלם/ת. אחרי התשלום ההזמנה הופכת להזמנת משלוח ונפתח לה משלוח
+        ב-HFD אוטומטית.
+      </p>
+      <div class="row" id="dl-make">
+        <label for="dl-amount">סכום (₪)</label>
+        <input
+          type="number"
+          id="dl-amount"
+          min="1"
+          step="1"
+          inputmode="numeric"
+          data-testid="dl-amount"
+        />
+        <button type="button" class="act" id="dl-create" data-testid="dl-create">צור קישור</button>
+      </div>
+      <div class="row" id="dl-live" hidden>
+        <input type="text" id="dl-url" readonly data-testid="dl-url" />
+        <button type="button" class="act" id="dl-copy" data-testid="dl-copy">העתק</button>
+        <button type="button" class="act" id="dl-cancel" data-testid="dl-cancel">בטל קישור</button>
+      </div>
+      <p class="muted" id="dl-status" data-testid="dl-status"></p>
+      <!-- A provider's window cannot be closed from here: a customer who already
+           opened the payment on the old link can still pay there, at its amount.
+           That charge is kept, but books no courier by itself. -->
+      <p class="muted" id="dl-window-note" data-testid="dl-window-note" hidden>
+        שימו לב: אם הלקוח/ה כבר פתח/ה את חלון התשלום בקישור הקודם, עדיין אפשר לשלם בו את הסכום
+        הקודם. תשלום כזה נשמר, אבל לא נפתח לו משלוח ב-HFD אוטומטית.
+      </p>
+      <p class="err" id="dl-err" data-testid="dl-err" hidden></p>
+      <div class="row">
+        <button type="button" class="act" id="dl-close">סגור</button>
+      </div>
+    </dialog>
+
     <script type="module">
       import { buildBulkCsv } from './js/collect.js';
       // The design catalog + the colour palette the wizard offers, so the edit
@@ -1577,6 +1664,155 @@
         draw();
         return box;
       }
+
+      // ---- the add-delivery payment link ------------------------------------
+      // For a PAID pickup order already closed for production, the owner makes
+      // a link the customer pays delivery through (server/stores/delivery-link.js).
+      // The server decides eligibility and the default price (settings pricing);
+      // this only asks, shows and copies.
+      function deliveryLinkOffered(c) {
+        const o = c.order;
+        if (!o || !o.paid) return false;
+        if (o.shipping && o.shipping.link) return true;
+        if (c.status !== 'closed' && c.status !== 'expired') return false;
+        return o.version !== 'delivery' && o.version !== 'pdf' && o.version !== 'custom';
+      }
+      function deliveryLinkButton(c) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'act';
+        b.setAttribute('data-money', '');
+        b.dataset.testid = 'delivery-link-btn';
+        const l = c.order.shipping && c.order.shipping.link;
+        b.textContent =
+          l && c.order.shipping.paid
+            ? 'משלוח שולם בקישור'
+            : l && !l.cancelled_at
+              ? 'קישור משלוח פתוח (' + l.amount + ' ₪)'
+              : 'קישור להוספת משלוח';
+        b.onclick = () => openDeliveryLink(c);
+        const wrap = document.createElement('div');
+        wrap.style.marginTop = '4px';
+        wrap.appendChild(b);
+        return wrap;
+      }
+      let dlFor = null;
+      const dlEl = (id) => document.getElementById(id);
+      const dlUrl = (id) =>
+        '/api/admin/collections/' + id + '/delivery-link?key=' + encodeURIComponent(key);
+      function dlShow(st) {
+        const link = st.link;
+        const live = link && !link.cancelled_at && !link.paid;
+        dlEl('dl-live').hidden = !live;
+        dlEl('dl-url').value = st.url || '';
+        dlEl('dl-make').hidden = !(st.eligible || live);
+        dlEl('dl-window-note').hidden = !(link && !link.paid);
+        dlEl('dl-create').textContent = live ? 'צור קישור חדש (מחליף את הקיים)' : 'צור קישור';
+        if (!dlEl('dl-amount').value) {
+          dlEl('dl-amount').value = live ? link.amount : st.default_fee || '';
+        }
+        let status = '';
+        if (link && link.paid) {
+          status =
+            'שולם ' +
+            (link.charged_total != null ? link.charged_total : link.amount) +
+            ' ₪' +
+            (link.paid_at ? ' · ' + new Date(link.paid_at).toLocaleString('he-IL') : '');
+          const h = link.hfd_auto;
+          if (h) {
+            status += h.ok
+              ? ' · נפתח משלוח ב-HFD ' + (h.shipments || []).join(', ')
+              : h.error === 'not booked'
+                ? ' · ' + h.message
+                : ' · HFD לא פתחה משלוח: ' + (h.message || h.error) + ' (לנסות שוב: שלח ל-HFD)';
+          }
+        } else if (live) {
+          status =
+            'קישור פתוח, ' +
+            link.amount +
+            ' ₪, נוצר ' +
+            new Date(link.created_at).toLocaleString('he-IL');
+        } else if (link && link.cancelled_at) {
+          status = 'הקישור הקודם בוטל.';
+        } else if (!st.eligible && st.message) {
+          status = st.message;
+        }
+        dlEl('dl-status').textContent = status;
+      }
+      async function dlCall(method, body) {
+        const err = dlEl('dl-err');
+        err.hidden = true;
+        try {
+          const r = await fetch(dlUrl(dlFor.id), {
+            method,
+            headers: body ? { 'Content-Type': 'application/json' } : undefined,
+            body: body ? JSON.stringify(body) : undefined,
+          });
+          const data = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            err.textContent = data.message || data.error || 'שגיאה ' + r.status;
+            err.hidden = false;
+            return null;
+          }
+          return data;
+        } catch {
+          err.textContent = 'שגיאת רשת מול השרת';
+          err.hidden = false;
+          return null;
+        }
+      }
+      async function openDeliveryLink(c) {
+        dlFor = c;
+        dlEl('dl-title').textContent =
+          'קישור להוספת משלוח · ' + (c.order_no || c.honoree_name || '');
+        dlEl('dl-amount').value = '';
+        dlEl('dl-url').value = '';
+        dlEl('dl-status').textContent = '';
+        dlEl('dl-err').hidden = true;
+        dlEl('dl-live').hidden = true;
+        const dlg = dlEl('dlink');
+        if (!dlg) return;
+        if (!dlg.open) dlg.showModal();
+        const st = await dlCall('GET');
+        if (st) dlShow(st);
+      }
+      (function wireDeliveryLink() {
+        const dlg = dlEl('dlink');
+        // Gone for the staff key: js/admin-role.js removes every [data-money]
+        // element, this dialog included — the link is the owner's alone.
+        if (!dlg) return;
+        dlEl('dl-close').onclick = () => dlg.close();
+        // A repaint picks up the link state the dialog changed.
+        dlg.addEventListener('close', () => {
+          dlFor = null;
+          load();
+        });
+        dlEl('dl-create').onclick = async () => {
+          const amount = Number(dlEl('dl-amount').value);
+          if (!Number.isInteger(amount) || amount < 1) {
+            dlEl('dl-err').textContent = 'הסכום צריך להיות מספר שלם וחיובי.';
+            dlEl('dl-err').hidden = false;
+            return;
+          }
+          if (!dlEl('dl-live').hidden && !confirm('ליצור קישור חדש? הקישור הקודם יפסיק לעבוד.'))
+            return;
+          const st = await dlCall('POST', { amount });
+          if (st) dlShow(st);
+        };
+        dlEl('dl-cancel').onclick = async () => {
+          if (!confirm('לבטל את הקישור? הלקוח/ה לא י/תוכל לשלם בו.')) return;
+          const st = await dlCall('DELETE');
+          if (st) dlShow(st);
+        };
+        dlEl('dl-copy').onclick = () => {
+          const v = dlEl('dl-url').value;
+          if (!v) return;
+          navigator.clipboard.writeText(v).then(
+            () => (dlEl('dl-status').textContent = 'הקישור הועתק ✓'),
+            () => dlEl('dl-url').select()
+          );
+        };
+      })();
 
       function ownerUrl(c) {
         return location.origin + '/collect.html?c=' + c.id + '&k=' + c.owner_token;
@@ -3099,6 +3335,11 @@
           // only when HFD is armed.
           if (hfdArmed && order && order.version === 'delivery') {
             tdAddress.appendChild(hfdBox(c));
+          }
+          // …and for a paid pickup order already in production, the owner's
+          // add-delivery payment link (openDeliveryLink).
+          if (order && deliveryLinkOffered(c) && document.getElementById('dlink')) {
+            tdAddress.appendChild(deliveryLinkButton(c));
           }
 
           const tdPaid = document.createElement('td');

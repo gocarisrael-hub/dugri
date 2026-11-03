@@ -705,9 +705,11 @@ function registerReadyBatchAndHfd(
   // box is a real charge, so the server refuses the overlap itself.
   const hfdBooking = new Set();
 
-  // Admin: book this delivery order's parcels. Deliberately manual — a shipment
-  // is a van and a charge, so it happens when the owner presses, never on a state
-  // change.
+  // Admin: book this delivery order's parcels. Manual — a shipment is a van and a
+  // charge, so it happens when the owner presses, never on a state change. The
+  // ONE exception is her own decision made in advance: an add-delivery link she
+  // created and the customer paid books automatically (index.js,
+  // onDeliveryLinkPaid), through bookHfdShipments below.
   //
   // ONE BOOKING PER BOX. Copies packed separately (db.orderBoxes — a box per copy
   // unless the buyer chose one box, and for every order from before that choice)
@@ -715,15 +717,32 @@ function registerReadyBatchAndHfd(
   // The press books exactly the boxes that have NO live shipment: a retry after a
   // refusal half-way, or after one box was cancelled, books only what is missing
   // and never a second van for a box that already has one.
+  //
+  // THE BOOKING ITSELF is bookHfdShipments, below the route, so the one other
+  // caller — the automatic booking after a paid add-delivery link (index.js,
+  // settleVerifiedPayment) — runs exactly this: the same lock, the same
+  // one-booking-per-box guard, the same refusal records. Never a second copy.
   app.post('/api/admin/collections/:id/hfd', async (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const c = db.getCollection(req.params.id);
-    if (!c) return res.status(404).json({ error: 'not found' });
+    const r = await bookHfdShipments(req.params.id);
+    res.status(r.status).json(r.body);
+  });
+
+  // Book every box of this order that has no live shipment. Answers
+  // { status, body } — the HTTP answer the admin route sends as is. Safe to call
+  // twice: a second call books nothing (409 'already booked'), and one that
+  // overlaps a booking in flight is refused (409 'busy').
+  async function bookHfdShipments(id) {
+    const c = db.getCollection(id);
+    if (!c) return { status: 404, body: { error: 'not found' } };
     if (!hfd.isConfigured()) {
-      return res.status(503).json({
-        error: 'hfd not configured',
-        message: 'HFD לא מוגדרת — חסרים HFD_TOKEN / HFD_CLIENT_NUMBER.',
-      });
+      return {
+        status: 503,
+        body: {
+          error: 'hfd not configured',
+          message: 'HFD לא מוגדרת — חסרים HFD_TOKEN / HFD_CLIENT_NUMBER.',
+        },
+      };
     }
     const boxes = Math.max(1, db.orderBoxes(c.order));
     const list = db.hfdShipments(c.order);
@@ -735,18 +754,24 @@ function registerReadyBatchAndHfd(
     // are returned with the refusal so the page can just show them.
     if (!missing.length) {
       const numbers = list.filter(liveShipment).map((r) => r.shipment_number);
-      return res.status(409).json({
-        error: 'already booked',
-        message: 'כבר נוצר משלוח להזמנה הזו (' + numbers.join(', ') + ').',
-        ...hfdState(c.id),
-      });
+      return {
+        status: 409,
+        body: {
+          error: 'already booked',
+          message: 'כבר נוצר משלוח להזמנה הזו (' + numbers.join(', ') + ').',
+          ...hfdState(c.id),
+        },
+      };
     }
     if (hfdBooking.has(c.id)) {
-      return res.status(409).json({
-        error: 'busy',
-        message: 'המשלוח להזמנה הזו כבר נשלח ל-HFD, רגע…',
-        ...hfdState(c.id),
-      });
+      return {
+        status: 409,
+        body: {
+          error: 'busy',
+          message: 'המשלוח להזמנה הזו כבר נשלח ל-HFD, רגע…',
+          ...hfdState(c.id),
+        },
+      };
     }
     hfdBooking.add(c.id);
     try {
@@ -758,11 +783,10 @@ function registerReadyBatchAndHfd(
           // Our own data is wrong (not a delivery, no address): nothing went to
           // HFD for this box, and the same is true of every other box.
           if (HFD_LOCAL_ERRORS[r.error]) {
-            return res.status(400).json({
-              error: r.error,
-              message: HFD_LOCAL_ERRORS[r.error],
-              ...hfdState(c.id),
-            });
+            return {
+              status: 400,
+              body: { error: r.error, message: HFD_LOCAL_ERRORS[r.error], ...hfdState(c.id) },
+            };
           }
           // HFD refused. Remember why, on THAT box: the owner comes back to this
           // row later, and "it didn't work" with no reason is what sends her to
@@ -774,12 +798,10 @@ function registerReadyBatchAndHfd(
             boxes > 1 && booked.length
               ? r.error + ' (נפתחו ' + booked.length + ' מתוך ' + boxes + ' משלוחים)'
               : r.error;
-          return res.status(502).json({
-            error: 'hfd refused',
-            message,
-            booked,
-            ...hfdState(c.id),
-          });
+          return {
+            status: 502,
+            body: { error: 'hfd refused', message, booked, ...hfdState(c.id) },
+          };
         }
         db.setHfdShipment(
           c.id,
@@ -796,11 +818,11 @@ function registerReadyBatchAndHfd(
         );
         booked.push(box);
       }
-      res.json({ ok: true, booked, ...hfdState(c.id) });
+      return { status: 200, body: { ok: true, booked, ...hfdState(c.id) } };
     } finally {
       hfdBooking.delete(c.id);
     }
-  });
+  }
 
   // The record a label or cancel request means: `?box=k` names one box; without
   // it, the first live shipment (or, for history, the first record at all).
@@ -867,6 +889,10 @@ function registerReadyBatchAndHfd(
     }
     res.json({ ok: true, ...hfdState(c.id) });
   });
+
+  // index.js books a paid add-delivery link's parcels through the SAME function
+  // (and so the same lock and per-box guard) as the admin button.
+  return { bookHfdShipments };
 }
 
 // The admin coupon routes and the partner report.

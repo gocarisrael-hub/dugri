@@ -16,6 +16,7 @@ const reminders = require('./reminders');
 // Agent D's store block (server/stores/platform.js), spread into `db` below.
 const platformStore = require('./stores/platform');
 const commerceStore = require('./stores/commerce');
+const deliveryLinkStore = require('./stores/delivery-link');
 // The friend coupon's pure rules (code format, email, dates, admin sums), handed
 // to commerceStore.friendCouponsBlock below. Requires nothing but node's crypto.
 const friendCouponRules = require('./friend-coupons');
@@ -3374,6 +3375,19 @@ const db = {
 
   // Agent A: the owner's entries on the revenue page, in server/stores/commerce.js.
   ...commerceStore.revenueBlock({ _db, saveDb, nowIso }),
+
+  // Agent A: the owner's "add delivery" payment link for an order already
+  // closed for production, in server/stores/delivery-link.js.
+  ...deliveryLinkStore.deliveryLinkBlock({
+    _db,
+    saveDb,
+    nowIso,
+    crypto,
+    effectiveStatus,
+    sanitizeAddress,
+    deliveryFee,
+    boxesFor,
+  }),
 };
 
 module.exports = db;

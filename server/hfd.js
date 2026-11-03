@@ -173,7 +173,10 @@ function buildShipment(c, opts = {}) {
       entrance: '',
       cityName: String(addr.city).trim(),
       streetCode: '',
-      telFirst: normalizePhone(c.owner_phone),
+      // The parcel's own contact when the order has one — the phone a customer
+      // typed on the add-delivery link page (server/stores/delivery-link.js) for
+      // the courier — else the buyer's, as before.
+      telFirst: normalizePhone(addr.phone) || normalizePhone(c.owner_phone),
       email: (c.owner_email && String(c.owner_email).trim()) || '',
       addressRemarks: addressRemarks(addr),
       // Printed on the sticker: which game is in this box.

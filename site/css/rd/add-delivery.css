@@ -1,0 +1,65 @@
+/* add-delivery.html in the redesign (Agent A, Commerce). Linked by the gate in redesign mode only; every rule is under html.rd.
+   The owner's add-delivery payment link: the shell's header replaces the page's logo row, so the customer has a way home. */
+html.rd {
+  --rd-header: replace;
+  --rd-header-replace: 'header.top';
+  --rd-footer: none;
+  --rd-as-title: 'main h1';
+  --rd-as-box: '.facts';
+  --rd-as-field: '.field';
+  --rd-as-btn: '.pay';
+  --rd-as-x: '.pay-modal-x';
+}
+
+html.rd body {
+  padding: 0 0 calc(40px + env(safe-area-inset-bottom, 0px));
+}
+html.rd main {
+  padding: var(--space-lg) var(--gutter) 0;
+  box-sizing: border-box;
+}
+html.rd main h1.rd-title {
+  font-size: var(--text-section);
+  margin: 0 0 var(--space-sm);
+}
+html.rd .lead {
+  color: var(--color-ink);
+}
+
+/* The order, whom it is for and the amount: a box with ink rules between its lines. */
+html.rd .facts.rd-box {
+  padding: 0;
+  margin: 0 0 var(--space-lg);
+}
+html.rd .facts p + p {
+  border-top: var(--border-hair) solid var(--color-ink);
+}
+html.rd .facts .k {
+  color: var(--color-text-muted);
+}
+
+html.rd .addr-head {
+  font-weight: var(--weight-heavy);
+}
+html.rd .field.rd-field label,
+html.rd .field .opt-tag {
+  color: var(--color-ink);
+}
+html.rd .err {
+  color: var(--color-error);
+}
+
+/* The one way on: the black pill, full width. */
+html.rd .pay.rd-btn {
+  display: -webkit-flex;
+  display: flex;
+  justify-content: center;
+  gap: 0.3em;
+  width: 100%;
+  margin-top: var(--space-lg);
+  font-size: var(--text-button-lg);
+}
+html.rd .mark {
+  border: var(--border-bold) solid var(--color-ink);
+  box-shadow: var(--shadow);
+}
