@@ -38,11 +38,27 @@ const CURRENCY_ILS = '1';
 const SUCCESS_CODE = '000';
 const REFUND_TYPES = new Set(['CREDIT', 'CANCEL', 'REFUTE', 'REVERSAL']);
 const REFUND_TRANMODE = /^C(\d*)$/;
-// A coupon this deep is the owner's own test recipe (server/TRANZILA.md: "create
-// a 99% coupon … and pay with your own card"), which is how the go-live tests on
-// production were paid. Excluded by default, shown as such, and she can count
-// one back in.
+// EXACTLY 99% is the owner's own test recipe (server/TRANZILA.md: "create a 99%
+// coupon … and pay with your own card"), which is how the go-live tests on
+// production were paid. Exactly, never "99 or more": a 100% coupon on a DELIVERY
+// order still charges the delivery fee by card (see commissionFor in db.js), and
+// that is a real sale whose card charge and copies count. Excluded by default,
+// shown as such, and she can count one back in.
 const TEST_DISCOUNT_PCT = 99;
+
+// Why a site order is not a sale, or null. The SAME rule on both sources (the
+// Tranzila rows and our own store), so an order counts identically whichever one
+// it is read from:
+//   • a cancelled collection is not a sale (the rule partnerReport and the
+//     dashboard's revenue tile apply) — PeleCard refunds have no other record;
+//   • an order paid with the owner's 99% test coupon.
+// A delivery upgrade bought on such an order goes with it.
+function orderExclusion(c) {
+  if (!c || !c.order) return null;
+  if (c.cancelled) return 'cancelled';
+  if (Number(c.order.discount_pct) === TEST_DISCOUNT_PCT) return 'test';
+  return null;
+}
 const MAX_COPIES_ENTRY = 10000;
 
 const TZ = 'Asia/Jerusalem';
@@ -132,9 +148,24 @@ function upgradeAgorot(sh) {
 // The order's OWN charge. markShippingPaid adds an upgrade into charged_total
 // (the one number a receipt shows), so it is taken back out here: the upgrade is
 // its own transaction, in its own month, and on Tranzila its own row.
+//
+// An old order with no charged_total falls back to what the card was charged: the
+// total LESS the coupon, which discounts the game and never the postage — never
+// the pre-discount total. markShippingPaid added an upgrade's fee to `total` (and
+// made delivery_fee that fee) whether or not charged_total existed, so for an
+// upgraded order the original total and fee are taken back first.
 function orderChargeAgorot(order) {
-  const total = agorot(order.charged_total != null ? order.charged_total : order.total || 0);
-  return Math.max(0, total - upgradeAgorot(order.shipping));
+  if (order.charged_total != null) {
+    return Math.max(0, agorot(order.charged_total) - upgradeAgorot(order.shipping));
+  }
+  const sh = order.shipping;
+  const upgraded = !!(sh && sh.paid);
+  const shipFee = upgraded ? Number(sh.fee) || 0 : 0;
+  const total = (Number(order.total) || 0) - shipFee;
+  const fee = upgraded ? 0 : Number(order.delivery_fee) || 0;
+  const pct = Math.min(100, Math.max(0, Number(order.discount_pct) || 0));
+  const charged = (total - fee) * (1 - pct / 100) + fee;
+  return Math.max(0, agorot(charged));
 }
 
 function emptyMonth(month) {
@@ -191,6 +222,9 @@ function monthlyRevenue({
   for (const m of monthsBetween(from, to)) monthOf(m);
 
   const tranzilaRead = Array.isArray(rows);
+  const unmatched = [];
+  const excluded = [];
+  const unclassified = [];
   const byOrderIndex = new Map();
   const byShipIndex = new Map();
 
@@ -208,11 +242,22 @@ function monthlyRevenue({
     if (sh && sh.paid && sh.paid_method === 'tranzila' && sh.paid_transaction_id != null) {
       byShipIndex.set(String(sh.paid_transaction_id), { c, ref });
     }
+    const why = orderExclusion(c);
     if (o.paid && o.paid_at) {
       const month = israelMonth(o.paid_at);
       const fromStore =
         o.paid_method === 'pelecard' || (o.paid_method === 'tranzila' && !tranzilaRead);
-      if (month && fromStore) {
+      if (month && fromStore && why) {
+        excluded.push({
+          index: o.paid_transaction_id != null ? String(o.paid_transaction_id) : null,
+          date: israelDate(o.paid_at),
+          kind: 'charge',
+          amount: orderChargeAgorot(o) / 100,
+          reason: why,
+          order: ref,
+          source: o.paid_method === 'pelecard' ? 'pelecard' : 'orders',
+        });
+      } else if (month && fromStore) {
         const mo = monthOf(month);
         mo.revenue += orderChargeAgorot(o);
         mo.charges += 1;
@@ -221,7 +266,7 @@ function monthlyRevenue({
         mo.copies += copiesOf(o);
         mo.site_copies += copiesOf(o);
         mo.sources.add(o.paid_method === 'pelecard' ? 'pelecard' : 'orders');
-      } else if (month && o.paid_method === 'coupon') {
+      } else if (month && o.paid_method === 'coupon' && !c.cancelled) {
         // A 100% coupon: no money moved, so it is not revenue, a charge or a
         // counted copy. Shown beside the month so the copies are not invisible.
         const mo = monthOf(month);
@@ -233,7 +278,17 @@ function monthlyRevenue({
       const month = israelMonth(sh.paid_at);
       const fromStore =
         sh.paid_method === 'pelecard' || (sh.paid_method === 'tranzila' && !tranzilaRead);
-      if (month && fromStore) {
+      if (month && fromStore && why) {
+        excluded.push({
+          index: sh.paid_transaction_id != null ? String(sh.paid_transaction_id) : null,
+          date: israelDate(sh.paid_at),
+          kind: 'upgrade',
+          amount: upgradeAgorot(sh) / 100,
+          reason: why,
+          order: ref,
+          source: sh.paid_method === 'pelecard' ? 'pelecard' : 'orders',
+        });
+      } else if (month && fromStore) {
         const mo = monthOf(month);
         mo.revenue += upgradeAgorot(sh);
         mo.charges += 1;
@@ -242,10 +297,6 @@ function monthlyRevenue({
       }
     }
   }
-
-  const unmatched = [];
-  const excluded = [];
-  const unclassified = [];
 
   if (tranzilaRead) {
     const approved = rows.filter((r) => r && r.responseCode === SUCCESS_CODE && r.date);
@@ -266,7 +317,8 @@ function monthlyRevenue({
       const ship = byShipIndex.get(r.index);
       let reason = null;
       if (otherEnv(r)) reason = 'other_env';
-      else if (site && Number(site.c.order.discount_pct) >= TEST_DISCOUNT_PCT) reason = 'test';
+      else if (site) reason = orderExclusion(site.c);
+      else if (ship) reason = orderExclusion(ship.c);
       if (ov.excluded === true) reason = reason || 'manual';
       if (ov.excluded === false) reason = null;
       chargeState.set(r.index, { r, site, ship, reason, refunded: 0 });
@@ -308,6 +360,7 @@ function monthlyRevenue({
             amount: -r.amountAgorot / 100,
             reason,
             refunds: cls.of,
+            toggle: true,
           });
           continue;
         }
@@ -325,10 +378,12 @@ function monthlyRevenue({
         excluded.push({
           index: r.index,
           date: r.date,
-          kind: 'charge',
+          kind: ch.ship ? 'upgrade' : 'charge',
           amount: r.amountAgorot / 100,
           reason: ch.reason,
           order: ref,
+          source: 'tranzila',
+          toggle: true,
         });
         continue;
       }
@@ -338,7 +393,8 @@ function monthlyRevenue({
       mo.sources.add('tranzila');
       const fullyRefunded = ch.refunded >= r.amountAgorot;
       if (ch.ship) {
-        mo.shipping_upgrades += 1;
+        // A refunded upgrade is postage given back, not a parcel bought.
+        if (!fullyRefunded) mo.shipping_upgrades += 1;
         continue;
       }
       if (ch.site) {

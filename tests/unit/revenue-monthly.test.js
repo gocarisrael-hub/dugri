@@ -461,3 +461,182 @@ describe('the report is read once per finished month', () => {
     await expect(rep.rowsFor('2026-11', '2026-11')).resolves.toEqual([]);
   });
 });
+
+// Review of #743: the same order counts the same way from either source, and the
+// owner's tests are recognised exactly, never by "a big discount".
+describe('the same exclusions on both sources', () => {
+  const peleOrder = (no, extra = {}, cExtra = {}) => ({
+    id: 'q' + no,
+    order_no: 'DG-' + no,
+    ...cExtra,
+    order: {
+      paid: true,
+      paid_at: '2026-10-10T10:00:00Z',
+      paid_method: 'pelecard',
+      paid_transaction_id: 'uuid-' + no,
+      charged_total: 279,
+      total: 279,
+      quantity: 2,
+      ...extra,
+    },
+  });
+
+  it('a real 100% coupon on a delivery order: its card charge (the fee) and copies count', () => {
+    // A coupon discounts the game, never the postage, so the card still pays 40.
+    const o = siteOrder(30, { index: 3000, total: 279, charged_total: 40, discount_pct: 100 });
+    const viaReport = run({ rows: [charge(3000, '2026-10-10', 40)], collections: [o] });
+    const viaStore = run({ rows: null, collections: [o] });
+    for (const out of [viaReport, viaStore]) {
+      expect(month(out, '2026-10')).toMatchObject({ revenue: 40, orders: 1, copies: 1 });
+      expect(out.excluded).toEqual([]);
+    }
+    const pele = run({
+      rows: [],
+      collections: [peleOrder(31, { charged_total: 40, discount_pct: 100, quantity: 1 })],
+    });
+    expect(month(pele, '2026-10')).toMatchObject({ revenue: 40, orders: 1, copies: 1 });
+  });
+
+  it('a 99% test is excluded on PeleCard and on the store fallback, as on the report', () => {
+    const t = siteOrder(32, { index: 3200, total: 239, charged_total: 2, discount_pct: 99 });
+    const viaReport = run({ rows: [charge(3200, '2026-10-10', 2)], collections: [t] });
+    const viaStore = run({ rows: null, collections: [t] });
+    const pele = run({
+      rows: [],
+      collections: [peleOrder(33, { charged_total: 2, discount_pct: 99, quantity: 1 })],
+    });
+    for (const out of [viaReport, viaStore, pele]) {
+      expect(month(out, '2026-10')).toMatchObject({ revenue: 0, orders: 0, copies: 0 });
+      expect(out.excluded.map((x) => x.reason)).toEqual(['test']);
+    }
+    // Only the terminal row can be counted back in from the page.
+    expect(viaReport.excluded[0].toggle).toBe(true);
+    expect(pele.excluded[0].toggle).toBeUndefined();
+  });
+
+  it('a cancelled order is not a sale on either source', () => {
+    const c = siteOrder(34, { index: 3400, total: 478, quantity: 2 });
+    c.cancelled = true;
+    const viaReport = run({ rows: [charge(3400, '2026-10-10', 478)], collections: [c] });
+    const viaStore = run({ rows: null, collections: [c] });
+    const pele = run({ rows: [], collections: [peleOrder(35, {}, { cancelled: true })] });
+    for (const out of [viaReport, viaStore, pele]) {
+      expect(month(out, '2026-10')).toMatchObject({ revenue: 0, orders: 0, copies: 0 });
+      expect(out.excluded.map((x) => [x.reason, x.order])).toEqual([
+        ['cancelled', expect.stringMatching(/^DG-/)],
+      ]);
+    }
+  });
+
+  it('a cancelled order refunded on the terminal is not subtracted twice', () => {
+    const c = siteOrder(36, { index: 3600, total: 279 });
+    c.cancelled = true;
+    const out = run({
+      rows: [charge(3600, '2026-10-10', 279), refund(3601, '2026-10-11', 279, 3600)],
+      collections: [c],
+    });
+    expect(month(out, '2026-10')).toMatchObject({ revenue: 0, refunds: 0 });
+  });
+
+  it('an upgrade on an excluded order goes with it, on both sources', () => {
+    const shipping = (method, idx) => ({
+      paid: true,
+      paid_method: method,
+      paid_transaction_id: idx,
+      charged_total: 40,
+      fee: 40,
+      paid_at: '2026-10-12T10:00:00Z',
+    });
+    const t = siteOrder(37, { index: 3700, total: 279, charged_total: 42, discount_pct: 99 });
+    t.order.shipping = shipping('tranzila', '3701');
+    const viaReport = run({
+      rows: [charge(3700, '2026-10-10', 2), charge(3701, '2026-10-12', 40)],
+      collections: [t],
+    });
+    const viaStore = run({ rows: null, collections: [t] });
+    const p = peleOrder(38, { charged_total: 42, discount_pct: 99, quantity: 1 });
+    p.order.shipping = shipping('pelecard', 'uuid-u38');
+    const pele = run({ rows: [], collections: [p] });
+    for (const out of [viaReport, viaStore, pele]) {
+      expect(month(out, '2026-10')).toMatchObject({ revenue: 0, charges: 0, shipping_upgrades: 0 });
+      expect(out.excluded.map((x) => [x.kind, x.reason]).sort()).toEqual([
+        ['charge', 'test'],
+        ['upgrade', 'test'],
+      ]);
+    }
+  });
+
+  it('a fully refunded upgrade is not counted as an upgrade', () => {
+    const o = siteOrder(39, { index: 3900, total: 279, charged_total: 279 });
+    o.order.shipping = {
+      paid: true,
+      paid_method: 'tranzila',
+      paid_transaction_id: '3901',
+      charged_total: 40,
+      paid_at: '2026-10-12T10:00:00Z',
+    };
+    const out = run({
+      rows: [
+        charge(3900, '2026-10-10', 239),
+        charge(3901, '2026-10-12', 40),
+        refund(3902, '2026-10-13', 40, 3901),
+      ],
+      collections: [o],
+    });
+    expect(month(out, '2026-10')).toMatchObject({ revenue: 239, shipping_upgrades: 0, orders: 1 });
+  });
+});
+
+describe('an old order with no charged_total', () => {
+  const old = (extra) => ({
+    id: 'o',
+    order_no: 'DG-1',
+    order: {
+      paid: true,
+      paid_at: '2026-08-10T10:00:00Z',
+      paid_method: 'pelecard',
+      quantity: 1,
+      ...extra,
+    },
+  });
+
+  it('counts the discounted total, never the pre-discount one', () => {
+    const out = run({
+      rows: [],
+      from: '2026-08',
+      collections: [old({ total: 200, discount_pct: 50 })],
+    });
+    expect(month(out, '2026-08').revenue).toBe(100);
+  });
+
+  it('discounts the game only, not the postage', () => {
+    const out = run({
+      rows: [],
+      from: '2026-08',
+      collections: [old({ total: 279, delivery_fee: 40, discount_pct: 10 })],
+    });
+    expect(month(out, '2026-08').revenue).toBe(255.1);
+  });
+
+  it('takes an upgrade folded into total back out before discounting', () => {
+    const out = run({
+      rows: [],
+      from: '2026-08',
+      collections: [
+        old({
+          total: 239,
+          delivery_fee: 40,
+          discount_pct: 50,
+          shipping: {
+            paid: true,
+            paid_method: 'pelecard',
+            fee: 40,
+            paid_at: '2026-08-12T10:00:00Z',
+          },
+        }),
+      ],
+    });
+    // The order: (239 − 40) × 50% = 99.5; the upgrade: 40.
+    expect(month(out, '2026-08')).toMatchObject({ revenue: 139.5, shipping_upgrades: 1 });
+  });
+});

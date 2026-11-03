@@ -273,8 +273,8 @@
         <section id="excludedSec">
           <h2>לא נספרו</h2>
           <div class="sub">
-            חיובי בדיקה (מהסביבה הניסיונית, או הזמנה עם קופון של 99% ומעלה) וזיכויים שלהם. אפשר
-            להחזיר כל אחד לספירה.
+            חיובי בדיקה (מהסביבה הניסיונית, או הזמנה עם קופון 99%), הזמנות שבוטלו, וזיכויים שלהם.
+            חיוב בטרנזילה אפשר להחזיר לספירה.
           </div>
           <div class="panel">
             <table id="excluded">
@@ -342,7 +342,8 @@
       const SOURCE = { tranzila: 'טרנזילה', pelecard: 'פלאקארד', orders: 'הזמנות האתר' };
       const REASON = {
         other_env: 'חיוב מהסביבה הניסיונית',
-        test: 'בדיקה (קופון 99% ומעלה)',
+        test: 'בדיקה (קופון 99%)',
+        cancelled: 'הזמנה שבוטלה',
         manual: 'הוצא ידנית',
         of_excluded: 'זיכוי של חיוב שלא נספר',
       };
@@ -549,23 +550,24 @@
         $('excludedSec').hidden = !list.length;
         for (const x of list) {
           const status = el('span', { class: 'saved' });
-          const btn = el('button', { type: 'button', text: 'לספור' });
+          // Only a terminal charge can be counted back in from here; a PeleCard
+          // order is excluded by its order (cancelled, or a test) and stays so.
+          const btn = x.toggle ? el('button', { type: 'button', text: 'לספור' }) : null;
           // Back to the default for her own exclusion; an explicit "count it" for an
           // automatic one (a test or a staging charge).
-          btn.addEventListener('click', () =>
-            save(x.index, { excluded: x.reason === 'manual' ? null : false }, status)
-          );
-          const what = x.order
-            ? ' · הזמנה ' + x.order
-            : x.refunds
-              ? ' · זיכוי לעסקה ' + x.refunds
-              : '';
+          if (btn)
+            btn.addEventListener('click', () =>
+              save(x.index, { excluded: x.reason === 'manual' ? null : false }, status)
+            );
+          const what =
+            (x.kind === 'upgrade' ? ' · תוספת משלוח' : '') +
+            (x.order ? ' · הזמנה ' + x.order : x.refunds ? ' · זיכוי לעסקה ' + x.refunds : '');
           body.append(
             el(
               'tr',
-              { 'data-index': x.index },
+              { 'data-index': x.index || '' },
               el('td', { text: dateHe(x.date) }),
-              el('td', { text: x.index }),
+              el('td', { text: x.index || '' }),
               el('td', { class: 'num', text: nis(x.amount) }),
               el('td', { text: (REASON[x.reason] || x.reason) + what }),
               el('td', {}, btn, status)
