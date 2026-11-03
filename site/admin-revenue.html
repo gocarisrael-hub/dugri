@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="admin-revenue.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · הכנסות לפי חודש</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#8ca287" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #f7f4ef;
+        color: #23201c;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .top {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .top a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #e4ddd0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 900;
+        margin-bottom: 4px;
+      }
+      h2 {
+        font-size: 17px;
+        font-weight: 800;
+        margin: 26px 0 8px;
+      }
+      .sub {
+        color: #6b645b;
+        margin-bottom: 14px;
+        font-size: 14px;
+        line-height: 1.6;
+      }
+      .msg {
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+      }
+      .warn {
+        background: #fff6e0;
+        border: 1px solid #ecd9a6;
+        border-radius: 12px;
+        padding: 10px 14px;
+        margin-bottom: 12px;
+        font-size: 14px;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+        margin-bottom: 18px;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        border-radius: 14px;
+        padding: 14px 16px;
+      }
+      .card .val {
+        font-size: 26px;
+        font-weight: 900;
+        color: #5c7357;
+        line-height: 1.1;
+      }
+      .card .lab {
+        font-size: 13px;
+        color: #6b645b;
+        margin-top: 4px;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        border-radius: 14px;
+        padding: 14px;
+        overflow-x: auto;
+      }
+      .legend {
+        display: flex;
+        gap: 16px;
+        font-size: 13px;
+        color: #6b645b;
+        margin-bottom: 6px;
+      }
+      .legend i {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 3px;
+        vertical-align: -2px;
+        margin-inline-end: 5px;
+      }
+      /* Months run left to right, newest at the right edge, beside the table's
+         start; on a narrow screen the panel scrolls and opens at that edge. */
+      #chart svg {
+        display: block;
+        direction: ltr;
+        margin-left: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 8px 10px;
+        border-bottom: 1px solid #efe9de;
+        white-space: nowrap;
+      }
+      th {
+        font-size: 12px;
+        color: #6b645b;
+        font-weight: 700;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+      }
+      tfoot td {
+        font-weight: 800;
+        border-bottom: 0;
+      }
+      .note {
+        display: block;
+        font-size: 12px;
+        color: #8a8277;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        border-radius: 99px;
+        padding: 2px 8px;
+        margin-inline-end: 4px;
+        background: #eef2ec;
+        color: #4d6349;
+      }
+      .tag.pelecard {
+        background: #efeaf6;
+        color: #5a4a78;
+      }
+      input.copies {
+        width: 80px;
+        font: inherit;
+        padding: 5px 8px;
+        border: 1px solid #d8d0c2;
+        border-radius: 8px;
+      }
+      button {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        border: 1px solid #d8d0c2;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 4px 12px;
+        cursor: pointer;
+      }
+      .saved {
+        font-size: 12px;
+        color: #5c7357;
+        margin-inline-start: 6px;
+      }
+      .saved.err {
+        color: #b3261e;
+      }
+    </style>
+    <script src="js/editor.js" defer></script>
+    <script src="js/admin-role.js" defer></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="top">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+      </div>
+      <h1>הכנסות לפי חודש</h1>
+      <div class="sub" id="sub">טוען…</div>
+      <div id="content"></div>
+      <div id="report" hidden>
+        <div class="warn" id="tzError" hidden></div>
+        <div class="warn" id="unfilledWarn" hidden></div>
+        <div class="cards" id="cards"></div>
+
+        <div class="panel">
+          <div class="legend">
+            <span><i style="background: #8ca287"></i>הכנסות ₪</span>
+            <span><i style="background: #3f3a33"></i>עותקים</span>
+          </div>
+          <div id="chart"></div>
+        </div>
+
+        <h2>לפי חודש</h2>
+        <div class="panel">
+          <table id="months">
+            <thead>
+              <tr>
+                <th>חודש</th>
+                <th>הכנסות ₪</th>
+                <th>הזמנות</th>
+                <th>עותקים</th>
+                <th>מקור</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+
+        <section id="b2b">
+          <h2>חיובים בטרנזילה שאינם הזמנה מהאתר</h2>
+          <div class="sub">
+            חיובים שהוקלדו ישירות במסוף (B2B). כמה עותקים היה כל חיוב? עד שממלאים, החיוב נספר כהזמנה
+            ולא נספר בעותקים.
+          </div>
+          <div class="panel">
+            <table id="unmatched">
+              <thead>
+                <tr>
+                  <th>תאריך</th>
+                  <th>מספר עסקה</th>
+                  <th>סכום ₪</th>
+                  <th>עותקים</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <div class="sub" id="noUnmatched" hidden>אין כרגע חיובים כאלה במסוף.</div>
+          </div>
+        </section>
+
+        <section id="excludedSec">
+          <h2>לא נספרו</h2>
+          <div class="sub">
+            חיובי בדיקה (מהסביבה הניסיונית, או הזמנה עם קופון 99%), הזמנות שבוטלו, וזיכויים שלהם.
+            חיוב בטרנזילה אפשר להחזיר לספירה.
+          </div>
+          <div class="panel">
+            <table id="excluded">
+              <thead>
+                <tr>
+                  <th>תאריך</th>
+                  <th>מספר עסקה</th>
+                  <th>סכום ₪</th>
+                  <th>סיבה</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="otherSec" hidden>
+          <h2>עסקאות שלא זוהו</h2>
+          <div class="sub">
+            עסקאות מאושרות במסוף שאינן חיוב רגיל ואינן זיכוי. לא נספרו בשום סכום. כדאי לבדוק אותן
+            ב-My Tranzila.
+          </div>
+          <div class="panel">
+            <table id="other">
+              <thead>
+                <tr>
+                  <th>תאריך</th>
+                  <th>מספר עסקה</th>
+                  <th>סכום ₪</th>
+                  <th>סוג</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+        <div class="sub" id="footnote" style="margin-top: 22px"></div>
+      </div>
+    </div>
+
+    <script type="module">
+      const key = (new URLSearchParams(location.search).get('key') || '').trim();
+      const withKey = (page) => page + (key ? '?key=' + encodeURIComponent(key) : '');
+      for (const a of document.querySelectorAll('[data-page]')) a.href = withKey(a.dataset.page);
+
+      const $ = (id) => document.getElementById(id);
+      const sub = $('sub');
+      const content = $('content');
+      const report = $('report');
+
+      const nis = (n) =>
+        Number(n || 0).toLocaleString('he-IL', { maximumFractionDigits: 2 }) + ' ₪';
+      const int = (n) => Number(n || 0).toLocaleString('he-IL');
+      function monthName(ym) {
+        const [y, m] = ym.split('-').map(Number);
+        return new Date(Date.UTC(y, m - 1, 15)).toLocaleDateString('he-IL', {
+          month: 'long',
+          year: 'numeric',
+          timeZone: 'UTC',
+        });
+      }
+      const shortMonth = (ym) => ym.slice(5) + '/' + ym.slice(2, 4);
+      const dateHe = (d) => (d ? d.split('-').reverse().join('.') : '');
+      const SOURCE = { tranzila: 'טרנזילה', pelecard: 'פלאקארד', orders: 'הזמנות האתר' };
+      const REASON = {
+        other_env: 'חיוב מהסביבה הניסיונית',
+        test: 'בדיקה (קופון 99%)',
+        cancelled: 'הזמנה שבוטלה',
+        manual: 'הוצא ידנית',
+        of_excluded: 'זיכוי של חיוב שלא נספר',
+      };
+
+      function el(tag, attrs = {}, ...kids) {
+        const n = document.createElement(tag);
+        for (const [k, v] of Object.entries(attrs)) {
+          if (k === 'class') n.className = v;
+          else if (k === 'text') n.textContent = v;
+          else n.setAttribute(k, v);
+        }
+        for (const k of kids) if (k != null) n.append(k);
+        return n;
+      }
+
+      // Revenue as bars on one scale, copies as a narrower dark bar beside each on
+      // its own scale, both labelled with their number so no axis has to be read.
+      function renderChart(months) {
+        const host = $('chart');
+        host.textContent = '';
+        const NS = 'http://www.w3.org/2000/svg';
+        const slot = 74;
+        const H = 230;
+        const top = 22;
+        const base = H - 28;
+        const W = Math.max(320, months.length * slot + 20);
+        const svg = document.createElementNS(NS, 'svg');
+        svg.setAttribute('width', W);
+        svg.setAttribute('height', H);
+        svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
+        svg.setAttribute('role', 'img');
+        svg.setAttribute('aria-label', 'הכנסות ועותקים לפי חודש');
+        const maxRev = Math.max(1, ...months.map((m) => m.revenue));
+        const maxCop = Math.max(1, ...months.map((m) => m.copies));
+        const mk = (tag, a) => {
+          const n = document.createElementNS(NS, tag);
+          for (const [k, v] of Object.entries(a)) n.setAttribute(k, v);
+          return n;
+        };
+        const text = (x, y, s, a = {}) => {
+          const t = mk('text', {
+            x,
+            y,
+            'text-anchor': 'middle',
+            'font-size': 11,
+            'font-family': 'Heebo, Arial, sans-serif',
+            fill: '#3f3a33',
+            ...a,
+          });
+          t.textContent = s;
+          return t;
+        };
+        svg.append(mk('line', { x1: 10, x2: W - 10, y1: base, y2: base, stroke: '#d8d0c2' }));
+        months.forEach((m, i) => {
+          const x0 = 10 + i * slot + 10;
+          const g = mk('g', { 'data-month': m.month });
+          const rh = Math.round(((base - top - 14) * Math.max(0, m.revenue)) / maxRev);
+          const ch = Math.round(((base - top - 14) * Math.max(0, m.copies)) / maxCop);
+          g.append(
+            mk('rect', { x: x0, y: base - rh, width: 34, height: rh, fill: '#8ca287', rx: 3 })
+          );
+          g.append(
+            mk('rect', { x: x0 + 38, y: base - ch, width: 14, height: ch, fill: '#3f3a33', rx: 2 })
+          );
+          g.append(
+            text(x0 + 17, base - rh - 4, Math.round(m.revenue).toLocaleString('he-IL'), {
+              'font-size': 10,
+            })
+          );
+          g.append(text(x0 + 45, base - ch - 4, String(m.copies), { 'font-size': 10 }));
+          g.append(text(x0 + 26, base + 16, shortMonth(m.month), { fill: '#6b645b' }));
+          svg.append(g);
+        });
+        host.append(svg);
+      }
+
+      function renderMonths(data) {
+        const body = $('months').tBodies[0];
+        body.textContent = '';
+        for (const m of [...data.months].reverse()) {
+          const details = [];
+          if (m.refunds) details.push('כולל זיכויים של ' + nis(m.refunds_total));
+          if (m.shipping_upgrades) details.push('תוספות משלוח: ' + m.shipping_upgrades);
+          if (m.b2b_charges) details.push('B2B: ' + m.b2b_charges);
+          const copiesNotes = [];
+          if (m.b2b_unfilled) copiesNotes.push(m.b2b_unfilled + ' חיובי B2B בלי מספר עותקים');
+          if (m.free_orders)
+            copiesNotes.push('ועוד ' + m.free_copies + ' בחינם (קופון 100%), לא נספרו');
+          const src = el('td');
+          if (!m.sources.length) src.append('—');
+          for (const s of m.sources)
+            src.append(el('span', { class: 'tag ' + s, text: SOURCE[s] || s }));
+          body.append(
+            el(
+              'tr',
+              { 'data-month': m.month },
+              el('td', { text: monthName(m.month) }),
+              el(
+                'td',
+                { class: 'num' },
+                el('span', { class: 'v', text: nis(m.revenue) }),
+                details.length ? el('span', { class: 'note', text: details.join(' · ') }) : null
+              ),
+              el('td', { class: 'num' }, el('span', { class: 'v', text: int(m.orders) })),
+              el(
+                'td',
+                { class: 'num' },
+                el('span', { class: 'v', text: int(m.copies) }),
+                copiesNotes.length
+                  ? el('span', { class: 'note', text: copiesNotes.join(' · ') })
+                  : null
+              ),
+              src
+            )
+          );
+        }
+        const t = data.totals;
+        const foot = $('months').tFoot;
+        foot.textContent = '';
+        foot.append(
+          el(
+            'tr',
+            {},
+            el('td', { text: 'סה״כ' }),
+            el('td', { class: 'num', text: nis(t.revenue) }),
+            el('td', { class: 'num', text: int(t.orders) }),
+            el('td', { class: 'num', text: int(t.copies) }),
+            el('td')
+          )
+        );
+      }
+
+      async function save(index, body, status) {
+        status.className = 'saved';
+        status.textContent = 'שומר…';
+        try {
+          const res = await fetch(
+            '/api/admin/revenue/charges/' +
+              encodeURIComponent(index) +
+              '?key=' +
+              encodeURIComponent(key),
+            {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            }
+          );
+          if (!res.ok) throw new Error(String(res.status));
+          status.textContent = 'נשמר';
+          await load();
+        } catch {
+          status.className = 'saved err';
+          status.textContent = 'לא נשמר';
+        }
+      }
+
+      function renderUnmatched(list) {
+        const body = $('unmatched').tBodies[0];
+        body.textContent = '';
+        $('unmatched').hidden = !list.length;
+        $('noUnmatched').hidden = !!list.length;
+        for (const u of list) {
+          const input = el('input', {
+            class: 'copies',
+            type: 'number',
+            min: '0',
+            step: '1',
+            inputmode: 'numeric',
+            'aria-label': 'עותקים בעסקה ' + u.index,
+          });
+          if (u.copies != null) input.value = String(u.copies);
+          const status = el('span', { class: 'saved' });
+          input.addEventListener('change', () => {
+            const v = input.value.trim();
+            save(u.index, { copies: v === '' ? null : Number(v) }, status);
+          });
+          // A charge that was not a sale at all (a test of her own on the terminal).
+          const skip = el('button', { type: 'button', text: 'לא לספור' });
+          skip.addEventListener('click', () => save(u.index, { excluded: true }, status));
+          const notes = [];
+          if (u.token_order) notes.push('נושא סימון של הזמנה ' + u.token_order + ' מהאתר');
+          if (u.refunded) notes.push('זוכה ' + nis(u.refunded));
+          body.append(
+            el(
+              'tr',
+              { 'data-index': u.index },
+              el('td', { text: dateHe(u.date) }),
+              el(
+                'td',
+                {},
+                u.index,
+                notes.length ? el('span', { class: 'note', text: notes.join(' · ') }) : null
+              ),
+              el('td', { class: 'num', text: nis(u.amount) }),
+              el('td', {}, input, ' ', skip, status)
+            )
+          );
+        }
+      }
+
+      function renderExcluded(list) {
+        const body = $('excluded').tBodies[0];
+        body.textContent = '';
+        $('excludedSec').hidden = !list.length;
+        for (const x of list) {
+          const status = el('span', { class: 'saved' });
+          // Only a terminal charge can be counted back in from here; a PeleCard
+          // order is excluded by its order (cancelled, or a test) and stays so.
+          const btn = x.toggle ? el('button', { type: 'button', text: 'לספור' }) : null;
+          // Back to the default for her own exclusion; an explicit "count it" for an
+          // automatic one (a test or a staging charge).
+          if (btn)
+            btn.addEventListener('click', () =>
+              save(x.index, { excluded: x.reason === 'manual' ? null : false }, status)
+            );
+          const what =
+            (x.kind === 'upgrade' ? ' · תוספת משלוח' : '') +
+            (x.order ? ' · הזמנה ' + x.order : x.refunds ? ' · זיכוי לעסקה ' + x.refunds : '');
+          body.append(
+            el(
+              'tr',
+              { 'data-index': x.index || '' },
+              el('td', { text: dateHe(x.date) }),
+              el('td', { text: x.index || '' }),
+              el('td', { class: 'num', text: nis(x.amount) }),
+              el('td', { text: (REASON[x.reason] || x.reason) + what }),
+              el('td', {}, btn, status)
+            )
+          );
+        }
+      }
+
+      function renderOther(list) {
+        const body = $('other').tBodies[0];
+        body.textContent = '';
+        $('otherSec').hidden = !list.length;
+        for (const x of list) {
+          body.append(
+            el(
+              'tr',
+              { 'data-index': x.index },
+              el('td', { text: dateHe(x.date) }),
+              el('td', { text: x.index }),
+              el('td', { class: 'num', text: x.amount == null ? '' : nis(x.amount) }),
+              el('td', { text: [x.txn_type, x.tranmode].filter(Boolean).join(' / ') || '—' })
+            )
+          );
+        }
+      }
+
+      function render(data) {
+        const t = data.totals;
+        const cards = $('cards');
+        cards.textContent = '';
+        for (const [lab, val] of [
+          ['הכנסות בתקופה', nis(t.revenue)],
+          ['הזמנות', int(t.orders)],
+          ['עותקים', int(t.copies)],
+        ]) {
+          cards.append(
+            el(
+              'div',
+              { class: 'card' },
+              el('div', { class: 'val', text: val }),
+              el('div', { class: 'lab', text: lab })
+            )
+          );
+        }
+        const tz = data.tranzila || {};
+        const err = $('tzError');
+        if (tz.error) {
+          err.hidden = false;
+          err.textContent =
+            'דוח טרנזילה לא נקרא (' +
+            tz.error +
+            '). הזמנות האתר ששולמו בטרנזילה נספרו מהרשומות שלנו, בלי חיובי B2B.';
+        } else if (!tz.configured) {
+          err.hidden = false;
+          err.textContent = 'טרנזילה לא מוגדרת בסביבה הזו, לכן מוצגות רק הזמנות האתר.';
+        } else err.hidden = true;
+        const warn = $('unfilledWarn');
+        warn.hidden = !t.b2b_unfilled;
+        warn.textContent = t.b2b_unfilled
+          ? t.b2b_unfilled +
+            ' חיובי B2B עדיין בלי מספר עותקים (למטה). עד שימולאו הם נספרים כהזמנה ולא כעותקים.'
+          : '';
+        renderChart(data.months);
+        renderMonths(data);
+        renderUnmatched(data.unmatched || []);
+        renderExcluded(data.excluded || []);
+        renderOther(data.unclassified || []);
+        $('footnote').textContent =
+          'מטרנזילה (מחודש ' +
+          monthName(tz.from || data.months[0].month) +
+          '): כל החיובים המאושרים במסוף, פחות זיכויים, לפי תאריך העסקה. מפלאקארד: הזמנות האתר ששולמו בפלאקארד, מהרשומות שלנו. חיובים שבוצעו בפלאקארד מחוץ לאתר (B2B לפני המעבר לטרנזילה) לא כלולים. הזמנה נספרת לפי החודש שבו שולמה (שעון ישראל).';
+        report.hidden = false;
+      }
+
+      async function load() {
+        if (!key) {
+          sub.textContent = '';
+          content.innerHTML =
+            '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
+          return;
+        }
+        try {
+          const res = await fetch('/api/admin/revenue?key=' + encodeURIComponent(key));
+          if (res.status === 403) {
+            sub.textContent = '';
+            report.hidden = true;
+            content.innerHTML = '<div class="msg">מפתח גישה שגוי.</div>';
+            return;
+          }
+          if (!res.ok) throw new Error(String(res.status));
+          const data = await res.json();
+          content.textContent = '';
+          sub.textContent = 'כמה נכנס כל חודש, כמה הזמנות וכמה עותקים.';
+          render(data);
+        } catch {
+          sub.textContent = '';
+          report.hidden = true;
+          content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';
+        }
+      }
+      load();
+    </script>
+  </body>
+</html>
