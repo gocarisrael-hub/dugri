@@ -185,6 +185,12 @@ function emptyMonth(month) {
     shipping_upgrades: 0,
     free_orders: 0,
     free_copies: 0,
+    // Free orders paid with a PARTNER VOUCHER (a reseller's code, server/
+    // vouchers.js): no money moved here — the reseller is invoiced per code from
+    // the partners page — so, like a 100% coupon, not revenue and not a counted
+    // copy, but noted apart, because these ARE sales.
+    voucher_orders: 0,
+    voucher_copies: 0,
     sources: new Set(),
   };
 }
@@ -272,6 +278,10 @@ function monthlyRevenue({
         const mo = monthOf(month);
         mo.free_orders += 1;
         mo.free_copies += copiesOf(o);
+      } else if (month && o.paid_method === 'voucher' && !c.cancelled) {
+        const mo = monthOf(month);
+        mo.voucher_orders += 1;
+        mo.voucher_copies += copiesOf(o);
       }
     }
     if (sh && sh.paid && sh.paid_at) {

@@ -432,6 +432,8 @@
           if (m.b2b_unfilled) copiesNotes.push(m.b2b_unfilled + ' חיובי B2B בלי מספר עותקים');
           if (m.free_orders)
             copiesNotes.push('ועוד ' + m.free_copies + ' בחינם (קופון 100%), לא נספרו');
+          if (m.voucher_orders)
+            copiesNotes.push('ועוד ' + m.voucher_copies + ' בקוד שותף (החיוב דרך השותף), לא נספרו');
           const src = el('td');
           if (!m.sources.length) src.append('—');
           for (const s of m.sources)

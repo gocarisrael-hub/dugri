@@ -348,6 +348,27 @@ describe('PeleCard months come from our own orders', () => {
       free_copies: 3,
     });
   });
+
+  it('a free PARTNER-VOUCHER order is noted apart from 100% coupons, not counted as revenue', () => {
+    const out = run({
+      rows: [],
+      collections: [
+        pele(8, '2026-11-10T10:00:00Z', 0, {
+          paid_method: 'voucher',
+          quantity: 1,
+          voucher: { code: 'HTZ-AAAA-BBBB-CCCC-DDDD', partner_name: 'Hi Tech Zone' },
+        }),
+      ],
+    });
+    expect(month(out, '2026-11')).toMatchObject({
+      revenue: 0,
+      orders: 0,
+      copies: 0,
+      free_orders: 0,
+      voucher_orders: 1,
+      voucher_copies: 1,
+    });
+  });
 });
 
 describe('month boundaries are Israel time', () => {
