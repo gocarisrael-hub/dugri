@@ -535,6 +535,27 @@ describe('the same exclusions on both sources', () => {
     expect(pele.excluded[0].toggle).toBeUndefined();
   });
 
+  it('a voucher order paid partly by card: the voucher copy is noted apart, not a card sale', () => {
+    // Three pickup copies, one paid by a partner voucher: the card bought two.
+    const voucher = { code: 'HTZ-AAAA-BBBB-CCCC-DDDD', partner_name: 'Hi Tech Zone', credit: 199 };
+    const t = siteOrder(40, { index: 4000, total: 398, quantity: 3, voucher });
+    const viaReport = run({ rows: [charge(4000, '2026-10-10', 398)], collections: [t] });
+    const viaStore = run({ rows: null, collections: [t] });
+    const pele = run({
+      rows: [],
+      collections: [peleOrder(41, { charged_total: 398, total: 597, quantity: 3, voucher })],
+    });
+    for (const out of [viaReport, viaStore, pele]) {
+      expect(month(out, '2026-10')).toMatchObject({
+        revenue: 398,
+        orders: 1,
+        copies: 2,
+        voucher_orders: 1,
+        voucher_copies: 1,
+      });
+    }
+  });
+
   it('a cancelled order is not a sale on either source', () => {
     const c = siteOrder(34, { index: 3400, total: 478, quantity: 2 });
     c.cancelled = true;

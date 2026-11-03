@@ -31,6 +31,7 @@ let base;
 let mails;
 let gatewayInits; // amounts (agorot) PeleCard was asked to charge
 let nextGetTx = null;
+let initFails = false; // the gateway refuses to open a window
 
 function jsonRes(obj) {
   return { ok: true, status: 200, json: async () => obj, text: async () => '' };
@@ -48,7 +49,6 @@ beforeAll(async () => {
   process.env.NOTIFY_TO = 'owner@example.com';
   process.env.NOTIFY_FROM = 'Dugri <orders@example.com>';
   delete process.env.VOUCHER_MISS_LIMIT;
-  delete process.env.VOUCHER_HOLD_MS;
   for (const f of ['settings.js', 'db.js', 'notify.js', 'pelecard.js', 'index.js']) {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
@@ -69,6 +69,8 @@ beforeAll(async () => {
         return jsonRes({ id: 'm1' });
       }
       if (u.includes('/PaymentGW/init')) {
+        if (initFails)
+          return { ok: false, status: 500, json: async () => ({}), text: async () => '' };
         gatewayInits.push(JSON.parse(opts.body).Total);
         return jsonRes({
           URL: 'https://gateway21.pelecard.biz/PaymentGW?transactionId=tx-' + gatewayInits.length,
@@ -109,6 +111,7 @@ beforeEach(() => {
   mails = [];
   gatewayInits = [];
   nextGetTx = null;
+  initFails = false;
   ipSeq += 1;
 });
 
@@ -288,7 +291,7 @@ describe('creating and running a pool', () => {
     expect(u).toHaveLength(2);
     expect(u[1]).toContain('"' + codes[0].code + '"');
     expect(u[1]).toContain('"' + db.orderRef(db.getCollection(buyer.id)) + '"');
-    expect(u[1]).toMatch(/"50"$/);
+    expect(u[1]).toMatch(/"50",""$/);
   });
 });
 
@@ -378,15 +381,56 @@ describe('redeeming at checkout', () => {
     expect(db.listVoucherPools().find((p) => p.id === pool.id).summary.used).toBe(1);
   });
 
-  it('an abandoned payment leaves the code unused and lets go of the hold', async () => {
+  it('a CLOSED window keeps the code: closing is not proof the payment will not land', async () => {
+    // On Tranzila the buyer closes the window before the sweep settles her charge.
     const { codes } = newPool(1);
-    const c = party();
-    await payInit(c, { version: 'delivery', address: ADDRESS, coupon: codes[0].code });
-    await post('/api/collections/' + c.id + '/pay/cancel', { owner_token: c.owner_token });
+    const a = party('א');
+    await payInit(a, { version: 'delivery', address: ADDRESS, coupon: codes[0].code });
+    await post('/api/collections/' + a.id + '/pay/cancel', { owner_token: a.owner_token });
     const row = db.getVoucherByCode(codes[0].code);
     expect(row.used_at).toBe(null);
-    expect(row.held).toBe(null);
-    expect(db.validateCoupon(codes[0].code, { collectionId: 'someone-else' }).valid).toBe(true);
+    // Another collection cannot redeem it, not even as a free pickup…
+    const b = party('ב');
+    const r = await payInit(b, { version: 'pickup', coupon: codes[0].code });
+    expect(r.body).toEqual({ error: 'invalid coupon', reason: 'held' });
+    // …and A's late charge still spends it, on A.
+    await settle(a.id);
+    expect(db.getVoucherByCode(codes[0].code).order_id).toBe(a.id);
+    expect(db.getCollection(b.id).order.paid).toBe(false);
+  });
+
+  it('a failed window opening lets go of ITS hold only, not an earlier window’s', async () => {
+    const { codes } = newPool(1);
+    const a = party('א');
+    expect(
+      (await payInit(a, { version: 'delivery', address: ADDRESS, coupon: codes[0].code })).status
+    ).toBe(200);
+    initFails = true;
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const failed = await payInit(a, {
+      version: 'delivery',
+      address: ADDRESS,
+      coupon: codes[0].code,
+    });
+    quiet.mockRestore();
+    expect(failed.status).toBe(502);
+    expect(db.getVoucherByCode(codes[0].code).held.tokens).toHaveLength(1);
+    const b = party('ב');
+    expect((await payInit(b, { version: 'pickup', coupon: codes[0].code })).body.reason).toBe(
+      'held'
+    );
+  });
+
+  it('a failed only window frees the code', async () => {
+    const { codes } = newPool(1);
+    const a = party('א');
+    initFails = true;
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(
+      (await payInit(a, { version: 'delivery', address: ADDRESS, coupon: codes[0].code })).status
+    ).toBe(502);
+    quiet.mockRestore();
+    expect(db.getVoucherByCode(codes[0].code).held).toBe(null);
   });
 
   it('refuses an unknown, a used and a voided code, with the reason', async () => {
@@ -438,15 +482,20 @@ describe('never spent twice', () => {
     expect(gatewayInits).toHaveLength(1);
   });
 
-  it('a window that outlived its hold and settles second is flagged, not spent again, and the owner is told', async () => {
+  it('a window the owner released that settles anyway is flagged, not spent again, and the owner is told', async () => {
     const { pool, codes } = newPool(1, { price_per_use: 30 });
     const a = party('א');
     const b = party('ב');
     expect(
       (await payInit(a, { version: 'delivery', address: ADDRESS, coupon: codes[0].code })).status
     ).toBe(200);
-    // A's hold runs out (a very slow payer), and B opens a window on the same code.
-    db.getVoucherByCode(codes[0].code).held.until = new Date(Date.now() - 1000).toISOString();
+    // The owner frees A's hold (she believed the window dead); B opens a window.
+    const row = db.getVoucherByCode(codes[0].code);
+    const freed = await post(key('/api/admin/partner-vouchers/' + row.id + '/release-hold'));
+    expect(freed.body.code.held).toBe(false);
+    expect(
+      (await post(key('/api/admin/partner-vouchers/' + row.id + '/release-hold'))).status
+    ).toBe(409);
     expect(
       (await payInit(b, { version: 'delivery', address: ADDRESS, coupon: codes[0].code })).status
     ).toBe(200);
@@ -479,6 +528,69 @@ describe('never spent twice', () => {
     await settle(c.id);
     expect(db.getVoucherByCode(codes[0].code).used_at).toBe(usedAt);
     expect(db.getCollection(c.id).order.voucher_conflict).toBeUndefined();
+  });
+});
+
+describe('the staff key sees no codes', () => {
+  it('neither the orders list nor the order edit hands it a voucher, a coupon or the partner', async () => {
+    const { codes } = newPool(2);
+    const paid = party('שולם');
+    await payInit(paid, { version: 'pickup', coupon: codes[0].code });
+    // A code left in an abandoned card window: still unused, the one worth stealing.
+    const open = party('פתוח');
+    await payInit(open, { version: 'delivery', address: ADDRESS, coupon: codes[1].code });
+    await post('/api/collections/' + open.id + '/pay/cancel', { owner_token: open.owner_token });
+
+    const staff = await get(key('/api/admin/collections', STAFF_KEY));
+    expect(staff.status).toBe(200);
+    for (const c of codes) expect(staff.text).not.toContain(c.code);
+    expect(staff.text).not.toContain('Hi Tech Zone');
+    expect(staff.body.collections.find((x) => x.id === paid.id).order.paid).toBe(true);
+
+    const owner = await get(key('/api/admin/collections'));
+    expect(owner.text).toContain(codes[0].code);
+    expect(owner.text).toContain(codes[1].code);
+
+    const patched = await call('PATCH', key('/api/admin/collections/' + paid.id, STAFF_KEY), {
+      owner_note: 'x',
+    });
+    expect(patched.status).toBe(200);
+    expect(patched.text).not.toContain(codes[0].code);
+    expect(patched.text).not.toContain('Hi Tech Zone');
+  });
+});
+
+describe('a cancelled order', () => {
+  it('is not billed, is marked in the usage CSV, and its code can be restored', async () => {
+    const { pool, codes } = newPool(2, { price_per_use: 40 });
+    const a = party('א');
+    await payInit(a, { version: 'pickup', coupon: codes[0].code });
+    const row = db.getVoucherByCode(codes[0].code);
+    // While the order stands, the code cannot come back.
+    expect((await post(key('/api/admin/partner-vouchers/' + row.id + '/restore'))).body).toEqual({
+      error: 'order_active',
+    });
+    let s = (await get(key('/api/admin/partner-pools/' + pool.id + '/codes'))).body.summary;
+    expect(s).toMatchObject({ used: 1, cancelled: 0, owed: 40 });
+
+    await post(key('/api/admin/collections/' + a.id + '/cancel'));
+    s = (await get(key('/api/admin/partner-pools/' + pool.id + '/codes'))).body.summary;
+    expect(s).toMatchObject({ used: 0, cancelled: 1, owed: 0, by_month: [] });
+    const usage = await get(key('/api/admin/partner-pools/' + pool.id + '/usage.csv'));
+    expect(usage.text).toContain('"0","order cancelled, not billed"');
+
+    const restored = await post(key('/api/admin/partner-vouchers/' + row.id + '/restore'));
+    expect(restored.body.code).toMatchObject({ status: 'unused', restored: 1 });
+    expect(db.getVoucherByCode(codes[0].code).restored[0].order_id).toBe(a.id);
+    // Unused again: another order can redeem it.
+    const b = party('ב');
+    expect((await payInit(b, { version: 'pickup', coupon: codes[0].code })).body.free).toBe(true);
+  });
+
+  it('restore and release-hold are the owner’s alone', async () => {
+    for (const a of ['restore', 'release-hold']) {
+      expect((await post(key('/api/admin/partner-vouchers/x/' + a, STAFF_KEY))).status).toBe(403);
+    }
   });
 });
 

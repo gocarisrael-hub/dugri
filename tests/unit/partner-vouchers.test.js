@@ -157,15 +157,51 @@ describe('the CSVs', () => {
     const out = rules.usageCsv(pool, rows, (r) => (r.order_id === 'c1' ? '1042' : ''));
     const lines = out.slice(1).trim().split('\r\n');
     expect(lines).toEqual([
-      '"code","partner","used_at","month","order","price_per_use"',
-      '"HTZ-EEEE-FFFF-GGGG-HHHH","Hi Tech Zone","2026-11-02T08:00:00Z","2026-11","1042","50"',
+      '"code","partner","used_at","month","order","price_per_use","note"',
+      '"HTZ-EEEE-FFFF-GGGG-HHHH","Hi Tech Zone","2026-11-02T08:00:00Z","2026-11","1042","50",""',
     ]);
+  });
+
+  it('usage: a code whose order was cancelled is listed, marked, and priced 0', () => {
+    const out = rules.usageCsv(pool, [{ ...rows[1], order_cancelled: true }], () => '1042');
+    const line = out.slice(1).trim().split('\r\n')[1];
+    expect(line).toBe(
+      '"HTZ-EEEE-FFFF-GGGG-HHHH","Hi Tech Zone","2026-11-02T08:00:00Z","2026-11","1042","0","order cancelled, not billed"'
+    );
   });
 
   it('defuses a cell a spreadsheet would run as a formula, and doubles quotes', () => {
     expect(rules.csvCell('=HYPERLINK("x")')).toBe('"\'=HYPERLINK(""x"")"');
     expect(rules.csvCell('+1')).toBe('"\'+1"');
     expect(rules.csvCell('Hi "Tech"')).toBe('"Hi ""Tech"""');
+  });
+});
+
+describe('what the staff key sees of an order', () => {
+  it('no coupon, friend code or voucher anywhere, and no partner; the original untouched', () => {
+    const c = {
+      id: 'c1',
+      order: {
+        paid: true,
+        coupon: 'HTZ-AAAA-BBBB-CCCC-DDDD',
+        discount_pct: 10,
+        voucher: { code: 'HTZ-AAAA-BBBB-CCCC-DDDD', partner_name: 'Hi Tech Zone' },
+        voucher_conflict: { code: 'HTZ-X' },
+        friend_coupon_conflict: { code: 'NOA5-K7Q2' },
+        commission: { code: 'BLOG', amount: 30 },
+        pelecard: { sessions: [{ token: 't', coupon: 'HTZ-EEEE-FFFF-GGGG-HHHH' }] },
+        shipping: { pelecard: { sessions: [{ token: 's', coupon: 'X' }] } },
+        version: 'pickup',
+      },
+    };
+    const out = rules.collectionForStaff(c);
+    const json = JSON.stringify(out);
+    for (const secret of ['HTZ-', 'NOA5', 'Hi Tech Zone', 'BLOG'])
+      expect(json).not.toContain(secret);
+    expect(out.order.version).toBe('pickup');
+    expect(out.order.pelecard.sessions[0].token).toBe('t');
+    expect(c.order.coupon).toBe('HTZ-AAAA-BBBB-CCCC-DDDD');
+    expect(rules.collectionForStaff({ id: 'x' })).toEqual({ id: 'x' });
   });
 });
 
@@ -191,6 +227,8 @@ describe('the store', () => {
     for (const f of ['settings.js', 'db.js', 'vouchers.js', 'stores/vouchers.js']) {
       delete require.cache[require.resolve(path.join(serverDir, f))];
     }
+    const settings = require(path.join(serverDir, 'settings.js'));
+    settings.set('pricing', 'pickup_enabled', true);
     db = require(path.join(serverDir, 'db.js'));
   });
 
@@ -278,19 +316,104 @@ describe('the store', () => {
     expect(db.consumeVoucher('NOT-A-VOUCHER', 'o3')).toBe(null);
   });
 
-  it('a hold reserves a code for one collection until it runs out', () => {
+  // A collection with an unpaid pickup order — what a card window hangs off.
+  function orderedParty(name) {
+    const c = db.createCollection(name);
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    return c;
+  }
+  const openWindow = (c, token) =>
+    db.recordPaymentInit(c.id, { paramToken: token, charged_total: 39, provider: 'pelecard' });
+
+  it('a hold lives as long as its card window can settle — not by the clock', () => {
     const { codes } = db.createVoucherPool({ partner_name: 'P', prefix: 'HOLD', count: 1 });
     const code = codes[0].code;
+    const a = orderedParty('א');
+    const b = orderedParty('ב');
     const now = Date.now();
-    expect(db.holdVoucher(code, 'c1', now + 60000, now)).toBe(true);
-    expect(db.validateVoucher(code, { collectionId: 'c2', now }).reason).toBe('held');
-    expect(db.validateVoucher(code, { collectionId: 'c1', now }).valid).toBe(true);
-    expect(db.holdVoucher(code, 'c2', now + 60000, now)).toBe(false);
-    // Runs out on its own…
-    expect(db.validateVoucher(code, { collectionId: 'c2', now: now + 60001 }).valid).toBe(true);
-    // …or is let go when the window closes.
-    expect(db.releaseVoucherHolds('c1')).toBe(1);
-    expect(db.validateVoucher(code, { collectionId: 'c2', now }).valid).toBe(true);
+    const DAY = 24 * 60 * 60 * 1000;
+    expect(db.holdVoucher(code, a.id, 'tok-a1', now)).toBe(true);
+    // While pay/init awaits the provider the session is not recorded yet: held.
+    expect(db.validateVoucher(code, { collectionId: b.id, now }).reason).toBe('held');
+    expect(db.validateVoucher(code, { collectionId: a.id, now }).valid).toBe(true);
+    expect(db.holdVoucher(code, b.id, 'tok-b1', now)).toBe(false);
+    // The window opened: held a WEEK later, because a settle has no age limit…
+    openWindow(a, 'tok-a1');
+    expect(db.validateVoucher(code, { collectionId: b.id, now: now + 7 * DAY }).reason).toBe(
+      'held'
+    );
+    // …and after the buyer closed it, because Tranzila settles closed windows.
+    db.abandonPaySessions(a.id, a.owner_token);
+    expect(db.validateVoucher(code, { collectionId: b.id, now: now + DAY }).reason).toBe('held');
+    // Dead once that order is paid some other way…
+    db.getCollection(a.id).order.paid = true;
+    expect(db.validateVoucher(code, { collectionId: b.id, now }).valid).toBe(true);
+    db.getCollection(a.id).order.paid = false;
+    // …or when the owner releases it.
+    const row = db.getVoucherByCode(code);
+    expect(db.releaseVoucherHold(row.id).held).toBe(null);
+    expect(db.releaseVoucherHold(row.id)).toEqual({ error: 'not_held' });
+    expect(db.validateVoucher(code, { collectionId: b.id, now }).valid).toBe(true);
+  });
+
+  it('a window that never got a session stops holding once the init grace is over', () => {
+    const { codes } = db.createVoucherPool({ partner_name: 'P', prefix: 'GRACE', count: 1 });
+    const code = codes[0].code;
+    const a = orderedParty('א');
+    const now = Date.now();
+    db.holdVoucher(code, a.id, 'never-recorded', now);
+    expect(db.validateVoucher(code, { collectionId: 'x', now: now + 60 * 1000 }).reason).toBe(
+      'held'
+    );
+    expect(db.validateVoucher(code, { collectionId: 'x', now: now + 6 * 60 * 1000 }).valid).toBe(
+      true
+    );
+  });
+
+  it('dropping one window’s hold keeps the hold of an earlier window', () => {
+    const { codes } = db.createVoucherPool({ partner_name: 'P', prefix: 'DROP', count: 1 });
+    const code = codes[0].code;
+    const a = orderedParty('א');
+    const now = Date.now();
+    db.holdVoucher(code, a.id, 'w1', now);
+    openWindow(a, 'w1');
+    db.holdVoucher(code, a.id, 'w2', now);
+    expect(db.dropVoucherHold(code, a.id, 'w2')).toBe(true);
+    expect(db.validateVoucher(code, { collectionId: 'x', now }).reason).toBe('held');
+    expect(db.getVoucherByCode(code).held.tokens.map((t) => t.token)).toEqual(['w1']);
+    expect(db.dropVoucherHold(code, 'other', 'w1')).toBe(false);
+  });
+
+  it('restores a code spent on a cancelled order, keeping the history; never on a live one', () => {
+    const { codes } = db.createVoucherPool({ partner_name: 'P', prefix: 'REST', count: 1 });
+    const v = codes[0];
+    const a = orderedParty('א');
+    db.consumeVoucher(v.code, a.id);
+    expect(db.restoreVoucher(v.id)).toEqual({ error: 'order_active' });
+    db.cancelCollection(a.id);
+    const r = db.restoreVoucher(v.id);
+    expect(r.used_at).toBe(null);
+    expect(r.restored).toHaveLength(1);
+    expect(r.restored[0].order_id).toBe(a.id);
+    expect(db.restoreVoucher(v.id)).toEqual({ error: 'not_used' });
+    expect(db.validateVoucher(v.code).valid).toBe(true);
+  });
+
+  it('bills nothing for a code whose order was cancelled', () => {
+    const { pool, codes } = db.createVoucherPool({
+      partner_name: 'P',
+      prefix: 'BILL',
+      count: 3,
+      price_per_use: 50,
+    });
+    const a = orderedParty('א');
+    const b = orderedParty('ב');
+    db.consumeVoucher(codes[0].code, a.id);
+    db.consumeVoucher(codes[1].code, b.id);
+    db.cancelCollection(b.id);
+    const s = rules.poolSummary(pool, db.billingRows(pool.id));
+    expect(s).toMatchObject({ issued: 3, used: 1, cancelled: 1, unused: 1, owed: 50 });
+    expect(s.by_month.reduce((t, m) => t + m.used, 0)).toBe(1);
   });
 
   it('adds codes to a pool, edits its price, and searches its codes', () => {

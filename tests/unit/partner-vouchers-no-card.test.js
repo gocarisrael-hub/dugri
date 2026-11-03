@@ -72,6 +72,13 @@ describe('pay/init with no card provider', () => {
     expect(db.getCollection(c.id).order).toBeFalsy();
   });
 
+  it('with a code that does not validate: 503 first, and no order is written', async () => {
+    const c = db.createCollection('קוד מומצא');
+    const r = await payInit(c, { version: 'pickup', coupon: 'NOT-A-REAL-CODE' });
+    expect(r).toEqual({ status: 503, body: { error: 'card payment not configured' } });
+    expect(db.getCollection(c.id).order).toBeFalsy();
+  });
+
   it('a voucher on one pickup copy still completes, free', async () => {
     const { codes } = db.createVoucherPool({ partner_name: 'P', prefix: 'NOC', count: 2 });
     const c = db.createCollection('שובר');

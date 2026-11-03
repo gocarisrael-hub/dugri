@@ -14,6 +14,12 @@
 // hundreds to a few thousand rows, and a scan of those is microseconds. Every row
 // carries `key` (its compact form) so the scan compares strings, not regexes.
 
+// How long a hold may wait for its pay session to be RECORDED. pay/init takes the
+// hold before awaiting the card provider and records the session only after the
+// provider answers, so for those few seconds the session does not exist yet. A
+// provider call that never answers is cut off long before this.
+const HOLD_INIT_GRACE_MS = 5 * 60 * 1000;
+
 function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
   const pools = () => {
     if (!Array.isArray(_db.voucher_pools)) _db.voucher_pools = [];
@@ -152,11 +158,23 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
       return rows().filter((r) => r.pool_id === poolId);
     },
 
+    // The pool's rows as the money is counted: each a copy carrying
+    // `order_cancelled` — a code used on an order the owner has since cancelled
+    // (or deleted) is not billed to the reseller (rules.poolSummary, usageCsv).
+    // Read live from the collection, so un-cancelling an order bills it again.
+    billingRows(poolId) {
+      return this.vouchersInPool(poolId).map((r) => {
+        if (!r.used_at) return { ...r, order_cancelled: false };
+        const c = r.order_id ? this.getCollection(r.order_id) : null;
+        return { ...r, order_cancelled: !c || !!c.cancelled };
+      });
+    },
+
     // Every pool with its numbers, newest first.
     listVoucherPools() {
       return [...pools()]
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))
-        .map((p) => ({ ...p, summary: rules.poolSummary(p, this.vouchersInPool(p.id)) }));
+        .map((p) => ({ ...p, summary: rules.poolSummary(p, this.billingRows(p.id)) }));
     },
 
     // A pool's codes, newest first, narrowed by a substring of the code (in any
@@ -179,15 +197,15 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
     // partner_name } } or { valid: false, reason } with reason 'not_found' |
     // 'used' | 'void' | 'held'.
     //
-    // 'held' is a code sitting in ANOTHER collection's open card window (a
-    // delivery or an extra copy being paid for). Refused so two buyers cannot
-    // both pay the difference on one code; the hold runs out with the window.
+    // 'held' is a code sitting in ANOTHER collection's card window (a delivery
+    // or an extra copy being paid for) that can still settle — see holdIsLive.
+    // Refused so two buyers cannot both pay the difference on one code.
     validateVoucher(code, { collectionId = null, now = Date.now() } = {}) {
       const r = this.getVoucherByCode(code);
       if (!r) return { valid: false, reason: 'not_found' };
       if (r.used_at) return { valid: false, reason: 'used' };
       if (r.voided_at) return { valid: false, reason: 'void' };
-      if (r.held && r.held.collection_id !== collectionId && Date.parse(r.held.until) > now) {
+      if (r.held && r.held.collection_id !== collectionId && this.holdIsLive(r, now)) {
         return { valid: false, reason: 'held' };
       }
       const pool = this.getVoucherPool(r.pool_id);
@@ -203,32 +221,87 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
       };
     },
 
-    // Reserve a code for this collection's card window, until `untilMs`. Called
-    // by pay/init in the SAME synchronous step as its validation — before the
-    // await on the card provider — so two checkouts cannot both pass validation
-    // and then both open a window. Returns false when the code is not free for
-    // this collection. Saves.
-    holdVoucher(code, collectionId, untilMs, now = Date.now()) {
+    // CAN THE WINDOW HOLDING THIS CODE STILL SETTLE? A hold is TIED TO ITS PAY
+    // SESSIONS, not to a clock, because nothing on the settle path has an age
+    // limit: PeleCard's callback finds its session by token however late it
+    // comes, and the Tranzila sweep settles a window the buyer closed long ago.
+    // Closing the window (pay/cancel) proves nothing either — on Tranzila the
+    // buyer closes it BEFORE the sweep settles the charge. So the hold lives
+    // while any of its sessions could still turn into a paid order:
+    //
+    //   dead  the holding collection is gone, or has no order;
+    //   dead  that order is PAID — by this code (then it is used) or by another
+    //         window, after which no session of it can settle again;
+    //   live  a session it took is on that order, resolved or not (an
+    //         abandoned session can still settle);
+    //   live  a session it took is not recorded YET — pay/init is awaiting the
+    //         card provider — for HOLD_INIT_GRACE_MS;
+    //   dead  otherwise: a session evicted from the order can never be found
+    //         by a settle again.
+    //
+    // A hold on a window nobody will ever pay stays until the owner releases it
+    // (releaseVoucherHold, on the partners page). Only another collection is
+    // blocked by it — the holding collection may always use its own code.
+    holdIsLive(row, now = Date.now()) {
+      const h = row && row.held;
+      if (!h || !Array.isArray(h.tokens) || !h.tokens.length) return false;
+      const c = this.getCollection(h.collection_id);
+      if (!c || !c.order || c.order.paid) return false;
+      const sessions = (c.order.pelecard && c.order.pelecard.sessions) || [];
+      return h.tokens.some(
+        (t) =>
+          sessions.some((s) => s && s.token === t.token) ||
+          now - Date.parse(t.at) < HOLD_INIT_GRACE_MS
+      );
+    },
+
+    // Reserve a code for one card window of this collection (`token`, the pay
+    // session's own token). Called by pay/init in the SAME synchronous step as
+    // its validation — before the await on the card provider — so two checkouts
+    // cannot both pass validation and then both open a window. A collection may
+    // hold its own code from several windows; another collection only takes it
+    // over once every window of the old hold is dead. Returns false when the
+    // code is not free for this collection. Saves.
+    holdVoucher(code, collectionId, token, now = Date.now()) {
       const v = this.validateVoucher(code, { collectionId, now });
       if (!v.valid) return false;
       const r = this.getVoucherByCode(code);
-      r.held = { collection_id: collectionId, until: new Date(untilMs).toISOString() };
+      const entry = { token, at: new Date(now).toISOString() };
+      if (r.held && r.held.collection_id === collectionId && Array.isArray(r.held.tokens)) {
+        r.held.tokens.push(entry);
+      } else {
+        r.held = { collection_id: collectionId, tokens: [entry] };
+      }
       saveDb();
       return true;
     },
 
-    // Let go of every hold this collection has (its pay window closed, or the
-    // card provider refused to open one). Returns how many were released.
-    releaseVoucherHolds(collectionId) {
-      let n = 0;
-      for (const r of rows()) {
-        if (r.held && r.held.collection_id === collectionId && !r.used_at) {
-          r.held = null;
-          n++;
-        }
-      }
-      if (n) saveDb();
-      return n;
+    // Undo ONE window's part of a hold — the one pay/init just took, when the
+    // card provider refused to open that window. Every other window of the hold,
+    // which may still be settling, keeps it. Returns whether anything changed.
+    dropVoucherHold(code, collectionId, token) {
+      const r = this.getVoucherByCode(code);
+      const h = r && r.held;
+      if (!h || h.collection_id !== collectionId || !Array.isArray(h.tokens)) return false;
+      const before = h.tokens.length;
+      h.tokens = h.tokens.filter((t) => t.token !== token);
+      if (h.tokens.length === before) return false;
+      if (!h.tokens.length) r.held = null;
+      saveDb();
+      return true;
+    },
+
+    // Admin: let go of a hold whose window will never be paid (the buyer gave up
+    // and started a new order elsewhere). The owner's call, because only she can
+    // know the window is dead: a settle has no age limit. Returns the row, null
+    // for an unknown id, or { error: 'not_held' }.
+    releaseVoucherHold(id) {
+      const r = this.getVoucherById(id);
+      if (!r) return null;
+      if (!r.held || r.used_at) return { error: 'not_held' };
+      r.held = null;
+      saveDb();
+      return r;
     },
 
     // SPEND A VOUCHER ON A PAID ORDER. Called ONLY from markPaid, inside the same
@@ -240,7 +313,7 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
     // in one Node process, so this check-then-set cannot interleave with another:
     // two orders settling on one code are settled one after the other and only
     // the FIRST finds used_at empty. The hold above makes a second one rare (it
-    // needs a window that outlived its hold); if it happens anyway, the second
+    // needs a window that settles after its hold was released by the owner); if it happens anyway, the second
     // order's money has already moved, so it stays paid — but the code is not
     // spent twice, the reseller is billed once, and it comes back as 'conflict'
     // for markPaid to put on the order.
@@ -259,6 +332,28 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
       r.order_id = orderId;
       r.held = null;
       return 'consumed';
+    },
+
+    // Admin: RESTORE a code spent on an order that was cancelled (or deleted) —
+    // the buyer refunded, the game never made. The code is unused again and can
+    // be handed out or redeemed; the use is kept in `restored` so the history of
+    // who spent it, and when, survives. Refused while that order still stands:
+    // un-spending a live order's code would let one code buy two games.
+    // Returns the row, null for an unknown id, or { error } — 'not_used' |
+    // 'order_active'.
+    restoreVoucher(id) {
+      const r = this.getVoucherById(id);
+      if (!r) return null;
+      if (!r.used_at) return { error: 'not_used' };
+      const c = r.order_id ? this.getCollection(r.order_id) : null;
+      if (c && !c.cancelled) return { error: 'order_active' };
+      if (!Array.isArray(r.restored)) r.restored = [];
+      r.restored.push({ used_at: r.used_at, order_id: r.order_id, restored_at: nowIso() });
+      r.used_at = null;
+      r.order_id = null;
+      r.held = null;
+      saveDb();
+      return r;
     },
 
     // Admin: void an unused code (the reseller lost it, or it leaked). Returns the

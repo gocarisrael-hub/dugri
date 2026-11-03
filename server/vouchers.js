@@ -162,13 +162,21 @@ const round2 = (n) => Math.round(n * 100) / 100;
 //   (contrast partner coupons, which freeze the rate on the order): the owner
 //   does not know the price yet, and codes used before she types it must be
 //   billed at it, not at the 0 that stood in for "not agreed".
+//
+//   A code used on an order that was later CANCELLED (row.order_cancelled, set
+//   by the store from the live collection) is not billed: no game was sold. It
+//   is counted apart as `cancelled`, out of `used`, `owed` and the months — the
+//   owner can restore it to unused from the partners page.
 function poolSummary(pool, rows) {
   const price = Number(pool && pool.price_per_use) || 0;
   let used = 0;
+  let cancelled = 0;
   let voided = 0;
   const months = new Map();
   for (const r of rows) {
-    if (r.used_at) {
+    if (r.used_at && r.order_cancelled) {
+      cancelled++;
+    } else if (r.used_at) {
       used++;
       const m = israelMonth(r.used_at);
       months.set(m, (months.get(m) || 0) + 1);
@@ -182,7 +190,8 @@ function poolSummary(pool, rows) {
   return {
     issued: rows.length,
     used,
-    unused: rows.length - used - voided,
+    cancelled,
+    unused: rows.length - used - cancelled - voided,
     voided,
     price_per_use: price,
     price_set: price > 0,
@@ -215,7 +224,8 @@ function codesCsv(pool, rows) {
 }
 
 // What the reseller is invoiced for: every USED code, when, which order, and
-// the price. `orderRefOf(row)` turns a row into the printed order number (the
+// the price. A code whose order was cancelled stays on the list — the reseller
+// may ask about it — but says so, and is priced 0. `orderRefOf(row)` turns a row into the printed order number (the
 // route knows the collections; this module does not).
 function usageCsv(pool, rows, orderRefOf = () => '') {
   const price = Number(pool.price_per_use) || 0;
@@ -223,14 +233,15 @@ function usageCsv(pool, rows, orderRefOf = () => '') {
     .filter((r) => r.used_at)
     .sort((a, b) => String(a.used_at).localeCompare(String(b.used_at)));
   return csv([
-    ['code', 'partner', 'used_at', 'month', 'order', 'price_per_use'],
+    ['code', 'partner', 'used_at', 'month', 'order', 'price_per_use', 'note'],
     ...used.map((r) => [
       r.code,
       pool.partner_name,
       r.used_at,
       israelMonth(r.used_at),
       orderRefOf(r) || '',
-      price,
+      r.order_cancelled ? 0 : price,
+      r.order_cancelled ? 'order cancelled, not billed' : '',
     ]),
   ]);
 }
@@ -264,7 +275,29 @@ function makeMissLimiter({
   };
 }
 
+// AN ORDER AS THE STAFF KEY MAY SEE IT. Every coupon, friend code and partner
+// voucher on a collection is a bearer code — whoever reads it can spend it — and
+// a voucher left in an abandoned card window is still unused. The staff key
+// works the orders, not the money, so the codes and the partner come out of
+// everything the orders routes hand it. Pure: returns a copy, never mutates.
+function collectionForStaff(c) {
+  if (!c || !c.order) return c;
+  const strip = (holder) =>
+    holder && Array.isArray(holder.sessions)
+      ? { ...holder, sessions: holder.sessions.map((s) => ({ ...s, coupon: null })) }
+      : holder;
+  const order = { ...c.order, coupon: null, discount_pct: null, pelecard: strip(c.order.pelecard) };
+  delete order.voucher;
+  delete order.voucher_conflict;
+  delete order.friend_coupon_conflict;
+  delete order.commission;
+  if (order.shipping)
+    order.shipping = { ...order.shipping, pelecard: strip(order.shipping.pelecard) };
+  return { ...c, order };
+}
+
 module.exports = {
+  collectionForStaff,
   ALPHABET,
   GROUPS,
   GROUP_LEN,

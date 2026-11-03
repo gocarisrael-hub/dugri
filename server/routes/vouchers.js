@@ -30,7 +30,8 @@ function registerPartnerVouchers(app, { requireAdmin, db, voucherRules }) {
       used_at: row.used_at,
       voided_at: row.voided_at,
       void_reason: row.void_reason || '',
-      held: !row.used_at && row.held && Date.parse(row.held.until) > Date.now(),
+      held: !row.used_at && db.holdIsLive(row),
+      restored: Array.isArray(row.restored) ? row.restored.length : 0,
       order_no: c ? db.orderRef(c) : null,
       order_link: c ? '/collect.html?c=' + c.id + '&k=' + c.owner_token : null,
       order_cancelled: c ? !!c.cancelled : false,
@@ -103,7 +104,7 @@ function registerPartnerVouchers(app, { requireAdmin, db, voucherRules }) {
     const codes = db.listVouchers(pool.id, { q: req.query.q, status }).map(present);
     res.json({
       pool,
-      summary: voucherRules.poolSummary(pool, db.vouchersInPool(pool.id)),
+      summary: voucherRules.poolSummary(pool, db.billingRows(pool.id)),
       codes,
     });
   });
@@ -140,7 +141,7 @@ function registerPartnerVouchers(app, { requireAdmin, db, voucherRules }) {
     sendCsv(
       res,
       pool.prefix + '-usage.csv',
-      voucherRules.usageCsv(pool, db.vouchersInPool(pool.id), orderRefOf)
+      voucherRules.usageCsv(pool, db.billingRows(pool.id), orderRefOf)
     );
   });
 
@@ -149,6 +150,28 @@ function registerPartnerVouchers(app, { requireAdmin, db, voucherRules }) {
     if (!requireAdmin(req, res)) return;
     noStore(res);
     const r = db.voidVoucher(req.params.id, (req.body || {}).reason);
+    if (!r) return res.status(404).json({ error: 'not found' });
+    if (r.error) return res.status(409).json({ error: r.error });
+    res.json({ code: present(r) });
+  });
+
+  // Restore a code spent on a cancelled (or deleted) order: unused again, the
+  // use kept in its history. 409 'order_active' while that order still stands.
+  app.post('/api/admin/partner-vouchers/:id/restore', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    noStore(res);
+    const r = db.restoreVoucher(req.params.id);
+    if (!r) return res.status(404).json({ error: 'not found' });
+    if (r.error) return res.status(409).json({ error: r.error });
+    res.json({ code: present(r) });
+  });
+
+  // Let go of a hold whose card window will never be paid. The owner's call: no
+  // settle path has an age limit, so the server cannot know the window is dead.
+  app.post('/api/admin/partner-vouchers/:id/release-hold', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    noStore(res);
+    const r = db.releaseVoucherHold(req.params.id);
     if (!r) return res.status(404).json({ error: 'not found' });
     if (r.error) return res.status(409).json({ error: r.error });
     res.json({ code: present(r) });

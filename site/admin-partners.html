@@ -284,7 +284,22 @@
         'bad price_per_use': 'מחיר לא תקין.',
         already_used: 'הקוד כבר נוצל, אי אפשר לבטל אותו.',
         forbidden: 'מפתח גישה שגוי.',
+        order_active: 'ההזמנה שנוצל בה הקוד עדיין פעילה. אפשר להחזיר קוד רק מהזמנה שבוטלה.',
+        not_held: 'הקוד כבר לא שמור לתשלום.',
+        not_used: 'הקוד לא נוצל.',
       };
+      // One action on a code, then reload. Shared by void, restore and release.
+      async function codeAction(id, action, body, failText) {
+        try {
+          await call('/api/admin/partner-vouchers/' + id + '/' + action, {
+            method: 'POST',
+            body: JSON.stringify(body || {}),
+          });
+          load();
+        } catch (e) {
+          alert(ERR_HE[e.message] || failText);
+        }
+      }
       const STATUS_HE = { unused: 'לא נוצל', used: 'נוצל', void: 'בוטל' };
 
       function el(tag, props = {}, ...kids) {
@@ -351,6 +366,7 @@
             card(s.used, 'נוצלו', 'pool-used'),
             card(s.unused, 'לא נוצלו', 'pool-unused'),
             card(s.voided, 'בוטלו', 'pool-voided'),
+            card(s.cancelled, 'בהזמנות שבוטלו (לא לחיוב)', 'pool-cancelled'),
             card(
               s.price_set ? shekel(s.owed) : 'לא נקבע',
               s.price_set ? 'לחיוב (' + shekel(s.price_per_use) + ' לקוד)' : 'לחיוב: המחיר לא נקבע',
@@ -571,7 +587,35 @@
               }
             };
             act.append(b);
-            if (c.held) act.append(el('span', { class: 'muted', text: ' בתשלום פתוח' }));
+            // Held by a card window that can still settle. Only the owner can
+            // know it never will (no settle has an age limit), so she frees it.
+            if (c.held) {
+              const free = el('button', {
+                class: 'ghost',
+                type: 'button',
+                text: 'שחרור מתשלום פתוח',
+                'data-testid': 'code-release',
+              });
+              free.onclick = () => {
+                if (!confirm('לשחרר את הקוד? רק אם ברור שהתשלום הפתוח לא יושלם.')) return;
+                codeAction(c.id, 'release-hold', {}, 'השחרור נכשל.');
+              };
+              act.append(' ', free);
+            }
+          } else if (c.status === 'used' && c.order_cancelled) {
+            // The order was cancelled: not billed, and the code can be handed out
+            // again. The use stays in the code's history.
+            const back = el('button', {
+              class: 'ghost',
+              type: 'button',
+              text: 'החזרת הקוד',
+              'data-testid': 'code-restore',
+            });
+            back.onclick = () => {
+              if (!confirm('להחזיר את הקוד לשימוש? הוא יחזור להיות לא מנוצל.')) return;
+              codeAction(c.id, 'restore', {}, 'ההחזרה נכשלה.');
+            };
+            act.append(back);
           } else if (c.status === 'void' && c.void_reason) {
             act.append(el('span', { class: 'muted', text: c.void_reason }));
           }

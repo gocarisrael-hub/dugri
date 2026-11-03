@@ -137,6 +137,19 @@ function copiesOf(order) {
   return Number.isFinite(n) && n >= 1 ? n : 1;
 }
 
+// The copy a PARTNER VOUCHER paid for (server/vouchers.js): always exactly one,
+// on an order the voucher was spent on. On a card-paid voucher order (delivery,
+// extra copies) the card bought the rest, so that copy is noted with the other
+// voucher copies and not counted as a card sale.
+function voucherCopyOf(order) {
+  return order && order.voucher ? 1 : 0;
+}
+
+// What the card itself paid for, in copies.
+function paidCopiesOf(order) {
+  return Math.max(0, copiesOf(order) - voucherCopyOf(order));
+}
+
 const agorot = (nis) => Math.round(Number(nis) * 100);
 
 // The upgrade's own charge, when the order bought delivery after paying.
@@ -269,8 +282,12 @@ function monthlyRevenue({
         mo.charges += 1;
         mo.orders += 1;
         mo.site_orders += 1;
-        mo.copies += copiesOf(o);
-        mo.site_copies += copiesOf(o);
+        mo.copies += paidCopiesOf(o);
+        mo.site_copies += paidCopiesOf(o);
+        if (voucherCopyOf(o)) {
+          mo.voucher_orders += 1;
+          mo.voucher_copies += voucherCopyOf(o);
+        }
         mo.sources.add(o.paid_method === 'pelecard' ? 'pelecard' : 'orders');
       } else if (month && o.paid_method === 'coupon' && !c.cancelled) {
         // A 100% coupon: no money moved, so it is not revenue, a charge or a
@@ -411,8 +428,12 @@ function monthlyRevenue({
         if (fullyRefunded) continue;
         mo.orders += 1;
         mo.site_orders += 1;
-        mo.copies += copiesOf(ch.site.c.order);
-        mo.site_copies += copiesOf(ch.site.c.order);
+        mo.copies += paidCopiesOf(ch.site.c.order);
+        mo.site_copies += paidCopiesOf(ch.site.c.order);
+        if (voucherCopyOf(ch.site.c.order)) {
+          mo.voucher_orders += 1;
+          mo.voucher_copies += voucherCopyOf(ch.site.c.order);
+        }
         continue;
       }
       // No site order recorded this index: a B2B charge typed into the terminal,

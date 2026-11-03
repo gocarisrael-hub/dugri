@@ -1526,10 +1526,14 @@ app.get('/api/admin/collections', (req, res) => {
   // `unsubscribed` rides along per row: a buyer who has stopped her mail gets no
   // receipt, no "ready" and no reminder, and the owner needs to see WHY rather
   // than discover that email is "broken" for one customer.
+  // The staff key gets no coupon, friend code or partner voucher: each is a
+  // bearer code, and a voucher left in an abandoned card window is still unused
+  // (voucherRules.collectionForStaff).
+  const forRole = req.adminRole === 'staff' ? voucherRules.collectionForStaff : (c) => c;
   res.json({
     collections: db
       .listAllCollections()
-      .map((c) => ({ ...c, unsubscribed: unsubscribe.isUnsubscribed(c.owner_email) })),
+      .map((c) => forRole({ ...c, unsubscribed: unsubscribe.isUnsubscribed(c.owner_email) })),
   });
 });
 
@@ -1629,7 +1633,12 @@ app.patch('/api/admin/collections/:id', (req, res) => {
   }
   const c = db.adminUpdateCollection(req.params.id, b);
   if (!c) return res.status(404).json({ error: 'not found' });
-  res.json({ ok: true, collection: { ...c, status: db.effectiveStatus(c) } });
+  const out = { ...c, status: db.effectiveStatus(c) };
+  // Same rule as the list: no bearer codes for the staff key.
+  res.json({
+    ok: true,
+    collection: req.adminRole === 'staff' ? voucherRules.collectionForStaff(out) : out,
+  });
 });
 
 // Agent D: the playbook routes, in server/routes/platform.js.
@@ -4118,17 +4127,11 @@ app.post('/api/collections/:id/pay/cancel', (req, res) => {
   const token = req.body && req.body.owner_token;
   const n = db.abandonPaySessions(req.params.id, token);
   if (n === null) return res.status(403).json({ error: 'forbidden' });
-  // The window is closed, so a partner voucher it was holding is free again.
-  db.releaseVoucherHolds(req.params.id);
+  // A partner voucher this window holds is deliberately NOT let go here: on
+  // Tranzila the buyer closes the window BEFORE the sweep settles her charge, so
+  // a closed window can still be paying with the code (db.holdIsLive).
   res.json({ cancelled: n });
 });
-
-// A PARTNER VOUCHER IN AN OPEN CARD WINDOW is held for that collection this long
-// (db.holdVoucher), so a second checkout cannot pay the difference on the same
-// code while the first is still paying. Longer than a pay session's own TTL on
-// purpose: a buyer who pays slowly must not lose the code to someone else under
-// her, and the only person a hold can block is someone else holding her code.
-const VOUCHER_HOLD_MS = positiveNumber(process.env.VOUCHER_HOLD_MS, 2 * 60 * 60 * 1000);
 
 // Owner-only: start a PeleCard card payment for this collection's order.
 // Persists/refreshes the order first (same validation as /order), then asks
@@ -4179,8 +4182,13 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // a partner voucher on one pickup copy), and a free order needs neither a card
   // provider nor a callback address. So those two refusals wait, for a coupon
   // only, until a card window is actually about to open (below). Without a code
-  // nothing changes: refused here, before anything is written.
-  if (!b0(req).coupon) {
+  // nothing changes: refused here, before anything is written — and the same for
+  // a code that does not validate, so a made-up code cannot get an order written
+  // and its one-time emails sent on a server that could never charge it.
+  if (
+    (!provider || !base) &&
+    !(b0(req).coupon && db.validateCoupon(b0(req).coupon, { collectionId: req.params.id }).valid)
+  ) {
     if (!provider) return res.status(503).json({ error: 'card payment not configured' });
     if (!base) return res.status(503).json({ error: 'payment base url not configured' });
   }
@@ -4343,7 +4351,9 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // synchronous step, so no other checkout can pass validation for the same code
   // in between; the await on the card provider below is where they could
   // interleave, and by then the code is already this collection's.
-  if (voucher && !db.holdVoucher(couponCode, c.id, Date.now() + VOUCHER_HOLD_MS)) {
+  // The hold is tied to THIS window's token (db.holdIsLive): it lasts while the
+  // window can still settle, not for a fixed time.
+  if (voucher && !db.holdVoucher(couponCode, c.id, paramToken)) {
     return res.status(400).json({ error: 'invalid coupon', reason: 'held' });
   }
   try {
@@ -4372,8 +4382,9 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
-    // No window opened, so nothing is paying with the voucher: let it go.
-    if (voucher) db.releaseVoucherHolds(c.id);
+    // No window opened, so THIS window's part of the hold goes. Only this one:
+    // an earlier window of the same collection may still be settling with it.
+    if (voucher) db.dropVoucherHold(couponCode, c.id, paramToken);
     // A 502 WITH NO LOG IS AN INVISIBLE FAILURE, and this one leaves nothing
     // behind to find later: the pay session is recorded only AFTER init()
     // returns, so there is no token and no session for any sweep to pick up.
