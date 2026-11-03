@@ -266,3 +266,15 @@ test('once paid, the order is a delivery with its courier booked, and on the sti
   await expect(page.getByTestId('pickup-stickers')).toBeVisible();
   await expect(page.locator('#stickerCount')).toHaveText('1');
 });
+
+// The link is money: the staff key never sees the button or the dialog, and the
+// orders page still works for her (js/admin-role.js strips every [data-money]).
+test('the worker gets no link button, and her orders page still loads', async ({ page }) => {
+  const name = uniq('עובדת');
+  await injectRows(page, [row(name, { version: 'pickup' })]);
+  await page.goto('/admin.html?key=dugri-staff');
+  await expect(page.locator('tbody tr', { hasText: name })).toBeVisible();
+  await expect(page.locator('#stats')).toBeVisible();
+  await expect(page.getByTestId('delivery-link-btn')).toHaveCount(0);
+  await expect(page.getByTestId('dlink')).toHaveCount(0);
+});

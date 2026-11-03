@@ -1761,12 +1761,16 @@
         dlEl('dl-err').hidden = true;
         dlEl('dl-live').hidden = true;
         const dlg = dlEl('dlink');
+        if (!dlg) return;
         if (!dlg.open) dlg.showModal();
         const st = await dlCall('GET');
         if (st) dlShow(st);
       }
       (function wireDeliveryLink() {
         const dlg = dlEl('dlink');
+        // Gone for the staff key: js/admin-role.js removes every [data-money]
+        // element, this dialog included — the link is the owner's alone.
+        if (!dlg) return;
         dlEl('dl-close').onclick = () => dlg.close();
         // A repaint picks up the link state the dialog changed.
         dlg.addEventListener('close', () => {
@@ -3324,7 +3328,7 @@
           }
           // …and for a paid pickup order already in production, the owner's
           // add-delivery payment link (openDeliveryLink).
-          if (order && deliveryLinkOffered(c)) {
+          if (order && deliveryLinkOffered(c) && document.getElementById('dlink')) {
             tdAddress.appendChild(deliveryLinkButton(c));
           }
 
