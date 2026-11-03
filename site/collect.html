@@ -7516,7 +7516,9 @@
         // Applied coupon (owner previewed + accepted). null = no coupon. Kept in
         // state so the discounted price is re-derived when the version changes and
         // so `coupon` is included when the card button POSTs pay/init.
-        let appliedCoupon = null; // { code, discount_pct }
+        // A partner voucher arrives as { code, discount_pct: 0, voucher: true,
+        // credit_cap }: one copy free, worth at most the pickup price.
+        let appliedCoupon = null; // { code, discount_pct, voucher?, credit_cap? }
         // Copies of the same deck. No business cap (the owner asked for none); the
         // 999 ceiling is input validation, so a slipped keypress can't become a
         // five-figure charge. The server sanitises independently — this is UI.
@@ -7632,6 +7634,13 @@
         function renderCouponMsg() {
           if (!appliedCoupon) return;
           const ship = payable ? shippingIn(selectedVersion()) : 0;
+          if (appliedCoupon.voucher) {
+            setCouponMsg(
+              'קוד המתנה הופעל: עותק אחד עלינו' + (ship ? ' (המשלוח בתשלום)' : ''),
+              'ok'
+            );
+            return;
+          }
           setCouponMsg(
             'קופון הופעל: ' +
               appliedCoupon.discount_pct +
@@ -7684,8 +7693,24 @@
             // money only and the delivery fee is added back whole. If the two ever
             // disagree, the buyer is shown one price and charged another.
             const shipping = shippingIn(v);
+            const gameMoney = Math.max(0, base - shipping);
+            // A PARTNER VOUCHER is one copy off, at most the pickup price — the
+            // credit pay/init takes (db.voucherCreditFor in server/db.js). A pdf is
+            // cheaper than pickup, so it comes to 0; extra copies and the postage
+            // are paid. A locked order's per-copy price is not on the page, so its
+            // whole game money stands in for it (one copy is what those are).
+            const credit = appliedCoupon.voucher
+              ? Math.max(
+                  0,
+                  Math.min(
+                    Number(appliedCoupon.credit_cap) || 0,
+                    locked ? gameMoney : unit,
+                    gameMoney
+                  )
+                )
+              : 0;
             const discounted =
-              Math.round(Math.max(0, base - shipping) * (1 - appliedCoupon.discount_pct / 100)) +
+              Math.max(0, Math.round(gameMoney * (1 - appliedCoupon.discount_pct / 100)) - credit) +
               shipping;
             // Signed, like the price beside it — and through setAmount, so its ₪
             // is isolated with its own digits instead of drifting to the far side
@@ -7766,7 +7791,13 @@
           if (discount) {
             el.appendChild(document.createTextNode(' − '));
             el.appendChild(amountNode(discount));
-            el.appendChild(document.createTextNode(' הנחה (' + appliedCoupon.discount_pct + '%)'));
+            el.appendChild(
+              document.createTextNode(
+                appliedCoupon.voucher
+                  ? ' קוד מתנה (עותק אחד)'
+                  : ' הנחה (' + appliedCoupon.discount_pct + '%)'
+              )
+            );
           }
           el.classList.remove('hidden');
         }
@@ -8070,7 +8101,12 @@
           // wrong, so "פג תוקף" would send her to check the calendar.
           used_up: 'הקופון נוצל במלואו',
           // A personal friend code is single-use: once a paid order has spent it.
+          // A partner's gift code (voucher) is single-use the same way.
           used: 'הקופון הזה כבר נוצל',
+          // A partner's gift code the shop cancelled (reported lost).
+          void: 'הקוד הזה בוטל',
+          // A partner's gift code sitting in another checkout's open payment.
+          held: 'הקוד הזה בשימוש בתשלום פתוח אחר. נסו שוב מאוחר יותר',
         };
         // The fold over the field (drawn only in the redesign; the live page hides
         // the toggle and ignores .open). openCoupon only ever opens: it runs when a
@@ -8114,7 +8150,9 @@
               body: JSON.stringify({ owner_token: ownerToken, code }),
             });
             if (r.valid) {
-              appliedCoupon = { code, discount_pct: r.discount_pct };
+              appliedCoupon = r.voucher
+                ? { code, discount_pct: 0, voucher: true, credit_cap: r.credit_cap }
+                : { code, discount_pct: r.discount_pct };
               openCoupon();
               couponInput.disabled = true;
               couponApply.classList.add('hidden');
@@ -8125,7 +8163,7 @@
               // also tick shipping AFTER applying the code, and a sentence written
               // once at apply-time would then be stale either way round.
               renderTotal();
-              track('coupon_applied', { discount_pct: r.discount_pct });
+              track('coupon_applied', { discount_pct: r.discount_pct, voucher: !!r.voucher });
             } else {
               setCouponMsg(COUPON_REASONS[r.reason] || 'קוד לא קיים', 'err');
               // A carried-in code that no longer works (spent, expired) is dropped,
@@ -8490,7 +8528,9 @@
                   ? 'הקופון נוצל במלואו'
                   : why === 'used'
                     ? 'הקופון הזה כבר נוצל'
-                    : 'הקופון אינו תקף יותר';
+                    : why === 'held' || why === 'void'
+                      ? COUPON_REASONS[why]
+                      : 'הקופון אינו תקף יותר';
               clearCoupon();
             } else if (err.status === 409) {
               // already paid / an open payment window — the server sends a Hebrew

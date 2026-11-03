@@ -280,6 +280,11 @@
         background: #efe9df;
         color: #6b645b;
       }
+      /* Whose code paid for the order (a partner voucher). */
+      .partner-tag {
+        background: #efe9df;
+        color: #3f3a33;
+      }
       .prod-error {
         background: #f3e6e3;
         color: #6f8a6a;
@@ -3351,6 +3356,22 @@
             badge.className = 'pill open';
             badge.textContent = 'שולם ✅';
             tdPaid.appendChild(badge);
+            // A PARTNER'S CODE paid for this order (a reseller such as Hi Tech
+            // Zone, billed per code used): the partner's name, so the owner sees
+            // whose customer it is. data-money: money business, stripped for the
+            // staff key by js/admin-role.js.
+            if (order.voucher || order.voucher_conflict) {
+              const tag = document.createElement('span');
+              tag.className = 'pill partner-tag';
+              tag.setAttribute('data-money', '');
+              tag.setAttribute('data-testid', 'order-partner-tag');
+              tag.textContent = order.voucher
+                ? order.voucher.partner_name || 'קוד שותף'
+                : 'קוד שותף שכבר נוצל';
+              tag.title = (order.voucher || order.voucher_conflict).code || '';
+              tdPaid.appendChild(document.createTextNode(' '));
+              tdPaid.appendChild(tag);
+            }
           } else {
             // Read-only on purpose: an order becomes paid only through a real
             // money event (a verified card payment or a 100%-coupon order), so

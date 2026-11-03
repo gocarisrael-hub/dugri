@@ -20,6 +20,11 @@ const deliveryLinkStore = require('./stores/delivery-link');
 // The friend coupon's pure rules (code format, email, dates, admin sums), handed
 // to commerceStore.friendCouponsBlock below. Requires nothing but node's crypto.
 const friendCouponRules = require('./friend-coupons');
+// Agent A: partner voucher pools (a reseller's single-use codes). The pure rules,
+// and the store block spread into `db` below. Neither requires anything but
+// node's crypto.
+const voucherRules = require('./vouchers');
+const vouchersStore = require('./stores/vouchers');
 // Reads words from per-collection files when the data file says they are there
 // (docs/storage-plan.md, phase 1a). Requires only fs and path.
 const wordFiles = require('./word-files');
@@ -449,6 +454,7 @@ function pushPaySession(
     provider,
     priceKey,
     feeAtInit,
+    voucherCredit,
   }
 ) {
   const p = holder || { sessions: [] };
@@ -482,6 +488,10 @@ function pushPaySession(
       // with a `total` that no longer equals what the card was charged and nobody
       // would otherwise know. Null when the purchase carries no fee.
       fee_at_init: Number.isFinite(Number(feeAtInit)) ? Number(feeAtInit) : null,
+      // What a partner voucher took off this window's charge (shekels), or null
+      // for no voucher. Kept so the settle path can recompute this window's charge
+      // (expectedChargeNow) and so the order records the credit it was sold at.
+      voucher_credit: Number(voucherCredit) > 0 ? Number(voucherCredit) : null,
       resolved: false,
       // Per-session timestamp: bounds the in-flight window (see TTL) and is the
       // basis for evicting only OLD, RESOLVED sessions when over the cap.
@@ -630,6 +640,26 @@ function deliveryFeeFor(version, quantity, oneBox) {
 function orderTotal(version, quantity, unitPrice, oneBox) {
   const unit = Number.isInteger(unitPrice) && unitPrice >= 1 ? unitPrice : versionPrice(version);
   return unit * sanitizeQuantity(quantity) + deliveryFeeFor(version, quantity, oneBox);
+}
+
+// WHAT A PARTNER VOUCHER TAKES OFF THIS ORDER, in shekels: one copy, at most
+// today's pickup price, never more than the game money (server/vouchers.js has
+// the per-version reasoning). Read by pay/init when it prices a voucher, and
+// stored on the pay session, so the settle path checks the charge against the
+// credit the buyer was actually quoted.
+function voucherCreditFor(order) {
+  if (!order) return 0;
+  const fee =
+    Number.isInteger(order.delivery_fee) && order.delivery_fee > 0 ? order.delivery_fee : 0;
+  const unit =
+    Number.isInteger(order.unit_price) && order.unit_price >= 1
+      ? order.unit_price
+      : versionPrice(order.version);
+  return voucherRules.voucherCredit({
+    unitPrice: unit,
+    pickupPrice: versionPrice('pickup'),
+    gameMoney: Math.max(0, Number(order.total) - fee),
+  });
 }
 
 // --- free word quota ---------------------------------------------------------
@@ -2448,6 +2478,7 @@ const db = {
       provider,
       priceKey,
       feeAtInit,
+      voucherCredit,
     } = {}
   ) {
     const c = this.getCollection(id);
@@ -2462,6 +2493,7 @@ const db = {
       provider,
       priceKey,
       feeAtInit,
+      voucherCredit,
     });
     saveDb();
     return true;
@@ -3008,6 +3040,36 @@ const db = {
         );
       }
     }
+    // A PARTNER VOUCHER is spent here too, for the same reason and under the same
+    // guard (consumeVoucher in server/stores/vouchers.js). The order records
+    // WHOSE code paid for it — the pool and the partner — so the orders list and
+    // the revenue page can say "Hi Tech Zone" without a lookup that a later
+    // rename or a deleted pool could break. On a conflict the order carries
+    // `voucher_conflict` instead, and no `voucher`: the reseller is billed for
+    // the code once, on the order that spent it.
+    if (meta.coupon !== undefined && c.order.coupon) {
+      const spent = this.consumeVoucher(c.order.coupon, c.id);
+      if (spent === 'consumed' || spent === 'already') {
+        const v = this.getVoucherByCode(c.order.coupon);
+        const pool = v ? this.getVoucherPool(v.pool_id) : null;
+        c.order.voucher = {
+          code: v ? v.code : c.order.coupon,
+          pool_id: v ? v.pool_id : null,
+          partner_name: pool ? pool.partner_name : '',
+          credit: meta.voucher_credit != null ? Number(meta.voucher_credit) : null,
+        };
+      } else if (spent === 'conflict') {
+        c.order.voucher_conflict = { code: c.order.coupon, at: nowIso() };
+        console.error(
+          '[voucher] ' +
+            orderRef(c) +
+            ': paid with ' +
+            c.order.coupon +
+            ', which another order had already used. The charge stands; the code ' +
+            'was not spent twice.'
+        );
+      }
+    }
     if (c.order.coupon) {
       const cp = this.getCouponByCode(c.order.coupon);
       if (cp && cp.commission_type) {
@@ -3395,6 +3457,8 @@ const db = {
     normCode,
     rules: friendCouponRules,
   }),
+  // Agent A: partner voucher pools, in server/stores/vouchers.js.
+  ...vouchersStore.vouchersBlock({ _db, saveDb, uid, nowIso, rules: voucherRules }),
   // Agent D: reminder + order-notified state, in server/stores/platform.js.
   ...platformStore({ _db, saveDb, nowIso, reminders, effectiveStatus, REMINDER_AFTER_MS }),
 
@@ -3440,6 +3504,7 @@ module.exports.deliveryFee = deliveryFee;
 module.exports.deliveryExceptions = deliveryExceptions;
 module.exports.sanitizeQuantity = sanitizeQuantity;
 module.exports.orderTotal = orderTotal;
+module.exports.voucherCreditFor = voucherCreditFor;
 // The box choice: how many boxes an order ships in and what that does to its fee.
 module.exports.boxesFor = boxesFor;
 module.exports.orderBoxes = orderBoxes;

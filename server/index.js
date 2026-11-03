@@ -72,6 +72,9 @@ const catalogRoutes = require('./routes/catalog');
 // Agent A's routes (server/routes/commerce.js), registered the same way.
 const commerceRoutes = require('./routes/commerce');
 const deliveryLinkRoutes = require('./routes/delivery-link');
+// Agent A: partner voucher pools — the admin routes and the pure rules.
+const vouchersRoutes = require('./routes/vouchers');
+const voucherRules = require('./vouchers');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -1508,6 +1511,16 @@ function couponRateOk(key) {
 function clientKey(req) {
   return paymentClientIp(req);
 }
+
+// WRONG PARTNER-VOUCHER GUESSES, per client (server/vouchers.js makeMissLimiter).
+// A voucher is worth a whole game, so a client that misses ten voucher-shaped
+// codes in an hour is refused further tries at the checkout preview AND at
+// pay/init. Only misses count, and only on codes that carry a pool's prefix, so
+// an owner with a working code — or fumbling her own coupon — never meets it.
+const voucherMissRate = voucherRules.makeMissLimiter({
+  limit: Number(process.env.VOUCHER_MISS_LIMIT) || 10,
+  windowMs: 60 * 60 * 1000,
+});
 app.get('/api/admin/collections', (req, res) => {
   if (!requireAdmin(req, res)) return;
   // `unsubscribed` rides along per row: a buyer who has stopped her mail gets no
@@ -2713,7 +2726,11 @@ commerceRoutes.registerCoupons(app, { requireAdmin, db });
 commerceRoutes.registerRevenue(app, { requireAdmin, db, tranzila, revenue });
 
 // Agent A: the checkout's coupon preview, in server/routes/commerce.js.
-commerceRoutes.registerCouponValidate(app, { db, couponRateOk, clientKey });
+commerceRoutes.registerCouponValidate(app, { db, couponRateOk, clientKey, voucherMissRate });
+
+// Agent A: partner voucher pools (a reseller's single-use codes), in
+// server/routes/vouchers.js.
+vouchersRoutes.registerPartnerVouchers(app, { requireAdmin, db, voucherRules });
 
 // Agent A: the friend coupon (offer, issue, admin list), in server/routes/commerce.js.
 commerceRoutes.registerFriendCoupons(app, {
@@ -4101,8 +4118,17 @@ app.post('/api/collections/:id/pay/cancel', (req, res) => {
   const token = req.body && req.body.owner_token;
   const n = db.abandonPaySessions(req.params.id, token);
   if (n === null) return res.status(403).json({ error: 'forbidden' });
+  // The window is closed, so a partner voucher it was holding is free again.
+  db.releaseVoucherHolds(req.params.id);
   res.json({ cancelled: n });
 });
+
+// A PARTNER VOUCHER IN AN OPEN CARD WINDOW is held for that collection this long
+// (db.holdVoucher), so a second checkout cannot pay the difference on the same
+// code while the first is still paying. Longer than a pay session's own TTL on
+// purpose: a buyer who pays slowly must not lose the code to someone else under
+// her, and the only person a hold can block is someone else holding her code.
+const VOUCHER_HOLD_MS = positiveNumber(process.env.VOUCHER_HOLD_MS, 2 * 60 * 60 * 1000);
 
 // Owner-only: start a PeleCard card payment for this collection's order.
 // Persists/refreshes the order first (same validation as /order), then asks
@@ -4139,6 +4165,8 @@ function payInitClientKey(req) {
   }
   return key;
 }
+// The request body, or an empty one.
+const b0 = (req) => req.body || {};
 const payInitCollectionRate = makeRateLimiter({
   limit: positiveNumber(process.env.PAY_INIT_RATE_LIMIT_COLLECTION, 20),
   windowMs: 10 * 60 * 1000,
@@ -4146,12 +4174,17 @@ const payInitCollectionRate = makeRateLimiter({
 });
 app.post('/api/collections/:id/pay/init', async (req, res) => {
   const provider = cardProvider();
-  if (!provider) {
-    return res.status(503).json({ error: 'card payment not configured' });
-  }
   const base = paymentBaseUrl();
-  if (!base) return res.status(503).json({ error: 'payment base url not configured' });
-  const limited = provider.NAME === tranzila.NAME;
+  // A request carrying a CODE may turn out to be a free order (a 100% coupon, or
+  // a partner voucher on one pickup copy), and a free order needs neither a card
+  // provider nor a callback address. So those two refusals wait, for a coupon
+  // only, until a card window is actually about to open (below). Without a code
+  // nothing changes: refused here, before anything is written.
+  if (!b0(req).coupon) {
+    if (!provider) return res.status(503).json({ error: 'card payment not configured' });
+    if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+  }
+  const limited = !!provider && provider.NAME === tranzila.NAME;
   if (limited && !payInitIpRate.ok(payInitClientKey(req))) {
     return res.status(429).json({ error: 'too many attempts' });
   }
@@ -4188,17 +4221,33 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // price). The effective charge is what we bill AND what the callback verifies.
   let discountPct = 0;
   let couponCode = null;
+  // A partner voucher (a reseller's code worth one pickup copy), or null.
+  let voucher = null;
   if (b.coupon) {
     // NOT rate-limited here: pay/init is owner_token-gated and performs a real
     // charge, so it must never be blocked by the preview endpoint's oracle budget
     // (an owner previewing a code repeatedly must still be able to pay).
-    const v = db.validateCoupon(b.coupon);
+    //
+    // …except for WRONG VOUCHER GUESSES. Those are counted per client by the
+    // same miss limiter as the preview (voucherMissRate), because a voucher is
+    // worth a whole game and pay/init would otherwise be a second, unlimited
+    // place to try them. Only misses on voucher-shaped codes count, so this
+    // never stands between an owner and a payment with a code that works.
+    const missKey = 'voucher-miss:' + clientKey(req);
+    if (voucherMissRate.blocked(missKey)) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    const v = db.validateCoupon(b.coupon, { collectionId: c.id });
     // The reason travels with the refusal: between the preview and this click
     // someone else can have spent the code's last use, and "the coupon ran out"
     // is a very different thing to read than "we could not open the payment".
-    if (!v.valid) return res.status(400).json({ error: 'invalid coupon', reason: v.reason });
+    if (!v.valid) {
+      if (v.reason === 'not_found' && db.looksLikeVoucher(b.coupon)) voucherMissRate.miss(missKey);
+      return res.status(400).json({ error: 'invalid coupon', reason: v.reason });
+    }
     discountPct = v.coupon.discount_pct;
     couponCode = v.coupon.code;
+    if (v.coupon.voucher) voucher = v.coupon;
   }
   // charged_total is ALWAYS a real number — the full total when no coupon.
   //
@@ -4214,10 +4263,17 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // card for the fee alone — the free path below only sees a real zero.
   // The checkout screen (site/collect.html renderTotal) mirrors this exactly;
   // a change to either belongs in both.
+  //
+  // A PARTNER VOUCHER is a fixed CREDIT off the same game money, not a
+  // percentage: one copy, at most the pickup price (db.voucherCreditFor). So one
+  // pickup copy comes to 0 and takes the free path below; a delivery pays the
+  // postage; extra copies are paid in full. expectedChargeNow mirrors this line.
   const fee =
     Number.isInteger(order.delivery_fee) && order.delivery_fee > 0 ? order.delivery_fee : 0;
   const gameMoney = Math.max(0, order.total - fee);
-  const charged = Math.round(gameMoney * (1 - discountPct / 100)) + fee;
+  const voucherCredit = voucher ? db.voucherCreditFor(order) : 0;
+  const charged =
+    Math.max(0, Math.round(gameMoney * (1 - discountPct / 100)) - voucherCredit) + fee;
 
   // A base order total can never be 0 (version prices validate as >= 1 and the
   // charge falls back to a positive default), so charged<=0 is ONLY reachable via
@@ -4244,10 +4300,15 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       return res.status(409).json({ error: 'יש תשלום פתוח — סגרו את חלון התשלום לפני החלת קופון' });
     }
     db.markPaid(req.params.id, {
-      method: 'coupon',
+      // 'voucher' rather than 'coupon', so the order's payment line can say a
+      // partner's code paid for it (site/js/payment-refs.js).
+      method: voucher ? 'voucher' : 'coupon',
       charged_total: 0,
       coupon: couponCode,
-      discount_pct: couponCode ? discountPct : null,
+      discount_pct: couponCode && !voucher ? discountPct : null,
+      // markPaid spends the voucher in this same write (consumeVoucher) and
+      // records the pool on the order.
+      voucher_credit: voucher ? voucherCredit : null,
       // No PeleCard handshake on this path, so the buyer's details and the Meta
       // claim ride in on markPaid's own write — one write, not three.
       metaCtx: adCtx,
@@ -4272,9 +4333,19 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     return res.json({ free: true, paid: true, total: 0 });
   }
 
+  // The deferred refusals (see the top of this handler): this charge is real.
+  if (!provider) return res.status(503).json({ error: 'card payment not configured' });
+  if (!base) return res.status(503).json({ error: 'payment base url not configured' });
   // A Tranzila token carries this environment (tranzila.newSessionToken), so a
   // sweep on the shared terminal can tell its own charges from the other's.
   const paramToken = provider.NAME === tranzila.NAME ? tranzila.newSessionToken() : newPayToken();
+  // HOLD THE VOUCHER BEFORE THE AWAIT. Validation above and this hold run in one
+  // synchronous step, so no other checkout can pass validation for the same code
+  // in between; the await on the card provider below is where they could
+  // interleave, and by then the code is already this collection's.
+  if (voucher && !db.holdVoucher(couponCode, c.id, Date.now() + VOUCHER_HOLD_MS)) {
+    return res.status(400).json({ error: 'invalid coupon', reason: 'held' });
+  }
   try {
     const { url, transactionId } = await provider.init({
       amountNis: charged,
@@ -4290,7 +4361,8 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
       transactionId,
       charged_total: charged,
       coupon: couponCode,
-      discount_pct: couponCode ? discountPct : null,
+      discount_pct: couponCode && !voucher ? discountPct : null,
+      voucherCredit: voucher ? voucherCredit : null,
       metaCtx: adCtx,
       provider: provider.NAME,
       priceKey: db.orderPriceKey(order),
@@ -4300,6 +4372,8 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     });
     res.json({ url, total: order.total, charged });
   } catch (e) {
+    // No window opened, so nothing is paying with the voucher: let it go.
+    if (voucher) db.releaseVoucherHolds(c.id);
     // A 502 WITH NO LOG IS AN INVISIBLE FAILURE, and this one leaves nothing
     // behind to find later: the pay session is recorded only AFTER init()
     // returns, so there is no token and no session for any sweep to pick up.
@@ -4699,10 +4773,16 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
     charged_total: session.charged_total,
     coupon: session.coupon,
     discount_pct: session.discount_pct,
+    voucher_credit: session.voucher_credit,
     metaClaim: metaArmed,
   });
   // Count the coupon use once, on the real unpaid->paid transition.
   if (session.coupon) db.incrementCouponUses(session.coupon);
+  // A partner voucher another order had already spent (markPaid refused to
+  // spend it twice). The money has moved, so the order stands — but the buyer
+  // got a pickup copy off that no reseller will pay for, and the owner should
+  // know which order and which code.
+  if (c.order.voucher_conflict) safelyReportVoucherConflict(c, { method, transactionId });
   // Fire the owner + buyer payment receipts, showing the amount ACTUALLY
   // charged for THIS session (never the pre-coupon order.total). Gated on
   // email being configured inside onOrderPaid, and fire-and-forget — a failed
@@ -4883,7 +4963,31 @@ function expectedChargeNow(order, session) {
     Number.isInteger(order.delivery_fee) && order.delivery_fee > 0 ? order.delivery_fee : 0;
   const gameMoney = Math.max(0, Number(order.total) - fee);
   const pct = Number(session && session.discount_pct) || 0;
-  return Math.round(gameMoney * (1 - pct / 100)) + fee;
+  // A partner voucher's credit, as that window priced it (pay/init stores it).
+  const credit = Number(session && session.voucher_credit) || 0;
+  return Math.max(0, Math.round(gameMoney * (1 - pct / 100)) - credit) + fee;
+}
+
+// A voucher spent twice: told to the owner the same way as a fee that moved — a
+// notice, never a refusal, because the charge has already landed.
+function safelyReportVoucherConflict(c, { method, transactionId }) {
+  try {
+    const conflict = c.order.voucher_conflict || {};
+    const lines = [
+      'הזמנה: ' + db.orderRef(c),
+      'התשלום התקבל וסומן כשולם' + (transactionId ? ' (עסקה ' + transactionId + ')' : '') + '.',
+      'ההזמנה שולמה עם קוד שותף ' + (conflict.code || '') + ', שכבר נוצל בהזמנה אחרת.',
+      'הקוד לא נספר פעמיים, ולכן אין על ההזמנה הזאת חיוב לשותף.',
+      'אמצעי תשלום: ' + (method || '—'),
+    ];
+    const subject = 'קוד שותף נוצל פעמיים';
+    notify
+      .sendSystemAlert(subject, lines)
+      .then((ok) => ok || alertOwnerViaWhatsApp(subject, lines))
+      .catch(() => {});
+  } catch (e) {
+    console.error('[voucher] conflict notice failed: ' + ((e && e.message) || e));
+  }
 }
 
 // IS THIS STILL THE SAME PURCHASE the buyer paid for? `price_key` is stored on
