@@ -84,8 +84,12 @@ for (const mode of ['classic', 'redesign']) {
       await page.getByTestId('tab-design').click();
       const sw = page.getByTestId('design-switch');
       await expect(sw).toBeVisible();
+      // Read back from the page, not from the list fetched above: other specs on
+      // the same server add and hide templates while this one runs.
       const options = page.getByTestId('design-option');
-      await expect(options).toHaveCount(designs.length);
+      await expect.poll(() => options.count()).toBeGreaterThan(2);
+      const ids = await options.evaluateAll((els) => els.map((el) => el.dataset.id));
+      const byId = Object.fromEntries(designs.map((d) => [d.id, d]));
       const cur = page.locator('.dsw-card.current');
       await expect(cur).toHaveAttribute('data-id', 'bachelorette');
       await expect(cur).toHaveClass(/focus/);
@@ -99,14 +103,14 @@ for (const mode of ['classic', 'redesign']) {
 
       // LAZY: her own design is the card already on screen (no ask), and only its
       // neighbours are asked for, one by one — never a render per design.
-      const at = designs.findIndex((d) => d.id === 'bachelorette');
-      const near = [designs[at - 1], designs[at + 1]].filter(Boolean).map((d) => d.id);
+      const at = ids.indexOf('bachelorette');
+      const near = [ids[at - 1], ids[at + 1]].filter(Boolean);
       await expect.poll(() => calls.card.length).toBe(near.length);
       expect([...calls.card].sort()).toEqual([...near].sort());
       expect(calls.card).not.toContain('bachelorette');
 
       // tap the neighbour: it slides to the middle and becomes the choice
-      const target = designs[at + 1] || designs[at - 1];
+      const target = byId[ids[at + 1] || ids[at - 1]];
       await page.locator(`.dsw-card[data-id="${target.id}"]`).click();
       await expect(page.locator(`.dsw-card[data-id="${target.id}"]`)).toHaveClass(/focus/);
       const choose = page.getByTestId('design-choose');
