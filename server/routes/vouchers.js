@@ -93,14 +93,17 @@ function registerPartnerVouchers(app, { requireAdmin, db, voucherRules }) {
     res.status(201).json({ created: r.codes.length });
   });
 
-  // The pool's codes, searchable (?q=) and filterable (?status=unused|used|void),
-  // plus the pool and its numbers.
+  // The pool's codes, searchable (?q=) and filterable (?status=unused|used|void|
+  // held — held: unused codes in a card window that can still settle), plus the
+  // pool and its numbers.
   app.get('/api/admin/partner-pools/:id/codes', (req, res) => {
     if (!requireAdmin(req, res)) return;
     noStore(res);
     const pool = db.getVoucherPool(req.params.id);
     if (!pool) return res.status(404).json({ error: 'not found' });
-    const status = ['unused', 'used', 'void'].includes(req.query.status) ? req.query.status : null;
+    const status = ['unused', 'used', 'void', 'held'].includes(req.query.status)
+      ? req.query.status
+      : null;
     const codes = db.listVouchers(pool.id, { q: req.query.q, status }).map(present);
     res.json({
       pool,

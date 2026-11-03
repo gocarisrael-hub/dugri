@@ -19,6 +19,8 @@
 // provider answers, so for those few seconds the session does not exist yet. A
 // provider call that never answers is cut off long before this.
 const HOLD_INIT_GRACE_MS = 5 * 60 * 1000;
+// How many of one collection's windows a hold remembers (newest kept).
+const MAX_HOLD_TOKENS = 20;
 
 function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
   const pools = () => {
@@ -161,10 +163,20 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
     // The pool's rows as the money is counted: each a copy carrying
     // `order_cancelled` — a code used on an order the owner has since cancelled
     // (or deleted) is not billed to the reseller (rules.poolSummary, usageCsv).
-    // Read live from the collection, so un-cancelling an order bills it again.
+    // Read live from the collection, so un-cancelling an order whose code is
+    // still on it bills it again. A RESTORED code is no longer on its order at all
+    // (order_id cleared); un-cancelling that order goes through
+    // reclaimRestoredVoucher, which puts the code back or refuses.
     billingRows(poolId) {
+      const now = Date.now();
       return this.vouchersInPool(poolId).map((r) => {
-        if (!r.used_at) return { ...r, order_cancelled: false };
+        if (!r.used_at) {
+          return {
+            ...r,
+            order_cancelled: false,
+            held_live: !r.voided_at && this.holdIsLive(r, now),
+          };
+        }
         const c = r.order_id ? this.getCollection(r.order_id) : null;
         return { ...r, order_cancelled: !c || !!c.cancelled };
       });
@@ -183,7 +195,13 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
       const needle = rules.compactCode(q);
       return this.vouchersInPool(poolId)
         .filter((r) => !needle || r.key.includes(needle))
-        .filter((r) => !status || rules.statusOf(r) === status)
+        .filter((r) =>
+          !status
+            ? true
+            : status === 'held'
+              ? !r.used_at && !r.voided_at && this.holdIsLive(r)
+              : rules.statusOf(r) === status
+        )
         .sort(
           (a, b) =>
             String(b.used_at || b.created_at).localeCompare(String(a.used_at || a.created_at)) ||
@@ -268,7 +286,11 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
       const r = this.getVoucherByCode(code);
       const entry = { token, at: new Date(now).toISOString() };
       if (r.held && r.held.collection_id === collectionId && Array.isArray(r.held.tokens)) {
-        r.held.tokens.push(entry);
+        // Newest MAX_HOLD_TOKENS windows only. A buyer retrying a payment opens a
+        // handful; the cap is so a script re-opening windows cannot grow a row
+        // without end. The session store keeps at most MAX_SESSIONS per order
+        // anyway, so an older token past this would be a weak claim regardless.
+        r.held.tokens = [...r.held.tokens, entry].slice(-MAX_HOLD_TOKENS);
       } else {
         r.held = { collection_id: collectionId, tokens: [entry] };
       }
@@ -349,11 +371,38 @@ function vouchersBlock({ _db, saveDb, uid, nowIso, rules }) {
       if (c && !c.cancelled) return { error: 'order_active' };
       if (!Array.isArray(r.restored)) r.restored = [];
       r.restored.push({ used_at: r.used_at, order_id: r.order_id, restored_at: nowIso() });
+      // The order remembers its code went back, so un-cancelling it later cannot
+      // quietly leave a live paid order whose code nobody bills (and someone
+      // else may by then have redeemed): see reclaimRestoredVoucher.
+      if (c && c.order) c.order.voucher_restored = { code: r.code, at: nowIso() };
       r.used_at = null;
       r.order_id = null;
       r.held = null;
       saveDb();
       return r;
+    },
+
+    // UN-CANCELLING AN ORDER WHOSE CODE WAS RESTORED. The order becomes a live,
+    // paid sale again, so its code must be spent on it again — or the
+    // un-cancel refused, because one code may not pay for two games.
+    //
+    //   null                         nothing to do (no restored code)
+    //   { reclaimed: code }          the code was still unused: spent on this
+    //                                order again (billed again), saves
+    //   { error: 'voucher_reused' }  someone else has spent it since (or it was
+    //                                voided): the caller refuses the un-cancel
+    reclaimRestoredVoucher(collectionId) {
+      const c = this.getCollection(collectionId);
+      const mark = c && c.order && c.order.voucher_restored;
+      if (!mark) return null;
+      const r = this.getVoucherByCode(mark.code);
+      if (!r || r.used_at || r.voided_at) return { error: 'voucher_reused', code: mark.code };
+      r.used_at = nowIso();
+      r.order_id = collectionId;
+      r.held = null;
+      delete c.order.voucher_restored;
+      saveDb();
+      return { reclaimed: r.code };
     },
 
     // Admin: void an unused code (the reseller lost it, or it leaked). Returns the

@@ -79,6 +79,25 @@ describe('pay/init with no card provider', () => {
     expect(db.getCollection(c.id).order).toBeFalsy();
   });
 
+  it('the owner check comes first: a stranger with a real code gets 403, not a code oracle', async () => {
+    const { codes } = db.createVoucherPool({ partner_name: 'P', prefix: 'NOE', count: 1 });
+    const c = db.createCollection('זר');
+    const r = await fetch(base + '/api/collections/' + c.id + '/pay/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_token: 'wrong', version: 'pickup', coupon: codes[0].code }),
+    });
+    expect(r.status).toBe(403);
+    expect(db.getVoucherByCode(codes[0].code).used_at).toBe(null);
+    // A made-up code gets the same 403: the code is never looked at for a stranger.
+    const bogus = await fetch(base + '/api/collections/' + c.id + '/pay/init', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ owner_token: 'wrong', version: 'pickup', coupon: 'NOT-REAL' }),
+    });
+    expect(bogus.status).toBe(403);
+  });
+
   it('a voucher on one pickup copy still completes, free', async () => {
     const { codes } = db.createVoucherPool({ partner_name: 'P', prefix: 'NOC', count: 2 });
     const c = db.createCollection('שובר');
@@ -95,5 +114,23 @@ describe('pay/init with no card provider', () => {
     const row = db.getVoucherByCode(codes[0].code);
     expect(row.used_at).toBe(null);
     expect(row.held).toBe(null);
+  });
+  it('wrong voucher guesses count against the client here too (last: it uses up this client)', async () => {
+    db.createVoucherPool({ partner_name: 'P', prefix: 'NOF', count: 1 });
+    const c = db.createCollection('ניחושים');
+    const statuses = [];
+    for (let i = 0; i < 11; i++) {
+      statuses.push(
+        (
+          await payInit(c, {
+            version: 'pickup',
+            coupon: 'NOF-AAAA-BBBB-CCCC-DDD' + 'EFGHJKMNPQR'[i],
+          })
+        ).status
+      );
+    }
+    expect(statuses.slice(0, 10).every((s) => s === 503)).toBe(true);
+    expect(statuses[10]).toBe(429);
+    expect(db.getCollection(c.id).order).toBeFalsy();
   });
 });

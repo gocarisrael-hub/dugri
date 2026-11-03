@@ -531,6 +531,28 @@ describe('never spent twice', () => {
   });
 });
 
+describe('finding held codes', () => {
+  it('the summary counts them and the list filters them', async () => {
+    const { pool, codes } = newPool(3);
+    const a = party('א');
+    await payInit(a, { version: 'delivery', address: ADDRESS, coupon: codes[1].code });
+    const r = await get(key('/api/admin/partner-pools/' + pool.id + '/codes?status=held'));
+    expect(r.body.summary).toMatchObject({ unused: 3, held: 1 });
+    expect(r.body.codes.map((c) => c.code)).toEqual([codes[1].code]);
+    expect(r.body.codes[0].held).toBe(true);
+  });
+
+  it('one collection’s hold remembers only its newest 20 windows', () => {
+    const { codes } = newPool(1);
+    const a = party('א');
+    for (let i = 0; i < 25; i++) expect(db.holdVoucher(codes[0].code, a.id, 'w' + i)).toBe(true);
+    const tokens = db.getVoucherByCode(codes[0].code).held.tokens.map((t) => t.token);
+    expect(tokens).toHaveLength(20);
+    expect(tokens[0]).toBe('w5');
+    expect(tokens[19]).toBe('w24');
+  });
+});
+
 describe('the staff key sees no codes', () => {
   it('neither the orders list nor the order edit hands it a voucher, a coupon or the partner', async () => {
     const { codes } = newPool(2);
@@ -585,6 +607,48 @@ describe('a cancelled order', () => {
     // Unused again: another order can redeem it.
     const b = party('ב');
     expect((await payInit(b, { version: 'pickup', coupon: codes[0].code })).body.free).toBe(true);
+  });
+
+  it('un-cancelling it after a restore spends the code on it again, if still unused', async () => {
+    const { pool, codes } = newPool(1, { price_per_use: 40 });
+    const a = party('א');
+    await payInit(a, { version: 'pickup', coupon: codes[0].code });
+    const row = db.getVoucherByCode(codes[0].code);
+    await post(key('/api/admin/collections/' + a.id + '/cancel'));
+    await post(key('/api/admin/partner-vouchers/' + row.id + '/restore'));
+    expect(db.getCollection(a.id).order.voucher_restored.code).toBe(codes[0].code);
+
+    const undo = await post(key('/api/admin/collections/' + a.id + '/cancel'), { undo: true });
+    expect(undo.status).toBe(200);
+    expect(db.getCollection(a.id).cancelled).toBe(false);
+    expect(db.getVoucherByCode(codes[0].code).order_id).toBe(a.id);
+    expect(db.getCollection(a.id).order.voucher_restored).toBeUndefined();
+    const s = (await get(key('/api/admin/partner-pools/' + pool.id + '/codes'))).body.summary;
+    expect(s).toMatchObject({ used: 1, cancelled: 0, owed: 40 });
+    // …and nobody else can redeem it now.
+    const b = party('ב');
+    expect((await payInit(b, { version: 'pickup', coupon: codes[0].code })).body.reason).toBe(
+      'used'
+    );
+  });
+
+  it('un-cancelling is REFUSED when the restored code was spent elsewhere since', async () => {
+    const { codes } = newPool(1);
+    const a = party('א');
+    await payInit(a, { version: 'pickup', coupon: codes[0].code });
+    const row = db.getVoucherByCode(codes[0].code);
+    await post(key('/api/admin/collections/' + a.id + '/cancel'));
+    await post(key('/api/admin/partner-vouchers/' + row.id + '/restore'));
+    const b = party('ב');
+    expect((await payInit(b, { version: 'pickup', coupon: codes[0].code })).body.free).toBe(true);
+
+    const undo = await post(key('/api/admin/collections/' + a.id + '/cancel'), { undo: true });
+    expect(undo.status).toBe(409);
+    expect(undo.body.error).toBe('voucher_reused');
+    expect(undo.body.message).toContain('אי אפשר לשחזר את ההזמנה');
+    expect(undo.body.message).toContain(codes[0].code);
+    expect(db.getCollection(a.id).cancelled).toBe(true);
+    expect(db.getVoucherByCode(codes[0].code).order_id).toBe(b.id);
   });
 
   it('restore and release-hold are the owner’s alone', async () => {

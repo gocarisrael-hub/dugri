@@ -3758,11 +3758,18 @@
             restoreBtn.textContent = 'שחזר';
             restoreBtn.onclick = async () => {
               restoreBtn.disabled = true;
-              const ok = await adminAction('POST', '/api/admin/collections/' + c.id + '/cancel', {
-                undo: true,
-              });
-              if (ok) load();
-              else restoreBtn.disabled = false;
+              // adminActionResult, not adminAction: an un-cancel can be refused
+              // with a reason she must read (a partner code spent elsewhere since).
+              const r = await adminActionResult(
+                'POST',
+                '/api/admin/collections/' + c.id + '/cancel',
+                { undo: true }
+              );
+              if (r.ok) load();
+              else {
+                if (r.data && r.data.message) alert(r.data.message);
+                restoreBtn.disabled = false;
+              }
             };
             td.appendChild(document.createTextNode(' '));
             td.appendChild(badge);

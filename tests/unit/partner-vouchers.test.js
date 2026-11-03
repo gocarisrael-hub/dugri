@@ -188,6 +188,7 @@ describe('what the staff key sees of an order', () => {
         voucher: { code: 'HTZ-AAAA-BBBB-CCCC-DDDD', partner_name: 'Hi Tech Zone' },
         voucher_conflict: { code: 'HTZ-X' },
         friend_coupon_conflict: { code: 'NOA5-K7Q2' },
+        voucher_restored: { code: 'HTZ-RRRR-SSSS-TTTT-UUUU' },
         commission: { code: 'BLOG', amount: 30 },
         pelecard: { sessions: [{ token: 't', coupon: 'HTZ-EEEE-FFFF-GGGG-HHHH' }] },
         shipping: { pelecard: { sessions: [{ token: 's', coupon: 'X' }] } },

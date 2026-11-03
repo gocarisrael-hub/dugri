@@ -172,6 +172,10 @@ function poolSummary(pool, rows) {
   let used = 0;
   let cancelled = 0;
   let voided = 0;
+  // Unused codes sitting in a card window that can still settle (row.held_live,
+  // set by the store). Part of `unused`; shown so a hold nobody will pay can be
+  // found and released without paging through every code.
+  let held = 0;
   const months = new Map();
   for (const r of rows) {
     if (r.used_at && r.order_cancelled) {
@@ -182,6 +186,8 @@ function poolSummary(pool, rows) {
       months.set(m, (months.get(m) || 0) + 1);
     } else if (r.voided_at) {
       voided++;
+    } else if (r.held_live) {
+      held++;
     }
   }
   const by_month = [...months.entries()]
@@ -192,6 +198,7 @@ function poolSummary(pool, rows) {
     used,
     cancelled,
     unused: rows.length - used - cancelled - voided,
+    held,
     voided,
     price_per_use: price,
     price_set: price > 0,
@@ -290,6 +297,7 @@ function collectionForStaff(c) {
   delete order.voucher;
   delete order.voucher_conflict;
   delete order.friend_coupon_conflict;
+  delete order.voucher_restored;
   delete order.commission;
   if (order.shipping)
     order.shipping = { ...order.shipping, pelecard: strip(order.shipping.pelecard) };

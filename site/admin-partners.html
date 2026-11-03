@@ -367,6 +367,7 @@
             card(s.unused, 'לא נוצלו', 'pool-unused'),
             card(s.voided, 'בוטלו', 'pool-voided'),
             card(s.cancelled, 'בהזמנות שבוטלו (לא לחיוב)', 'pool-cancelled'),
+            card(s.held, 'בתשלום פתוח', 'pool-held'),
             card(
               s.price_set ? shekel(s.owed) : 'לא נקבע',
               s.price_set ? 'לחיוב (' + shekel(s.price_per_use) + ' לקוד)' : 'לחיוב: המחיר לא נקבע',
@@ -514,7 +515,8 @@
           el('option', { value: '', text: 'הכל' }),
           el('option', { value: 'unused', text: 'לא נוצלו' }),
           el('option', { value: 'used', text: 'נוצלו' }),
-          el('option', { value: 'void', text: 'בוטלו' })
+          el('option', { value: 'void', text: 'בוטלו' }),
+          el('option', { value: 'held', text: 'בתשלום פתוח' })
         );
         const list = el('div', { class: 'scroll' });
         const toggle = el('button', {

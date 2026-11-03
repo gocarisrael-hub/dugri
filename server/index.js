@@ -2703,6 +2703,21 @@ const { bookHfdShipments } = commerceRoutes.registerReadyBatchAndHfd(app, {
 app.post('/api/admin/collections/:id/cancel', (req, res) => {
   if (!requireAdmin(req, res)) return;
   const undo = !!(req.body && req.body.undo);
+  // Un-cancelling an order whose PARTNER VOUCHER the owner restored: the code is
+  // spent on it again if it is still unused, otherwise the un-cancel is refused
+  // — one code must not pay for two games (db.reclaimRestoredVoucher).
+  if (undo && db.getCollection(req.params.id)) {
+    const back = db.reclaimRestoredVoucher(req.params.id);
+    if (back && back.error) {
+      return res.status(409).json({
+        error: back.error,
+        message:
+          'אי אפשר לשחזר את ההזמנה: קוד השותף שלה (' +
+          back.code +
+          ') הוחזר לשימוש ונוצל מאז בהזמנה אחרת או בוטל. ההזמנה נשארת מבוטלת.',
+      });
+    }
+  }
   if (!db.cancelCollection(req.params.id, undo))
     return res.status(404).json({ error: 'not found' });
   res.json({ ok: true });
@@ -4182,16 +4197,14 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // a partner voucher on one pickup copy), and a free order needs neither a card
   // provider nor a callback address. So those two refusals wait, for a coupon
   // only, until a card window is actually about to open (below). Without a code
-  // nothing changes: refused here, before anything is written — and the same for
-  // a code that does not validate, so a made-up code cannot get an order written
-  // and its one-time emails sent on a server that could never charge it.
-  if (
-    (!provider || !base) &&
-    !(b0(req).coupon && db.validateCoupon(b0(req).coupon, { collectionId: req.params.id }).valid)
-  ) {
-    if (!provider) return res.status(503).json({ error: 'card payment not configured' });
-    if (!base) return res.status(503).json({ error: 'payment base url not configured' });
-  }
+  // nothing changes: refused here, before anything is written. A code that does
+  // not validate is refused the same way further down — after the owner check
+  // and the miss limiter, but still before any write (noCardRefusal).
+  const noCardRefusal = () =>
+    !provider
+      ? res.status(503).json({ error: 'card payment not configured' })
+      : res.status(503).json({ error: 'payment base url not configured' });
+  if ((!provider || !base) && !b0(req).coupon) return noCardRefusal();
   const limited = !!provider && provider.NAME === tranzila.NAME;
   if (limited && !payInitIpRate.ok(payInitClientKey(req))) {
     return res.status(429).json({ error: 'too many attempts' });
@@ -4206,6 +4219,22 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   // Never re-open payment on an order that is already paid (re-clicking the card
   // button must not rebuild the order and discard the recorded payment).
   if (c.order && c.order.paid) return res.status(409).json({ error: 'already paid' });
+  // No card provider here (the deferred refusal above): only a code that
+  // validates may go on, because it may be a free order. Anything else gets the
+  // 503 before setOrder writes the order or its one-time emails go out with no
+  // base URL. The wrong guess still counts against the client.
+  if (!provider || !base) {
+    const missKey = 'voucher-miss:' + clientKey(req);
+    if (voucherMissRate.blocked(missKey)) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    const pre = db.validateCoupon(b.coupon, { collectionId: c.id });
+    if (!pre.valid) {
+      if (pre.reason === 'not_found' && db.looksLikeVoucher(b.coupon))
+        voucherMissRate.miss(missKey);
+      return noCardRefusal();
+    }
+  }
 
   // (Re)set the order for this payment. setOrder preserves the pending PeleCard
   // handshake on an unpaid order, so in-flight ParamX tokens from an earlier
@@ -4342,8 +4371,7 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
   }
 
   // The deferred refusals (see the top of this handler): this charge is real.
-  if (!provider) return res.status(503).json({ error: 'card payment not configured' });
-  if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+  if (!provider || !base) return noCardRefusal();
   // A Tranzila token carries this environment (tranzila.newSessionToken), so a
   // sweep on the shared terminal can tell its own charges from the other's.
   const paramToken = provider.NAME === tranzila.NAME ? tranzila.newSessionToken() : newPayToken();
