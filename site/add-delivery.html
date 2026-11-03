@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="dugri:page" content="add-delivery.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+    <title>דוגרי · הוספת משלוח</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#ffffff" />
+    <!-- A private payment page reached only by its own link. -->
+    <meta name="robots" content="noindex" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <style>
+      body {
+        margin: 0;
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--ink);
+        min-height: 100vh;
+        padding: 0 16px calc(40px + env(safe-area-inset-bottom, 0px));
+      }
+      .top {
+        display: flex;
+        justify-content: center;
+        padding: 20px 0 8px;
+      }
+      .top img {
+        height: 44px;
+        width: auto;
+      }
+      main {
+        width: 100%;
+        max-width: 480px;
+        margin: 0 auto;
+      }
+      [hidden] {
+        display: none !important;
+      }
+      h1 {
+        font-size: 28px;
+        font-weight: 900;
+        margin: 18px 0 8px;
+        text-align: center;
+      }
+      .lead {
+        text-align: center;
+        line-height: 1.55;
+        margin: 0 0 22px;
+      }
+      .muted {
+        color: var(--muted);
+      }
+      /* What this payment is for: the order, whom it is for and the amount. */
+      .facts {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        margin: 0 0 22px;
+      }
+      .facts p {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin: 0;
+        padding: 12px 16px;
+        font-size: 15px;
+      }
+      .facts p + p {
+        border-top: 1px solid var(--line);
+      }
+      .facts .k {
+        color: var(--muted);
+      }
+      .facts .v {
+        font-weight: 800;
+        text-align: end;
+      }
+      /* The address, laid out as the checkout's own address form (collect.html
+         .addr-form): street and city wide, postal / apartment / floor beside. */
+      .addr-head {
+        font-weight: 800;
+        margin: 0 0 10px;
+      }
+      .addr-grid {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        gap: 10px;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        grid-column: span 3;
+      }
+      .field.wide {
+        grid-column: span 6;
+      }
+      .field.third {
+        grid-column: span 2;
+      }
+      .field label {
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .field .opt-tag {
+        font-size: 12px;
+      }
+      .field input {
+        font: inherit;
+        font-size: 16px;
+        padding: 11px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #fff;
+        color: var(--ink);
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .err {
+        color: #b3261e;
+        margin: 12px 0 0;
+        font-size: 14.5px;
+      }
+      .pay {
+        display: block;
+        width: 100%;
+        margin-top: 20px;
+        padding: 17px 20px;
+        border: none;
+        border-radius: var(--radius-pill);
+        background: var(--ink);
+        color: #fff;
+        font: inherit;
+        font-weight: 900;
+        font-size: 18px;
+        cursor: pointer;
+      }
+      .pay:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .note {
+        text-align: center;
+        font-size: 13.5px;
+        margin: 12px 0 0;
+      }
+      .mark {
+        width: 92px;
+        height: 92px;
+        margin: 26px auto 6px;
+        border-radius: 50%;
+        background: var(--ink);
+        display: grid;
+        place-items: center;
+      }
+      .mark svg {
+        width: 48px;
+        height: 48px;
+        fill: none;
+        stroke: #fff;
+        stroke-width: 6;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      .center {
+        text-align: center;
+      }
+      .pay-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.55);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+        z-index: 50;
+      }
+      .pay-modal-card {
+        position: relative;
+        background: #fff;
+        border-radius: 16px;
+        width: min(440px, 100%);
+        height: min(640px, 90vh);
+        overflow: hidden;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      }
+      .pay-modal-x {
+        position: absolute;
+        top: 8px;
+        inset-inline-end: 8px;
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 99px;
+        background: var(--section);
+        font-size: 20px;
+        line-height: 1;
+        cursor: pointer;
+        z-index: 2;
+      }
+      #payFrame {
+        width: 100%;
+        height: 100%;
+        border: 0;
+      }
+    </style>
+    <script src="js/editor.js" defer></script>
+  </head>
+  <body>
+    <header class="top">
+      <a href="/" aria-label="דוגרי · חזרה לדף הבית"><img src="assets/logo.png" alt="דוגרי" /></a>
+    </header>
+    <main>
+      <p class="center muted" id="loading" data-testid="ad-loading">רגע…</p>
+
+      <!-- Unknown, cancelled or replaced link. -->
+      <section id="invalid" class="center" data-testid="ad-invalid" hidden>
+        <h1 data-edit="adddelivery-invalid-title">הקישור הזה כבר לא פעיל</h1>
+        <p class="lead" data-edit="adddelivery-invalid-lead">
+          ייתכן שנשלח אליכם קישור חדש יותר. לכל שאלה, דברו איתנו בוואטסאפ.
+        </p>
+      </section>
+
+      <!-- The order changed since the link was made (cancelled, or already
+           made a delivery order by hand). -->
+      <section id="unavailable" class="center" data-testid="ad-unavailable" hidden>
+        <h1 data-edit="adddelivery-unavailable-title">אי אפשר לשלם בקישור הזה כרגע</h1>
+        <p class="lead" data-edit="adddelivery-unavailable-lead">
+          ההזמנה השתנתה מאז שנשלח הקישור. דברו איתנו בוואטסאפ ונסדר את זה.
+        </p>
+      </section>
+
+      <section id="form" data-testid="ad-form" hidden>
+        <h1 data-edit="adddelivery-title">הוספת משלוח עד הבית</h1>
+        <p class="lead" data-edit="adddelivery-lead">
+          המשחק שלכם כבר בהפקה. ממלאים כתובת וטלפון, משלמים על המשלוח, ואנחנו שולחים אותו אליכם ברגע
+          שהוא מוכן.
+        </p>
+        <div class="facts" id="facts">
+          <p>
+            <span class="k" data-edit="adddelivery-order-label">מספר הזמנה</span>
+            <bdi class="v" id="orderRef" data-testid="ad-order-ref"></bdi>
+          </p>
+          <p id="honoreeRow">
+            <span class="k" data-edit="adddelivery-honoree-label">המשחק של</span>
+            <span class="v" id="honoree" data-testid="ad-honoree"></span>
+          </p>
+          <p>
+            <span class="k" data-edit="adddelivery-amount-label">לתשלום על המשלוח</span>
+            <span class="v"><span id="amount" data-testid="ad-amount"></span> ₪</span>
+          </p>
+        </div>
+
+        <div class="addr-head" data-edit="adddelivery-addr-head">כתובת למשלוח</div>
+        <div class="addr-grid">
+          <div class="field wide">
+            <label for="street">רחוב ומספר</label>
+            <input
+              type="text"
+              id="street"
+              autocomplete="street-address"
+              placeholder="הרצל 12"
+              data-testid="ad-street"
+            />
+          </div>
+          <div class="field">
+            <label for="city">עיר</label>
+            <input
+              type="text"
+              id="city"
+              autocomplete="address-level2"
+              placeholder="תל אביב"
+              data-testid="ad-city"
+            />
+          </div>
+          <div class="field">
+            <label for="postal">מיקוד</label>
+            <input
+              type="text"
+              id="postal"
+              autocomplete="postal-code"
+              inputmode="numeric"
+              maxlength="7"
+              placeholder="6100000"
+              data-testid="ad-postal"
+            />
+          </div>
+          <div class="field">
+            <label for="apt">דירה <span class="opt-tag muted">לא חובה</span></label>
+            <input type="text" id="apt" data-testid="ad-apt" />
+          </div>
+          <div class="field">
+            <label for="floor">קומה <span class="opt-tag muted">לא חובה</span></label>
+            <input type="text" id="floor" inputmode="numeric" data-testid="ad-floor" />
+          </div>
+          <div class="field wide">
+            <label for="phone" data-edit="adddelivery-phone-label">טלפון נייד לשליח</label>
+            <input
+              type="tel"
+              id="phone"
+              autocomplete="tel"
+              inputmode="tel"
+              placeholder="050-0000000"
+              data-testid="ad-phone"
+            />
+          </div>
+        </div>
+        <p class="err" id="err" role="alert" data-testid="ad-err" hidden></p>
+        <button type="button" class="pay" id="payBtn" data-testid="ad-pay">
+          <span data-edit="adddelivery-pay">לתשלום</span> <span id="payAmount"></span> ₪
+        </button>
+        <p class="note muted" data-edit="adddelivery-secure">תשלום מאובטח בכרטיס אשראי.</p>
+      </section>
+
+      <section id="paid" class="center" data-testid="ad-paid" hidden>
+        <div class="mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64"><path d="M15 33 L27 45 L49 21" /></svg>
+        </div>
+        <h1 data-edit="adddelivery-paid-title">המשלוח שולם</h1>
+        <p class="lead" data-edit="adddelivery-paid-lead">
+          תודה! נשלח את המשחק לכתובת הזו ברגע שהוא מוכן:
+        </p>
+        <div class="facts">
+          <p>
+            <span class="k" data-edit="adddelivery-order-label-paid">מספר הזמנה</span>
+            <bdi class="v" id="paidRef"></bdi>
+          </p>
+          <p>
+            <span class="k" data-edit="adddelivery-paid-addr-label">כתובת</span>
+            <span class="v" id="paidAddr" data-testid="ad-paid-addr"></span>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <!-- The provider's hosted card page, as on the checkout (collect.html). -->
+    <div
+      id="payModal"
+      class="pay-modal"
+      role="dialog"
+      aria-modal="true"
+      aria-label="תשלום בכרטיס אשראי"
+      hidden
+    >
+      <div class="pay-modal-card">
+        <button type="button" class="pay-modal-x" id="payModalClose" aria-label="סגירה">×</button>
+        <iframe
+          id="payFrame"
+          title="תשלום מאובטח"
+          src="about:blank"
+          allow="payment"
+          allowpaymentrequest="true"
+        ></iframe>
+      </div>
+    </div>
+
+    <script type="module">
+      // THE OWNER'S ADD-DELIVERY LINK, the customer's half. The link carries its
+      // own token (?t=), minted by the admin (server/stores/delivery-link.js); it
+      // is not the collection's ?k= managing link. The page reads the offer from
+      // the server, takes the address and a phone, and opens the active card
+      // provider's window — the same window and the same settle path as the
+      // checkout's own delivery upgrade. Paid is decided by the server only: the
+      // page watches GET /api/delivery-link/:t until it says so.
+      import { isValidIlMobile, normalizeIlPhone } from './js/configurator.js';
+      import { armApplePay } from './js/apple-pay.js';
+
+      const $ = (s) => document.querySelector(s);
+      const token = new URLSearchParams(location.search).get('t') || '';
+      const api = '/api/delivery-link/' + encodeURIComponent(token);
+      let state = null;
+
+      function show(id) {
+        for (const s of ['#loading', '#invalid', '#unavailable', '#form', '#paid']) {
+          $(s).hidden = s !== id;
+        }
+      }
+      function formatAddress(a) {
+        if (!a) return '';
+        return [
+          a.street,
+          a.apartment ? 'דירה ' + a.apartment : '',
+          a.floor ? 'קומה ' + a.floor : '',
+          a.city,
+          a.postal,
+        ]
+          .filter(Boolean)
+          .join(', ');
+      }
+      function render() {
+        if (!state) return show('#invalid');
+        if (state.paid) {
+          $('#paidRef').textContent = state.order_ref;
+          $('#paidAddr').textContent = formatAddress(state.address);
+          return show('#paid');
+        }
+        if (!state.payable || !state.card_enabled) return show('#unavailable');
+        $('#orderRef').textContent = state.order_ref;
+        $('#honoree').textContent = state.honoree || '';
+        $('#honoreeRow').hidden = !state.honoree;
+        $('#amount').textContent = state.amount;
+        $('#payAmount').textContent = state.amount;
+        show('#form');
+      }
+      async function load() {
+        try {
+          const r = await fetch(api, { cache: 'no-store' });
+          state = r.ok ? await r.json() : null;
+        } catch {
+          // A network blip keeps what was shown rather than declaring the link dead.
+          return state;
+        }
+        return state;
+      }
+
+      const err = $('#err');
+      function fail(text) {
+        err.textContent = text;
+        err.hidden = false;
+      }
+
+      // ---- the payment window --------------------------------------------
+      const modal = $('#payModal');
+      const frame = $('#payFrame');
+      let watching = false;
+      function closeModal() {
+        modal.hidden = true;
+        frame.src = 'about:blank';
+      }
+      $('#payModalClose').onclick = closeModal;
+      // Watch the server until the charge lands — the one route home that needs
+      // no message from the frame at all. Bounded at ten minutes.
+      async function watch(tries = 0) {
+        if (!watching) return;
+        if (tries > 240) {
+          watching = false;
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+        await load();
+        if (state && state.paid) {
+          watching = false;
+          closeModal();
+          render();
+          return;
+        }
+        watch(tries + 1);
+      }
+      // The provider's return page (pay-done.html) tells its parent how it went.
+      // Identified by window: only the frame we opened can send it.
+      window.addEventListener('message', (e) => {
+        if (e.source !== frame.contentWindow) return;
+        const d = e.data || {};
+        if (d.type !== 'dugri-pay') return;
+        closeModal();
+        if (!d.ok) return;
+        $('#loading').textContent = 'מאשרים את התשלום…';
+        show('#loading');
+        if (!watching) {
+          watching = true;
+          watch();
+        }
+      });
+
+      $('#payBtn').addEventListener('click', async () => {
+        err.hidden = true;
+        const address = {
+          street: $('#street').value.trim(),
+          city: $('#city').value.trim(),
+          postal: $('#postal').value.trim(),
+          apartment: $('#apt').value.trim(),
+          floor: $('#floor').value.trim(),
+        };
+        // The same three the checkout insists on (db.sanitizeAddress)…
+        if (!address.street || !address.city || !address.postal) {
+          return fail('נא למלא רחוב, עיר ומיקוד למשלוח.');
+        }
+        // …and a mobile, as the wizard asks for one: the courier texts it.
+        const phone = $('#phone').value.trim();
+        if (!isValidIlMobile(phone)) return fail('נא למלא מספר נייד תקין (05X-XXXXXXX).');
+        const btn = $('#payBtn');
+        btn.disabled = true;
+        try {
+          const r = await fetch(api + '/pay', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ address, phone: normalizeIlPhone(phone) }),
+          });
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            if (r.status === 404 || r.status === 409) {
+              await load();
+              render();
+              return;
+            }
+            return fail(
+              r.status === 429
+                ? 'יותר מדי ניסיונות, נסו עוד רגע'
+                : body.error === 'phone required'
+                  ? 'נא למלא מספר נייד תקין (05X-XXXXXXX).'
+                  : body.error === 'address required'
+                    ? 'נא למלא רחוב, עיר ומיקוד למשלוח.'
+                    : 'לא הצלחנו לפתוח את התשלום, נסו שוב'
+            );
+          }
+          // Best-effort wallet support on a Tranzila window; never in the way.
+          try {
+            armApplePay(body.url);
+          } catch {
+            /* the card form underneath still works */
+          }
+          frame.src = body.url;
+          modal.hidden = false;
+          if (!watching) {
+            watching = true;
+            watch();
+          }
+        } catch {
+          fail('לא הצלחנו לפתוח את התשלום, נסו שוב');
+        } finally {
+          btn.disabled = false;
+        }
+      });
+
+      if (!token) render();
+      else load().then(render);
+    </script>
+  </body>
+</html>

@@ -69,6 +69,7 @@ const platformHooks = require('./platform-hooks');
 const catalogRoutes = require('./routes/catalog');
 // Agent A's routes (server/routes/commerce.js), registered the same way.
 const commerceRoutes = require('./routes/commerce');
+const deliveryLinkRoutes = require('./routes/delivery-link');
 
 const app = express();
 // Behind Railway's proxy: trust X-Forwarded-For so req.ip is the real client
@@ -2652,8 +2653,9 @@ app.post('/api/admin/collections/:id/ready', (req, res) => {
 });
 
 // Agent A: the ready-batch press and the HFD courier routes, in
-// server/routes/commerce.js.
-commerceRoutes.registerReadyBatchAndHfd(app, {
+// server/routes/commerce.js. bookHfdShipments comes back for the automatic
+// booking after a paid add-delivery link (settleVerifiedPayment).
+const { bookHfdShipments } = commerceRoutes.registerReadyBatchAndHfd(app, {
   requireAdmin,
   db,
   sms,
@@ -4218,7 +4220,25 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
   // offered, so this is unreachable — and it is here because a 0-charge PeleCard
   // init is the one failure mode that would look like a free upgrade.
   if (!(charged > 0)) return res.status(400).json({ error: 'invalid order total' });
+  await openShippingWindow(res, {
+    c,
+    provider,
+    base,
+    shipping,
+    // Her order is already paid here; what did not open is the delivery she
+    // was adding to it.
+    failure:
+      'shipping/init failed for ' + charged + ' \u20aa \u2014 the delivery upgrade did not open',
+  });
+});
 
+// Open a card window for a SHIPPING purchase staged on `order.shipping` — the
+// buyer's own upgrade (shipping/init) and the owner's add-delivery link
+// (delivery-link pay) alike. ONE place records the session, so both settle
+// through the same kind:'shipping' branch of settleVerifiedPayment, verified
+// against the same `fee`.
+async function openShippingWindow(res, { c, provider, base, shipping, failure }) {
+  const charged = shipping.fee;
   // A Tranzila token carries this environment (tranzila.newSessionToken), so a
   // sweep on the shared terminal can tell its own charges from the other's.
   const paramToken = provider.NAME === tranzila.NAME ? tranzila.newSessionToken() : newPayToken();
@@ -4229,7 +4249,7 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
       urls: paymentUrls(base, paramToken),
       buyer: { email: c.owner_email, phone: c.owner_phone },
     });
-    db.recordShippingInit(req.params.id, {
+    db.recordShippingInit(c.id, {
       paramToken,
       transactionId,
       charged_total: charged,
@@ -4240,20 +4260,75 @@ app.post('/api/collections/:id/shipping/init', async (req, res) => {
     res.json({ url, charged });
   } catch (e) {
     // The SAME 502 body as the order's own pay/init, so without naming the stage
-    // the log cannot say WHICH purchase failed. Her order is already paid here;
-    // what did not open is the delivery she was adding to it.
+    // the log cannot say WHICH purchase failed.
     console.error(
       '[payment] ' +
         db.orderRef(c) +
         ': ' +
         provider.NAME +
-        ' shipping/init failed for ' +
-        charged +
-        ' \u20aa \u2014 the delivery upgrade did not open, nothing pending: ' +
+        ' ' +
+        failure +
+        ', nothing pending: ' +
         ((e && e.message) || e)
     );
     res.status(502).json({ error: 'payment init failed' });
   }
+}
+
+// THE OWNER'S ADD-DELIVERY LINK (server/stores/delivery-link.js): the customer
+// pays for delivery on an order already closed for production, on a public page
+// found by the link's own token. The same purchase as shipping/init above, on
+// the same record and through openShippingWindow — only the gate differs: the
+// link's unguessable token instead of the owner_token, and the amount the owner
+// set instead of the buyer's offer. Rate-limited exactly like shipping/init.
+app.post('/api/delivery-link/:token/pay', async (req, res) => {
+  const provider = cardProvider();
+  if (!provider) {
+    return res.status(503).json({ error: 'card payment not configured' });
+  }
+  const base = paymentBaseUrl();
+  if (!base) return res.status(503).json({ error: 'payment base url not configured' });
+  const limited = provider.NAME === tranzila.NAME;
+  if (limited && !payInitIpRate.ok(payInitClientKey(req))) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const b = req.body || {};
+  const m = db.findDeliveryLink(req.params.token);
+  if (!m) return res.status(404).json({ error: 'not found' });
+  if (limited && !payInitCollectionRate.ok(m.collection.id)) {
+    return res.status(429).json({ error: 'too many attempts' });
+  }
+  const staged = db.startDeliveryLinkPayment(req.params.token, {
+    address: b.address,
+    phone: b.phone,
+  });
+  if (staged.error === 'not found') return res.status(404).json({ error: 'not found' });
+  if (staged.error === 'already paid' || staged.error === 'unavailable') {
+    return res.status(409).json({ error: staged.error });
+  }
+  if (staged.error) return res.status(400).json({ error: staged.error });
+  // The amount is validated as a positive integer when the link is made; this
+  // is the same unreachable guard as shipping/init's.
+  if (!(staged.shipping.fee > 0)) return res.status(400).json({ error: 'invalid order total' });
+  await openShippingWindow(res, {
+    c: staged.collection,
+    provider,
+    base,
+    shipping: staged.shipping,
+    failure:
+      'delivery-link pay failed for ' +
+      staged.shipping.fee +
+      ' \u20aa \u2014 the add-delivery link did not open',
+  });
+});
+
+// Agent A: the add-delivery link's admin routes and its public read, in
+// server/routes/delivery-link.js.
+deliveryLinkRoutes.registerDeliveryLink(app, {
+  requireAdmin,
+  db,
+  publicBaseUrl: paymentBaseUrl,
+  cardEnabled: () => !!cardProvider(),
 });
 
 // PeleCard server-side callback (ServerSideGoodFeedbackURL). The body is
@@ -4422,7 +4497,10 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
   const purchaseChanged = purchaseChangedOnSettle(match);
   if (match.kind === 'shipping') {
     if (c.order.shipping.paid) return false;
-    db.markShippingPaid(c.id, {
+    // Bought through the owner's add-delivery link (server/stores/delivery-link.js)
+    // rather than the buyer's own card on collect.html. Read before the write.
+    const viaLink = !!c.order.shipping.link;
+    const marked = db.markShippingPaid(c.id, {
       method,
       transactionId,
       approvalNo,
@@ -4433,7 +4511,16 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
     // The order is a DELIVERY order from this moment (db.markShippingPaid), so
     // the owner is told the same way she is told about any other change of
     // fulfilment — she has a parcel to send that she did not have this morning.
-    onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
+    // A link-paid one is told by onDeliveryLinkPaid instead, ONE alert that
+    // also carries the courier booking's outcome.
+    if (viaLink) {
+      // Only on the real unpaid->paid transition (`marked`), so a replayed or
+      // duplicate notify can never book a second van; bookHfdShipments' own
+      // per-box guard is the second line behind this one.
+      if (marked) onDeliveryLinkPaid(c.id, session.charged_total);
+    } else {
+      onShippingAdded(c.id, paymentBaseUrl(), session.charged_total);
+    }
     if (feeMoved) safelyReportFeeMoved(c, feeMoved, { method, transactionId });
     return true;
   }
@@ -4495,6 +4582,86 @@ function settleVerifiedPayment(match, { method, transactionId, approvalNo, vouch
     safelyReportFeeMoved(c, feeMoved, { method, transactionId });
   }
   return true;
+}
+
+// A PAID ADD-DELIVERY LINK: book the courier now, then tell the owner — once,
+// with the booking's outcome in the same message.
+//
+// AUTOMATIC BY THE OWNER'S DECISION. Booking is otherwise a button she presses
+// (POST /api/admin/collections/:id/hfd), because a van is a real charge; here she
+// has already decided, by making the link, that this order ships, and the whole
+// point is that she no longer hunts for the order to make its sticker. It runs
+// the admin button's own function (bookHfdShipments): the same per-order lock,
+// the same one-booking-per-box guard, the same refusal records on the order.
+//
+// THE PAYMENT IS SETTLED BEFORE THIS RUNS AND NOTHING HERE CAN UNSETTLE IT.
+// Fire-and-forget off the settle path: a courier that refuses, errors or is not
+// configured leaves the order paid and converted, she gets an alert naming the
+// order and why, and the manual שלח ל-HFD button on its row is the retry.
+function onDeliveryLinkPaid(id, amountCharged) {
+  Promise.resolve()
+    .then(() => bookHfdShipments(id))
+    .catch((e) => ({ status: 500, body: { error: (e && e.message) || String(e) } }))
+    .then((r) => {
+      const booked = r.status === 200;
+      const body = r.body || {};
+      const numbers = (body.shipments || [])
+        .filter((x) => x && x.shipment_number && !x.cancelled_at)
+        .map((x) => x.shipment_number);
+      try {
+        db.recordDeliveryLinkHfd(id, {
+          ok: booked,
+          error: booked ? null : body.error || 'error',
+          message: booked ? null : body.message || null,
+          shipments: numbers,
+        });
+      } catch (e) {
+        console.error('[delivery-link] could not record the booking: ' + ((e && e.message) || e));
+      }
+      if (!booked) {
+        console.error(
+          '[delivery-link] ' +
+            id +
+            ': paid, but the HFD booking did not go through: ' +
+            (body.message || body.error || r.status)
+        );
+      }
+      reportDeliveryLinkPaid(id, amountCharged, { booked, numbers, body });
+    })
+    .catch((e) => console.error('[delivery-link] paid notice failed: ' + ((e && e.message) || e)));
+}
+
+function reportDeliveryLinkPaid(id, amountCharged, { booked, numbers, body }) {
+  const c = db.getCollection(id);
+  if (!c || !c.order) return;
+  const a = c.order.address || {};
+  const addr = notify.formatAddress(a);
+  const base = paymentBaseUrl();
+  const lines = [
+    'הזמנה: ' + db.orderRef(c),
+    'בעל/ת השמחה: ' + (c.honoree_name || '—'),
+    'שולם קישור הוספת המשלוח: ' + amountCharged + ' ₪ (חיוב נפרד). ההזמנה היא עכשיו הזמנת משלוח.',
+    'כתובת למשלוח: ' + (addr || '—'),
+    'טלפון לשליח: ' + (a.phone || c.owner_phone || '—'),
+    booked
+      ? 'נפתח משלוח ב-HFD: ' + numbers.join(', ') + '. ההזמנה מופיעה בדף המדבקות כהזמנת משלוח.'
+      : 'המשלוח ב-HFD לא נפתח: ' +
+        (body.message || body.error || 'שגיאה') +
+        '. התשלום נשמר. אפשר לנסות שוב בכפתור "שלח ל-HFD" בשורת ההזמנה.',
+    base && ADMIN_KEY
+      ? 'לוח ההזמנות: ' + base + '/admin.html?key=' + encodeURIComponent(ADMIN_KEY)
+      : '',
+  ].filter(Boolean);
+  const subject = booked
+    ? 'שולם משלוח בקישור ונפתח משלוח ב-HFD'
+    : 'שולם משלוח בקישור, אבל HFD לא פתחה משלוח';
+  // Email, then WhatsApp: the same escalation as every other owner alert on the
+  // payment path. A failed HFD booking that reaches nobody is a parcel nobody
+  // sends.
+  notify
+    .sendSystemAlert(subject, lines)
+    .then((ok) => ok || alertOwnerViaWhatsApp(subject, lines))
+    .catch(() => {});
 }
 
 // The delivery fee this window quoted, against the one the purchase carries right

@@ -634,6 +634,44 @@ describe('delivery through Tranzila', () => {
     expect(order.version).toBe('delivery');
   });
 
+  // The owner's add-delivery link (server/stores/delivery-link.js) is the same
+  // purchase on the same record, so Tranzila's sweep settles it through the same
+  // shipping branch — at the amount SHE set, not the settings fee.
+  it('an add-delivery link on a closed order settles through the same sweep', async () => {
+    const c = db.createCollection('קישור משלוח בטרנזילה');
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    db.markPaid(c.id, { method: 'tranzila', transactionId: '2', charged_total: 199 });
+    db.closeCollection(c.id, c.owner_token);
+    const link = db.createDeliveryLink(c.id, { amount: 33 });
+    expect(link.amount).toBe(33);
+    const r = await post('/api/delivery-link/' + link.token + '/pay', {
+      address: { street: 'הרצל 12', city: 'תל אביב', postal: '6100000' },
+      phone: '0521234567',
+    });
+    expect(r.status).toBe(200);
+    expect(new URL(r.body.url).searchParams.get('sum')).toBe('33.00');
+    const session = db.getCollection(c.id).order.shipping.pelecard.sessions.slice(-1)[0];
+    expect(session.provider).toBe('tranzila');
+
+    charge(session.token, 33);
+    await notifyFor(session.token);
+    const order = db.getCollection(c.id).order;
+    expect(order.shipping).toMatchObject({
+      paid: true,
+      paid_method: 'tranzila',
+      charged_total: 33,
+    });
+    expect(order.version).toBe('delivery');
+    expect(order.charged_total).toBe(199 + 33);
+    // HFD is not configured in this file: the payment stands, and the attempt
+    // is recorded as not booked (the owner is alerted; see delivery-link.test.js).
+    await new Promise((res) => setTimeout(res, 20));
+    expect(db.getCollection(c.id).order.shipping.link.hfd_auto).toMatchObject({
+      ok: false,
+      error: 'hfd not configured',
+    });
+  });
+
   // The upgrade stays STRICT where the order path is now tolerant, and the
   // difference is deliberate: for an order the delivery fee is incidental to what
   // is being bought, but for an upgrade the fee IS the purchase, so its key and
