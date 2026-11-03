@@ -1292,6 +1292,44 @@ function onboardTemplate(opts) {
   }
   const isCards = norm.cardStructure === 'cards';
 
+  // Every image a card or board names must be inline or one of the shared images
+  // uploaded alongside it; anything else would print as a broken-image icon
+  // (brokenSvgImages). Checked against a stand-in dir, before anything is written.
+  {
+    const tplDir = path.resolve(os.tmpdir(), 'dugri-onboard-check', norm.slug);
+    const available = new Set(
+      Object.keys(norm.assets || {}).map((n) => path.join(tplDir, 'assets', n))
+    );
+    for (const [layer, map] of [
+      ['clean', norm.clean || {}],
+      ['filled', norm.filled || {}],
+    ]) {
+      for (const k of Object.keys(map)) {
+        if (!map[k]) continue;
+        const broken = brokenSvgImages(
+          Buffer.isBuffer(map[k]) ? map[k].toString('utf8') : String(map[k]),
+          path.join(tplDir, layer),
+          tplDir,
+          available
+        );
+        if (broken.length) {
+          return {
+            error:
+              'בקובץ ' +
+              layer +
+              '/' +
+              (svgFileNameForKey(k) || k) +
+              ' יש תמונה שלא תוצג ותודפס כאייקון שבור: ' +
+              brokenImagesText(broken) +
+              '. ייצאו את הקובץ מחדש כשהתמונות מוטמעות בו, ונסו שוב.',
+            httpStatus: 400,
+            brokenImages: broken,
+          };
+        }
+      }
+    }
+  }
+
   // Shrink oversized embedded images BEFORE writing, so both the stored files and
   // the recipe_diff (which reads the written fronts) use the lightened SVGs.
   // Best-effort per file; unless disabled with shrinkImages:false (pure-write test).
@@ -2066,6 +2104,141 @@ function countCardAssets(dir) {
   }
 }
 
+// ── Image references that will not render ────────────────────────────────────────
+// Chrome, which renders every card, board and deck, draws an image it cannot load
+// as its broken-image icon and exits 0. That is how the grapefruit board reached the
+// shop with the icon on every logo square (generator/card_assets.py
+// unresolved_images, which the generator now enforces before every render). These
+// are the same rules applied where the owner can act on them: an upload whose
+// images cannot resolve is refused, and a stored file that names a missing image is
+// reported on the template's checklist.
+//
+// A template SVG may carry its images inline (data:) or as a relative path to a
+// file INSIDE the template dir (the de-duplicated "../assets/<sha>.png"). Anything
+// else is broken for us: a missing file, a path out of the template, an absolute
+// or file: path (a path on someone else's machine), or a web address (the
+// renderer must never depend on a network fetch for a printed deck).
+const SVG_IMAGE_TAG_RE = /<(?:image|img)\b[^>]*>/gi;
+const SVG_IMAGE_HREF_RE = /\s(?:xlink:href|href|src)\s*=\s*(["'])([\s\S]*?)\1/i;
+const SVG_SCRIPT_RE = /<script\b[\s\S]*?<\/script\s*>/gi;
+
+function svgImageRefs(text) {
+  const out = [];
+  const body = String(text || '').replace(SVG_SCRIPT_RE, '');
+  for (const m of body.matchAll(SVG_IMAGE_TAG_RE)) {
+    const h = SVG_IMAGE_HREF_RE.exec(m[0]);
+    if (h) out.push(h[2]);
+  }
+  return out;
+}
+
+function decodeXmlAttr(s) {
+  return s
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+// [{ href, reason }] for every image in `text` that will not render, each href once.
+// `svgDir` is the directory the SVG lives (or will live) in; `templateDir` bounds
+// where a relative reference may point; `available` (a Set of absolute paths)
+// counts files that are about to be written as present. reason: missing | outside
+// | absolute | external.
+function brokenSvgImages(text, svgDir, templateDir, available = null) {
+  const out = [];
+  const seen = new Set();
+  const base = path.resolve(templateDir);
+  for (const raw of svgImageRefs(text)) {
+    const h = decodeXmlAttr(raw).trim();
+    if (!h || /^data:/i.test(h) || h.startsWith('#') || seen.has(raw)) continue;
+    let reason = null;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(h)) reason = 'external';
+    else if (h.startsWith('/') || path.isAbsolute(h)) reason = 'absolute';
+    else {
+      let rel = h.split(/[?#]/)[0];
+      try {
+        rel = decodeURIComponent(rel);
+      } catch {
+        /* keep it as written */
+      }
+      const p = path.resolve(svgDir, rel);
+      if (p !== base && !p.startsWith(base + path.sep)) reason = 'outside';
+      else {
+        let isFile = !!(available && available.has(p));
+        try {
+          isFile = isFile || fs.statSync(p).isFile();
+        } catch {
+          /* not on disk */
+        }
+        if (!isFile) reason = 'missing';
+      }
+    }
+    if (reason) {
+      seen.add(raw);
+      out.push({ href: raw.length > 200 ? raw.slice(0, 200) + '…' : raw, reason });
+    }
+  }
+  return out;
+}
+
+const BROKEN_IMAGE_REASON_HE = {
+  missing: 'הקובץ לא נמצא',
+  outside: 'מצביע אל מחוץ לתבנית',
+  absolute: 'נתיב במחשב אחר',
+  external: 'כתובת אינטרנט',
+};
+
+function brokenImagesText(broken) {
+  return broken
+    .slice(0, 5)
+    .map((b) => b.href + ' (' + (BROKEN_IMAGE_REASON_HE[b.reason] || b.reason) + ')')
+    .join(', ');
+}
+
+// The same check for a stored file, cached on (path, mtime, size): the admin list is
+// re-fetched often, and a Canva SVG can be tens of MB.
+const brokenImagesCache = new Map();
+function brokenImagesInFile(abs, templateDir) {
+  let st;
+  try {
+    st = fs.statSync(abs);
+  } catch {
+    return [];
+  }
+  const hit = brokenImagesCache.get(abs);
+  if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size && hit.dir === templateDir) {
+    return hit.broken;
+  }
+  let broken = [];
+  try {
+    broken = brokenSvgImages(fs.readFileSync(abs, 'utf8'), path.dirname(abs), templateDir);
+  } catch {
+    broken = [];
+  }
+  brokenImagesCache.set(abs, { mtimeMs: st.mtimeMs, size: st.size, dir: templateDir, broken });
+  return broken;
+}
+
+// The owner-facing notes for a template's broken images, one per file.
+function imageNotesFrom(assets) {
+  const notes = [];
+  for (const a of assets) {
+    if (!a.brokenImages || !a.brokenImages.length) continue;
+    notes.push({
+      role: a.role,
+      text:
+        'בקובץ "' +
+        a.label +
+        '" יש תמונה שלא תוצג ותודפס כאייקון שבור: ' +
+        brokenImagesText(a.brokenImages) +
+        '. העלו את הקובץ מחדש כשהתמונות מוטמעות בו.',
+    });
+  }
+  return notes;
+}
+
 // Compute one template's asset checklist: which files are present vs missing.
 // Returns a plain descriptor (safe to serialize to the admin UI).
 function computeTemplateStatus(root, key, entry) {
@@ -2092,6 +2265,15 @@ function computeTemplateStatus(root, key, entry) {
         : a.kind === 'font'
           ? { scripts: null }
           : {}),
+      // Images this SVG names that will not render (see brokenSvgImages). Only on a
+      // present SVG, and only when there are some, so a clean template's payload
+      // is unchanged.
+      ...(a.kind === 'svg' && present
+        ? (() => {
+            const broken = brokenImagesInFile(path.join(dir, a.rel), dir);
+            return broken.length ? { brokenImages: broken } : {};
+          })()
+        : {}),
     };
   });
   const missingRequired = assets.filter((a) => !a.optional && !a.present).map((a) => a.role);
@@ -2161,6 +2343,9 @@ function computeTemplateStatus(root, key, entry) {
     // Hebrew is not MISSING a file, it is a design decision that may or may not
     // matter for what it is sold for. Reported, not enforced.
     fontNotes: fontNotesFrom(assets),
+    // One note per SVG that names an image which will not render — what the owner
+    // re-uploads. Reported, not part of `complete`: the file IS there.
+    imageNotes: imageNotesFrom(assets),
     complete: missingRequired.length === 0,
     missingRequired,
     // Overlay provenance, so the admin UI can tell a persisted owner template (or
@@ -3911,6 +4096,24 @@ function replaceAsset({
     data = shrinkSvgImages(file.data, { root, pythonBin, runner: shrinkRunner });
   }
 
+  // Refuse artwork whose images will not render: Chrome would print each as a
+  // broken-image icon and say nothing (brokenSvgImages). Checked against the dir
+  // the file goes into, so a "../assets/<sha>.png" this template already holds
+  // passes. After the shrink, which only ever rewrites inline data: images.
+  if (kind === 'svg') {
+    const broken = brokenSvgImages(data.toString('utf8'), path.dirname(current), readDir);
+    if (broken.length) {
+      return {
+        error:
+          'יש בקובץ תמונה שלא תוצג ותודפס כאייקון שבור: ' +
+          brokenImagesText(broken) +
+          '. ייצאו את הקובץ מחדש כשהתמונות מוטמעות בו (ב-Canva: הורדה כ-SVG), ונסו שוב.',
+        httpStatus: 400,
+        brokenImages: broken,
+      };
+    }
+  }
+
   // Only now resolve WHERE the write lands: the owner store (copy-on-write over
   // the shipped dir) when it is active, else the image dir exactly as before.
   const writeDir = templateWriteDir(root, entry, key);
@@ -4164,6 +4367,8 @@ module.exports = {
   isShippedTheme,
   revertTemplate,
   computeTemplateStatus,
+  svgImageRefs,
+  brokenSvgImages,
   listTemplateStatuses,
   validateDisplayName,
   renameTemplate,

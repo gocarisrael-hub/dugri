@@ -5422,7 +5422,8 @@ def build_page(theme, clean_svg, words_by_card, title_lines, word_font=None):
     word_font = config.resolve_word_font(theme, word_font)
     title_font = title_font_for(theme, title_lines, cfg)
     ts = cfg["title_style"]
-    svg = open(clean_svg, encoding="utf-8").read()
+    import card_assets
+    svg = card_assets.read_svg(clean_svg)  # never open(): ../assets/ refs
     overlay = [style]
     for ci, card in enumerate(recipe["cards"]):
         if not card:
