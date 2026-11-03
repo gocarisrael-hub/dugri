@@ -1853,6 +1853,42 @@ const db = {
     return c.custom_title;
   },
 
+  // The buyer MOVES her deck to another design from the collection page,
+  // owner-token gated like the title above. The caller has already checked the
+  // design is one the site offers and that the collection is still open; this
+  // only writes it.
+  //
+  // `design` is the Hebrew display name (what the wizard stores, and what the
+  // admin table and the emails show) and `theme` the generator theme production
+  // renders from — always written together, so no reader can see one design's
+  // name over another's cards. The colour was picked for the OLD design's
+  // artwork and names nothing on the new one, so it goes. A frozen word bank is
+  // dropped on a real change, as for the seed pool: the theme picks the default
+  // pool the bank was frozen from.
+  //
+  // Returns { design, theme } as stored, or 'forbidden' for a bad token /
+  // unknown collection.
+  setDesignForOwner(id, ownerToken, { design, theme } = {}) {
+    const c = this.getCollection(id);
+    if (!c || c.owner_token !== ownerToken) return 'forbidden';
+    const nextTheme = String(theme || '')
+      .trim()
+      .slice(0, 80);
+    if (!nextTheme) return 'forbidden';
+    const nextDesign =
+      String(design || '')
+        .trim()
+        .slice(0, 80) || null;
+    if ((c.theme || '') !== nextTheme) {
+      if (c.word_bank) delete c.word_bank;
+      c.color = null;
+    }
+    c.theme = nextTheme;
+    c.design = nextDesign;
+    saveDb();
+    return { design: c.design, theme: c.theme };
+  },
+
   // REMOVE / REORDER the buyer's own pawn photos, owner-token gated. The buyer's
   // half of adminSetPawnImages: she reopens her collection page, sees the faces
   // she sent, and takes one out.

@@ -346,6 +346,37 @@ html.rd .finish-step button[data-goto]:hover {
 html.rd .sheet-err {
   color: var(--color-error);
 }
+/* The design switch: the strip's cards are real cards on the table — ink hairline, rounded like the shop's, the hard
+   shadow on the one in the middle; the one she has now is marked with a tag-cream chip under it. */
+html.rd .dsw {
+  border-top: var(--border-hair) solid var(--color-ink);
+}
+html.rd .dsw-pic {
+  background: var(--color-ground);
+  border: var(--border-hair) solid var(--color-ink);
+  border-radius: var(--radius-card);
+}
+html.rd .dsw-card.focus .dsw-pic {
+  box-shadow: var(--shadow-sm);
+}
+html.rd .dsw-card.current .dsw-pic {
+  border: var(--border-thin) solid var(--color-ink);
+}
+html.rd .dsw-nm {
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+}
+html.rd .dsw-tag {
+  padding: 2px 10px;
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-tag);
+  color: var(--color-ink);
+}
+html.rd .dsw-here {
+  font-family: var(--font-body);
+  font-weight: var(--weight-strong);
+}
 
 /* ---- the order link at the end: an outlined pill card ---- */
 html.rd .order-cta {
