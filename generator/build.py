@@ -63,7 +63,11 @@ def render_board(theme, board_clean, title_lines, out_png, scale=2):
     # ever touch the board it was verified against — never a future/other board
     # that happens to contain red circular art. align_ring_discs is additionally
     # a no-op on any SVG lacking the exact ring/tile signature (belt-and-braces).
-    raw_board = open(board_clean, encoding="utf-8").read()
+    # read_svg, never open(): a de-duplicated board names its images as
+    # "../assets/<sha>.png", which render_svg's copy in the work dir cannot
+    # resolve. With open() the grapefruit board rendered every logo square and
+    # its background as Chrome's broken-image icon (card_assets docstring).
+    raw_board = card_assets.read_svg(board_clean)
     board_svg = svg_rings.align_ring_discs(raw_board) if cfg.get("fix_ring_discs") else raw_board
     if not bd:  # theme has no personalized board title -> use the clean board as-is
         return render_svg(board_svg, w, h, out_png, scale=scale)
@@ -94,12 +98,12 @@ def render_backs(theme, backs_clean, title_lines, out_png, scale=2):
     w, h, vb = svg_dims(backs_clean)
     bk, ts = cfg.get("back"), cfg["title_style"]
     if not bk:  # theme has no personalized back title -> use the clean backs as-is
-        return render_svg(open(backs_clean, encoding="utf-8").read(), w, h, out_png,
+        return render_svg(card_assets.read_svg(backs_clean), w, h, out_png,
                           scale=scale)
     frac = bk["frac"]
     title_font = rp.title_font_for(theme, title_lines, cfg)
     recipe = config.load_recipe(cfg["recipe"])
-    svg = open(backs_clean, encoding="utf-8").read()
+    svg = card_assets.read_svg(backs_clean)
     body = ["<style>" + rp.GEOMETRIC_TEXT_STYLE
             + rp.title_faces(theme, cfg, lines=title_lines) + "</style>"]
     for card in recipe["cards"]:

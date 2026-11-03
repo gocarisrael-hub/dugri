@@ -212,6 +212,55 @@ class ChromeBusy(ChromeError):
     """Too many renders are already in flight; this one never started."""
 
 
+class MissingImage(ChromeError):
+    """The source names an image file that is not on disk; nothing was rendered."""
+
+
+# The emergency switch for the missing-image check below, for one run that has
+# to go out anyway. Never set it on the service: it turns the check off for
+# every render, which is exactly the silent failure the check exists to stop.
+ALLOW_MISSING_IMAGES = os.environ.get("DUGRI_ALLOW_MISSING_IMAGES") == "1"
+
+
+def _source_path(source):
+    if source.startswith("file://"):
+        from urllib.parse import unquote, urlsplit
+        return unquote(urlsplit(source).path)
+    return source
+
+
+def check_images(source, what):
+    """Refuse to render ``source`` when an image it names is not on disk.
+
+    Chrome draws such an image as its broken-image glyph and exits 0, so without
+    this the glyph is printed, or shown on the shop, with no error anywhere — it
+    happened to the grapefruit board (see ``card_assets.unresolved_images``).
+    Every render path comes through here, so a new one is covered by
+    construction. The missing references are named in the error and on stderr,
+    where the server's generator log picks them up.
+    """
+    try:
+        path = _source_path(source)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+    except OSError:
+        return  # Chrome reports an unreadable source itself
+    import card_assets
+    missing = card_assets.unresolved_images(text, os.path.dirname(os.path.abspath(path)))
+    if not missing:
+        return
+    shown = ", ".join(repr(h) for h in missing[:5])
+    more = f" and {len(missing) - 5} more" if len(missing) > 5 else ""
+    msg = (f"{what} names {len(missing)} image file(s) that are not on disk: "
+           f"{shown}{more}. Chrome would draw each as a broken-image icon, so "
+           "nothing was rendered. Check that the template's assets/ folder holds "
+           "these files, or re-upload the artwork with its images embedded.")
+    import sys
+    print("MISSING IMAGE: " + msg, file=sys.stderr)
+    if not ALLOW_MISSING_IMAGES:
+        raise MissingImage(msg)
+
+
 def binary():
     """The Chrome binary to run.
 
@@ -366,6 +415,7 @@ def _run(extra, source, out_path, *, timeout, what):
     hundreds of orphans in production were orphans in the first place: nothing
     ever killed the browser at all.
     """
+    check_images(source, what)
     exe = binary()
     argv = [exe] + BASE_FLAGS + PROFILE_FLAGS + list(extra) + [source]
     # The profile is created INSIDE the slot so a queued run holds no disk, and

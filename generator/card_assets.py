@@ -129,6 +129,70 @@ def absolutize(svg_text, svg_dir):
     return _ASSET_REF.sub(swap, svg_text)
 
 
+# An image element in an SVG (<image>) or in the HTML the deck is printed from
+# (<img>), and the attribute that names its pixels.
+_IMAGE_TAG = re.compile(r"<(?:image|img)\b[^>]*>", re.IGNORECASE)
+_IMAGE_HREF = re.compile(r"""\s(?:xlink:href|href|src)\s*=\s*(["'])(.*?)\1""",
+                         re.IGNORECASE | re.DOTALL)
+
+# A script body is code, not markup: the pawn harness builds
+# '<image href="${esc(href)}">' in a template string, which is no reference.
+_SCRIPT = re.compile(r"<script\b.*?</script\s*>", re.IGNORECASE | re.DOTALL)
+
+# References that cannot be checked on disk and are never reported: pixels
+# carried inline, and anything a network or the document itself serves.
+_UNCHECKED = ("data:", "http:", "https:", "blob:", "#")
+
+
+def image_refs(text):
+    """Every ``<image>``/``<img>`` reference in ``text``, in document order.
+
+    Markup only: whatever a ``<script>`` builds is skipped."""
+    out = []
+    for tag in _IMAGE_TAG.finditer(_SCRIPT.sub("", text)):
+        m = _IMAGE_HREF.search(tag.group(0))
+        if m:
+            out.append(m.group(2))
+    return out
+
+
+def _local_path(href, base_dir):
+    """The file a local reference points at, or None for one that is not local."""
+    import html
+    from urllib.parse import unquote, urlsplit
+
+    h = html.unescape(href).strip()
+    if not h or h.lower().startswith(_UNCHECKED):
+        return None
+    if h.lower().startswith("file:"):
+        return unquote(urlsplit(h).path)
+    p = unquote(h.split("#", 1)[0].split("?", 1)[0])
+    return p if os.path.isabs(p) else os.path.normpath(os.path.join(base_dir, p))
+
+
+def unresolved_images(text, base_dir):
+    """The image references in ``text`` that point at a file that is not there.
+
+    ``base_dir`` is the directory the text is RENDERED from: a relative reference
+    resolves against it, exactly as Chrome resolves it. Chrome draws an image it
+    cannot load as its broken-image glyph (a grey page with a cloud and a green
+    hill) and still exits 0, so this check is the only place that failure shows.
+    That is how the grapefruit board went out with the glyph on every logo square
+    and a stretched glyph for a background: ``build.render_board`` read the board
+    with a plain ``open()``, so its ``../assets/`` references were left relative
+    and then written to the work dir, where they point at nothing.
+
+    Inline ``data:`` images and network URLs are not checked. Returns each
+    missing reference once, in document order; empty means all are on disk.
+    """
+    missing = []
+    for href in image_refs(text):
+        p = _local_path(href, base_dir)
+        if p is not None and not os.path.isfile(p) and href not in missing:
+            missing.append(href)
+    return missing
+
+
 def migrate_file(src, dst, assets_dir):
     """De-duplicate one SVG from ``src`` to ``dst``. Returns (before, after)."""
     with open(src, encoding="utf-8") as f:

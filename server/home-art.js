@@ -49,7 +49,9 @@ const PYTHON_BIN = process.env.PYTHON || 'python3';
 
 // Everything about the OUTPUT that is not the template: bump it when the scales, the ladder or the sample inputs change.
 //   r1 = cards at scale 5, board ~3400 px, ladder below, webp via thumb_image.py
-const REV = 'r1';
+//   r2 = the board render resolves a de-duplicated template's ../assets/ images (build.render_board read it with a
+//        plain open(), so grapefruit's board art carried broken-image icons); every r1 art is re-rendered once
+const REV = 'r2';
 const CARD_SCALE = 5;
 const BOARD_TARGET_W = 3400;
 // The widths the page can pick from. A card is drawn at most ~250 CSS px (the design view on a big screen) and zooms to
