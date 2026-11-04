@@ -344,8 +344,12 @@ describe('the scan page API', () => {
     expect(r.body.state).toBe('open');
     expect(r.body.percent).toBe(10);
     expect(r.body.expiry_months).toBe(6);
-    expect(r.body.copy.title).toBe('החזקתם דוגרי ביד? מגיע לכם 10%');
-    expect(r.body.copy.lead).toContain('בתוקף ל-6 חודשים');
+    expect(r.body.copy.title).toBe('תודה שבחרתם בדוגרי! מגיע לכם 10% הנחה לפעם הבאה');
+    expect(r.body.copy.lead).toBe(
+      'הקלידו את מספר הטלפון שאיתו הזמנתם, ותקבלו קוד אישי של 10% הנחה למשחק הבא. ' +
+        'הקוד בתוקף ל-6 חודשים. ושוב תודה :)'
+    );
+    expect(r.body.copy.consent).toBe('אשמח לקבל מדוגרי עדכונים והטבות במייל');
     expect(r.body.copy.no_match).toContain('נסו את המספר שנתתם כשהזמנתם');
     // {email} is the page's to fill, with the masked address it is given.
     expect(r.body.copy.emailed).toContain('{email}');
@@ -484,6 +488,13 @@ describe('the scan page API', () => {
   it('consent is recorded only on a real true', async () => {
     const c = order();
     const r = await claim(c.owner_phone, { marketing_consent: 'yes' });
+    expect(db.getFriendCouponByCode(r.body.code).marketing_consent).toBe(false);
+  });
+
+  it('an unticked box (consent false) is recorded as false', async () => {
+    const c = order();
+    const r = await claim(c.owner_phone, { marketing_consent: false });
+    expect(r.body.created).toBe(true);
     expect(db.getFriendCouponByCode(r.body.code).marketing_consent).toBe(false);
   });
 
