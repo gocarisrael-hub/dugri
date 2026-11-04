@@ -518,6 +518,11 @@ function orderLines(collection, baseUrl, options) {
     // instruction depends on this line, so it must never be silently dropped.
     lines.push(...copyLines(order));
     lines.push(...amountLines(order, options, f.amount));
+    // A code claimed from a BOX QR paid for this: named, so the owner sees a box
+    // bring a buyer back. Other coupons are not itemised here (unchanged).
+    if (order.coupon_source === 'qr' && order.coupon) {
+      lines.push(f.qrCoupon + ': ' + order.coupon);
+    }
     // A delivery order carries a shipping address — surface it so the owner can
     // fulfil without opening the panel.
     if (order.version === 'delivery') {
@@ -1469,12 +1474,23 @@ const FC_MUTED = '#6b6b6b';
 
 // `coupon` is the stored row ({ code, discount_percent, expires_at }), and
 // `collection` the party the friend wrote in (for {celebrant_name}).
+//
+// A row claimed from a BOX QR (`source: 'qr'`) is the same mail with its own
+// owner-editable words (email.box_qr_coupon + email.box_qr_coupon_parts) and its
+// own GA campaign. It never names the order the box came from: the scanner may
+// be anyone the game was handed to.
+function friendCouponTemplateKey(coupon) {
+  return friendCoupons.sourceOf(coupon) === 'qr' ? 'box_qr_coupon' : 'friend_coupon';
+}
 function buildFriendCoupon(coupon, collection, baseUrl) {
   const fc = friendCoupons;
-  const tpl = emailTpl('friend_coupon');
-  const parts = _store.get('email', 'friend_coupon_parts');
-  const name = collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
-  const link = fc.landingLink(baseUrl, coupon.code);
+  const isQr = fc.sourceOf(coupon) === 'qr';
+  const tplKey = friendCouponTemplateKey(coupon);
+  const tpl = emailTpl(tplKey);
+  const parts = _store.get('email', tplKey + '_parts');
+  const name =
+    !isQr && collection && collection.honoree_name ? String(collection.honoree_name).trim() : '';
+  const link = fc.landingLink(baseUrl, coupon.code, isQr ? 'box_qr' : 'friend_coupon');
   const values = {
     celebrant_name: name || 'החוגגים',
     code: coupon.code,
@@ -1555,7 +1571,7 @@ function buildFriendCoupon(coupon, collection, baseUrl) {
 // caller records a false so the admin can see the send failed and retry it.
 async function sendFriendCoupon(to, coupon, collection, baseUrl) {
   try {
-    if (!settings.emailEnabled('friend_coupon')) return false;
+    if (!settings.emailEnabled(friendCouponTemplateKey(coupon))) return false;
     if (!to) return false;
     return await send({ ...buildFriendCoupon(coupon, collection, baseUrl), to });
   } catch (e) {

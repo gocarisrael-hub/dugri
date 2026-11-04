@@ -3372,6 +3372,20 @@
               tdPaid.appendChild(document.createTextNode(' '));
               tdPaid.appendChild(tag);
             }
+            // A code claimed from the QR on an earlier order's BOX paid for this
+            // one: the owner counts how many boxes bring a buyer back. Money
+            // business, stripped for the staff key like the partner tag (the
+            // server does not even send coupon_source to it).
+            if (order.coupon_source === 'qr') {
+              const tag = document.createElement('span');
+              tag.className = 'pill partner-tag';
+              tag.setAttribute('data-money', '');
+              tag.setAttribute('data-testid', 'order-qr-tag');
+              tag.textContent = 'QR';
+              tag.title = order.coupon || '';
+              tdPaid.appendChild(document.createTextNode(' '));
+              tdPaid.appendChild(tag);
+            }
           } else {
             // Read-only on purpose: an order becomes paid only through a real
             // money event (a verified card payment or a 100%-coupon order), so

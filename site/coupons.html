@@ -216,6 +216,17 @@
       .fc-settings .field input[type='number'] {
         width: 100px;
       }
+      /* The box QR's words: full width, one per line. */
+      .fc-settings .qr-text {
+        flex-basis: 100%;
+      }
+      .fc-settings .qr-text textarea {
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid #e4ddd0;
+        border-radius: 9px;
+        padding: 8px 10px;
+      }
       .fc-check {
         display: flex;
         gap: 6px;
@@ -367,6 +378,94 @@
             data-testid="friend-search"
           />
           <div class="fc-list" id="fcList"></div>
+        </div>
+      </div>
+
+      <!-- Box QR codes: the personal code whoever holds a printed game claims by
+           scanning the QR on its box sticker. ONE per order. Same rows and the
+           same rules as the friend codes, its own settings. Owner key only. -->
+      <div class="panel" id="qrPanel" hidden data-testid="qr-panel">
+        <h2>קופוני QR מהקופסה</h2>
+        <form class="fc-settings" id="qrSettings">
+          <label class="fc-check"
+            ><input type="checkbox" id="qrEnabled" /> להדפיס QR על מדבקת הקופסה ולתת קוד</label
+          >
+          <div class="field">
+            <label for="qrPercent">אחוז הנחה</label>
+            <input id="qrPercent" type="number" min="1" max="100" step="1" />
+          </div>
+          <div class="field">
+            <label for="qrMonths">תוקף (חודשים)</label>
+            <input id="qrMonths" type="number" min="1" max="60" step="1" />
+          </div>
+          <label class="fc-check"
+            ><input type="checkbox" id="qrDelivery" /> להדפיס את המדבקה שלנו (עם ה-QR) גם על קופסאות
+            משלוח, אחרי המדבקה של HFD</label
+          >
+          <div class="field qr-text">
+            <label for="qrStickerLine">השורה מתחת ל-QR במדבקה</label>
+            <input id="qrStickerLine" type="text" maxlength="40" data-qrkey="sticker_line" />
+          </div>
+          <div class="field qr-text">
+            <label for="qrTitle">עמוד הסריקה: כותרת</label>
+            <input id="qrTitle" type="text" maxlength="80" data-qrkey="page_title" />
+          </div>
+          <div class="field qr-text">
+            <label for="qrBody">עמוד הסריקה: טקסט</label>
+            <textarea id="qrBody" maxlength="300" rows="3" data-qrkey="page_body"></textarea>
+          </div>
+          <div class="field qr-text">
+            <label for="qrButton">עמוד הסריקה: כפתור</label>
+            <input id="qrButton" type="text" maxlength="40" data-qrkey="page_button" />
+          </div>
+          <div class="field qr-text">
+            <label for="qrConsent">עמוד הסריקה: הסכמה לדיוור</label>
+            <input id="qrConsent" type="text" maxlength="120" data-qrkey="page_consent" />
+          </div>
+          <div class="field qr-text">
+            <label for="qrDone">עמוד הסריקה: אחרי שקיבלו קוד</label>
+            <input id="qrDone" type="text" maxlength="160" data-qrkey="page_done" />
+          </div>
+          <div class="field qr-text">
+            <label for="qrClaimed">עמוד הסריקה: כשהקוד כבר נלקח</label>
+            <textarea id="qrClaimed" maxlength="200" rows="2" data-qrkey="page_claimed"></textarea>
+          </div>
+          <button type="submit" id="qrSave">שמירה</button>
+          <span class="muted" id="qrSaved"></span>
+        </form>
+        <div class="muted" style="margin-bottom: 10px">
+          קוד אחד לכל הזמנה. {percent} ו-{months} בטקסטים מתמלאים לבד. שינוי האחוז או התוקף חל על
+          קודים חדשים בלבד. המייל עצמו נערך בעמוד הטקסטים.
+        </div>
+        <table id="qrSummary">
+          <thead>
+            <tr>
+              <th>קמפיין</th>
+              <th>הונפקו</th>
+              <th>נוצלו</th>
+              <th>המרה</th>
+              <th>הכנסות (₪)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr data-testid="qr-summary-row" tabindex="0">
+              <td id="qrCampaign">קופוני QR</td>
+              <td id="qrIssued">0</td>
+              <td id="qrUsed">0</td>
+              <td id="qrConv">0%</td>
+              <td id="qrRevenue">0</td>
+            </tr>
+          </tbody>
+        </table>
+        <div id="qrListWrap" hidden>
+          <input
+            class="fc-search"
+            id="qrSearch"
+            type="search"
+            placeholder="חיפוש לפי מייל או קוד"
+            data-testid="qr-search"
+          />
+          <div class="fc-list" id="qrList"></div>
         </div>
       </div>
 
@@ -797,18 +896,22 @@
         );
       }
 
-      function renderFriendList(rows) {
+      // The list behind a summary row. Shared by the friend section and the box
+      // QR one (`qr`: true adds the column naming the order whose box it was).
+      function renderFriendList(rows, list = fcList, reload = loadFriends, qr = false) {
         if (!rows.length) {
-          fcList.innerHTML = '<div class="muted">אין קופונים.</div>';
+          list.innerHTML = '<div class="muted">אין קופונים.</div>';
           return;
         }
         const table = document.createElement('table');
         table.innerHTML =
-          '<thead><tr><th>מייל</th><th>קוד</th><th>נוצר</th><th>נוצל</th><th>הזמנה</th><th>הסכמה לדיוור</th><th>מייל</th><th>תמיכה</th></tr></thead>';
+          '<thead><tr><th>מייל</th><th>קוד</th>' +
+          (qr ? '<th>מהקופסה של</th>' : '') +
+          '<th>נוצר</th><th>נוצל</th><th>הזמנה</th><th>הסכמה לדיוור</th><th>מייל</th><th>תמיכה</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const r of rows) {
           const tr = document.createElement('tr');
-          tr.dataset.testid = 'friend-row';
+          tr.dataset.testid = qr ? 'qr-row' : 'friend-row';
           const cell = (text, cls) => {
             const td = document.createElement('td');
             if (cls) td.className = cls;
@@ -818,6 +921,7 @@
           };
           cell(r.email);
           cell(r.code, 'code');
+          if (qr) cell(r.box_order_no || '—');
           cell(fcDate(r.created_at));
           cell(r.used_at ? fcDate(r.used_at) + (r.used_manually ? ' (ידני)' : '') : '—');
           const tdOrder = cell('');
@@ -849,7 +953,7 @@
               }).catch(() => null);
               const data = res && res.ok ? await res.json() : null;
               resend.textContent = data && data.emailed ? 'נשלח ✓' : 'השליחה נכשלה';
-              loadFriends();
+              reload();
             };
             const mark = document.createElement('button');
             mark.className = 'danger';
@@ -861,15 +965,15 @@
               await fetch(withKey('/api/admin/friend-coupons/' + r.id + '/mark-used'), {
                 method: 'POST',
               }).catch(() => null);
-              loadFriends();
+              reload();
             };
             tdAct.append(resend, mark);
           } else tdAct.textContent = '—';
           tb.appendChild(tr);
         }
         table.appendChild(tb);
-        fcList.innerHTML = '';
-        fcList.appendChild(table);
+        list.innerHTML = '';
+        list.appendChild(table);
       }
 
       async function loadFriends() {
@@ -938,6 +1042,92 @@
         loadFriends();
       });
 
+      // --- Box QR codes -----------------------------------------------------------
+      const qrPanel = document.getElementById('qrPanel');
+      const qrListWrap = document.getElementById('qrListWrap');
+      const qrSearch = document.getElementById('qrSearch');
+      const qrList = document.getElementById('qrList');
+      let qrSettingsLoaded = false;
+      async function loadQr() {
+        try {
+          const q = qrSearch.value.trim();
+          const r = await fetch(
+            withKey(
+              '/api/admin/friend-coupons?source=qr' + (q ? '&q=' + encodeURIComponent(q) : '')
+            )
+          );
+          if (!r.ok) return;
+          const data = await r.json();
+          qrPanel.hidden = false;
+          const sm = data.summary;
+          document.getElementById('qrCampaign').textContent = 'קופוני QR, ' + sm.percent + '%';
+          document.getElementById('qrIssued').textContent = sm.issued;
+          document.getElementById('qrUsed').textContent = sm.used;
+          document.getElementById('qrConv').textContent =
+            Math.round(sm.conversion * 1000) / 10 + '%';
+          document.getElementById('qrRevenue').textContent = Number(sm.revenue).toLocaleString(
+            'he-IL'
+          );
+          if (!qrSettingsLoaded) {
+            qrSettingsLoaded = true;
+            document.getElementById('qrEnabled').checked = sm.enabled;
+            document.getElementById('qrPercent').value = sm.percent;
+            document.getElementById('qrMonths').value = sm.expiry_months;
+            document.getElementById('qrDelivery').checked = sm.delivery_label;
+            try {
+              const s = await (await fetch(withKey('/api/admin/settings'))).json();
+              for (const el of qrPanel.querySelectorAll('[data-qrkey]')) {
+                el.value = s.effective.box_qr[el.dataset.qrkey] || '';
+              }
+            } catch {
+              /* leave the texts blank */
+            }
+          }
+          if (!qrListWrap.hidden) renderFriendList(data.coupons, qrList, loadQr, true);
+        } catch {
+          /* the panel stays hidden */
+        }
+      }
+      const qrRow = document.querySelector('[data-testid="qr-summary-row"]');
+      const toggleQr = () => {
+        qrListWrap.hidden = !qrListWrap.hidden;
+        if (!qrListWrap.hidden) loadQr();
+      };
+      qrRow.addEventListener('click', toggleQr);
+      qrRow.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') toggleQr();
+      });
+      let qrSearchTimer = null;
+      qrSearch.addEventListener('input', () => {
+        clearTimeout(qrSearchTimer);
+        qrSearchTimer = setTimeout(loadQr, 250);
+      });
+      document.getElementById('qrSettings').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const saved = document.getElementById('qrSaved');
+        const put = (k, value) =>
+          fetch(withKey('/api/admin/settings'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section: 'box_qr', key: k, value }),
+          });
+        const texts = [...qrPanel.querySelectorAll('[data-qrkey]')].map((el) =>
+          put(el.dataset.qrkey, el.value)
+        );
+        const results = await Promise.all([
+          put('enabled', document.getElementById('qrEnabled').checked),
+          put('percent', Number(document.getElementById('qrPercent').value)),
+          put('expiry_months', Number(document.getElementById('qrMonths').value)),
+          put('delivery_label', document.getElementById('qrDelivery').checked),
+          ...texts,
+        ]).catch(() => []);
+        saved.textContent =
+          results.length && results.every((r) => r.ok)
+            ? 'נשמר ✓'
+            : 'השמירה נכשלה — בדקו את המספרים והאורך של הטקסטים';
+        loadQr();
+      });
+
       async function load() {
         if (!key) {
           sub.textContent = '';
@@ -959,6 +1149,7 @@
           createPanel.hidden = false;
           render(coupons);
           loadFriends();
+          loadQr();
         } catch {
           sub.textContent = '';
           content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';

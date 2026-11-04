@@ -8107,6 +8107,8 @@
           void: 'הקוד הזה בוטל',
           // A partner's gift code sitting in another checkout's open payment.
           held: 'הקוד הזה בשימוש בתשלום פתוח אחר. נסו שוב מאוחר יותר',
+          // A code claimed from the QR on THIS order's own box: it is for the next one.
+          own_order: 'הקוד הזה הגיע מהקופסה של ההזמנה הזו, והוא מיועד להזמנה הבאה',
         };
         // The fold over the field (drawn only in the redesign; the live page hides
         // the toggle and ignores .open). openCoupon only ever opens: it runs when a
@@ -8528,7 +8530,7 @@
                   ? 'הקופון נוצל במלואו'
                   : why === 'used'
                     ? 'הקופון הזה כבר נוצל'
-                    : why === 'held' || why === 'void'
+                    : why === 'held' || why === 'void' || why === 'own_order'
                       ? COUPON_REASONS[why]
                       : 'הקופון אינו תקף יותר';
               clearCoupon();
