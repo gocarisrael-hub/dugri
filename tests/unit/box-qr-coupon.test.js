@@ -445,6 +445,48 @@ describe('the scan page API', () => {
   });
 });
 
+describe('the terms a box promises', () => {
+  it('are frozen with the token: a later settings change cannot shrink a printed promise', async () => {
+    const c = db.createCollection('שירה');
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    db.markPaid(c.id, { method: 'pelecard' });
+    // Minted (as the sticker does) while the offer is 10% for 6 months…
+    const token = db.ensureBoxQrToken(c.id, { percent: 10, months: 6 });
+    expect(db.getCollection(c.id).order.box_qr).toMatchObject({ percent: 10, months: 6 });
+    // …then the owner moves it to 5% for 2 months.
+    settings.set('box_qr', 'percent', 5);
+    settings.set('box_qr', 'expiry_months', 2);
+    try {
+      const look = await get('/api/box-qr/' + token);
+      expect(look.body.percent).toBe(10);
+      expect(look.body.expiry_months).toBe(6);
+      expect(look.body.copy.title).toBe('החזקתם דוגרי ביד? מגיע לכם 10%');
+      const r = await post('/api/box-qr/' + token, { email: 'frozen@x.co' });
+      expect(r.body.code).toMatch(/^FROZEN10-/);
+      const row = db.getFriendCouponByCode(r.body.code);
+      expect(row.discount_percent).toBe(10);
+      expect(row.expires_at).toBe(rules.expiresAtForMonths(row.created_at, 6));
+    } finally {
+      settings.reset('box_qr', 'percent');
+      settings.reset('box_qr', 'expiry_months');
+    }
+  });
+
+  it('a box minted with no terms reads today’s settings', () => {
+    const { c } = boxOrder();
+    expect(db.boxQrTerms(c.id, { percent: 7, months: 3 })).toEqual({ percent: 7, months: 3 });
+  });
+
+  it('an UNPAID order’s token opens nothing and claims nothing', async () => {
+    const c = db.createCollection('לא שולם');
+    db.setOrder(c.id, c.owner_token, { version: 'pickup' });
+    const token = db.ensureBoxQrToken(c.id, { percent: 10, months: 6 });
+    expect((await get('/api/box-qr/' + token)).status).toBe(404);
+    expect((await post('/api/box-qr/' + token, { email: 'unpaid@x.co' })).status).toBe(404);
+    expect(db.getQrCouponForCollection(c.id)).toBe(null);
+  });
+});
+
 describe('at checkout', () => {
   async function qrCode(email) {
     const { c, token } = boxOrder();
@@ -634,6 +676,44 @@ describe('the sticker', () => {
     const label = lastBatch().find((l) => l.title === 'בלי QR');
     expect(label.qr_svg).toBeUndefined();
     expect(db.getCollection(c.id).order.box_qr).toBeUndefined();
+    db.setOrderReady(c.id, true);
+  });
+
+  it('prints the percent frozen on the order, not today’s setting', async () => {
+    const c = produced('קופסה מוקפאת');
+    db.ensureBoxQrToken(c.id, { percent: 10, months: 6 });
+    settings.set('box_qr', 'percent', 5);
+    const res = await realFetch(base + '/api/admin/stickers?key=' + ADMIN_KEY);
+    settings.reset('box_qr', 'percent');
+    expect(res.status).toBe(200);
+    expect(lastBatch().find((l) => l.title === 'קופסה מוקפאת').qr_line).toBe('סרקו ל-10% הנחה');
+    db.setOrderReady(c.id, true);
+  });
+
+  it('a failing token mint or save never costs the night its stickers', async () => {
+    const c = produced('קופסה בלי QR בגלל תקלה');
+    const mint = vi.spyOn(db, 'ensureBoxQrToken').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const flush = vi.spyOn(db, 'flushBoxQrTokens').mockImplementation(() => {
+      throw new Error('disk full');
+    });
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    let res;
+    try {
+      res = await realFetch(base + '/api/admin/stickers?key=' + ADMIN_KEY);
+    } finally {
+      mint.mockRestore();
+      flush.mockRestore();
+    }
+    const logged = err.mock.calls.map((a) => a.join(' ')).join('\n');
+    err.mockRestore();
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('application/pdf');
+    const label = lastBatch().find((l) => l.title === 'קופסה בלי QR בגלל תקלה');
+    expect(label).toBeTruthy();
+    expect(label.qr_svg).toBeUndefined();
+    expect(logged).toContain('printed without a QR');
     db.setOrderReady(c.id, true);
   });
 

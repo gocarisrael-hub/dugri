@@ -381,8 +381,17 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
 
     // The order's box token, minted the FIRST time its sticker is printed and
     // stored on the order, so every reprint encodes the same URL. Returns the
-    // token, or null when there is no such order. Saves only when it mints.
-    ensureBoxQrToken(collectionId) {
+    // token, or null when there is no such order.
+    //
+    // `terms` ({ percent, months }, today's box_qr settings) are FROZEN onto the
+    // order with the token: the sticker prints "10%", so the code that box
+    // yields is 10% even if the setting has moved to 5 by the time someone
+    // scans it. A token from before the freeze carries none and reads the live
+    // settings (boxQrTerms).
+    //
+    // Saves when it mints, unless `save: false`: the sticker batch mints a whole
+    // night's tokens and saves ONCE after (flushBoxQrTokens).
+    ensureBoxQrToken(collectionId, terms = {}, { save = true } = {}) {
       const c = this.getCollection(collectionId);
       if (!c || !c.order) return null;
       if (c.order.box_qr && rules.isBoxTokenShape(c.order.box_qr.token))
@@ -390,9 +399,28 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
       let token = rules.makeBoxToken();
       // 128 bits do not collide; the loop is so a test can prove it would not matter.
       while (this.getCollectionByBoxQrToken(token)) token = rules.makeBoxToken();
-      c.order.box_qr = { token, created_at: nowIso() };
-      saveDb();
+      const box = { token, created_at: nowIso() };
+      if (Number.isInteger(terms.percent)) box.percent = terms.percent;
+      if (Number.isInteger(terms.months)) box.months = terms.months;
+      c.order.box_qr = box;
+      if (save) saveDb();
       return token;
+    },
+
+    // The terms frozen on this order's box ({ percent, months }), each falling
+    // back to `live` (today's settings) when the order carries none.
+    boxQrTerms(collectionId, live = {}) {
+      const c = this.getCollection(collectionId);
+      const b = (c && c.order && c.order.box_qr) || {};
+      return {
+        percent: Number.isInteger(b.percent) ? b.percent : live.percent,
+        months: Number.isInteger(b.months) ? b.months : live.months,
+      };
+    },
+
+    // One write for every token a sticker batch minted with save: false.
+    flushBoxQrTokens() {
+      saveDb();
     },
 
     // Claim this order's ONE code for `email`. Returns { error } — 'bad_email' |

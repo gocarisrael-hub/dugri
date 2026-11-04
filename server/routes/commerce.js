@@ -94,20 +94,29 @@ function registerStickersAndStock(
         return d;
       }
     };
-    const percent = get('percent', 10);
     return {
       enabled: get('enabled', true) !== false,
       delivery: get('delivery_label', false) === true,
-      line: String(get('sticker_line', '') || '').replace(/\{percent\}/g, String(percent)),
+      percent: get('percent', 10),
+      months: get('expiry_months', 6),
+      line: String(get('sticker_line', '') || ''),
     };
   }
+  // The QR fields for one label. Mints without saving (the batch saves once).
+  // The line says the percent FROZEN on the order with its token, which is the
+  // percent the code it yields will carry (db.ensureBoxQrToken).
   function boxQrFields(collectionId, qr) {
     const base = paymentBaseUrl ? paymentBaseUrl() : null;
     if (!qr.enabled || !base) return {};
-    const token = db.ensureBoxQrToken(collectionId);
+    const live = { percent: qr.percent, months: qr.months };
+    const token = db.ensureBoxQrToken(collectionId, live, { save: false });
     const url = fcRules.boxQrUrl(base, token);
     if (!url) return {};
-    return { qr_svg: boxQr.svgFor(url), qr_line: qr.line };
+    const { percent } = db.boxQrTerms(collectionId, live);
+    return {
+      qr_svg: boxQr.svgFor(url),
+      qr_line: qr.line.replace(/\{percent\}/g, String(percent)),
+    };
   }
 
   // --- self-collection stickers -------------------------------------------------
@@ -434,10 +443,30 @@ function registerStickersAndStock(
     // The box QR, on every label of ours. Minting the token here — when the
     // sticker is actually produced — and not in stickerBatch, which other
     // screens read just to count tonight's pile.
+    //
+    // NEVER AT THE COST OF THE STICKERS. This runs outside the render's try, in
+    // an async handler: a throw here (a store write, the encoder) would hang the
+    // request and could take the process down. So each label's QR is tried on
+    // its own, a failure prints that label without one and says so in the log,
+    // and the night's tokens are saved in ONE write after the loop.
     const qr = boxQrSettings();
     for (const e of printable) {
       if (e.kind === 'delivery') e.own_label = qr.enabled && qr.delivery;
-      if (e.kind === 'pickup' || e.own_label) Object.assign(e.label, boxQrFields(e.id, qr));
+      if (e.kind !== 'pickup' && !e.own_label) continue;
+      try {
+        Object.assign(e.label, boxQrFields(e.id, qr));
+      } catch (err) {
+        console.error(
+          '[box-qr] ' + e.label.order_no + ': printed without a QR:',
+          (err && err.message) || err
+        );
+      }
+    }
+    try {
+      db.flushBoxQrTokens();
+    } catch (err) {
+      // The tokens stay in memory and go out with the next write that works.
+      console.error('[box-qr] tokens not saved yet:', (err && err.message) || err);
     }
 
     let out;
@@ -1183,14 +1212,19 @@ function registerFriendCoupons(
       delivery_label: get('delivery_label') === true,
     };
   };
-  // The page's words, owner-editable on the coupons page, with {percent} and
-  // {months} filled in from today's settings.
-  const qrCopy = () => {
+  // The terms THIS box promises: frozen on the order when its token was minted
+  // (db.ensureBoxQrToken); today's settings only for a token that predates that.
+  const boxTerms = (c) => {
     const o = qrOffer();
+    return db.boxQrTerms(c.id, { percent: o.percent, months: o.expiry_months });
+  };
+  // The page's words, owner-editable on the coupons page, with {percent} and
+  // {months} filled in from this box's terms.
+  const qrCopy = (t) => {
     const fill = (k) =>
       String(settings.get('box_qr', k) || '')
-        .replace(/\{percent\}/g, String(o.percent))
-        .replace(/\{months\}/g, String(o.expiry_months));
+        .replace(/\{percent\}/g, String(t.percent))
+        .replace(/\{months\}/g, String(t.months));
     return {
       title: fill('page_title'),
       body: fill('page_body'),
@@ -1207,9 +1241,10 @@ function registerFriendCoupons(
   };
   // The order behind a token, or null — unknown, malformed, or cancelled (a
   // voided order's box earns nothing).
+  // …or not paid: no box is made for an unpaid order.
   const boxOrder = (token) => {
     const c = db.getCollectionByBoxQrToken(token);
-    return c && !c.cancelled ? c : null;
+    return c && !c.cancelled && c.order && c.order.paid ? c : null;
   };
   // FIVE CLAIMS per client per hour, like the friend offer (each one can send a
   // mail from our domain), and a looser budget for opening the page. Keyed by
@@ -1236,10 +1271,11 @@ function registerFriendCoupons(
     const c = boxOrder(req.params.token);
     if (!c) return res.status(404).json({ state: 'not_found' });
     const o = qrOffer();
-    const copy = qrCopy();
+    const t = boxTerms(c);
+    const copy = qrCopy(t);
     if (db.getQrCouponForCollection(c.id)) return res.json({ state: 'claimed', copy });
     if (!o.enabled) return res.json({ state: 'disabled', copy });
-    res.json({ state: 'open', percent: o.percent, expiry_months: o.expiry_months, copy });
+    res.json({ state: 'open', percent: t.percent, expiry_months: t.months, copy });
   });
 
   // Public: claim the order's code. Body: { email, marketing_consent }.
@@ -1257,12 +1293,14 @@ function registerFriendCoupons(
     const o = qrOffer();
     if (!o.enabled) return res.status(403).json({ error: 'disabled' });
     const b = req.body || {};
+    // What the sticker promised, not today's setting.
+    const t = boxTerms(c);
     const r = db.issueQrCoupon({
       collectionId: c.id,
       email: b.email,
       marketingConsent: b.marketing_consent === true,
-      percent: o.percent,
-      expiryMonths: o.expiry_months,
+      percent: t.percent,
+      expiryMonths: t.months,
     });
     if (r.error === 'bad_email') return res.status(400).json({ error: 'bad_email' });
     if (r.error) return res.status(404).json({ error: 'not_found' });
@@ -1293,7 +1331,11 @@ function registerFriendCoupons(
     if (!o.paid || c.cancelled || (o.version !== 'pickup' && o.version !== 'delivery')) {
       return res.status(409).json({ error: 'no box' });
     }
-    const token = db.ensureBoxQrToken(c.id);
+    const live = qrOffer();
+    const token = db.ensureBoxQrToken(c.id, {
+      percent: live.percent,
+      months: live.expiry_months,
+    });
     const fc = require('../friend-coupons');
     res.json({
       path: '/box?t=' + token,
