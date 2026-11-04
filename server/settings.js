@@ -745,7 +745,7 @@ const REGISTRY = {
       kind: 'text',
       tokens: ['percent'],
       max: 80,
-      default: 'החזקתם דוגרי ביד? מגיע לכם {percent}%',
+      default: 'תודה שבחרתם בדוגרי! מגיע לכם {percent}% הנחה לפעם הבאה',
     },
     page_lead: {
       kind: 'text',
@@ -753,8 +753,8 @@ const REGISTRY = {
       max: 300,
       multiline: true,
       default:
-        'בלי סיבובים: הקלידו את מספר הטלפון שאיתו הזמנתם, ותקבלו קוד אישי של {percent}% הנחה ' +
-        'למשחק הבא. קוד אחד לכל משחק שהפקנו, בתוקף ל-{months} חודשים.',
+        'הקלידו את מספר הטלפון שאיתו הזמנתם, ותקבלו קוד אישי של {percent}% הנחה ' +
+        'למשחק הבא. הקוד בתוקף ל-{months} חודשים. ושוב תודה :)',
     },
     page_button: { kind: 'text', tokens: [], max: 40, default: 'תנו לי את הקוד' },
     page_consent: {

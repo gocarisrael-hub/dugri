@@ -59,9 +59,14 @@ test('scan → phone → the code on screen with the masked address → it appli
   const card = page.getByTestId('box-card');
   await expect(card).toHaveAttribute('data-state', 'open');
   // The owner's words, from the real server.
-  await expect(page.locator('h1')).toHaveText('החזקתם דוגרי ביד? מגיע לכם 10%');
-  await expect(card).toContainText('מספר הטלפון שאיתו הזמנתם');
+  await expect(page.locator('h1')).toHaveText('תודה שבחרתם בדוגרי! מגיע לכם 10% הנחה לפעם הבאה');
+  await expect(card).toContainText(
+    'הקלידו את מספר הטלפון שאיתו הזמנתם, ותקבלו קוד אישי של 10% הנחה למשחק הבא. ' +
+      'הקוד בתוקף ל-6 חודשים. ושוב תודה :)'
+  );
+  // Ticked by default: the owner's standing choice.
   await expect(page.getByTestId('box-consent')).toBeChecked();
+  await expect(card).toContainText('אשמח לקבל מדוגרי עדכונים והטבות במייל');
 
   await page.getByTestId('box-phone').fill('+972 52-727-5047');
   await page.getByTestId('box-submit').click();
@@ -108,6 +113,23 @@ test('a number with no produced order: the neutral message, and the form stays f
   await expect(page.getByTestId('box-code')).toHaveCount(0);
 });
 
+test('unticking the marketing box sends consent false', async ({ page }) => {
+  let sent = null;
+  await page.route('**/api/box-qr', async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    sent = route.request().postDataJSON();
+    await route.fulfill({ json: { ok: true, all_claimed: true } });
+  });
+  await page.goto('/box');
+  const consent = page.getByTestId('box-consent');
+  await expect(consent).toBeChecked();
+  await consent.uncheck();
+  await page.getByTestId('box-phone').fill('0527275047');
+  await page.getByTestId('box-submit').click();
+  await expect(page.getByTestId('box-card')).toHaveAttribute('data-state', 'all_claimed');
+  expect(sent).toEqual({ phone: '0527275047', marketing_consent: false });
+});
+
 test('not a phone number is caught before it is sent', async ({ page }) => {
   let posted = false;
   await page.route('**/api/box-qr', (route) => {
@@ -143,6 +165,11 @@ test('in the redesign the page takes the kit’s look', async ({ page }) => {
   await expect(page.getByTestId('box-card')).toHaveAttribute('data-state', 'open');
   await expect(page.getByTestId('box-card')).toHaveClass(/rd-box/);
   await expect(page.getByTestId('box-submit')).toHaveClass(/rd-btn/);
+  // The same words and the same ticked box in the new look.
+  await expect(page.locator('h1')).toHaveText('תודה שבחרתם בדוגרי! מגיע לכם 10% הנחה לפעם הבאה');
+  await expect(page.getByTestId('box-card')).toContainText('ושוב תודה :)');
+  await expect(page.getByTestId('box-consent')).toBeChecked();
+  await expect(page.getByTestId('box-consent')).toBeVisible();
   await page.goto('/box?rd=0');
 });
 
