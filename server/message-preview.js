@@ -184,6 +184,25 @@ const EMAIL_KINDS = [
       ),
   },
   {
+    // The box QR's code mail (Agent A): to whoever scanned the QR on a box and
+    // left an email. A fixed sample, like the friend coupon's.
+    id: 'box_qr_coupon',
+    label: 'קופון QR מהקופסה (למי שסרקו את הקופסה)',
+    audience: 'buyer',
+    settingsKey: 'box_qr_coupon',
+    build: (n, c, base) =>
+      n.buildFriendCoupon(
+        {
+          code: 'DANA10-K7Q2',
+          source: 'qr',
+          discount_percent: 10,
+          expires_at: '2027-05-04T10:00:00.000Z',
+        },
+        c,
+        base
+      ),
+  },
+  {
     id: 'owner_order_created',
     label: 'הזמנה חדשה (לבעלת העסק)',
     audience: 'owner',

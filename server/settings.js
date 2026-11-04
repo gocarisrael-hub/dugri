@@ -334,6 +334,7 @@ const REGISTRY = {
         ownerLink: 'קישור לניהול', // "קישור לניהול: <url>"
         currency: '₪', // amount unit
         freeCoupon: 'קופון 100%', // shown for a fully-free (0 ₪) order
+        qrCoupon: 'קופון QR מהקופסה', // owner order-detail: a code claimed from a box QR paid
         buyerPackage: '· חבילה', // buyer confirmation: "· חבילה: <label>"
         buyerPrice: '· מחיר', // buyer confirmation: "· מחיר: <n> ₪"
         buyerPaid: '· שולם', // buyer payment receipt: "· שולם: <n> ₪"
@@ -452,6 +453,37 @@ const REGISTRY = {
         code_label: 'הקוד האישי שלכם:',
         terms: '{percent}% הנחה על המשחק הראשון שלכם. לשימוש אחד, בתוקף עד {expiry_date}.',
         button: 'בונים את המשחק',
+        button_note: 'דרך הכפתור ההנחה כבר בפנים, בלי להקליד כלום',
+        sign1: 'דוגרי',
+        sign2: 'המתנה הכי אישית ומקורית שאפשר לתת',
+      },
+    },
+    // The BOX QR mail (Agent A): sent to whoever scanned the QR on a Dugri box
+    // and left an email for the personal code. Built by the same builder as the
+    // friend coupon mail (notify.buildFriendCoupon), in the same look. It knows
+    // nothing about the order the box came from — the scanner may be a guest
+    // who was handed the game — so there is no {celebrant_name} here.
+    box_qr_coupon: {
+      kind: 'email',
+      tokens: ['code', 'percent', 'expiry_date', 'link'],
+      default: {
+        enabled: true,
+        subject: 'הקוד שלכם מהקופסה של דוגרי',
+        body:
+          'היי,\n\n' +
+          'סרקתם את הקופסה, אז בואו נדבר דוגרי: מגיע לכם משחק משלכם.\n\n' +
+          'יש גם אצלכם מישהו שמגיע לו ערב שלם עליו, בלי פילטרים?',
+      },
+    },
+    // The rest of the box QR mail, around the code box (the same parts as the
+    // friend coupon's, worded for a next game).
+    box_qr_coupon_parts: {
+      kind: 'map',
+      tokens: ['percent', 'expiry_date'],
+      default: {
+        code_label: 'הקוד האישי שלכם:',
+        terms: '{percent}% הנחה על המשחק הבא שלכם. לשימוש אחד, בתוקף עד {expiry_date}.',
+        button: 'בונים משחק חדש',
         button_note: 'דרך הכפתור ההנחה כבר בפנים, בלי להקליד כלום',
         sign1: 'דוגרי',
         sign2: 'המתנה הכי אישית ומקורית שאפשר לתת',
@@ -694,6 +726,63 @@ const REGISTRY = {
     enabled: { kind: 'flag', tokens: [], default: true },
     percent: { kind: 'count', min: 1, max: 100, tokens: [], default: 5 },
     expiry_days: { kind: 'count', min: 1, max: 3650, tokens: [], default: 90 },
+  },
+  // --- The box QR (Agent A) -------------------------------------------------
+  // Every printed game's box sticker carries a QR; whoever holds the box scans it
+  // and claims ONE personal single-use code per order for a next order
+  // (server/friend-coupons.js). Edited from the coupons page. `percent` and
+  // `expiry_months` are COPIED onto each code when it is claimed, like the friend
+  // coupon. `enabled` off: no QR is printed on new stickers and the scan page
+  // stops issuing codes; codes already claimed keep working.
+  box_qr: {
+    enabled: { kind: 'flag', tokens: [], default: true },
+    percent: { kind: 'count', min: 1, max: 100, tokens: [], default: 10 },
+    expiry_months: { kind: 'count', min: 1, max: 60, tokens: [], default: 6 },
+    // Delivery boxes carry only HFD's label today. On: our own label (with the
+    // QR) is printed too, right after each delivery box's courier label. Off by
+    // default: it is one more sticker per parcel, the owner's call.
+    delivery_label: { kind: 'flag', tokens: [], default: false },
+    // The one line printed under the QR on the sticker. {percent} is the live
+    // percent. Short: it sits in a 22 mm column.
+    sticker_line: { kind: 'text', tokens: ['percent'], max: 40, default: 'סרקו ל-{percent}% הנחה' },
+    // The scan page (site/box.html), in Dugri's voice.
+    page_title: {
+      kind: 'text',
+      tokens: ['percent'],
+      max: 80,
+      default: 'החזקתם דוגרי ביד? מגיע לכם {percent}%',
+    },
+    page_body: {
+      kind: 'text',
+      tokens: ['percent', 'months'],
+      max: 300,
+      multiline: true,
+      default:
+        'בלי סיבובים: השאירו מייל ונשלח לכם קוד אישי של {percent}% הנחה למשחק הבא שלכם. ' +
+        'קוד אחד לכל קופסה, בתוקף ל-{months} חודשים.',
+    },
+    page_button: { kind: 'text', tokens: [], max: 40, default: 'שלחו לי את הקוד' },
+    page_consent: {
+      kind: 'text',
+      tokens: [],
+      max: 120,
+      default: 'אשמח לקבל מדוגרי עדכונים והטבות במייל',
+    },
+    page_done: {
+      kind: 'text',
+      tokens: ['percent'],
+      max: 160,
+      default: 'הנה הקוד שלכם. שלחנו אותו גם למייל, שלא ילך לאיבוד.',
+    },
+    page_claimed: {
+      kind: 'text',
+      tokens: [],
+      max: 200,
+      multiline: true,
+      default:
+        'הקוד של הקופסה הזו כבר נלקח. קוד אחד לכל קופסה, ככה זה. ' +
+        'אבל משחק משלכם אפשר לבנות תמיד.',
+    },
   },
   // --- Owner-managed reminder list (email + WhatsApp) -----------------------
   // A flexible replacement for the fixed wa daily/quiet triggers: ONE key holding

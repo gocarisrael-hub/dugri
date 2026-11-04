@@ -120,6 +120,8 @@ export default defineConfig({
       // Same reason for the friend coupon's issue endpoint (5 per client per hour
       // in production): every E2E test is the one client 127.0.0.1.
       FRIEND_COUPON_RATE_LIMIT: '100000',
+      // …and the box QR's claim endpoint (5 per client per hour in production).
+      BOX_QR_RATE_LIMIT: '100000',
       // And for creating a collection (20 per client per hour in production):
       // nearly every spec makes its own party, all from 127.0.0.1.
       COLLECTION_CREATE_RATE_LIMIT: '100000',

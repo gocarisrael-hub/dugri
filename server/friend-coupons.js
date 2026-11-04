@@ -125,14 +125,64 @@ function formatIsraelDate(iso) {
 // hand-written domain (dugri.co.il is dead; staging is not production). The UTM
 // tags here are the ONLY ones in the whole feature: an internal link carrying
 // them would overwrite the visitor's real source in GA.
-function landingLink(baseUrl, code) {
+//
+// `campaign` names the source in GA: friend_coupon for a friend's code, box_qr
+// for a code claimed from the QR on a box.
+function landingLink(baseUrl, code, campaign = 'friend_coupon') {
   if (!baseUrl) return null;
   return (
     String(baseUrl).replace(/\/+$/, '') +
     '/?coupon=' +
     encodeURIComponent(code) +
-    '&utm_source=coupon&utm_medium=email&utm_campaign=friend_coupon'
+    '&utm_source=coupon&utm_medium=email&utm_campaign=' +
+    encodeURIComponent(campaign)
   );
+}
+
+// --- The box QR: a SECOND SOURCE of the same personal codes -------------------
+//
+// Every printed game's box sticker carries a QR (generator/pickup_stickers.py).
+// Whoever holds the box scans it, leaves an email and gets ONE personal
+// single-use code for a next order — one per ORDER, not per person: the box is
+// the thing that earns it. The codes are ordinary friend-coupon rows with
+// `source: 'qr'` and `collection_id` = the order whose box carried the QR, so
+// they go through the same validate / consume-on-paid / double-use guard as a
+// friend's code, with no second pipeline to keep in step.
+
+// A row's source. Rows from before the QR existed carry none and are friend codes.
+function sourceOf(row) {
+  return row && row.source === 'qr' ? 'qr' : 'friend';
+}
+
+// The token in the QR's URL. 16 bytes from the CSPRNG = 128 bits, base64url (22
+// characters, no padding) so it rides in a URL as is. It is a bearer secret: the
+// box's holder IS whoever has it, so it is long enough that nobody reaches a box
+// by guessing, and it is never the order id or the code.
+const BOX_TOKEN_BYTES = 16;
+const BOX_TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
+function makeBoxToken(randomBytes = crypto.randomBytes) {
+  return randomBytes(BOX_TOKEN_BYTES).toString('base64url');
+}
+function isBoxTokenShape(t) {
+  return typeof t === 'string' && BOX_TOKEN_RE.test(t);
+}
+
+// The URL the QR encodes, from the deployment's own origin (PUBLIC_BASE_URL),
+// never a typed domain — staging prints staging's. `/box` is site/box.html. Kept
+// short on purpose: every character is QR modules, and a smaller code scans from
+// further away on a 105x74 mm label. null when there is no origin to build it
+// from: a QR pointing nowhere is worse than none.
+function boxQrUrl(baseUrl, token) {
+  if (!baseUrl || !isBoxTokenShape(token)) return null;
+  return String(baseUrl).replace(/\/+$/, '') + '/box?t=' + token;
+}
+
+// Calendar months, in UTC. Jan 31 + 1 month is Mar 3 (Date's own overflow),
+// which errs a few days in the buyer's favour rather than cutting a month short.
+function expiresAtForMonths(createdIso, months) {
+  const d = new Date(Date.parse(createdIso));
+  d.setUTCMonth(d.getUTCMonth() + Number(months));
+  return d.toISOString();
 }
 
 // The admin's one summary row, from the rows and the orders.
@@ -149,8 +199,12 @@ function landingLink(baseUrl, code) {
 // Revenue is read from the ORDERS, not from the rows' order_id: an order that
 // paid with a code someone else had consumed first (the double-use guard below)
 // is still a sale the code brought in, and the owner should see it.
-function summarize(rows, collections) {
-  const list = Array.isArray(rows) ? rows : [];
+//
+// `source` narrows the rows first ('friend' or 'qr'), so each admin section
+// counts only its own codes. Omitted, every row counts (the old behaviour).
+function summarize(rows, collections, source) {
+  const all = Array.isArray(rows) ? rows : [];
+  const list = source ? all.filter((r) => sourceOf(r) === source) : all;
   const codes = new Set(list.map((r) => r.code));
   const issued = list.length;
   const used = list.filter((r) => r.used_at).length;
@@ -185,4 +239,10 @@ module.exports = {
   formatIsraelDate,
   landingLink,
   summarize,
+  sourceOf,
+  BOX_TOKEN_RE,
+  makeBoxToken,
+  isBoxTokenShape,
+  boxQrUrl,
+  expiresAtForMonths,
 };

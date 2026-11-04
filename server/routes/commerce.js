@@ -73,8 +73,43 @@ function registerStickersAndStock(
     PREVIEW_TIMEOUT_MS,
     spawnGenerator,
     killGenerator,
+    settings,
+    paymentBaseUrl,
   }
 ) {
+  // --- the box QR on our sticker ------------------------------------------------
+  // Every label of OURS carries a QR to this order's scan page (site/box.html),
+  // where whoever holds the box claims the order's one personal code
+  // (server/friend-coupons.js). The token is minted the first time the order's
+  // sticker is printed and reused on every reprint (db.ensureBoxQrToken), so a
+  // reprinted label is the same QR. No QR when the owner has switched it off, or
+  // when there is no PUBLIC_BASE_URL to build the link from.
+  const fcRules = require('../friend-coupons');
+  const boxQr = require('../box-qr');
+  function boxQrSettings() {
+    const get = (k, d) => {
+      try {
+        return settings ? settings.get('box_qr', k) : d;
+      } catch {
+        return d;
+      }
+    };
+    const percent = get('percent', 10);
+    return {
+      enabled: get('enabled', true) !== false,
+      delivery: get('delivery_label', false) === true,
+      line: String(get('sticker_line', '') || '').replace(/\{percent\}/g, String(percent)),
+    };
+  }
+  function boxQrFields(collectionId, qr) {
+    const base = paymentBaseUrl ? paymentBaseUrl() : null;
+    if (!qr.enabled || !base) return {};
+    const token = db.ensureBoxQrToken(collectionId);
+    const url = fcRules.boxQrUrl(base, token);
+    if (!url) return {};
+    return { qr_svg: boxQr.svgFor(url), qr_line: qr.line };
+  }
+
   // --- self-collection stickers -------------------------------------------------
   // Every printed game the customer collects herself gets a label on its box, and
   // the owner has been typing that sheet by hand every night: open a document,
@@ -316,10 +351,21 @@ function registerStickersAndStock(
         if (n === 1) return [e.label];
         return Array.from({ length: n }, (_, i) => ({ ...e.label, box: i + 1 + '/' + n }));
       }
-      return courierShipments(e)
+      const courier = courierShipments(e)
         .map((sh) => files.get(sh.shipment_number))
         .filter(Boolean)
         .map((file) => ({ pdf: file }));
+      // OUR label too, after the courier's, when the owner has asked for one on
+      // delivery boxes (box_qr.delivery_label) — it is what carries the box QR.
+      // One per box, marked like a pickup's. Headed "משלוח", not "איסוף עצמי".
+      if (!e.own_label) return courier;
+      const n = Math.max(1, Number(e.boxes) || 1);
+      const own = Array.from({ length: n }, (_, i) => ({
+        ...e.label,
+        head: 'משלוח',
+        ...(n === 1 ? {} : { box: i + 1 + '/' + n }),
+      }));
+      return [...courier, ...own];
     });
   }
 
@@ -384,6 +430,15 @@ function registerStickersAndStock(
         /* best-effort cleanup */
       }
     };
+
+    // The box QR, on every label of ours. Minting the token here — when the
+    // sticker is actually produced — and not in stickerBatch, which other
+    // screens read just to count tonight's pile.
+    const qr = boxQrSettings();
+    for (const e of printable) {
+      if (e.kind === 'delivery') e.own_label = qr.enabled && qr.delivery;
+      if (e.kind === 'pickup' || e.own_label) Object.assign(e.label, boxQrFields(e.id, qr));
+    }
 
     let out;
     let failed = [];
@@ -1115,6 +1170,138 @@ function registerFriendCoupons(
     return ok;
   }
 
+  // --- the box QR's scan page (site/box.html) ---------------------------------
+  // The QR on a box sticker opens /box?t=<token>. One code per ORDER: the first
+  // person to leave an email gets it, on screen and by mail; everyone after is
+  // told it was claimed and is never shown it (db.issueQrCoupon).
+  const qrOffer = () => {
+    const get = (k) => settings.get('box_qr', k);
+    return {
+      enabled: get('enabled') !== false,
+      percent: get('percent'),
+      expiry_months: get('expiry_months'),
+      delivery_label: get('delivery_label') === true,
+    };
+  };
+  // The page's words, owner-editable on the coupons page, with {percent} and
+  // {months} filled in from today's settings.
+  const qrCopy = () => {
+    const o = qrOffer();
+    const fill = (k) =>
+      String(settings.get('box_qr', k) || '')
+        .replace(/\{percent\}/g, String(o.percent))
+        .replace(/\{months\}/g, String(o.expiry_months));
+    return {
+      title: fill('page_title'),
+      body: fill('page_body'),
+      button: fill('page_button'),
+      consent: fill('page_consent'),
+      done: fill('page_done'),
+      claimed: fill('page_claimed'),
+    };
+  };
+  // The order a QR row came from, for the admin list (owner key only).
+  const boxOrderFields = (row) => {
+    const src = db.getCollection(row.collection_id);
+    return { box_order_no: src ? db.orderRef(src) : null };
+  };
+  // The order behind a token, or null — unknown, malformed, or cancelled (a
+  // voided order's box earns nothing).
+  const boxOrder = (token) => {
+    const c = db.getCollectionByBoxQrToken(token);
+    return c && !c.cancelled ? c : null;
+  };
+  // FIVE CLAIMS per client per hour, like the friend offer (each one can send a
+  // mail from our domain), and a looser budget for opening the page. Keyed by
+  // clientKey, never req.ip. BOX_QR_RATE_LIMIT is for the E2E server only.
+  const claimRate = makeRateLimiter({
+    limit: Number(process.env.BOX_QR_RATE_LIMIT) || 5,
+    windowMs: 60 * 60 * 1000,
+    maxKeys: 10000,
+  });
+  const lookRate = makeRateLimiter({
+    limit: Number(process.env.BOX_QR_LOOK_RATE_LIMIT) || 60,
+    windowMs: 60 * 60 * 1000,
+    maxKeys: 10000,
+  });
+
+  // Public: what the scan page should say. state 'open' | 'claimed' | 'disabled';
+  // 404 for a token no order carries. NOTHING about the order goes out — not the
+  // honoree, not the buyer, not the code: the token proves you hold a box, not
+  // whose party it was.
+  app.get('/api/box-qr/:token', (req, res) => {
+    if (!lookRate.ok('box-look:' + clientKey(req))) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    const c = boxOrder(req.params.token);
+    if (!c) return res.status(404).json({ state: 'not_found' });
+    const o = qrOffer();
+    const copy = qrCopy();
+    if (db.getQrCouponForCollection(c.id)) return res.json({ state: 'claimed', copy });
+    if (!o.enabled) return res.json({ state: 'disabled', copy });
+    res.json({ state: 'open', percent: o.percent, expiry_months: o.expiry_months, copy });
+  });
+
+  // Public: claim the order's code. Body: { email, marketing_consent }.
+  //
+  // created → the code comes back (to show on screen) and goes to the inbox.
+  // Already claimed → { claimed: true } and NOTHING else: no code, no email sent
+  // anywhere, whatever address was typed. The code is the first claimer's.
+  app.post('/api/box-qr/:token', async (req, res) => {
+    if (!claimRate.ok('box-claim:' + clientKey(req))) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    const c = boxOrder(req.params.token);
+    if (!c) return res.status(404).json({ error: 'not_found' });
+    if (db.getQrCouponForCollection(c.id)) return res.json({ ok: true, claimed: true });
+    const o = qrOffer();
+    if (!o.enabled) return res.status(403).json({ error: 'disabled' });
+    const b = req.body || {};
+    const r = db.issueQrCoupon({
+      collectionId: c.id,
+      email: b.email,
+      marketingConsent: b.marketing_consent === true,
+      percent: o.percent,
+      expiryMonths: o.expiry_months,
+    });
+    if (r.error === 'bad_email') return res.status(400).json({ error: 'bad_email' });
+    if (r.error) return res.status(404).json({ error: 'not_found' });
+    if (!r.created) return res.json({ ok: true, claimed: true });
+    const row = r.coupon;
+    const emailed = await mailCode(row);
+    res.json({
+      ok: true,
+      created: true,
+      emailed,
+      code: row.code,
+      percent: row.discount_percent,
+      expires_at: row.expires_at,
+    });
+  });
+
+  // Owner only: this order's box QR link — the same one its sticker prints,
+  // minted here if no sticker has been printed yet (paid physical orders only:
+  // a PDF order has no box). So the owner can open the scan page herself, on
+  // staging say, without printing a label. Whether the code was claimed rides
+  // along; the code itself does not (it is on the coupons page). Denied to the
+  // staff key (STAFF_DENIED): the link is worth a code.
+  app.get('/api/admin/collections/:id/box-qr', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const c = db.getCollection(req.params.id);
+    if (!c || !c.order) return res.status(404).json({ error: 'not found' });
+    const o = c.order;
+    if (!o.paid || c.cancelled || (o.version !== 'pickup' && o.version !== 'delivery')) {
+      return res.status(409).json({ error: 'no box' });
+    }
+    const token = db.ensureBoxQrToken(c.id);
+    const fc = require('../friend-coupons');
+    res.json({
+      path: '/box?t=' + token,
+      url: fc.boxQrUrl(paymentBaseUrl(), token),
+      claimed: !!db.getQrCouponForCollection(c.id),
+    });
+  });
+
   // Public: is the offer on, and at what percent. The collect page reads this
   // before it shows the bar, so the copy says the number the owner set.
   app.get('/api/friend-coupon', (req, res) => {
@@ -1159,17 +1346,26 @@ function registerFriendCoupons(
   // email or code (?q=). Owner key only — requireAdmin keeps the staff key out
   // (its allow-list does not include this path), because every row is a
   // person's email address.
+  //
+  // ?source=qr is the BOX QR section (codes claimed from the QR on a box): the
+  // same rows and the same arithmetic, narrowed to that source, with its own
+  // settings. Each row also names the order whose box it came from.
   app.get('/api/admin/friend-coupons', (req, res) => {
     if (!requireAdmin(req, res)) return;
-    const coupons = db.listFriendCoupons({ q: req.query.q }).map((row) => {
+    const source = req.query.source === 'qr' ? 'qr' : 'friend';
+    const coupons = db.listFriendCoupons({ q: req.query.q, source }).map((row) => {
       const c = row.order_id ? db.getCollection(row.order_id) : null;
       return {
         ...row,
         order_no: c ? db.orderRef(c) : null,
         order_link: c ? '/collect.html?c=' + c.id + '&k=' + c.owner_token : null,
+        ...(source === 'qr' ? boxOrderFields(row) : {}),
       };
     });
-    res.json({ summary: { ...db.friendCouponSummary(), ...offer() }, coupons });
+    res.json({
+      summary: { ...db.friendCouponSummary(source), ...(source === 'qr' ? qrOffer() : offer()) },
+      coupons,
+    });
   });
 
   // Admin: mark a code used by hand (customer support). 409 when already used.

@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="box.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <!-- The token in this page's URL is a bearer secret (it claims a code), so it
+         must not ride out to anything this page links to or loads. -->
+    <meta name="referrer" content="no-referrer" />
+    <title>דוגרי · קוד מהקופסה</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        font-weight: 300;
+        background: #fff;
+        color: #141414;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 16px;
+        line-height: 1.6;
+      }
+      .card {
+        max-width: 460px;
+        width: 100%;
+        text-align: center;
+      }
+      .brand {
+        font-size: 15px;
+        letter-spacing: 2px;
+        color: #6b6b6b;
+        margin-bottom: 18px;
+      }
+      h1 {
+        font-size: 28px;
+        font-weight: 300;
+        line-height: 1.25;
+        margin-bottom: 14px;
+      }
+      p {
+        margin-bottom: 14px;
+        white-space: pre-line;
+      }
+      form {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        margin-top: 8px;
+        text-align: right;
+      }
+      input[type='email'] {
+        font: inherit;
+        font-size: 17px;
+        padding: 13px 14px;
+        border: 1px solid #141414;
+        border-radius: 0;
+        direction: ltr;
+        text-align: left;
+        width: 100%;
+      }
+      .consent {
+        display: flex;
+        gap: 8px;
+        align-items: flex-start;
+        font-size: 14px;
+        color: #3c3c3c;
+      }
+      .consent input {
+        margin-top: 4px;
+      }
+      button,
+      .cta {
+        font: inherit;
+        font-size: 17px;
+        cursor: pointer;
+        border: 1px solid #141414;
+        background: #141414;
+        color: #fff;
+        border-radius: 0;
+        padding: 14px 26px;
+        text-decoration: none;
+        display: inline-block;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .code {
+        display: inline-block;
+        border: 2px dashed #b7a389;
+        background: #f6f1e8;
+        padding: 14px 26px;
+        font-size: 28px;
+        letter-spacing: 3px;
+        direction: ltr;
+        margin: 6px 0 16px;
+        user-select: all;
+      }
+      .muted {
+        color: #6b6b6b;
+        font-size: 14px;
+      }
+      .err {
+        color: #a4443a;
+        font-size: 15px;
+        min-height: 1em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card" id="card" data-testid="box-card">
+      <div class="brand">דוגרי</div>
+      <h1 id="title">רגע…</h1>
+      <div id="body"><p class="muted">טוען…</p></div>
+    </div>
+
+    <script type="module">
+      const token = new URLSearchParams(location.search).get('t') || '';
+      const titleEl = document.getElementById('title');
+      const bodyEl = document.getElementById('body');
+      const card = document.getElementById('card');
+
+      const esc = (s) =>
+        String(s == null ? '' : s).replace(
+          /[&<>"']/g,
+          (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+        );
+      const api = '/api/box-qr/' + encodeURIComponent(token);
+
+      function renderBad() {
+        card.dataset.state = 'not_found';
+        titleEl.textContent = 'הקוד הזה לא מוכר לנו';
+        bodyEl.innerHTML =
+          '<p>נסו לסרוק שוב את המדבקה שעל הקופסה. אם זה לא עובד, כתבו לנו ונסדר.</p>' +
+          '<a class="cta" href="/">לאתר של דוגרי</a>';
+      }
+
+      function renderClaimed(copy) {
+        card.dataset.state = 'claimed';
+        titleEl.textContent = 'כבר נלקח';
+        bodyEl.innerHTML =
+          '<p data-testid="box-claimed">' +
+          esc(copy.claimed) +
+          '</p><a class="cta" href="/">בונים משחק</a>';
+      }
+
+      function renderDisabled() {
+        card.dataset.state = 'disabled';
+        titleEl.textContent = 'ההטבה הזו לא פעילה כרגע';
+        bodyEl.innerHTML = '<a class="cta" href="/">לאתר של דוגרי</a>';
+      }
+
+      // The code, shown ONCE, to whoever just claimed it. A reload asks the
+      // server again and gets "claimed": it never says the code a second time.
+      function renderDone(copy, r) {
+        card.dataset.state = 'done';
+        titleEl.textContent = r.percent + '% הנחה, שלכם';
+        // The owner's "we sent it to your inbox too" line only when it was sent.
+        bodyEl.innerHTML =
+          (r.emailed ? '<p>' + esc(copy.done) + '</p>' : '') +
+          '<div class="code" data-testid="box-code">' +
+          esc(r.code) +
+          '</div><br /><a class="cta" data-testid="box-start" href="/?coupon=' +
+          encodeURIComponent(r.code) +
+          '&utm_source=coupon&utm_medium=qr&utm_campaign=box_qr">בונים משחק חדש</a>' +
+          (r.emailed
+            ? ''
+            : '<p class="muted" style="margin-top:14px">המייל לא יצא, אז שמרו את הקוד.</p>');
+      }
+
+      function renderOpen(copy) {
+        card.dataset.state = 'open';
+        titleEl.textContent = copy.title;
+        bodyEl.innerHTML =
+          '<p>' +
+          esc(copy.body) +
+          '</p><form id="f" novalidate>' +
+          '<input id="email" type="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="מייל" data-testid="box-email" />' +
+          // Ticked by default (the owner's standing choice, as on the friend
+          // coupon); the server records consent only for an explicit true.
+          '<label class="consent"><input id="consent" type="checkbox" checked data-testid="box-consent" /><span>' +
+          esc(copy.consent) +
+          '</span></label>' +
+          '<button type="submit" data-testid="box-submit">' +
+          esc(copy.button) +
+          '</button><div class="err" id="err" role="alert"></div></form>';
+        const f = document.getElementById('f');
+        const err = document.getElementById('err');
+        f.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const email = document.getElementById('email').value.trim();
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+            err.textContent = 'המייל לא נראה תקין';
+            return;
+          }
+          const btn = f.querySelector('button');
+          btn.disabled = true;
+          err.textContent = '';
+          try {
+            const res = await fetch(api, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email,
+                marketing_consent: document.getElementById('consent').checked === true,
+              }),
+            });
+            const r = await res.json().catch(() => ({}));
+            if (res.status === 429) throw new Error('יותר מדי ניסיונות. נסו שוב בעוד שעה.');
+            if (res.status === 400) throw new Error('המייל לא נראה תקין');
+            if (!res.ok) throw new Error('משהו השתבש. נסו שוב.');
+            if (r.claimed) return renderClaimed(copy);
+            renderDone(copy, r);
+          } catch (x) {
+            btn.disabled = false;
+            err.textContent = (x && x.message) || 'משהו השתבש. נסו שוב.';
+          }
+        });
+      }
+
+      async function start() {
+        if (!token) return renderBad();
+        try {
+          const res = await fetch(api);
+          if (res.status === 404) return renderBad();
+          if (!res.ok) throw new Error('bad');
+          const data = await res.json();
+          if (data.state === 'claimed') return renderClaimed(data.copy);
+          if (data.state === 'disabled') return renderDisabled();
+          renderOpen(data.copy);
+        } catch {
+          titleEl.textContent = 'משהו השתבש';
+          bodyEl.innerHTML = '<p>נסו לרענן את העמוד בעוד רגע.</p>';
+        }
+      }
+      start();
+    </script>
+  </body>
+</html>

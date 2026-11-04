@@ -3028,6 +3028,12 @@ const db = {
     // and in the log for the owner to see.
     if (meta.coupon !== undefined && c.order.coupon) {
       const spent = this.consumeFriendCoupon(c.order.coupon, c.id);
+      // A code claimed from a BOX QR is named on the order, so the orders list
+      // and the owner's receipt can say "QR" — how many boxes bring a buyer
+      // back is the whole point of printing it. Stamped on a conflict too: the
+      // sale still came from a box.
+      const personal = spent ? this.getFriendCouponByCode(c.order.coupon) : null;
+      if (personal && personal.source === 'qr') c.order.coupon_source = 'qr';
       if (spent === 'conflict') {
         c.order.friend_coupon_conflict = { code: c.order.coupon, at: nowIso() };
         console.error(

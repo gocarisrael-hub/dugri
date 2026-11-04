@@ -171,7 +171,7 @@ describe('the store', () => {
     const v = db.validateCoupon(fc.code.toLowerCase());
     expect(v).toEqual({
       valid: true,
-      coupon: { code: fc.code, discount_pct: 5, friend: true },
+      coupon: { code: fc.code, discount_pct: 5, friend: true, source: 'friend' },
     });
     // An owner coupon is found by its own path and never reaches the friend list.
     db.createCoupon({ code: 'SUMMER10', discount_pct: 10 });

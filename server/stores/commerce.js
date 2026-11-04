@@ -61,6 +61,10 @@ function couponsBlock({
       // and validateCoupon tries owner coupons FIRST — so an owner coupon equal to
       // a voucher's compact form would shadow that voucher at the checkout.
       if (this.getVoucherByCode && this.getVoucherByCode(c)) return { error: 'duplicate' };
+      // …and the same for a personal code (a friend's, or one claimed from a box
+      // QR) typed without its dash: unique across EVERY kind of code, compared in
+      // compact form (anyCodeTaken, server/stores/vouchers.js).
+      if (this.anyCodeTaken && this.anyCodeTaken(c)) return { error: 'duplicate' };
       const terms = normalizeCommission({ partner_name, commission_type, commission_value });
       if (terms.error) return { error: terms.error };
       const coupon = {
@@ -231,7 +235,7 @@ function couponsBlock({
     validateCoupon(code, opts = {}) {
       const c = this.getCouponByCode(code);
       if (!c) {
-        const friend = this.validateFriendCoupon(code);
+        const friend = this.validateFriendCoupon(code, Date.now(), opts);
         if (friend.valid || friend.reason !== 'not_found') return friend;
         return this.validateVoucher(code, opts);
       }
@@ -342,10 +346,101 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
     return _db.friend_coupons;
   };
   return {
+    // A FRIEND's row for this email. Box-QR rows are not counted: "one coupon
+    // per email" is the friend offer's rule, and claiming the code on a box you
+    // were given must not use up the code you would get for adding words.
     getFriendCouponByEmail(email) {
       const e = rules.normEmail(email);
       if (!e) return null;
-      return rows().find((r) => r.email === e) || null;
+      return rows().find((r) => r.email === e && rules.sourceOf(r) === 'friend') || null;
+    },
+
+    // --- The box QR (a second source of these codes; server/friend-coupons.js) --
+
+    // The code already claimed from this order's box, or null. THE one-per-order
+    // rule is this lookup: keyed by the ORDER (the collection), not by the token
+    // and not by the email, so a reprinted sticker, a second scanner or a second
+    // address all find the same row.
+    getQrCouponForCollection(collectionId) {
+      if (!collectionId) return null;
+      return (
+        rows().find((r) => rules.sourceOf(r) === 'qr' && r.collection_id === collectionId) || null
+      );
+    },
+
+    // The order whose box QR carries `token`, or null. A scan over the
+    // collections, like every lookup in this block (see the note above it).
+    getCollectionByBoxQrToken(token) {
+      if (!rules.isBoxTokenShape(token)) return null;
+      return (
+        (_db.collections || []).find(
+          (c) => c && c.order && c.order.box_qr && c.order.box_qr.token === token
+        ) || null
+      );
+    },
+
+    // The order's box token, minted the FIRST time its sticker is printed and
+    // stored on the order, so every reprint encodes the same URL. Returns the
+    // token, or null when there is no such order. Saves only when it mints.
+    ensureBoxQrToken(collectionId) {
+      const c = this.getCollection(collectionId);
+      if (!c || !c.order) return null;
+      if (c.order.box_qr && rules.isBoxTokenShape(c.order.box_qr.token))
+        return c.order.box_qr.token;
+      let token = rules.makeBoxToken();
+      // 128 bits do not collide; the loop is so a test can prove it would not matter.
+      while (this.getCollectionByBoxQrToken(token)) token = rules.makeBoxToken();
+      c.order.box_qr = { token, created_at: nowIso() };
+      saveDb();
+      return token;
+    },
+
+    // Claim this order's ONE code for `email`. Returns { error } — 'bad_email' |
+    // 'no_collection' — or { coupon, created }. created:false means the order's
+    // code was ALREADY claimed (by anyone, with any email): the caller must say
+    // so and must NOT show or send that code — it belongs to whoever claimed it.
+    //
+    // percent / expiryMonths come from the live box_qr settings and are COPIED
+    // onto the row, like the friend offer: a later change re-prices nothing that
+    // has already been issued.
+    issueQrCoupon({ collectionId, email, marketingConsent, percent, expiryMonths } = {}) {
+      if (!collectionId || !this.getCollection(collectionId)) return { error: 'no_collection' };
+      const existing = this.getQrCouponForCollection(collectionId);
+      if (existing) return { coupon: existing, created: false };
+      if (!rules.isValidEmail(email)) return { error: 'bad_email' };
+      const e = rules.normEmail(email);
+      const createdAt = nowIso();
+      const consent = marketingConsent === true;
+      const row = {
+        id: uid(),
+        source: 'qr',
+        email: e,
+        code: rules.makeCode(e, percent, { taken: (code) => this._personalCodeTaken(code) }),
+        // The order whose box carried the QR — the order this code can NOT be
+        // spent on (validateFriendCoupon, reason 'own_order').
+        collection_id: collectionId,
+        discount_percent: percent,
+        marketing_consent: consent,
+        consent_at: consent ? createdAt : null,
+        created_at: createdAt,
+        expires_at: rules.expiresAtForMonths(createdAt, expiryMonths),
+        used_at: null,
+        order_id: null,
+        email_sent_at: null,
+        email_failed_at: null,
+        email_sends: 0,
+      };
+      rows().push(row);
+      saveDb();
+      return { coupon: row, created: true };
+    },
+
+    // Is `code` held by ANY code in the shop — owner coupon, personal code or
+    // partner voucher? anyCodeTaken (the vouchers block) compares compact forms
+    // across all three; without that block loaded, the personal codes alone.
+    _personalCodeTaken(code) {
+      if (this.anyCodeTaken) return this.anyCodeTaken(code);
+      return !!this.getFriendCouponByCode(code);
     },
 
     getFriendCouponByCode(code) {
@@ -382,7 +477,7 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
       const row = {
         id: uid(),
         email: e,
-        code: rules.makeCode(e, percent, { taken: (code) => !!this.getFriendCouponByCode(code) }),
+        code: rules.makeCode(e, percent, { taken: (code) => this._personalCodeTaken(code) }),
         collection_id: collectionId,
         discount_percent: percent,
         // Separate from getting the coupon, unticked by default, and only ever
@@ -423,15 +518,24 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
     // Is this a live friend code? Same answer shape as validateCoupon, so the
     // checkout and pay/init treat it exactly like an owner coupon:
     // { valid: true, coupon: { code, discount_pct, friend: true } } or
-    // { valid: false, reason } with reason 'not_found' | 'used' | 'expired'.
-    validateFriendCoupon(code, now = Date.now()) {
+    // { valid: false, reason } with reason 'not_found' | 'used' | 'expired' |
+    // 'own_order'.
+    //
+    // 'own_order': a code claimed from a box QR is for the NEXT order, so it is
+    // refused on the order whose box carried it (`opts.collectionId` is the
+    // checkout asking; every caller of validateCoupon passes it).
+    validateFriendCoupon(code, now = Date.now(), opts = {}) {
       const r = this.getFriendCouponByCode(code);
       if (!r) return { valid: false, reason: 'not_found' };
       if (r.used_at) return { valid: false, reason: 'used' };
       if (!(Date.parse(r.expires_at) > now)) return { valid: false, reason: 'expired' };
+      const source = rules.sourceOf(r);
+      if (source === 'qr' && opts && opts.collectionId && opts.collectionId === r.collection_id) {
+        return { valid: false, reason: 'own_order' };
+      }
       return {
         valid: true,
-        coupon: { code: r.code, discount_pct: r.discount_percent, friend: true },
+        coupon: { code: r.code, discount_pct: r.discount_percent, friend: true, source },
       };
     },
 
@@ -476,17 +580,20 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
 
     // Every row, newest first, optionally narrowed by a case-insensitive
     // substring of the email or the code.
-    listFriendCoupons({ q } = {}) {
+    // `source` is 'friend' (the default: the friend section of the admin) or
+    // 'qr' (the box-QR section).
+    listFriendCoupons({ q, source = 'friend' } = {}) {
       const needle = String(q == null ? '' : q)
         .trim()
         .toLowerCase();
       return rows()
+        .filter((r) => rules.sourceOf(r) === source)
         .filter((r) => !needle || r.email.includes(needle) || r.code.toLowerCase().includes(needle))
         .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
     },
 
-    friendCouponSummary() {
-      return rules.summarize(rows(), _db.collections);
+    friendCouponSummary(source = 'friend') {
+      return rules.summarize(rows(), _db.collections, source);
     },
   };
 }

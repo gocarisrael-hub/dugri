@@ -297,6 +297,10 @@ function collectionForStaff(c) {
   delete order.voucher;
   delete order.voucher_conflict;
   delete order.friend_coupon_conflict;
+  // The box QR's token is a bearer secret worth a code (server/friend-coupons.js),
+  // and which kind of code paid is the owner's business like the code itself.
+  delete order.box_qr;
+  delete order.coupon_source;
   delete order.voucher_restored;
   delete order.commission;
   if (order.shipping)
