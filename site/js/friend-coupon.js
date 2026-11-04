@@ -22,6 +22,8 @@ let memory = null;
 // the banner shows: it is the record of what was promised when the code was
 // issued, which today's setting may no longer be.
 const FRIEND_CODE_RE = /^[A-Z]{1,8}(\d{1,3})-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
+// …and its QR_CODE_RE: a box QR's code, DUGRI<percent>-XXXX-XXXX-XXXX.
+const QR_CODE_RE = /^DUGRI(\d{1,3})(?:-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}){3}$/;
 
 export function normalizeCode(s) {
   return String(s == null ? '' : s)
@@ -30,12 +32,14 @@ export function normalizeCode(s) {
 }
 
 export function percentInCode(code) {
-  const m = FRIEND_CODE_RE.exec(normalizeCode(code));
+  const c = normalizeCode(code);
+  const m = FRIEND_CODE_RE.exec(c) || QR_CODE_RE.exec(c);
   return m ? Number(m[1]) : null;
 }
 
 // A code worth carrying: the owner's coupons are [A-Z0-9]{3,20}, friend codes
-// add one dash. Anything else in the URL is ignored rather than stored.
+// add one dash, a box QR's three (23 characters at most). Anything else in the
+// URL is ignored rather than stored.
 function plausible(code) {
   return /^[A-Z0-9-]{3,24}$/.test(code);
 }

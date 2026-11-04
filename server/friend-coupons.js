@@ -28,6 +28,43 @@ const FALLBACK_PREFIX = 'DUGRI';
 // contain one.
 const CODE_RE = new RegExp('^[A-Z]{1,' + PREFIX_MAX + '}(\\d{1,3})-[' + ALPHABET + ']{4}$');
 
+// A BOX QR code is longer: DUGRI<percent>-XXXX-XXXX-XXXX, TWELVE random
+// characters. A friend code's prefix is the friend's own name, so its 4 random
+// characters only ever compete with codes of one prefix; every QR code shares
+// the public prefix DUGRI<percent>, so with hundreds live a 4-character tail
+// (31^4, ~923k) would fall to a checkout guesser in about two thousand tries.
+// 31^12 is ~7.9e17 (59 bits). Friend codes keep their old shape.
+const QR_PREFIX = 'DUGRI';
+const QR_GROUPS = 3;
+const QR_CODE_RE = new RegExp(
+  '^' + QR_PREFIX + '(\\d{1,3})(?:-[' + ALPHABET + ']{4}){' + QR_GROUPS + '}$'
+);
+
+// The code with everything but letters and digits dropped, upper-cased: the form
+// every personal code is LOOKED UP in, so dugri10-k7q2-… , DUGRI10K7Q2… and a
+// pasted code with spaces are one code. Same rule as a partner voucher
+// (server/vouchers.js compactCode); kept here so this file stays dependency-free.
+function compactCode(s) {
+  return String(s == null ? '' : s)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+const COMPACT_FRIEND_RE = new RegExp(
+  '^[A-Z]{1,' + PREFIX_MAX + '}\\d{1,3}[' + ALPHABET + ']{' + RANDOM_LEN + '}$'
+);
+const COMPACT_QR_RE = new RegExp(
+  '^' + QR_PREFIX + '\\d{1,3}[' + ALPHABET + ']{' + 4 * QR_GROUPS + '}$'
+);
+
+// Does what the buyer typed LOOK like a personal code (a friend's or a box
+// QR's), in any case and with or without its dashes? Says nothing about whether
+// one was issued: the checkout's miss limiter counts wrong guesses of these
+// shapes (as it does a partner voucher's), so walking the space is capped.
+function looksLikePersonalCode(code) {
+  const k = compactCode(code);
+  return COMPACT_FRIEND_RE.test(k) || COMPACT_QR_RE.test(k);
+}
+
 // Trim + lowercase. The email is the row's identity ("one coupon per person,
 // ever"), so Noa@Gmail.com and noa@gmail.com must be the same person.
 function normEmail(s) {
@@ -94,12 +131,31 @@ function isFriendCodeShape(code) {
 // asking the server: the code IS the record of what was promised when it was
 // issued, and today's setting may have changed since.
 function percentInCode(code) {
-  const m = CODE_RE.exec(
+  const c = String(code == null ? '' : code)
+    .trim()
+    .toUpperCase();
+  const m = CODE_RE.exec(c) || QR_CODE_RE.exec(c);
+  return m ? Number(m[1]) : null;
+}
+
+// A fresh BOX QR code at this percent: DUGRI<percent>-XXXX-XXXX-XXXX. `taken`
+// as for makeCode; at 59 bits a collision is a bug, so 50 in a row throws.
+function makeQrCode(percent, { randomInt = crypto.randomInt, taken = () => false } = {}) {
+  for (let i = 0; i < 50; i++) {
+    const groups = [];
+    for (let g = 0; g < QR_GROUPS; g++) groups.push(randomPart(randomInt));
+    const code = QR_PREFIX + String(percent) + '-' + groups.join('-');
+    if (!taken(code)) return code;
+  }
+  throw new Error('box QR coupon: no free code after 50 tries');
+}
+
+function isQrCodeShape(code) {
+  return QR_CODE_RE.test(
     String(code == null ? '' : code)
       .trim()
       .toUpperCase()
   );
-  return m ? Number(m[1]) : null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -141,40 +197,58 @@ function landingLink(baseUrl, code, campaign = 'friend_coupon') {
 
 // --- The box QR: a SECOND SOURCE of the same personal codes -------------------
 //
-// Every printed game's box sticker carries a QR (generator/pickup_stickers.py).
-// Whoever holds the box scans it, leaves an email and gets ONE personal
-// single-use code for a next order — one per ORDER, not per person: the box is
-// the thing that earns it. The codes are ordinary friend-coupon rows with
-// `source: 'qr'` and `collection_id` = the order whose box carried the QR, so
-// they go through the same validate / consume-on-paid / double-use guard as a
-// friend's code, with no second pipeline to keep in step.
+// ONE fixed QR, the same for everyone, printed wherever the owner puts it (the
+// box art): it opens /box (site/box.html). Whoever holds a game types the PHONE
+// NUMBER the order was placed with, and gets ONE personal single-use code for a
+// next order per PRODUCED order of that number — the order is the thing that
+// earns it. The codes are ordinary friend-coupon rows with `source: 'qr'` and
+// `collection_id` = the order that earned them, so they go through the same
+// validate / consume-on-paid / double-use guard as a friend's code, with no
+// second pipeline to keep in step.
 
 // A row's source. Rows from before the QR existed carry none and are friend codes.
 function sourceOf(row) {
   return row && row.source === 'qr' ? 'qr' : 'friend';
 }
 
-// The token in the QR's URL. 16 bytes from the CSPRNG = 128 bits, base64url (22
-// characters, no padding) so it rides in a URL as is. It is a bearer secret: the
-// box's holder IS whoever has it, so it is long enough that nobody reaches a box
-// by guessing, and it is never the order id or the code.
-const BOX_TOKEN_BYTES = 16;
-const BOX_TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
-function makeBoxToken(randomBytes = crypto.randomBytes) {
-  return randomBytes(BOX_TOKEN_BYTES).toString('base64url');
-}
-function isBoxTokenShape(t) {
-  return typeof t === 'string' && BOX_TOKEN_RE.test(t);
+// The URL the QR encodes, from the deployment's own origin (PUBLIC_BASE_URL),
+// never a typed domain — staging's QR opens staging. `/box` is site/box.html.
+// Kept short on purpose: every character is QR modules, and a smaller code scans
+// from further away. null when there is no origin to build it from: a QR
+// pointing nowhere is worse than none.
+function boxPageUrl(baseUrl) {
+  if (!baseUrl) return null;
+  return String(baseUrl).replace(/\/+$/, '') + '/box';
 }
 
-// The URL the QR encodes, from the deployment's own origin (PUBLIC_BASE_URL),
-// never a typed domain — staging prints staging's. `/box` is site/box.html. Kept
-// short on purpose: every character is QR modules, and a smaller code scans from
-// further away on a 105x74 mm label. null when there is no origin to build it
-// from: a QR pointing nowhere is worse than none.
-function boxQrUrl(baseUrl, token) {
-  if (!baseUrl || !isBoxTokenShape(token)) return null;
-  return String(baseUrl).replace(/\/+$/, '') + '/box?t=' + token;
+// The phone as the scan page compares it: the checkout's own rule
+// (server/stores/delivery-link.js normalizePhone, the server twin of
+// site/js/configurator.js normalizeIlPhone), so 052-727-5047, 0527275047,
+// +972 52 727 5047 and 972527275047 are one number. '' when it is not one.
+function normPhone(v) {
+  return require('./stores/delivery-link').normalizePhone(v);
+}
+
+// Does this order EARN a code? Paid, not cancelled, and PRODUCED: its deck was
+// built and the owner released it (production.state 'generated' + released_at,
+// db.setProductionReleased — the same stage the sticker sheet reads as "made").
+// A PDF order counts the same way once its PDF is released; an order still
+// collecting words, or one a buyer's סיום built that nobody released, does not.
+function orderEarnsQrCode(c) {
+  if (!c || c.cancelled || !c.order || !c.order.paid) return false;
+  const p = c.order.production || c.production || null;
+  return !!(p && p.state === 'generated' && p.released_at);
+}
+
+// The address the code was mailed to, as the page may show it to whoever typed
+// the number: the first two letters of the name and the whole domain
+// (ha***@gmail.com), one letter for a name that short. null for no address.
+function maskEmail(email) {
+  const e = normEmail(email);
+  const at = e.lastIndexOf('@');
+  if (at < 1) return null;
+  const name = e.slice(0, at);
+  return name.slice(0, name.length > 2 ? 2 : 1) + '***' + e.slice(at);
 }
 
 // Calendar months, in UTC. Jan 31 + 1 month is Mar 3 (Date's own overflow),
@@ -233,6 +307,11 @@ module.exports = {
   prefixFor,
   randomPart,
   makeCode,
+  makeQrCode,
+  QR_CODE_RE,
+  isQrCodeShape,
+  compactCode,
+  looksLikePersonalCode,
   isFriendCodeShape,
   percentInCode,
   expiresAtFor,
@@ -240,9 +319,9 @@ module.exports = {
   landingLink,
   summarize,
   sourceOf,
-  BOX_TOKEN_RE,
-  makeBoxToken,
-  isBoxTokenShape,
-  boxQrUrl,
+  boxPageUrl,
+  normPhone,
+  orderEarnsQrCode,
+  maskEmail,
   expiresAtForMonths,
 };

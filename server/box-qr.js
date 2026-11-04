@@ -1,11 +1,12 @@
 // Agent A (Commerce): the box QR's picture.
 //
-// The QR on a box sticker (generator/pickup_stickers.py) is drawn HERE, in Node,
-// and handed to the generator as finished SVG markup: the production image has no
-// Python QR library and deliberately no pip layer (see generator/
-// requirements-dev.txt), while the server already ships its own npm
-// dependencies. qrcode-generator (Kazuhiko Arase, MIT, zero dependencies) is the
-// encoder; this file only turns its module matrix into an SVG.
+// ONE static QR, the same for everyone, that the owner downloads from the
+// coupons page (GET /api/admin/box-qr) and puts on the box art. It encodes the
+// scan page's URL on this deployment's origin (friend-coupons.js boxPageUrl).
+// qrcode-generator (Kazuhiko Arase, MIT, zero dependencies) is the encoder; this
+// file only turns its module matrix into an SVG. Drawn on the server because the
+// origin is the server's (PUBLIC_BASE_URL), and so a unit test can decode
+// exactly the markup the owner downloads.
 //
 // The encoder is required INSIDE the function, for the same reason as every
 // server module the tests reload: nothing heavier than node's own modules at the
@@ -13,7 +14,7 @@
 
 // Error correction M (~15% of the code can be lost and it still reads). A box
 // gets handled, and a scuffed corner should not cost the buyer the code; H would
-// grow the symbol for little gain on a sticker that is printed fresh.
+// grow the symbol for little gain on art that is printed fresh.
 const ECC = 'M';
 // The quiet zone the standard asks for: four modules of white on every side.
 // Without it a phone camera can lose the finder patterns against the artwork.
@@ -31,8 +32,8 @@ function matrixFor(text) {
 
 // The QR as a standalone SVG: black modules on white, one unit per module, the
 // quiet zone included, so it scales to any printed size with crisp edges. Dark
-// modules are merged into horizontal runs, which keeps the markup small (it is
-// base64'd into the sticker page). Returns null for empty text.
+// modules are merged into horizontal runs, which keeps the markup small.
+// Returns null for empty text.
 function svgFor(text) {
   if (!text) return null;
   const { size, dark } = matrixFor(text);
