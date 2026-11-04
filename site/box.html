@@ -5,9 +5,6 @@
     <meta name="dugri:page" content="box.html" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex" />
-    <!-- The token in this page's URL is a bearer secret (it claims a code), so it
-         must not ride out to anything this page links to or loads. -->
-    <meta name="referrer" content="no-referrer" />
     <title>דוגרי · קוד מהקופסה</title>
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link
@@ -64,7 +61,7 @@
         margin-top: 8px;
         text-align: right;
       }
-      input[type='email'] {
+      input[type='tel'] {
         font: inherit;
         font-size: 17px;
         padding: 13px 14px;
@@ -131,34 +128,21 @@
     </div>
 
     <script type="module">
-      const token = new URLSearchParams(location.search).get('t') || '';
+      // THE BOX QR's page. One QR for everyone (on the box art) opens /box; the
+      // holder types the phone number the order was placed with, and each
+      // PRODUCED order of that number earns one code (POST /api/box-qr). The code
+      // is shown here and mailed to the order's address. All words are the
+      // owner's (coupons page), filled in by the server.
       const titleEl = document.getElementById('title');
       const bodyEl = document.getElementById('body');
       const card = document.getElementById('card');
+      const api = '/api/box-qr';
 
       const esc = (s) =>
         String(s == null ? '' : s).replace(
           /[&<>"']/g,
           (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
         );
-      const api = '/api/box-qr/' + encodeURIComponent(token);
-
-      function renderBad() {
-        card.dataset.state = 'not_found';
-        titleEl.textContent = 'הקוד הזה לא מוכר לנו';
-        bodyEl.innerHTML =
-          '<p>נסו לסרוק שוב את המדבקה שעל הקופסה. אם זה לא עובד, כתבו לנו ונסדר.</p>' +
-          '<a class="cta" href="/">לאתר של דוגרי</a>';
-      }
-
-      function renderClaimed(copy) {
-        card.dataset.state = 'claimed';
-        titleEl.textContent = 'כבר נלקח';
-        bodyEl.innerHTML =
-          '<p data-testid="box-claimed">' +
-          esc(copy.claimed) +
-          '</p><a class="cta" href="/">בונים משחק</a>';
-      }
 
       function renderDisabled() {
         card.dataset.state = 'disabled';
@@ -166,22 +150,39 @@
         bodyEl.innerHTML = '<a class="cta" href="/">לאתר של דוגרי</a>';
       }
 
-      // The code, shown ONCE, to whoever just claimed it. A reload asks the
-      // server again and gets "claimed": it never says the code a second time.
+      // Every code of this number was already given out. They are never said
+      // again here: they went to the order's inbox.
+      function renderAllClaimed(copy) {
+        card.dataset.state = 'all_claimed';
+        titleEl.textContent = 'כבר נלקח';
+        bodyEl.innerHTML =
+          '<p data-testid="box-all-claimed">' +
+          esc(copy.all_claimed) +
+          '</p><a class="cta" href="/">בונים משחק</a>';
+      }
+
       function renderDone(copy, r) {
         card.dataset.state = 'done';
         titleEl.textContent = r.percent + '% הנחה, שלכם';
-        // The owner's "we sent it to your inbox too" line only when it was sent.
+        // "We sent it to ha***@gmail.com too" only when it was sent.
+        const sent =
+          r.emailed && r.email
+            ? '<p data-testid="box-emailed">' +
+              // The address is an LTR run in a Hebrew sentence: isolated, so the
+              // punctuation around it stays where the owner wrote it.
+              esc(copy.emailed).replace(/\{email\}/g, '<bdi>' + esc(r.email) + '</bdi>') +
+              '</p>'
+            : '<p class="muted">שמרו את הקוד, הוא לא נשלח במייל.</p>';
         bodyEl.innerHTML =
-          (r.emailed ? '<p>' + esc(copy.done) + '</p>' : '') +
-          '<div class="code" data-testid="box-code">' +
+          '<p>' +
+          esc(copy.code) +
+          '</p><div class="code" data-testid="box-code">' +
           esc(r.code) +
-          '</div><br /><a class="cta" data-testid="box-start" href="/?coupon=' +
+          '</div>' +
+          sent +
+          '<a class="cta" data-testid="box-start" href="/?coupon=' +
           encodeURIComponent(r.code) +
-          '&utm_source=coupon&utm_medium=qr&utm_campaign=box_qr">בונים משחק חדש</a>' +
-          (r.emailed
-            ? ''
-            : '<p class="muted" style="margin-top:14px">המייל לא יצא, אז שמרו את הקוד.</p>');
+          '&utm_source=coupon&utm_medium=qr&utm_campaign=box_qr">בונים משחק חדש</a>';
       }
 
       function renderOpen(copy) {
@@ -189,9 +190,9 @@
         titleEl.textContent = copy.title;
         bodyEl.innerHTML =
           '<p>' +
-          esc(copy.body) +
+          esc(copy.lead) +
           '</p><form id="f" novalidate>' +
-          '<input id="email" type="email" required autocomplete="email" inputmode="email" placeholder="you@example.com" aria-label="מייל" data-testid="box-email" />' +
+          '<input id="phone" type="tel" required autocomplete="tel" inputmode="tel" placeholder="050-0000000" aria-label="מספר טלפון" data-testid="box-phone" />' +
           // Ticked by default (the owner's standing choice, as on the friend
           // coupon); the server records consent only for an explicit true.
           '<label class="consent"><input id="consent" type="checkbox" checked data-testid="box-consent" /><span>' +
@@ -199,49 +200,56 @@
           '</span></label>' +
           '<button type="submit" data-testid="box-submit">' +
           esc(copy.button) +
-          '</button><div class="err" id="err" role="alert"></div></form>';
+          '</button><div class="err" id="err" role="alert" data-testid="box-err"></div></form>';
         const f = document.getElementById('f');
         const err = document.getElementById('err');
         f.addEventListener('submit', async (e) => {
           e.preventDefault();
-          const email = document.getElementById('email').value.trim();
-          if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-            err.textContent = 'המייל לא נראה תקין';
+          const phone = document.getElementById('phone').value.trim();
+          if (phone.replace(/\D/g, '').length < 9) {
+            err.textContent = 'המספר לא נראה תקין';
             return;
           }
           const btn = f.querySelector('button');
           btn.disabled = true;
           err.textContent = '';
+          delete card.dataset.miss;
           try {
             const res = await fetch(api, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                email,
+                phone,
                 marketing_consent: document.getElementById('consent').checked === true,
               }),
             });
             const r = await res.json().catch(() => ({}));
             if (res.status === 429) throw new Error('יותר מדי ניסיונות. נסו שוב בעוד שעה.');
-            if (res.status === 400) throw new Error('המייל לא נראה תקין');
+            if (res.status === 400) throw new Error('המספר לא נראה תקין');
             if (!res.ok) throw new Error('משהו השתבש. נסו שוב.');
-            if (r.claimed) return renderClaimed(copy);
+            if (r.all_claimed) return renderAllClaimed(copy);
+            if (r.found === false) {
+              // Neutral, and the form stays: a typo is the usual reason.
+              card.dataset.miss = '1';
+              btn.disabled = false;
+              err.setAttribute('data-kind', 'no_match');
+              err.textContent = copy.no_match;
+              return;
+            }
             renderDone(copy, r);
           } catch (x) {
             btn.disabled = false;
+            err.removeAttribute('data-kind');
             err.textContent = (x && x.message) || 'משהו השתבש. נסו שוב.';
           }
         });
       }
 
       async function start() {
-        if (!token) return renderBad();
         try {
           const res = await fetch(api);
-          if (res.status === 404) return renderBad();
           if (!res.ok) throw new Error('bad');
           const data = await res.json();
-          if (data.state === 'claimed') return renderClaimed(data.copy);
           if (data.state === 'disabled') return renderDisabled();
           renderOpen(data.copy);
         } catch {

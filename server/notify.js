@@ -1475,10 +1475,11 @@ const FC_MUTED = '#6b6b6b';
 // `coupon` is the stored row ({ code, discount_percent, expires_at }), and
 // `collection` the party the friend wrote in (for {celebrant_name}).
 //
-// A row claimed from a BOX QR (`source: 'qr'`) is the same mail with its own
-// owner-editable words (email.box_qr_coupon + email.box_qr_coupon_parts) and its
-// own GA campaign. It never names the order the box came from: the scanner may
-// be anyone the game was handed to.
+// A row claimed on the BOX QR's page (`source: 'qr'`) is the same mail with its
+// own owner-editable words (email.box_qr_coupon + email.box_qr_coupon_parts) and
+// its own GA campaign. It goes to the address on the order that earned it, and
+// never names that order's party: the same code was just shown on screen to
+// whoever typed the order's phone number.
 function friendCouponTemplateKey(coupon) {
   return friendCoupons.sourceOf(coupon) === 'qr' ? 'box_qr_coupon' : 'friend_coupon';
 }

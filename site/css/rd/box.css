@@ -1,0 +1,70 @@
+/* box.html in the redesign (Agent A, Commerce): the box QR's page, where the phone number an order was placed with earns
+   a code for the next one. Linked by the gate in redesign mode only; every rule is under html.rd. Reached from a QR on a
+   box in someone's hands, with one thing to do on it: no shop header or footer, just the card. The page hard-codes its old
+   colours and Heebo, so each is restated here; its form and buttons are drawn by its script after the first call
+   returns, and the shell's --rd-as-* watcher gives them the kit's look as they arrive. */
+
+html.rd {
+  --rd-header: none;
+  --rd-footer: none;
+  --rd-as-box: '#card';
+  --rd-as-title: '#title';
+  --rd-as-btn: '#card button, #card .cta';
+}
+
+html.rd body {
+  font-family: var(--font-body);
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-size: var(--text-body);
+  line-height: var(--leading-body);
+  padding: var(--space-lg) var(--gutter);
+}
+
+html.rd .card {
+  max-width: 520px;
+  padding: var(--space-2xl) var(--space-lg);
+  border-radius: var(--radius-panel);
+  box-shadow: var(--shadow);
+}
+html.rd .brand {
+  color: var(--color-ink);
+  font-weight: var(--weight-label);
+}
+html.rd #title {
+  font-size: var(--text-catch);
+  line-height: 1.05;
+  margin-bottom: var(--space-md);
+}
+html.rd .card p {
+  color: var(--color-ink);
+}
+html.rd .card .muted {
+  color: var(--color-text-muted);
+  font-size: var(--text-small);
+}
+html.rd .card .err {
+  color: var(--color-error);
+}
+
+/* The number is typed LTR inside a Hebrew page: the thin ink line and the box radius, like the kit's fields. */
+html.rd input[type='tel'] {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-box);
+  background: var(--color-paper);
+  font-family: var(--font-body);
+}
+
+/* The code is a label in the body face on a pill, like the partner page's. */
+html.rd .code {
+  border: var(--border-thin) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-tag);
+  box-shadow: var(--shadow-sm);
+  font: var(--weight-heavy) 26px / 1.4 var(--font-body);
+  letter-spacing: 0.08em;
+  unicode-bidi: isolate;
+}
+html.rd .card .cta {
+  margin-top: var(--space-xs);
+}

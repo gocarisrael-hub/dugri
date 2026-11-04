@@ -16,10 +16,6 @@ ONE STICKER, four lines of it:
     טלפון:   <phone>     ← the one thing needed to chase a no-show
     קופסה:   2/3         ← only when the order's copies went out in separate boxes
 
-…and, in the bottom-left corner, the BOX QR (``qr_svg`` + ``qr_line``): the
-order's scan page, where whoever holds the box claims a personal code for a
-next order. Drawn by the server; see ``QR_MM`` below.
-
 ONE STICKER PER BOX. An order whose copies were packed separately arrives here
 as one entry per box, each carrying ``box: "k/N"`` (server/routes/commerce.js,
 stickerEntries), so the three boxes of one order can be matched up on the shelf
@@ -144,66 +140,22 @@ def _row(label, value):
             f'<span class="val">{html.escape(str(value))}</span></div>')
 
 
-# THE BOX QR. The server draws it (server/box-qr.js: the production image has no
-# Python QR library) and hands it over as finished SVG markup in ``qr_svg``, with
-# the one line printed under it in ``qr_line``. It sits in the label's bottom-left
-# corner, beside the facts rather than on top of them: QR_MM square, quiet zone
-# included, which at the ~41-module code a 22-character token makes is ~0.5 mm a
-# module, well inside what a phone reads off a box at arm's length.
-QR_MM = 20
-
-
-def qr_svg_of(sticker):
-    """The sticker's QR markup, or None when it carries none (or junk)."""
-    svg = sticker.get("qr_svg") if isinstance(sticker, dict) else None
-    if not isinstance(svg, str) or not svg.lstrip().startswith("<svg"):
-        return None
-    return svg
-
-
-def _qr_html(sticker):
-    svg = qr_svg_of(sticker)
-    if not svg:
-        return ""
-    # As an <img> data URI, never inlined: the markup is not ours to trust inside
-    # the page's own DOM, and an image cannot run or restyle anything.
-    b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
-    line = str(sticker.get("qr_line") or "").strip()
-    return (
-        '<div class="qr">'
-        f'<img alt="" src="data:image/svg+xml;base64,{b64}">'
-        + (f'<div class="qrline">{html.escape(line)}</div>' if line else "")
-        + "</div>"
-    )
-
-
 def cell_html(sticker):
     """One label. ``None`` is an empty cell — the page keeps its shape."""
     if not sticker:
         return '<div class="cell"></div>'
     title = str(sticker.get("title") or "").strip()
-    # The heading: איסוף עצמי on a self-collection box; a delivery box that gets
-    # our label too (for its QR) says so instead.
-    head = str(sticker.get("head") or "איסוף עצמי").strip()
-    rows = (
+    return (
+        '<div class="cell">'
+        '<div class="head">איסוף עצמי</div>'
+        f'<div class="title" style="font-size:{title_size(title)}">'
+        f'{html.escape(title)}</div>'
         '<div class="rows">'
         + _row("שם מלא:", sticker.get("buyer_name"))
         + _row("עיצוב:", sticker.get("design"))
         + _row("טלפון:", sticker.get("phone"))
         + _row("קופסה:", sticker.get("box"))
-        + "</div>"
-    )
-    qr = _qr_html(sticker)
-    # With a QR, the facts and the code share the foot of the label side by side;
-    # without one the label is exactly what it was.
-    foot = f'<div class="foot">{rows}{qr}</div>' if qr else rows
-    return (
-        '<div class="cell">'
-        f'<div class="head">{html.escape(head)}</div>'
-        f'<div class="title" style="font-size:{title_size(title)}">'
-        f'{html.escape(title)}</div>'
-        + foot
-        + "</div>"
+        + "</div></div>"
     )
 
 
@@ -244,13 +196,6 @@ def sheet_html(stickers):
         # box in her hand. Label and value on ONE line, next to each other —
         # pushed to opposite edges they stop reading as a pair.
         ".rows{margin-top:auto;display:flex;flex-direction:column;gap:0.8mm}"
-        # The QR beside the facts: the foot takes the rows' margin-top:auto, and
-        # in this RTL page the rows come first (right) and the QR last (left).
-        ".foot{margin-top:auto;display:flex;align-items:flex-end;gap:3mm}"
-        ".foot .rows{margin-top:0;flex:1;min-width:0}"
-        f".qr{{flex:none;width:{QR_MM}mm;text-align:center}}"
-        f".qr img{{display:block;width:{QR_MM}mm;height:{QR_MM}mm}}"
-        ".qrline{font-size:7pt;line-height:1.2;margin-top:0.6mm}"
         ".row{display:flex;justify-content:flex-start;align-items:baseline;"
         "gap:2mm;font-size:11pt;line-height:1.3}"
         ".lab{font-weight:700;white-space:nowrap;"

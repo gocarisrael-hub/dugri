@@ -347,8 +347,8 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
   };
   return {
     // A FRIEND's row for this email. Box-QR rows are not counted: "one coupon
-    // per email" is the friend offer's rule, and claiming the code on a box you
-    // were given must not use up the code you would get for adding words.
+    // per email" is the friend offer's rule, and the code an order earned on the
+    // box QR must not use up the code you would get for adding words.
     getFriendCouponByEmail(email) {
       const e = rules.normEmail(email);
       if (!e) return null;
@@ -357,10 +357,9 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
 
     // --- The box QR (a second source of these codes; server/friend-coupons.js) --
 
-    // The code already claimed from this order's box, or null. THE one-per-order
-    // rule is this lookup: keyed by the ORDER (the collection), not by the token
-    // and not by the email, so a reprinted sticker, a second scanner or a second
-    // address all find the same row.
+    // The code already claimed for this order, or null. THE one-per-order rule is
+    // this lookup: keyed by the ORDER (the collection), not by the phone or the
+    // email, so a second claim for the same order always finds the same row.
     getQrCouponForCollection(collectionId) {
       if (!collectionId) return null;
       return (
@@ -368,85 +367,55 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
       );
     },
 
-    // The order whose box QR carries `token`, or null. A scan over the
-    // collections, like every lookup in this block (see the note above it).
-    getCollectionByBoxQrToken(token) {
-      if (!rules.isBoxTokenShape(token)) return null;
-      return (
-        (_db.collections || []).find(
-          (c) => c && c.order && c.order.box_qr && c.order.box_qr.token === token
-        ) || null
-      );
+    // The orders of this phone number that EARN a code (rules.orderEarnsQrCode:
+    // paid, not cancelled, produced), OLDEST first. The number is compared in
+    // normalised form on both sides, so it matches however either was typed. A
+    // scan over the collections, like every lookup in this block (see the note
+    // above it).
+    qrOrdersForPhone(phone) {
+      const want = rules.normPhone(phone);
+      if (!want) return [];
+      return (_db.collections || [])
+        .filter((c) => c && rules.normPhone(c.owner_phone) === want && rules.orderEarnsQrCode(c))
+        .sort((x, y) => String(x.created_at || '').localeCompare(String(y.created_at || '')));
     },
 
-    // The order's box token, minted the FIRST time its sticker is printed and
-    // stored on the order, so every reprint encodes the same URL. Returns the
-    // token, or null when there is no such order.
+    // Claim ONE code for this phone number: for its OLDEST produced order that has
+    // no code yet. One code per produced order, so a number with two produced
+    // orders can claim twice in all. Synchronous from the lookup to the push, so
+    // two claims racing for one order cannot both mint.
     //
-    // `terms` ({ percent, months }, today's box_qr settings) are FROZEN onto the
-    // order with the token: the sticker prints "10%", so the code that box
-    // yields is 10% even if the setting has moved to 5 by the time someone
-    // scans it. A token from before the freeze carries none and reads the live
-    // settings (boxQrTerms).
+    // Returns { error: 'bad_phone' } | { found: false } (no produced order for
+    // this number) | { all_claimed: true } (every one already has its code) |
+    // { coupon, collection, created: true, remaining } (remaining: how many more
+    // this number can still claim).
     //
-    // Saves when it mints, unless `save: false`: the sticker batch mints a whole
-    // night's tokens and saves ONCE after (flushBoxQrTokens).
-    ensureBoxQrToken(collectionId, terms = {}, { save = true } = {}) {
-      const c = this.getCollection(collectionId);
-      if (!c || !c.order) return null;
-      if (c.order.box_qr && rules.isBoxTokenShape(c.order.box_qr.token))
-        return c.order.box_qr.token;
-      let token = rules.makeBoxToken();
-      // 128 bits do not collide; the loop is so a test can prove it would not matter.
-      while (this.getCollectionByBoxQrToken(token)) token = rules.makeBoxToken();
-      const box = { token, created_at: nowIso() };
-      if (Number.isInteger(terms.percent)) box.percent = terms.percent;
-      if (Number.isInteger(terms.months)) box.months = terms.months;
-      c.order.box_qr = box;
-      if (save) saveDb();
-      return token;
-    },
-
-    // The terms frozen on this order's box ({ percent, months }), each falling
-    // back to `live` (today's settings) when the order carries none.
-    boxQrTerms(collectionId, live = {}) {
-      const c = this.getCollection(collectionId);
-      const b = (c && c.order && c.order.box_qr) || {};
-      return {
-        percent: Number.isInteger(b.percent) ? b.percent : live.percent,
-        months: Number.isInteger(b.months) ? b.months : live.months,
-      };
-    },
-
-    // One write for every token a sticker batch minted with save: false.
-    flushBoxQrTokens() {
-      saveDb();
-    },
-
-    // Claim this order's ONE code for `email`. Returns { error } — 'bad_email' |
-    // 'no_collection' — or { coupon, created }. created:false means the order's
-    // code was ALREADY claimed (by anyone, with any email): the caller must say
-    // so and must NOT show or send that code — it belongs to whoever claimed it.
-    //
-    // percent / expiryMonths come from the live box_qr settings and are COPIED
-    // onto the row, like the friend offer: a later change re-prices nothing that
-    // has already been issued.
-    issueQrCoupon({ collectionId, email, marketingConsent, percent, expiryMonths } = {}) {
-      if (!collectionId || !this.getCollection(collectionId)) return { error: 'no_collection' };
-      const existing = this.getQrCouponForCollection(collectionId);
-      if (existing) return { coupon: existing, created: false };
-      if (!rules.isValidEmail(email)) return { error: 'bad_email' };
-      const e = rules.normEmail(email);
+    // The row's email is the ORDER's address (the code is mailed there), or ''
+    // when the order has none. percent / expiryMonths come from the live box_qr
+    // settings and are COPIED onto the row, like the friend offer: a later change
+    // re-prices nothing that has already been issued.
+    claimQrCouponForPhone({ phone, marketingConsent, percent, expiryMonths } = {}) {
+      if (!rules.normPhone(phone)) return { error: 'bad_phone' };
+      const orders = this.qrOrdersForPhone(phone);
+      if (!orders.length) return { found: false };
+      const open = orders.filter((c) => !this.getQrCouponForCollection(c.id));
+      if (!open.length) return { all_claimed: true };
+      const c = open[0];
+      const e = rules.isValidEmail(c.owner_email) ? rules.normEmail(c.owner_email) : '';
       const createdAt = nowIso();
-      const consent = marketingConsent === true;
+      const consent = marketingConsent === true && !!e;
       const row = {
         id: uid(),
         source: 'qr',
         email: e,
-        code: rules.makeCode(e, percent, { taken: (code) => this._personalCodeTaken(code) }),
-        // The order whose box carried the QR — the order this code can NOT be
-        // spent on (validateFriendCoupon, reason 'own_order').
-        collection_id: collectionId,
+        // NOT read from the address, unlike a friend's code: this one is shown
+        // on screen to whoever typed the number, and a prefix taken from the
+        // email would spell out the very part maskEmail hides. Every QR code is
+        // DUGRI<percent>-XXXX.
+        code: rules.makeCode('', percent, { taken: (code) => this._personalCodeTaken(code) }),
+        // The order that earned it — the order this code can NOT be spent on
+        // (validateFriendCoupon, reason 'own_order').
+        collection_id: c.id,
         discount_percent: percent,
         marketing_consent: consent,
         consent_at: consent ? createdAt : null,
@@ -460,7 +429,7 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
       };
       rows().push(row);
       saveDb();
-      return { coupon: row, created: true };
+      return { coupon: row, collection: c, created: true, remaining: open.length - 1 };
     },
 
     // Is `code` held by ANY code in the shop — owner coupon, personal code or
@@ -549,8 +518,8 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
     // { valid: false, reason } with reason 'not_found' | 'used' | 'expired' |
     // 'own_order'.
     //
-    // 'own_order': a code claimed from a box QR is for the NEXT order, so it is
-    // refused on the order whose box carried it (`opts.collectionId` is the
+    // 'own_order': a code claimed from the box QR is for the NEXT order, so it is
+    // refused on the order that earned it (`opts.collectionId` is the
     // checkout asking; every caller of validateCoupon passes it).
     validateFriendCoupon(code, now = Date.now(), opts = {}) {
       const r = this.getFriendCouponByCode(code);

@@ -216,6 +216,25 @@
       .fc-settings .field input[type='number'] {
         width: 100px;
       }
+      /* The static box QR, to download for the box art. */
+      .qr-download {
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+      .qr-download img {
+        width: 120px;
+        height: 120px;
+        flex: none;
+      }
+      .qr-download button {
+        margin-top: 8px;
+      }
+      .qr-download a {
+        direction: ltr;
+        unicode-bidi: isolate;
+      }
       /* The box QR's words: full width, one per line. */
       .fc-settings .qr-text {
         flex-basis: 100%;
@@ -381,14 +400,29 @@
         </div>
       </div>
 
-      <!-- Box QR codes: the personal code whoever holds a printed game claims by
-           scanning the QR on its box sticker. ONE per order. Same rows and the
-           same rules as the friend codes, its own settings. Owner key only. -->
+      <!-- Box QR codes: ONE static QR for everyone, on the box art, opens /box;
+           whoever types the phone number an order was placed with gets ONE code
+           per PRODUCED order of that number. Same rows and the same rules as the
+           friend codes, its own settings. Owner key only. -->
       <div class="panel" id="qrPanel" hidden data-testid="qr-panel">
         <h2>קופוני QR מהקופסה</h2>
+        <div class="qr-download" data-testid="qr-download">
+          <img id="qrImage" alt="ה-QR של עמוד הסריקה" hidden />
+          <div>
+            <div class="muted">
+              QR אחד לכולם, לשים על עיצוב הקופסה. הוא פותח את
+              <a id="qrUrl" data-testid="qr-url" target="_blank" rel="noopener"></a>
+            </div>
+            <button type="button" id="qrPng" data-testid="qr-png" disabled>הורדה כ-PNG</button>
+            <button type="button" id="qrSvg" data-testid="qr-svg" disabled>הורדה כ-SVG</button>
+            <div class="muted" id="qrNoUrl" hidden>
+              אין כתובת אתר מוגדרת לסביבה הזו (PUBLIC_BASE_URL), אז אין QR.
+            </div>
+          </div>
+        </div>
         <form class="fc-settings" id="qrSettings">
           <label class="fc-check"
-            ><input type="checkbox" id="qrEnabled" /> להדפיס QR על מדבקת הקופסה ולתת קוד</label
+            ><input type="checkbox" id="qrEnabled" /> לתת קוד למי שסורק את ה-QR</label
           >
           <div class="field">
             <label for="qrPercent">אחוז הנחה</label>
@@ -398,21 +432,13 @@
             <label for="qrMonths">תוקף (חודשים)</label>
             <input id="qrMonths" type="number" min="1" max="60" step="1" />
           </div>
-          <label class="fc-check"
-            ><input type="checkbox" id="qrDelivery" /> להדפיס את המדבקה שלנו (עם ה-QR) גם על קופסאות
-            משלוח, אחרי המדבקה של HFD</label
-          >
-          <div class="field qr-text">
-            <label for="qrStickerLine">השורה מתחת ל-QR במדבקה</label>
-            <input id="qrStickerLine" type="text" maxlength="40" data-qrkey="sticker_line" />
-          </div>
           <div class="field qr-text">
             <label for="qrTitle">עמוד הסריקה: כותרת</label>
             <input id="qrTitle" type="text" maxlength="80" data-qrkey="page_title" />
           </div>
           <div class="field qr-text">
-            <label for="qrBody">עמוד הסריקה: טקסט</label>
-            <textarea id="qrBody" maxlength="300" rows="3" data-qrkey="page_body"></textarea>
+            <label for="qrLead">עמוד הסריקה: טקסט</label>
+            <textarea id="qrLead" maxlength="300" rows="3" data-qrkey="page_lead"></textarea>
           </div>
           <div class="field qr-text">
             <label for="qrButton">עמוד הסריקה: כפתור</label>
@@ -423,19 +449,35 @@
             <input id="qrConsent" type="text" maxlength="120" data-qrkey="page_consent" />
           </div>
           <div class="field qr-text">
-            <label for="qrDone">עמוד הסריקה: אחרי שקיבלו קוד</label>
-            <input id="qrDone" type="text" maxlength="160" data-qrkey="page_done" />
+            <label for="qrCode">עמוד הסריקה: מעל הקוד</label>
+            <input id="qrCode" type="text" maxlength="160" data-qrkey="page_code" />
           </div>
           <div class="field qr-text">
-            <label for="qrClaimed">עמוד הסריקה: כשהקוד כבר נלקח</label>
-            <textarea id="qrClaimed" maxlength="200" rows="2" data-qrkey="page_claimed"></textarea>
+            <label for="qrEmailed"
+              >עמוד הסריקה: שלחנו גם למייל ({email} = המייל של ההזמנה, מוסתר)</label
+            >
+            <input id="qrEmailed" type="text" maxlength="160" data-qrkey="page_emailed" />
+          </div>
+          <div class="field qr-text">
+            <label for="qrNoMatch">עמוד הסריקה: כשאין הזמנה שהופקה למספר</label>
+            <textarea id="qrNoMatch" maxlength="200" rows="2" data-qrkey="page_no_match"></textarea>
+          </div>
+          <div class="field qr-text">
+            <label for="qrAllClaimed">עמוד הסריקה: כשכל הקודים של המספר כבר נלקחו</label>
+            <textarea
+              id="qrAllClaimed"
+              maxlength="200"
+              rows="2"
+              data-qrkey="page_all_claimed"
+            ></textarea>
           </div>
           <button type="submit" id="qrSave">שמירה</button>
           <span class="muted" id="qrSaved"></span>
         </form>
         <div class="muted" style="margin-bottom: 10px">
-          קוד אחד לכל הזמנה. {percent} ו-{months} בטקסטים מתמלאים לבד. שינוי האחוז או התוקף חל על
-          קודים חדשים בלבד. המייל עצמו נערך בעמוד הטקסטים.
+          קוד אחד לכל הזמנה שהופקה, לפי הטלפון שאיתו הוזמנה. הקוד מוצג במסך ונשלח למייל של ההזמנה.
+          {percent} ו-{months} בטקסטים מתמלאים לבד. שינוי האחוז או התוקף חל על קודים חדשים בלבד.
+          המייל עצמו נערך בעמוד הטקסטים.
         </div>
         <table id="qrSummary">
           <thead>
@@ -897,7 +939,7 @@
       }
 
       // The list behind a summary row. Shared by the friend section and the box
-      // QR one (`qr`: true adds the column naming the order whose box it was).
+      // QR one (`qr`: true adds the column naming the order that earned the code).
       function renderFriendList(rows, list = fcList, reload = loadFriends, qr = false) {
         if (!rows.length) {
           list.innerHTML = '<div class="muted">אין קופונים.</div>';
@@ -906,7 +948,7 @@
         const table = document.createElement('table');
         table.innerHTML =
           '<thead><tr><th>מייל</th><th>קוד</th>' +
-          (qr ? '<th>מהקופסה של</th>' : '') +
+          (qr ? '<th>הזמנת המקור</th>' : '') +
           '<th>נוצר</th><th>נוצל</th><th>הזמנה</th><th>הסכמה לדיוור</th><th>מייל</th><th>תמיכה</th></tr></thead>';
         const tb = document.createElement('tbody');
         for (const r of rows) {
@@ -1073,7 +1115,6 @@
             document.getElementById('qrEnabled').checked = sm.enabled;
             document.getElementById('qrPercent').value = sm.percent;
             document.getElementById('qrMonths').value = sm.expiry_months;
-            document.getElementById('qrDelivery').checked = sm.delivery_label;
             try {
               const s = await (await fetch(withKey('/api/admin/settings'))).json();
               for (const el of qrPanel.querySelectorAll('[data-qrkey]')) {
@@ -1086,6 +1127,59 @@
           if (!qrListWrap.hidden) renderFriendList(data.coupons, qrList, loadQr, true);
         } catch {
           /* the panel stays hidden */
+        }
+      }
+      // The ONE static QR (GET /api/admin/box-qr): shown, and offered as the SVG
+      // the server drew and as a PNG drawn from it here, big enough to print.
+      const QR_PNG_PX = 1200;
+      async function loadQrImage() {
+        try {
+          const r = await fetch(withKey('/api/admin/box-qr'));
+          if (r.status === 409) {
+            document.getElementById('qrNoUrl').hidden = false;
+            return;
+          }
+          if (!r.ok) return;
+          const { url, svg } = await r.json();
+          const a = document.getElementById('qrUrl');
+          a.href = url;
+          a.textContent = url;
+          const src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+          const img = document.getElementById('qrImage');
+          img.src = src;
+          img.hidden = false;
+          const save = (href, name) => {
+            const link = document.createElement('a');
+            link.href = href;
+            link.download = name;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+          };
+          const svgBtn = document.getElementById('qrSvg');
+          const pngBtn = document.getElementById('qrPng');
+          svgBtn.onclick = () => {
+            const blob = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+            save(blob, 'dugri-box-qr.svg');
+            setTimeout(() => URL.revokeObjectURL(blob), 1000);
+          };
+          pngBtn.onclick = () => {
+            const pic = new Image();
+            pic.onload = () => {
+              const canvas = document.createElement('canvas');
+              canvas.width = canvas.height = QR_PNG_PX;
+              const ctx = canvas.getContext('2d');
+              // Crisp modules: no smoothing when the small viewBox is scaled up.
+              ctx.imageSmoothingEnabled = false;
+              ctx.drawImage(pic, 0, 0, QR_PNG_PX, QR_PNG_PX);
+              save(canvas.toDataURL('image/png'), 'dugri-box-qr.png');
+            };
+            pic.src = src;
+          };
+          svgBtn.disabled = false;
+          pngBtn.disabled = false;
+        } catch {
+          /* no QR to offer */
         }
       }
       const qrRow = document.querySelector('[data-testid="qr-summary-row"]');
@@ -1118,7 +1212,6 @@
           put('enabled', document.getElementById('qrEnabled').checked),
           put('percent', Number(document.getElementById('qrPercent').value)),
           put('expiry_months', Number(document.getElementById('qrMonths').value)),
-          put('delivery_label', document.getElementById('qrDelivery').checked),
           ...texts,
         ]).catch(() => []);
         saved.textContent =
@@ -1150,6 +1243,7 @@
           render(coupons);
           loadFriends();
           loadQr();
+          loadQrImage();
         } catch {
           sub.textContent = '';
           content.innerHTML = '<div class="msg">שגיאה בטעינה.</div>';

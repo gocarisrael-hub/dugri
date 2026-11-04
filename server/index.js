@@ -1402,8 +1402,6 @@ const STAFF_DENIED = [
   // The add-delivery payment link: a price, a charge and a link to it, all of
   // it the owner's — reading it as much as making or cancelling it.
   /^\/api\/admin\/collections\/[^/]+\/delivery-link$/,
-  // The box QR link: a bearer link worth a personal code (server/friend-coupons.js).
-  /^\/api\/admin\/collections\/[^/]+\/box-qr$/,
 ];
 
 // Match against a NORMALISED path, because Express does not route on the exact
@@ -2524,8 +2522,6 @@ const { stickerBatch, pickupStickerOrders, stickerEntries, stockDesigns, designN
     PREVIEW_TIMEOUT_MS,
     spawnGenerator,
     killGenerator,
-    settings,
-    paymentBaseUrl,
   });
 
 // EVERYTHING THAT HAPPENS WHEN AN ORDER BECOMES READY, in one place.
