@@ -348,6 +348,27 @@ describe('PeleCard months come from our own orders', () => {
       free_copies: 3,
     });
   });
+
+  it('a free PARTNER-VOUCHER order is noted apart from 100% coupons, not counted as revenue', () => {
+    const out = run({
+      rows: [],
+      collections: [
+        pele(8, '2026-11-10T10:00:00Z', 0, {
+          paid_method: 'voucher',
+          quantity: 1,
+          voucher: { code: 'HTZ-AAAA-BBBB-CCCC-DDDD', partner_name: 'Hi Tech Zone' },
+        }),
+      ],
+    });
+    expect(month(out, '2026-11')).toMatchObject({
+      revenue: 0,
+      orders: 0,
+      copies: 0,
+      free_orders: 0,
+      voucher_orders: 1,
+      voucher_copies: 1,
+    });
+  });
 });
 
 describe('month boundaries are Israel time', () => {
@@ -512,6 +533,27 @@ describe('the same exclusions on both sources', () => {
     // Only the terminal row can be counted back in from the page.
     expect(viaReport.excluded[0].toggle).toBe(true);
     expect(pele.excluded[0].toggle).toBeUndefined();
+  });
+
+  it('a voucher order paid partly by card: the voucher copy is noted apart, not a card sale', () => {
+    // Three pickup copies, one paid by a partner voucher: the card bought two.
+    const voucher = { code: 'HTZ-AAAA-BBBB-CCCC-DDDD', partner_name: 'Hi Tech Zone', credit: 199 };
+    const t = siteOrder(40, { index: 4000, total: 398, quantity: 3, voucher });
+    const viaReport = run({ rows: [charge(4000, '2026-10-10', 398)], collections: [t] });
+    const viaStore = run({ rows: null, collections: [t] });
+    const pele = run({
+      rows: [],
+      collections: [peleOrder(41, { charged_total: 398, total: 597, quantity: 3, voucher })],
+    });
+    for (const out of [viaReport, viaStore, pele]) {
+      expect(month(out, '2026-10')).toMatchObject({
+        revenue: 398,
+        orders: 1,
+        copies: 2,
+        voucher_orders: 1,
+        voucher_copies: 1,
+      });
+    }
   });
 
   it('a cancelled order is not a sale on either source', () => {

@@ -149,6 +149,41 @@ describe('pay/init and expectedChargeNow agree on what to charge', () => {
     expect(app.expectedChargeNow(order, session)).toBe(r.body.charged);
   });
 
+  let voucherRow = 0;
+  // A PARTNER VOUCHER is a fixed credit (one copy, at most the pickup price), not
+  // a percentage, so it takes its own rows: the same shapes plus a pdf, where the
+  // credit is the pdf's own price.
+  it.each([...SHAPES, { version: 'pdf', quantity: 2 }])(
+    'voucher on $version ×$quantity one_box=$one_box',
+    async (k) => {
+      const { codes } = db.createVoucherPool({
+        partner_name: 'Binding',
+        // One pool per row, each with its own prefix (BVA, BVB, …).
+        prefix: 'BV' + 'ABCDEFGHJK'[voucherRow++],
+        count: 1,
+      });
+      const c = db.createCollection('קשירה ' + Math.random());
+      const r = await post('/api/collections/' + c.id + '/pay/init', {
+        owner_token: c.owner_token,
+        version: k.version,
+        address: k.version === 'delivery' ? ADDRESS : undefined,
+        quantity: k.quantity,
+        ...(k.one_box === undefined ? {} : { one_box: k.one_box }),
+        coupon: codes[0].code,
+      });
+      expect(r.status).toBe(200);
+      const order = db.getCollection(c.id).order;
+      if (r.body.free) {
+        expect(order.voucher.credit).toBe(order.total);
+        expect(lastInitTotal).toBeNull();
+        return;
+      }
+      const session = order.pelecard.sessions.slice(-1)[0];
+      expect(lastInitTotal).toBe(r.body.charged * 100);
+      expect(app.expectedChargeNow(order, session)).toBe(r.body.charged);
+    }
+  );
+
   it('covers the cases that make a drift visible', () => {
     // A table that silently lost its rounding or 100%-delivery rows would still
     // pass; these are the rows that tell the two groupings apart.

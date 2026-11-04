@@ -1,0 +1,717 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="admin-partners.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>דוגרי · שותפים וקודי מתנה</title>
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link
+      rel="stylesheet"
+      href="/assets/fonts/fonts.css"
+      media="print"
+      onload="this.media = 'all'"
+    />
+    <noscript><link rel="stylesheet" href="/assets/fonts/fonts.css" /></noscript>
+    <link rel="stylesheet" href="/css/tokens.css" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: 'Heebo', Arial, sans-serif;
+        background: #f7f4ef;
+        color: #23201c;
+        padding: 22px 16px 60px;
+      }
+      .wrap {
+        max-width: 1100px;
+        margin: 0 auto;
+      }
+      .top {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-bottom: 16px;
+      }
+      .top a {
+        font-size: 13px;
+        font-weight: 700;
+        text-decoration: none;
+        border: 1px solid #e4ddd0;
+        background: #fff;
+        color: #5c7357;
+        border-radius: 99px;
+        padding: 6px 14px;
+      }
+      h1 {
+        font-size: 24px;
+        font-weight: 900;
+        margin-bottom: 4px;
+      }
+      h2 {
+        font-size: 16px;
+        font-weight: 800;
+        color: #5c7357;
+        margin-bottom: 12px;
+      }
+      h3 {
+        font-size: 14px;
+        font-weight: 800;
+        margin: 14px 0 8px;
+      }
+      .sub {
+        color: #6b645b;
+        margin-bottom: 18px;
+        font-size: 14px;
+        line-height: 1.5;
+      }
+      .msg {
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        border-radius: 14px;
+        padding: 20px;
+        text-align: center;
+      }
+      .panel {
+        background: #fff;
+        border: 1px solid #e4ddd0;
+        border-radius: 14px;
+        padding: 16px 18px;
+        margin-bottom: 18px;
+      }
+      .form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: flex-end;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .field label {
+        font-size: 12.5px;
+        color: #6b645b;
+        font-weight: 700;
+      }
+      input,
+      select {
+        font: inherit;
+        font-size: 14px;
+        border: 1px solid #e4ddd0;
+        border-radius: 9px;
+        padding: 8px 10px;
+        background: #fff;
+        color: #23201c;
+        max-width: 100%;
+      }
+      .prefix {
+        text-transform: uppercase;
+        width: 100px;
+      }
+      .num {
+        width: 110px;
+      }
+      button,
+      a.btn {
+        font: inherit;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 1px solid #8ca287;
+        background: #8ca287;
+        color: #fff;
+        border-radius: 9px;
+        padding: 9px 16px;
+        text-decoration: none;
+        display: inline-block;
+      }
+      button.ghost,
+      a.btn.ghost {
+        background: #fff;
+        color: #5c7357;
+        padding: 6px 10px;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .err {
+        color: #b3261e;
+        font-size: 13px;
+        font-weight: 700;
+        margin-top: 10px;
+        min-height: 18px;
+      }
+      .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 10px;
+        margin-bottom: 12px;
+      }
+      .card {
+        border: 1px solid #efe9df;
+        border-radius: 12px;
+        padding: 10px 12px;
+      }
+      .card .n {
+        font-size: 22px;
+        font-weight: 900;
+      }
+      .card .l {
+        font-size: 12.5px;
+        color: #6b645b;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: flex-end;
+        margin: 8px 0;
+      }
+      .scroll {
+        overflow-x: auto;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: right;
+        padding: 8px 10px;
+        border-bottom: 1px solid #efe9df;
+        vertical-align: middle;
+      }
+      th {
+        background: #f3e6e3;
+        color: #5c7357;
+        font-size: 12.5px;
+      }
+      .code {
+        font-family: ui-monospace, Menlo, monospace;
+        direction: ltr;
+        unicode-bidi: isolate;
+        white-space: nowrap;
+      }
+      .st-used {
+        color: #1f7a4d;
+        font-weight: 700;
+      }
+      .st-void {
+        color: #6b645b;
+        text-decoration: line-through;
+      }
+      .muted {
+        color: #6b645b;
+        font-size: 13px;
+      }
+    </style>
+    <script src="js/editor.js" defer></script>
+    <script src="js/admin-role.js" defer></script>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="top">
+        <a data-page="dashboard.html">לוח בקרה</a>
+        <a data-page="admin.html">ניהול הזמנות</a>
+        <a data-page="coupons.html">ניהול קופונים</a>
+      </div>
+      <h1>שותפים וקודי מתנה</h1>
+      <div class="sub">
+        שותף (למשל Hi Tech Zone) מוכר את דוגרי ללקוחות שלו ונותן לכל לקוח קוד. כל קוד שווה עותק אחד
+        באיסוף עצמי ב-0 ₪, ופעם אחת בלבד. משלוח או עותקים נוספים הלקוח משלים בכרטיס. השותף משלם לך
+        על כל קוד שנוצל.
+      </div>
+      <div id="content"></div>
+      <div id="main" hidden>
+        <div class="panel">
+          <h2>שותף חדש</h2>
+          <form class="form" id="createForm" autocomplete="off">
+            <div class="field">
+              <label for="pName">שם השותף</label>
+              <input id="pName" maxlength="80" required />
+            </div>
+            <div class="field">
+              <label for="pPrefix">קידומת (2–6 אותיות)</label>
+              <input id="pPrefix" class="prefix" maxlength="6" placeholder="HTZ" required />
+            </div>
+            <div class="field">
+              <label for="pCount">כמה קודים</label>
+              <input id="pCount" class="num" type="number" min="1" step="1" value="100" required />
+            </div>
+            <div class="field">
+              <label for="pPrice">מחיר לקוד שנוצל (₪)</label>
+              <input
+                id="pPrice"
+                class="num"
+                type="number"
+                min="0"
+                step="0.5"
+                placeholder="לא נקבע"
+              />
+            </div>
+            <button type="submit" id="createBtn">יצירה</button>
+          </form>
+          <div class="err" id="createErr" role="status"></div>
+          <div class="muted" id="entropy"></div>
+        </div>
+        <div id="pools"></div>
+      </div>
+    </div>
+
+    <script type="module">
+      const key = (new URLSearchParams(location.search).get('key') || '').trim();
+      for (const a of document.querySelectorAll('[data-page]')) {
+        a.href = a.dataset.page + (key ? '?key=' + encodeURIComponent(key) : '');
+      }
+      const withKey = (path) =>
+        path + (path.includes('?') ? '&' : '?') + 'key=' + encodeURIComponent(key);
+      const $ = (id) => document.getElementById(id);
+
+      const ERR_HE = {
+        'bad partner_name': 'חסר שם שותף.',
+        'bad prefix': 'קידומת: 2 עד 6 אותיות באנגלית.',
+        'duplicate prefix': 'הקידומת הזאת כבר בשימוש אצל שותף אחר.',
+        'bad count': 'מספר הקודים חייב להיות מספר שלם בין 1 ל-5000.',
+        'bad price_per_use': 'מחיר לא תקין.',
+        already_used: 'הקוד כבר נוצל, אי אפשר לבטל אותו.',
+        forbidden: 'מפתח גישה שגוי.',
+        order_active: 'ההזמנה שנוצל בה הקוד עדיין פעילה. אפשר להחזיר קוד רק מהזמנה שבוטלה.',
+        not_held: 'הקוד כבר לא שמור לתשלום.',
+        not_used: 'הקוד לא נוצל.',
+      };
+      // One action on a code, then reload. Shared by void, restore and release.
+      async function codeAction(id, action, body, failText) {
+        try {
+          await call('/api/admin/partner-vouchers/' + id + '/' + action, {
+            method: 'POST',
+            body: JSON.stringify(body || {}),
+          });
+          load();
+        } catch (e) {
+          alert(ERR_HE[e.message] || failText);
+        }
+      }
+      const STATUS_HE = { unused: 'לא נוצל', used: 'נוצל', void: 'בוטל' };
+
+      function el(tag, props = {}, ...kids) {
+        const n = document.createElement(tag);
+        for (const [k, v] of Object.entries(props)) {
+          if (k === 'class') n.className = v;
+          else if (k === 'text') n.textContent = v;
+          else if (k.startsWith('data-') || k === 'for') n.setAttribute(k, v);
+          else n[k] = v;
+        }
+        for (const kid of kids) if (kid != null) n.append(kid);
+        return n;
+      }
+      const shekel = (n) => Number(n || 0).toLocaleString('he-IL') + ' ₪';
+      const fmtDate = (iso) =>
+        iso
+          ? new Date(iso).toLocaleString('he-IL', {
+              timeZone: 'Asia/Jerusalem',
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+          : '';
+      const monthHe = (ym) => {
+        const [y, m] = String(ym).split('-');
+        return m + '/' + y;
+      };
+
+      async function call(path, opts = {}) {
+        const r = await fetch(withKey(path), {
+          ...opts,
+          headers: { 'Content-Type': 'application/json' },
+        });
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          const e = new Error(body.error || 'error');
+          e.status = r.status;
+          throw e;
+        }
+        return body;
+      }
+
+      function card(n, label, testid) {
+        return el(
+          'div',
+          { class: 'card', 'data-testid': testid },
+          el('div', { class: 'n', text: String(n) }),
+          el('div', { class: 'l', text: label })
+        );
+      }
+
+      // One pool: its numbers, its settings, its exports and (on demand) its codes.
+      function renderPool(pool) {
+        const s = pool.summary;
+        const box = el('div', { class: 'panel', 'data-testid': 'pool' });
+        box.append(
+          el('h2', { text: pool.partner_name + ' · ' + pool.prefix }),
+          el(
+            'div',
+            { class: 'cards' },
+            card(s.issued, 'הונפקו', 'pool-issued'),
+            card(s.used, 'נוצלו', 'pool-used'),
+            card(s.unused, 'לא נוצלו', 'pool-unused'),
+            card(s.voided, 'בוטלו', 'pool-voided'),
+            card(s.cancelled, 'בהזמנות שבוטלו (לא לחיוב)', 'pool-cancelled'),
+            card(s.held, 'בתשלום פתוח', 'pool-held'),
+            card(
+              s.price_set ? shekel(s.owed) : 'לא נקבע',
+              s.price_set ? 'לחיוב (' + shekel(s.price_per_use) + ' לקוד)' : 'לחיוב: המחיר לא נקבע',
+              'pool-owed'
+            )
+          )
+        );
+
+        // Price + name.
+        const price = el('input', {
+          class: 'num',
+          type: 'number',
+          min: 0,
+          step: 0.5,
+          value: s.price_set ? String(s.price_per_use) : '',
+          placeholder: 'לא נקבע',
+          'data-testid': 'pool-price',
+        });
+        const name = el('input', { value: pool.partner_name, maxLength: 80 });
+        const saveErr = el('span', { class: 'err' });
+        const save = el('button', { class: 'ghost', type: 'button', text: 'שמירה' });
+        save.onclick = async () => {
+          saveErr.textContent = '';
+          try {
+            await call('/api/admin/partner-pools/' + pool.id, {
+              method: 'POST',
+              body: JSON.stringify({ partner_name: name.value, price_per_use: price.value }),
+            });
+            load();
+          } catch (e) {
+            saveErr.textContent = ERR_HE[e.message] || 'השמירה נכשלה.';
+          }
+        };
+
+        // More codes.
+        const more = el('input', {
+          class: 'num',
+          type: 'number',
+          min: 1,
+          step: 1,
+          value: '50',
+          'data-testid': 'pool-more-count',
+        });
+        const moreBtn = el('button', {
+          class: 'ghost',
+          type: 'button',
+          text: 'הוספת קודים',
+          'data-testid': 'pool-more',
+        });
+        moreBtn.onclick = async () => {
+          saveErr.textContent = '';
+          moreBtn.disabled = true;
+          try {
+            await call('/api/admin/partner-pools/' + pool.id + '/codes', {
+              method: 'POST',
+              body: JSON.stringify({ count: Number(more.value) }),
+            });
+            load();
+          } catch (e) {
+            saveErr.textContent = ERR_HE[e.message] || 'ההוספה נכשלה.';
+          } finally {
+            moreBtn.disabled = false;
+          }
+        };
+
+        box.append(
+          el(
+            'div',
+            { class: 'actions' },
+            el('div', { class: 'field' }, el('label', { text: 'שם השותף' }), name),
+            el('div', { class: 'field' }, el('label', { text: 'מחיר לקוד שנוצל (₪)' }), price),
+            save,
+            el('div', { class: 'field' }, el('label', { text: 'עוד קודים' }), more),
+            moreBtn,
+            saveErr
+          ),
+          el(
+            'div',
+            { class: 'actions' },
+            el('a', {
+              class: 'btn ghost',
+              href: withKey('/api/admin/partner-pools/' + pool.id + '/codes.csv?status=unused'),
+              text: 'קודים למסירה (CSV, רק לא מנוצלים)',
+              'data-testid': 'csv-unused',
+            }),
+            el('a', {
+              class: 'btn ghost',
+              href: withKey('/api/admin/partner-pools/' + pool.id + '/codes.csv'),
+              text: 'כל הקודים (CSV)',
+              'data-testid': 'csv-codes',
+            }),
+            el('a', {
+              class: 'btn ghost',
+              href: withKey('/api/admin/partner-pools/' + pool.id + '/usage.csv'),
+              text: 'שימושים לחשבונית (CSV)',
+              'data-testid': 'csv-usage',
+            })
+          )
+        );
+
+        // By month.
+        if (s.by_month.length) {
+          const tb = el('tbody');
+          for (const m of s.by_month) {
+            tb.append(
+              el(
+                'tr',
+                {},
+                el('td', { text: monthHe(m.month) }),
+                el('td', { text: String(m.used) }),
+                el('td', { text: s.price_set ? shekel(m.owed) : 'לא נקבע' })
+              )
+            );
+          }
+          box.append(
+            el('h3', { text: 'לפי חודש' }),
+            el(
+              'div',
+              { class: 'scroll' },
+              el(
+                'table',
+                { 'data-testid': 'pool-months' },
+                el(
+                  'thead',
+                  {},
+                  el(
+                    'tr',
+                    {},
+                    el('th', { text: 'חודש' }),
+                    el('th', { text: 'נוצלו' }),
+                    el('th', { text: 'לחיוב' })
+                  )
+                ),
+                tb
+              )
+            )
+          );
+        }
+
+        // The codes, searchable.
+        const q = el('input', { placeholder: 'חיפוש קוד', 'data-testid': 'codes-q' });
+        const status = el(
+          'select',
+          { 'data-testid': 'codes-status' },
+          el('option', { value: '', text: 'הכל' }),
+          el('option', { value: 'unused', text: 'לא נוצלו' }),
+          el('option', { value: 'used', text: 'נוצלו' }),
+          el('option', { value: 'void', text: 'בוטלו' }),
+          el('option', { value: 'held', text: 'בתשלום פתוח' })
+        );
+        const list = el('div', { class: 'scroll' });
+        const toggle = el('button', {
+          class: 'ghost',
+          type: 'button',
+          text: 'הצגת הקודים',
+          'data-testid': 'codes-toggle',
+        });
+        let shown = false;
+        async function loadCodes() {
+          const params = new URLSearchParams();
+          if (q.value.trim()) params.set('q', q.value.trim());
+          if (status.value) params.set('status', status.value);
+          const r = await call(
+            '/api/admin/partner-pools/' + pool.id + '/codes?' + params.toString()
+          );
+          list.replaceChildren(codesTable(r.codes));
+        }
+        toggle.onclick = () => {
+          shown = !shown;
+          toggle.textContent = shown ? 'הסתרת הקודים' : 'הצגת הקודים';
+          if (shown) loadCodes();
+          else list.replaceChildren();
+        };
+        let t = null;
+        q.oninput = () => {
+          clearTimeout(t);
+          t = setTimeout(() => shown && loadCodes(), 250);
+        };
+        status.onchange = () => shown && loadCodes();
+        box.append(
+          el('h3', { text: 'הקודים' }),
+          el('div', { class: 'actions' }, toggle, q, status),
+          list
+        );
+        return box;
+      }
+
+      function codesTable(codes) {
+        if (!codes.length) return el('div', { class: 'muted', text: 'אין קודים להצגה.' });
+        const tb = el('tbody');
+        for (const c of codes) {
+          const order = c.order_link
+            ? el('a', {
+                href: c.order_link,
+                target: '_blank',
+                rel: 'noopener',
+                text: c.order_no + (c.order_cancelled ? ' (בוטלה)' : ''),
+              })
+            : document.createTextNode('');
+          const act = el('td');
+          if (c.status === 'unused') {
+            const b = el('button', {
+              class: 'ghost',
+              type: 'button',
+              text: 'ביטול קוד',
+              'data-testid': 'code-void',
+            });
+            b.onclick = async () => {
+              const reason = prompt('למה מבטלים את הקוד? (למשל: אבד)', 'אבד');
+              if (reason === null) return;
+              try {
+                await call('/api/admin/partner-vouchers/' + c.id + '/void', {
+                  method: 'POST',
+                  body: JSON.stringify({ reason }),
+                });
+                load();
+              } catch (e) {
+                alert(ERR_HE[e.message] || 'הביטול נכשל.');
+              }
+            };
+            act.append(b);
+            // Held by a card window that can still settle. Only the owner can
+            // know it never will (no settle has an age limit), so she frees it.
+            if (c.held) {
+              const free = el('button', {
+                class: 'ghost',
+                type: 'button',
+                text: 'שחרור מתשלום פתוח',
+                'data-testid': 'code-release',
+              });
+              free.onclick = () => {
+                if (!confirm('לשחרר את הקוד? רק אם ברור שהתשלום הפתוח לא יושלם.')) return;
+                codeAction(c.id, 'release-hold', {}, 'השחרור נכשל.');
+              };
+              act.append(' ', free);
+            }
+          } else if (c.status === 'used' && c.order_cancelled) {
+            // The order was cancelled: not billed, and the code can be handed out
+            // again. The use stays in the code's history.
+            const back = el('button', {
+              class: 'ghost',
+              type: 'button',
+              text: 'החזרת הקוד',
+              'data-testid': 'code-restore',
+            });
+            back.onclick = () => {
+              if (!confirm('להחזיר את הקוד לשימוש? הוא יחזור להיות לא מנוצל.')) return;
+              codeAction(c.id, 'restore', {}, 'ההחזרה נכשלה.');
+            };
+            act.append(back);
+          } else if (c.status === 'void' && c.void_reason) {
+            act.append(el('span', { class: 'muted', text: c.void_reason }));
+          }
+          tb.append(
+            el(
+              'tr',
+              { 'data-testid': 'code-row' },
+              el('td', { class: 'code', text: c.code }),
+              el('td', { class: 'st-' + c.status, text: STATUS_HE[c.status] || c.status }),
+              el('td', { text: fmtDate(c.used_at || c.voided_at) }),
+              el('td', {}, order),
+              act
+            )
+          );
+        }
+        return el(
+          'table',
+          { 'data-testid': 'codes-table' },
+          el(
+            'thead',
+            {},
+            el(
+              'tr',
+              {},
+              el('th', { text: 'קוד' }),
+              el('th', { text: 'סטטוס' }),
+              el('th', { text: 'מתי' }),
+              el('th', { text: 'הזמנה' }),
+              el('th', { text: '' })
+            )
+          ),
+          tb
+        );
+      }
+
+      async function load() {
+        const r = await call('/api/admin/partner-pools');
+        $('entropy').textContent =
+          'כל קוד: קידומת + 16 תווים אקראיים (כ-' + r.entropy_bits + ' ביט), אי אפשר לנחש.';
+        const pools = $('pools');
+        pools.replaceChildren(
+          ...(r.pools.length
+            ? r.pools.map(renderPool)
+            : [el('div', { class: 'msg', text: 'עוד אין שותפים.' })])
+        );
+      }
+
+      $('createForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        $('createErr').textContent = '';
+        $('createBtn').disabled = true;
+        try {
+          await call('/api/admin/partner-pools', {
+            method: 'POST',
+            body: JSON.stringify({
+              partner_name: $('pName').value,
+              prefix: $('pPrefix').value,
+              count: Number($('pCount').value),
+              price_per_use: $('pPrice').value,
+            }),
+          });
+          $('createForm').reset();
+          load();
+        } catch (err) {
+          $('createErr').textContent = ERR_HE[err.message] || 'היצירה נכשלה.';
+        } finally {
+          $('createBtn').disabled = false;
+        }
+      });
+
+      (async () => {
+        const content = $('content');
+        if (!key) {
+          content.innerHTML =
+            '<div class="msg">חסר מפתח גישה. פתחו עם <code>?key=…</code> בכתובת.</div>';
+          return;
+        }
+        try {
+          await load();
+          $('main').hidden = false;
+        } catch (e) {
+          content.replaceChildren(
+            el('div', {
+              class: 'msg',
+              text:
+                e.status === 403
+                  ? 'אין גישה לעמוד הזה עם המפתח הזה.'
+                  : e.status === 503
+                    ? 'ניהול מושבת בשרת (חסר ADMIN_KEY).'
+                    : 'הטעינה נכשלה.',
+            })
+          );
+        }
+      })();
+    </script>
+  </body>
+</html>

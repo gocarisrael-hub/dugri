@@ -57,6 +57,10 @@ function couponsBlock({
       const cap = normMaxUses(max_uses);
       if (cap && cap.error) return { error: cap.error };
       if (_db.coupons.some((x) => x.code === c)) return { error: 'duplicate' };
+      // A partner voucher typed without its dashes is a valid owner-code shape,
+      // and validateCoupon tries owner coupons FIRST — so an owner coupon equal to
+      // a voucher's compact form would shadow that voucher at the checkout.
+      if (this.getVoucherByCode && this.getVoucherByCode(c)) return { error: 'duplicate' };
       const terms = normalizeCommission({ partner_name, commission_type, commission_value });
       if (terms.error) return { error: terms.error };
       const coupon = {
@@ -209,16 +213,28 @@ function couponsBlock({
 
     // Validate a code for use at checkout. Returns { valid:true, coupon } or
     // { valid:false, reason } with reason in 'not_found'|'inactive'|'expired'|
-    // 'used_up', or — for a friend code — 'used'.
+    // 'used_up', or — for a friend code — 'used', or — for a partner voucher —
+    // 'used' | 'void' | 'held'.
+    //
+    // After the friend coupons come the PARTNER VOUCHERS (server/stores/
+    // vouchers.js): a reseller's single-use code worth one pickup copy. Last in
+    // line, and createCoupon / the voucher minting both refuse a code another
+    // kind already holds, so the order never decides which one a buyer gets.
+    // `opts.collectionId` is the checkout asking: a voucher held in ANOTHER
+    // collection's open card window is refused, its own is not.
     //
     // A code that is not an owner coupon is then looked up among the FRIEND
     // coupons (friendCouponsBlock below) — owner coupons first, always — so the
     // checkout, its preview and pay/init take a friend code through this one
     // door, with no second path to keep in step. Friend codes carry a dash and
     // owner codes cannot, so the order only matters in principle.
-    validateCoupon(code) {
+    validateCoupon(code, opts = {}) {
       const c = this.getCouponByCode(code);
-      if (!c) return this.validateFriendCoupon(code);
+      if (!c) {
+        const friend = this.validateFriendCoupon(code);
+        if (friend.valid || friend.reason !== 'not_found') return friend;
+        return this.validateVoucher(code, opts);
+      }
       if (!c.active) return { valid: false, reason: 'inactive' };
       // valid_until is inclusive: expired only once today (Israel) is after it.
       if (c.valid_until && todayStrIsrael() > c.valid_until) {

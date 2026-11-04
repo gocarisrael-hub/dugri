@@ -20,6 +20,8 @@ export const PROVIDER_LABELS = {
   pelecard: 'פלאקארד',
   tranzila: 'טרנזילה',
   coupon: 'קופון 100% — לא בוצע חיוב',
+  // A partner's gift code (a reseller's voucher) covered the whole order.
+  voucher: 'קוד שותף — לא בוצע חיוב',
 };
 
 export const REF_LABELS = {

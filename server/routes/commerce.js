@@ -1025,7 +1025,7 @@ function registerCoupons(app, { requireAdmin, db }) {
 }
 
 // The checkout's coupon preview.
-function registerCouponValidate(app, { db, couponRateOk, clientKey }) {
+function registerCouponValidate(app, { db, couponRateOk, clientKey, voucherMissRate }) {
   // OWNER-SCOPED coupon validation so checkout can preview the discount. Requires
   // the collection id + owner_token (so it is NOT a fully-open enumeration oracle)
   // and is rate-limited per collection. Only the discount percentage is ever
@@ -1040,8 +1040,35 @@ function registerCouponValidate(app, { db, couponRateOk, clientKey }) {
     if (!couponRateOk('validate:' + clientKey(req))) {
       return res.status(429).json({ error: 'too many attempts' });
     }
-    const r = db.validateCoupon(req.body && req.body.code);
-    if (!r.valid) return res.json({ valid: false, reason: r.reason });
+    // A second, tighter wall for PARTNER VOUCHERS: ten wrong voucher-shaped
+    // guesses an hour per client (voucherMissRate, shared with pay/init). The
+    // budget above is attempts per minute; this one is misses per hour.
+    const missKey = 'voucher-miss:' + clientKey(req);
+    if (voucherMissRate && voucherMissRate.blocked(missKey)) {
+      return res.status(429).json({ error: 'too many attempts' });
+    }
+    const code = req.body && req.body.code;
+    const r = db.validateCoupon(code, { collectionId: c.id });
+    if (!r.valid) {
+      if (voucherMissRate && r.reason === 'not_found' && db.looksLikeVoucher(code)) {
+        voucherMissRate.miss(missKey);
+      }
+      return res.json({ valid: false, reason: r.reason });
+    }
+    // A voucher is not a percentage: it is one copy, worth at most the pickup
+    // price. The page needs that cap to show the same total pay/init will charge
+    // (pay/init's own formula, db.voucherCreditFor). Nothing about the reseller
+    // goes to the browser.
+    if (r.coupon.voucher) {
+      const pricing = db.effectivePricing();
+      const cap = pricing && pricing.versions && pricing.versions.pickup;
+      return res.json({
+        valid: true,
+        voucher: true,
+        discount_pct: 0,
+        credit_cap: cap ? cap.price : 0,
+      });
+    }
     res.json({ valid: true, discount_pct: r.coupon.discount_pct });
   });
 }
