@@ -102,6 +102,47 @@ describe('the rules', () => {
     expect(rules.maskEmail(null)).toBe(null);
   });
 
+  it('a QR code carries TWELVE random characters (59 bits); a friend code keeps its four', () => {
+    const seen = new Set();
+    for (let i = 0; i < 2000; i++) {
+      const code = rules.makeQrCode(10);
+      expect(code).toMatch(/^DUGRI10(?:-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}){3}$/);
+      expect(code.replace(/^DUGRI10/, '').replace(/-/g, '')).toHaveLength(12);
+      expect(rules.isQrCodeShape(code)).toBe(true);
+      expect(rules.percentInCode(code)).toBe(10);
+      seen.add(code);
+    }
+    expect(seen.size).toBe(2000);
+    // log2(31^12) — the space a guesser of one percent's codes has to walk.
+    expect(12 * Math.log2(31)).toBeGreaterThan(59);
+    // Every draw is one of 31 from the CSPRNG.
+    const calls = [];
+    rules.makeQrCode(5, {
+      randomInt: (n) => {
+        calls.push(n);
+        return 0;
+      },
+    });
+    expect(calls).toEqual(Array(12).fill(31));
+    // Friend codes: unchanged.
+    expect(rules.makeCode('noa@x.co', 5)).toMatch(/^NOA5-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/);
+  });
+
+  it('personal-code shapes, in any case and with or without dashes, are what the miss limiter counts', () => {
+    for (const yes of [
+      'DUGRI10-K7Q2-ABCD-EFGH',
+      'dugri10k7q2abcdefgh',
+      ' dugri10 k7q2 abcd efgh ',
+      'NOA5-K7Q2',
+      'noa5k7q2',
+    ]) {
+      expect(rules.looksLikePersonalCode(yes)).toBe(true);
+    }
+    for (const no of ['SUMMER10', 'WELCOME', 'DUGRI10-K7Q2-ABCD', '', null]) {
+      expect(rules.looksLikePersonalCode(no)).toBe(false);
+    }
+  });
+
   it('the page URL is built from PUBLIC_BASE_URL, never a typed domain', () => {
     expect(rules.boxPageUrl(BASE + '/')).toBe(BASE + '/box');
     expect(rules.boxPageUrl('https://dugri-israel.co.il')).toBe('https://dugri-israel.co.il/box');
@@ -323,7 +364,7 @@ describe('the scan page API', () => {
       percent: 10,
     });
     // Not read from the address: the prefix would spell out what the mask hides.
-    expect(r.body.code).toMatch(/^DUGRI10-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/);
+    expect(r.body.code).toMatch(/^DUGRI10(?:-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}){3}$/);
     expect(r.text).not.toContain('hadar.levi');
     expect(r.text).not.toContain(c.id);
     expect(r.text).not.toContain('שירה');
@@ -553,6 +594,33 @@ describe('at checkout', () => {
     expect(ok.body).toEqual({ valid: true, discount_pct: 10 });
   });
 
+  it('is taken however it is typed: any case, with or without its dashes', async () => {
+    const { code } = await qrCode();
+    const other = party();
+    for (const typed of [
+      code.toLowerCase(),
+      code.replace(/-/g, ''),
+      ' ' + code.replace(/-/g, ' '),
+    ]) {
+      const r = await post('/api/collections/' + other.id + '/coupon/validate', {
+        owner_token: other.owner_token,
+        code: typed,
+      });
+      expect(r.body).toEqual({ valid: true, discount_pct: 10 });
+    }
+    // …and charged as the code it is.
+    const init = await post('/api/collections/' + other.id + '/pay/init', {
+      owner_token: other.owner_token,
+      version: 'pickup',
+      coupon: code.replace(/-/g, '').toLowerCase(),
+    });
+    expect(init.status).toBe(200);
+    expect(init.body.charged).toBe(Math.round(199 * 0.9));
+    await settle(other.id);
+    expect(db.getCollection(other.id).order.coupon).toBe(code);
+    expect(db.getFriendCouponByCode(code).order_id).toBe(other.id);
+  });
+
   it('is spent only when the next order is PAID; the order and the owner’s receipt say QR', async () => {
     const { code } = await qrCode();
     const buyer = party();
@@ -622,13 +690,77 @@ describe('at checkout', () => {
   });
 });
 
+describe('wrong guesses at the checkout', () => {
+  // The miss limiter partner vouchers use (VOUCHER_MISS_LIMIT, 10 an hour per
+  // client), shared by the preview and pay/init. beforeEach gives every test its
+  // own client.
+  const guess = () => 'DUGRI10-' + rules.makeQrCode(10).slice(8);
+
+  it('ten wrong QR-shaped guesses at the preview, and the client is refused — even a real code', async () => {
+    const { code } = (await claim(order().owner_phone)).body;
+    const p = party();
+    const statuses = [];
+    for (let i = 0; i < 11; i++) {
+      const r = await post('/api/collections/' + p.id + '/coupon/validate', {
+        owner_token: p.owner_token,
+        code: i % 2 ? guess().toLowerCase().replace(/-/g, '') : guess(),
+      });
+      statuses.push(r.status);
+    }
+    expect(statuses).toEqual([...Array(10).fill(200), 429]);
+    const real = await post('/api/collections/' + p.id + '/coupon/validate', {
+      owner_token: p.owner_token,
+      code,
+    });
+    expect(real.status).toBe(429);
+    // …and pay/init shares the wall.
+    const init = await post('/api/collections/' + p.id + '/pay/init', {
+      owner_token: p.owner_token,
+      version: 'pickup',
+      coupon: code,
+    });
+    expect(init.status).toBe(429);
+  });
+
+  it('friend-shaped misses count too, and pay/init counts them for the preview', async () => {
+    const p = party();
+    for (let i = 0; i < 10; i++) {
+      const r = await post('/api/collections/' + p.id + '/pay/init', {
+        owner_token: p.owner_token,
+        version: 'pickup',
+        coupon: 'NOA5-' + rules.makeQrCode(5).slice(7, 11),
+      });
+      expect(r.status).toBe(400);
+    }
+    const r = await post('/api/collections/' + p.id + '/coupon/validate', {
+      owner_token: p.owner_token,
+      code: 'NOA5-K7Q2',
+    });
+    expect(r.status).toBe(429);
+  });
+
+  it('a mistyped OWNER coupon is not a personal-code guess and never meets the wall', async () => {
+    const p = party();
+    for (let i = 0; i < 12; i++) {
+      const r = await post('/api/collections/' + p.id + '/coupon/validate', {
+        owner_token: p.owner_token,
+        code: 'SUMMER1' + (i % 10),
+      });
+      expect(r.status).toBe(200);
+      expect(r.body).toEqual({ valid: false, reason: 'not_found' });
+    }
+  });
+});
+
 describe('one shop, one namespace of codes', () => {
   it('a QR code is minted around every code another kind already holds', () => {
     const c = order();
-    db.createCoupon({ code: 'DUGRI10AAAA', discount_pct: 10 });
-    // Force the random half: the first draw collides with that owner coupon's
+    expect(db.createCoupon({ code: 'DUGRI10AAAAAAAAAAAA', discount_pct: 10 }).error).toBe(
+      undefined
+    );
+    // Force the random part: the first draw collides with that owner coupon's
     // compact form, the second does not.
-    const seq = [0, 0, 0, 0, 1, 1, 1, 1];
+    const seq = [...Array(12).fill(0), ...Array(12).fill(1)];
     const real = require('crypto').randomInt;
     const spy = vi
       .spyOn(require('crypto'), 'randomInt')
@@ -639,13 +771,13 @@ describe('one shop, one namespace of codes', () => {
     } finally {
       spy.mockRestore();
     }
-    expect(r.coupon.code).toBe('DUGRI10-BBBB');
+    expect(r.coupon.code).toBe('DUGRI10-BBBB-BBBB-BBBB');
   });
 
   it('an owner coupon cannot take a personal code’s compact form', async () => {
     const c = order();
     const r = await claim(c.owner_phone);
-    const compact = r.body.code.replace('-', '');
+    const compact = r.body.code.replace(/-/g, '');
     expect(db.createCoupon({ code: compact, discount_pct: 50 })).toEqual({ error: 'duplicate' });
   });
 

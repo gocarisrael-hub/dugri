@@ -340,7 +340,7 @@ function couponsBlock({
 // with every write, every store import and every reload. If the list ever runs
 // to six figures, add a Map keyed by code and email here — nowhere else reads
 // the array.
-function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
+function friendCouponsBlock({ _db, saveDb, uid, nowIso, rules }) {
   const rows = () => {
     if (!Array.isArray(_db.friend_coupons)) _db.friend_coupons = [];
     return _db.friend_coupons;
@@ -411,8 +411,9 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
         // NOT read from the address, unlike a friend's code: this one is shown
         // on screen to whoever typed the number, and a prefix taken from the
         // email would spell out the very part maskEmail hides. Every QR code is
-        // DUGRI<percent>-XXXX.
-        code: rules.makeCode('', percent, { taken: (code) => this._personalCodeTaken(code) }),
+        // DUGRI<percent>-XXXX-XXXX-XXXX: a shared public prefix, so twelve
+        // random characters where a friend code has four (rules.makeQrCode).
+        code: rules.makeQrCode(percent, { taken: (code) => this._personalCodeTaken(code) }),
         // The order that earned it — the order this code can NOT be spent on
         // (validateFriendCoupon, reason 'own_order').
         collection_id: c.id,
@@ -440,10 +441,19 @@ function friendCouponsBlock({ _db, saveDb, uid, nowIso, normCode, rules }) {
       return !!this.getFriendCouponByCode(code);
     },
 
+    // In COMPACT form, like a partner voucher: case, dashes and spaces do not
+    // matter, so a QR code's three dashes need not be typed. Unique in that form
+    // already (anyCodeTaken compares compact forms across every kind of code).
     getFriendCouponByCode(code) {
-      const c = normCode(code);
-      if (!c) return null;
-      return rows().find((r) => r.code === c) || null;
+      const k = rules.compactCode(code);
+      if (!k) return null;
+      return rows().find((r) => rules.compactCode(r.code) === k) || null;
+    },
+
+    // Is this SHAPED like a personal code (rules.looksLikePersonalCode)? The
+    // checkout's miss limiter counts wrong guesses of this shape.
+    looksLikePersonalCode(code) {
+      return rules.looksLikePersonalCode(code);
     },
 
     getFriendCouponById(id) {

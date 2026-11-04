@@ -28,6 +28,43 @@ const FALLBACK_PREFIX = 'DUGRI';
 // contain one.
 const CODE_RE = new RegExp('^[A-Z]{1,' + PREFIX_MAX + '}(\\d{1,3})-[' + ALPHABET + ']{4}$');
 
+// A BOX QR code is longer: DUGRI<percent>-XXXX-XXXX-XXXX, TWELVE random
+// characters. A friend code's prefix is the friend's own name, so its 4 random
+// characters only ever compete with codes of one prefix; every QR code shares
+// the public prefix DUGRI<percent>, so with hundreds live a 4-character tail
+// (31^4, ~923k) would fall to a checkout guesser in about two thousand tries.
+// 31^12 is ~7.9e17 (59 bits). Friend codes keep their old shape.
+const QR_PREFIX = 'DUGRI';
+const QR_GROUPS = 3;
+const QR_CODE_RE = new RegExp(
+  '^' + QR_PREFIX + '(\\d{1,3})(?:-[' + ALPHABET + ']{4}){' + QR_GROUPS + '}$'
+);
+
+// The code with everything but letters and digits dropped, upper-cased: the form
+// every personal code is LOOKED UP in, so dugri10-k7q2-… , DUGRI10K7Q2… and a
+// pasted code with spaces are one code. Same rule as a partner voucher
+// (server/vouchers.js compactCode); kept here so this file stays dependency-free.
+function compactCode(s) {
+  return String(s == null ? '' : s)
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+}
+const COMPACT_FRIEND_RE = new RegExp(
+  '^[A-Z]{1,' + PREFIX_MAX + '}\\d{1,3}[' + ALPHABET + ']{' + RANDOM_LEN + '}$'
+);
+const COMPACT_QR_RE = new RegExp(
+  '^' + QR_PREFIX + '\\d{1,3}[' + ALPHABET + ']{' + 4 * QR_GROUPS + '}$'
+);
+
+// Does what the buyer typed LOOK like a personal code (a friend's or a box
+// QR's), in any case and with or without its dashes? Says nothing about whether
+// one was issued: the checkout's miss limiter counts wrong guesses of these
+// shapes (as it does a partner voucher's), so walking the space is capped.
+function looksLikePersonalCode(code) {
+  const k = compactCode(code);
+  return COMPACT_FRIEND_RE.test(k) || COMPACT_QR_RE.test(k);
+}
+
 // Trim + lowercase. The email is the row's identity ("one coupon per person,
 // ever"), so Noa@Gmail.com and noa@gmail.com must be the same person.
 function normEmail(s) {
@@ -94,12 +131,31 @@ function isFriendCodeShape(code) {
 // asking the server: the code IS the record of what was promised when it was
 // issued, and today's setting may have changed since.
 function percentInCode(code) {
-  const m = CODE_RE.exec(
+  const c = String(code == null ? '' : code)
+    .trim()
+    .toUpperCase();
+  const m = CODE_RE.exec(c) || QR_CODE_RE.exec(c);
+  return m ? Number(m[1]) : null;
+}
+
+// A fresh BOX QR code at this percent: DUGRI<percent>-XXXX-XXXX-XXXX. `taken`
+// as for makeCode; at 59 bits a collision is a bug, so 50 in a row throws.
+function makeQrCode(percent, { randomInt = crypto.randomInt, taken = () => false } = {}) {
+  for (let i = 0; i < 50; i++) {
+    const groups = [];
+    for (let g = 0; g < QR_GROUPS; g++) groups.push(randomPart(randomInt));
+    const code = QR_PREFIX + String(percent) + '-' + groups.join('-');
+    if (!taken(code)) return code;
+  }
+  throw new Error('box QR coupon: no free code after 50 tries');
+}
+
+function isQrCodeShape(code) {
+  return QR_CODE_RE.test(
     String(code == null ? '' : code)
       .trim()
       .toUpperCase()
   );
-  return m ? Number(m[1]) : null;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -251,6 +307,11 @@ module.exports = {
   prefixFor,
   randomPart,
   makeCode,
+  makeQrCode,
+  QR_CODE_RE,
+  isQrCodeShape,
+  compactCode,
+  looksLikePersonalCode,
   isFriendCodeShape,
   percentInCode,
   expiresAtFor,

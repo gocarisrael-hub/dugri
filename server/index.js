@@ -1512,11 +1512,13 @@ function clientKey(req) {
   return paymentClientIp(req);
 }
 
-// WRONG PARTNER-VOUCHER GUESSES, per client (server/vouchers.js makeMissLimiter).
-// A voucher is worth a whole game, so a client that misses ten voucher-shaped
-// codes in an hour is refused further tries at the checkout preview AND at
-// pay/init. Only misses count, and only on codes that carry a pool's prefix, so
-// an owner with a working code — or fumbling her own coupon — never meets it.
+// WRONG BEARER-CODE GUESSES, per client (server/vouchers.js makeMissLimiter).
+// A voucher is worth a whole game, and a personal code (a friend's, or a box
+// QR's, whose prefix is public) is worth a discount, so a client that misses ten
+// codes of those shapes in an hour is refused further tries at the checkout
+// preview AND at pay/init. Only misses count, and only on codes that carry a
+// pool's prefix or a personal code's shape (db.looksLikePersonalCode), so an
+// owner with a working code never meets it.
 const voucherMissRate = voucherRules.makeMissLimiter({
   limit: Number(process.env.VOUCHER_MISS_LIMIT) || 10,
   windowMs: 60 * 60 * 1000,
@@ -4230,7 +4232,10 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     }
     const pre = db.validateCoupon(b.coupon, { collectionId: c.id });
     if (!pre.valid) {
-      if (pre.reason === 'not_found' && db.looksLikeVoucher(b.coupon))
+      if (
+        pre.reason === 'not_found' &&
+        (db.looksLikeVoucher(b.coupon) || db.looksLikePersonalCode(b.coupon))
+      )
         voucherMissRate.miss(missKey);
       return noCardRefusal();
     }
@@ -4265,11 +4270,11 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     // charge, so it must never be blocked by the preview endpoint's oracle budget
     // (an owner previewing a code repeatedly must still be able to pay).
     //
-    // …except for WRONG VOUCHER GUESSES. Those are counted per client by the
-    // same miss limiter as the preview (voucherMissRate), because a voucher is
-    // worth a whole game and pay/init would otherwise be a second, unlimited
-    // place to try them. Only misses on voucher-shaped codes count, so this
-    // never stands between an owner and a payment with a code that works.
+    // …except for WRONG BEARER-CODE GUESSES (partner vouchers and personal
+    // codes). Those are counted per client by the same miss limiter as the
+    // preview (voucherMissRate), because pay/init would otherwise be a second,
+    // unlimited place to try them. Only misses on codes of those shapes count,
+    // so this never stands between an owner and a payment with a code that works.
     const missKey = 'voucher-miss:' + clientKey(req);
     if (voucherMissRate.blocked(missKey)) {
       return res.status(429).json({ error: 'too many attempts' });
@@ -4279,7 +4284,11 @@ app.post('/api/collections/:id/pay/init', async (req, res) => {
     // someone else can have spent the code's last use, and "the coupon ran out"
     // is a very different thing to read than "we could not open the payment".
     if (!v.valid) {
-      if (v.reason === 'not_found' && db.looksLikeVoucher(b.coupon)) voucherMissRate.miss(missKey);
+      if (
+        v.reason === 'not_found' &&
+        (db.looksLikeVoucher(b.coupon) || db.looksLikePersonalCode(b.coupon))
+      )
+        voucherMissRate.miss(missKey);
       return res.status(400).json({ error: 'invalid coupon', reason: v.reason });
     }
     discountPct = v.coupon.discount_pct;

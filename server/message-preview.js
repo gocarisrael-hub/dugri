@@ -194,7 +194,7 @@ const EMAIL_KINDS = [
     build: (n, c, base) =>
       n.buildFriendCoupon(
         {
-          code: 'DUGRI10-K7Q2',
+          code: 'DUGRI10-K7Q2-ABCD-EFGH',
           source: 'qr',
           discount_percent: 10,
           expires_at: '2027-05-04T10:00:00.000Z',

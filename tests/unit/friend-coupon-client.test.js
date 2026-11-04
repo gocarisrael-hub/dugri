@@ -54,6 +54,8 @@ describe('landing with ?coupon=', () => {
   it('reads the percent out of the code, not from a setting that may have moved', async () => {
     const m = await load();
     expect(m.percentInCode('DUGRI15-ABCD')).toBe(15);
+    expect(m.percentInCode('dugri15-abcd-efgh-jkmn')).toBe(15);
+    expect(m.percentInCode('DUGRI15-ABCD-EFGH')).toBe(null);
     expect(m.percentInCode('SUMMER10')).toBe(null);
   });
 

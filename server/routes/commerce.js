@@ -1040,9 +1040,10 @@ function registerCouponValidate(app, { db, couponRateOk, clientKey, voucherMissR
     if (!couponRateOk('validate:' + clientKey(req))) {
       return res.status(429).json({ error: 'too many attempts' });
     }
-    // A second, tighter wall for PARTNER VOUCHERS: ten wrong voucher-shaped
-    // guesses an hour per client (voucherMissRate, shared with pay/init). The
-    // budget above is attempts per minute; this one is misses per hour.
+    // A second, tighter wall for BEARER CODES — partner vouchers and personal
+    // codes (a friend's, a box QR's): ten wrong guesses of those shapes an hour
+    // per client (voucherMissRate, shared with pay/init). The budget above is
+    // attempts per minute; this one is misses per hour.
     const missKey = 'voucher-miss:' + clientKey(req);
     if (voucherMissRate && voucherMissRate.blocked(missKey)) {
       return res.status(429).json({ error: 'too many attempts' });
@@ -1050,7 +1051,11 @@ function registerCouponValidate(app, { db, couponRateOk, clientKey, voucherMissR
     const code = req.body && req.body.code;
     const r = db.validateCoupon(code, { collectionId: c.id });
     if (!r.valid) {
-      if (voucherMissRate && r.reason === 'not_found' && db.looksLikeVoucher(code)) {
+      if (
+        voucherMissRate &&
+        r.reason === 'not_found' &&
+        (db.looksLikeVoucher(code) || db.looksLikePersonalCode(code))
+      ) {
         voucherMissRate.miss(missKey);
       }
       return res.json({ valid: false, reason: r.reason });

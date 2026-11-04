@@ -165,7 +165,7 @@ test('the coupons page: the QR section, its settings, and the static QR to downl
         id: 'qr-1',
         source: 'qr',
         email: 'buyer@example.com',
-        code: 'DUGRI10-K7Q2',
+        code: 'DUGRI10-K7Q2-ABCD-EFGH',
         box_order_no: 'DG-1234',
         created_at: new Date().toISOString(),
         used_at: null,
@@ -207,7 +207,7 @@ test('the coupons page: the QR section, its settings, and the static QR to downl
   await page.getByTestId('qr-summary-row').click();
   const rows = panel.locator('[data-testid="qr-row"]');
   await expect(rows).toHaveCount(1);
-  await expect(rows.first()).toContainText('DUGRI10-K7Q2');
+  await expect(rows.first()).toContainText('DUGRI10-K7Q2-ABCD-EFGH');
   await expect(rows.first()).toContainText('DG-1234');
 });
 
