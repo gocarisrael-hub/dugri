@@ -408,6 +408,14 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
     # because only here is the whole order visible: every card says what spacing
     # it needs, the tightest answer wins, and every card is then printed at it.
     # Cards that need nothing return None and the design's own spacing stands.
+    # ONE READING DIRECTION FOR THE DECK, for the same reason: an order whose
+    # every word is English prints "1. word" from the left on every card, and a
+    # deck with a single Hebrew word anywhere keeps every card right to left —
+    # four English words that happen to share a card do not flip that card alone.
+    ltr = rp.words_read_ltr([w for card in cards if card["kind"] != "photo"
+                             for w in card["words"]])
+    if progress and ltr:
+        log("words: left to right (no Hebrew in this order)")
     wants = []
     for card in cards:
         if card["kind"] == "photo":
@@ -415,7 +423,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
         front = fronts[card["front"] % len(fronts)]
         need = rp.card_pitch_need(theme, recipe, card["words"], front_index=front,
                                   word_font=word_font, card_vb=vb,
-                                  card_svg=front_svgs[front])
+                                  card_svg=front_svgs[front], ltr=ltr)
         if need:
             wants.append(need)
     deck_pitch = deck_pitch_for(cfg, wants)
@@ -462,7 +470,7 @@ def deck_document(theme, csvp, title_lines, word_font=None, photos=None,
                                          front_index=front, word_font=word_font,
                                          card_vb=vb, card_svg=front_svgs[front],
                                          deck_pitch=deck_pitch,
-                                         blank_markers=blank_markers))
+                                         blank_markers=blank_markers, ltr=ltr))
         if progress and n % 25 == 0:
             log(f"card {n}/{len(cards)}")
 

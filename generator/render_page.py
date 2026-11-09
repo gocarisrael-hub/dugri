@@ -403,7 +403,7 @@ _WORD_ALT_SCALE = float(os.environ.get("DUGRI_WORD_ALT_SCALE", "0.8"))
 
 @functools.lru_cache(maxsize=8)
 def _word_face(font_path, alt_font_path=None, ref=200,
-               alt_scale=_WORD_ALT_SCALE):
+               alt_scale=_WORD_ALT_SCALE, rtl=True):
     """The measuring instrument for a card's words: one face, or two.
 
     Cached on the PATHS rather than built per card, because the readings behind
@@ -419,7 +419,7 @@ def _word_face(font_path, alt_font_path=None, ref=200,
     """
     primary = _word_metrics(font_path, ref)[0]
     alt = _word_metrics(alt_font_path, ref)[0] if alt_font_path else None
-    return Face(primary, alt, ref, alt_scale=alt_scale)
+    return Face(primary, alt, ref, rtl=rtl, alt_scale=alt_scale)
 
 
 def word_font_alt(theme, word_font=None):
@@ -696,7 +696,7 @@ def _embed(text, base_rtl=True):
 
 def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
                marker_advance=None, bold_w=0.0, alt_font_path=None,
-               alt_scale=_WORD_ALT_SCALE):
+               alt_scale=_WORD_ALT_SCALE, ltr=False):
     """One numbered entry, wrapped over ``lines``, as SVG markup.
 
     RTL numbered line: the marker must sit on the RIGHT (the Hebrew reading
@@ -737,6 +737,11 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
     The marker keeps the card's own size whatever this is: the digit is the
     card's own face by design.
     """
+    if ltr:
+        return _word_lines_ltr(x_right, center_y, size, color, num, lines,
+                               font_path, lead=lead, marker_advance=marker_advance,
+                               bold_w=bold_w, alt_font_path=alt_font_path,
+                               alt_scale=alt_scale)
     msize = size * _MARKER_SCALE
     # The optional Latin face. Absent, every line below takes the one-face
     # branch, which emits the exact markup it always has — and so does a HEBREW
@@ -834,6 +839,132 @@ def word_lines(x_right, center_y, size, color, num, lines, font_path, lead=None,
                 f'text-anchor="end" xml:space="preserve">{body}</text>'
             )
     return "".join(out)
+
+
+def _word_lines_ltr(x_left, center_y, size, color, num, lines, font_path,
+                    lead=None, marker_advance=None, bold_w=0.0,
+                    alt_font_path=None, alt_scale=_WORD_ALT_SCALE):
+    """``word_lines`` for a LEFT-TO-RIGHT card: "1. word", read from the left.
+
+    ``x_left`` is where the number's INK starts — the mirror of the right edge
+    the RTL line pins its digit's ink to — and everything else is that line read
+    the other way: the period a hairline right of the digit's ink, the word one
+    ``_WORD_GAP`` after the whole marker, continuations hanging under the first
+    line's text. Every run is anchored by its START.
+
+    The same three-run split as the RTL line, for the same reason: the digit,
+    the period and the word never share a ``<text>``, so bidi cannot reorder one
+    across another. A line that mixes scripts takes the card's LEFT-TO-RIGHT
+    base, so its runs are walked in logical order, each one placed after the
+    last.
+    """
+    msize = size * _MARKER_SCALE
+    face = _word_face(font_path, alt_font_path, alt_scale=alt_scale, rtl=False)
+    font, ref = face.primary, face.ref
+    digit = f"{num}"
+    digit_w = font.getlength(digit) / ref * msize
+    col_w = digit_w if marker_advance is None else marker_advance / ref * msize
+    dot_w = font.getlength(".") / ref * msize
+    tiny = msize * 0.06
+    marker_w = col_w + tiny + dot_w
+    if marker_advance is None:
+        digit_x, dot_x = x_left, x_left + col_w + tiny
+    else:
+        d_lsb, d_rsb = (v / ref * msize for v in _glyph_bearings(font, ref, digit))
+        dot_lsb, _ = (v / ref * msize for v in _glyph_bearings(font, ref, "."))
+        ink_w = digit_w - d_lsb - d_rsb
+        # text-anchor="start" pins the ADVANCE left edge, so pull it left by
+        # the digit's own left bearing and the INK starts exactly on x_left.
+        digit_x = x_left - d_lsb
+        dot_x = x_left + ink_w + tiny - dot_lsb
+    word_x = x_left + marker_w + size * _WORD_GAP
+    lead = size * (_lead_for(face, ref, lines) if lead is None else lead)
+    first = center_y - (len(lines) - 1) * lead / 2 + size * _CENTER_DROP
+
+    def _fat(sz):
+        return (f'stroke="{color}" stroke-width="{sz * bold_w:.2f}" '
+                'paint-order="stroke" stroke-linejoin="round" ') if bold_w else ""
+
+    fat, m_fat = _fat(size), _fat(msize)
+    out = [
+        f'<text x="{digit_x:.2f}" y="{first:.2f}" font-family="HebWord" '
+        f'font-size="{msize:.2f}" fill="{color}" {m_fat}text-anchor="start" '
+        f'direction="ltr" xml:space="preserve">{digit}</text>'
+        f'<text x="{dot_x:.2f}" y="{first:.2f}" font-family="HebWord" '
+        f'font-size="{msize:.2f}" fill="{color}" {m_fat}text-anchor="start" '
+        f'xml:space="preserve">.</text>'
+    ]
+    for i, line in enumerate(lines):
+        y = first + i * lead
+        runs = face.runs_by_script(line)
+        if not runs or len(runs) == 1 and not runs[0][2]:
+            out.append(
+                f'<text x="{word_x:.2f}" y="{y:.2f}" '
+                f'font-family="HebWord" font-size="{size:.2f}" fill="{color}" '
+                f'{fat}text-anchor="start" xml:space="preserve">'
+                f'{_embed(line, False)}</text>'
+            )
+            continue
+        pen = word_x
+        for f, txt, latin in runs:
+            w = f.getlength(txt) * face.scale(latin) / ref * size
+            body = (escape(txt) if latin
+                    else _embed(_hanging_tail(txt)[0], False))
+            fam = "HebWordAlt" if latin else "HebWord"
+            rsize = size * face.scale(latin)
+            out.append(
+                f'<text x="{pen:.2f}" y="{y:.2f}" font-family="{fam}" '
+                f'font-size="{rsize:.2f}" fill="{color}" {_fat(rsize)}'
+                f'text-anchor="start" xml:space="preserve">{body}</text>'
+            )
+            pen += w
+    return "".join(out)
+
+
+def words_read_ltr(words):
+    """Whether a card's (or a deck's) words read LEFT TO RIGHT.
+
+    True when every entry is written in a left-to-right script and none carries
+    a Hebrew letter: an English deck. The numbered list is then set the way an
+    English list is — "1. Nova", the number on the LEFT and the word flowing
+    right — instead of the Hebrew shape (number on the right, word right-aligned
+    against it), which is what every card printed until now whatever its words
+    were, and which an all-English order read as broken.
+
+    Decided by the WORDS, not by the design's ``language``: "english" designs
+    take Hebrew words every day, and a Hebrew design can be ordered with an
+    English list. One Hebrew word anywhere keeps the whole deck right to left,
+    so a mixed deck prints exactly as it always has. Empty entries say nothing.
+    """
+    text = [w for w in words or [] if w and w.strip()]
+    if not text:
+        return False
+    if any(_has_strong(w, ("R", "AL")) for w in text):
+        return False
+    return any(_has_strong(w, ("L",)) for w in text)
+
+
+def _mirror_axis(slots, cell):
+    """The vertical line a card is mirrored about: its own centre line."""
+    if cell:
+        return cell[0] + cell[2]
+    return min(s["x0"] for s in slots) + max(s["x1"] for s in slots)
+
+
+def _mirrored(slots, obstacles, axis):
+    """``slots`` and ``obstacles`` reflected left to right about ``axis``/2.
+
+    A LEFT-TO-RIGHT card is laid out by mirroring its geometry, fitting it with
+    the same right-anchored arithmetic every RTL card uses, and reading the
+    anchor back the right way round (``axis - x_right``). Every rule that card
+    obeys — the one text column, the icon bounds, the rows, the room at the
+    foot — is about the GEOMETRY, and a mirror carries all of them across
+    without a second copy of any.
+    """
+    m_slots = [dict(s, x0=axis - s["x1"], x1=axis - s["x0"]) for s in slots]
+    m_obs = None if obstacles is None else [
+        [axis - o[2], o[1], axis - o[0], o[3]] for o in obstacles]
+    return m_slots, m_obs
 
 
 def latin_scale(cfg, size, default):
@@ -1197,7 +1328,7 @@ def _face_lead(font, ref):
 _MARKER_GLYPHS = "1234567890."
 
 
-def _card_lead(font, ref, lines, count=None, bold_w=0.0):
+def _card_lead(font, ref, lines, count=None, bold_w=0.0, ltr=False):
     """The pitch this card's own type needs, as a multiple of the size.
 
     The owner's rule: "the minimum gap (that obeys the rule that no 2 letters
@@ -1280,8 +1411,11 @@ def _card_lead(font, ref, lines, count=None, bold_w=0.0):
     markers = (mbox[3] - mbox[1]) / ref * _MARKER_SCALE + _WRAP_GAP
     if len(texts) < 2:
         return max(markers, _WRAP_GAP)
-    words = _min_line_pitch(font, ref, texts, bold_w or 0.0, align="right",
-                            grow=(bold_w or 0.0) / 2, rtl=True, clear=_WRAP_GAP)
+    # A left-to-right card (``words_read_ltr``) stacks its lines on their START,
+    # so two lines meet where their LEFT ends are, not their right ones.
+    words = _min_line_pitch(font, ref, texts, bold_w or 0.0,
+                            align="left" if ltr else "right",
+                            grow=(bold_w or 0.0) / 2, rtl=not ltr, clear=_WRAP_GAP)
     return max(words, markers)
 
 
@@ -2219,6 +2353,35 @@ def _ink_reach_left(font, ref, line):
     return adv - min(0.0, _ink_left(path, ref, visual_order(line, True)))
 
 
+def _ink_reach_right(font, ref, line):
+    """``_ink_reach_left`` for a LEFT-TO-RIGHT line: how far its ink reaches
+    past the start of its own advance, in ``ref`` units, never less than the
+    advance. The far end of an LTR line is its right, so the overhang that
+    matters is the last glyph's, off the right edge of the advance.
+    """
+    path = getattr(font, "path", None)
+    adv = font.getlength(line)
+    if not path:
+        return max(adv, font.getbbox(line)[2])
+    return max(adv, _ink_right(path, ref, line))
+
+
+@functools.lru_cache(maxsize=1024)
+def _ink_right(font_path, ref, line):
+    """The rightmost inked column of a rasterized line, relative to its pen
+    origin — ``_ink_left``'s other edge, same rasterization."""
+    from PIL import Image, ImageDraw
+    f = _measuring_font(font_path, ref)
+    pad = int(ref) + 8
+    w = int(f.getlength(line)) + 2 * pad
+    h = 4 * int(ref) + 2 * pad
+    img = Image.new("L", (max(8, w), max(8, h)), 0)
+    ImageDraw.Draw(img).text((pad, 2 * int(ref) + pad), line, font=f, fill=255,
+                             anchor="ls")
+    ink = img.getbbox()
+    return 0.0 if not ink else float(ink[2] - pad)
+
+
 @functools.lru_cache(maxsize=1024)
 def _ink_left(font_path, ref, line):
     """The leftmost inked column of a rasterized line, relative to its pen origin.
@@ -2487,7 +2650,7 @@ def _hard_split(font, text, n, hyphen=_BREAK_HYPHEN):
 
 
 def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
-                advance=None, uniform=None, ink=False):
+                advance=None, uniform=None, ink=False, ltr=False):
     """Every way to set one entry: ``{line_count: (lines, lead, max_size_ref)}``.
 
     ``max_size_ref`` is the largest font size at which that wrapping still fits
@@ -2509,7 +2672,9 @@ def _candidates(font, ref, num, word, avail, max_lines=_WRAP_MAX_LINES,
     where changing the measure would re-fit eight shipped decks for nothing.
     """
     marker_ref = _line_width_at(font, ref, num, "", advance=advance)
-    reach = (lambda ln: _ink_reach_left(font, ref, ln)) if ink else font.getlength
+    # ``ltr`` reads the far end of a left-to-right line, which is its RIGHT.
+    reach_ink = _ink_reach_right if ltr else _ink_reach_left
+    reach = (lambda ln: reach_ink(font, ref, ln)) if ink else font.getlength
 
     def budget(lines):
         widest = max(reach(ln) for ln in lines)
@@ -2552,7 +2717,7 @@ def _entry_step(centers):
 
 def _fit_card(cands, centers, uniform, font=None, ref=None,
               vbounds=None, room=None, count=None, bold_w=0.0, rows=None,
-              pitch=None, wrap_pitch=None):
+              pitch=None, wrap_pitch=None, ltr=False):
     """Solve ONE font size for the whole card, and each entry's line count.
 
     Every word on a card renders at the SAME size — that is the origin
@@ -2614,7 +2779,7 @@ def _fit_card(cands, centers, uniform, font=None, ref=None,
         size = min([uniform] + [cands[i][counts[i]][2] for i in live])
         flat = [ln for i in live for ln in cands[i][counts[i]][0]]
         live_c = [centers[i] for i in live]
-        lead = _card_lead(font, ref, flat, count=count, bold_w=bold_w)
+        lead = _card_lead(font, ref, flat, count=count, bold_w=bold_w, ltr=ltr)
         # THE DESIGN MAY ASK FOR MORE THAN THE INK FLOOR between the lines of one
         # entry (word_wrap_pitch). It is applied HERE, inside the fit, rather than
         # at the render: a wider gap makes the block taller, and only the fit can
@@ -2706,7 +2871,7 @@ def _fit_card(cands, centers, uniform, font=None, ref=None,
         # will not match. It cannot recurse twice (pitch=None takes the old path).
         return _fit_card(cands, centers, uniform, font=font, ref=ref,
                          vbounds=vbounds, room=room, count=count,
-                         bold_w=bold_w, rows=rows, pitch=None)
+                         bold_w=bold_w, rows=rows, pitch=None, ltr=ltr)
     return best[1], best[2], best[3]
 
 
@@ -3087,8 +3252,14 @@ def _uniform_size(slots, word_size=None, max_size=None):
 def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
                   safe=_CELL_SAFE, room_bottom=None, bold_w=0.0,
                   obstacles=None, title_box=None, even_lines=False,
-                  deck_pitch=None, max_size=None, wrap_pitch=None):
+                  deck_pitch=None, max_size=None, wrap_pitch=None, ltr=False):
     """Per-slot ``(size, [lines])`` for a card's words, or None for an empty slot.
+
+    ``ltr`` is a left-to-right card (``words_read_ltr``), handed in with its
+    geometry already MIRRORED (``_mirrored``): every bound below is then the
+    same right-anchored arithmetic, and only the two readings that are about the
+    glyphs themselves — the ink at a line's far end and where two stacked lines
+    meet — have to know which way the text really runs.
 
     One UNIFORM font size is the target for every word (matching the origin's
     single-size look): the uniform size comes from the recipe box heights (see
@@ -3225,7 +3396,8 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
     def _solve(rows, cap):
         cands = {wi: _candidates(font, ref, wi + 1, word, right - left,
                                  max_lines=_WRAP_MAX_LINES,
-                                 advance=advance, uniform=cap, ink=on_icon)
+                                 advance=advance, uniform=cap, ink=on_icon,
+                                 ltr=ltr)
                  for wi, (word, right, left, on_icon) in _bands(rows).items()}
         live_c = [centers[i] for i in sorted(cands)]
         room = _room(live_c, rows)
@@ -3247,7 +3419,8 @@ def _word_layouts(slots, words, font, ref, cell=None, word_size=None,
         size, counts, lead = _fit_card(cands, centers, cap, font=font, ref=ref,
                                        vbounds=vbounds, room=room,
                                        count=len(slots), bold_w=bold_w,
-                                       rows=rows, pitch=want, wrap_pitch=wrap_pitch)
+                                       rows=rows, pitch=want, wrap_pitch=wrap_pitch,
+                                       ltr=ltr)
         lines = sum(counts.values())
         # With a card to measure, the pitch floor is the origin's ENTRY spacing (a
         # constant per template) and the ceiling is the paper left below the first
@@ -4762,8 +4935,12 @@ def _blank_lines(slots, layouts, cfg):
 
 def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                    obstacles=None, word_font_alt=None, title_box=None,
-                   deck_pitch=None, blank_markers=False):
+                   deck_pitch=None, blank_markers=False, ltr=False):
     """The four numbered word lines for one card, as SVG markup.
+
+    ``ltr`` sets the card left to right (``words_read_ltr``): its geometry is
+    mirrored, fitted exactly as a right-to-left card is, and drawn from the
+    mirrored anchor (``_mirrored``).
 
     ``room`` is the lowest y a line's ink may reach (see ``room_bottom``) — the
     card's real vertical envelope, which a wrapping card may grow down into.
@@ -4782,9 +4959,12 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
     """
     if not slots:
         return ""
+    axis = _mirror_axis(slots, cell) if ltr else None
+    if ltr:
+        slots, obstacles = _mirrored(slots, obstacles, axis)
     # ONE scale for the fit and the render — read once, handed to both.
     alt_scale = config.word_alt_scale(cfg, _WORD_ALT_SCALE)
-    face = _word_face(word_font, word_font_alt, alt_scale=alt_scale)
+    face = _word_face(word_font, word_font_alt, alt_scale=alt_scale, rtl=not ltr)
     bold_w = config.word_bold_w(cfg, _WORD_BOLD_W)
     # WHICH ROW each entry takes, decided against THIS card's artwork — see
     # order_by_room. The packer chooses which entries share a card; only here is
@@ -4808,12 +4988,15 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                             even_lines=config.is_single_card(cfg),
                             deck_pitch=deck_pitch,
                             max_size=config.type_ceiling(cfg, "word_max_he"),
-                            wrap_pitch=config.word_wrap_pitch(cfg))
+                            wrap_pitch=config.word_wrap_pitch(cfg),
+                            ltr=ltr)
     # One anchor and one digit column for the whole card, so the four numbers sit
     # in a column and the four words start at the same x. Both must match what
     # _word_layouts fitted against, or the render would overflow the band it was
     # measured for.
     x_right = _card_right_edge(slots, cell)
+    if ltr:
+        x_right = axis - x_right      # the mirrored anchor, read back: x_left
     advance = _marker_advance(face.primary, len(slots))
     blanks = _blank_lines(slots, layouts, cfg) if blank_markers else {}
     out = []
@@ -4828,7 +5011,8 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                                   wi + 1, [""], word_font, lead=b_lead,
                                   marker_advance=advance, bold_w=bold_w,
                                   alt_font_path=word_font_alt,
-                                  alt_scale=latin_scale(cfg, b_size, alt_scale)))
+                                  alt_scale=latin_scale(cfg, b_size, alt_scale),
+                                  ltr=ltr))
             continue
         lay = layouts[wi]
         # The card's own grid centre — one pitch for every gap on the card.
@@ -4839,7 +5023,8 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
                               alt_font_path=word_font_alt,
                               # per CARD, because the ceiling bites at the size
                               # this card actually set, not the deck's ratio
-                              alt_scale=latin_scale(cfg, lay.size, alt_scale)))
+                              alt_scale=latin_scale(cfg, lay.size, alt_scale),
+                              ltr=ltr))
     return "".join(out)
 
 
@@ -4852,7 +5037,7 @@ def _words_overlay(slots, words, cfg, word_font, cell, room=None,
 
 
 def card_pitch_need(theme, recipe, words, front_index=None, word_font=None,
-                    card_vb=None, card_svg=None):
+                    card_vb=None, card_svg=None, ltr=None):
     """The line spacing THIS card wants, in card units — or None if it is happy.
 
     A card is happy when it needs no more lines than the origin's own entries, so
@@ -4883,12 +5068,17 @@ def card_pitch_need(theme, recipe, words, front_index=None, word_font=None,
             if card_svg else None)
     icons = (card_obstacle_rects(theme, front_index, card_svg, cell)
              if card_svg else None)
+    # Asked of the card as it will be DRAWN (see card_overlay): mirrored when it
+    # reads left to right.
+    ltr = words_read_ltr(words) if ltr is None else ltr
+    if ltr:
+        slots, icons = _mirrored(slots, icons, _mirror_axis(slots, cell))
     free = _word_layouts(slots, words, face, face.ref, cell=cell,
                          word_size=cfg.get("word_size"), safe=_CARD_SAFE,
                          room_bottom=room, bold_w=config.word_bold_w(cfg, _WORD_BOLD_W),
                          obstacles=icons, even_lines=False,
                          max_size=config.type_ceiling(cfg, "word_max_he"),
-                         wrap_pitch=config.word_wrap_pitch(cfg))
+                         wrap_pitch=config.word_wrap_pitch(cfg), ltr=ltr)
     live = [l for l in free if l]
     if not live or all(len(l.lines) == 1 for l in live):
         return None                      # nothing wraps: the design's own spacing stands
@@ -4897,7 +5087,7 @@ def card_pitch_need(theme, recipe, words, front_index=None, word_font=None,
 
 def card_overlay(theme, recipe, words, title_lines, front_index=None,
                  word_font=None, kind="word", card_vb=None, card_svg=None,
-                 deck_pitch=None, blank_markers=False):
+                 deck_pitch=None, blank_markers=False, ltr=None):
     """Title + word markup for ONE card, in the card's own viewBox units.
 
     ``front_index`` selects which front's title box to use: the words are SHARED
@@ -4920,6 +5110,11 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
     ``blank_markers`` is the 'no top-up' deck: an empty slot still prints its
     number, because the buyer asked for the room to write her own (see
     ``_blank_lines``).
+
+    ``ltr`` sets the words left to right. The DECK decides it when there is one
+    (build passes ``words_read_ltr`` over every word of the order, so one card
+    of four English words in a Hebrew deck does not flip on its own); None
+    decides it from this card's words, which is what a single preview card has.
     """
     if kind == "photo":
         return ""
@@ -4958,7 +5153,8 @@ def card_overlay(theme, recipe, words, title_lines, front_index=None,
                              word_font_alt=word_alt_path,
                              title_box=title_span,
                              deck_pitch=deck_pitch,
-                             blank_markers=blank_markers))
+                             blank_markers=blank_markers,
+                             ltr=words_read_ltr(words) if ltr is None else ltr))
 
 
 def back_overlay(theme, recipe, title_lines, card_vb=None, back_index=None):
