@@ -144,10 +144,39 @@ test('the wait says what is being made, then the proof opens on her own order', 
 
 // WHEN THE OWNER HAS SWITCHED THE BUYER'S PROOF OFF.
 //
-// The deck is still produced — 'ready' says so — but the server hands back no
-// proof_url, because there is no page to send her to. The wait must END on that,
-// and end calmly: a client that only navigates when a link is present would sit
-// on the spinner for four minutes and then say the same thing anyway.
+// The start answer says so (`proof: false`), and then there is nothing to wait
+// for: the deck renders on the server whether or not her page stays open, and
+// nothing will come of it that she can open. So no spinner, and no polling —
+// the calm no-proof note straight away.
+test('with the proof switched off she is not held on a spinner at all', async ({ page }) => {
+  await createCollection(page);
+  let polls = 0;
+  await stubProduce(page, (method) => {
+    if (method === 'POST')
+      return { status: 202, body: { state: 'running', cards: 104, proof: false } };
+    polls++;
+    return { body: { state: 'running' } };
+  });
+
+  await pressFinish(page);
+
+  await expect(page.getByTestId('produce-wait-title')).toHaveText('קיבלנו! המשחק בהפקה', {
+    timeout: AFTER_CLOSE,
+  });
+  await expect(page.getByTestId('produce-wait-sub')).not.toContainText('ההדמיה');
+  await expect(page.locator('#produceWaitSpin')).toBeHidden();
+  await expect(page.getByTestId('produce-wait-ok')).toBeVisible();
+  // Longer than one poll interval (2s): a page still polling would have asked.
+  await page.waitForTimeout(2500);
+  expect(polls).toBe(0);
+  await expect(page.getByTestId('produce-wait-title')).toHaveText('קיבלנו! המשחק בהפקה');
+  await expect(page).toHaveURL(/collect\.html/);
+});
+
+// The switch flipped OFF while she was already waiting: the start answer said
+// the proof was on, and then 'ready' comes back with no proof_url. The wait must
+// END on that, and end calmly: a client that only navigates when a link is
+// present would sit on the spinner for four minutes and then say the same thing.
 test('ready with no proof link ends the wait calmly instead of hanging on it', async ({ page }) => {
   await createCollection(page);
   await stubProduce(page, (method) => {

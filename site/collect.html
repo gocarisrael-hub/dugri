@@ -7050,11 +7050,20 @@
           // Already produced (a second tap, or a reload after it finished).
           // 'ready' with NO proof_url is the owner having switched the buyer's
           // proof off: the deck is made, there is simply nothing to send her to,
-          // so she gets the same calm note the slow path ends on rather than a
-          // wait for a page that will never come.
+          // so she gets the calm no-proof note rather than a wait for a page
+          // that will never come.
           if (start.state === 'ready') {
             if (start.proof_url) location.href = start.proof_url;
             else showWait(WAIT_CALM_TITLE, WAIT_NO_PROOF_SUB, false);
+            return;
+          }
+          // The render has started, but with the buyer's proof switched off
+          // (`proof: false`) it ends in nothing she can open, so there is nothing
+          // to wait for: the deck renders on the server whether or not this page
+          // stays open. She gets the calm note now — no spinner, no polling.
+          // A MISSING field is an older server and counts as on.
+          if (start.proof === false) {
+            showWait(WAIT_CALM_TITLE, WAIT_NO_PROOF_SUB, false);
             return;
           }
           const n = Number(start.cards);
@@ -7074,6 +7083,8 @@
             } catch {
               continue; // a blip mid-render is not an answer; keep asking
             }
+            // 'ready' with no proof_url here is the switch flipped OFF while
+            // she was already waiting (the start answer said proof was on).
             if (s.state === 'ready') {
               if (s.proof_url) location.href = s.proof_url;
               else showWait(WAIT_CALM_TITLE, WAIT_NO_PROOF_SUB, false);

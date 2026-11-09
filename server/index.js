@@ -2282,9 +2282,11 @@ function produceState(c) {
   if (production && production.state === 'generated' && token && deckOnDisk(c.id)) {
     // 'ready' is a fact about the DECK, so it stands whether or not she may look
     // at it — only the link is withheld when the proof is switched off. That is
-    // exactly what collect.html reads: ready with no proof_url ends the wait on
-    // the calm "המשחק בהפקה" note instead of navigating to a page that would
-    // refuse her.
+    // exactly what collect.html reads: ready with no proof_url shows the calm
+    // "המשחק בהפקה" note instead of navigating to a page that would refuse her.
+    // (With the proof off she normally never polls this at all: the POST's
+    // `proof: false` sends her to that note straight away. This covers a deck
+    // already made, and the switch flipped while she was waiting.)
     const ready = { state: 'ready', pages: production.pages || null };
     if (deckProofOn()) {
       ready.proof_url =
@@ -2377,9 +2379,17 @@ app.post('/api/collections/:id/produce', (req, res) => {
     res.setHeader('Retry-After', '120');
     return res.status(503).json({ state: 'busy' });
   }
-  res
-    .status(202)
-    .json({ state: job.state === 'queued' ? 'queued' : 'running', cards: cardEstimate(c) });
+  // `proof` tells her page whether there is anything to wait FOR. With the
+  // buyer's proof switched off the render still runs (above, in the job, which
+  // does not need her page open), but nothing will come of it that she can see,
+  // so the page shows its calm "in production" note at once instead of holding
+  // her on a spinner for the length of a render. Read once, here, so the page
+  // and this answer cannot disagree about it.
+  res.status(202).json({
+    state: job.state === 'queued' ? 'queued' : 'running',
+    cards: cardEstimate(c),
+    proof: deckProofOn(),
+  });
 });
 
 app.get('/api/collections/:id/produce', (req, res) => {
