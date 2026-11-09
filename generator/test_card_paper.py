@@ -401,3 +401,53 @@ def test_every_shipped_template_has_a_measurable_front_paper():
     assert not unmeasured, f"no paper measured for {unmeasured}"
     for theme, colour in answers.items():
         assert re.match(r"^#[0-9a-f]{6}$", colour), (theme, colour)
+
+
+# --------------------------------------------------------------------------
+# the card's INK follows the paper too (DG-1786, יולי גלזר הפקות on navy)
+# --------------------------------------------------------------------------
+
+NAVY = "#06203f"
+CREAM = "#faf09d"
+
+
+def _generic():
+    with open(GENERIC, encoding="utf-8") as f:
+        return f.read()
+
+
+def test_the_generic_cards_ink_is_read_off_its_copy():
+    assert card_paper.own_ink(_generic()) == "#111111"
+    assert card_paper.own_ink(_card()) is None
+
+
+def test_on_a_dark_paper_the_copy_takes_the_decks_ink():
+    svg = card_paper.reink(card_paper.repaper(_generic(), NAVY), NAVY, prefer=CREAM)
+    # heading, caption and the four dashed cut circles — nothing left in the old ink
+    assert 'fill="#111111"' not in svg and 'stroke="#111111"' not in svg
+    assert svg.count('stroke="%s"' % CREAM) >= 4
+    assert svg.count('fill="%s"' % CREAM) >= 2
+    assert card_paper.contrast(card_paper.own_ink(svg), NAVY) >= card_paper.INK_MIN_CONTRAST
+    # the halo is not ink: still white, its shadow still dark
+    assert 'flood-color="#ffffff"' in svg and 'flood-color="#111111"' in svg
+
+
+def test_an_illegible_deck_ink_falls_back_to_white_on_dark_paper():
+    # The deck's ink is only borrowed if IT can be read — a detector that recorded
+    # the paper as the ink must not hand the pawn card the same invisible colour.
+    svg = card_paper.reink(card_paper.repaper(_generic(), NAVY), NAVY, prefer=NAVY)
+    assert card_paper.own_ink(svg) == "#ffffff"
+
+
+def test_a_legible_ink_is_left_exactly_alone():
+    for paper in ("#ffffff", "#ffc6d7", "#fffdf1"):
+        svg = card_paper.repaper(_generic(), paper)
+        assert card_paper.reink(svg, paper, prefer=CREAM) == svg
+    assert card_paper.reink(_generic(), None, prefer=CREAM) == _generic()
+
+
+def test_the_pawn_card_on_a_dark_deck_prints_its_heading_in_the_decks_ink(monkeypatch):
+    monkeypatch.setattr(rp, "deck_ink", lambda theme: CREAM)
+    svg = rp.photo_card_svg("grapefruit", [], paper=NAVY)
+    assert card_paper.own_ink(svg) == CREAM
+    assert 'fill="#711d20"' not in svg

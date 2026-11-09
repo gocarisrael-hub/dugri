@@ -965,6 +965,44 @@ def word_wrap_pitch(cfg):
     return val if 0 < val <= 1 else None
 
 
+_HEX_COLOUR = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
+
+
+def word_color(cfg):
+    """The ink this design's card words print in when the owner PINS one, or None.
+
+    Normally the ink is detected: each word slot in the recipe carries the colour
+    the filled card set its words in, and the deck pools them (``render_page.
+    _deck_rows``). Detection can answer wrong and nothing downstream would know —
+    יולי גלזר הפקות sets cream words on navy, the detector of the day read the
+    navy page as the ink, and DG-1786 printed 412 words in the paper's own colour.
+    Re-detecting the live template rewrites geometry the owner may have tuned, so
+    the owner needs a way to say the colour outright: ``word_color`` in the theme
+    entry wins over every detected slot colour.
+
+    Anything that is not a ``#rgb``/``#rrggbb`` colour is ignored (detected ink
+    again) rather than raising: a mistyped knob must not stop a paid order.
+    """
+    raw = (cfg or {}).get("word_color")
+    if isinstance(raw, str) and _HEX_COLOUR.match(raw.strip()):
+        return raw.strip().lower()
+    return None
+
+
+def pawn_halo(cfg):
+    """Whether this design's pawns print with the white sticker halo.
+
+    The pawn card outlines each photo in white, dilated from the photo's own
+    alpha (``docs/photo-card.md`` "The sticker") — a die-cut sticker look that
+    reads well on a light card. On a design whose pawns are already clean
+    transparent artwork (a logo, an ornament) the owner may not want it: "remove
+    the white background from the pawns". ``pawn_halo: false`` in the theme entry
+    drops it; anything else, absence included, keeps it, so every design that
+    never mentions the knob prints exactly as before.
+    """
+    return (cfg or {}).get("pawn_halo") is not False
+
+
 def _default_ink(cfg):
     """Fallback ink colour when no detected recipe supplies one.
 

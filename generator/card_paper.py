@@ -245,3 +245,115 @@ def repaper(svg_text, colour):
     return re.sub(r'(\bfill=")(%s)(")' % re.escape(current),
                   lambda m: m.group(1) + colour.lower() + m.group(3),
                   svg_text, flags=re.IGNORECASE)
+
+
+# The least contrast (WCAG 2 ratio) the pawn card's own copy may have against the
+# paper it prints on. 3:1 is WCAG's floor for large text — the card's heading is
+# large, its subtitle and cut lines are guides rather than reading matter, and a
+# floor any higher would start "correcting" shipped cards that read fine (the
+# generic card's #111111 on grapefruit's pink measures 12:1).
+INK_MIN_CONTRAST = 3.0
+
+_LIGHT_INK = "#ffffff"
+_DARK_INK = "#111111"
+
+
+def _rgb(colour):
+    c = colour.lstrip("#")
+    if len(c) == 3:
+        c = "".join(ch * 2 for ch in c)
+    return tuple(int(c[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _relative_luminance(colour):
+    def lin(v):
+        v = v / 255.0
+        return v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4
+    r, g, b = (lin(v) for v in _rgb(colour))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contrast(a, b):
+    """The WCAG 2 contrast ratio between two ``#rrggbb`` colours, 1..21."""
+    la, lb = _relative_luminance(a), _relative_luminance(b)
+    hi, lo = max(la, lb), min(la, lb)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def own_ink(svg_text):
+    """The colour a pawn card's own copy is printed in, or None.
+
+    Read off the copy itself: the card's lines of text are baked to paths, and the
+    caption carries ``data-copy`` (``docs/photo-card.md``,
+    ``scripts/set_photo_card_copy.py``). Every hand-authored pawn card prints its
+    heading, caption and cut guides in that one ink.
+    """
+    m = re.search(r"<path\b[^>]*\bdata-copy=[^>]*>", svg_text or "")
+    if not m:
+        return None
+    fill = _attr(m.group(0), "fill", None)
+    return fill.lower() if fill and _HEX.match(fill) else None
+
+
+def reink(svg_text, paper, prefer=None):
+    """``svg_text`` with its ink moved to one that can be READ on ``paper``.
+
+    Repapering follows the deck's front, and the deck's front is not always
+    light. יולי גלזר הפקות prints on navy (#06203f); its pawn card came out navy
+    with the generic card's #111111 heading on it — "החיילים שלכם" at a contrast
+    of 1.3:1, which the owner described as "black, you barely can see it". The
+    card's ink has to follow the paper the same way the paper follows the deck.
+
+    Nothing moves while the card's own ink is legible (``INK_MIN_CONTRAST``), so
+    every light-paper deck prints exactly as before. When it is not, the ink
+    becomes ``prefer`` — the deck's own word ink, so the card matches the cards
+    it ships with — if THAT is legible on the paper, and otherwise whichever of
+    white and near-black reads better.
+
+    Every ``fill`` and ``stroke`` in the old ink moves (heading, caption, the
+    dashed cut circles), and nothing else: the halo's ``flood-color`` and its
+    drop shadow are not ink.
+    """
+    if not paper or not _HEX.match(str(paper)):
+        return svg_text
+    ink = own_ink(svg_text)
+    if not ink or contrast(ink, paper) >= INK_MIN_CONTRAST:
+        return svg_text
+    if prefer and _HEX.match(str(prefer)) and contrast(prefer, paper) >= INK_MIN_CONTRAST:
+        new = prefer.lower()
+    elif contrast(_LIGHT_INK, paper) >= contrast(_DARK_INK, paper):
+        new = _LIGHT_INK
+    else:
+        new = _DARK_INK
+    return re.sub(r'(\b(?:fill|stroke)=")(%s)(")' % re.escape(ink),
+                  lambda m: m.group(1) + new + m.group(3),
+                  svg_text, flags=re.IGNORECASE)
+
+
+# The pawn card's ``<filter id="sticker-halo">``: the white die-cut outline every
+# slot's ``<use>`` is painted through (docs/photo-card.md, "The sticker").
+_HALO_FILTER = re.compile(
+    r'(<filter\b[^>]*\bid="sticker-halo"[^>]*>).*?(</filter>)', re.S)
+
+# What the filter becomes when a design turns its halo off: a flood with no
+# opacity, so every ``<use>`` painted through it prints nothing at all.
+_NO_HALO = '<feFlood flood-color="#ffffff" flood-opacity="0"/>'
+
+
+def drop_halo(svg_text):
+    """``svg_text`` with the sticker halo emptied, so the pawns print bare.
+
+    The filter is EMPTIED rather than the ``<use>`` copies deleted, and that is
+    the whole design: the site draws her pawns through the same filter, read out
+    of this very SVG (``preview.sticker_spec`` -> ``site/js/pawn-print.js``), so
+    one edit here turns the halo off on the page and in the print together. A
+    deleted filter would leave the page referencing an id that does not exist,
+    which browsers resolve differently.
+
+    Geometry is untouched: the slots, their dashed cut circles and the disc each
+    photo is clipped to stay where they were, so the frame, the title band and
+    every layout measurement come out identical with or without the halo.
+    """
+    return _HALO_FILTER.sub(lambda m: m.group(1) + _NO_HALO + m.group(2),
+                            svg_text or "")
+

@@ -521,6 +521,10 @@ describe('templates.js full editing (status / rename / replace)', () => {
       // Her line spacing for this deck; null until she sets one, and then the
       // design's own measured spacing is what prints.
       word_pitch: null,
+      // No pinned word ink, so the detected one prints.
+      word_color: null,
+      // The pawns keep the white sticker outline unless a design turns it off.
+      pawn_halo: true,
       // Names no seed pool → the generic fallback (see the wordlist tests below).
       wordlist: null,
       calibrated: false,

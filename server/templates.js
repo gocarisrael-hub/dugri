@@ -3307,6 +3307,31 @@ function updateTemplateSettings({ root, key, patch }) {
     }
     changed.word_bold = p.word_bold;
   }
+  // THE INK THIS DESIGN'S WORDS PRINT IN, pinned by the owner (generator/
+  // config.word_color reads this exact name). The ink is normally DETECTED per
+  // word slot, and detection can be wrong without anything noticing: a cream-on-
+  // navy design recorded its navy page as the ink and printed a deck of words in
+  // the paper's own colour. Re-running detection on a live template rewrites the
+  // geometry too, so the colour gets its own knob. null returns to the detected ink.
+  if ('word_color' in p) {
+    if (p.word_color === null || p.word_color === '') {
+      changed.word_color = null;
+    } else if (isHexColor(p.word_color)) {
+      changed.word_color = p.word_color.trim().toLowerCase();
+    } else {
+      return { error: 'word_color must be a hex color (#rgb or #rrggbb)', httpStatus: 400 };
+    }
+  }
+  // WHETHER THE PAWNS PRINT WITH THE WHITE STICKER OUTLINE (generator/
+  // config.pawn_halo). Absent or true is the house look; false prints them bare,
+  // for a design whose pawns are clean transparent artwork. Stored only when it
+  // differs from the default, so an entry that never turned it off stays as it was.
+  if ('pawn_halo' in p) {
+    if (typeof p.pawn_halo !== 'boolean') {
+      return { error: 'pawn_halo must be a boolean', httpStatus: 400 };
+    }
+    changed.pawn_halo = p.pawn_halo;
+  }
   // HOW BIG THIS DESIGN SETS ITS ENGLISH WORDS, as a fraction of the card's size
   // (generator/config.word_alt_scale reads this exact name). English is set in
   // the SECOND word face, and a Latin face beside a Hebrew one at the same point
@@ -3520,6 +3545,9 @@ function updateTemplateSettings({ root, key, patch }) {
   if ('word_pitch' in changed && changed.word_pitch === null) delete entry.word_pitch;
   // Same for word_alt_scale:null — "the house fraction", i.e. absent.
   if ('word_alt_scale' in changed && changed.word_alt_scale === null) delete entry.word_alt_scale;
+  // Same for word_color:null — "the detected ink" — and pawn_halo:true, the default.
+  if ('word_color' in changed && changed.word_color === null) delete entry.word_color;
+  if ('pawn_halo' in changed && changed.pawn_halo === true) delete entry.pawn_halo;
   // Same for word_wrap_pitch:null — "the ink floor", i.e. absent.
   if ('word_wrap_pitch' in changed && changed.word_wrap_pitch === null)
     delete entry.word_wrap_pitch;
@@ -3564,6 +3592,10 @@ function updateTemplateSettings({ root, key, patch }) {
       word_size: entry.word_size == null ? null : entry.word_size,
       // The line spacing this deck prints at, or null for the design's own.
       word_pitch: entry.word_pitch == null ? null : entry.word_pitch,
+      // null = the detected ink.
+      word_color: entry.word_color || null,
+      // false only when the design turned the pawns' white outline off.
+      pawn_halo: entry.pawn_halo !== false,
       // null = names no pool, i.e. the generic fallback.
       wordlist: entry.wordlist || null,
       calibrated: !!entry.calibrated,

@@ -1120,8 +1120,13 @@ def deck_slots(theme, slots, cell):
     the value the deck as a whole measured.
     """
     offsets, colour = _deck_rows(theme)
+    # A colour the owner pinned beats every detected one (config.word_color).
+    pinned = config.word_color(config.theme(theme))
     if not offsets or not cell:
+        if pinned:
+            return [dict(slot, color=pinned) for slot in slots]
         return slots
+    colour = pinned or colour
     out = []
     for i, slot in enumerate(slots):
         box = dict(slot)
@@ -5391,6 +5396,19 @@ def photo_card_svg(theme, photos, paper=None, frame=_MEASURE, title_lines=None):
                             title_lines=title_lines)[0]
 
 
+def deck_ink(theme):
+    """The one colour this deck's words print in — the recipe's, else the theme's.
+
+    The same answer ``deck_slots`` and ``config.card_word_boxes`` arrive at for
+    the word cards, asked without a card: the detected ink pooled over the deck,
+    falling back to the theme's default ink when nothing was detected. A
+    ``word_color`` the owner pinned wins over both, exactly as it does there.
+    """
+    cfg = config.theme(theme)
+    colour = config.word_color(cfg) or _deck_rows(theme)[1]
+    return colour or config._default_ink(cfg)
+
+
 def photo_card_parts(theme, photos, paper=None, frame=_MEASURE, title_lines=None):
     """``(svg, title_markup)`` — the pawn card, and the title it ACTUALLY got.
 
@@ -5411,6 +5429,13 @@ def photo_card_parts(theme, photos, paper=None, frame=_MEASURE, title_lines=None
     if frame is _MEASURE:
         frame = card_frame.front_frame(theme)
     svg = card_frame.reframe(card_paper.repaper(svg, paper), frame)
+    # The copy follows the paper: on a dark deck the card's own dark ink would
+    # print unreadable, so it takes the deck's word ink (card_paper.reink).
+    svg = card_paper.reink(svg, paper, prefer=deck_ink(theme))
+    # A design may print its pawns bare, without the white sticker outline
+    # (``pawn_halo: false``, config.pawn_halo).
+    if not config.pawn_halo(config.theme(theme)):
+        svg = card_paper.drop_halo(svg)
     # AFTER the reframe: the band is measured against the frame the card will
     # actually print in, and reframing is what moves it.
     title = photo_card_title_markup(theme, svg, title_lines)
