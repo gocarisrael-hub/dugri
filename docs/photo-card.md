@@ -448,6 +448,14 @@ the pixels, on every shipped template, so the arithmetic cannot quietly become f
 The cards carry **no font dependency**: every piece of static copy is already baked to vector
 paths. Rendering one needs no `@font-face` injection, unlike `clean/fronts.svg`.
 
+**Turning it off per design.** `pawn_halo: false` in a theme entry (settable through
+`POST /api/admin/templates/:key/settings`) prints that design's pawns bare: the
+`#sticker-halo` filter is emptied (`card_paper.drop_halo`) rather than its `<use>`s removed,
+so the page — which paints through the filter it reads out of the rendered card
+(`preview.sticker_spec`) — loses the halo together with the print. Slots, cut circles and
+the disc clip are unchanged, so the card's layout is identical either way. Absent or `true`
+is the house look.
+
 ## The paper — measured off the template's front card
 
 The pawn card ships inside the buyer's deck, so it is printed on **that template's own front-card
