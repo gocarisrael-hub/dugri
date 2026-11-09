@@ -38,6 +38,7 @@ let base;
 let genDir;
 let runLog;
 let deckJobs;
+let settings;
 
 beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'dugri-produce-'));
@@ -90,7 +91,7 @@ beforeAll(async () => {
     delete require.cache[require.resolve(path.join(serverDir, f))];
   }
   delete require.cache[require.resolve(path.join(serverDir, 'settings.js'))];
-  const settings = require(path.join(serverDir, 'settings.js'));
+  settings = require(path.join(serverDir, 'settings.js'));
   for (const v of ['pdf', 'pickup', 'delivery', 'custom'])
     settings.set('pricing', v + '_enabled', true);
   db = require(path.join(serverDir, 'db.js'));
@@ -209,6 +210,8 @@ describe('POST /api/collections/:id/produce — the render', () => {
     // The number the waiting screen says out loud: her deck's cards, four words
     // to a card, from the list production will actually print.
     expect(kick.body.cards).toBeGreaterThan(0);
+    // The proof is on (the shipped default), so her page waits for it.
+    expect(kick.body.proof).toBe(true);
 
     const done = await settle(c);
     expect(done.state).toBe('ready');
@@ -339,5 +342,34 @@ describe('POST /api/collections/:id/produce — when the render fails', () => {
     const again = await post(`/api/collections/${c.id}/produce`, { owner_token: c.owner_token });
     expect(again.status).toBe(202);
     expect((await settle(c)).state).toBe('ready');
+  });
+});
+
+// WITH THE BUYER'S PROOF SWITCHED OFF there is nothing for her page to wait for,
+// so the start answer says so and collect.html shows its calm note at once. The
+// render itself must still happen exactly as before: only the waiting goes.
+describe('POST /api/collections/:id/produce — the proof switched off', () => {
+  it('answers proof:false, and still renders the deck without her page asking', async () => {
+    await waitSlotsFree();
+    settings.set('features', 'deck_proof', false);
+    try {
+      const c = seedFinished('No Proof Order');
+      const before = runCount();
+      const kick = await post(`/api/collections/${c.id}/produce`, { owner_token: c.owner_token });
+      expect(kick.status).toBe(202);
+      expect(['running', 'queued']).toContain(kick.body.state);
+      expect(kick.body.proof).toBe(false);
+      expect(kick.body.cards).toBeGreaterThan(0);
+
+      // Nobody polls in the real flow; wait on the job registry directly, so
+      // this proves the render ran on its own and not because a poll nudged it.
+      await waitSlotsFree();
+      expect(runCount()).toBe(before + 1);
+      expect(fs.existsSync(path.join(genDir, c.id + '.pdf'))).toBe(true);
+      expect(db.getCollection(c.id).production.state).toBe('generated');
+      expect(db.getCollection(c.id).status).toBe('closed');
+    } finally {
+      settings.reset('features', 'deck_proof');
+    }
   });
 });
