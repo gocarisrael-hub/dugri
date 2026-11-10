@@ -46,8 +46,11 @@ describe('corrupt pricing override falls back to the built-in default (never 0/g
     }
   });
 
-  it('a non-integer store price falls back to the default (not shown as 0)', () => {
+  it('the shown price is the charged fallback, and a stale store_now is ignored', () => {
     const p = db.effectivePricing();
+    // store.now is derived from the (fallen-back) pickup price, never from the
+    // stale `store_now: 'oops'` still sitting in the file.
+    expect(p.store.now).toBe(p.versions.pickup.price);
     expect(p.store.now).toBe(199);
     expect(p.store.was).toBe(239);
   });

@@ -1378,12 +1378,13 @@ function registerStatsOrders(app, { db }) {
 function registerPricing(app, { db }) {
   // Public, UNAUTHENTICATED: the effective pricing the storefront + checkout read
   // (the owner edits it from admin-pricing.html, no deploy). A WHITELISTED
-  // projection of only the `pricing` settings section — the store display price and
-  // each checkout version's { enabled, price }. No other settings section leaks
+  // projection of only the `pricing` settings section — the store price (`now` is
+  // the charged per-copy price, `was` the struck one) and each checkout version's
+  // { enabled, price }. No other settings section leaks
   // here. Mirrors GET /api/content (public overrides projection).
   app.get('/api/pricing', (req, res) => {
     // db.effectivePricing() is the SINGLE source shared with the charge path (it
-    // reads the same versionEnabled/versionPrice/storeValue helpers), so the price
+    // reads the same versionEnabled/versionPrice/storeNow helpers), so the price
     // a buyer is shown can never disagree with the price the server charges — and a
     // corrupt override falls back to the same built-in default the charge uses (not
     // a misleading 0). Only the whitelisted { store, versions } is exposed here.

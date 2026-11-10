@@ -13,7 +13,7 @@ Working language: English. Style: concise, no long horizontal dividers, no emoji
 
 Business facts change from the admin, not in code. Never copy a number from a doc; read it from its source.
 
-- Prices, sale mode, enabled versions (pdf / pickup / delivery / custom), free word limit: `server/settings.js` → `REGISTRY.pricing` (defaults), overridden live from `site/admin-pricing.html`. `server/db.js` derives `ORDER_PRICES` from it.
+- Prices, sale mode, enabled versions (pdf / pickup / delivery / custom), free word limit: `server/settings.js` → `REGISTRY.pricing` (defaults), overridden live from `site/admin-pricing.html`. `server/db.js` derives `ORDER_PRICES` from it. The price the shop shows is the charged per-copy price `pickup_price` (db.storeNow); there is no separate display price, only the struck-through `store_was`.
 - Payment: PeleCard card payment, `server/pelecard.js` (setup: `server/PELECARD.md`).
 - Shipping: HFD courier, `server/hfd.js`; self-pickup stickers, `generator/pickup_stickers.py`.
 - Deck production: the Python generator in `generator/` (`docs/deck-rendering.md`, `docs/card-structure-schema.md`, `docs/photo-card.md`). Short word lists are topped up from seed pools (`generator/topup.py`, `server/wordlists.js`).

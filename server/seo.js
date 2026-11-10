@@ -212,7 +212,8 @@ function websiteLd() {
   };
 }
 
-// price: the store display price (what the page prints). Omitted when unknown —
+// price: the store price (what the page prints), which is the charged per-copy
+// price (db.storeNow). Omitted when unknown —
 // an Offer with a wrong or zero price is worse than no Offer: Google flags a
 // structured price that disagrees with the visible one.
 function productLd({ price }) {

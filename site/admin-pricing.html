@@ -401,11 +401,12 @@
       // ONE switch for the whole offer. The hint spells out what the switch moves,
       // because the pieces live on pages the owner isn't looking at while flipping
       // it — and spells out the condition the server enforces on top of it: with
-      // "מחיר לפני" not higher than "מחיר מוצג", nothing shows however the switch
-      // is set (we don't strike through a price nobody is saved from).
+      // "מחיר לפני" not higher than the per-copy price (pickup_price, which is the
+      // price the shop shows), nothing shows however the switch is set (we don't
+      // strike through a price nobody is saved from).
       function saleCardHtml(eff) {
         const on = !!eff.sale_on;
-        const real = eff.store_was > eff.store_now;
+        const real = eff.store_was > eff.pickup_price;
         return (
           '<div class="card' +
           (on ? '' : ' off') +
@@ -421,7 +422,7 @@
             'רצועת הודעה בדף הבית',
             eff.sale_banner,
             120,
-            'אפשר להשתמש ב-<code>{now}</code> (מחיר מוצג), <code>{was}</code> (מחיר לפני) ' +
+            'אפשר להשתמש ב-<code>{now}</code> (המחיר לעותק), <code>{was}</code> (מחיר לפני) ' +
               'ו-<code>{saving}</code> (ההפרש) — הם מתעדכנים לבד כשמשנים מחיר. ' +
               'שדה ריק = בלי רצועה, והמבצע נשאר פעיל.'
           ) +
@@ -431,8 +432,8 @@
             ? ''
             : ' <b>שימו לב:</b> “מחיר לפני” (' +
               esc(eff.store_was) +
-              ' ₪) אינו גבוה מ“מחיר מוצג” (' +
-              esc(eff.store_now) +
+              ' ₪) אינו גבוה מהמחיר לעותק (' +
+              esc(eff.pickup_price) +
               ' ₪), ולכן שום דבר לא יוצג גם כשהמתג דלוק.') +
           '</p>' +
           '<div class="actions">' +
@@ -443,15 +444,21 @@
         );
       }
 
-      // --- store price card (store_now + store_was) ------------------------------
+      // --- store price card (store_was only) ------------------------------------
+      // The price the shop shows is NOT edited here: it IS pickup_price, the
+      // per-copy price we charge (the "המשחק — מחיר לעותק" card). It is printed
+      // read-only so the owner sees which number the shop advertises, and where to
+      // change it. Only the struck-through "before" price is set on this card.
       function storeCardHtml(eff) {
         return (
-          '<div class="card" data-card="store" data-keys="store_now,store_was">' +
+          '<div class="card" data-card="store" data-keys="store_was">' +
           '<div class="card-head"><h3 class="card-title">מחיר בחנות</h3>' +
           '<span class="card-id">pricing.store</span></div>' +
-          priceFieldHtml('store_now', 'מחיר מוצג', eff.store_now) +
+          '<p class="hint" data-shop-price>המחיר שמופיע בחנות הוא המחיר לעותק: <b>' +
+          esc(eff.pickup_price) +
+          ' ₪</b>. זה גם המחיר שהקונים משלמים. לשינוי: “המשחק — מחיר לעותק”.</p>' +
           priceFieldHtml('store_was', 'מחיר לפני (מחוק)', eff.store_was) +
-          '<p class="hint">המחיר שמופיע בעמודי החנות והמוצר; המחיר "לפני" מוצג עם קו חוצה.</p>' +
+          '<p class="hint">המחיר "לפני" מוצג עם קו חוצה בעמודי החנות והמוצר.</p>' +
           '<div class="actions">' +
           '<button class="primary" data-save type="button">שמירה</button>' +
           '<button class="danger" data-reset type="button">אפס לברירת מחדל</button>' +
@@ -630,6 +637,15 @@
                     : versionCardHtml(byId(id), eff);
         card.outerHTML = html;
       }
+      // The store and sale cards print pickup_price read-only, so a save or reset
+      // of the per-copy price must repaint them too, or they show the old number.
+      function rerenderPriceReaders(keys) {
+        if (!keys.includes('pickup_price')) return;
+        for (const id of ['store', 'sale']) {
+          const c = qs('app').querySelector('[data-card="' + id + '"]');
+          if (c) rerenderCard(c);
+        }
+      }
       function byId(id) {
         return VERSIONS.find((v) => v.id === id);
       }
@@ -685,6 +701,7 @@
             state.effective.pricing[k] = effective;
           }
           rerenderCard(card);
+          rerenderPriceReaders(Object.keys(parsed.values));
           const fresh = qs('app').querySelector('[data-card="' + card.dataset.card + '"]');
           setStatus(fresh, 'נשמר ✓', 'ok');
         } catch (e) {
@@ -706,6 +723,7 @@
             state.effective.pricing[k] = effective;
           }
           rerenderCard(card);
+          rerenderPriceReaders(keys);
           const fresh = qs('app').querySelector('[data-card="' + card.dataset.card + '"]');
           setStatus(fresh, 'אופס ✓', 'ok');
         } catch (e) {
