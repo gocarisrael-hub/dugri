@@ -32,9 +32,9 @@ function jsonRes(obj) {
   return { ok: true, status: 200, json: async () => obj };
 }
 
-// All ten pricing keys, so beforeEach can restore a pristine default state.
+// All nine pricing keys, so beforeEach can restore a pristine default state.
+// (There is no `store_now`: the shop shows pickup_price, see db.storeNow.)
 const PRICING_KEYS = [
-  'store_now',
   'store_was',
   'pdf_enabled',
   'pdf_price',
@@ -168,7 +168,7 @@ describe('GET /api/pricing (public)', () => {
   it('reflects an admin override', async () => {
     await post(adminUrl('/api/admin/settings'), {
       section: 'pricing',
-      key: 'store_now',
+      key: 'pickup_price',
       value: 249,
     });
     await post(adminUrl('/api/admin/settings'), {
@@ -177,11 +177,12 @@ describe('GET /api/pricing (public)', () => {
       value: true,
     });
     const { body } = await get('/api/pricing');
+    // The shown price follows the charged per-copy price: one number.
     expect(body.store.now).toBe(249);
+    expect(body.versions.pickup).toEqual({ enabled: true, price: 249 });
     expect(body.versions.pdf.enabled).toBe(true);
     // Untouched keys keep their defaults.
     expect(body.store.was).toBe(239);
-    expect(body.versions.pickup).toEqual({ enabled: true, price: 199 });
   });
 
   it('the admin API refuses to set a version price to 0 (a 0 total would be a free order)', async () => {

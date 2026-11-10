@@ -635,31 +635,41 @@ const REGISTRY = {
     enabled: { kind: 'flag', tokens: [], default: false },
   },
   // --- Pricing (owner-editable, no deploy) -----------------------------------
-  // The storefront display price (`store_now` shown, `store_was` struck through)
-  // and, per checkout version, an `<v>_enabled` flag + an `<v>_price` (NIS). The
-  // DEFAULTS below ARE the launch state: the store shows 199 (struck 239) and
-  // checkout offers ONLY self-pickup (pickup) at 199 — every other version is
-  // disabled until the owner turns it on from the admin page. server/db.js reads
-  // these as the authoritative charge (fail-safe fallback to the same numbers).
+  // Per checkout version, an `<v>_enabled` flag + an `<v>_price` (NIS), plus the
+  // storefront's struck-through "before" price `store_was`. The DEFAULTS below ARE
+  // the launch state: checkout offers ONLY self-pickup (pickup) at 199, struck
+  // 239 — every other version is disabled until the owner turns it on from the
+  // admin page. server/db.js reads these as the authoritative charge (fail-safe
+  // fallback to the same numbers).
+  //
+  // There is deliberately NO separate display price. The price the shop shows
+  // (GET /api/pricing `store.now`, the sale banner's {now}, the SEO Offer) IS
+  // `pickup_price`, the per-copy price we charge — db.storeNow() derives it. A
+  // second, independently editable `store_now` once let the site advertise 259
+  // while checkout charged 239. Old volumes may still carry a stored
+  // `pricing.store_now` override: with the key gone from this registry nothing
+  // reads it (get/set/reset refuse an unknown key, all() lists only registered
+  // keys, replaceOverrides drops it), so it is inert and is left in place.
+  //
   // A per-version `<v>_price` carries `min: 1` — a CHARGED amount can never be 0
   // (the pay path treats a 0 total as a free/already-paid order, so a 0 base price
-  // would mark every order for that version paid at ₪0). The store display prices
-  // may be 0 (default min 0) since they are never charged.
+  // would mark every order for that version paid at ₪0). `store_was` may be 0
+  // (default min 0) since it is never charged.
   pricing: {
-    store_now: { kind: 'price', tokens: [], default: 199 },
     store_was: { kind: 'price', tokens: [], default: 239 },
     // --- sale mode: ONE switch for the whole offer ------------------------------
     // Flipped on, every storefront surface shows the same offer at once: the
     // struck `store_was` price wherever a price is printed, a "מחיר השקה" flag on
     // each product picture, and the announcement strip on the home page. Flipped
-    // off, all three disappear together and only `store_now` is shown — so ending
-    // a sale is one click, not a hunt through six pages for the piece each one
-    // carries.
+    // off, all three disappear together and only the price we charge is shown —
+    // so ending a sale is one click, not a hunt through six pages for the piece
+    // each one carries.
     //
     // The switch alone does NOT make a sale: db.saleInfo() also requires
-    // store_was > store_now. A struck price that isn't actually higher than what
-    // we charge advertises a discount that does not exist, and no admin switch
-    // should be able to put that in front of a buyer.
+    // store_was > pickup_price (the price shown and charged). A struck price
+    // that isn't actually higher than what we charge advertises a discount that
+    // does not exist, and no admin switch should be able to put that in front of
+    // a buyer.
     //
     // Default true — it is the state the storefront already ships in (199 struck 239),
     // so this key appearing changes nothing until the owner turns it off.
@@ -667,9 +677,10 @@ const REGISTRY = {
     // The flag text on the product pictures. Short by design: it renders in a
     // corner tab over the photo, and anything longer covers the product.
     sale_label: { kind: 'text', max: 40, tokens: [], default: 'מחיר השקה' },
-    // The home-page strip. {now}/{was}/{saving} are filled from the live store
-    // prices, so the strip stays true after a price change with no re-edit. An
-    // EMPTY value is meaningful: it drops the strip while leaving the sale on.
+    // The home-page strip. {now}/{was}/{saving} are filled from the live prices
+    // ({now} = pickup_price, the charged per-copy price), so the strip stays
+    // true after a price change with no re-edit. An EMPTY value is meaningful: it
+    // drops the strip while leaving the sale on.
     sale_banner: {
       kind: 'text',
       max: 120,

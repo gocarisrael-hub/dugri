@@ -3,8 +3,8 @@
 //
 // Two conditions must both hold for the storefront to advertise a sale, and the
 // second one is the point of these tests: `store_was` is display-only and freely
-// editable, so a switch alone would let a typo (or a `store_now` raised past a
-// stale `store_was`) put a struck-through price on the site that saves the buyer
+// editable, so a switch alone would let a typo (or a `pickup_price` raised past
+// a stale `store_was`) put a struck-through price on the site that saves the buyer
 // nothing. db.saleInfo() fails closed on that, and every surface reads this one
 // flag — so they all go quiet together.
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
@@ -20,7 +20,7 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 
 const realFetch = globalThis.fetch;
 const ADMIN_KEY = 'test-sale-key';
-const KEYS = ['store_now', 'store_was', 'sale_on', 'sale_label', 'sale_banner'];
+const KEYS = ['pickup_price', 'store_was', 'sale_on', 'sale_label', 'sale_banner'];
 
 let app;
 let settings;
@@ -79,7 +79,9 @@ describe('GET /api/pricing — the sale projection', () => {
 
   it('re-interpolates after a price change — the banner text needs no re-edit', async () => {
     await setKey('sale_banner', '{now} במקום {was}');
-    await setKey('store_now', 249);
+    // The shown price IS the charged per-copy price: raising pickup_price moves
+    // {now} with it.
+    await setKey('pickup_price', 249);
     const p = await pricing();
     expect(p.sale.banner).toBe('249 במקום 239');
   });
@@ -107,10 +109,17 @@ describe('GET /api/pricing — the sale projection', () => {
   });
 
   it('refuses to advertise a sale when the struck price is LOWER than the price shown', async () => {
-    await setKey('store_now', 299);
+    await setKey('pickup_price', 299);
     const p = await pricing();
     expect(p.store).toEqual({ now: 299, was: 239 });
+    expect(p.versions.pickup.price).toBe(299);
     expect(p.sale.on).toBe(false);
+  });
+
+  it('there is no separate display price to set: store_now is an unknown key', async () => {
+    const r = await setKey('store_now', 259);
+    expect(r.status).toBe(400);
+    expect((await pricing()).store.now).toBe(199);
   });
 });
 

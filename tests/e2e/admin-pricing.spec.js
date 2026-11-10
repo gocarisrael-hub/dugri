@@ -12,7 +12,7 @@ const KEY = 'dugri-admin';
 //    below). Playwright runs the tests in a file sequentially within a project,
 //    but the two device projects run the same file CONCURRENTLY against one
 //    server — so "renders the launch defaults (199)" on the phone was racing
-//    "saving the store price (211)" on the desktop. Nothing here is
+//    "saving the struck price (211)" on the desktop. Nothing here is
 //    device-specific: it is an admin form, so the second run only added the race.
 //  • Every test resets the keys it touched, and pickup is NEVER disabled (it is
 //    the launch default the checkout specs rely on).
@@ -49,10 +49,15 @@ test.describe('admin pricing editor', () => {
     await page.goto(`/admin-pricing.html?key=${KEY}`);
     await expect(page.locator('#app')).toBeVisible();
 
-    // Store price card: two number inputs.
+    // Store price card: ONE number input, the struck "before" price. The price
+    // the shop shows is not typed here — it IS the per-copy price we charge, so
+    // the card prints it read-only and points at the game card.
     const store = page.locator('[data-card="store"]');
-    await expect(store.locator('[data-price="store_now"]')).toBeVisible();
+    await expect(store.locator('[data-price]')).toHaveCount(1);
+    await expect(store.locator('[data-price="store_now"]')).toHaveCount(0);
     await expect(store.locator('[data-price="store_was"]')).toBeVisible();
+    await expect(store.locator('[data-shop-price]')).toContainText('199 ₪');
+    await expect(store.locator('[data-shop-price]')).toContainText('המשחק — מחיר לעותק');
 
     // Each version card has an enable checkbox...
     for (const v of ['pdf', 'pickup', 'delivery', 'custom']) {
@@ -71,32 +76,65 @@ test.describe('admin pricing editor', () => {
     );
     await expect(page.locator('[data-card="shipping"] [data-price="delivery_fee"]')).toBeVisible();
 
-    // Launch defaults reflected: store 199/239; only pickup checked.
-    await expect(store.locator('[data-price="store_now"]')).toHaveValue('199');
+    // Launch defaults reflected: 199 per copy, struck 239; only pickup checked.
+    await expect(page.locator('[data-card="pickup"] [data-price="pickup_price"]')).toHaveValue(
+      '199'
+    );
     await expect(store.locator('[data-price="store_was"]')).toHaveValue('239');
     await expect(page.locator('[data-card="pickup"] [data-flag="pickup_enabled"]')).toBeChecked();
     await expect(page.locator('[data-card="pdf"] [data-flag="pdf_enabled"]')).not.toBeChecked();
   });
 
-  test('saving the store price persists via the admin API', async ({ page, request }, testInfo) => {
+  test('saving the struck price persists via the admin API', async ({
+    page,
+    request,
+  }, testInfo) => {
     test.skip(testInfo.project.name !== ONLY, 'writes shared pricing state — one project only');
     await page.goto(`/admin-pricing.html?key=${KEY}`);
     const store = page.locator('[data-card="store"]');
     await expect(store).toBeVisible();
 
-    await store.locator('[data-price="store_now"]').fill('211');
+    await store.locator('[data-price="store_was"]').fill('211');
     await store.locator('button[data-save]').click();
-    // Status turns to "נשמר ✓" only after BOTH keys (store_now + store_was) POST.
     await expect(page.locator('[data-card="store"] .status')).toHaveText(/נשמר/);
 
     // The re-rendered input holds the saved value (populated from the POST's own
     // effective response — race-free against other workers).
-    await expect(page.locator('[data-card="store"] [data-price="store_now"]')).toHaveValue('211');
+    await expect(page.locator('[data-card="store"] [data-price="store_was"]')).toHaveValue('211');
+    expect((await (await request.get('/api/pricing')).json()).store.was).toBe(211);
 
-    // And the PUBLIC endpoint reflects it (read our own value back by resetting
-    // afterwards regardless of concurrent workers).
-    await resetKey(request, 'store_now');
     await resetKey(request, 'store_was');
+  });
+
+  // The bug this guards: the shop once showed 259 while checkout charged 239,
+  // because the shown price was a separate field. Now repricing the game card is
+  // the ONLY way to move the shop's price, and the store card follows it live.
+  //
+  // pickup_price is the CHARGED price that the checkout specs running beside this
+  // one rely on, so this test must not really write it to the shared server: the
+  // save is answered in the browser. That the server derives store.now from
+  // pickup_price is proven in tests/unit/one-price.test.js.
+  test('repricing the game card repaints the price the store card shows', async ({ page }) => {
+    const posted = [];
+    await page.route('**/api/admin/settings?*', async (route) => {
+      const req = route.request();
+      if (req.method() !== 'POST') return route.fallback();
+      const body = req.postDataJSON();
+      posted.push(body.key);
+      await route.fulfill({ json: { effective: body.value } });
+    });
+    await page.goto(`/admin-pricing.html?key=${KEY}`);
+    const pickup = page.locator('[data-card="pickup"]');
+    await expect(pickup).toBeVisible();
+    await expect(page.locator('[data-card="store"] [data-shop-price]')).toContainText('199 ₪');
+
+    await pickup.locator('[data-price="pickup_price"]').fill('233');
+    await pickup.locator('button[data-save]').click();
+    await expect(page.locator('[data-card="pickup"] .status')).toHaveText(/נשמר/);
+    expect(posted).toContain('pickup_price');
+
+    // The store card repainted with the new number, without a reload.
+    await expect(page.locator('[data-card="store"] [data-shop-price]')).toContainText('233 ₪');
   });
 
   test('toggling a version on + repricing it persists via the admin API', async ({
@@ -133,13 +171,13 @@ test.describe('admin pricing editor', () => {
     const store = page.locator('[data-card="store"]');
     await expect(store).toBeVisible();
 
-    await store.locator('[data-price="store_now"]').fill('-5');
+    await store.locator('[data-price="store_was"]').fill('-5');
     await store.locator('button[data-save]').click();
     await expect(store.locator('.status')).toHaveText(/מספר שלם/);
     expect(posted).toBe(false);
   });
 
-  test('reset restores the default store price', async ({ page, request }, testInfo) => {
+  test('reset restores the default struck price', async ({ page, request }, testInfo) => {
     test.skip(testInfo.project.name !== ONLY, 'writes shared pricing state — one project only');
     page.on('dialog', (d) => d.accept()); // reset asks for confirmation
     await page.goto(`/admin-pricing.html?key=${KEY}`);
@@ -147,15 +185,14 @@ test.describe('admin pricing editor', () => {
     await expect(store).toBeVisible();
 
     // Override, then reset back to the default.
-    await store.locator('[data-price="store_now"]').fill('177');
+    await store.locator('[data-price="store_was"]').fill('177');
     await store.locator('button[data-save]').click();
     await expect(page.locator('[data-card="store"] .status')).toHaveText(/נשמר/);
 
     await page.locator('[data-card="store"] button[data-reset]').click();
     await expect(page.locator('[data-card="store"] .status')).toHaveText(/אופס/);
-    await expect(page.locator('[data-card="store"] [data-price="store_now"]')).toHaveValue('199');
+    await expect(page.locator('[data-card="store"] [data-price="store_was"]')).toHaveValue('239');
 
-    await resetKey(request, 'store_now');
     await resetKey(request, 'store_was');
   });
 

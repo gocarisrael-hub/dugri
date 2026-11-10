@@ -81,7 +81,7 @@ const ORDER_NO_PREFIX = 'DG-';
 const ORDER_NO_START = 1001;
 
 // Owner-editable pricing lives in server/settings.js (the `pricing` section) so
-// the store price + per-version enable/price change with NO deploy. This module
+// the per-version enable/price (and the struck `store_was`) change with NO deploy. This module
 // reads it as the AUTHORITATIVE charge. settings.js requires nothing from db, so
 // this import is cycle-free; it's wrapped so a broken settings module can never
 // take the charge path down (we fall back to the built-in defaults below).
@@ -127,7 +127,7 @@ function pricingDefaults() {
   for (const key of Object.keys(reg)) {
     const m = /^(.+)_enabled$/.exec(key);
     if (m) enabled[m[1]] = reg[key].default === true;
-    else if (key === 'store_now' || key === 'store_was') store[key] = reg[key].default;
+    else if (key === 'store_was') store[key] = reg[key].default;
   }
   return { prices, enabled, store };
 }
@@ -161,14 +161,14 @@ function versionPrice(version) {
 }
 
 // Last-resort baked store display defaults, used only if the settings module
-// itself failed to load (so the registry-derived STORE_DEFAULTS are empty). This
-// guarantees the public projection never emits an `undefined` store price that
-// would render as "undefined ₪" on the storefront.
-const BAKED_STORE = { store_now: 199, store_was: 239 };
+// itself failed to load (so the registry-derived STORE_DEFAULTS and ORDER_PRICES
+// are empty). This guarantees the public projection never emits an `undefined`
+// store price that would render as "undefined ₪" on the storefront.
+const BAKED_STORE = { now: 199, store_was: 239 };
 
-// The effective store display price for `store_now`/`store_was`. Display-only
-// (never charged), so 0 is allowed; a corrupt/non-integer override falls back to
-// the registry default, and to the baked default if even that is unavailable.
+// The effective struck-through "before" price, `store_was`. Display-only (never
+// charged), so 0 is allowed; a corrupt/non-integer override falls back to the
+// registry default, and to the baked default if even that is unavailable.
 function storeValue(key) {
   try {
     const v = settings.get('pricing', key);
@@ -180,16 +180,28 @@ function storeValue(key) {
   return Number.isInteger(d) ? d : BAKED_STORE[key];
 }
 
+// The price the shop SHOWS: the per-copy price we CHARGE (`pickup_price`, shared
+// by pickup and delivery — see VERSION_PRICE_KEY). Derived, never stored, so the
+// storefront cannot advertise a number the checkout does not charge. There used
+// to be an independently editable `store_now`; changing it alone made the site
+// show 259 while buyers paid 239. A stale `pricing.store_now` override left on a
+// volume is inert: the key is no longer registered and nothing here reads it.
+function storeNow() {
+  const p = versionPrice('pickup');
+  return Number.isInteger(p) ? p : BAKED_STORE.now;
+}
+
 // --- sale mode ----------------------------------------------------------------
 // The owner's one switch for the whole offer, resolved into what the storefront
 // needs: { on, label, banner }. Two independent conditions must BOTH hold for
 // `on` to be true:
 //
 //   1. the owner turned `sale_on` on, and
-//   2. the struck price is genuinely higher than the price shown (was > now).
+//   2. the struck price is genuinely higher than the price shown (was > now),
+//      where `now` is the charged per-copy price (storeNow).
 //
 // (2) is not a nicety. `store_was` is display-only and freely editable, so a
-// typo — or a `store_now` raised above a stale `store_was` — would leave the site
+// typo — or a `pickup_price` raised above a stale `store_was` — would leave the site
 // striking through a price NOBODY is being saved from, i.e. advertising a
 // discount that does not exist. Failing closed here means every surface goes
 // quiet at once, because they all read this one flag.
@@ -199,7 +211,7 @@ function storeValue(key) {
 // falls back to the registry defaults, and an empty banner simply means "no
 // strip" (a legal owner choice, not an error).
 function saleInfo() {
-  const now = storeValue('store_now');
+  const now = storeNow();
   const was = storeValue('store_was');
   let on = false;
   let label = 'מחיר השקה';
@@ -229,7 +241,9 @@ function effectivePricing() {
     versions[v] = { enabled: versionEnabled(v), price: versionPrice(v) };
   }
   return {
-    store: { now: storeValue('store_now'), was: storeValue('store_was') },
+    // `store.now` is DERIVED from the charged per-copy price (storeNow), not a
+    // setting of its own: shown and charged are one number.
+    store: { now: storeNow(), was: storeValue('store_was') },
     // Whether the struck price / picture flags / home strip are shown at all.
     // `store.was` still travels when the sale is off: the number is display data,
     // and the client decides what to paint from `sale.on` alone.

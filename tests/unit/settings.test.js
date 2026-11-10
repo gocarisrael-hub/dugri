@@ -188,9 +188,10 @@ describe('value-shape validation (set + validateValue)', () => {
 });
 
 describe('pricing section (price + flag kinds)', () => {
-  it('ships the launch defaults (store 199/239; only pickup enabled)', () => {
+  it('ships the launch defaults (struck 239; only pickup enabled)', () => {
     const s = loadFresh();
-    expect(s.get('pricing', 'store_now')).toBe(199);
+    // No separate display price: the shop shows pickup_price (db.storeNow).
+    expect(s.hasKey('pricing', 'store_now')).toBe(false);
     expect(s.get('pricing', 'store_was')).toBe(239);
     expect(s.get('pricing', 'pdf_enabled')).toBe(false);
     expect(s.get('pricing', 'pdf_price')).toBe(79);
@@ -210,16 +211,16 @@ describe('pricing section (price + flag kinds)', () => {
     const msg = 'value must be a non-negative integer';
     // Rejected: strings (even numeric), floats, negatives, null, NaN, booleans.
     for (const bad of ['199', 1.5, -1, null, NaN, true]) {
-      expect(s.validateValue('pricing', 'store_now', bad)).toBe(msg);
-      expect(() => s.set('pricing', 'store_now', bad)).toThrow();
+      expect(s.validateValue('pricing', 'store_was', bad)).toBe(msg);
+      expect(() => s.set('pricing', 'store_was', bad)).toThrow();
     }
     // Accepted: zero and positive integers.
     for (const good of [0, 1, 79, 249]) {
-      expect(s.validateValue('pricing', 'store_now', good)).toBeNull();
+      expect(s.validateValue('pricing', 'store_was', good)).toBeNull();
     }
     // No bad write leaked; the default is intact.
     expect(s.all().overrides).toEqual({});
-    expect(s.get('pricing', 'store_now')).toBe(199);
+    expect(s.get('pricing', 'store_was')).toBe(239);
   });
 
   it('rejects 0 for a version price (must be a POSITIVE integer) but allows 0 for a store price', () => {
@@ -234,8 +235,7 @@ describe('pricing section (price + flag kinds)', () => {
       expect(s.validateValue('pricing', key, 1)).toBeNull();
       expect(s.validateValue('pricing', key, 249)).toBeNull();
     }
-    // Store display prices are never charged, so 0 is allowed.
-    expect(s.validateValue('pricing', 'store_now', 0)).toBeNull();
+    // The struck "before" price is never charged, so 0 is allowed.
     expect(s.validateValue('pricing', 'store_was', 0)).toBeNull();
     // Nothing bad was written.
     expect(s.all().overrides).toEqual({});
@@ -268,7 +268,7 @@ describe('pricing section (price + flag kinds)', () => {
   it('all().registry.pricing advertises kind per key with no tokens', () => {
     const s = loadFresh();
     const reg = s.all().registry.pricing;
-    expect(reg.store_now).toEqual({ tokens: [], kind: 'price' });
+    expect(reg.store_now).toBeUndefined();
     expect(reg.store_was).toEqual({ tokens: [], kind: 'price' });
     expect(reg.pdf_enabled).toEqual({ tokens: [], kind: 'flag' });
     expect(reg.pickup_price).toEqual({ tokens: [], kind: 'price' });
