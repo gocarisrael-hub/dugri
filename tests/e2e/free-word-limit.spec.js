@@ -6,7 +6,6 @@ import { ALL_ON, stubFeatures } from './feature-flags.js';
 // lock and the pay panel becomes the next step. Drives the REAL server — no
 // stubbed collection state — so the page and the API agree.
 const FREE_LIMIT = 20; // the server-side cap — never shown to the buyer
-const WORD_GOAL = 70; // the counter keeps its ordinary minimum framing throughout
 
 test.beforeEach(async ({ page }) => {
   await stubFeatures(page, ALL_ON);
@@ -74,12 +73,12 @@ async function pasteWords(page, n, prefix = 'word') {
 test('quota: nothing hints at the cap, then the add box locks at the limit', async ({ page }) => {
   await createCollection(page, 'Quota');
 
-  // Below the quota the page gives NOTHING away: the counter keeps its ordinary
-  // minimum framing, no "free" wording anywhere, and the add box works. The lock
-  // is meant to be a surprise.
+  // Below the quota the page gives NOTHING away: the counter is the bare count
+  // (no goal, no limit, 2026-11-16), no "free" wording anywhere, and the add box
+  // works. The lock is meant to be a surprise.
   await pasteWords(page, 5);
   await expect(page.locator('#count')).toHaveText('5');
-  await expect(page.locator('#countMax')).toContainText(String(WORD_GOAL));
+  await expect(page.locator('.count-pill')).toHaveText('5 מילים');
   await expect(page.locator('#countMax')).not.toContainText(String(FREE_LIMIT));
   await expect(page.locator('.count-pill')).not.toContainText('חינם');
   await expect(page.locator('#countHint')).not.toContainText('חינם');

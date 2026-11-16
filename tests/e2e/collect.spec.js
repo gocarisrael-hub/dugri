@@ -833,15 +833,17 @@ async function liftFreeQuota(page) {
 test('below 70 words: Stage-1 bar is scaled to the 70-word minimum', async ({ page }) => {
   await createCollection(page, 'Shira');
   await liftFreeQuota(page);
-  // Stage 1 frames the 70-word minimum (not the 412 max) below the goal.
-  await expect(page.locator('.count-pill')).toContainText('/ 70');
+  // The pill is the count only, below the goal as above it (owner, 2026-11-16):
+  // the 70-word goal scales the Stage-1 bar but is never printed.
+  await expect(page.locator('.count-pill')).toHaveText('0 מילים');
+  await expect(page.locator('.count-pill')).not.toContainText('70');
   await expect(page.locator('.count-pill')).not.toContainText('מינימום');
   await expect(page.locator('#stage1')).toBeVisible();
   await expect(page.locator('#stage2')).toBeHidden();
   await page.fill('#wordInput', 'מילה אחת');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
-  await expect(page.locator('#countMax')).toContainText('/ 70');
+  await expect(page.locator('.count-pill')).toHaveText('1 מילים');
   await expect(page.locator('#countHint')).toHaveText('');
   // one word = 1/70 ≈ 1.43% of a 70-word Stage-1 bar
   const width = await page.locator('#barFill1').evaluate((el) => el.style.width);
@@ -863,7 +865,8 @@ test('at 70+ words: Stage-2 bar replaces Stage-1 and is scaled to the 412 max', 
   // The swap: Stage-1 gone, the new Stage-2 bar takes over and frames the max.
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
-  await expect(page.locator('#countMax')).toContainText('/ 412');
+  await expect(page.locator('.count-pill')).toHaveText('70 מילים');
+  await expect(page.locator('.count-pill')).not.toContainText('/');
   await expect(page.locator('#countMax')).not.toContainText('מינימום');
   // 70 / 412 ≈ 17% — the second bar starts already ~⅙ filled.
   const width = await page.locator('#barFill2').evaluate((el) => el.style.width);

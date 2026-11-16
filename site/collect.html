@@ -5948,9 +5948,9 @@
         // Free quota: the buyer is NEVER told the number, or that a quota exists,
         // until they actually hit it — the lock is meant to land as a surprise, and
         // a "3 of your 20 free words" countdown would both spoil it and cap how
-        // much they bother to write. So the counter keeps its ordinary
-        // minimum/maximum framing throughout; only `free_limit_locked` (a bare
-        // boolean — the server deliberately does not send the limit) changes the UI.
+        // much they bother to write. So the counter keeps its ordinary framing
+        // throughout; only `free_limit_locked` (a bare boolean — the server
+        // deliberately does not send the limit) changes the UI.
         const n = state.count;
         const atMax = n >= MAX_WORDS;
         // Order matters: when a collection is BOTH locked and full, the payment
@@ -5958,16 +5958,16 @@
         // about.
         if (state.free_limit_locked) applyFreeLimit(true);
         else applyDeckFull(atMax);
-        // Stage 2 kicks in once the 70-word goal is met: the pill reframes around
-        // the max and the bar swaps to one scaled to MAX_WORDS.
+        // Stage 2 kicks in once the 70-word goal is met: the bar swaps to one
+        // scaled to MAX_WORDS.
         const stage2 = n >= WORD_GOAL;
-        // Never display a fraction over the cap: show the count capped at the max.
+        // The pill is the count and nothing else: "5 מילים", never "5 / 70" or
+        // "80 / 412" (owner decision, 2026-11-16). The product page promises no
+        // word limit, and a fraction reads as a cap. WORD_GOAL still drives the
+        // bar below; it is just never printed. Only the real cap is named, once
+        // reached, and the count is shown capped at it.
         $('#count').textContent = Math.min(n, MAX_WORDS);
-        $('#countMax').textContent = atMax
-          ? ' מילים · מקסימום'
-          : stage2
-            ? ' / ' + MAX_WORDS + ' מילים'
-            : ' / ' + WORD_GOAL + ' מילים';
+        $('#countMax').textContent = atMax ? ' מילים · מקסימום' : ' מילים';
         // No running commentary under the bar (the owner removed it, 2026-10-18): the pill and the bar say how far
         // along the list is. The line speaks only when it has news: the deck is full (the field is closed), or, below,
         // the collection is locked for payment.
