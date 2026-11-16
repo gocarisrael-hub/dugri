@@ -343,7 +343,10 @@ describe('the private pages are untouched', () => {
       expect(page, o.slug).not.toMatch(
         /occ-biz|occ-logos|occ-why|occ-kit|occ-hub|occasion-business|לקבלת הצעה לחברה/
       );
-      expect(page, o.slug).toMatch(/<section data-edit-scope="new\.html" hidden class="biz"/);
+      // the home's business section stays hidden, except on a private page that asks for it (showBiz: /gibush)
+      if (o.showBiz)
+        expect(page, o.slug).toMatch(/<section data-edit-scope="new\.html" class="biz"/);
+      else expect(page, o.slug).toMatch(/<section data-edit-scope="new\.html" hidden class="biz"/);
     }
   });
 });

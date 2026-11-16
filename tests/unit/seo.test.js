@@ -192,6 +192,13 @@ describe('seo module (pure)', () => {
     expect(sec).toContain(
       '- [משחק משפחתי לחנוכה, שכל המילים בו על המשפחה שלכם](https://dugri-israel.co.il/chag-mishpachti)'
     );
+    for (const [h1, slug] of [
+      ['מתנה ליום נישואין לאמא ואבא או לסבא וסבתא', 'yom-nisuin'],
+      ['מתנת שחרור שכל הצוות או המחלקה כותבים', 'shichrur'],
+      ['משחק לערב גיבוש, עם השמות והבדיחות מהמשרד', 'gibush'],
+      ['מתנה ליום הולדת 30 לחברה הכי טובה', 'yom-huledet-30'],
+    ])
+      expect(sec).toContain(`- [${h1}](https://dugri-israel.co.il/${slug})`);
   });
 
   it('every live occasion page is public, in the sitemap, with its own canonical', () => {

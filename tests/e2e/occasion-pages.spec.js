@@ -171,7 +171,7 @@ test('the footer row links the occasion pages, on the home page and on each occa
   ).toHaveAttribute('aria-current', 'page');
 });
 
-// pages 2-4 and 14: each loads with its own H1, its order buttons carry its slug, and the footer row links it
+// pages 2-8 and 14: each loads with its own H1, its order buttons carry its slug, and the footer row links it
 for (const [slug, h1, label] of [
   ['mesibat-ravakot', 'משחק למסיבת רווקות, מותאם אישית לכלה', 'מסיבת רווקות'],
   [
@@ -181,6 +181,10 @@ for (const [slug, h1, label] of [
   ],
   ['pensia', 'מתנה ליציאה לפנסיה שכל המשרד כותב', 'יציאה לפנסיה'],
   ['chag-mishpachti', 'משחק משפחתי לחנוכה, שכל המילים בו על המשפחה שלכם', 'חנוכה וחגים משפחתיים'],
+  ['yom-nisuin', 'מתנה ליום נישואין לאמא ואבא או לסבא וסבתא', 'יום נישואין להורים'],
+  ['shichrur', 'מתנת שחרור שכל הצוות או המחלקה כותבים', 'שחרור מהצבא'],
+  ['gibush', 'משחק לערב גיבוש, עם השמות והבדיחות מהמשרד', 'ערב גיבוש'],
+  ['yom-huledet-30', 'מתנה ליום הולדת 30 לחברה הכי טובה', 'יום הולדת 30 לחברה'],
 ]) {
   test(`/${slug} loads with its H1 and every order button carries the slug`, async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
@@ -218,4 +222,19 @@ test('/chag-mishpachti shows the last order dates for delivery and self-pickup',
   await expect(line).toContainText('עד יום ב׳ 23.11 ב-16:00');
   await expect(line).toContainText('לאיסוף עצמי: עד יום א׳ 29.11 ב-16:00');
   await expect(page.locator('summary', { hasText: 'עד מתי להזמין כדי שיגיע לחג?' })).toHaveCount(1);
+});
+
+// page 7 (team events) shows the home page's business section: its WhatsApp and its lead form; the other pages keep it hidden
+test('/gibush shows the business WhatsApp and lead form; /shichrur does not', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 800 });
+  await page.goto('/gibush');
+  const biz = page.locator('#biz');
+  await expect(biz).toBeVisible();
+  await expect(biz.locator('a.pill[href^="https://wa.me/972546577715"]')).toBeVisible();
+  await expect(biz.locator('form#lead input[name="company"]')).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true
+  );
+  await page.goto('/shichrur');
+  await expect(page.locator('#biz')).toBeHidden();
 });

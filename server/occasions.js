@@ -40,6 +40,9 @@
 //                 עד החג: ..."), shown under the hero's button; null or absent shows nothing. It is typed by hand
 //                 and not computed: the admin's etas say "בדרך כלל כ-N ימי עסקים" and nothing on the site knows
 //                 which days are business days or when a holiday falls.
+//   showBiz       optional, true shows the home page's business section (its WhatsApp and lead form) on this
+//                 page, for a private page bought by a workplace (/gibush); absent or false keeps it hidden. A company
+//                 page (audience 'business') has its own lead form (businessLead) and ignores it.
 //
 // "{eta}" in any text is the production time, read from the admin (the pickup
 // eta, settings email.pickup_info.eta, "... תוך כ-4 ימי עסקים ...") on every
@@ -49,8 +52,8 @@
 // Shared pieces are not copied: the reviews row, its sheet, the design view and
 // the site footer are read out of site/new.html (the live home page) per request,
 // so an owner's edit to the home's reviews or a new review card shows here too.
-// The business section is carried hidden (home-new.js wires its form), the
-// founders' story is left out.
+// The business section is carried hidden (home-new.js wires its form) unless the
+// page sets showBiz, the founders' story is left out.
 
 const fs = require('fs');
 const path = require('path');
@@ -144,6 +147,8 @@ function validateOccasion(o, known) {
     e.push('seasonal must be true or false');
   if (o.deadline !== undefined && o.deadline !== null && !isStr(o.deadline))
     e.push('deadline: a line of text, or null');
+  if (o.showBiz !== undefined && typeof o.showBiz !== 'boolean')
+    e.push('showBiz must be true or false');
   // a company page's own rules; its quantity-pricing sentence and question are the
   // one place "מחירים" is allowed, so they are taken out before the price rule
   const business = o.audience === 'business';
@@ -361,7 +366,9 @@ function renderPage(template, newHtml, o) {
     .join('\n            ');
   const config = { slug: o.slug, audience: o.audience, designs: o.designs };
   const json = JSON.stringify(config).replace(/</g, '\\u003c');
-  const biz = piece(newHtml, 'biz').replace(/^<section\b/, '<section hidden');
+  const biz = o.showBiz
+    ? piece(newHtml, 'biz')
+    : piece(newHtml, 'biz').replace(/^<section\b/, '<section hidden');
   const vals = {
     slug: esc(o.slug),
     title: esc(o.title),
