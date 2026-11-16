@@ -37,9 +37,21 @@ const ETA = 'המשחק מוכן בדרך כלל תוך כ-4 ימי עסקים �
 describe('the data files', () => {
   const known = new Set(files.map((f) => read(f).slug));
 
+  // other batches' pages (tests/unit/occasions-<batch>.test.js) are live too: LIVE is the ones this file pins, in order
   it("pages 1-4 and 14 (and page 1's dad page) exist and are live, in the owner's page order", () => {
-    expect(known).toEqual(new Set(LIVE));
-    expect(occ.live().map((o) => o.slug)).toEqual(LIVE);
+    for (const s of LIVE) expect(known.has(s), s).toBe(true);
+    expect(
+      occ
+        .live()
+        .map((o) => o.slug)
+        .filter((s) => LIVE.includes(s))
+    ).toEqual(LIVE);
+    expect(occ.live().map((o) => o.order)).toEqual(
+      occ
+        .live()
+        .map((o) => o.order)
+        .sort((a, b) => a - b)
+    );
   });
 
   it('every page has its own event-type label (the wizard pre-fills it, /api/occasions sends it)', () => {

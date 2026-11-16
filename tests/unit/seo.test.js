@@ -23,6 +23,7 @@ const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const serverDir = path.join(__dirname, '..', '..', 'server');
 const seo = require(path.join(serverDir, 'seo.js'));
+const occasions = require(path.join(serverDir, 'occasions.js'));
 
 const PROD = 'dugri-israel.co.il';
 const STAGING = 'dugri-staging.up.railway.app';
@@ -195,14 +196,17 @@ describe('seo module (pure)', () => {
 
   it('every live occasion page is public, in the sitemap, with its own canonical', () => {
     const occ = seo.PUBLIC_PAGES.filter((p) => p.occasion).map((p) => p.path);
-    expect(occ).toEqual([
+    // every live data file, in page order (each batch's own test pins its pages)
+    expect(occ).toEqual(occasions.live().map((o) => '/' + o.slug));
+    for (const p of [
       '/yom-huledet',
       '/yom-huledet-aba',
       '/mesibat-ravakot',
       '/tiyul-mishpachti-lechul',
       '/pensia',
       '/chag-mishpachti',
-    ]);
+    ])
+      expect(occ).toContain(p);
     const xml = seo.sitemapXml();
     for (const p of occ) expect(xml).toContain(`<loc>https://dugri-israel.co.il${p}</loc>`);
     expect(xml).toContain('<loc>https://dugri-israel.co.il/yom-huledet</loc>');
