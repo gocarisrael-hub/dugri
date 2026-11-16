@@ -30,13 +30,14 @@ const LIVE = [
   'mesibat-ravakot',
   'tiyul-mishpachti-lechul',
   'pensia',
+  'chag-mishpachti',
 ];
 const ETA = 'המשחק מוכן בדרך כלל תוך כ-4 ימי עסקים מרגע שרשימת המילים מוכנה.';
 
 describe('the data files', () => {
   const known = new Set(files.map((f) => read(f).slug));
 
-  it("pages 1-4 (and page 1's dad page) exist and are live, in the owner's page order", () => {
+  it("pages 1-4 and 14 (and page 1's dad page) exist and are live, in the owner's page order", () => {
     expect(known).toEqual(new Set(LIVE));
     expect(occ.live().map((o) => o.slug)).toEqual(LIVE);
   });
@@ -47,6 +48,67 @@ describe('the data files', () => {
     expect(occ.find('mesibat-ravakot').label).toBe('מסיבת רווקות');
     expect(occ.find('tiyul-mishpachti-lechul').label).toBe('טיול משפחתי לחו״ל');
     expect(occ.find('pensia').label).toBe('יציאה לפנסיה');
+    expect(occ.find('chag-mishpachti').label).toBe('חנוכה וחגים משפחתיים');
+  });
+
+  // page 14, Hanukkah: seasonal, live now (Hanukkah 2026 starts the evening of Friday 2026-12-04)
+  describe('page 14, /chag-mishpachti', () => {
+    const o = () => occ.find('chag-mishpachti');
+
+    it("carries the owner's H1, blue box, example words and questions", () => {
+      expect(o().order).toBe(14);
+      expect(o().live).toBe(true);
+      expect(o().seasonal).toBe(true);
+      expect(o().audience).toBe('private');
+      expect(o().h1).toBe('משחק משפחתי לחנוכה, שכל המילים בו על המשפחה שלכם');
+      expect(o().blueBox.body).toBe(
+        'כל המשפחה מוסיפה עד 412 מילים אישיות לפני החג: הסופגניות של סבתא, הדוד עם הבדיחות, הסדר שנמשך עד אחת. משחקים אחרי הדלקת נרות, בראש השנה או בפסח.'
+      );
+      expect(o().sampleWords.words).toEqual([
+        'הלביבות של סבתא',
+        'הסביבון השבור',
+        '"מי הדליק בלי לחכות?"',
+        'הסדר של 2019',
+        'הדוד עם הבדיחות',
+        'הטיול של חול המועד',
+        'השולחן המתקפל',
+        'הקבוצה של המשפחה',
+      ]);
+      expect(o().faq.items.map((i) => i.q)).toEqual([
+        'מתאים גם לראש השנה ולפסח?',
+        'ילדים וסבים יחד?',
+        'כמה אנשים יכולים לשחק?',
+        'עד מתי להזמין כדי שיגיע לחג?',
+        'אפשר כמה משפחות ביחד?',
+      ]);
+    });
+
+    it('the "until when" answer gives no date or day count of its own: the admin\'s eta, the 16:00 rule, WhatsApp', () => {
+      const a = o().faq.items.find((i) => /עד מתי להזמין/.test(i.q)).a;
+      expect(a).toContain('{eta}');
+      expect(a).toContain('16:00');
+      expect(a).toContain('בוואטסאפ');
+      // no date (4.12, 24/11, "בדצמבר") and no number of days besides the admin's
+      expect(a.replace('16:00', '')).not.toMatch(/\d/);
+      expect(a).not.toMatch(/דצמבר|נובמבר/);
+      const resolved = occ.resolve(o(), ETA).faq.items.find((i) => /עד מתי/.test(i.q)).a;
+      expect(resolved).toContain('לאיסוף עצמי המשחק מוכן תוך 4 ימי עסקים');
+    });
+
+    // TODO(owner): the last order date for delivery before Hanukkah is the owner's to type into `deadline`
+    // (suggested in the PR body); until then the page shows no date at all
+    it('shows the last order date only when the owner has typed one in', () => {
+      expect(o().deadline).toBe(null);
+      const none = occ.renderPage(TEMPLATE, NEW_HTML, occ.resolve(o(), ETA));
+      expect(none).not.toContain('occ-deadline');
+      expect(none).not.toMatch(/\{\{\{?\w+\}?\}\}/);
+      const set = { ...o(), deadline: 'להזמנה עם משלוח עד החג: <עד יום ראשון>' };
+      expect(occ.validateOccasion(set, new Set(LIVE))).toEqual([]);
+      const html = occ.renderPage(TEMPLATE, NEW_HTML, occ.resolve(set, ETA));
+      expect(html).toContain(
+        '<p class="occ-deadline" data-testid="occ-deadline">להזמנה עם משלוח עד החג: &lt;עד יום ראשון&gt;</p>'
+      );
+    });
   });
 
   // pages 2-4: the owner's texts (occasion-pages spec), word for word
@@ -154,6 +216,12 @@ describe('the data files', () => {
     expect(bad((o) => (o.audience = 'other'))).toContain('audience');
     expect(bad((o) => delete o.live)).toContain('live must be true or false');
     expect(bad((o) => (o.slug = 'Not A Slug'))).toContain('slug');
+    expect(bad((o) => (o.seasonal = 'yes'))).toContain('seasonal must be true or false');
+    expect(bad((o) => (o.deadline = ''))).toContain('deadline: a line of text, or null');
+    expect(bad((o) => (o.deadline = 'עד 3.12, תוך 8 ימי עסקים'))).toContain(
+      'types the production time (use {eta})'
+    );
+    expect(bad((o) => (o.deadline = null))).toEqual([]);
   });
 
   it('a bad file is left out of the loaded set, and the others still load', () => {

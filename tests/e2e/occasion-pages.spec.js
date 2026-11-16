@@ -171,7 +171,7 @@ test('the footer row links the occasion pages, on the home page and on each occa
   ).toHaveAttribute('aria-current', 'page');
 });
 
-// pages 2-4: each loads with its own H1, its order buttons carry its slug, and the footer row links it
+// pages 2-4 and 14: each loads with its own H1, its order buttons carry its slug, and the footer row links it
 for (const [slug, h1, label] of [
   ['mesibat-ravakot', 'משחק למסיבת רווקות, מותאם אישית לכלה', 'מסיבת רווקות'],
   [
@@ -180,6 +180,7 @@ for (const [slug, h1, label] of [
     'טיול משפחתי לחו״ל',
   ],
   ['pensia', 'מתנה ליציאה לפנסיה שכל המשרד כותב', 'יציאה לפנסיה'],
+  ['chag-mishpachti', 'משחק משפחתי לחנוכה, שכל המילים בו על המשפחה שלכם', 'חנוכה וחגים משפחתיים'],
 ]) {
   test(`/${slug} loads with its H1 and every order button carries the slug`, async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 800 });
@@ -205,3 +206,11 @@ for (const [slug, h1, label] of [
     await expect(page).toHaveURL(new RegExp(`/options\\.html\\?occasion=${slug}$`));
   });
 }
+
+// page 14 shows no last order date until the owner types one into its data file (deadline: null)
+test('/chag-mishpachti shows no order date of its own', async ({ page }) => {
+  await page.goto('/chag-mishpachti');
+  await expect(page.locator('h1')).toHaveText('משחק משפחתי לחנוכה, שכל המילים בו על המשפחה שלכם');
+  await expect(page.getByTestId('occ-deadline')).toHaveCount(0);
+  await expect(page.locator('summary', { hasText: 'עד מתי להזמין כדי שיגיע לחג?' })).toHaveCount(1);
+});
