@@ -135,6 +135,11 @@ export const DESIGN_ORDER = [
 export const NOT_DEALT = new Set(['kids']);
 const ART = 'assets/home/';
 const FALLBACK_COLOR = '#a4e9ff';
+// An uploaded design with no hand-cut art here still gets its own colour when the owner chose one (its panel and tapped
+// view derive from it like any other design's); the rest take the fallback.
+export const CUSTOM_COLOR = {
+  hanuka: '#c8692a', // the sunset orange of its art (the owner's pick, 2026-11-16)
+};
 const HEX_RE = /^#[0-9a-f]{6}$/i;
 
 const rgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
@@ -240,7 +245,10 @@ export function homeDesigns(designs) {
       if (bd) board = { src: bd, srcset: home.board.srcset || '', fallback: pictureFallback(bd) };
     }
     seen.add(d.id);
-    const color = (art && art.color) || (HEX_RE.test(d.accent || '') ? d.accent : FALLBACK_COLOR);
+    const color =
+      (art && art.color) ||
+      CUSTOM_COLOR[d.id] ||
+      (HEX_RE.test(d.accent || '') ? d.accent : FALLBACK_COLOR);
     out.push({
       id: d.id,
       name: typeof d.name === 'string' && d.name.trim() ? d.name : d.id,
