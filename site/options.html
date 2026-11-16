@@ -3497,6 +3497,7 @@
             type="email"
             id="ownerEmail"
             data-testid="owner-email"
+            dir="ltr"
             maxlength="120"
             autocomplete="email"
             inputmode="email"
@@ -3562,12 +3563,12 @@
               aria-label="השם המלא של המזמין/ה"
             />
             <!-- WHY THIS IS A PERMANENT LINE AND NOT A POST-SUBMIT ERROR: an
-                 empty box here holds "צרו את המשחק" disabled, and a disabled
-                 button with no stated reason is the worst screen in the wizard.
-                 The title step answered the same problem the same way (see
-                 TITLE_REQUIRED_ERR) — say it plainly rather than leave it
-                 silent. Worded as an instruction, not an accusation, because she
-                 sees it the moment she lands on the step. -->
+                 empty box here means "צרו את המשחק" will not create the order,
+                 and a required box with no stated reason is the worst screen in
+                 the wizard. The title step answered the same problem the same
+                 way (see TITLE_REQUIRED_ERR) — say it plainly rather than leave
+                 it silent. Worded as an instruction, not an accusation, because
+                 she sees it the moment she lands on the step. -->
             <span class="wiz-err" id="buyerNameErr" data-testid="buyer-name-err" hidden
               >כתבו את שם המזמין/ה כדי להמשיך</span
             >
@@ -4777,6 +4778,12 @@
       const phoneErr = document.getElementById('phoneErr');
       const buyerNameErr = document.getElementById('buyerNameErr');
       const createErr = document.getElementById('createErr');
+      // Details-step state, declared up here because refreshControls (which
+      // reads both) can run during boot. detailsAttempted: she has tapped
+      // "צרו את המשחק" with the step incomplete (see refreshStep5Errors).
+      // creatingOrder: the POST is in flight, the one thing that holds the button.
+      let detailsAttempted = false;
+      let creatingOrder = false;
 
       // --- ONE input decides what prints -------------------------------------
       // The step used to ask three things — the honoree's name, their gender, and
@@ -5829,14 +5836,34 @@
       // Inline field errors on the details step. The mail and the number speak up
       // only once she has typed something (a red line under a box she has not
       // reached yet is noise); the ORDERER'S NAME is the opposite case and speaks
-      // up whenever it is empty, because an empty name is the one thing here that
-      // disables the button with nothing else on screen to explain why.
+      // up whenever it is empty, because it is a required box with no other cue.
+      // Once she has tapped "צרו את המשחק" with the step incomplete
+      // (detailsAttempted), an EMPTY mail or number is no longer "not reached
+      // yet" — it is the reason nothing happened — so its message stays up until
+      // the box holds something valid.
       function refreshStep5Errors() {
         const e = emailInput.value.trim();
         const p = phoneInput.value.trim();
-        emailErr.hidden = !(e.length && !isValidEmail(e));
-        phoneErr.hidden = !(p.length && !isValidIlMobile(p));
+        emailErr.hidden = isValidEmail(e) || (!e.length && !detailsAttempted);
+        phoneErr.hidden = isValidIlMobile(p) || (!p.length && !detailsAttempted);
         if (buyerNameErr) buyerNameErr.hidden = hasBuyerName();
+      }
+
+      // A tap on "צרו את המשחק" with the step incomplete. The button is never
+      // disabled on this step (a dead button with no reason was the complaint):
+      // instead every invalid field shows its message and the cursor goes to the
+      // first one, in the order they sit on the screen. No order is created.
+      function flagDetailsErrors() {
+        detailsAttempted = true;
+        refreshStep5Errors();
+        const firstBad = !isValidEmail(emailInput.value.trim())
+          ? emailInput
+          : !isValidIlMobile(phoneInput.value.trim())
+            ? phoneInput
+            : !hasBuyerName()
+              ? buyerNameInput
+              : null;
+        if (firstBad) firstBad.focus();
       }
 
       function refreshControls() {
@@ -5845,7 +5872,10 @@
         backBtn.classList.remove('is-hidden');
         backBtn.textContent = currentStep === 1 ? 'חזרה לחנות' : 'הקודם';
         nextBtn.textContent = currentStep === lastActive ? 'צרו את המשחק' : 'הבא';
-        let disabled = !validateStep(currentStep);
+        // The details step keeps its button tappable even when incomplete: the
+        // tap is what explains what is missing (flagDetailsErrors). Only an order
+        // already on its way holds it.
+        let disabled = currentStep === 4 ? creatingOrder : !validateStep(currentStep);
         // On the preview step, also hold the button until the name-preview has
         // shown (or the 20s backstop elapsed): never let the game be created
         // before the customer has actually seen a preview. Only gate when a preview
@@ -6469,7 +6499,11 @@
       }
 
       function next() {
-        if (!validateStep(currentStep)) return;
+        if (currentStep === 4 && creatingOrder) return;
+        if (!validateStep(currentStep)) {
+          if (currentStep === 4) flagDetailsErrors();
+          return;
+        }
         if (currentStep === lastActive) {
           createCollection();
           return;
@@ -7193,18 +7227,18 @@
           return;
         }
         // The orderer's name, held to the same bar as the mail and the number
-        // above it. "צרו את המשחק" is already disabled while this is empty, so in
-        // the normal flow we never get here — this is the backstop for the ways
-        // in that skip the button's own gate (a deep link to ?step=4, a restored
-        // tab, anything that calls createCollection directly), and it has to say
-        // what is missing and put the cursor in the box rather than silently do
-        // nothing.
+        // above it. A tap on "צרו את המשחק" with this empty is caught by next()
+        // (flagDetailsErrors), so in the normal flow we never get here — this is
+        // the backstop for anything that calls createCollection directly, and it
+        // has to say what is missing and put the cursor in the box rather than
+        // silently do nothing.
         if (!hasBuyerName()) {
           if (buyerNameErr) buyerNameErr.hidden = false;
           if (buyerNameInput) buyerNameInput.focus();
           return;
         }
         const prevLabel = nextBtn.textContent;
+        creatingOrder = true;
         nextBtn.disabled = true;
         nextBtn.textContent = 'יוצר…';
         const s = currentSelection();
@@ -7259,6 +7293,7 @@
           if (r.status === 400 && data && data.error === 'emoji') {
             createErr.textContent = data.message;
             createErr.hidden = false;
+            creatingOrder = false;
             nextBtn.disabled = false;
             nextBtn.textContent = prevLabel;
             return;
@@ -7268,6 +7303,7 @@
           if (r.status === 429) {
             createErr.textContent = 'יותר מדי ניסיונות. נסו שוב בעוד כמה דקות.';
             createErr.hidden = false;
+            creatingOrder = false;
             nextBtn.disabled = false;
             nextBtn.textContent = prevLabel;
             return;
@@ -7296,6 +7332,7 @@
         } catch (e) {
           createErr.textContent = 'משהו השתבש ביצירת הקישור. נסו שוב.';
           createErr.hidden = false;
+          creatingOrder = false;
           nextBtn.disabled = false;
           nextBtn.textContent = prevLabel;
         }

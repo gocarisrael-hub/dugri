@@ -423,34 +423,35 @@ test.describe('order wizard', () => {
     await expect(page.getByTestId('continue-summary')).toBeVisible();
     await expect(page.getByTestId('continue-summary')).toContainText('עיצוב');
 
-    // Final button is "צרו את המשחק" and starts disabled (no contact yet).
+    // Final button is "צרו את המשחק" and is tappable from the start: a tap on an
+    // incomplete step explains itself (order-buyer-details.spec.js) rather than
+    // being a dead button.
     const create = page.getByTestId('next-btn');
     await expect(create).toHaveText('צרו את המשחק');
-    await expect(create).toBeDisabled();
+    await expect(create).toBeEnabled();
 
-    // Bad email -> inline email error, still disabled.
+    // Bad email -> inline email error.
     await page.fill('#ownerEmail', 'not-an-email');
     await expect(page.getByTestId('email-err')).toBeVisible();
-    await expect(create).toBeDisabled();
 
     // Valid email, bad phone -> phone error.
     await page.fill('#ownerEmail', 'owner@example.com');
     await expect(page.getByTestId('email-err')).toBeHidden();
     await page.fill('#ownerPhone', '12345');
     await expect(page.getByTestId('phone-err')).toBeVisible();
-    await expect(create).toBeDisabled();
 
-    // Valid email + valid IL mobile, and the button is STILL held — the orderer's
-    // name is required on this step too now ("make it must to write"), and this
-    // test would otherwise read as "the phone was the last thing missing".
+    // Valid email + valid IL mobile, and a tap STILL does not create — the
+    // orderer's name is required on this step too ("make it must to write"), and
+    // this test would otherwise read as "the phone was the last thing missing".
     await page.fill('#ownerPhone', '0521234567');
     await expect(page.getByTestId('phone-err')).toBeHidden();
-    await expect(create).toBeDisabled();
+    await create.click();
+    await expect(page.locator('#buyerNameInput')).toBeFocused();
+    await expect(page.getByTestId('step-4')).toBeVisible();
 
-    // …and with the name, the step is complete: enabled, creates, redirects. The
-    // name gate itself is tested in order-buyer-details.spec.js.
+    // …and with the name, the step is complete: creates, redirects. The name
+    // gate itself is tested in order-buyer-details.spec.js.
     await page.fill('#buyerNameInput', 'דנה כהן');
-    await expect(create).toBeEnabled();
     await create.click();
     await page.waitForURL(/collect\.html\?c=.+&k=.+/);
     await expect(page.locator('#title')).toContainText('Shira');
@@ -470,16 +471,16 @@ test.describe('order wizard', () => {
     await page.getByTestId('next-btn').click();
     await expect(page.getByTestId('step-4')).toBeVisible();
     await page.fill('#ownerEmail', 'owner@example.com');
-    // Everything else the step requires, so the only thing the loop below can be
-    // measuring is the phone shape (the orderer's name is required now too, and
-    // an empty one would hold the button on every iteration).
     await page.fill('#buyerNameInput', 'דנה כהן');
 
-    const create = page.getByTestId('next-btn');
+    // The create button is never disabled on this step, so validity is read off
+    // the phone message. A tap with the box empty first puts the step in its
+    // "she tried" mode, where any invalid number (empty included) shows it.
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('phone-err')).toBeVisible();
     for (const phone of ['+972 54-657-7715', '+972546577715', '546577715', '054-657-7715']) {
       await page.fill('#ownerPhone', phone);
       await expect(page.getByTestId('phone-err'), phone).toBeHidden();
-      await expect(create, phone).toBeEnabled();
     }
   });
 
