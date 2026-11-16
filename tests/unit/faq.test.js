@@ -45,6 +45,14 @@ describe('DEFAULT_FAQ — the shipped seed', () => {
     ]);
   });
 
+  // The words rule on every page: an upper bound in the owner's wording, never a
+  // minimum (the deck is 103 cards of four words; short lists are topped up).
+  it('answers "how many words" with "עד 412 מילים אישיות" and no minimum', () => {
+    const q = DEFAULT_FAQ.find((r) => r.id === 'how-many-words');
+    expect(q.a).toContain('עד 412 מילים אישיות');
+    expect(q.a).not.toMatch(/מינימום|לפחות|100|400/);
+  });
+
   // "when do I get it" and "where do I go" are asked at different moments — the
   // first before ordering, the second on the morning of the collection — so the
   // pickup answer is its own question, and it carries the link to the page that

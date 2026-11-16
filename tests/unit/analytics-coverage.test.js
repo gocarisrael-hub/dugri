@@ -22,6 +22,8 @@ const BUYER_PAGES = [
   'options.html',
   'collect.html',
   'pay-success.html',
+  // the template every occasion page (/yom-huledet, ...) is served from
+  'occasion.html',
 ];
 
 const read = (f) => fs.readFileSync(path.join(SITE, f), 'utf8');
@@ -67,5 +69,28 @@ describe('the money events carry money', () => {
     const html = read('pay-success.html');
     const fn = html.slice(html.indexOf('function reportPurchase'));
     expect(fn).toContain('if (!s.order || !s.order.paid) return;');
+  });
+});
+
+// The occasion pages are not files of their own: each one is site/occasion.html
+// filled from its data file (server/occasions.js), so the template covering GA is
+// what covers them, as long as every live page is served from it.
+describe('GA4 covers every occasion page', () => {
+  it('every live occasion page is rendered from occasion.html, with the GA stub intact', async () => {
+    const { createRequire } = await import('node:module');
+    const occasions = createRequire(import.meta.url)(
+      path.join(__dirname, '..', '..', 'server', 'occasions.js')
+    );
+    const live = occasions.live();
+    expect(live.length).toBeGreaterThan(0);
+    const template = read('occasion.html');
+    for (const o of live) {
+      const html = occasions.renderPage(template, read('new.html'), occasions.resolve(o, ''));
+      expect(html, o.slug).toContain('function gtag()');
+      expect(html, o.slug).toMatch(/<script type="module" src="js\/analytics\.js"><\/script>/);
+      // what js/analytics.js reads to send occasion_view and tag every event
+      expect(html, o.slug).toContain('"slug":"' + o.slug + '"');
+      expect(html, o.slug).toContain('"audience":"' + o.audience + '"');
+    }
   });
 });

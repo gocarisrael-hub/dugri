@@ -38,6 +38,8 @@ const SAVE_THROTTLE_MS = Number(process.env.ATTRIBUTION_SAVE_MS || 1500);
 const PRUNE_INTERVAL_MS = Number(process.env.ATTRIBUTION_PRUNE_MS || 5 * 60 * 1000);
 
 const KINDS = new Set(['visit', 'checkout', 'purchase']);
+// An occasion page's slug (server/occasions.js), as a visit may carry it.
+const OCCASION_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 // --- parsing ------------------------------------------------------------------
 
@@ -771,7 +773,7 @@ function storedTouch(t) {
  * landing: the buyer who clicked the ad on her phone and paid from the email on
  * her laptop bought because of the ad, not because of her inbox.
  */
-function record({ kind, landing, referrer, visitor, order_no, value, at, arrival } = {}) {
+function record({ kind, landing, referrer, visitor, order_no, value, at, arrival, occasion } = {}) {
   if (!KINDS.has(kind)) return null;
   const stored = storedTouch(arrival);
   const touch = stored || parseTouch({ landing, referrer });
@@ -802,6 +804,11 @@ function record({ kind, landing, referrer, visitor, order_no, value, at, arrival
   ev.i = stored ? stored.i : isInternalLanding(landing) ? 1 : 0;
   if (order) ev.o = order;
   if (Number.isFinite(value)) ev.val = Math.round(Number(value) * 100) / 100;
+  // The occasion page a VISIT was made on (/yom-huledet, ...), for the admin's
+  // "orders by occasion page". The route has already checked it is a real page;
+  // the shape is checked again here, since it becomes a key in a report.
+  if (kind === 'visit' && typeof occasion === 'string' && OCCASION_SLUG_RE.test(occasion))
+    ev.oc = occasion.slice(0, 80);
   _events.push(ev);
   if (kind === 'purchase') _orders.add(order);
   capEvents(); // cheap and clockless; the age sweep is the timer's job
@@ -812,6 +819,44 @@ function record({ kind, landing, referrer, visitor, order_no, value, at, arrival
 }
 
 // --- reporting ----------------------------------------------------------------
+
+/**
+ * THE MONEY A PAID ORDER IS CREDITED WITH, in this ledger, in the Meta report and
+ * in the occasion report: what the payment charged, or the order's total where no
+ * charge was recorded (a free-coupon order). One rule, so the reports cannot
+ * disagree about the same sale. It reads one field OR the other and never
+ * compares them: the charge can differ from the total for good reasons (a coupon
+ * applied at checkout, a delivery upgrade added later). Null when the order
+ * names no amount at all.
+ */
+function orderValue(order) {
+  if (!order) return null;
+  const v = order.charged_total != null ? order.charged_total : order.total;
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Visits per occasion page, newest `days` only: { slug: distinct visitors }.
+ * Our own addresses are left out, as in report().
+ */
+function occasionVisits({ days = 30, now = Date.now() } = {}) {
+  const cutoff = now - Math.max(1, Number(days) || 30) * 24 * 60 * 60 * 1000;
+  const ours = internalVisitorIds();
+  const seen = new Map();
+  for (const e of _events) {
+    if (!e || e.k !== 'visit' || typeof e.oc !== 'string' || !e.oc) continue;
+    const t = Date.parse(e.t);
+    if (!Number.isFinite(t) || t < cutoff) continue;
+    if (isInternalEvent(e, ours)) continue;
+    if (!seen.has(e.oc)) seen.set(e.oc, new Set());
+    seen.get(e.oc).add(e.v || 't:' + e.t);
+  }
+  const out = {};
+  for (const [slug, who] of seen) out[slug] = who.size;
+  return out;
+}
 
 const rowKey = (e) => [e.s || '', e.m || '', e.c || '', e.ct || ''].join('|');
 
@@ -976,6 +1021,8 @@ module.exports = {
   isInternalLanding,
   internalHosts,
   isPaid,
+  orderValue,
+  occasionVisits,
   record,
   report,
   recent,

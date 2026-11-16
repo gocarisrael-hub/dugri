@@ -1158,6 +1158,15 @@ function sanitizeShortText(input) {
   return Array.from(text).slice(0, SHORT_TEXT_MAX).join('');
 }
 
+// The occasion page she ordered from (/yom-huledet → 'yom-huledet'), when the
+// wizard was opened as options.html?occasion=<slug>: the admin's "orders by
+// occasion page" counts by it. Only a slug that IS one of the pages
+// (server/occasions.js) is kept; anything else stores null.
+function sanitizeOccasion(input) {
+  if (typeof input !== 'string' || !input) return null;
+  return require('./occasions').find(input) ? input : null;
+}
+
 // The buyer's own note on the order. Unlike the custom title this is never
 // printed on anything — it is a message to the owner — so the only shaping it
 // needs is trimming, a cap, and empty-means-absent. Line breaks are KEPT (a note
@@ -1355,6 +1364,8 @@ const db = {
       // a picture she liked and this is the event, and the two disagree often
       // enough that the owner asked to be told rather than to infer.
       event_type: sanitizeShortText(contact.event_type),
+      // The occasion page she came from (sanitizeOccasion), null for any other way in.
+      occasion: sanitizeOccasion(contact.occasion),
       // The buyer's own note to the owner, typed with the order. Never printed —
       // see sanitizeComment. null when she wrote nothing.
       comment: sanitizeComment(contact.comment),
