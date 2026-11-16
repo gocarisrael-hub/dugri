@@ -4,7 +4,7 @@ import { previewRedesign } from './helpers/redesign.js';
 // The occasion landing pages (site/occasion.html filled by server/occasions.js). What these pin:
 // - /yom-huledet and /yom-huledet-aba load with their own H1, steps, example words and FAQ, and no price anywhere;
 // - every order button opens the wizard with the occasion in the URL (the hero's, clicked through to options.html);
-// - the hero deck deals the page's own designs;
+// - the hero deck deals the page's own designs (the custom ones once /api/custom-designs answers) and the strip starts with them;
 // - the raw template is never served; the footer's "לפי אירוע" row links the pages;
 // - the page looks the same in redesign mode (production runs it) and nothing scrolls sideways at 375px.
 
@@ -12,7 +12,8 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
 });
 
-const MOM_DESIGNS = ['birthday', 'marriage', 'japanese'];
+const MOM_DESIGNS = ['daniel-amit', 'birthday', 'grapefruit', 'marriage', 'bachelorette'];
+const DAD_DESIGNS = ['japanese', 'kids', 'football-boys', 'posttrip'];
 
 for (const mode of ['plain', 'redesign']) {
   test.describe(`/yom-huledet (${mode})`, () => {
@@ -66,25 +67,79 @@ for (const mode of ['plain', 'redesign']) {
   });
 }
 
-test('the deck deals the page’s own designs', async ({ page }) => {
-  await page.goto('/yom-huledet');
-  const cards = page.locator('#stage .card');
-  await expect(cards).toHaveCount(1);
-  for (let i = 0; i < 4; i++) await page.locator('#deck').click();
-  await expect(cards).toHaveCount(5);
-  const srcs = await page
-    .locator('#stage .card img.f')
-    .evaluateAll((els) => els.map((e) => e.getAttribute('src')));
-  for (const src of srcs) {
-    const id = src.match(/cards\/([a-z-]+)-f\d\.webp$/)[1];
-    expect(MOM_DESIGNS).toContain(id);
-  }
-  // and the designs strip starts with them
-  const first = await page
-    .locator('#strip .dz:not([aria-hidden])')
-    .evaluateAll((els) => els.slice(0, 3).map((e) => e.dataset.k));
-  expect(first).toEqual(MOM_DESIGNS);
+// her uploaded designs on the pages (daniel-amit, grapefruit, football-boys) come from /api/custom-designs, after first paint
+const customDesign = (id) => ({
+  id,
+  name: id,
+  theme: id,
+  custom: true,
+  public: true,
+  img: {
+    front: `/api/template-image/${id}/front`,
+    back: `/api/template-image/${id}/back`,
+    board: `/api/template-image/${id}/board`,
+  },
 });
+const CUSTOM = ['daniel-amit', 'grapefruit', 'football-boys'].map(customDesign);
+// the custom designs answer only when `release` is called, so the page's first paint can be checked on its own
+async function holdCustomDesigns(page) {
+  let release;
+  const gate = new Promise((r) => (release = r));
+  await page.unroute('**/api/custom-designs');
+  await page.route('**/api/custom-designs', async (route) => {
+    await gate;
+    await route.fulfill({ json: { designs: CUSTOM } });
+  });
+  return () => release();
+}
+const dealtIds = (page) =>
+  page
+    .locator('#stage .card img.f')
+    .evaluateAll((els) =>
+      els.map((e) => e.getAttribute('src').match(/cards\/([a-z-]+)-f\d\.webp$/)[1])
+    );
+const stripIds = (page, n) =>
+  page
+    .locator('#strip .dz:not([aria-hidden])')
+    .evaluateAll((els, n) => els.slice(0, n).map((e) => e.dataset.k), n);
+
+for (const [slug, want, firstPaint, dealt] of [
+  [
+    'yom-huledet',
+    MOM_DESIGNS,
+    ['birthday', 'marriage', 'bachelorette'],
+    ['daniel-amit', 'birthday', 'grapefruit', 'marriage', 'bachelorette'],
+  ],
+  [
+    'yom-huledet-aba',
+    DAD_DESIGNS,
+    ['japanese', 'kids', 'posttrip'],
+    // ברוקלין (kids) is on the strip but never dealt (NOT_DEALT, site/js/home-data.js)
+    ['japanese', 'football-boys', 'posttrip'],
+  ],
+]) {
+  test(`/${slug}: the deck deals the page’s own designs, custom ones once they arrive`, async ({
+    page,
+  }) => {
+    const release = await holdCustomDesigns(page);
+    await page.goto('/' + slug);
+    const cards = page.locator('#stage .card');
+    // first paint, before the custom designs answer: a full deck of the page's built-ins, nothing unrelated
+    await expect(cards).toHaveCount(1);
+    for (let i = 0; i < 3; i++) await page.locator('#deck').click();
+    await expect(cards).toHaveCount(4);
+    for (const id of await dealtIds(page)) expect(firstPaint).toContain(id);
+    expect(await stripIds(page, firstPaint.length)).toEqual(firstPaint);
+    // the custom designs arrive: the strip starts with her list, in her order
+    release();
+    await expect.poll(() => stripIds(page, want.length)).toEqual(want);
+    for (let i = 0; i < 16; i++) await page.locator('#deck').click();
+    const ids = await dealtIds(page);
+    for (const id of ids) expect(dealt).toContain(id);
+    // and a custom design is dealt too (the earliest cards may have left the pile)
+    expect(ids.some((id) => CUSTOM.some((d) => d.id === id))).toBe(true);
+  });
+}
 
 test('the dad page is its own page', async ({ page }) => {
   await page.goto('/yom-huledet-aba');

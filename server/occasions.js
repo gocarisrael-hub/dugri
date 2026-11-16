@@ -28,7 +28,9 @@
 //   cta           the order buttons' label
 //   steps         { heading, items: [{ title, text }] x3, cta }
 //   sampleWords   { heading, words: [8], note } (always labelled as examples)
-//   designs       design ids: the deck deals these, the strip shows them first
+//   designs       design ids: the deck deals these, the strip shows them first. Built-in and custom ids alike (custom
+//                 ones come from /api/custom-designs after first paint; until then the deck deals the listed built-ins);
+//                 each needs its art in site/js/home-data.js DESIGN_ART. A NOT_DEALT design (kids) is shown, not dealt.
 //   faq           { heading, items: [{ q, a }] x4-5 } (also FAQPage JSON-LD)
 //   related       other occasion slugs
 //
