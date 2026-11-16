@@ -27,6 +27,13 @@
 
 const DEFAULT_HOST = 'dugri-israel.co.il';
 
+// The occasion landing pages (server/occasions.js): their data files are read once
+// at load, like a page in site/ is a file on disk. Only LIVE pages are public.
+const occasions = require('./occasions');
+// An occasion page's key in PUBLIC_PAGES. Every occasion is served from the one
+// template, so the file name can't tell them apart; the slug does.
+const occasionFile = (slug) => 'occasion:' + slug;
+
 function seoHost() {
   return String(process.env.SEO_HOST || DEFAULT_HOST)
     .trim()
@@ -63,6 +70,13 @@ const PUBLIC_PAGES = [
   { file: 'pickup.html', path: '/pickup.html', priority: '0.5' },
   { file: 'timer.html', path: '/timer.html', priority: '0.4' },
   { file: 'terms.html', path: '/terms.html', priority: '0.2' },
+  // the live occasion pages, in the owner's page order
+  ...occasions.live().map((o) => ({
+    file: occasionFile(o.slug),
+    path: '/' + o.slug,
+    priority: '0.8',
+    occasion: o,
+  })),
 ];
 const PUBLIC_BY_FILE = new Map(PUBLIC_PAGES.map((p) => [p.file, p]));
 
@@ -164,7 +178,7 @@ const BRAND = {
 };
 
 const PRODUCT_DESCRIPTION =
-  'משחק מסיבה מותאם אישית בסגנון ניחוש מילים: שולחים 100 עד 400 מילים על בעל או בעלת השמחה ' +
+  'משחק מסיבה מותאם אישית בסגנון ניחוש מילים: שולחים עד 412 מילים אישיות על בעל או בעלת השמחה ' +
   '(אנשים, מקומות, בדיחות פנימיות, ביטויים) ומקבלים חפיסת קלפים ולוח משחק מעוצבים. ' +
   'מתנה מקורית למסיבת רווקות, יום הולדת, יום נישואין, חתונה, פרישה ופרידה.';
 
@@ -241,17 +255,29 @@ function productLd({ price }) {
   return ld;
 }
 
-function faqLd(items) {
+function faqLd(items, id = origin() + '/#faq') {
   const list = (Array.isArray(items) ? items : []).filter((i) => i && i.q && i.a);
   if (!list.length) return null;
   return {
     '@type': 'FAQPage',
-    '@id': origin() + '/#faq',
+    '@id': id,
     mainEntity: list.map((i) => ({
       '@type': 'Question',
       name: String(i.q),
       acceptedAnswer: { '@type': 'Answer', text: String(i.a) },
     })),
+  };
+}
+
+// דוגרי › the occasion, for an occasion page.
+function breadcrumbLd(o, url) {
+  return {
+    '@type': 'BreadcrumbList',
+    '@id': url + '#breadcrumb',
+    itemListElement: [
+      { '@type': 'ListItem', position: 1, name: BRAND.name, item: origin() + '/' },
+      { '@type': 'ListItem', position: 2, name: String(o.label), item: url },
+    ],
   };
 }
 
@@ -272,7 +298,9 @@ const attrEscape = (s) =>
 
 // The tags for one page. `html` is passed so a tag the page already carries is
 // not duplicated (a page with its own og:image keeps it).
-function headTags({ file, query, fallback = false, indexable, price, faq, html = '' }) {
+// `occasion`: on an occasion page, its data with {eta} already filled in — the
+// FAQPage is ITS questions, with a breadcrumb, and no Product (no price on these pages).
+function headTags({ file, query, fallback = false, indexable, price, faq, html = '', occasion }) {
   const out = [];
   const isPublic = fallback || isPublicPage(file);
   if (!indexable || !isPublic) {
@@ -293,6 +321,11 @@ function headTags({ file, query, fallback = false, indexable, price, faq, html =
     out.push('<meta property="og:locale" content="he_IL" />');
 
   const graph = [organizationLd(), websiteLd()];
+  if (occasion && canonical) {
+    const f = faqLd(occasion.faq && occasion.faq.items, canonical + '#faq');
+    if (f) graph.push(f);
+    graph.push(breadcrumbLd(occasion, canonical));
+  }
   const isHome = fallback || file === 'index.html';
   if (isHome || file === 'products.html') graph.push(productLd({ price }));
   if (isHome) {
@@ -326,14 +359,16 @@ function llmsTxt({ price, faq }) {
     '> דוגרי הוא משחק מסיבה אישי בהתאמה אישית מישראל: משחק ניחוש מילים בקבוצות שכל המילים בו הן על בעל או בעלת השמחה. ' +
       'Dugri is an Israeli personalized party game: a team word-guessing game where every word is about the guest of honour.',
     '',
-    'דוגרי (באנגלית Dugri, אתר: dugri-israel.co.il) הוא מותג ולא רק המילה בעברית. מזמינים באתר, אוספים 100 עד 400 מילים על החוגג או החוגגת ' +
+    'דוגרי (באנגלית Dugri, אתר: dugri-israel.co.il) הוא מותג ולא רק המילה בעברית. מזמינים באתר, אוספים עד 412 מילים אישיות על החוגג או החוגגת ' +
       '(לבד או עם חברים, דרך קישור שיתוף), ומקבלים חפיסת קלפים ולוח משחק מעוצבים. מתאים למסיבת רווקות ורווקים, יום הולדת (במיוחד עגול), ' +
       'יום נישואין, חתונה, זוגות, פרישה, פרידה ואירועי חברה.',
+    '',
+    'דוגרי (dugri-israel.co.il) אינו dugri.app ואינו dugri.org.',
     '',
     '## עובדות עיקריות',
     '',
     '- איך משחקים: מתחלקים לקבוצות, שולפים קלף ומתארים את המילה בלי להגיד אותה; הקבוצה מנחשת כמה שיותר עד שהטיימר מצלצל.',
-    '- כמה מילים: מינימום 100, עד 400. נשלח דף עזר עם קטגוריות ודוגמאות.',
+    '- כמה מילים: עד 412 מילים אישיות. נשלח דף עזר עם קטגוריות ודוגמאות.',
     '- זמן אספקה: עד 4 ימי עסקים מרגע שליחת רשימת המילים (לא מרגע התשלום).',
     '- איסוף עצמי: בית הדפוס גלאור, התחייה 14 תל אביב, כניסה B, קומה ראשונה (ראשון עד חמישי).',
   ];
@@ -352,6 +387,11 @@ function llmsTxt({ price, faq }) {
     `- [טיימר 60 שניות](${base}/timer.html)`,
     `- [תקנון](${base}/terms.html)`
   );
+  const occ = PUBLIC_PAGES.filter((p) => p.occasion);
+  if (occ.length) {
+    lines.push('', '## לפי אירוע', '');
+    for (const p of occ) lines.push(`- [${p.occasion.h1}](${base}${p.path})`);
+  }
   const list = (Array.isArray(faq) ? faq : []).filter((i) => i && i.q && i.a);
   if (list.length) {
     lines.push('', '## שאלות נפוצות', '');
@@ -363,6 +403,7 @@ function llmsTxt({ price, faq }) {
 module.exports = {
   DEFAULT_HOST,
   PUBLIC_PAGES,
+  occasionFile,
   seoHost,
   origin,
   isIndexableHost,

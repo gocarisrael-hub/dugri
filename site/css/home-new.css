@@ -2128,6 +2128,26 @@ header .logo-a {
   justify-self: start;
 }
 
+/* the footer's "לפי אירוע" row: small and quiet, under the footer (server/occasions.js renders it on new.html and the occasion pages) */
+.occ-row {
+  padding: 0 16px 28px;
+  font-size: var(--text-small, 14px);
+  line-height: 1.9;
+  text-align: center;
+}
+.occ-row .occ-row-hd {
+  font-weight: 700;
+}
+.occ-row a {
+  color: inherit;
+}
+/* after new.html's footer, whose bottom padding keeps its last line clear of the floating WhatsApp button: the row moves up into
+   that room and keeps the clearance below itself */
+.site-ft + .occ-row {
+  margin-top: -72px;
+  padding-bottom: 80px;
+}
+
 /* ---------- old Safari (js/home-legacy.js): before 15.4 a <dialog> is an unknown element, shown unless hidden here; the script gives
    it open/showModal/close and a backdrop */
 dialog:not([open]) {

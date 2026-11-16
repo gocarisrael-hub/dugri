@@ -1,0 +1,117 @@
+import { test, expect } from '@playwright/test';
+import { previewRedesign } from './helpers/redesign.js';
+
+// The occasion landing pages (site/occasion.html filled by server/occasions.js). What these pin:
+// - /yom-huledet and /yom-huledet-aba load with their own H1, steps, example words and FAQ, and no price anywhere;
+// - every order button opens the wizard with the occasion in the URL (the hero's, clicked through to options.html);
+// - the hero deck deals the page's own designs;
+// - the raw template is never served; the footer's "לפי אירוע" row links the pages;
+// - the page looks the same in redesign mode (production runs it) and nothing scrolls sideways at 375px.
+
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
+});
+
+const MOM_DESIGNS = ['birthday', 'marriage', 'japanese'];
+
+for (const mode of ['plain', 'redesign']) {
+  test.describe(`/yom-huledet (${mode})`, () => {
+    test.beforeEach(async ({ page }) => {
+      if (mode === 'redesign') await previewRedesign(page);
+      await page.setViewportSize({ width: 375, height: 800 });
+    });
+
+    test('renders the page from its data file, with no price and no sideways scroll', async ({
+      page,
+    }) => {
+      const res = await page.goto('/yom-huledet');
+      expect(res.status()).toBe(200);
+      await expect(page.locator('h1')).toHaveText('המתנה ליום הולדת 60 שכל המשפחה כותבת');
+      await expect(page).toHaveTitle('מתנה ליום הולדת 60 לאמא – משחק שכל המשפחה כותבת | דוגרי');
+      await expect(page.locator('.hero .pn.sky')).toContainText('עד 412 מילים אישיות');
+      await expect(page.locator('.catch .big')).toHaveText('כל המילים עליה!');
+      await expect(page.locator('.steps .step')).toHaveCount(3);
+      await expect(page.locator('.chips li')).toHaveCount(8);
+      await expect(page.locator('.chips-note')).toContainText('דוגמאות');
+      await expect(page.locator('#faq details')).toHaveCount(5);
+      await expect(page.locator('#faq')).toContainText('כמה שרוצים, עדיף בקבוצות.');
+      // the reviews row is the home page's; the story is gone and the business section hidden
+      await expect(page.locator('#recs .rc').first()).toBeAttached();
+      await expect(page.locator('#story')).toHaveCount(0);
+      await expect(page.locator('#biz')).toBeHidden();
+      // no price on the page, not even in a design's view
+      await page.waitForLoadState('networkidle');
+      expect(await page.locator('body').innerText()).not.toMatch(/₪/);
+      await page.locator('#strip .dz:not([aria-hidden])').first().click();
+      await expect(page.locator('#flood')).toHaveAttribute('open', '');
+      await expect(page.locator('#floodPrice')).toBeHidden();
+      await expect(page.locator('#floodOrder')).toHaveAttribute('href', /&occasion=yom-huledet$/);
+      await page.keyboard.press('Escape');
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+      ).toBe(true);
+      if (mode === 'redesign')
+        await expect(page.locator('html')).toHaveClass(/(^|\s)rd-native(\s|$)/);
+    });
+
+    test('the hero button opens the wizard with the occasion in the URL', async ({ page }) => {
+      await page.goto('/yom-huledet');
+      for (const href of await page
+        .locator('a.pill:not([href^="https://wa.me"])')
+        .evaluateAll((as) => as.map((a) => a.getAttribute('href'))))
+        expect(href).toBe('options.html?occasion=yom-huledet');
+      await page.locator('.hero .cta a.pill').click();
+      await expect(page).toHaveURL(/\/options\.html\?occasion=yom-huledet/);
+    });
+  });
+}
+
+test('the deck deals the page’s own designs', async ({ page }) => {
+  await page.goto('/yom-huledet');
+  const cards = page.locator('#stage .card');
+  await expect(cards).toHaveCount(1);
+  for (let i = 0; i < 4; i++) await page.locator('#deck').click();
+  await expect(cards).toHaveCount(5);
+  const srcs = await page
+    .locator('#stage .card img.f')
+    .evaluateAll((els) => els.map((e) => e.getAttribute('src')));
+  for (const src of srcs) {
+    const id = src.match(/cards\/([a-z-]+)-f\d\.webp$/)[1];
+    expect(MOM_DESIGNS).toContain(id);
+  }
+  // and the designs strip starts with them
+  const first = await page
+    .locator('#strip .dz:not([aria-hidden])')
+    .evaluateAll((els) => els.slice(0, 3).map((e) => e.dataset.k));
+  expect(first).toEqual(MOM_DESIGNS);
+});
+
+test('the dad page is its own page', async ({ page }) => {
+  await page.goto('/yom-huledet-aba');
+  await expect(page.locator('h1')).toHaveText('המתנה ליום הולדת 60 לאבא שכל המשפחה כותבת');
+  await expect(page.locator('.catch .big')).toHaveText('כל המילים עליו!');
+  await expect(page.locator('.hero .cta a.pill')).toHaveAttribute(
+    'href',
+    'options.html?occasion=yom-huledet-aba'
+  );
+});
+
+test('the raw template is never served', async ({ request }) => {
+  expect((await request.get('/occasion.html')).status()).toBe(404);
+  expect((await request.get('/occasion')).status()).toBe(404);
+});
+
+test('the footer row links the occasion pages, on the home page and on each occasion page', async ({
+  page,
+}) => {
+  for (const url of ['/', '/yom-huledet']) {
+    await page.goto(url);
+    const row = page.getByTestId('footer-occasions');
+    await expect(row).toContainText('לפי אירוע');
+    await expect(row.locator('a[href="/yom-huledet"]')).toHaveText('יום הולדת לאמא');
+    await expect(row.locator('a[href="/yom-huledet-aba"]')).toHaveText('יום הולדת לאבא');
+  }
+  await expect(
+    page.getByTestId('footer-occasions').locator('a[href="/yom-huledet"]')
+  ).toHaveAttribute('aria-current', 'page');
+});

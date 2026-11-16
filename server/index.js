@@ -6204,6 +6204,38 @@ app.get(['/how.html', '/how'], (req, res) => {
 });
 // ---- end B ----
 
+// ---- B (Catalog & Design): occasion pages (server/occasions.js) ----
+// /<slug> for every LIVE occasion data file: site/occasion.html filled from
+// server/occasions/<slug>.json, with the production time read from the admin
+// (the pickup eta) on every request. A known slug that is not live answers 404,
+// and so does the raw template. Any other path is untouched (the SPA fallback
+// keeps serving ad vanity paths).
+const occasions = require('./occasions');
+app.get(['/occasion.html', '/occasion'], (req, res) =>
+  res.status(404).type('txt').send('Not found')
+);
+app.get('/:slug', (req, res, next) => {
+  const o = occasions.find(req.params.slug);
+  if (!o) return next();
+  if (!o.live) return res.status(404).type('txt').send('Not found');
+  let html;
+  try {
+    const pickup = settings.get('email', 'pickup_info') || {};
+    const page = occasions.resolve(o, pickup.eta);
+    html = renderPage(req, res, path.join(SITE_DIR, 'occasion.html'), false, {
+      occasion: page,
+      render: (tpl) =>
+        occasions.renderPage(tpl, fs.readFileSync(path.join(SITE_DIR, 'new.html'), 'utf8'), page),
+    });
+  } catch (err) {
+    return next(err);
+  }
+  res.setHeader('Cache-Control', 'no-cache');
+  res.type('html');
+  res.send(html);
+});
+// ---- end B ----
+
 // SEARCH AND AI VISIBILITY (server/seo.js): robots.txt, sitemap.xml, llms.txt,
 // and the canonical / noindex / JSON-LD tags injected into every page below.
 // Indexable only on the production domain (seo.isIndexableHost) — staging and
@@ -6232,15 +6264,16 @@ function seoLive() {
 // A redesign PREVIEW (the rd=1 cookie with the setting off) is never indexable,
 // on any host: it is one browser's view, and a crawler that followed a ?rd=1
 // link must not keep it.
-function seoHeadFor(req, res, html, file, fallback, { noindex = false } = {}) {
+function seoHeadFor(req, res, html, file, fallback, { noindex = false, occasion = null } = {}) {
   const indexable = !noindex && seo.isIndexableHost(req.hostname);
   if (!indexable) res.setHeader('X-Robots-Tag', 'noindex, nofollow');
   return seo.headTags({
-    file: file ? path.basename(file) : 'index.html',
+    file: occasion ? seo.occasionFile(occasion.slug) : file ? path.basename(file) : 'index.html',
     query: req.query || {},
     fallback,
     indexable,
     html,
+    occasion,
     ...seoLive(),
   });
 }
@@ -6278,18 +6311,24 @@ app.get('/llms.txt', (req, res) => {
 // the same URL. Admin pages and the other exempt ones (isExemptFile) are left alone.
 // Out of the mode, this returns the page exactly as before.
 const redesignGate = require('./redesign-gate');
-function renderPage(req, res, file, fallback) {
+// `opts` (B, the occasion pages): `render(html)` fills a template before the
+// rest runs, and `occasion` gives the SEO tags that page's canonical and FAQ.
+function renderPage(req, res, file, fallback, opts = {}) {
   const rd = redesignGate.forRequest(req, { enabled: settings.get('redesign', 'enabled') });
   if (rd.setCookie) res.append('Set-Cookie', rd.setCookie);
   const gated = rd.active && !redesignGate.isExemptFile(file);
   const source = (gated && redesignGate.homeSwap(file, SITE_DIR, fs)) || file;
   let html = fs.readFileSync(source, 'utf8');
+  if (opts.render) html = opts.render(html);
+  // the footer's "לפי אירוע" row, on the pages that carry its marker
+  html = occasions.injectRow(html, opts.occasion ? opts.occasion.slug : null);
   if (source !== file && rd.live) html = redesignGate.dropRobotsMeta(html);
   // The SEO tags are those of the page ASKED for: the swapped home is "/".
   html = seo.inject(
     html,
     seoHeadFor(req, res, html, fallback ? null : file, fallback, {
       noindex: gated && rd.previewOnly,
+      occasion: opts.occasion || null,
     })
   );
   if (gated) html = redesignGate.apply(html, (url) => moduleAssets.forward.has(url), source);

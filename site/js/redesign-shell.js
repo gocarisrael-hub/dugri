@@ -10,7 +10,8 @@
 //   --rd-as-<component>: '<selectors>'       the page's own elements that take a shared component's look, e.g.
 //                                            --rd-as-btn: '.cta, .next'; the shell adds the class, now and as the page adds more
 // What it does, once per page:
-//   1. a page already built in the redesign (new.html, new-faq.html, served at / in the mode too) is marked html.rd-native and
+//   1. a page already built in the redesign (new.html, new-faq.html, served at / in the mode too, and occasion.html, the
+//      occasion pages) is marked html.rd-native and
 //      left alone
 //   2. <dialog> and replaceChildren for Safari before 15.4 / 14 (the same fallbacks as js/home-legacy.js)
 //   3. the shared header (logo, ≡ and the order button, with the menu sheet) and footer; a page's own stays in the DOM, hidden,
@@ -23,7 +24,7 @@
   if (window.__dugriRdShell || !/(^|\s)rd(\s|$)/.test(root.className)) return;
   window.__dugriRdShell = true;
 
-  var NATIVE = ['new.html', 'new-faq.html'];
+  var NATIVE = ['new.html', 'new-faq.html', 'occasion.html'];
   var meta = doc.querySelector('meta[name="dugri:page"]');
   if (meta && NATIVE.indexOf(meta.getAttribute('content')) > -1) {
     root.className += ' rd-native';

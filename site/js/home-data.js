@@ -264,6 +264,33 @@ export function homeDesigns(designs) {
     .map(([d]) => d);
 }
 
+/**
+ * The designs on an occasion page (occasion.html, server/occasions.js): the page's own designs first, in its order, then the
+ * rest; the deck deals only the page's designs (all of them when none of those can be dealt); and every order link carries the
+ * occasion, so options.html knows which page the order came from.
+ * @param {ReturnType<typeof homeDesigns>} list
+ * @param {{slug:string, designs:string[]}|null} occ the page's config, or null on the home page (the list is returned as is)
+ */
+export function occasionDesigns(list, occ) {
+  if (!occ || typeof occ.slug !== 'string' || !Array.isArray(occ.designs)) return list;
+  const want = occ.designs.filter((id) => typeof id === 'string');
+  const pos = (id) => {
+    const i = want.indexOf(id);
+    return i < 0 ? want.length : i;
+  };
+  const sorted = list
+    .map((d, i) => [d, i])
+    .sort((a, b) => pos(a[0].id) - pos(b[0].id) || a[1] - b[1])
+    .map(([d]) => d);
+  const ours = sorted.some((d) => d.deal && want.includes(d.id));
+  const tag = `&occasion=${encodeURIComponent(occ.slug)}`;
+  return sorted.map((d) => ({
+    ...d,
+    href: d.href + tag,
+    deal: d.deal && (!ours || want.includes(d.id)),
+  }));
+}
+
 /** How the price reads: "239 ₪", and the old price when a sale is on. */
 export function priceText(pricing) {
   const store = (pricing && pricing.store) || {};
