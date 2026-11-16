@@ -31,7 +31,7 @@
 //                 ones come from /api/custom-designs after first paint; until then the deck deals the listed built-ins).
 //                 A built-in needs its art in site/js/home-data.js DESIGN_ART; a custom one without an entry there
 //                 (hanuka) is drawn from the server's render of its template (homeDesigns), in the fallback colour.
-//                 A NOT_DEALT design (kids) is shown, not dealt.
+//                 A NOT_DEALT design (site/js/home-data.js; none today) is shown, not dealt.
 //   faq           { heading, items: [{ q, a }] x4-5 } (also FAQPage JSON-LD)
 //   related       other occasion slugs
 //   seasonal      optional, true for a page tied to a date in the year (Hanukkah, Valentine's Day): a marker for

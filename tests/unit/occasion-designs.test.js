@@ -53,7 +53,7 @@ describe('occasionDesigns', () => {
   });
 
   it('deals every design when none of the listed ones can be dealt', () => {
-    const out = occasionDesigns(base, { slug: 'x', designs: ['kids', 'no-such-design'] });
+    const out = occasionDesigns(base, { slug: 'x', designs: ['no-such-design', 'nor-this-one'] });
     expect(out.filter((d) => d.deal).map((d) => d.id)).toEqual(
       base.filter((d) => d.deal).map((d) => d.id)
     );
@@ -176,7 +176,7 @@ describe('occasionDesigns', () => {
       ]);
       expect(mom.map((d) => d.id).slice(0, 3)).toEqual(['birthday', 'marriage', 'bachelorette']);
       const dad = occasionDesigns(base, page('yom-huledet-aba'));
-      expect(dad.filter((d) => d.deal).map((d) => d.id)).toEqual(['japanese', 'posttrip']);
+      expect(dad.filter((d) => d.deal).map((d) => d.id)).toEqual(['japanese', 'kids', 'posttrip']);
       expect(dad.map((d) => d.id).slice(0, 3)).toEqual(['japanese', 'kids', 'posttrip']);
     });
 
@@ -186,13 +186,9 @@ describe('occasionDesigns', () => {
       expect(mom.filter((d) => d.deal).map((d) => d.id)).toEqual(MOM);
       const dad = occasionDesigns(withCustom, page('yom-huledet-aba'));
       expect(dad.map((d) => d.id).slice(0, DAD.length)).toEqual(DAD);
-      // ברוקלין (kids) is shown second but never dealt: the site-wide NOT_DEALT rule (an NBA-like logo on its back)
-      expect(NOT_DEALT.has('kids')).toBe(true);
-      expect(dad.filter((d) => d.deal).map((d) => d.id)).toEqual([
-        'japanese',
-        'football-boys',
-        'posttrip',
-      ]);
+      // ברוקלין (kids) is shown second and dealt like the rest (the owner asked for it in the deck)
+      expect(NOT_DEALT.has('kids')).toBe(false);
+      expect(dad.filter((d) => d.deal).map((d) => d.id)).toEqual(DAD);
     });
   });
 });

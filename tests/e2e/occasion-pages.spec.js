@@ -114,8 +114,8 @@ for (const [slug, want, firstPaint, dealt] of [
     'yom-huledet-aba',
     DAD_DESIGNS,
     ['japanese', 'kids', 'posttrip'],
-    // ברוקלין (kids) is on the strip but never dealt (NOT_DEALT, site/js/home-data.js)
-    ['japanese', 'football-boys', 'posttrip'],
+    // ברוקלין (kids) is dealt like the rest
+    ['japanese', 'kids', 'football-boys', 'posttrip'],
   ],
 ]) {
   test(`/${slug}: the deck deals the page’s own designs, custom ones once they arrive`, async ({

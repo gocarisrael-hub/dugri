@@ -131,8 +131,9 @@ export const DESIGN_ORDER = [
   'tarifa',
   'kids',
 ];
-// The hero deck deals every design with a back except ברוקלין (an NBA-like logo on its back).
-export const NOT_DEALT = new Set(['kids']);
+// Designs the hero deck shows on the strip but never deals. Empty: ברוקלין (an NBA-like logo on its back) was kept out
+// from the redesign's r10 until the owner asked for it in the deck (2026-11-16).
+export const NOT_DEALT = new Set([]);
 const ART = 'assets/home/';
 const FALLBACK_COLOR = '#a4e9ff';
 // An uploaded design with no hand-cut art here still gets its own colour when the owner chose one (its panel and tapped
