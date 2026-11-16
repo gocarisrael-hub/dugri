@@ -483,6 +483,17 @@
             fbq('track', 'Purchase', { value: value, currency: 'ILS' }, { eventID: String(id) });
           }
           if (typeof gtag !== 'function') return;
+          // Google Ads' half of the same sale: the "רכישה" conversion the search
+          // campaign bids toward. It rides on the site's Google tag (consent.js),
+          // which has the Ads account (AW-18579122005) as a destination, so no
+          // second gtag config is needed. transaction_id is Google's
+          // deduplication key, the same order number as GA4's purchase below.
+          gtag('event', 'conversion', {
+            send_to: 'AW-18579122005/lieGCJC51bkdENXOm5tF',
+            value: value,
+            currency: 'ILS',
+            transaction_id: String(id),
+          });
           gtag('event', 'purchase', {
             transaction_id: String(id),
             value: value,

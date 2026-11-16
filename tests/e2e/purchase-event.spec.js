@@ -36,6 +36,11 @@ function mockSummary(page, body) {
 const purchases = (dataLayer) =>
   dataLayer.filter((e) => e[0] === 'event' && e[1] === 'purchase').map((e) => e[2]);
 
+// Google Ads' "רכישה" conversion, fired beside GA4's purchase for the search
+// campaign to bid toward.
+const adsConversions = (dataLayer) =>
+  dataLayer.filter((e) => e[0] === 'event' && e[1] === 'conversion').map((e) => e[2]);
+
 const readLayer = (page) => page.evaluate(() => window.dataLayer.map((a) => Array.from(a)));
 
 test.describe('purchase event', () => {
@@ -64,6 +69,26 @@ test.describe('purchase event', () => {
     });
   });
 
+  test('a paid order reports the Google Ads purchase conversion once', async ({ page }) => {
+    await mockSummary(page, SUMMARY);
+    await page.goto('/pay-success.html?c=abc&k=tok');
+    await expect(page.locator('#orderNoVal')).toHaveText('DG-1042');
+
+    const conversions = adsConversions(await readLayer(page));
+    expect(conversions).toEqual([
+      {
+        send_to: 'AW-18579122005/lieGCJC51bkdENXOm5tF',
+        value: 437,
+        currency: 'ILS',
+        transaction_id: 'DG-1042',
+      },
+    ]);
+
+    await page.reload();
+    await expect(page.locator('#orderNoVal')).toHaveText('DG-1042');
+    expect(adsConversions(await readLayer(page))).toHaveLength(0);
+  });
+
   test('a reload does not count the same sale twice', async ({ page }) => {
     await mockSummary(page, SUMMARY);
     await page.goto('/pay-success.html?c=abc&k=tok');
@@ -83,7 +108,9 @@ test.describe('purchase event', () => {
     });
     await page.goto('/pay-success.html?c=abc&k=tok');
     await expect(page.locator('#orderNoVal')).toHaveText('DG-1043');
-    expect(purchases(await readLayer(page))).toHaveLength(0);
+    const layer = await readLayer(page);
+    expect(purchases(layer)).toHaveLength(0);
+    expect(adsConversions(layer)).toHaveLength(0);
   });
 });
 
