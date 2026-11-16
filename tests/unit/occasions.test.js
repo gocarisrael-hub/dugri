@@ -350,11 +350,8 @@ describe('the data files', () => {
     }
   });
 
-  it('no page links to a page that is not live yet (the bachelor page, /mesibat-ravakim)', () => {
-    for (const o of occ.live()) {
-      expect(JSON.stringify(o)).not.toContain('mesibat-ravakim');
-      for (const s of o.related) expect(occ.find(s).live, s).toBe(true);
-    }
+  it('no page links to a page that is not live', () => {
+    for (const o of occ.live()) for (const s of o.related) expect(occ.find(s).live, s).toBe(true);
   });
 
   for (const f of files) {
