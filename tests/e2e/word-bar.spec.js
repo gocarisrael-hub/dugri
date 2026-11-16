@@ -46,8 +46,11 @@ test('stage 1 (<70 words): bar is scaled to the 70-word minimum', async ({ page,
   // Stage-1 bar shown, stage-2 hidden.
   await expect(page.locator('#stage1')).toBeVisible();
   await expect(page.locator('#stage2')).toBeHidden();
-  // Pill frames the 70-word goal, not the max, and no longer calls it a minimum (owner, 2026-10-18).
-  await expect(page.locator('#countMax')).toContainText('/ ' + WORD_GOAL);
+  // The pill is the count only: no "/ 70" goal and no max (owner, 2026-11-16), and it no
+  // longer calls anything a minimum (owner, 2026-10-18). The goal drives only the bar.
+  await expect(page.locator('.count-pill')).toHaveText('40 מילים');
+  await expect(page.locator('.count-pill')).not.toContainText('/');
+  await expect(page.locator('.count-pill')).not.toContainText(String(WORD_GOAL));
   await expect(page.locator('#countMax')).not.toContainText('מינימום');
   // No running commentary under the bar.
   await expect(page.locator('#countHint')).toHaveText('');
@@ -72,8 +75,9 @@ test('crossing to exactly 70 words: stage-2 bar replaces stage-1, ~⅙ full', as
   // No commentary on the way up: the label and the hint stay empty until the cap.
   await expect(page.locator('#stage2Label')).toHaveText('');
   await expect(page.locator('#countHint')).toHaveText('');
-  // Pill now frames the max.
-  await expect(page.locator('#countMax')).toContainText('/ ' + MAX_WORDS);
+  // Past the goal the pill is still the count only: no "/ 412" either.
+  await expect(page.locator('.count-pill')).toHaveText(WORD_GOAL + ' מילים');
+  await expect(page.locator('.count-pill')).not.toContainText('/');
   await expect(page.locator('#countMax')).not.toContainText('מינימום');
   // 70 / 412 ≈ 17% — the new bar starts already ~⅙ filled.
   const w = await barWidth(page.locator('#barFill2'));
@@ -110,7 +114,8 @@ test('more words (200): stage-2 fill grows toward the max', async ({ page, reque
   await expect(page.locator('#count')).toHaveText('200');
   await expect(page.locator('#stage1')).toBeHidden();
   await expect(page.locator('#stage2')).toBeVisible();
-  await expect(page.locator('#countMax')).toContainText('/ ' + MAX_WORDS);
+  await expect(page.locator('.count-pill')).toHaveText('200 מילים');
+  await expect(page.locator('.count-pill')).not.toContainText(String(MAX_WORDS));
   // 200 / 412 ≈ 48%.
   const w = await barWidth(page.locator('#barFill2'));
   expect(w).toBeGreaterThan(46);

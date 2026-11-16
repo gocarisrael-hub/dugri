@@ -48,7 +48,9 @@ for (const mode of ['off', 'on']) {
     await page.fill('#wordInput', 'מילה');
     await page.locator('#addBtn').click();
     await expect(page.locator('#count')).toHaveText('1');
-    await expect(page.locator('#countMax')).toHaveText(' / 70 מילים');
+    // One word, said in words: "מילה אחת", never "1 מילים" or "1 / 70 מילים".
+    await expect(page.locator('#countMax')).toHaveText('מילה אחת');
+    await expect(page.locator('#count')).toBeHidden();
     await expect(page.locator('#countHint')).toHaveText('');
     expect(await page.locator('body').innerText()).not.toContain('מינימום');
   });
