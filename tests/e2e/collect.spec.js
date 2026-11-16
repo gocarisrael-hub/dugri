@@ -843,7 +843,9 @@ test('below 70 words: Stage-1 bar is scaled to the 70-word minimum', async ({ pa
   await page.fill('#wordInput', 'מילה אחת');
   await page.click('#addBtn');
   await expect(page.locator('#count')).toHaveText('1');
-  await expect(page.locator('.count-pill')).toHaveText('1 מילים');
+  // Exactly one word is said in words, not "1 מילים" (owner, 2026-11-16).
+  await expect(page.locator('.count-pill')).toHaveText('מילה אחת', { useInnerText: true });
+  await expect(page.locator('.count-pill')).not.toContainText('מילים');
   await expect(page.locator('#countHint')).toHaveText('');
   // one word = 1/70 ≈ 1.43% of a 70-word Stage-1 bar
   const width = await page.locator('#barFill1').evaluate((el) => el.style.width);

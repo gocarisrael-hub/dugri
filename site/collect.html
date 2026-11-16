@@ -5965,9 +5965,13 @@
         // "80 / 412" (owner decision, 2026-11-16). The product page promises no
         // word limit, and a fraction reads as a cap. WORD_GOAL still drives the
         // bar below; it is just never printed. Only the real cap is named, once
-        // reached, and the count is shown capped at it.
+        // reached, and the count is shown capped at it. Exactly one word reads
+        // "מילה אחת", not "1 מילים": the number is hidden (its text stays, for
+        // anything reading the count) and the label carries the whole phrase.
+        const one = n === 1;
         $('#count').textContent = Math.min(n, MAX_WORDS);
-        $('#countMax').textContent = atMax ? ' מילים · מקסימום' : ' מילים';
+        $('#count').hidden = one;
+        $('#countMax').textContent = atMax ? ' מילים · מקסימום' : one ? 'מילה אחת' : ' מילים';
         // No running commentary under the bar (the owner removed it, 2026-10-18): the pill and the bar say how far
         // along the list is. The line speaks only when it has news: the deck is full (the field is closed), or, below,
         // the collection is locked for payment.
