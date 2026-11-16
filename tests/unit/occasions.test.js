@@ -188,10 +188,16 @@ describe('the data files', () => {
       expect(ans('shichrur', 'אפשר משלוח לבסיס?')).toContain('בוואטסאפ');
       expect(ans('shichrur', 'אפשר משלוח לבסיס?')).toContain('בתוך ישראל');
       expect(ans('yom-nisuin', 'אפשר משלוח ישר אליהם?')).toContain('רק בתוך ישראל');
-      // the home page's business line, word for word, and nothing about colours
+      // the owner's answer (2026-11-16): a logo from a certain quantity, with no number; nothing about colours
       const logo = ans('gibush', 'אפשר לוגו וצבעי החברה?');
-      expect(logo).toContain('הלוגו שלכם על גב הקלף ועל הקופסה, בעיצוב שלנו.');
-      expect(logo).not.toMatch(/צבע/);
+      const pensia = ans('pensia', 'אפשר לוגו של החברה?');
+      for (const a of [logo, pensia]) {
+        expect(a).toContain('כן, בהזמנה מעל כמות מסוימת: הלוגו שלכם, בעיצוב וליווי שלנו.');
+        expect(a).not.toMatch(/\d|צבע/);
+      }
+      expect(pensia).toBe(
+        'כן, בהזמנה מעל כמות מסוימת: הלוגו שלכם, בעיצוב וליווי שלנו. דברו איתנו בוואטסאפ.'
+      );
     });
 
     // the title is printed on the cards (options.html "הכותרת שתודפס על הקלפים")
