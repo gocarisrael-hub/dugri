@@ -148,6 +148,14 @@ describe('pages 20-23: the data files', () => {
       const text = JSON.stringify(o);
       expect(text).toContain('{eta}');
       expect(text).not.toMatch(/₪|מחיר|חשבונית|אליאס|alias|מינימום|\d+\s*ימי עסקים/i);
+      // owner 2026-11-16: the title is printed on the cards, not the box; no discount for copies; nothing is sent
+      // straight to the guest of honour as a surprise
+      expect(text).not.toMatch(/(?:כותבים|כותרת)\s+על\s+הקופסה|על הקופסה כותבים/);
+      expect(o.steps.items[0].text).toContain('על הקלפים');
+      expect(text).not.toMatch(/הנחה|מבצע|זול יותר/);
+      expect(text).not.toMatch(
+        /(?:שולחים|משלוח|נשלח)\s+(?:ישר\s+)?(?:אל|ל)(?:סבא|סבתא|בן הזוג|בת הזוג)/
+      );
     });
   }
 
