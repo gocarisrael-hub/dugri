@@ -126,25 +126,30 @@ test.describe('the buyer’s name and the event type, on the details step', () =
 
   test('with no name there is no order — and the screen says why', async ({ page }) => {
     // The owner's rule, from the buyer's side. The mail and the number are filled
-    // and correct, so the ONLY thing holding the button is the empty name — and a
-    // held button with nothing on screen to explain it is the failure mode this
-    // asserts against, not just the gate itself.
+    // and correct, so the ONLY thing missing is the name. The button stays
+    // tappable (a dead button with no reason was the QA complaint); the tap
+    // creates nothing and puts the cursor in the name box under its message.
     await toNameStep(page);
+    const state = await captureOrder(page);
     await toDetailsStep(page);
     const create = page.getByTestId('next-btn');
-    await expect(create).toBeDisabled();
     await expect(page.getByTestId('buyer-name-err')).toBeVisible();
+    await expect(create).toBeEnabled();
+    await create.click();
+    await expect(page.getByTestId('buyer-name-input')).toBeFocused();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+    expect(state.posted).toBeNull();
 
-    // Typing a name releases it on the keystroke, with nothing else touched.
+    // Typing a name clears the message on the keystroke, with nothing else touched.
     await page.getByTestId('buyer-name-input').fill('דנה כהן');
     await expect(page.getByTestId('buyer-name-err')).toBeHidden();
-    await expect(create).toBeEnabled();
 
-    // …and clearing it again brings both back, so the rule is not a one-way latch
+    // …and clearing it again brings it back, so the rule is not a one-way latch
     // that a buyer can escape by typing a character and deleting it.
     await page.getByTestId('buyer-name-input').fill('');
-    await expect(create).toBeDisabled();
     await expect(page.getByTestId('buyer-name-err')).toBeVisible();
+    await create.click();
+    expect(state.posted).toBeNull();
   });
 
   test('a name made of spaces is not a name', async ({ page }) => {
@@ -152,10 +157,13 @@ test.describe('the buyer’s name and the event type, on the details step', () =
     // this to null (tests/unit/order-buyer-details.test.js), so letting it pass
     // would produce exactly the nameless order the gate exists to prevent.
     await toNameStep(page);
+    const state = await captureOrder(page);
     await toDetailsStep(page);
     await page.getByTestId('buyer-name-input').fill('   ');
-    await expect(page.getByTestId('next-btn')).toBeDisabled();
     await expect(page.getByTestId('buyer-name-err')).toBeVisible();
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('buyer-name-input')).toBeFocused();
+    expect(state.posted).toBeNull();
   });
 
   test('what she typed in each survives a refresh of the step', async ({ page }) => {
@@ -209,6 +217,84 @@ test.describe('the buyer’s name and the event type, on the details step', () =
     await expect.poll(() => state.posted && state.posted.event_type).toBe('');
     expect(state.posted.buyer_name).toBe('דנה כהן');
     expect(state.posted.honoree_name).toBe('Shira');
+  });
+});
+
+// THE MAIL AND THE NUMBER, the two boxes above the name (staging QA, Fix 4).
+// The mail is typed left-to-right inside a Hebrew page, and "צרו את המשחק" is
+// never a dead button: tapping it with the step incomplete says what is missing.
+test.describe('the mail and the number, on the details step', () => {
+  // Straight to the details step with nothing typed in it — toDetailsStep fills
+  // the mail and the number, and these tests need them empty.
+  async function toEmptyDetailsStep(page) {
+    await page.getByTestId('custom-title-input').fill('Shira');
+    await page.getByTestId('next-btn').click(); // -> pawn photos
+    await expect(page.getByTestId('step-pawns')).toBeVisible();
+    await page.getByTestId('next-btn').click(); // -> details
+    await expect(page.getByTestId('step-4')).toBeVisible();
+  }
+
+  test('the mail box types left-to-right, its label stays Hebrew', async ({ page }) => {
+    await toNameStep(page);
+    await toEmptyDetailsStep(page);
+    const email = page.getByTestId('owner-email');
+    await expect(email).toHaveAttribute('dir', 'ltr');
+    expect(await email.evaluate((el) => getComputedStyle(el).direction)).toBe('ltr');
+    const label = page.locator('[data-edit="options-email-label"]');
+    expect(await label.evaluate((el) => getComputedStyle(el).direction)).toBe('rtl');
+  });
+
+  test('tapping create with the step empty shows every message and creates nothing', async ({
+    page,
+  }) => {
+    await toNameStep(page);
+    const state = await captureOrder(page);
+    await toEmptyDetailsStep(page);
+    const create = page.getByTestId('next-btn');
+    await expect(create).toHaveText('צרו את המשחק');
+    // Nothing typed yet: the mail and number stay quiet until she acts.
+    await expect(page.getByTestId('email-err')).toBeHidden();
+    await expect(page.getByTestId('phone-err')).toBeHidden();
+    await expect(create).toBeEnabled();
+
+    await create.click();
+    await expect(page.getByTestId('email-err')).toBeVisible();
+    await expect(page.getByTestId('phone-err')).toBeVisible();
+    await expect(page.getByTestId('buyer-name-err')).toBeVisible();
+    await expect(page.getByTestId('owner-email')).toBeFocused();
+    await expect(page.getByTestId('step-4')).toBeVisible();
+
+    // Fixing the mail clears ITS message only; the number's stays up, because it
+    // is still the reason the order will not go.
+    await page.getByTestId('owner-email').fill('a@b.com');
+    await expect(page.getByTestId('email-err')).toBeHidden();
+    await expect(page.getByTestId('phone-err')).toBeVisible();
+
+    // The next tap goes to the first box still wrong.
+    await create.click();
+    await expect(page.getByTestId('owner-phone')).toBeFocused();
+    expect(state.posted).toBeNull();
+
+    // Complete it, and the same button creates the order.
+    await page.getByTestId('owner-phone').fill('0521234567');
+    await expect(page.getByTestId('phone-err')).toBeHidden();
+    await page.getByTestId('buyer-name-input').fill('דנה כהן');
+    await create.click();
+    await expect.poll(() => state.posted && state.posted.email).toBe('a@b.com');
+  });
+
+  test('an invalid mail is flagged on the tap and nothing is posted', async ({ page }) => {
+    await toNameStep(page);
+    const state = await captureOrder(page);
+    await toEmptyDetailsStep(page);
+    await page.getByTestId('owner-email').fill('not-an-email');
+    await page.getByTestId('owner-phone').fill('0521234567');
+    await page.getByTestId('buyer-name-input').fill('דנה כהן');
+    await page.getByTestId('next-btn').click();
+    await expect(page.getByTestId('email-err')).toBeVisible();
+    await expect(page.getByTestId('phone-err')).toBeHidden();
+    await expect(page.getByTestId('owner-email')).toBeFocused();
+    expect(state.posted).toBeNull();
   });
 });
 

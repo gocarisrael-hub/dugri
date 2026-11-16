@@ -88,7 +88,8 @@ test('the wizard runs to a created collection in the mode, in its own bar and th
   await expect(page.getByTestId('step-4')).toBeVisible();
 
   await expect(next).toHaveText('צרו את המשחק');
-  await expect(next).toBeDisabled();
+  // tappable while incomplete: the tap names what is missing instead
+  await expect(next).toBeEnabled();
   await page.fill('#ownerEmail', 'owner@example.com');
   await page.fill('#ownerPhone', '0521234567');
   await page.fill('#buyerNameInput', 'דנה כהן');
