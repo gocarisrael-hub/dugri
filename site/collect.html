@@ -6489,6 +6489,23 @@
         }
       }
 
+      // The entries addWords() will refuse before it asks the server: over the
+      // length cap, carrying an emoji, or pointed. Run through the SAME three
+      // splitters in the same order, so the two can never disagree. A caller
+      // uses it to put exactly these back in front of the buyer after a partial
+      // add: the good words leave the box, the refused ones stay to be fixed.
+      // Without this a partial add (which returns true) cleared the whole box and
+      // the refused line survived only in a toast that fades.
+      function refusedEntries(text) {
+        const parsed = parseWordText(text);
+        const { ok: fits, tooLong } = splitByLength(parsed);
+        const { ok: plain, withEmoji } = splitByEmoji(fits);
+        const { withNiqqud } = splitByNiqqud(plain);
+        const refused = new Set([...tooLong, ...withEmoji, ...withNiqqud]);
+        // In the order she wrote them, not grouped by reason.
+        return parsed.map(cleanWord).filter((w) => refused.has(w));
+      }
+
       async function removeWord(wordId) {
         // token in the body (not the URL) so it isn't logged; surface failures.
         try {
@@ -6664,9 +6681,12 @@
         // Belt to the live check: Enter can reach here before an `input` event on
         // a paste, so re-measure instead of trusting the disabled state.
         if (syncWordLen()) return;
+        const refused = refusedEntries(v);
         const ok = await addWords(v, 'single');
-        // Keep the typed word on failure so the user can retry; clear on success.
-        if (ok) $('#wordInput').value = '';
+        // Keep the typed word on failure so the user can retry. On success clear
+        // only what landed: an entry addWords refused stays in the box (the live
+        // check blocks a lone refused word, but "a, b🍕" is two entries).
+        if (ok) $('#wordInput').value = refused.join(', ');
         syncWordLen();
         $('#wordInput').focus();
       };
@@ -6688,15 +6708,34 @@
         };
       }
       $('#pasteAdd').onclick = async () => {
-        const ok = await addWords($('#pasteBox').value, 'paste');
-        // Keep the pasted text on failure so it isn't lost before a retry.
-        if (ok) $('#pasteBox').value = '';
+        const text = $('#pasteBox').value;
+        const refused = refusedEntries(text);
+        const ok = await addWords(text, 'paste');
+        // Keep the pasted text on failure so it isn't lost before a retry. On
+        // success the added lines leave the box and the REFUSED ones stay, one
+        // per line, so she can fix them and add again; a clean list empties it.
+        if (ok) $('#pasteBox').value = refused.join('\n');
       };
       $('#fileInput').addEventListener('change', (e) => {
         const f = e.target.files && e.target.files[0];
         if (!f) return;
         const reader = new FileReader();
-        reader.onload = () => addWords(String(reader.result), 'file');
+        reader.onload = async () => {
+          const text = String(reader.result);
+          const refused = refusedEntries(text);
+          const ok = await addWords(text, 'file');
+          // A file leaves nothing on screen, so the refused lines would live only
+          // in a fading toast. Put them in the list box instead, to be fixed and
+          // added from there. When nothing was submitted at all (every entry was
+          // refused) they go there too; any other failure keeps today's behaviour.
+          const all = refused.length && refused.length === parseWordText(text).length;
+          if (refused.length && (ok || all)) {
+            const box = $('#pasteBox');
+            box.value =
+              (box.value.trim() ? box.value.replace(/\s+$/, '') + '\n' : '') + refused.join('\n');
+            $('#tab-list').click();
+          }
+        };
         reader.readAsText(f);
         // Cleared so re-picking the SAME file fires `change` again. Unlike the
         // paste box there is nothing left on screen afterwards, which is why the
