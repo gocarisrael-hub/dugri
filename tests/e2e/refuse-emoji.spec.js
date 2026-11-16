@@ -227,6 +227,58 @@ test.describe('the word list', () => {
     // and the toast says what did NOT land, and why — a partial add must never
     // look like a clean success.
     await expect(page.locator('#toast')).toContainText('אימוג׳י');
+    // The refused line STAYS in the box, and nothing else does: the added words
+    // left it, and the 🍕 one is there to be fixed. The toast fades; the box is
+    // the only place the word survives (staging QA, 2026-11-16).
+    await expect(page.locator('#pasteBox')).toHaveValue('פיצה 🍕');
+  });
+
+  test('the QA repro: a refused line survives the paste, and a fixed one then lands', async ({
+    page,
+  }) => {
+    await createCollection(page, 'Shira');
+    await page.click('#tab-list');
+    await page.fill('#pasteBox', 'ריקודים על הבר\nאקס מהצבא 🙈\nטיול לאילת');
+    await page.click('#pasteAdd');
+
+    await expect(page.locator('#count')).toHaveText('2');
+    await expect(page.locator('#wordsWrap')).toContainText('ריקודים על הבר');
+    await expect(page.locator('#wordsWrap')).toContainText('טיול לאילת');
+    await expect(page.locator('#pasteBox')).toHaveValue('אקס מהצבא 🙈');
+
+    // She drops the emoji and adds again: it lands and the box empties, as a
+    // fully clean add always did.
+    await page.fill('#pasteBox', 'אקס מהצבא');
+    await page.click('#pasteAdd');
+    await expect(page.locator('#count')).toHaveText('3');
+    await expect(page.locator('#pasteBox')).toHaveValue('');
+  });
+
+  test('a single refused word stays in the input and nothing is added', async ({ page }) => {
+    await createCollection(page, 'Shira');
+    await page.fill('#wordInput', 'פיצה 🍕');
+    // Enter is the path that can outrun the live check; it must not clear it.
+    await page.locator('#wordInput').press('Enter');
+    await expect(page.locator('#wordInput')).toHaveValue('פיצה 🍕');
+    await expect(page.locator('#wordLenHint')).toContainText('אימוג׳י');
+    await expect(page.locator('#count')).toHaveText('0');
+  });
+
+  test('a file keeps its good words and puts the refused ones in the list box', async ({
+    page,
+  }) => {
+    // A file leaves nothing on screen, so without this the refused line lived
+    // only in the toast.
+    await createCollection(page, 'Shira');
+    await page.click('#tab-file');
+    await page.setInputFiles('#fileInput', {
+      name: 'words.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('קמפינג\nפיצה 🍕\nהדייט מטבריה\n', 'utf-8'),
+    });
+    await expect(page.locator('#count')).toHaveText('2');
+    await expect(page.locator('#panel-list')).toBeVisible();
+    await expect(page.locator('#pasteBox')).toHaveValue('פיצה 🍕');
   });
 
   test('a legitimate list is untouched — no word is refused for looking unusual', async ({
@@ -239,6 +291,8 @@ test.describe('the word list', () => {
 
     await expect(page.locator('#count')).toHaveText('4');
     await expect(page.locator('#toast')).not.toContainText('אימוג׳י');
+    // A fully clean add empties the box, as it always did.
+    await expect(page.locator('#pasteBox')).toHaveValue('');
   });
 
   test('the API refuses an emoji word posted straight at it', async ({ page }) => {
