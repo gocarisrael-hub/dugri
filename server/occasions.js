@@ -29,10 +29,18 @@
 //   steps         { heading, items: [{ title, text }] x3, cta }
 //   sampleWords   { heading, words: [8], note } (always labelled as examples)
 //   designs       design ids: the deck deals these, the strip shows them first. Built-in and custom ids alike (custom
-//                 ones come from /api/custom-designs after first paint; until then the deck deals the listed built-ins);
-//                 each needs its art in site/js/home-data.js DESIGN_ART. A NOT_DEALT design (kids) is shown, not dealt.
+//                 ones come from /api/custom-designs after first paint; until then the deck deals the listed built-ins).
+//                 A built-in needs its art in site/js/home-data.js DESIGN_ART; a custom one without an entry there
+//                 (hanuka) is drawn from the server's render of its template (homeDesigns), in the fallback colour.
+//                 A NOT_DEALT design (kids) is shown, not dealt.
 //   faq           { heading, items: [{ q, a }] x4-5 } (also FAQPage JSON-LD)
 //   related       other occasion slugs
+//   seasonal      optional, true for a page tied to a date in the year (Hanukkah, Valentine's Day): a marker for
+//                 whoever plans the year's pages; nothing is hidden or shown by it
+//   deadline      optional, the owner's own line with the last order date before the holiday ("להזמנה עם משלוח
+//                 עד החג: ..."), shown under the hero's button; null or absent shows nothing. It is typed by hand
+//                 and not computed: the admin's etas say "בדרך כלל כ-N ימי עסקים" and nothing on the site knows
+//                 which days are business days or when a holiday falls.
 //
 // "{eta}" in any text is the production time, read from the admin (the pickup
 // eta, settings email.pickup_info.eta, "... תוך כ-4 ימי עסקים ...") on every
@@ -131,6 +139,10 @@ function validateOccasion(o, known) {
     e.push('related');
   else if (known)
     for (const s of o.related) if (!known.has(s)) e.push('related: unknown slug ' + s);
+  if (o.seasonal !== undefined && typeof o.seasonal !== 'boolean')
+    e.push('seasonal must be true or false');
+  if (o.deadline !== undefined && o.deadline !== null && !isStr(o.deadline))
+    e.push('deadline: a line of text, or null');
   const text = allText(o);
   if (!/עד 412 מילים אישיות/.test(text)) e.push('says "עד 412 מילים אישיות"');
   for (const [what, bad] of COPY_RULES) if (bad(text)) e.push(what);
@@ -299,6 +311,9 @@ function renderPage(template, newHtml, o) {
     steps,
     words,
     faq,
+    deadline: isStr(o.deadline)
+      ? `<p class="occ-deadline" data-testid="occ-deadline">${esc(o.deadline)}</p>`
+      : '',
     config: json,
     recs: scoped(piece(newHtml, 'recs')),
     sheet: scoped(piece(newHtml, 'sheet')),

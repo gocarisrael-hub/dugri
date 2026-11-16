@@ -96,6 +96,56 @@ describe('occasionDesigns', () => {
     }
   });
 
+  // page 14: the live חנוכה custom design first. It has no DESIGN_ART entry (no hand-cut art in the repo): it is drawn from
+  // the server's render of its template, as /api/custom-designs sends it on production (img with no back; home renders)
+  describe('page 14, /chag-mishpachti', () => {
+    const LIST = ['hanuka', 'marriage', 'birthday', 'grapefruit', 'posttrip'];
+    const render = (role) => ({
+      src: `/home-art/hanuka/27c4ddbef62c1f4a/${role}-400.webp`,
+      srcset: `/home-art/hanuka/27c4ddbef62c1f4a/${role}-400.webp 400w`,
+    });
+    const hanuka = {
+      id: 'hanuka',
+      name: 'חנוכה',
+      custom: true,
+      public: true,
+      accent: null,
+      img: { front: '/api/template-image/hanuka/front', board: '/api/template-image/hanuka/board' },
+      home: { front: render('front'), back: render('back'), board: render('board') },
+    };
+
+    it('leads with hanuka, which shows and is dealt from its render once the custom designs arrive', () => {
+      expect(page('chag-mishpachti').designs).toEqual(LIST);
+      expect(DESIGN_ART.hanuka).toBeUndefined();
+      for (const id of LIST.slice(1)) expect(DESIGN_ART[id], id).toBeTruthy();
+      // first paint: hanuka has not arrived, the listed built-ins are dealt
+      const builtIn = LIST.filter((id) => PUBLIC_DESIGNS.some((d) => d.id === id));
+      expect(builtIn.length).toBeGreaterThan(0);
+      const first = occasionDesigns(base, page('chag-mishpachti'));
+      expect(first.filter((d) => d.deal).map((d) => d.id)).toEqual(builtIn);
+      // then: hanuka first, drawn from its renders, dealt with the rest of the list
+      const later = occasionDesigns(
+        homeDesigns([...PUBLIC_DESIGNS, custom('grapefruit'), hanuka]),
+        page('chag-mishpachti')
+      );
+      expect(later.map((d) => d.id).slice(0, LIST.length)).toEqual(LIST);
+      expect(later.filter((d) => d.deal).map((d) => d.id)).toEqual(LIST);
+      const h = later[0];
+      expect(h.fronts).toEqual([render('front').src]);
+      expect(h.back).toBe(render('back').src);
+      expect(h.board.src).toBe(render('board').src);
+      expect(h.href).toBe('options.html?design=hanuka&step=2&occasion=chag-mishpachti');
+    });
+
+    it('a server with no render of it still shows its template card, undealt (no back to deal)', () => {
+      const bare = { ...hanuka, home: undefined };
+      const out = occasionDesigns(homeDesigns([...PUBLIC_DESIGNS, bare]), page('chag-mishpachti'));
+      expect(out[0].id).toBe('hanuka');
+      expect(out[0].fronts).toEqual(['/api/template-image/hanuka/front']);
+      expect(out[0].deal).toBe(false);
+    });
+  });
+
   describe("the owner's lists", () => {
     const MOM = ['daniel-amit', 'birthday', 'grapefruit', 'marriage', 'bachelorette'];
     const DAD = ['japanese', 'kids', 'football-boys', 'posttrip'];

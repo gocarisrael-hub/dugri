@@ -188,6 +188,9 @@ describe('seo module (pure)', () => {
     expect(sec).toContain(
       '- [מתנה ליציאה לפנסיה שכל המשרד כותב](https://dugri-israel.co.il/pensia)'
     );
+    expect(sec).toContain(
+      '- [משחק משפחתי לחנוכה, שכל המילים בו על המשפחה שלכם](https://dugri-israel.co.il/chag-mishpachti)'
+    );
   });
 
   it('every live occasion page is public, in the sitemap, with its own canonical', () => {
@@ -198,6 +201,7 @@ describe('seo module (pure)', () => {
       '/mesibat-ravakot',
       '/tiyul-mishpachti-lechul',
       '/pensia',
+      '/chag-mishpachti',
     ]);
     const xml = seo.sitemapXml();
     for (const p of occ) expect(xml).toContain(`<loc>https://dugri-israel.co.il${p}</loc>`);
