@@ -1114,7 +1114,8 @@ loadCustomDesigns().then(async (extra) => {
   D = byId();
   buildStrip();
   startStrip();
-  showNext();
+  // an occasion page whose first design is a custom one (it only arrives now): it is still the first one dealt
+  showNext(OCC && !cards.length && designs[0] ? designs[0].id : undefined);
 });
 // the owner's text and photos: the editor fills them in; the reviews' copies follow
 if (window.dugriEditor && window.dugriEditor.onReady)
