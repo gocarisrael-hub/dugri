@@ -188,6 +188,8 @@ exports[`route registration order > matches the pinned table 1`] = `
   "GET /api/admin/ads/meta",
   "POST /api/admin/meta-capi/retry",
   "GET /api/admin/ads",
+  "GET /api/admin/ads/occasions",
+  "GET /api/occasions",
   "GET /api/admin/ads/live",
   "POST /api/admin/ads/hidden",
   "GET /api/admin/settings",

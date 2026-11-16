@@ -1256,6 +1256,9 @@ app.post('/api/collections', (req, res) => {
     // empty/whitespace as absent.
     buyer_name: b.buyer_name,
     event_type: b.event_type,
+    // The occasion page she started from (options.html?occasion=<slug>); kept only
+    // when it is one of the pages (db.createCollection).
+    occasion: b.occasion,
     // Anything she wants to tell us about this order — a date, a surprise to keep,
     // a delivery note. Stored as typed (sanitized) and shown in admin; never
     // printed on the cards.
@@ -6107,6 +6110,10 @@ const { metaCapiArmed, metaAdContext, sendPurchaseToMeta, isGroupWebhook, webhoo
     openWhatsappGroup,
     ilPhoneToWaId,
     resolveProductImageUrl,
+    // the occasion pages, for the visit beacon, the wizard's event type and the
+    // admin's "orders by occasion page"
+    occasions: require('./occasions'),
+    occasionReport: require('./occasion-report'),
   });
 
 // Agent A: the public pricing reads, in server/routes/commerce.js.
@@ -6257,7 +6264,14 @@ function seoLive() {
   } catch {
     /* the FAQ block is simply left out */
   }
-  return { price, faq: faqItems };
+  // the production time llms.txt quotes: the admin's pickup eta, as on the occasion pages
+  let eta = '';
+  try {
+    eta = (settings.get('email', 'pickup_info') || {}).eta || '';
+  } catch {
+    /* llms.txt then names no number */
+  }
+  return { price, faq: faqItems, eta };
 }
 // Off production, the header form of noindex too, so a crawler that only reads
 // headers is told as well.

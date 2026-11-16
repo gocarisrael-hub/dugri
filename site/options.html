@@ -3783,6 +3783,12 @@
       import { titleMixesLanguages, titleLanguageMessage } from './js/title-language.js';
       import { track } from './js/analytics.js';
       import { sendEvent, currentTouch } from './js/attribution.js';
+      import {
+        occasionSlug,
+        labelFor,
+        prefillEventType,
+        fetchOccasions,
+      } from './js/occasion-order.js';
       import { initCarousel } from './js/carousel.js';
       import { initPinchZoom } from './js/pinch-zoom.js';
       import { markOwned } from './js/friend-bar.js';
@@ -3935,6 +3941,9 @@
       let customTitle = ''; // optional free-form title override (F7); '' = theme default
       let buyerName = ''; // REQUIRED: who is ORDERING (never the honoree); '' = unanswered
       let eventType = ''; // optional: the event in her words; '' = unanswered
+      // the occasion page she came from (options.html?occasion=<slug>), '' for any
+      // other way in; sent with the order (js/occasion-order.js)
+      const orderOccasion = occasionSlug(location.search);
       let currentStep = 1; // wizard position (1..5); read by persist() for the URL
 
       // colour-step swipe carousel (front/back/board) — see setupColorCarousel
@@ -7227,6 +7236,8 @@
               // both in her words; optional, never printed, shown to us in admin
               buyer_name: buyerName,
               event_type: eventType,
+              // the occasion page's slug; the server keeps it only for a real page
+              occasion: orderOccasion || null,
               // How this browser arrived (sanitised by currentTouch — origin, path
               // and campaign parameters only). Stored on the order so the sale is
               // credited to the ad even when she pays from the email on another
@@ -7737,6 +7748,19 @@
         setActiveSwatch(colorIndex);
         renderExtraFields(); // reflect the restored design's theme extra fields
       })();
+
+      // From an occasion page: the event type starts as that page's label (its own
+      // data file's, via /api/occasions), unless she has typed her own. After the
+      // restore above, so a saved answer is what it is weighed against.
+      if (orderOccasion) {
+        fetchOccasions().then((list) => {
+          const next = prefillEventType(eventType, labelFor(orderOccasion, list), list);
+          if (next === eventType) return;
+          eventType = next;
+          if (eventTypeInput) eventTypeInput.value = next;
+          persist();
+        });
+      }
 
       // restore the wizard position from ?step=N (defaults to the first step).
       // normalizeStep snaps a shared ?step=2 to the next active step when step 2

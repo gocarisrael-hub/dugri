@@ -343,6 +343,23 @@ Set these on **staging first** and book one parcel end to end before putting the
 on production: HFD has no sandbox, so every booking is a real one (cancel it from
 the same row when you're done testing).
 
+## Search Console and Bing verification (optional, production only)
+
+Two variables prove to Google and Bing that the site is yours by the HTML-tag
+method. Each is read on every request and, when set, adds its tag to the **home
+page only** (`/`, in either look); nothing is added when it is unset.
+
+- **`GOOGLE_SITE_VERIFICATION`** — the token from Google Search Console › Add
+  property › URL prefix › HTML tag. Renders
+  `<meta name="google-site-verification" content="TOKEN">`.
+- **`BING_SITE_VERIFICATION`** — the token from Bing Webmaster Tools › HTML Meta
+  Tag. Renders `<meta name="msvalidate.01" content="TOKEN">`.
+
+Paste the token itself (the whole `<meta …>` line also works; its `content` is
+used). Set them on **production** only, redeploy, then press Verify in the
+console. Neither is needed if Search Console is verified by a DNS TXT record and
+Bing imports the site from Search Console.
+
 ## Meta Conversions API — server-side sale reporting (optional)
 
 The Meta pixel reports a sale from the **buyer's browser**, which is exactly

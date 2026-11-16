@@ -344,10 +344,37 @@ export function trackVisit() {
   const key = campaignKey(here);
   const mark = key ? key.slice(0, 2000) : '1';
   const counted = read('sessionStorage', SESSION_KEY);
-  if (counted && (!key || counted === mark)) return false;
-  write('sessionStorage', SESSION_KEY, mark);
-  sendEvent('visit');
+  const visitDue = !(counted && (!key || counted === mark));
+  // AN OCCASION PAGE COUNTS ITS OWN VISIT (the admin's "orders by occasion page"):
+  // once per session per page, even when the session's visit was already counted
+  // on another page, because a buyer who came in on the home page and then opened
+  // /yom-huledet did visit it. The extra beacon cannot inflate the ad report: it
+  // counts DISTINCT visitors per row, and this is the same visitor on the same row.
+  const occasion = pageOccasion();
+  const occKey = occasion ? OCCASION_SESSION_PREFIX + occasion : '';
+  const occasionDue = !!occasion && !read('sessionStorage', occKey);
+  if (!visitDue && !occasionDue) return false;
+  if (visitDue) write('sessionStorage', SESSION_KEY, mark);
+  if (occasionDue) write('sessionStorage', occKey, '1');
+  sendEvent('visit', occasion ? { occasion } : {});
   return true;
+}
+
+const OCCASION_SESSION_PREFIX = 'dugri_visit_occ:';
+const OCCASION_SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** The slug of the occasion page this is (its #occasion-data, written by
+ *  server/occasions.js), '' on every other page. The server checks it against the
+ *  real pages before it keeps it. */
+export function pageOccasion(doc = typeof document !== 'undefined' ? document : null) {
+  try {
+    const el = doc && doc.getElementById('occasion-data');
+    if (!el) return '';
+    const slug = JSON.parse(el.textContent).slug;
+    return typeof slug === 'string' && OCCASION_SLUG_RE.test(slug) ? slug.slice(0, 80) : '';
+  } catch {
+    return '';
+  }
 }
 
 /**

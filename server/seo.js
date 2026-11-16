@@ -173,6 +173,10 @@ const BRAND = {
   name: 'דוגרי',
   alternateName: ['Dugri', 'Dugri Israel', 'דוגרי ישראל', 'דוגרי - משחק מסיבה אישי'],
   instagram: 'https://instagram.com/dugri_israel',
+  // the shop's listing on mit4mit (an Israeli events-suppliers directory)
+  mit4mit: 'https://www.mit4mit.co.il/biz/106559',
+  // TODO(owner): the Google Business Profile URL ("דוגרי – המשחק הכי אישי"),
+  // once it exists; add it to sameAs below.
   phone: '+972-55-244-1334',
   businessPhone: '+972-54-657-7715',
 };
@@ -192,7 +196,7 @@ function organizationLd() {
     url: base + '/',
     logo: base + '/assets/logo.png',
     description: PRODUCT_DESCRIPTION,
-    sameAs: [BRAND.instagram],
+    sameAs: [BRAND.instagram, BRAND.mit4mit],
     areaServed: { '@type': 'Country', name: 'Israel' },
     contactPoint: [
       {
@@ -296,6 +300,29 @@ function scriptSafeJson(obj) {
 const attrEscape = (s) =>
   String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 
+// SEARCH CONSOLE AND BING OWNERSHIP TAGS, from the environment
+// (GOOGLE_SITE_VERIFICATION, BING_SITE_VERIFICATION; RAILWAY_SETUP.md), on the
+// home page only and only when set. The value is the token; a whole pasted
+// <meta … content="TOKEN"> is accepted too and reduced to its token.
+const VERIFICATION = [
+  ['GOOGLE_SITE_VERIFICATION', 'google-site-verification'],
+  ['BING_SITE_VERIFICATION', 'msvalidate.01'],
+];
+function verificationToken(raw) {
+  let v = String(raw || '').trim();
+  const m = v.match(/content\s*=\s*["']([^"']*)["']/i);
+  if (m) v = m[1].trim();
+  return /^[A-Za-z0-9_\-.=+/]{1,200}$/.test(v) ? v : '';
+}
+function verificationTags(env = process.env) {
+  const out = [];
+  for (const [key, name] of VERIFICATION) {
+    const token = verificationToken(env[key]);
+    if (token) out.push(`<meta name="${name}" content="${attrEscape(token)}" />`);
+  }
+  return out;
+}
+
 // The tags for one page. `html` is passed so a tag the page already carries is
 // not duplicated (a page with its own og:image keeps it).
 // `occasion`: on an occasion page, its data with {eta} already filled in — the
@@ -303,6 +330,10 @@ const attrEscape = (s) =>
 function headTags({ file, query, fallback = false, indexable, price, faq, html = '', occasion }) {
   const out = [];
   const isPublic = fallback || isPublicPage(file);
+  // the home page in either look: "/" (index.html, or new.html swapped in by the
+  // redesign mode, which is still asked for as index.html) and new.html itself.
+  // Off production too: the tag proves ownership and says nothing to a crawler.
+  if (fallback || file === 'index.html' || file === 'new.html') out.push(...verificationTags());
   if (!indexable || !isPublic) {
     if (!/<meta\s+name="robots"/i.test(html)) out.push('<meta name="robots" content="noindex" />');
     return out.join('\n    ');
@@ -351,7 +382,9 @@ function inject(html, tags) {
 // llms.txt (llmstxt.org): a Markdown brief an AI assistant can read in one go,
 // instead of reconstructing the business from carousels and scripts. Built from
 // the same live price and FAQ the pages show, so it can't drift from them.
-function llmsTxt({ price, faq }) {
+function llmsTxt({ price, faq, eta }) {
+  // the production time, from the admin (the pickup eta) like the occasion pages
+  const days = occasions.etaPhrase(eta);
   const base = origin();
   const lines = [
     '# דוגרי (Dugri)',
@@ -369,7 +402,7 @@ function llmsTxt({ price, faq }) {
     '',
     '- איך משחקים: מתחלקים לקבוצות, שולפים קלף ומתארים את המילה בלי להגיד אותה; הקבוצה מנחשת כמה שיותר עד שהטיימר מצלצל.',
     '- כמה מילים: עד 412 מילים אישיות. נשלח דף עזר עם קטגוריות ודוגמאות.',
-    '- זמן אספקה: עד 4 ימי עסקים מרגע שליחת רשימת המילים (לא מרגע התשלום).',
+    `- זמן אספקה: ${days ? 'עד ' + days : 'כמה ימי עסקים'} מרגע שליחת רשימת המילים (לא מרגע התשלום).`,
     '- איסוף עצמי: בית הדפוס גלאור, התחייה 14 תל אביב, כניסה B, קומה ראשונה (ראשון עד חמישי).',
   ];
   if (Number.isFinite(price) && price > 0) lines.push(`- מחיר: ${price} ₪ (מחיר עדכני באתר).`);
@@ -402,6 +435,7 @@ function llmsTxt({ price, faq }) {
 
 module.exports = {
   DEFAULT_HOST,
+  verificationTags,
   PUBLIC_PAGES,
   occasionFile,
   seoHost,

@@ -710,6 +710,8 @@ function registerAdsSettingsWhatsapp(
     openWhatsappGroup,
     ilPhoneToWaId,
     resolveProductImageUrl,
+    occasions,
+    occasionReport,
   }
 ) {
   // --- Ad attribution (first-party) --------------------------------------------
@@ -887,7 +889,7 @@ function registerAdsSettingsWhatsapp(
     if (!preclaimed && !db.claimMetaReport(collectionId)) return;
     const orderNo = db.orderRef(c);
     // The amount is read from the order store, never from a caller.
-    const value = c.order.charged_total != null ? c.order.charged_total : c.order.total;
+    const value = attribution.orderValue(c.order);
     // What we captured at pay/init, refreshed by anything the caller can add.
     // Only a REAL value overrides: the confirmation page knows the click id but
     // not the cookies, the callback knows the cookies but not the click id, and an
@@ -1125,7 +1127,7 @@ function registerAdsSettingsWhatsapp(
       const c = db.getCollection(String(body.collection || ''));
       if (!c || !c.order || !c.order.paid) return res.status(204).end();
       if (!body.k || body.k !== c.owner_token) return res.status(204).end();
-      value = c.order.charged_total != null ? c.order.charged_total : c.order.total;
+      value = attribution.orderValue(c.order);
       orderNo = db.orderRef(c);
       order = c;
     }
@@ -1141,6 +1143,11 @@ function registerAdsSettingsWhatsapp(
       // is often opened on another device, from one of our own emails, and that
       // browser's touch would credit the sale to the inbox instead of the ad.
       arrival: order ? order.arrival : undefined,
+      // The occasion page a visit was made on, only when it IS one of the pages.
+      occasion:
+        kind === 'visit' && occasions && occasions.find(String(body.occasion || ''))
+          ? String(body.occasion)
+          : undefined,
     });
     // Meta's copy of the same sale — the FALLBACK half. The report that matters
     // left from the payment itself (see sendPurchaseToMeta), because a buyer who
@@ -1336,6 +1343,33 @@ function registerAdsSettingsWhatsapp(
       base_url: paymentBaseUrl(),
     });
   });
+  // ORDERS BY OCCASION PAGE (server/occasion-report.js): visits, orders started,
+  // paid orders and revenue per occasion slug, for the same window as the ad
+  // report above.
+  app.get('/api/admin/ads/occasions', (req, res) => {
+    if (!requireAdmin(req, res)) return;
+    const days = Math.min(Math.max(1, Number(req.query.days) || 30), 400);
+    res.json(
+      occasionReport.occasionReport({
+        collections: db.listAllCollections(),
+        visits: attribution.occasionVisits({ days }),
+        pages: occasions.live().map((o) => ({ slug: o.slug, label: o.label })),
+        days,
+      })
+    );
+  });
+
+  // The live occasion pages, for the wizard: options.html?occasion=<slug>
+  // pre-fills the order's event type with the page's label. Read from the pages'
+  // own data files, so there is no second table of names to keep in step.
+  app.get('/api/occasions', (req, res) => {
+    res.json({
+      occasions: occasions
+        .live()
+        .map((o) => ({ slug: o.slug, label: o.label, audience: o.audience })),
+    });
+  });
+
   app.get('/api/admin/ads/live', (req, res) => {
     if (!requireAdmin(req, res)) return;
     res.json({ events: attribution.recent(Number(req.query.limit) || 60) });
