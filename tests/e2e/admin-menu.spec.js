@@ -14,9 +14,8 @@ import { test, expect } from '@playwright/test';
 // one outcome she ruled out. That is a restatement of the edit, not a test of it.
 const KEY = 'dugri-admin';
 
-// Title text is the marker: it proves the route served THAT page rather than the
-// SPA fallback, which answers 200 with the landing page for anything it does not
-// recognise.
+// Title text is the marker: it proves the route served THAT page rather than
+// something else answering 200 in its place.
 const OFF_THE_MENU = [
   { path: '/admin-designs.html', title: 'עיצובים — דוגרי (ניהול)' },
   { path: '/admin-playbook.html', title: 'פלייבוק — דוגרי (ניהול)' },

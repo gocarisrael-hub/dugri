@@ -425,8 +425,12 @@ describe('seo routes (app)', () => {
     expect(await r.text()).not.toContain('rel="canonical"');
   });
 
-  it('a vanity path (SPA fallback) canonicalises to the home page', async () => {
-    const html = await (await get('/sale', PROD)).text();
-    expect(html).toContain('<link rel="canonical" href="https://dugri-israel.co.il/" />');
+  it('an unknown path is a 301 to the home page, not a second copy of it', async () => {
+    const r = await fetch(base + '/sale?utm_source=ig', {
+      headers: { 'x-forwarded-host': PROD },
+      redirect: 'manual',
+    });
+    expect(r.status).toBe(301);
+    expect(r.headers.get('location')).toBe('/?utm_source=ig');
   });
 });

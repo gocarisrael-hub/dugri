@@ -506,8 +506,8 @@ describe('the funnel reads like a funnel', () => {
 });
 
 // The builder writes links that go into paid ads. A destination that does not
-// exist does not 404 — the server's navigation fallback serves the homepage with
-// a 200 — so a wrong option here is money spent on traffic that lands somewhere
+// exist does not 404 — the server's navigation fallback redirects it to the
+// homepage — so a wrong option here is money spent on traffic that lands somewhere
 // other than the page the ad promised, with nothing to reveal it.
 describe('the link builder', () => {
   it('offers only destinations the site actually serves', async () => {

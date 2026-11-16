@@ -100,13 +100,13 @@ test.describe('meta pixel, end to end', () => {
     await page.getByTestId('save-pixel').click();
     await expect(page.locator('.status')).toHaveText(/הפיקסל פעיל/);
 
-    // An extension-less path with no page behind it falls through to the
-    // navigation fallback, which serves the home page. That is exactly the shape
-    // of a vanity link in a bio or a mistyped ad destination — the traffic this
-    // feature exists to measure — so the fallback must be pixelled too.
-    const r = await request.get('/sale');
-    expect(r.status()).toBe(200);
-    expect(await r.text()).toContain(`fbq('init', '${ID}')`);
+    // An extension-less path with no page behind it (a vanity link in a bio, a
+    // mistyped ad destination) answers 301 to the home page with its query, so
+    // the pixel fires there: the redirect must land on a pixelled page.
+    const r = await request.get('/sale?utm_source=ig', { maxRedirects: 0 });
+    expect(r.status()).toBe(301);
+    expect(r.headers()['location']).toBe('/?utm_source=ig');
+    expect(await (await request.get('/?utm_source=ig')).text()).toContain(`fbq('init', '${ID}')`);
   });
 
   test('the admin pages themselves are never pixelled', async ({ page, request }) => {

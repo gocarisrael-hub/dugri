@@ -5581,8 +5581,8 @@ app.post('/pay-done.html', (req, res) => res.redirect(303, req.originalUrl));
 // on the domain the buyer pays on before Tranzila's page may show Apple Pay. The
 // file is Tranzila's (the same for every Tranzila merchant, published at
 // api.tranzila.com/assets/apple_pay/merchant_authentication_file.zip) and public.
-// It needs its own route: express.static skips dot-directories, and the SPA
-// fallback below would answer an extension-less path with the homepage.
+// It needs its own route: express.static skips dot-directories, and the
+// navigation fallback below would answer an extension-less path with a redirect.
 const APPLE_PAY_DOMAIN_FILE = path.join(
   __dirname,
   'apple-pay',
@@ -6215,8 +6215,8 @@ app.get(['/how.html', '/how'], (req, res) => {
 // /<slug> for every LIVE occasion data file: site/occasion.html filled from
 // server/occasions/<slug>.json, with the production time read from the admin
 // (the pickup eta) on every request. A known slug that is not live answers 404,
-// and so does the raw template (both of them). Any other path is untouched (the SPA fallback
-// keeps serving ad vanity paths).
+// and so does the raw template (both of them). Any other path falls through to
+// the navigation fallback at the end of the file (301 to "/").
 const occasions = require('./occasions');
 app.get(
   ['/occasion.html', '/occasion', '/occasion-business.html', '/occasion-business'],
@@ -6405,21 +6405,26 @@ app.use(
   })
 );
 
-// Navigation fallback: serve the landing page only for extension-less routes.
-// A request for a missing asset (it has a file extension) gets a real 404
-// instead of the HTML homepage, which in-app browsers (Instagram) mishandle.
+// Navigation fallback: whatever nothing above matched. It MUST stay the last
+// route (tests/unit/route-order.test.js pins it).
+//
+// - A path with a file extension is a missing asset: a real plain-text 404, not
+//   the HTML homepage, which in-app browsers (Instagram) mishandle.
+// - /api/* never gets here (the JSON 404 above answers it); guarded anyway, so a
+//   reorder cannot turn an unknown API call into a redirect to a web page.
+// - Any other extension-less path (a mistyped link, an old address) answers 301
+//   to "/". Owner decision 2026-11-16: it used to serve the home page with a 200
+//   under the unknown address. The QUERY SURVIVES, so an ad's utm/fbclid tags
+//   still attribute the visit; the pixel fires on "/". The landing PATH itself is
+//   lost, so a vanity path that ads or a bio link to needs its own route above
+//   (none was in use when this changed: the ads link builder offers only "/" and
+//   /products.html, and the Instagram bio links to "/").
 app.get('*', (req, res) => {
   if (path.extname(req.path)) return res.status(404).type('txt').send('Not found');
-  res.setHeader('Cache-Control', 'no-cache');
-  // The same rendering as a directly-served page: the import map, so the SPA
-  // fallback carries hashed module urls; the pixel, because these extension-less
-  // paths are exactly the ones an ad links to (/sale, a vanity path in a bio, a
-  // mistyped link), so a fallback with no pixel would miss precisely the traffic
-  // it is there for; and the redesign gate, so an ad's vanity path shows the same
-  // home page as "/".
-  const html = renderPage(req, res, path.join(SITE_DIR, 'index.html'), true);
-  res.type('html');
-  res.send(html);
+  if (req.path === '/api' || req.path.startsWith('/api/'))
+    return res.status(404).json({ error: 'not found' });
+  const q = req.originalUrl.indexOf('?');
+  res.redirect(301, '/' + (q === -1 ? '' : req.originalUrl.slice(q)));
 });
 
 // An over-sized upload is rejected by body-parser with a 413 (entity.too.large)
