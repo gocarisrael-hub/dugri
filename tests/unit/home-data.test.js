@@ -206,9 +206,9 @@ describe('the designs come from the live catalog', () => {
     expect(homeDesigns([builtIn('brand-new', 'x')])).toEqual([]);
   });
 
-  it('deals every design with a back except ברוקלין', () => {
+  it('deals every design with a back, ברוקלין included', () => {
     const list = homeDesigns([builtIn('kids', 'ברוקלין'), builtIn('bachelorette', 'פריז')]);
-    expect(list.find((d) => d.id === 'kids').deal).toBe(false);
+    expect(list.find((d) => d.id === 'kids').deal).toBe(true);
     expect(list.find((d) => d.id === 'bachelorette').deal).toBe(true);
   });
 });
