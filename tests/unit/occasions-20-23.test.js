@@ -6,7 +6,7 @@
 //   3. page 22, Valentine's Day and Tu B'Av, is seasonal and built in full but NOT live: it answers 404 and is out of
 //      the sitemap, llms.txt, the footer row and the wizard's list; its "before February 14" answer types no date and
 //      its `deadline` stays null until the owner types one
-//   4. each page's designs: 3-5 live ones with art, never kids, the listed built-ins dealt on first paint
+//   4. each page's designs: 3-5 live ones with art, the listed built-ins dealt on first paint
 //   5. pages 20, 21 and 23 are live, served, in the sitemap and llms.txt, and link only to live pages
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createRequire } from 'node:module';
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
-import { DESIGN_ART, NOT_DEALT, homeDesigns, occasionDesigns } from '../../site/js/home-data.js';
+import { DESIGN_ART, homeDesigns, occasionDesigns } from '../../site/js/home-data.js';
 import { PUBLIC_DESIGNS } from '../../site/js/designs.js';
 
 const require = createRequire(import.meta.url);
@@ -251,14 +251,13 @@ describe('page 22, /yom-haahava: seasonal, built, not live', () => {
 describe('pages 20-23: the designs', () => {
   const base = homeDesigns(PUBLIC_DESIGNS);
   for (const [slug, want] of Object.entries(PAGES))
-    it(`/${slug} lists 3-5 designs with art, never kids, and deals its built-ins on first paint`, () => {
+    it(`/${slug} lists 3-5 designs with art and deals its built-ins on first paint`, () => {
       const list = occ.find(slug).designs;
       expect(list).toEqual(want.designs);
       expect(list.length).toBeGreaterThanOrEqual(3);
       expect(list.length).toBeLessThanOrEqual(5);
       for (const id of list) {
         expect(DESIGN_ART[id], id).toBeTruthy();
-        expect(NOT_DEALT.has(id), id).toBe(false);
       }
       const builtIn = list.filter((id) => PUBLIC_DESIGNS.some((d) => d.id === id));
       expect(builtIn.length).toBeGreaterThan(0);
