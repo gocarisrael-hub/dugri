@@ -295,7 +295,11 @@ describe('the gate, served', () => {
       expect(r.body).toBe(preGate(file));
       expect(r.headers['set-cookie']).toBeUndefined();
     }
-    expect((await get('/some-ad-path')).body).toBe(preGate('index.html', { fallback: true }));
+    // an unknown path is a redirect home now, with no page body and no cookie
+    const unknown = await get('/some-ad-path');
+    expect(unknown.status).toBe(301);
+    expect(unknown.headers.location).toBe('/');
+    expect(unknown.headers['set-cookie']).toBeUndefined();
   });
 
   it('?rd=1 previews: a session cookie, the redesign, new.html at "/", noindex', async () => {
@@ -362,11 +366,13 @@ describe('the gate, served', () => {
     expect(canonical(r.body)).toBe(null);
   });
 
-  it('on, an ad vanity path shows the same new home as "/"', async () => {
+  // An unknown extension-less path is a 301 to "/" (query kept), so it shows
+  // whatever "/" shows, gated or not; it is never served under its own address.
+  it('on, an unknown vanity path redirects to "/"', async () => {
     settings.set('redesign', 'enabled', true);
-    const r = await get('/sale');
-    expect(servesNewHome(r.body)).toBe(true);
-    expect(canonical(r.body)).toBe('https://127.0.0.1/');
+    const r = await get('/sale?utm_source=ig');
+    expect(r.status).toBe(301);
+    expect(r.headers.location).toBe('/?utm_source=ig');
   });
 
   it('an admin page is untouched, setting on and cookie set', async () => {
