@@ -135,6 +135,8 @@ describe('occasionDesigns', () => {
       expect(h.back).toBe(render('back').src);
       expect(h.board.src).toBe(render('board').src);
       expect(h.href).toBe('options.html?design=hanuka&step=2&occasion=chag-mishpachti');
+      // the owner's colour for it, not the fallback light blue
+      expect(h.color).toBe('#c8692a');
     });
 
     it('a server with no render of it still shows its template card, undealt (no back to deal)', () => {
