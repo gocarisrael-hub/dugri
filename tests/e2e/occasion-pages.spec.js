@@ -207,10 +207,15 @@ for (const [slug, h1, label] of [
   });
 }
 
-// page 14 shows no last order date until the owner types one into its data file (deadline: null)
-test('/chag-mishpachti shows no order date of its own', async ({ page }) => {
+// page 14 shows the owner's last order dates before the holiday, under the hero's order button
+test('/chag-mishpachti shows the last order dates for delivery and self-pickup', async ({
+  page,
+}) => {
   await page.goto('/chag-mishpachti');
   await expect(page.locator('h1')).toHaveText('משחק משפחתי לחנוכה, שכל המילים בו על המשפחה שלכם');
-  await expect(page.getByTestId('occ-deadline')).toHaveCount(0);
+  const line = page.getByTestId('occ-deadline');
+  await expect(line).toHaveCount(1);
+  await expect(line).toContainText('עד יום ב׳ 23.11 ב-16:00');
+  await expect(line).toContainText('לאיסוף עצמי: עד יום א׳ 29.11 ב-16:00');
   await expect(page.locator('summary', { hasText: 'עד מתי להזמין כדי שיגיע לחג?' })).toHaveCount(1);
 });
