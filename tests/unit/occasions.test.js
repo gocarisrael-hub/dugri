@@ -94,7 +94,7 @@ describe('the data files', () => {
           'הדירה הראשונה',
         ],
         faq: [
-          'אפשר לכתוב שמות של שניהם על הקופסה?',
+          'אפשר לכתוב שמות של שניהם על הקלפים?',
           'גם בני זוג של הילדים יכולים להוסיף?',
           'מתאים למסיבת הפתעה?',
           'כמה זמן זה לוקח?',
@@ -119,7 +119,7 @@ describe('the data files', () => {
           'מתאים גם למפקד שמשתחרר?',
           'כמה זמן זה לוקח?',
           'אפשר משלוח לבסיס?',
-          'יש הנחה לכמה עותקים?',
+          'אפשר להזמין כמה עותקים?',
         ],
       },
       gibush: {
@@ -189,7 +189,7 @@ describe('the data files', () => {
 
     it('no page promises a discount, a base delivery or the company colours it does not offer', () => {
       const ans = (slug, q) => occ.find(slug).faq.items.find((i) => i.q === q).a;
-      expect(ans('shichrur', 'יש הנחה לכמה עותקים?')).not.toMatch(/הנחה|%|\d/);
+      expect(ans('shichrur', 'אפשר להזמין כמה עותקים?')).not.toMatch(/הנחה|%|\d/);
       // the owner (2026-11-16): the courier delivers to a base, an address in Israel; no time of its own
       const base = ans('shichrur', 'אפשר משלוח לבסיס?');
       expect(base).toMatch(/^כן\./);

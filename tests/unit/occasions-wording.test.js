@@ -20,5 +20,12 @@ describe('occasion pages: where the title is printed', () => {
       const steps = JSON.stringify(o.steps || {});
       expect(steps).not.toMatch(/(כותבים|כותבות) על הקופסה/);
     });
+    // no built-in discount for copies (owner, 2026-11-16): no question may ask about one, and the name is not on a box
+    it(`${o.slug} asks no question about a discount or about the box`, () => {
+      for (const { q } of (o.faq && o.faq.items) || []) {
+        expect(q, q).not.toMatch(/הנחה/);
+        expect(q, q).not.toMatch(/על הקופסה/);
+      }
+    });
   }
 });
