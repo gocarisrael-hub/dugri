@@ -51,10 +51,10 @@ test('the click is counted, and counted as its own place', async ({ page }) => {
 
 test('every word of it is owner-editable', async ({ page }) => {
   const band = page.locator('#business');
-  // Heading, sub, three titles, three bodies and the button. The terms line was
-  // the tenth until it was removed; this count is what would catch another one
-  // going missing.
-  await expect(band.locator('[data-edit^="index-b2b-"]')).toHaveCount(9);
+  // Heading, sub, three titles, three bodies, the button and the link to the
+  // company page (/asakim). The terms line was once one of them until it was
+  // removed; this count is what would catch another one going missing.
+  await expect(band.locator('[data-edit^="index-b2b-"]')).toHaveCount(10);
 });
 
 test('it sits between the closing CTA and the footer', async ({ page }) => {

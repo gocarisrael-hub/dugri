@@ -23,7 +23,7 @@ function mount(slug) {
     read('new.html'),
     occ.resolve(occ.find(slug), '')
   );
-  const doc = new DOMParser().parseFromString(html, 'text/html');
+  const doc = new window.DOMParser().parseFromString(html, 'text/html');
   document.head.innerHTML = doc.head.innerHTML;
   document.body.innerHTML = doc.body.innerHTML;
 }
