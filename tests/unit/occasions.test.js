@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'node:fs';
+import { DESIGN_ART } from '../../site/js/home-data.js';
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -23,14 +24,81 @@ const files = fs.readdirSync(DATA).filter((f) => f.endsWith('.json'));
 const read = (f) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
 const NEW_HTML = fs.readFileSync(path.join(siteDir, 'new.html'), 'utf8');
 const TEMPLATE = fs.readFileSync(path.join(siteDir, 'occasion.html'), 'utf8');
+const LIVE = [
+  'yom-huledet',
+  'yom-huledet-aba',
+  'mesibat-ravakot',
+  'tiyul-mishpachti-lechul',
+  'pensia',
+];
 const ETA = 'המשחק מוכן בדרך כלל תוך כ-4 ימי עסקים מרגע שרשימת המילים מוכנה.';
 
 describe('the data files', () => {
   const known = new Set(files.map((f) => read(f).slug));
 
-  it('page 1 and its dad page exist and are live', () => {
-    expect(known).toEqual(new Set(['yom-huledet', 'yom-huledet-aba']));
-    expect(occ.live().map((o) => o.slug)).toEqual(['yom-huledet', 'yom-huledet-aba']);
+  it("pages 1-4 (and page 1's dad page) exist and are live, in the owner's page order", () => {
+    expect(known).toEqual(new Set(LIVE));
+    expect(occ.live().map((o) => o.slug)).toEqual(LIVE);
+  });
+
+  it('every page has its own event-type label (the wizard pre-fills it, /api/occasions sends it)', () => {
+    const labels = occ.live().map((o) => o.label);
+    expect(new Set(labels).size).toBe(labels.length);
+    expect(occ.find('mesibat-ravakot').label).toBe('מסיבת רווקות');
+    expect(occ.find('tiyul-mishpachti-lechul').label).toBe('טיול משפחתי לחו״ל');
+    expect(occ.find('pensia').label).toBe('יציאה לפנסיה');
+  });
+
+  // pages 2-4: the owner's texts (occasion-pages spec), word for word
+  for (const [slug, order, h1, words] of [
+    [
+      'mesibat-ravakot',
+      2,
+      'משחק למסיבת רווקות, מותאם אישית לכלה',
+      ['האקס מהצבא', 'יוון 2023', '"רק עוד אחד"'],
+    ],
+    [
+      'tiyul-mishpachti-lechul',
+      3,
+      'משחק לטיול משפחתי בחו״ל, שכל המילים בו על המשפחה שלכם',
+      ['הדיוטי פרי', 'המרק של סבתא', 'דוד שתמיד מאחר'],
+    ],
+    [
+      'pensia',
+      4,
+      'מתנה ליציאה לפנסיה שכל המשרד כותב',
+      ['הקפה של עשר', 'המדפסת בקומה 3', 'ארוחת שישי בעבודה'],
+    ],
+  ]) {
+    it(`page ${order}, /${slug}, carries the owner's H1 and example words`, () => {
+      const o = occ.find(slug);
+      expect(o.order).toBe(order);
+      expect(o.live).toBe(true);
+      expect(o.audience).toBe('private');
+      expect(o.h1).toBe(h1);
+      for (const w of words) expect(o.sampleWords.words).toContain(w);
+      // every listed design has art the page can draw before the volume answers
+      for (const d of o.designs) expect(DESIGN_ART[d], d).toBeTruthy();
+    });
+  }
+
+  it('the "take it abroad" answers send the box on the flight, never a parcel abroad', () => {
+    const abroad = [
+      occ.find('mesibat-ravakot').faq.items.find((i) => /לחו״ל/.test(i.q)),
+      occ.find('tiyul-mishpachti-lechul').faq.items.find((i) => /בטיסה/.test(i.q)),
+    ];
+    for (const f of abroad) {
+      expect(f.a).toContain('לטיסה');
+      expect(f.a).toContain('רק בתוך ישראל');
+      expect(f.a).toContain('מזמינ');
+    }
+  });
+
+  it('no page links to a page that is not live yet (the bachelor page, /mesibat-ravakim)', () => {
+    for (const o of occ.live()) {
+      expect(JSON.stringify(o)).not.toContain('mesibat-ravakim');
+      for (const s of o.related) expect(occ.find(s).live, s).toBe(true);
+    }
   });
 
   for (const f of files) {
@@ -47,8 +115,9 @@ describe('the data files', () => {
       // the production time is never typed: it is the admin's, as {eta}
       expect(text).not.toMatch(/\d+\s*ימי עסקים/);
       expect(text).toContain('{eta}');
+      // the players answer is fixed wherever a page asks it (not every page's five questions do)
       const players = o.faq.items.find((i) => /כמה אנשים יכולים לשחק/.test(i.q));
-      expect(players.a).toBe('כמה שרוצים, עדיף בקבוצות.');
+      if (players) expect(players.a).toBe('כמה שרוצים, עדיף בקבוצות.');
     });
   }
 
@@ -222,7 +291,7 @@ describe('the routes (app)', () => {
   });
 
   it('serves a live page at its slug', async () => {
-    for (const slug of ['yom-huledet', 'yom-huledet-aba']) {
+    for (const slug of LIVE) {
       const r = await fetch(base + '/' + slug);
       expect(r.status, slug).toBe(200);
       expect(r.headers.get('content-type')).toMatch(/text\/html/);

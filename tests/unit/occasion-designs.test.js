@@ -65,6 +65,37 @@ describe('occasionDesigns', () => {
       expect(d.href).toMatch(/^options\.html\?design=[^&]+&step=2&occasion=yom-huledet$/);
   });
 
+  // pages 2-4: the agent's picks from the live designs, for the owner to change in the data files
+  describe('pages 2-4', () => {
+    const LISTS = {
+      'mesibat-ravakot': ['bachelorette', 'daniel-amit', 'tarifa', 'birthday', 'grapefruit'],
+      'tiyul-mishpachti-lechul': ['posttrip', 'marriage', 'grapefruit', 'tarifa', 'birthday'],
+      pensia: ['japanese', 'marriage', 'grapefruit', 'posttrip'],
+    };
+    const ALL_CUSTOM = homeDesigns([
+      ...PUBLIC_DESIGNS,
+      ...['daniel-amit', 'grapefruit', 'football-boys', 'tarifa'].map(custom),
+    ]);
+
+    for (const [slug, list] of Object.entries(LISTS)) {
+      it(`/${slug} lists 3-5 designs with art, deals its built-ins first, then all of them`, () => {
+        expect(page(slug).designs).toEqual(list);
+        expect(list.length).toBeGreaterThanOrEqual(3);
+        expect(list.length).toBeLessThanOrEqual(5);
+        for (const id of list) expect(DESIGN_ART[id], id).toBeTruthy();
+        const builtIn = list.filter((id) => PUBLIC_DESIGNS.some((d) => d.id === id));
+        expect(builtIn.length).toBeGreaterThan(0);
+        // first paint: only the listed built-ins are dealt
+        const first = occasionDesigns(base, page(slug));
+        expect(first.filter((d) => d.deal).map((d) => d.id)).toEqual(builtIn);
+        // with the custom designs in: the strip starts with the list, every one dealt
+        const later = occasionDesigns(ALL_CUSTOM, page(slug));
+        expect(later.map((d) => d.id).slice(0, list.length)).toEqual(list);
+        expect(later.filter((d) => d.deal).map((d) => d.id)).toEqual(list);
+      });
+    }
+  });
+
   describe("the owner's lists", () => {
     const MOM = ['daniel-amit', 'birthday', 'grapefruit', 'marriage', 'bachelorette'];
     const DAD = ['japanese', 'kids', 'football-boys', 'posttrip'];
