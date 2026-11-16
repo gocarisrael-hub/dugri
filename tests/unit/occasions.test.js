@@ -92,7 +92,6 @@ describe('the data files', () => {
           'גם בני זוג של הילדים יכולים להוסיף?',
           'מתאים למסיבת הפתעה?',
           'כמה זמן זה לוקח?',
-          'אפשר משלוח ישר אליהם?',
         ],
       },
       shichrur: {
@@ -185,16 +184,22 @@ describe('the data files', () => {
     it('no page promises a discount, a base delivery or the company colours it does not offer', () => {
       const ans = (slug, q) => occ.find(slug).faq.items.find((i) => i.q === q).a;
       expect(ans('shichrur', 'יש הנחה לכמה עותקים?')).not.toMatch(/הנחה|%|\d/);
-      expect(ans('shichrur', 'אפשר משלוח לבסיס?')).toContain('בוואטסאפ');
-      expect(ans('shichrur', 'אפשר משלוח לבסיס?')).toContain('בתוך ישראל');
-      expect(ans('yom-nisuin', 'אפשר משלוח ישר אליהם?')).toContain('רק בתוך ישראל');
-      // the owner's answer (2026-11-16): a logo from a certain quantity, with no number; nothing about colours
+      // the owner (2026-11-16): the courier delivers to a base, an address in Israel; no time of its own
+      const base = ans('shichrur', 'אפשר משלוח לבסיס?');
+      expect(base).toMatch(/^כן\./);
+      expect(base).toContain('בתוך ישראל, גם לבסיס');
+      expect(base).not.toMatch(/\d|ימים|שעות/);
+      // the owner: the anniversary game is not shipped straight to the couple, so the page doesn't offer it
+      expect(JSON.stringify(occ.find('yom-nisuin').faq)).not.toContain('ישר אליהם');
+      // the owner's answer (2026-11-16): a logo from a certain quantity, with no number; the design is ours, in the
+      // company's spirit, and never "your colours"
       const logo = ans('gibush', 'אפשר לוגו וצבעי החברה?');
       const pensia = ans('pensia', 'אפשר לוגו של החברה?');
-      for (const a of [logo, pensia]) {
-        expect(a).toContain('כן, בהזמנה מעל כמות מסוימת: הלוגו שלכם, בעיצוב וליווי שלנו.');
-        expect(a).not.toMatch(/\d|צבע/);
-      }
+      expect(logo).toContain(
+        'כן, בהזמנה מעל כמות מסוימת: הלוגו שלכם, והעיצוב שלנו, ברוח החברה, עם ליווי שלנו.'
+      );
+      expect(pensia).toContain('כן, בהזמנה מעל כמות מסוימת: הלוגו שלכם, בעיצוב וליווי שלנו.');
+      for (const a of [logo, pensia]) expect(a).not.toMatch(/\d|צבע/);
       expect(pensia).toBe(
         'כן, בהזמנה מעל כמות מסוימת: הלוגו שלכם, בעיצוב וליווי שלנו. דברו איתנו בוואטסאפ.'
       );
