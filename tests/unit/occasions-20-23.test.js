@@ -195,10 +195,15 @@ describe('pages 20-23: the data files', () => {
       for (const s of o.related) expect(occ.find(s) && occ.find(s).live, s).toBe(true);
     });
 
-  it('links the pages that are live: 20 to the anniversary page, 22 and 23 to the couples pages', () => {
+  it('links the pages that are live: 20 to the anniversary page, 21 to the bachelor party, 22 and 23 to the couples pages, 23 to the surprise party', () => {
     expect(occ.find('yom-huledet-saba-savta').related).toContain('yom-nisuin');
-    for (const slug of ['deit-mafti-a', VALENTINE])
-      expect(occ.find(slug).related).toEqual(['zug', 'yom-huledet-ben-zug']);
+    expect(occ.find(VALENTINE).related).toEqual(['zug', 'yom-huledet-ben-zug']);
+    expect(occ.find('deit-mafti-a').related).toEqual([
+      'zug',
+      'yom-huledet-ben-zug',
+      'mesibat-hafta-a',
+    ]);
+    expect(occ.find('tiyul-chavura-lechul').related).toContain('mesibat-ravakim');
   });
 
   it('no live page links to the Valentine page while it is not live', () => {
