@@ -6215,11 +6215,12 @@ app.get(['/how.html', '/how'], (req, res) => {
 // /<slug> for every LIVE occasion data file: site/occasion.html filled from
 // server/occasions/<slug>.json, with the production time read from the admin
 // (the pickup eta) on every request. A known slug that is not live answers 404,
-// and so does the raw template. Any other path is untouched (the SPA fallback
+// and so does the raw template (both of them). Any other path is untouched (the SPA fallback
 // keeps serving ad vanity paths).
 const occasions = require('./occasions');
-app.get(['/occasion.html', '/occasion'], (req, res) =>
-  res.status(404).type('txt').send('Not found')
+app.get(
+  ['/occasion.html', '/occasion', '/occasion-business.html', '/occasion-business'],
+  (req, res) => res.status(404).type('txt').send('Not found')
 );
 app.get('/:slug', (req, res, next) => {
   const o = occasions.find(req.params.slug);
@@ -6229,10 +6230,16 @@ app.get('/:slug', (req, res, next) => {
   try {
     const pickup = settings.get('email', 'pickup_info') || {};
     const page = occasions.resolve(o, pickup.eta);
-    html = renderPage(req, res, path.join(SITE_DIR, 'occasion.html'), false, {
+    // a company page (audience 'business') is the template's company variant
+    const business = o.audience === 'business';
+    html = renderPage(req, res, path.join(SITE_DIR, occasions.templateFor(o)), false, {
       occasion: page,
       render: (tpl) =>
-        occasions.renderPage(tpl, fs.readFileSync(path.join(SITE_DIR, 'new.html'), 'utf8'), page),
+        (business ? occasions.renderBusinessPage : occasions.renderPage)(
+          tpl,
+          fs.readFileSync(path.join(SITE_DIR, 'new.html'), 'utf8'),
+          page
+        ),
     });
   } catch (err) {
     return next(err);

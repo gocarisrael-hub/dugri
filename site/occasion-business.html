@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="dugri:page" content="occasion-business.html" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- The company variant of the occasion template (/asakim, ...: audience "business"). server/occasions.js
+         (renderBusinessPage) fills its own slots, then the shared ones as on occasion.html. No price and no order button:
+         every button asks for a quote and scrolls to the lead form (#biz, the home's business section). Never served as is. -->
+    <script src="js/home-legacy.js"></script>
+    <!-- Google Analytics (GA4) - loads after consent (js/consent.js) -->
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      gtag('consent', 'default', { analytics_storage: 'denied' });
+    </script>
+    <script src="js/consent.js" defer></script>
+    <script type="module" src="js/analytics.js"></script>
+    <title>{{title}}</title>
+    <meta name="description" content="{{description}}" />
+    <meta property="og:title" content="{{title}}" />
+    <meta property="og:description" content="{{description}}" />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/assets/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png" />
+    <meta name="theme-color" content="#fff1de" />
+    <link
+      rel="preload"
+      as="font"
+      type="font/woff2"
+      href="/assets/fonts/gveret-levin-400-hebrew.8c865542.woff2"
+      crossorigin
+    />
+    <link rel="stylesheet" href="/css/redesign-tokens.css" />
+    <link rel="stylesheet" href="/css/home-new.css" />
+    <link rel="stylesheet" href="/css/occasion.css" />
+    <link rel="stylesheet" href="/css/occasion-business.css" />
+    <script type="application/json" id="occasion-data">
+      {{{config}}}
+    </script>
+    <script src="js/editor.js" defer></script>
+    <script type="module" src="js/home-new.js"></script>
+  </head>
+  <body class="occ-page occ-biz" data-occasion="{{slug}}">
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <symbol id="spark" viewBox="0 0 40 40">
+        <path
+          d="M20 2c1.6 9.6 8.4 16.4 18 18-9.6 1.6-16.4 8.4-18 18-1.6-9.6-8.4-16.4-18-18 9.6-1.6 16.4-8.4 18-18Z"
+        />
+      </symbol>
+      <symbol id="clover" viewBox="0 0 40 40">
+        <circle cx="20" cy="11" r="8" />
+        <circle cx="29" cy="20" r="8" />
+        <circle cx="20" cy="29" r="8" />
+        <circle cx="11" cy="20" r="8" />
+        <circle cx="20" cy="20" r="4" />
+      </symbol>
+    </svg>
+
+    <header>
+      <div class="start">
+        <button
+          class="menu-btn"
+          id="menuBtn"
+          type="button"
+          aria-label="תפריט"
+          aria-haspopup="dialog"
+          aria-expanded="false"
+          aria-controls="menu"
+          data-ga="menu_open"
+        >
+          <svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+            <path class="l1" d="M24 8H4" />
+            <path class="l2" d="M24 14H4" />
+            <path class="l3" d="M24 20H4" />
+          </svg>
+        </button>
+        <a class="logo-a" href="/" data-ga="nav_click" data-ga-target="home" data-ga-where="header"
+          ><img class="logo" src="/assets/logo-pink-original.png" alt="דוגרי, לעמוד הבית"
+        /></a>
+      </div>
+      <a class="pill" href="#biz" data-ga="occasion_cta_click" data-ga-cta="header">{{cta}}</a>
+    </header>
+
+    <section class="hero" id="top" aria-labelledby="h1">
+      <div class="hero-in">
+        <div class="stage" id="stage">
+          <button class="deck" id="deck" type="button" aria-label="לחלק קלף מהחפיסה">
+            <img src="assets/home/cards/posttrip-b1.webp" alt="" draggable="false" /><img
+              src="assets/home/cards/birthday-b1.webp"
+              alt=""
+              draggable="false"
+            /><img src="assets/home/cards/bachelorette-b1.webp" alt="" draggable="false" />
+          </button>
+          <span class="hint" id="hint" aria-hidden="true">לגעת בחפיסה</span>
+          <p class="sr" id="said" aria-live="polite"></p>
+        </div>
+        <div class="hero-text">
+          <h1 id="h1" class="tt">{{h1}}</h1>
+          <p class="pn sky"><b>{{blueLead}}</b> <span>{{blueBody}}</span></p>
+          <p class="catch">
+            <span class="q">ומה הקאץ׳?</span>
+            <span class="big">{{catch}}</span>
+          </p>
+          <p class="pn pink">{{{pink}}}</p>
+          <div class="cta">
+            <a class="pill" href="#biz" data-ga="occasion_cta_click" data-ga-cta="hero"
+              ><span>{{cta}}</span
+              ><svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M19 12H5M11 6l-6 6 6 6" /></svg
+            ></a>
+          </div>
+          {{{deadline}}}
+        </div>
+      </div>
+    </section>
+
+    <!-- proof right under the hero: the home's "כבר שיחקו" logos -->
+    {{{logos}}}
+
+    <section class="occ-why" id="why" aria-labelledby="h-why">
+      <div class="occ-in">
+        <h2 id="h-why" class="tt">{{whyHeading}}</h2>
+        <ul class="why">
+          {{{why}}}
+        </ul>
+      </div>
+    </section>
+
+    <section class="occ-kit" id="kit" aria-labelledby="h-kit">
+      <div class="occ-in">
+        <h2 id="h-kit" class="tt">{{kitHeading}}</h2>
+        <ul class="kit">
+          {{{kit}}}
+        </ul>
+        <p class="pn pink kit-box">{{kitBox}}</p>
+        <p class="kit-qty" data-testid="kit-quantity">{{kitQuantity}}</p>
+      </div>
+    </section>
+
+    {{{hub}}}
+
+    <section class="occ-steps" id="how" aria-labelledby="h-how">
+      <div class="occ-in">
+        <h2 id="h-how" class="tt">{{stepsHeading}}</h2>
+        <ol class="steps">
+          {{{steps}}}
+        </ol>
+        <a class="pill" href="#biz" data-ga="occasion_cta_click" data-ga-cta="steps"
+          ><span>{{stepsCta}}</span
+          ><svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 12H5M11 6l-6 6 6 6" /></svg
+        ></a>
+      </div>
+    </section>
+
+    <section class="occ-words" id="words" aria-labelledby="h-words">
+      <div class="occ-in">
+        <h2 id="h-words" class="tt">{{wordsHeading}}</h2>
+        <ul class="chips" aria-describedby="words-note">
+          {{{words}}}
+        </ul>
+        <p class="chips-note" id="words-note">{{wordsNote}}</p>
+      </div>
+    </section>
+
+    <section class="designs" id="order" aria-labelledby="h-designs">
+      <div class="bgs" id="bgs" aria-hidden="true"></div>
+      <h2 id="h-designs" class="tt">העיצובים שלנו</h2>
+      <p class="lede">כל עיצוב מתאים לכל חגיגה&nbsp;- את הכותרת אתם כותבים</p>
+      <div class="strip" id="strip" aria-label="העיצובים"></div>
+      <div class="strip-hint" aria-hidden="true">
+        <span>החליקו</span
+        ><svg viewBox="0 0 24 24" focusable="false"><path d="M19 12H5M11 6l-6 6 6 6" /></svg>
+      </div>
+      <div class="order">
+        <a class="pill" href="#biz" data-ga="occasion_cta_click" data-ga-cta="designs"
+          ><span>{{cta}}</span
+          ><svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 12H5M11 6l-6 6 6 6" /></svg
+        ></a>
+        <a
+          class="wa-line"
+          href="https://wa.me/972546577715?text=%D7%94%D7%99%D7%99%21%20%D7%90%D7%A0%D7%97%D7%A0%D7%95%20%D7%9E%D7%A2%D7%95%D7%A0%D7%99%D7%99%D7%A0%D7%99%D7%9D%20%D7%91%D7%94%D7%96%D7%9E%D7%A0%D7%94%20%D7%9C%D7%A2%D7%A1%D7%A7%2F%D7%90%D7%99%D7%A8%D7%95%D7%A2%20%D7%92%D7%93%D7%95%D7%9C"
+          target="_blank"
+          rel="noopener"
+          data-ga="whatsapp_click"
+          data-ga-cta="designs"
+          >יש שאלה? לפניות עסקיות בוואטסאפ</a
+        >
+      </div>
+    </section>
+    <div class="wave w1" aria-hidden="true">
+      <svg viewBox="0 0 1200 100" preserveAspectRatio="none" focusable="false">
+        <path class="fld" d="M0 74 C 260 74 380 22 600 48 S 940 86 1200 26 L 1200 103 L 0 103 Z" />
+        <path class="ln" d="M0 74 C 260 74 380 22 600 48 S 940 86 1200 26" />
+      </svg>
+    </div>
+
+    {{{recs}}} {{{sheet}}} {{{flood}}}
+
+    <div class="wave w2" aria-hidden="true">
+      <svg viewBox="0 0 1200 100" preserveAspectRatio="none" focusable="false">
+        <path class="fld" d="M0 30 C 200 30 330 84 560 70 S 960 16 1200 58 L 1200 -3 L 0 -3 Z" />
+        <path class="ln" d="M0 30 C 200 30 330 84 560 70 S 960 16 1200 58" />
+      </svg>
+    </div>
+
+    <section class="faq" id="faq" aria-labelledby="h-faq">
+      <div class="faq-in">
+        <h2 id="h-faq" class="tt">{{faqHeading}}</h2>
+        <div class="qa">{{{faq}}}</div>
+        <a class="pill" href="#biz" data-ga="occasion_cta_click" data-ga-cta="faq"
+          ><span>{{cta}}</span
+          ><svg class="arr" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M19 12H5M11 6l-6 6 6 6" /></svg
+        ></a>
+      </div>
+    </section>
+
+    <!-- the lead form: the home's business section, shown (js/home-new.js wires its form) -->
+    {{{bizLead}}}
+
+    <dialog class="menu" id="menu" aria-label="תפריט">
+      <button class="x" type="button" id="menuX" aria-label="סגירת התפריט">
+        <svg class="mi" viewBox="0 0 28 28" aria-hidden="true" focusable="false">
+          <path class="l1" d="M24 8H4" />
+          <path class="l2" d="M24 14H4" />
+          <path class="l3" d="M24 20H4" />
+        </svg>
+      </button>
+      <nav aria-label="ניווט">
+        <ul>
+          <li>
+            <a href="#order" data-ga="nav_click" data-ga-target="designs" data-ga-where="menu"
+              >העיצובים</a
+            >
+          </li>
+          <li>
+            <a href="/#story" data-ga="nav_click" data-ga-target="story" data-ga-where="menu"
+              >איך דוגרי נולד</a
+            >
+          </li>
+          <li>
+            <a href="#recs" data-ga="nav_click" data-ga-target="recs" data-ga-where="menu"
+              >ממליצים עלינו</a
+            >
+          </li>
+          <li>
+            <a href="new-faq.html" data-ga="nav_click" data-ga-target="faq" data-ga-where="menu"
+              >שאלות נפוצות</a
+            >
+          </li>
+          <li>
+            <a href="pickup.html" data-ga="nav_click" data-ga-target="pickup" data-ga-where="menu"
+              >איסוף עצמי</a
+            >
+          </li>
+          <li>
+            <a href="#biz" data-ga="nav_click" data-ga-target="biz" data-ga-where="menu"
+              >פניות עסקיות</a
+            >
+          </li>
+        </ul>
+      </nav>
+      <a class="pill" href="#biz" data-ga="occasion_cta_click" data-ga-cta="menu">{{cta}}</a>
+    </dialog>
+
+    <a
+      class="fab wa-fab"
+      id="waFab"
+      data-ga="whatsapp_click"
+      data-ga-cta="float"
+      href="https://wa.me/972546577715?text=%D7%94%D7%99%D7%99%21%20%D7%90%D7%A0%D7%97%D7%A0%D7%95%20%D7%9E%D7%A2%D7%95%D7%A0%D7%99%D7%99%D7%A0%D7%99%D7%9D%20%D7%91%D7%94%D7%96%D7%9E%D7%A0%D7%94%20%D7%9C%D7%A2%D7%A1%D7%A7%2F%D7%90%D7%99%D7%A8%D7%95%D7%A2%20%D7%92%D7%93%D7%95%D7%9C"
+      target="_blank"
+      rel="noopener"
+      aria-label="לפניות עסקיות בוואטסאפ"
+      ><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path
+          d="M19.05 4.91A9.82 9.82 0 0 0 12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.91-4.45 9.91-9.91 0-2.65-1.03-5.14-2.91-7.02ZM12.05 20.15h-.01a8.2 8.2 0 0 1-4.18-1.15l-.3-.18-3.11.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.24-8.23a8.2 8.2 0 0 1 8.23 8.24c0 4.54-3.7 8.23-8.24 8.23Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.13-.16.25-.64.81-.79.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-1.99-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.01-.38.11-.51.11-.11.25-.29.37-.43.13-.14.17-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.41-.42-.56-.42-.14-.01-.31-.01-.48-.01a.92.92 0 0 0-.66.31c-.23.25-.87.85-.87 2.07 0 1.22.89 2.4 1.01 2.56.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"
+        /></svg
+    ></a>
+
+    {{{footer}}}
+    <!--occasion-row-->
+  </body>
+</html>

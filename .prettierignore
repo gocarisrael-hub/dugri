@@ -19,3 +19,6 @@ site/vendor
 # generated / runtime-managed generator data (recipes are auto-detected; themes.json is rewritten by the template-upload endpoint)
 generator/recipes/
 generator/themes.json
+
+# a golden render of the private occasion page (tests/unit/occasions-business.test.js): byte-exact on purpose
+tests/fixtures/occasion-private/

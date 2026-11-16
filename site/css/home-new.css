@@ -1570,6 +1570,12 @@ dialog.menu .pill {
 .biz .logos img[src*='hapoalim'] {
   height: 22px;
 }
+/* the quiet link to the company page (/asakim) */
+.biz-more {
+  color: var(--color-ink);
+  font-weight: 700;
+  text-underline-offset: 3px;
+}
 .biz .pill svg.wa {
   width: 22px;
   height: 22px;

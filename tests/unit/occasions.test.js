@@ -20,8 +20,11 @@ const serverDir = path.join(__dirname, '..', '..', 'server');
 const siteDir = path.join(__dirname, '..', '..', 'site');
 const occ = require(path.join(serverDir, 'occasions.js'));
 const DATA = occ.DATA_DIR;
-const files = fs.readdirSync(DATA).filter((f) => f.endsWith('.json'));
 const read = (f) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
+// the private pages' files (the company pages, audience "business", are pinned in occasions-business.test.js)
+const files = fs
+  .readdirSync(DATA)
+  .filter((f) => f.endsWith('.json') && read(f).audience !== 'business');
 const NEW_HTML = fs.readFileSync(path.join(siteDir, 'new.html'), 'utf8');
 const TEMPLATE = fs.readFileSync(path.join(siteDir, 'occasion.html'), 'utf8');
 const LIVE = [
