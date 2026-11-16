@@ -38,7 +38,13 @@ const LIVE = [
 const ETA = 'המשחק מוכן בדרך כלל תוך כ-4 ימי עסקים מרגע שרשימת המילים מוכנה.';
 
 describe('the data files', () => {
-  const known = new Set(files.map((f) => read(f).slug));
+  // every slug, company pages included: a private page may link one (/gibush → /matanot-leeruei-chevra)
+  const known = new Set(
+    fs
+      .readdirSync(DATA)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => read(f).slug)
+  );
 
   // other batches' pages (tests/unit/occasions-<batch>.test.js) are live too: LIVE is the ones this file pins, in order
   it("pages 1-4 and 14 (and page 1's dad page) exist and are live, in the owner's page order", () => {
@@ -209,6 +215,11 @@ describe('the data files', () => {
     it('the title steps say where it is printed, as the wizard does', () => {
       for (const slug of Object.keys(SPEC))
         expect(occ.find(slug).steps.items[0].text, slug).toContain('הכותרת שתודפס על הקלפים');
+    });
+
+    it('the team-events page links the live company-events page (spec page 7 → 26)', () => {
+      expect(occ.find('gibush').related).toEqual(['matanot-leeruei-chevra', 'pensia']);
+      expect(occ.find('matanot-leeruei-chevra').live).toBe(true);
     });
 
     it('only the team-events page shows the business section, with its WhatsApp and lead form', () => {
