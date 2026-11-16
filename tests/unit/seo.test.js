@@ -181,12 +181,26 @@ describe('seo module (pure)', () => {
       '- [המתנה ליום הולדת 60 שכל המשפחה כותבת](https://dugri-israel.co.il/yom-huledet)'
     );
     expect(sec).toContain('(https://dugri-israel.co.il/yom-huledet-aba)');
+    expect(sec).toContain(
+      '- [משחק למסיבת רווקות, מותאם אישית לכלה](https://dugri-israel.co.il/mesibat-ravakot)'
+    );
+    expect(sec).toContain('(https://dugri-israel.co.il/tiyul-mishpachti-lechul)');
+    expect(sec).toContain(
+      '- [מתנה ליציאה לפנסיה שכל המשרד כותב](https://dugri-israel.co.il/pensia)'
+    );
   });
 
   it('every live occasion page is public, in the sitemap, with its own canonical', () => {
     const occ = seo.PUBLIC_PAGES.filter((p) => p.occasion).map((p) => p.path);
-    expect(occ).toEqual(['/yom-huledet', '/yom-huledet-aba']);
+    expect(occ).toEqual([
+      '/yom-huledet',
+      '/yom-huledet-aba',
+      '/mesibat-ravakot',
+      '/tiyul-mishpachti-lechul',
+      '/pensia',
+    ]);
     const xml = seo.sitemapXml();
+    for (const p of occ) expect(xml).toContain(`<loc>https://dugri-israel.co.il${p}</loc>`);
     expect(xml).toContain('<loc>https://dugri-israel.co.il/yom-huledet</loc>');
     expect(xml).toContain('<loc>https://dugri-israel.co.il/yom-huledet-aba</loc>');
     expect(seo.isPublicPage(seo.occasionFile('yom-huledet'))).toBe(true);

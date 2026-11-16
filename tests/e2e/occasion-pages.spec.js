@@ -170,3 +170,38 @@ test('the footer row links the occasion pages, on the home page and on each occa
     page.getByTestId('footer-occasions').locator('a[href="/yom-huledet"]')
   ).toHaveAttribute('aria-current', 'page');
 });
+
+// pages 2-4: each loads with its own H1, its order buttons carry its slug, and the footer row links it
+for (const [slug, h1, label] of [
+  ['mesibat-ravakot', 'משחק למסיבת רווקות, מותאם אישית לכלה', 'מסיבת רווקות'],
+  [
+    'tiyul-mishpachti-lechul',
+    'משחק לטיול משפחתי בחו״ל, שכל המילים בו על המשפחה שלכם',
+    'טיול משפחתי לחו״ל',
+  ],
+  ['pensia', 'מתנה ליציאה לפנסיה שכל המשרד כותב', 'יציאה לפנסיה'],
+]) {
+  test(`/${slug} loads with its H1 and every order button carries the slug`, async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 800 });
+    const res = await page.goto('/' + slug);
+    expect(res.status()).toBe(200);
+    await expect(page.locator('h1')).toHaveText(h1);
+    await expect(page.locator('.chips li')).toHaveCount(8);
+    await expect(page.locator('.hero .pn.sky')).toContainText('עד 412 מילים אישיות');
+    const hrefs = await page
+      .locator('a.pill:not([href^="https://wa.me"])')
+      .evaluateAll((as) => as.map((a) => a.getAttribute('href')));
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) expect(href).toBe('options.html?occasion=' + slug);
+    const row = page.getByTestId('footer-occasions');
+    await expect(row.locator(`a[href="/${slug}"]`)).toHaveText(label);
+    await expect(row.locator(`a[href="/${slug}"]`)).toHaveAttribute('aria-current', 'page');
+    await page.waitForLoadState('networkidle');
+    expect(await page.locator('body').innerText()).not.toMatch(/₪/);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)
+    ).toBe(true);
+    await page.locator('.hero .cta a.pill').click();
+    await expect(page).toHaveURL(new RegExp(`/options\\.html\\?occasion=${slug}$`));
+  });
+}
