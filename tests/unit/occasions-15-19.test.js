@@ -251,6 +251,11 @@ describe('pages 15-19', () => {
     expect(weekend.a).toContain('רק בתוך ישראל');
   });
 
+  it('the enlistment and army release pages point to each other (same family, two years later)', () => {
+    expect(occ.find('giyus').related).toContain('shichrur');
+    expect(occ.find('shichrur').related).toContain('giyus');
+  });
+
   it('the bachelorette and bachelor pages point to each other', () => {
     expect(occ.find('mesibat-ravakot').related).toContain('mesibat-ravakim');
     expect(occ.find('mesibat-ravakim').related).toContain('mesibat-ravakot');
