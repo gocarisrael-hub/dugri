@@ -53,3 +53,30 @@ for (const mode of ['off', 'on']) {
     expect(await page.locator('body').innerText()).not.toContain('מינימום');
   });
 }
+
+// The page speaks to the reader in the plural everywhere (staging QA, 2026-11-16):
+// "תני לי רעיון" was feminine and "הוסף" masculine, side by side. Each removed word
+// is asserted absent on its own, because a spec pinning a single word is how a copy
+// change goes red (or how an old word survives in a second place).
+for (const mode of ['off', 'on']) {
+  test(`the add and idea buttons speak in the plural (mode ${mode})`, async ({ page, request }) => {
+    if (mode === 'on') await previewRedesign(page);
+    await page.route('**/api/content*', (route) => route.fulfill({ json: { overrides: {} } }));
+    const { id, k } = await makeCollection(request);
+    await page.goto(`/collect.html?c=${id}&k=${k}`);
+
+    await expect(page.locator('#addBtn')).toHaveText('הוסיפו');
+    await expect(page.locator('#ideaBtn')).toHaveText('תנו לי רעיון 💡');
+    await expect(page.locator('[data-edit="collect-help-intro"]')).toContainText('ולחצו “הוסיפו”');
+
+    // The questionnaire's own add button, built in JS, says the same.
+    await page.locator('#catChips .chip').first().click();
+    const row = page.getByTestId('q-row').first();
+    await expect(row.getByTestId('q-add')).toHaveText('הוסיפו');
+
+    // Whole words only: "תני" and "הוסף" are prefixes of words the page rightly uses.
+    const text = await page.locator('body').innerText();
+    expect(text).not.toMatch(/(^|[\s“"'])תני(?=[\s”"'.,!]|$)/m);
+    expect(text).not.toMatch(/(^|[\s“"'])הוסף(?=[\s”"'.,!]|$)/m);
+  });
+}

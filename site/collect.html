@@ -2897,7 +2897,7 @@
               aria-label="מילה להוספה"
               aria-describedby="wordLenHint"
             />
-            <button id="addBtn" type="button" data-edit="collect-add-btn">הוסף</button>
+            <button id="addBtn" type="button" data-edit="collect-add-btn">הוסיפו</button>
           </div>
           <!-- Live over-length warning. Deliberately NOT a maxlength attribute:
                typing that silently stops at 25 leaves the customer guessing, so
@@ -2905,7 +2905,7 @@
           <small class="len-hint hidden" id="wordLenHint" role="status" aria-live="polite"></small>
           <div class="actions">
             <button class="soft" id="ideaBtn" type="button" data-edit="collect-idea-btn">
-              תני לי רעיון 💡
+              תנו לי רעיון 💡
             </button>
           </div>
         </div>
@@ -3075,7 +3075,7 @@
           תקועים? ענו על כמה שאלות ונמלא לכם מילים 👇
         </div>
         <p class="muted" style="margin: -2px 0 4px" data-edit="collect-help-intro">
-          בחרו קטגוריה, כתבו תשובה ולחצו “הוסף” - כל תשובה נכנסת ישר לרשימה. אפשר כמה תשובות לכל
+          בחרו קטגוריה, כתבו תשובה ולחצו “הוסיפו” - כל תשובה נכנסת ישר לרשימה. אפשר כמה תשובות לכל
           שאלה.
         </p>
         <div class="chips" id="catChips"></div>
@@ -6846,7 +6846,7 @@
           const add = document.createElement('button');
           add.type = 'button';
           add.className = 'soft q-add';
-          add.textContent = 'הוסף';
+          add.textContent = 'הוסיפו';
           add.setAttribute('data-testid', 'q-add');
 
           async function commit() {
