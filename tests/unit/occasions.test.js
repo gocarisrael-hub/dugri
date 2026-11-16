@@ -64,6 +64,158 @@ describe('the data files', () => {
     expect(occ.find('tiyul-mishpachti-lechul').label).toBe('טיול משפחתי לחו״ל');
     expect(occ.find('pensia').label).toBe('יציאה לפנסיה');
     expect(occ.find('chag-mishpachti').label).toBe('חנוכה וחגים משפחתיים');
+    expect(occ.find('yom-nisuin').label).toBe('יום נישואין להורים');
+    expect(occ.find('shichrur').label).toBe('שחרור מהצבא');
+    expect(occ.find('gibush').label).toBe('ערב גיבוש');
+    expect(occ.find('yom-huledet-30').label).toBe('יום הולדת 30 לחברה');
+  });
+
+  // pages 5-8: the owner's texts (occasion-pages spec), word for word
+  describe('pages 5-8', () => {
+    const SPEC = {
+      'yom-nisuin': {
+        order: 5,
+        h1: 'מתנה ליום נישואין לאמא ואבא או לסבא וסבתא',
+        body: '30, 40, 50 או 60 שנה ביחד: הילדים, הנכדים ואפילו הנינים מוסיפים עד 412 מילים אישיות על הזוג, מהדייט הראשון ועד המריבה הקבועה על המזגן.',
+        words: [
+          'הדייט הראשון בקולנוע',
+          'ירח הדבש',
+          '"אמרתי לך שזה ימינה"',
+          'המזגן על 24',
+          'החתונה באולם ההוא',
+          'הטיול הגדול',
+          'שיר החתונה',
+          'הדירה הראשונה',
+        ],
+        faq: [
+          'אפשר לכתוב שמות של שניהם על הקופסה?',
+          'גם בני זוג של הילדים יכולים להוסיף?',
+          'מתאים למסיבת הפתעה?',
+          'כמה זמן זה לוקח?',
+          'אפשר משלוח ישר אליהם?',
+        ],
+      },
+      shichrur: {
+        order: 6,
+        h1: 'מתנת שחרור שכל הצוות או המחלקה כותבים',
+        body: 'החברים מהיחידה מוסיפים עד 412 מילים אישיות: השמירות, המפקד, השבת שנתקעתם בבסיס. משחקים במסיבת השחרור, וכל המילים עליו.',
+        words: [
+          'השמירה של שתיים בלילה',
+          'המפקד הראשון',
+          '"מי לא החזיר את הנשק?"',
+          'השבת בבסיס',
+          'הש״ג',
+          'שק״ם',
+          'הטירונות',
+          'הקפה מהמכונה',
+        ],
+        faq: [
+          'אפשר להזמין מכמה חברים ביחד?',
+          'מתאים גם למפקד שמשתחרר?',
+          'כמה זמן זה לוקח?',
+          'אפשר משלוח לבסיס?',
+          'יש הנחה לכמה עותקים?',
+        ],
+      },
+      gibush: {
+        order: 7,
+        h1: 'משחק לערב גיבוש, עם השמות והבדיחות מהמשרד',
+        body: 'משחק שנבנה מהמילים של הצוות: הכינויים, הפרויקטים, הבדיחות הפנימיות. אתם אוספים את המילים מראש, והעובדים מקבלים משחק מוכן. מתחלקים לקבוצות לפי מחלקות, וכל קלף הוא רגע שכולם מכירים.',
+        words: [
+          'הזום שנפל',
+          'המטבחון',
+          '"נדבר אחרי החגים"',
+          'הדדליין של רבעון 3',
+          'הכינוי של הבוס',
+          'הנופש האחרון',
+          'הסלאק בשבת',
+          'הקפה של המנכ״ל',
+        ],
+        // the spec asks the players question twice ("כמה עובדים..." and "כמה אנשים..."): one question, the fixed answer
+        faq: [
+          'כמה אנשים יכולים לשחק?',
+          'אפשר כמה חפיסות לקבוצות?',
+          'אפשר לוגו וצבעי החברה?',
+          'כמה זמן מראש להזמין?',
+        ],
+      },
+      'yom-huledet-30': {
+        order: 8,
+        h1: 'מתנה ליום הולדת 30 לחברה הכי טובה',
+        body: 'כל החבורה מוסיפה עד 412 מילים אישיות עליה: הצבא, הדירה הראשונה, האקסים, הטיול אחרי. מתחלקים לקבוצות ומגלים מי באמת מכירה אותה.',
+        words: [
+          'הדירה בפלורנטין',
+          '"אני בדרך"',
+          'הטיול לתאילנד',
+          'התואר שלא נגמר',
+          'הקבוצה של התיכון',
+          'הגיטרה מכיתה ט׳',
+          'ארוחות שישי',
+          'הכלב של ההורים',
+        ],
+        faq: [
+          'מתאים גם ליום הולדת 40?',
+          'אפשר להפתיע אותה?',
+          'כמה אנשים יכולים לשחק?',
+          'אפשר כמה חבורות שונות?',
+          'תוך כמה זמן זה מגיע?',
+        ],
+      },
+    };
+    for (const [slug, s] of Object.entries(SPEC)) {
+      it(`page ${s.order}, /${slug}, carries the owner's H1, blue box, example words and questions`, () => {
+        const o = occ.find(slug);
+        expect(o.order).toBe(s.order);
+        expect(o.live).toBe(true);
+        expect(o.audience).toBe('private');
+        expect(o.h1).toBe(s.h1);
+        expect(o.blueBox.body).toBe(s.body);
+        expect(o.sampleWords.words).toEqual(s.words);
+        expect(o.faq.items.map((i) => i.q)).toEqual(s.faq);
+      });
+    }
+
+    it('the army page keeps its words generic: no unit, base or operation named', () => {
+      const text = JSON.stringify(occ.find('shichrur'));
+      expect(text).not.toMatch(
+        /גולני|גבעתי|צנחנים|הנדסה|שריון|תותחנים|כפיר|נח״ל|מבצע|גדוד|חטיבת|8200|שייטת|סיירת/
+      );
+    });
+
+    it('no page promises a discount, a base delivery or the company colours it does not offer', () => {
+      const ans = (slug, q) => occ.find(slug).faq.items.find((i) => i.q === q).a;
+      expect(ans('shichrur', 'יש הנחה לכמה עותקים?')).not.toMatch(/הנחה|%|\d/);
+      expect(ans('shichrur', 'אפשר משלוח לבסיס?')).toContain('בוואטסאפ');
+      expect(ans('shichrur', 'אפשר משלוח לבסיס?')).toContain('בתוך ישראל');
+      expect(ans('yom-nisuin', 'אפשר משלוח ישר אליהם?')).toContain('רק בתוך ישראל');
+      // the home page's business line, word for word, and nothing about colours
+      const logo = ans('gibush', 'אפשר לוגו וצבעי החברה?');
+      expect(logo).toContain('הלוגו שלכם על גב הקלף ועל הקופסה, בעיצוב שלנו.');
+      expect(logo).not.toMatch(/צבע/);
+    });
+
+    // the title is printed on the cards (options.html "הכותרת שתודפס על הקלפים")
+    it('the title steps say where it is printed, as the wizard does', () => {
+      for (const slug of Object.keys(SPEC))
+        expect(occ.find(slug).steps.items[0].text, slug).toContain('הכותרת שתודפס על הקלפים');
+    });
+
+    it('only the team-events page shows the business section, with its WhatsApp and lead form', () => {
+      for (const o of occ.live()) expect(o.showBiz === true, o.slug).toBe(o.slug === 'gibush');
+      const html = occ.renderPage(TEMPLATE, NEW_HTML, occ.resolve(occ.find('gibush'), ETA));
+      const biz = html.match(
+        /<section data-edit-scope="new\.html"[^>]*class="biz"[\s\S]*?<\/section>/
+      )[0];
+      expect(biz).not.toMatch(/^<section[^>]*\shidden/);
+      expect(biz).toContain('href="https://wa.me/972546577715');
+      expect(biz).toContain('data-ga-cta="business"');
+      expect(biz).toContain('<form class="lead" id="lead"');
+      // every other order button still carries the slug
+      const own = [...html.matchAll(/<a\s+class="pill"\s+href="([^"]*)"/g)]
+        .map((m) => m[1])
+        .filter((h) => !h.startsWith('https://wa.me/'));
+      for (const h of own) expect(h).toBe('options.html?occasion=gibush');
+    });
   });
 
   // page 14, Hanukkah: seasonal, live now (Hanukkah 2026 starts the evening of Friday 2026-12-04)
@@ -242,6 +394,8 @@ describe('the data files', () => {
       'types the production time (use {eta})'
     );
     expect(bad((o) => (o.deadline = null))).toEqual([]);
+    expect(bad((o) => (o.showBiz = 'yes'))).toContain('showBiz must be true or false');
+    expect(bad((o) => (o.showBiz = false))).toEqual([]);
   });
 
   it('a bad file is left out of the loaded set, and the others still load', () => {

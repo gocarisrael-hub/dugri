@@ -65,12 +65,16 @@ describe('occasionDesigns', () => {
       expect(d.href).toMatch(/^options\.html\?design=[^&]+&step=2&occasion=yom-huledet$/);
   });
 
-  // pages 2-4: the agent's picks from the live designs, for the owner to change in the data files
-  describe('pages 2-4', () => {
+  // pages 2-8: the agent's picks from the live designs, for the owner to change in the data files
+  describe('pages 2-8', () => {
     const LISTS = {
       'mesibat-ravakot': ['bachelorette', 'daniel-amit', 'tarifa', 'birthday', 'grapefruit'],
       'tiyul-mishpachti-lechul': ['posttrip', 'marriage', 'grapefruit', 'tarifa', 'birthday'],
       pensia: ['japanese', 'marriage', 'grapefruit', 'posttrip'],
+      'yom-nisuin': ['marriage', 'grapefruit', 'birthday', 'posttrip'],
+      shichrur: ['football-boys', 'posttrip', 'japanese', 'tarifa'],
+      gibush: ['japanese', 'grapefruit', 'football-boys', 'birthday'],
+      'yom-huledet-30': ['birthday', 'bachelorette', 'tarifa', 'grapefruit', 'posttrip'],
     };
     const ALL_CUSTOM = homeDesigns([
       ...PUBLIC_DESIGNS,
@@ -83,6 +87,8 @@ describe('occasionDesigns', () => {
         expect(list.length).toBeGreaterThanOrEqual(3);
         expect(list.length).toBeLessThanOrEqual(5);
         for (const id of list) expect(DESIGN_ART[id], id).toBeTruthy();
+        // kids (ברוקלין) is never dealt, so no page lists it
+        for (const id of list) expect(NOT_DEALT.has(id), id).toBe(false);
         const builtIn = list.filter((id) => PUBLIC_DESIGNS.some((d) => d.id === id));
         expect(builtIn.length).toBeGreaterThan(0);
         // first paint: only the listed built-ins are dealt
