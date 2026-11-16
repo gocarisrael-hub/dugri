@@ -266,7 +266,11 @@ describe('the gate, served', () => {
   // while it is off. The pixel is not set in a fresh DATA_DIR, so it adds nothing.
   function preGate(file, { fallback = false } = {}) {
     const assets = assetHashing.build(siteDir);
-    const raw = fs.readFileSync(path.join(siteDir, file), 'utf8');
+    // the footer's "לפי אירוע" row (server/occasions.js) is filled in on every page that carries its marker, in or out of the mode
+    const raw = require(path.join(serverDir, 'occasions.js')).injectRow(
+      fs.readFileSync(path.join(siteDir, file), 'utf8'),
+      null
+    );
     const tags = seo.headTags({
       file,
       query: {},

@@ -138,7 +138,8 @@ describe('seo module (pure)', () => {
   // that is missing, under ~50 or over 160. Every page in the sitemap has one.
   it('every public page has a meta description Google shows in full', () => {
     const siteDir = path.join(__dirname, '..', '..', 'site');
-    for (const { file } of seo.PUBLIC_PAGES) {
+    for (const { file, occasion } of seo.PUBLIC_PAGES) {
+      if (occasion) continue; // an occasion page's description is its data file's (below)
       const html = fs.readFileSync(path.join(siteDir, file), 'utf8');
       const m = html.match(/<meta\s+name="description"\s+content="([^"]*)"/);
       expect(m, `${file} has no meta description`).toBeTruthy();
@@ -154,6 +155,79 @@ describe('seo module (pure)', () => {
     const heroes = html.match(/<img\s+class="hero-slide__bg"[^>]*>/g) || [];
     expect(heroes).toHaveLength(3);
     for (const tag of heroes) expect(tag).toMatch(/alt="[^"]{10,}"/);
+  });
+
+  it('the words wording has no minimum: "עד 412 מילים אישיות"', () => {
+    const t = seo.llmsTxt({ price: null, faq: [] });
+    expect(t).toContain('עד 412 מילים אישיות');
+    expect(t).not.toMatch(/100 עד 400|מינימום/);
+    const home = seo.headTags({
+      file: 'index.html',
+      query: {},
+      indexable: true,
+      price: 199,
+      faq: [],
+    });
+    const org = JSON.parse(home.match(/ld\+json">([\s\S]*?)<\/script>/)[1])['@graph'][0];
+    expect(org.description).toContain('עד 412 מילים אישיות');
+    expect(org.description).not.toMatch(/100 עד 400/);
+  });
+
+  it('llms.txt lists every live occasion page under "לפי אירוע", and is not dugri.app', () => {
+    const t = seo.llmsTxt({ price: null, faq: [] });
+    expect(t).toContain('דוגרי (dugri-israel.co.il) אינו dugri.app ואינו dugri.org.');
+    const sec = t.slice(t.indexOf('## לפי אירוע'));
+    expect(sec).toContain(
+      '- [המתנה ליום הולדת 60 שכל המשפחה כותבת](https://dugri-israel.co.il/yom-huledet)'
+    );
+    expect(sec).toContain('(https://dugri-israel.co.il/yom-huledet-aba)');
+  });
+
+  it('every live occasion page is public, in the sitemap, with its own canonical', () => {
+    const occ = seo.PUBLIC_PAGES.filter((p) => p.occasion).map((p) => p.path);
+    expect(occ).toEqual(['/yom-huledet', '/yom-huledet-aba']);
+    const xml = seo.sitemapXml();
+    expect(xml).toContain('<loc>https://dugri-israel.co.il/yom-huledet</loc>');
+    expect(xml).toContain('<loc>https://dugri-israel.co.il/yom-huledet-aba</loc>');
+    expect(seo.isPublicPage(seo.occasionFile('yom-huledet'))).toBe(true);
+    expect(seo.isPublicPage(seo.occasionFile('not-a-page'))).toBe(false);
+    expect(seo.canonicalUrl(seo.occasionFile('yom-huledet'), { utm_source: 'ig' })).toBe(
+      'https://dugri-israel.co.il/yom-huledet'
+    );
+  });
+
+  it('an occasion page carries its FAQPage and breadcrumb, and no Product price', () => {
+    const occasion = {
+      slug: 'yom-huledet',
+      label: 'יום הולדת לאמא',
+      faq: {
+        heading: 'h',
+        items: [{ q: 'כמה אנשים יכולים לשחק?', a: 'כמה שרוצים, עדיף בקבוצות.' }],
+      },
+    };
+    const tags = seo.headTags({
+      file: seo.occasionFile('yom-huledet'),
+      query: {},
+      indexable: true,
+      price: 199,
+      faq: [{ q: 'שאלת הבית', a: 'x' }],
+      occasion,
+    });
+    expect(tags).toContain(
+      '<link rel="canonical" href="https://dugri-israel.co.il/yom-huledet" />'
+    );
+    const graph = JSON.parse(tags.match(/ld\+json">([\s\S]*?)<\/script>/)[1])['@graph'];
+    const types = graph.map((n) => n['@type']);
+    expect(types).toEqual(['Organization', 'WebSite', 'FAQPage', 'BreadcrumbList']);
+    const faq = graph.find((n) => n['@type'] === 'FAQPage');
+    expect(faq['@id']).toBe('https://dugri-israel.co.il/yom-huledet#faq');
+    expect(faq.mainEntity.map((q) => q.name)).toEqual(['כמה אנשים יכולים לשחק?']);
+    const crumbs = graph.find((n) => n['@type'] === 'BreadcrumbList').itemListElement;
+    expect(crumbs.map((c) => [c.name, c.item])).toEqual([
+      ['דוגרי', 'https://dugri-israel.co.il/'],
+      ['יום הולדת לאמא', 'https://dugri-israel.co.il/yom-huledet'],
+    ]);
+    expect(tags).not.toMatch(/"Offer"|"price"/);
   });
 
   it('inject puts the tags inside <head>', () => {
@@ -278,6 +352,48 @@ describe('seo routes (app)', () => {
     const html = await (await get('/pay-done.html', PROD)).text();
     expect(html).toContain('<meta name="robots" content="noindex" />');
     expect(html).not.toContain('application/ld+json');
+  });
+
+  it('an occasion page on production: its own title, description, canonical, og and JSON-LD', async () => {
+    const r = await get('/yom-huledet?utm_source=ig', PROD);
+    expect(r.status).toBe(200);
+    expect(r.headers.get('x-robots-tag')).toBe(null);
+    const html = await r.text();
+    expect(html).toContain(
+      '<title>מתנה ליום הולדת 60 לאמא – משחק שכל המשפחה כותבת | דוגרי</title>'
+    );
+    expect(html).toContain(
+      '<link rel="canonical" href="https://dugri-israel.co.il/yom-huledet" />'
+    );
+    expect(html).toContain(
+      '<meta property="og:url" content="https://dugri-israel.co.il/yom-huledet" />'
+    );
+    expect(html).toMatch(/<meta property="og:title" content="מתנה ליום הולדת 60 לאמא/);
+    const desc = html.match(/<meta name="description" content="([^"]*)"/)[1];
+    expect(desc).toMatch(/עד 412 מילים אישיות/);
+    expect(desc.length).toBeGreaterThanOrEqual(50);
+    expect(desc.length).toBeLessThanOrEqual(160);
+    expect(html).toMatch(/<meta property="og:description" content="משחק מילים אישי/);
+    expect(html).not.toContain('<meta name="robots"');
+    const graph = JSON.parse(html.match(/ld\+json">([\s\S]*?)<\/script>/)[1])['@graph'];
+    expect(graph.map((n) => n['@type'])).toEqual([
+      'Organization',
+      'WebSite',
+      'FAQPage',
+      'BreadcrumbList',
+    ]);
+    expect(graph.find((n) => n['@type'] === 'FAQPage').mainEntity).toHaveLength(5);
+    // the FAQ's {eta} is the admin's production time, filled in
+    expect(JSON.stringify(graph)).not.toContain('{eta}');
+  });
+
+  it('the sitemap lists the occasion pages; staging serves them noindex', async () => {
+    expect(await (await get('/sitemap.xml', PROD)).text()).toContain(
+      '<loc>https://dugri-israel.co.il/yom-huledet</loc>'
+    );
+    const r = await get('/yom-huledet', STAGING);
+    expect(r.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(await r.text()).not.toContain('rel="canonical"');
   });
 
   it('a vanity path (SPA fallback) canonicalises to the home page', async () => {

@@ -1,0 +1,91 @@
+/* The occasion pages (occasion.html, server/occasions.js): new.html's look (home-new.css) plus the two sections the home page has
+   no need for, the three steps and the example words (the footer's "לפי אירוע" row is in home-new.css, which new.html shares). Plain rules, not scoped to html.rd:
+   the page is built in the redesign, so it looks the same in and out of redesign mode, like new.html. */
+
+.occ-in {
+  max-width: 760px;
+  margin-right: auto;
+  margin-left: auto;
+}
+#h-how,
+#h-words {
+  --tsh: var(--title-offset-hero);
+  text-wrap: balance;
+}
+
+/* how it works: three numbered sky panels */
+.steps {
+  list-style: none;
+  margin: 26px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+.step {
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+.step .num {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  display: grid;
+  place-items: center;
+  font: 800 19px/1 var(--font-body);
+  margin-top: 14px;
+}
+.step .pn {
+  margin: 0;
+}
+.step .pn b {
+  display: block;
+}
+.occ-steps .pill,
+.faq .pill {
+  margin-top: 26px;
+}
+.occ-steps .occ-in {
+  display: grid;
+  justify-items: start;
+}
+
+/* the example words: tilted stickers, plainly labelled as examples */
+.chips {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 10px;
+}
+.chips li {
+  background: var(--color-paper);
+  border: var(--border-thin, 1.5px) solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  padding: 9px 16px;
+  font: 700 16px/1.2 var(--font-body);
+  box-shadow: 3px 3px 0 var(--color-accent-sky);
+  transform: rotate(var(--tilt, 0deg));
+}
+.chips li:nth-child(even) {
+  box-shadow: 3px 3px 0 var(--color-accent-pink);
+}
+.chips-note {
+  margin: 18px 0 0;
+  text-align: center;
+  font-size: var(--text-small, 14px);
+  color: var(--color-text-muted);
+}
+
+/* the FAQ: the home page's, its order button at the reading start */
+.occ-page .faq-in > .pill {
+  justify-self: start;
+}
+.occ-page .faq h2 {
+  text-wrap: balance;
+}

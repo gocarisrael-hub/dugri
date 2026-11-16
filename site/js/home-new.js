@@ -17,6 +17,7 @@ import {
   AUTO_DEAL_MS,
   cardSrcset,
   pictureFallback,
+  occasionDesigns,
 } from './home-data.js';
 import { initIllustrations } from './home-illos.js';
 import { initMenu, trapTab } from './home-menu.js';
@@ -48,8 +49,19 @@ const esc = (s) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
   );
 
+/* ---------- an occasion page (occasion.html) runs this same page: its config says which designs it deals and shows first ---------- */
+const OCC = (() => {
+  try {
+    const el = document.getElementById('occasion-data');
+    return el ? JSON.parse(el.textContent) : null;
+  } catch {
+    return null;
+  }
+})();
+const pageDesigns = (list) => occasionDesigns(homeDesigns(list), OCC);
+
 /* ---------- the designs: the built-in ones at once, then the admin's names and custom designs as they arrive ---------- */
-let designs = homeDesigns(PUBLIC_DESIGNS);
+let designs = pageDesigns(PUBLIC_DESIGNS);
 const byId = () => Object.fromEntries(designs.map((d) => [d.id, d]));
 let D = byId();
 let price = null;
@@ -738,7 +750,7 @@ trapTab(flood);
 /* ---------- the price: only ever the admin's live price; the line stays hidden until it is known ---------- */
 function stampPrice() {
   const el = $('floodPrice');
-  if (!price) return;
+  if (!price || OCC) return; // an occasion page shows no price
   // M PLUS draws ₪ as heavy as the 900 digits; set beside the number a little smaller and lighter, as a price tag would
   const amount = (text) => {
     const f = document.createDocumentFragment();
@@ -1077,7 +1089,7 @@ lead.addEventListener('submit', async (e) => {
 
 /* ---------- start ---------- */
 buildStrip();
-showNext('bachelorette');
+showNext(OCC ? designs[0] && designs[0].id : 'bachelorette');
 placeDeck();
 initIllustrations();
 fetchPricing().then((p) => {
@@ -1090,7 +1102,7 @@ fetchPricing().then((p) => {
 // they have answered (each gives up on its own after 2.5 s)
 loadCustomDesigns().then(async (extra) => {
   await syncDesignNames(() => {}, { lists: [PUBLIC_DESIGNS, extra] });
-  const next = homeDesigns([...PUBLIC_DESIGNS, ...extra]);
+  const next = pageDesigns([...PUBLIC_DESIGNS, ...extra]);
   const same =
     next.length === designs.length &&
     next.every(
