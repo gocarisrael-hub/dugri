@@ -95,11 +95,16 @@ describe('the data files', () => {
       expect(resolved).toContain('לאיסוף עצמי המשחק מוכן תוך 4 ימי עסקים');
     });
 
-    // TODO(owner): the last order date for delivery before Hanukkah is the owner's to type into `deadline`
-    // (suggested in the PR body); until then the page shows no date at all
+    // the owner's own last order dates before Hanukkah 2026 (delivery and self-pickup); a page with no
+    // `deadline` shows no date line at all
     it('shows the last order date only when the owner has typed one in', () => {
-      expect(o().deadline).toBe(null);
-      const none = occ.renderPage(TEMPLATE, NEW_HTML, occ.resolve(o(), ETA));
+      expect(o().deadline).toBe(
+        'להזמנה עם משלוח עד החג: שולחים את רשימת המילים עד יום ב׳ 23.11 ב-16:00. לאיסוף עצמי: עד יום א׳ 29.11 ב-16:00.'
+      );
+      expect(occ.renderPage(TEMPLATE, NEW_HTML, occ.resolve(o(), ETA))).toContain(
+        'data-testid="occ-deadline"'
+      );
+      const none = occ.renderPage(TEMPLATE, NEW_HTML, occ.resolve({ ...o(), deadline: null }, ETA));
       expect(none).not.toContain('occ-deadline');
       expect(none).not.toMatch(/\{\{\{?\w+\}?\}\}/);
       const set = { ...o(), deadline: 'להזמנה עם משלוח עד החג: <עד יום ראשון>' };
