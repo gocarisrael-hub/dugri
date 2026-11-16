@@ -16,10 +16,9 @@
 //                 the footer row, the sitemap and llms.txt list pages by it
 //   live          only a live page is served, listed in the sitemap/llms.txt and
 //                 linked from the footer row; any other known slug answers 404
-//   audience      'private' | 'business' (company pages, a later PR, add their own
-//                 sections; their helper sheet is "דף עזר שנכין במיוחד בשבילכם",
-//                 never a link to a ready-made file, and quantity pricing is only
-//                 the sentence "יש כמובן מחירים מיוחדים לכמויות גדולות")
+//   audience      'private' | 'business': a company page (/asakim, ...) is the
+//                 business variant, site/occasion-business.html (renderBusinessPage,
+//                 validateBusiness: its own sections and rules, below)
 //   label         the short name in the footer row, the breadcrumb and llms.txt
 //   title, description, h1
 //   blueBox       { lead, body }: what Dugri is, for this buyer
@@ -106,10 +105,12 @@ function validateOccasion(o, known) {
     !isStr(st.heading) ||
     !isStr(st.cta) ||
     !Array.isArray(st.items) ||
-    st.items.length !== 3 ||
+    st.items.length !== (o.audience === 'business' ? 4 : 3) ||
     !st.items.every((i) => i && isStr(i.title) && isStr(i.text))
   )
-    e.push('steps: a heading, a cta and three items with a title and a text');
+    e.push(
+      'steps: a heading, a cta and three items (four on a company page) with a title and a text'
+    );
   const sw = o.sampleWords;
   if (!sw || !isStr(sw.heading) || !isStr(sw.note)) e.push('sampleWords heading/note');
   if (!sw || !Array.isArray(sw.words) || sw.words.length !== 8 || !sw.words.every(isStr))
@@ -125,8 +126,8 @@ function validateOccasion(o, known) {
     !fq ||
     !isStr(fq.heading) ||
     !Array.isArray(fq.items) ||
-    fq.items.length < 4 ||
-    fq.items.length > 5 ||
+    fq.items.length < (o.audience === 'business' ? 5 : 4) ||
+    fq.items.length > (o.audience === 'business' ? 7 : 5) ||
     !fq.items.every((i) => i && isStr(i.q) && isStr(i.a))
   )
     e.push('faq: a heading and 4-5 questions, each with an answer');
@@ -143,9 +144,81 @@ function validateOccasion(o, known) {
     e.push('seasonal must be true or false');
   if (o.deadline !== undefined && o.deadline !== null && !isStr(o.deadline))
     e.push('deadline: a line of text, or null');
-  const text = allText(o);
+  // a company page's own rules; its quantity-pricing sentence and question are the
+  // one place "מחירים" is allowed, so they are taken out before the price rule
+  const business = o.audience === 'business';
+  if (business) e.push(...validateBusiness(o));
+  const text = business ? allText(o).split(QTY_PHRASE).join('') : allText(o);
   if (!/עד 412 מילים אישיות/.test(text)) e.push('says "עד 412 מילים אישיות"');
   for (const [what, bad] of COPY_RULES) if (bad(text)) e.push(what);
+  return e;
+}
+
+// ---- the company pages (audience 'business', spec "Pages for welfare managers") ----
+// The words come from the company, gathered by the welfare manager with a helper
+// sheet Dugri prepares for each company; employees receive a finished game and add
+// no words. A company page sells through a quote, never the order wizard: every
+// button is the lead button. The owner's fixed texts:
+const BUSINESS_CTA = 'לקבלת הצעה לחברה';
+const HELPER_SHEET = 'דף עזר שנכין במיוחד בשבילכם';
+const QTY_PHRASE = 'מחירים מיוחדים לכמויות';
+const QTY_LINE = 'יש כמובן מחירים מיוחדים לכמויות גדולות';
+const QTY_Q = 'יש מחירים מיוחדים לכמויות?';
+const EMPLOYEES_Q = 'העובדים צריכים לעשות משהו?';
+const EMPLOYEES_A = 'לא. העובדים מקבלים משחק מוכן, ורק פותחים את הקופסה ומשחקים.';
+const LOGO_A = 'אפשר לוגו מעל כמות מסוימת, בעיצוב וליווי שלנו';
+// "employees add words" in any wording a page could slip into (the step that says
+// "בלי להוסיף מילים בעצמם" is the denial, and passes)
+const EMPLOYEES_ADD = [
+  /(?:ה?עובדים|כל\s+עובד|הצוות)\s+(?:מוסיפ|יוסיפ|כותב|יכתב|שולח|ישלח)\S*\s+(?:את\s+)?(?:ה?מילים|מילה)/,
+  /(?<!בלי\s)(?:מוסיפים|תוסיפו|יוסיפו)\s+(?:ה?מילים|מילה)/,
+  /קישור\s+(?:ל|אל\s+)(?:כל\s+)?ה?(?:עובדים|צוות|משרד)/,
+];
+const listOf = (v, n) => Array.isArray(v) && v.length === n && v.every(isStr);
+const noDot = (s) => String(s).trim().replace(/\.$/, '');
+
+function validateBusiness(o) {
+  const e = [];
+  if (o.cta !== BUSINESS_CTA) e.push('cta: "' + BUSINESS_CTA + '"');
+  if (o.steps && o.steps.cta !== BUSINESS_CTA) e.push('steps.cta: "' + BUSINESS_CTA + '"');
+  if (!o.why || !isStr(o.why.heading) || !listOf(o.why.items, 3))
+    e.push('why: a heading and three reasons');
+  const kit = o.kit;
+  if (!kit || !isStr(kit.heading) || !listOf(kit.items, 4) || !isStr(kit.box))
+    e.push('kit: a heading, four items and the gift-box line');
+  else if (!kit.items.includes(HELPER_SHEET))
+    e.push('kit: the helper sheet is "' + HELPER_SHEET + '"');
+  if (!kit || kit.quantity !== QTY_LINE) e.push('kit.quantity: "' + QTY_LINE + '"');
+  if (o.hub !== undefined) {
+    const h = o.hub;
+    if (
+      !h ||
+      !isStr(h.heading) ||
+      !Array.isArray(h.cards) ||
+      !h.cards.length ||
+      !h.cards.every((c) => isStr(c) && SLUG_RE.test(c))
+    )
+      e.push('hub: a heading and the slugs of the pages it links');
+  }
+  const items = (o.faq && Array.isArray(o.faq.items) ? o.faq.items : []).filter(Boolean);
+  const emp = items.find((i) => i.q === EMPLOYEES_Q);
+  if (!emp || emp.a !== EMPLOYEES_A) e.push('faq: "' + EMPLOYEES_Q + '" → "' + EMPLOYEES_A + '"');
+  const qty = items.find((i) => i.q === QTY_Q);
+  if (!qty) e.push('faq: "' + QTY_Q + '"');
+  else if (/\d|₪/.test(String(qty.a))) e.push('faq: the quantity answer names no number');
+  for (const i of items)
+    if (/לוגו/.test(String(i.q)) && noDot(i.a) !== LOGO_A)
+      e.push('faq: the logo answer is "' + LOGO_A + '"');
+  // the look is ours, in the company's spirit: an answer never promises the company's own colours or graphic language
+  // (the master copy's step 3, "בצבעים ובלוגו שלכם", is the owner's text and stays)
+  if (items.some((i) => /צבע(?:ים|י)\s+(?:שלכם|שלכן|החברה)|ה?שפה\s+הגרפית/.test(String(i.a))))
+    e.push(
+      "faq: the design is ours, in the company's spirit; never their colours or graphic language"
+    );
+  const text = allText(o);
+  if (EMPLOYEES_ADD.some((re) => re.test(text))) e.push('says employees add words');
+  if (/דף\s+עזר\s+לאיסוף/.test(text) || /https?:|\.pdf\b/i.test(text))
+    e.push('the helper sheet is prepared for them, never a ready-made file or a link');
   return e;
 }
 
@@ -334,8 +407,122 @@ function renderPage(template, newHtml, o) {
     );
 }
 
+// ---- the company variant (audience 'business'): site/occasion-business.html ----
+// The private renderer above is left exactly as it is: a company page fills its own
+// slots first, then hands the rest to renderPage with new.html's pieces adapted
+// (only the "לקוח עסקי" review cards; the design view's button is the lead button),
+// so the shared slots are filled by the same code on both kinds of page.
+
+// The template a page is served from.
+const templateFor = (o) =>
+  o && o.audience === 'business' ? 'occasion-business.html' : 'occasion.html';
+
+const BIZ_LEDE = 'ספרו לנו לאיזה חג או אירוע, כמה ערכות ומה רוצים במארז, ונחזור אליכם עם הצעה.';
+const BIZ_TAG = 'לקוח עסקי';
+// one review card in the row: a logo card (div) or a review (button), neither holding its own kind
+const CARD_RE = /<(div|button) class="rc\b[^"]*"[^>]*>[\s\S]*?<\/\1>/g;
+const isBizCard = (card) => new RegExp('class="tag"[^>]*>\\s*' + BIZ_TAG + '\\s*</span').test(card);
+// the cards a company page shows: only the business customers'
+const bizReviews = (recs) => recs.replace(CARD_RE, (card) => (isBizCard(card) ? card : ''));
+
+// new.html as a company page uses it: reviews from business customers only, and the
+// design view's button asks for a quote instead of opening the wizard.
+function businessHome(newHtml) {
+  const recs = piece(newHtml, 'recs');
+  const flood = piece(newHtml, 'flood');
+  const lead = flood.replace(/<a\b[^>]*\bid="floodOrder"[\s\S]*?<\/a\s*>/, (a) =>
+    a
+      .replace(/\shref="[^"]*"/, ' href="#biz"')
+      .replace(/data-ga="order_started"/, 'data-ga="occasion_cta_click"')
+      .replace(/<span data-edit="new-view-cta">[^<]*<\/span/, `<span>${BUSINESS_CTA}</span`)
+  );
+  return newHtml.replace(recs, () => bizReviews(recs)).replace(flood, () => lead);
+}
+
+// The home's business section, shown, as the page's lead form: its heading is the
+// page's button text, its lede asks what the quote needs, and the logos (under the
+// hero here) and the home's link to /asakim are left out.
+function businessLead(newHtml) {
+  return scoped(piece(newHtml, 'biz'))
+    .replace(/<h2 id="h-biz"[^>]*>[^<]*<\/h2>/, `<h2 id="h-biz" class="tt">${BUSINESS_CTA}</h2>`)
+    .replace(/<p class="lede"[^>]*>[^<]*<\/p>/, `<p class="lede">${esc(BIZ_LEDE)}</p>`)
+    .replace(/\s*<div class="logos">[\s\S]*?<\/div>/, '')
+    .replace(/\s*<a\b[^>]*\bhref="\/asakim"[\s\S]*?<\/a\s*>/, '');
+}
+
+// The "כבר שיחקו" logo row, read out of the home's business section.
+function logoRow(newHtml) {
+  const biz = piece(newHtml, 'biz');
+  const m = biz.match(/<div class="logos">[\s\S]*?<\/div>/);
+  return m ? `<div class="occ-logos" data-edit-scope="new.html">${m[0]}</div>` : '';
+}
+
+const CHECK =
+  '<svg class="ck" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 12.5l5 5L20 6.5" /></svg>';
+
+// A company page (`o` already resolved). `isLive` says which hub cards may link.
+function renderBusinessPage(template, newHtml, o, isLive = (s) => !!(find(s) && find(s).live)) {
+  const why = o.why.items
+    .map((t) => `<li><p class="pn sky">${esc(t)}</p></li>`)
+    .join('\n          ');
+  const kit = o.kit.items
+    .map((t) => `<li>${CHECK}<span>${esc(t)}</span></li>`)
+    .join('\n          ');
+  const cards = (o.hub ? o.hub.cards : [])
+    .filter((s) => s !== o.slug && isLive(s) && find(s))
+    .map(
+      (s) =>
+        `<li><a href="/${esc(s)}" data-ga="nav_click" data-ga-target="occasion" data-ga-where="hub"><b>${esc(find(s).label)}</b><span>${esc(find(s).h1)}</span></a></li>`
+    )
+    .join('\n          ');
+  const hub = cards
+    ? `<section class="occ-hub" id="hub" aria-labelledby="h-hub">
+      <div class="occ-in">
+        <h2 id="h-hub" class="tt">${esc(o.hub.heading)}</h2>
+        <ul class="hub-cards">
+          ${cards}
+        </ul>
+      </div>
+    </section>`
+    : '';
+  const raw = {
+    why,
+    kit,
+    hub,
+    logos: logoRow(newHtml),
+    bizLead: businessLead(newHtml),
+  };
+  const vals = {
+    whyHeading: esc(o.why.heading),
+    kitHeading: esc(o.kit.heading),
+    kitBox: esc(o.kit.box),
+    kitQuantity: esc(o.kit.quantity),
+  };
+  const filled = template
+    .replace(/\{\{\{(\w+)\}\}\}/g, (m, k) =>
+      Object.prototype.hasOwnProperty.call(raw, k) ? raw[k] : m
+    )
+    .replace(/\{\{(\w+)\}\}/g, (m, k) =>
+      Object.prototype.hasOwnProperty.call(vals, k) ? vals[k] : m
+    );
+  // renderPage points the design view's button at the wizard; here it is the lead button
+  return renderPage(filled, businessHome(newHtml), o).replace(
+    /(<a\b[^>]*?\shref=")[^"]*("[^>]*\bid="floodOrder")/,
+    '$1#biz$2'
+  );
+}
+
 module.exports = {
   DATA_DIR,
+  BUSINESS_CTA,
+  HELPER_SHEET,
+  QTY_LINE,
+  EMPLOYEES_Q,
+  EMPLOYEES_A,
+  LOGO_A,
+  templateFor,
+  renderBusinessPage,
+  bizReviews,
   PLAYERS_ANSWER,
   ROW_MARK,
   validateOccasion,

@@ -59,6 +59,8 @@ const OCC = (() => {
   }
 })();
 const pageDesigns = (list) => occasionDesigns(homeDesigns(list), OCC);
+// a company page (occasion-business.html): the design view's button scrolls to the lead form, so it closes the view first
+const BUSINESS = !!(OCC && OCC.audience === 'business');
 
 /* ---------- the designs: the built-in ones at once, then the admin's names and custom designs as they arrive ---------- */
 let designs = pageDesigns(PUBLIC_DESIGNS);
@@ -615,7 +617,8 @@ function fillFlood(d) {
       : '') +
     cardImg(d.fronts[0], VIEW_SIZES, `class="fc fr" alt="קלף מהעיצוב ${esc(d.name)}"`) +
     (d.back ? cardImg(d.back, VIEW_SIZES, `class="fc bk" alt="גב הקלף של ${esc(d.name)}"`) : '');
-  $('floodOrder').href = d.href;
+  // a company page's button asks for a quote (#biz), never the wizard
+  if (!BUSINESS) $('floodOrder').href = d.href;
   $('floodOrder').dataset.gaDesign = d.id;
   stampPrice();
 }
@@ -729,6 +732,16 @@ strip.addEventListener('click', (e) => {
   openDesign(btn, e.clientX || r.left + r.width / 2, e.clientY || r.top + r.height / 2);
 });
 $('floodX').addEventListener('click', closeDesign);
+// a company page: the view's quote button shuts the view at once and goes to the lead form
+if (BUSINESS)
+  $('floodOrder').addEventListener('click', (e) => {
+    e.preventDefault();
+    flood.close();
+    zoom.reset();
+    tableau.innerHTML = '';
+    openId = null;
+    $('biz').scrollIntoView({ behavior: reduce ? 'auto' : 'smooth' });
+  });
 flood.addEventListener('cancel', (e) => {
   e.preventDefault();
   closeDesign();

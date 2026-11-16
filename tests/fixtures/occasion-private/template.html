@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+  <head>
+    <title>{{title}}</title>
+    <meta name="description" content="{{description}}" />
+    <script type="application/json" id="occasion-data">
+      {{{config}}}
+    </script>
+  </head>
+  <body data-occasion="{{slug}}">
+    <a class="pill" href="{{href}}" data-ga="nav_order">הזמינו עכשיו</a>
+    <h1>{{h1}}</h1>
+    <p class="pn sky"><b>{{blueLead}}</b> <span>{{blueBody}}</span></p>
+    <span class="big">{{catch}}</span>
+    <p class="pn pink">{{{pink}}}</p>
+    <a class="pill" href="{{href}}"><span>{{cta}}</span></a>
+    {{{deadline}}}
+    <h2>{{stepsHeading}}</h2>
+    <ol class="steps">{{{steps}}}</ol>
+    <a class="pill" href="{{href}}"><span>{{stepsCta}}</span></a>
+    <h2>{{wordsHeading}}</h2>
+    <ul class="chips">{{{words}}}</ul>
+    <p>{{wordsNote}}</p>
+    {{{recs}}} {{{sheet}}} {{{flood}}}
+    <h2>{{faqHeading}}</h2>
+    <div class="qa">{{{faq}}}</div>
+    {{{biz}}}
+    <p>{{label}} {{unknown}} {{{alsoUnknown}}}</p>
+    {{{footer}}}
+  </body>
+</html>

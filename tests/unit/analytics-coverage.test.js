@@ -24,6 +24,8 @@ const BUYER_PAGES = [
   'pay-success.html',
   // the template every occasion page (/yom-huledet, ...) is served from
   'occasion.html',
+  // and its company variant (/asakim, ...: audience "business")
+  'occasion-business.html',
 ];
 
 const read = (f) => fs.readFileSync(path.join(SITE, f), 'utf8');
@@ -73,19 +75,22 @@ describe('the money events carry money', () => {
 });
 
 // The occasion pages are not files of their own: each one is site/occasion.html
-// filled from its data file (server/occasions.js), so the template covering GA is
-// what covers them, as long as every live page is served from it.
+// (a company page: site/occasion-business.html) filled from its data file
+// (server/occasions.js), so the template covering GA is what covers them, as long
+// as every live page is served from one of them.
 describe('GA4 covers every occasion page', () => {
-  it('every live occasion page is rendered from occasion.html, with the GA stub intact', async () => {
+  it('every live occasion page is rendered from its template, with the GA stub intact', async () => {
     const { createRequire } = await import('node:module');
     const occasions = createRequire(import.meta.url)(
       path.join(__dirname, '..', '..', 'server', 'occasions.js')
     );
     const live = occasions.live();
     expect(live.length).toBeGreaterThan(0);
-    const template = read('occasion.html');
     for (const o of live) {
-      const html = occasions.renderPage(template, read('new.html'), occasions.resolve(o, ''));
+      const file = occasions.templateFor(o);
+      expect(BUYER_PAGES, o.slug).toContain(file);
+      const fill = o.audience === 'business' ? occasions.renderBusinessPage : occasions.renderPage;
+      const html = fill(read(file), read('new.html'), occasions.resolve(o, ''));
       expect(html, o.slug).toContain('function gtag()');
       expect(html, o.slug).toMatch(/<script type="module" src="js\/analytics\.js"><\/script>/);
       // what js/analytics.js reads to send occasion_view and tag every event
