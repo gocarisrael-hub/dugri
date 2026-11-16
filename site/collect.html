@@ -7864,6 +7864,30 @@
           renderTotal();
         }
 
+        // The address the courier cannot do without. An empty one is marked
+        // aria-invalid when pay is refused, and the mark comes off as it fills.
+        const ADDR_REQUIRED = ['#addrStreet', '#addrCity', '#addrPostal'];
+        // True while #payErr is showing the missing-address message, so filling
+        // the last empty field can take it down.
+        let addrErrShown = false;
+        // Declared ahead of the first applyPricing() run, which reaches it.
+        function clearPayErr() {
+          payErr.style.display = 'none';
+          addrErrShown = false;
+          ADDR_REQUIRED.forEach((sel) => $(sel).removeAttribute('aria-invalid'));
+        }
+        addressForm.addEventListener('input', () => {
+          const empty = ADDR_REQUIRED.filter((sel) => {
+            const el = $(sel);
+            const blank = !el.value.trim();
+            if (!blank) el.removeAttribute('aria-invalid');
+            return blank;
+          });
+          if (addrErrShown && !empty.length) clearPayErr();
+        });
+        // The version the last refreshPay() saw, so a re-render that changed
+        // nothing leaves #payErr alone.
+        let lastPayVersion;
         function refreshPay() {
           const v = selectedVersion();
           // A LOCKED order (admin-created, or already paid) is bought exactly as it
@@ -7886,7 +7910,12 @@
             prefillAddress(state.order.address);
           }
           renderTotal();
-          payErr.style.display = 'none';
+          // The 5s poll re-renders through here, so an unconditional hide wiped a
+          // validation error the buyer had not acted on yet (staging QA, 2026-11).
+          // Only a real change of the selection clears it now; the rest is up to
+          // the buyer (fixing the address, or a pay tap that passes).
+          if (v !== lastPayVersion) clearPayErr();
+          lastPayVersion = v;
         }
 
         // Whether the owner has manually picked a version. Until they do, each
@@ -7908,7 +7937,6 @@
         //   4. CLOSED: no version is enabled → no pay button, "orders closed".
         //   5. NORMAL: show the enabled versions at their endpoint prices.
         function applyPricing() {
-          console.log('APPLY resolved=' + pricingResolved + ' ok=' + pricingOk);
           // Only an admin-created / paid order LOCKS checkout (server `locked`
           // flag). An ordinary UNPAID public order is NOT locked — the buyer keeps
           // the full enabled menu and can switch versions (re-priced server-side).
@@ -8497,13 +8525,20 @@
             if (!address.street || !address.city || !address.postal) {
               payErr.textContent = 'נא למלא רחוב, עיר ומיקוד למשלוח.';
               payErr.style.display = 'block';
+              addrErrShown = true;
+              const empty = ADDR_REQUIRED.map((sel) => $(sel)).filter((el) => !el.value.trim());
+              empty.forEach((el) => el.setAttribute('aria-invalid', 'true'));
+              // Take the buyer to the first field to fill, not leave her on the
+              // button wondering what went wrong.
+              empty[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+              empty[0].focus({ preventScroll: true });
               return;
             }
           }
           // Clear any stale error from an earlier attempt (e.g. a prior 429)
           // before starting a fresh one — otherwise the free-coupon path, which
           // returns without touching payErr, would keep showing it while polling.
-          payErr.style.display = 'none';
+          clearPayErr();
           cardBtn.disabled = true;
           // Record the start for BOTH paths (iframe + free coupon) so the
           // analytics funnel pairs started→done correctly.
