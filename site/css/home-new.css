@@ -593,6 +593,43 @@ img[src^='/home-art/'] {
   margin-top: 32px;
   font: 700 15px/1 var(--font-body);
 }
+/* the cue under the subtitle that the cards open: a white sticker, quieter than the black order button below; it lies over the
+   section's placed marks (.pl, z-index 1), so a star beside it tucks under its edge */
+.tap-cue {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: fit-content;
+  max-width: calc(100% - 32px);
+  margin: 16px auto 0;
+  padding: 8px 15px 8px 13px;
+  border: 1.5px solid var(--color-ink);
+  border-radius: var(--radius-pill);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-sm);
+  font: var(--weight-strong) 14px/1.25 var(--font-body);
+  text-align: center;
+  text-wrap: balance;
+  cursor: pointer;
+  transition: transform 0.15s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+.tap-cue:active {
+  transform: translate(2px, 2px);
+  box-shadow: 1px 1px 0 var(--color-ink);
+}
+.tap-cue svg {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 /* one arrow at the left end, pointing left: an SVG, since a glyph arrow mirrors in RTL */
 .strip-hint {
   position: relative;

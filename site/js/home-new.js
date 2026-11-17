@@ -731,6 +731,58 @@ strip.addEventListener('click', (e) => {
   const r = btn.querySelector('img').getBoundingClientRect();
   openDesign(btn, e.clientX || r.left + r.width / 2, e.clientY || r.top + r.height / 2);
 });
+/* the cue under the subtitle: it says a card opens, and it opens the card in the middle (the first one in the still
+   grid), the same view and the same design_open as tapping that card */
+function centreTile() {
+  if (!items.length) return null;
+  let best = items[0];
+  if (!reduce) {
+    const w = span(),
+      mid = strip.scrollLeft + strip.clientWidth / 2,
+      off = (el) => Math.abs(el.offsetLeft + w / 2 - mid);
+    for (const el of items) if (off(el) < off(best)) best = el;
+  }
+  return best;
+}
+const tapCue = $('tapCue');
+if (tapCue)
+  tapCue.addEventListener('click', () => {
+    const shown = centreTile();
+    if (!shown) return;
+    // the copy on screen gives the circle its centre; the real tile is the one focus comes back to
+    const real =
+        strip.querySelector(
+          `.dz:not([aria-hidden])[data-k="${window.CSS.escape(shown.dataset.k)}"]`
+        ) || shown,
+      r = shown.querySelector('img').getBoundingClientRect();
+    openDesign(real, r.left + r.width / 2, r.top + r.height / 2);
+  });
+// once, when the strip first comes into view and nobody has touched it yet, the middle card hops twice: it can be picked up
+if (!reduce && tapCue && window.IntersectionObserver) {
+  const io = new window.IntersectionObserver(
+    (es) => {
+      if (!es.some((e) => e.isIntersecting)) return;
+      io.disconnect();
+      setTimeout(() => {
+        const tile = !swiped && !openId && centreTile(),
+          img = tile && tile.querySelector('img');
+        if (img)
+          img.animate(
+            [
+              { transform: 'none' },
+              { transform: 'translateY(-14px)', offset: 0.25 },
+              { transform: 'none', offset: 0.5 },
+              { transform: 'translateY(-7px)', offset: 0.7 },
+              { transform: 'none' },
+            ],
+            { duration: 900, easing: 'ease-in-out' }
+          );
+      }, 700);
+    },
+    { threshold: 0.6 }
+  );
+  io.observe(strip);
+}
 $('floodX').addEventListener('click', closeDesign);
 // a company page: the view's quote button shuts the view at once and goes to the lead form
 if (BUSINESS)
