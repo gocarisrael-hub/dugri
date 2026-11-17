@@ -288,7 +288,7 @@ describe('new.html', () => {
   it('self-hosts its fonts: every face is a real woff2, the body face sized to Rubik', () => {
     const css = read('css/home-new.css');
     const faces = [...css.matchAll(/@font-face \{([^}]*)\}/g)].map((m) => m[1]);
-    expect(faces.length).toBe(11);
+    expect(faces.length).toBe(12); // the heading face, the tap cue's handwriting, the body face's ten
     expect(css).not.toMatch(/fonts\.(googleapis|gstatic)\.com/);
     const weights = new Set();
     for (const f of faces) {
@@ -299,7 +299,7 @@ describe('new.html', () => {
       if (f.includes('M PLUS Rounded 1c')) {
         expect(f).toContain('size-adjust: 109.8%');
         weights.add(+f.match(/font-weight: (\d+)/)[1]);
-      } else expect(f).toContain('unicode-range: U+0590-05FF'); // the heading face is Hebrew only
+      } else expect(f).toContain('unicode-range: U+0590-05FF'); // the heading face and the handwriting are Hebrew only
     }
     expect([...weights].sort()).toEqual([400, 500, 700, 800, 900]);
   });

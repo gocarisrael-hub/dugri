@@ -15,6 +15,15 @@
    vh before svh, hidden before clip. */
 
 /* ---------- 1. faces and tokens ---------- */
+/* the handwriting of the home's designs tap cue (home-new.css): kept here too, so the shell carries the same faces */
+@font-face {
+  font-family: 'Playpen Sans Hebrew';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/assets/fonts/playpen-sans-hebrew-400-hebrew.f22ac207.woff2) format('woff2');
+  unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F;
+}
 @font-face {
   font-family: 'Gveret Levin';
   font-style: normal;
