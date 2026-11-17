@@ -1,6 +1,15 @@
 /* The redesigned homepage (new.html). Port of redesign/directions/r17.html onto the role tokens in redesign-tokens.css. */
 /* The redesign's own faces (DESIGN.md, "Typography"), self-hosted. The heading face covers Hebrew only, so Latin and digits in a
    heading come from the body face; the body face is sized so its Hebrew stands as tall as Rubik's at the same font-size. */
+/* the handwriting of the designs' tap cue: Hebrew only, so it never pulls the Latin file */
+@font-face {
+  font-family: 'Playpen Sans Hebrew';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/assets/fonts/playpen-sans-hebrew-400-hebrew.f22ac207.woff2) format('woff2');
+  unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+FB1D-FB4F;
+}
 @font-face {
   font-family: 'Gveret Levin';
   font-style: normal;
@@ -593,42 +602,54 @@ img[src^='/home-art/'] {
   margin-top: 32px;
   font: 700 15px/1 var(--font-body);
 }
-/* the cue under the subtitle that the cards open: a white sticker, quieter than the black order button below; it lies over the
-   section's placed marks (.pl, z-index 1), so a star beside it tucks under its edge */
-.tap-cue {
+/* the cue that the cards open (the owner's pick): handwriting at the side of the middle card, its arrow curving down onto that
+   card's top; bare, no box. The row only makes room above the fan; the button holds the words and the arrow and nothing more.
+   Geometry: the button is 130 x 60, the arrow's tip 18 px from its left and 6 px above its bottom, and the tip lands 60 px inside
+   the middle card's right edge, just above the card (the strip's 34 px top padding) */
+.tap-row {
   position: relative;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  width: fit-content;
-  max-width: calc(100% - 32px);
-  margin: 16px auto 0;
-  padding: 8px 15px 8px 13px;
-  border: 1.5px solid var(--color-ink);
-  border-radius: var(--radius-pill);
-  background: var(--color-paper);
+  z-index: 3;
+  height: 30px;
+  margin-top: 10px;
+}
+.tap-cue {
+  position: absolute;
+  top: 0;
+  left: calc(50% + var(--strip-card-w) / 2 - 78px);
+  width: 130px;
+  height: 60px;
+  padding: 0;
+  border: 0;
+  background: none;
   color: var(--color-ink);
-  box-shadow: var(--shadow-sm);
-  font: var(--weight-strong) 14px/1.25 var(--font-body);
-  text-align: center;
-  text-wrap: balance;
   cursor: pointer;
-  transition: transform 0.15s cubic-bezier(0.3, 1.4, 0.5, 1);
+  -webkit-tap-highlight-color: transparent;
 }
-.tap-cue:active {
-  transform: translate(2px, 2px);
-  box-shadow: 1px 1px 0 var(--color-ink);
+.tap-txt {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font:
+    400 18px/1.2 'Playpen Sans Hebrew',
+    var(--font-body);
+  white-space: nowrap;
 }
-.tap-cue svg {
-  width: 19px;
-  height: 19px;
-  flex: none;
+.tap-arrow {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 56px;
+  height: 48px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.8;
+  stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+.tap-cue:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 4px;
+  border-radius: 8px;
 }
 /* one arrow at the left end, pointing left: an SVG, since a glyph arrow mirrors in RTL */
 .strip-hint {
@@ -1899,6 +1920,10 @@ footer {
   .strip-hint,
   .bgs {
     display: none;
+  }
+  /* the cue points at the grid's first tile, the one it opens: the left column (the strip runs left to right) */
+  .tap-cue {
+    left: calc(16px + (100% - 56px) / 6 - 18px);
   }
 }
 /* illustrations: four from the owner's pick (#13 hourglass, #25 popper, #27 disco ball, #91 sparkles), each with its own gallery motion,

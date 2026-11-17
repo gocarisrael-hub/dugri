@@ -1,15 +1,16 @@
 import { test, expect } from '@playwright/test';
 
-// The cue under "העיצובים שלנו" that the design cards open (the owner: people did not see that a card shows the whole game).
-// What these pin:
-// - it shows, on one line's worth of room, at phone and desktop width, on the home (new.html), an occasion page and a
-//   company page, which all render the same strip;
+// The cue that the design cards open (the owner: people did not see that a card shows the whole game): handwriting beside
+// the middle card with an arrow curving down onto it, no box. What these pin:
+// - it shows with the owner's words at phone and desktop width, on the home (new.html), an occasion page and a company page,
+//   which all render the same strip; it stays on screen, ends above the middle card, and touches neither a card nor one of
+//   the owner's placed decorations (.pl);
 // - tapping it opens the design in the middle of the strip and sends design_open for that design, exactly as a card tap
 //   does (same name, same single parameter: the before/after open rate compares the two);
 // - tapping a card still opens it and sends the same event;
 // - under reduced motion it opens the first design of the still grid.
 
-const CUE = 'לחצו על עיצוב לראות את כל המשחק';
+const CUE = 'לחצו עליי';
 
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/custom-designs', (route) => route.fulfill({ json: { designs: [] } }));
@@ -53,12 +54,26 @@ for (const path of ['/new.html', '/mesibat-ravakot', '/asakim'])
       const cue = page.locator('#tapCue');
       await expect(cue).toBeVisible();
       await expect(cue).toHaveText(CUE);
-      // it sits between the subtitle and the cards, inside the page
+      // inside the page, above the middle card, clear of every card and every placed decoration
       const box = await cue.boundingBox();
-      const strip = await page.locator('#strip').boundingBox();
-      expect(box.y + box.height).toBeLessThanOrEqual(strip.y + 1);
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(width);
+      const hits = await page.evaluate(() => {
+        const parts = [...document.querySelectorAll('#tapCue .tap-txt, #tapCue .tap-arrow')].map(
+          (e) => e.getBoundingClientRect()
+        );
+        const meet = (a, b) =>
+          a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        const others = [
+          ...[...document.querySelectorAll('#strip .dz img')].map((e) => ['card', e]),
+          ...[...document.querySelectorAll('#order .pl')].map((e) => ['decoration', e]),
+        ];
+        return others
+          .filter(([, e]) => getComputedStyle(e).display !== 'none' && e.getClientRects().length)
+          .filter(([, e]) => parts.some((p) => meet(p, e.getBoundingClientRect())))
+          .map(([kind, e]) => kind + ' ' + (e.closest('.dz')?.dataset.k || e.dataset.kind));
+      });
+      expect(hits).toEqual([]);
       await cue.scrollIntoViewIfNeeded();
       const id = await middleId(page);
       await cue.click();
