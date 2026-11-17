@@ -12,6 +12,7 @@ const COUNTED_IN_CODE = [
   '#deck', // deck_deal (js/home-new.js)
   '#track button.rc', // review_open
   '#strip .dz', // design_open
+  '#tapCue', // design_open, the centre design
   '#stage .card', // dealt cards: part of the deck, deck_deal
   '#lead button[type="submit"]', // business_lead, once the lead is sent
   '#menuX', // closers: they lead nowhere
