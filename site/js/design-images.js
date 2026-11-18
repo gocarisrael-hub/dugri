@@ -362,8 +362,40 @@ export const SIZES = {
  */
 export function srcsetFor(src) {
   const p = String(src || '');
+  if (TEMPLATE_IMAGE_PATH_RE.test(p)) return _picSrcsets[p] || '';
   if (!UPLOAD_PATH_RE.test(p)) return '';
   return _srcsets[p.split('/').pop()] || '';
+}
+
+// An uploaded design's shipped picture is its template SVG, /api/template-image/<slug>/<slot>: a Canva export with
+// its photos embedded, megabytes for one card. The server rasterizes the same SVG into a WebP ladder
+// (server/template-pics.js) and /api/custom-designs hands it over as `pics`; loadCustomDesigns (js/designs.js)
+// registers it here, keyed by the SVG's URL, so every surface that already asks srcsetFor(src) gets the ladder and the
+// SVG stays the `src` a browser falls back to. Empty until a ladder exists: the SVG alone, as before.
+const TEMPLATE_IMAGE_PATH_RE =
+  /^\/api\/template-image\/[a-z0-9]+(?:-[a-z0-9]+)*\/(front|back|board)$/;
+let _picSrcsets = {};
+
+/** Record the WebP ladders of custom designs' template pictures (each design's `img` + `pics`, as loadCustomDesigns
+ *  normalized them). Replaces what was registered before. */
+export function registerTemplatePics(designs) {
+  const next = {};
+  for (const d of Array.isArray(designs) ? designs : []) {
+    const img = (d && d.img) || {};
+    const pics = (d && d.pics) || {};
+    for (const slot of ['front', 'back', 'board']) {
+      const p = pics[slot];
+      if (
+        typeof img[slot] === 'string' &&
+        TEMPLATE_IMAGE_PATH_RE.test(img[slot]) &&
+        p &&
+        p.srcset
+      ) {
+        next[img[slot]] = p.srcset;
+      }
+    }
+  }
+  _picSrcsets = next;
 }
 
 /** Fetch the whole gallery-config map { designId: config }. NEVER rejects: a

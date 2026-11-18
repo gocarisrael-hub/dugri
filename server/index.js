@@ -5891,10 +5891,19 @@ platformRoutes.registerUnsubscribeSmsContent(app, {
 
 // Agent B: design names, custom designs, template art, in server/routes/catalog.js.
 // The homepage's pictures of an uploaded design, rendered by the generator once per artwork revision (server/home-art.js).
+// The shop's pictures of one (server/template-pics.js): its template SVGs as a WebP ladder. One render lane for both.
+const artLane = require('./home-art').createLane();
 const homeArt = require('./home-art').createHomeArt({
   dataDir: path.resolve(process.env.DATA_DIR || __dirname),
   fingerprint: (slug) => templateFingerprint(slug),
   boardSvg: (slug) => templates.templateImagePath(TEMPLATE_ROOT, slug, 'board'),
+  lane: artLane,
+});
+const templatePics = require('./template-pics').createTemplatePics({
+  dataDir: path.resolve(process.env.DATA_DIR || __dirname),
+  fingerprint: (slug) => templateFingerprint(slug),
+  imagePath: (slug, slot) => templates.templateImagePath(TEMPLATE_ROOT, slug, slot),
+  lane: artLane,
 });
 catalogRoutes.registerStorefrontTemplates(app, {
   requireAdmin,
@@ -5905,6 +5914,7 @@ catalogRoutes.registerStorefrontTemplates(app, {
   TEMPLATE_ROOT,
   templates,
   homeArt,
+  templatePics,
 });
 
 // Agent D: content uploads + content-editor writes, in server/routes/platform.js.
