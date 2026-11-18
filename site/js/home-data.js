@@ -231,7 +231,11 @@ export function homeDesigns(designs) {
     // An uploaded design whose art the server has rendered through the generator: its print render, at every width the
     // page needs, and current with the design as the owner last changed it — so it wins over a hand cut, which goes
     // stale the day she edits the design. A role it has no render for keeps what was there.
-    const home = d.custom && d.home && d.home.front && d.home.front.src ? d.home : null;
+    // Until that render exists (or when it cannot be made, e.g. an uncalibrated template), the shop's WebP ladder of the
+    // template card itself (server/template-pics.js, `pics`): the same picture as the SVG, without its megabytes. Only
+    // in place of that SVG: a hand cut (DESIGN_ART) is left alone.
+    const ready = (a) => (a && a.front && a.front.src ? a : null);
+    const home = d.custom ? ready(d.home) || (art ? null : ready(d.pics)) : null;
     if (home) {
       const img = d.img || {};
       const take = (role, was) => {

@@ -87,10 +87,27 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const REV_RE = /^[a-f0-9]{16}$/;
 const FILE_RE = /^(front|back|board)-(\d{3,4})\.webp$/;
 
-function enabled(env = process.env) {
-  if (env.HOME_ART === 'on') return true;
-  if (env.HOME_ART === 'off') return false;
+/** Whether renders run: `<flag>=on|off`, else on in production only (a local server and the E2E suite never render). */
+function enabled(env = process.env, flag = 'HOME_ART') {
+  if (env[flag] === 'on') return true;
+  if (env[flag] === 'off') return false;
   return env.NODE_ENV === 'production';
+}
+
+/**
+ * A lane of ONE: the jobs given to it run strictly one after another. Every kind of art that renders through Chrome
+ * shares one lane (server/index.js), so INVARIANT 2's "one render at a time" holds across the home art and the shop's
+ * template pictures (server/template-pics.js) together, not per kind.
+ */
+function createLane() {
+  let tail = Promise.resolve();
+  return {
+    run(fn) {
+      const p = tail.then(fn);
+      tail = p.catch(() => {});
+      return p;
+    },
+  };
 }
 
 /** What the render is given for a theme: the sample name, gender and extra fields. */
@@ -126,8 +143,17 @@ function boardScaleFor(boardSvgPath, readFile = fs.readFileSync) {
 
 /**
  * The module, built over its environment so the tests can drive it without Chrome.
+ *
+ * The defaults are the homepage art. server/template-pics.js builds a second KIND of art on the same machinery (the
+ * queue, the revisions, the failure memory, the sweep, the immutable files) by passing its own name, rev, ladder,
+ * revInput and render.
  * @param {object} o
  * @param {string} o.dataDir           where the art lives (DATA_DIR)
+ * @param {string} [o.name]            the kind: its folder under dataDir AND its URL prefix (/<name>/...); 'home-art'
+ * @param {string} [o.rev]             the output's own revision (see REV); REV
+ * @param {object} [o.ladder]          widths per role; LADDER
+ * @param {(theme:object)=>string} [o.revInput]  what else, besides the template, makes a new rev; the sample inputs
+ * @param {{run:Function}} [o.lane]    the lane renders run in (createLane); one of its own by default
  * @param {(theme:string)=>string} o.fingerprint   index.js templateFingerprint
  * @param {(theme:string)=>string|null} [o.boardSvg]  the theme's board SVG path, for the board's scale
  * @param {boolean} [o.on]             override enabled()
@@ -137,10 +163,15 @@ function boardScaleFor(boardSvgPath, readFile = fs.readFileSync) {
  * @param {Function} [o.log]
  */
 function createHomeArt(o) {
-  const root = path.join(o.dataDir, 'home-art');
+  const name = o.name || 'home-art';
+  const outRev = o.rev || REV;
+  const ladder = o.ladder || LADDER;
+  const revInput = o.revInput || ((theme) => JSON.stringify(sampleFor(theme)));
+  const lane = o.lane || createLane();
+  const root = path.join(o.dataDir, name);
   const on = typeof o.on === 'boolean' ? o.on : enabled();
   const now = o.now || Date.now;
-  const log = o.log || ((m) => console.log('[home-art] ' + m));
+  const log = o.log || ((m) => console.log(`[${name}] ` + m));
   const render = o.render || ((job) => defaultRender(job, o.spawnRender || spawnGenerator));
   const resize = o.resize || defaultResize;
   const fpCache = new Map(); // slug -> { at, fp }
@@ -155,10 +186,9 @@ function createHomeArt(o) {
       c = { at: now(), fp: String(o.fingerprint(slug)) };
       fpCache.set(slug, c);
     }
-    const sample = sampleFor(theme);
     return crypto
       .createHash('sha256')
-      .update([REV, slug, c.fp, JSON.stringify(sample)].join('\n'))
+      .update([outRev, slug, c.fp, revInput(theme)].join('\n'))
       .digest('hex')
       .slice(0, 16);
   }
@@ -180,7 +210,7 @@ function createHomeArt(o) {
     for (const role of ROLES) {
       const widths = manifest[role];
       if (!Array.isArray(widths) || !widths.length) continue;
-      const url = (w) => `/home-art/${encodeURIComponent(slug)}/${rev}/${role}-${w}.webp`;
+      const url = (w) => `/${name}/${encodeURIComponent(slug)}/${rev}/${role}-${w}.webp`;
       out[role] = { src: url(widths[0]), srcset: widths.map((w) => `${url(w)} ${w}w`).join(', ') };
     }
     return out.front ? out : null;
@@ -218,7 +248,8 @@ function createHomeArt(o) {
     if (running || !queue.length) return;
     running = true;
     const job = queue.shift();
-    build(job)
+    lane
+      .run(() => build(job))
       .catch((e) => {
         const f = failed.get(job.key);
         failed.set(job.key, { tries: (f ? f.tries : 0) + 1, at: now() });
@@ -244,6 +275,7 @@ function createHomeArt(o) {
       const boardSvg = o.boardSvg ? o.boardSvg(slug) : null;
       const pngs = await render({
         slug,
+        theme,
         outDir: path.join(tmp, 'src'),
         sample,
         scale: CARD_SCALE,
@@ -259,7 +291,7 @@ function createHomeArt(o) {
         if (!file || !fs.existsSync(file)) continue;
         const native = pngWidth(file);
         // never upscaled: the rungs above the render's own width collapse onto it
-        const widths = [...new Set(LADDER[role].map((w) => Math.min(w, native || w)))];
+        const widths = [...new Set(ladder[role].map((w) => Math.min(w, native || w)))];
         for (const w of widths) {
           const ok = await resize(file, path.join(tmp, `${role}-${w}.webp`), w);
           if (!ok) throw new Error(`resizing the ${role} to ${w} failed`);
@@ -342,6 +374,16 @@ function defaultRender({ slug, outDir, sample, scale, boardScale }, spawnRender)
       '--board-scale',
       String(boardScale)
     );
+    runRender(args, spawnRender).then(resolve, reject);
+  });
+}
+
+/**
+ * Spawn one generator render (python3 <args>) the way INVARIANT 2 asks — one Chrome slot, a low CPU priority, a
+ * timeout that kills it — and resolve the JSON it prints on its last line.
+ */
+function runRender(args, spawnRender = spawnGenerator) {
+  return new Promise((resolve, reject) => {
     let child;
     try {
       child = spawnRender(PYTHON_BIN, args, {
@@ -402,6 +444,8 @@ function defaultResize(src, dest, width) {
 
 module.exports = {
   createHomeArt,
+  createLane,
+  runRender,
   enabled,
   sampleFor,
   boardScaleFor,

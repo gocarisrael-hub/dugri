@@ -2,6 +2,7 @@
 // GENERATED is produced by another build step (designs.generated.js).
 
 import { GENERATED } from './designs.generated.js';
+import { registerTemplatePics } from './design-images.js';
 
 /** Selectable "main" colors the user can pick to recolor a design. */
 // Vivid, electric brights in the spirit of the original designs (magenta /
@@ -498,16 +499,19 @@ const TEMPLATE_IMAGE_RE = /^\/api\/template-image\/[a-z0-9]+(?:-[a-z0-9]+)*\/(fr
 // The homepage's rendered pictures of a custom design (server/home-art.js): /home-art/<slug>/<rev>/<role>-<width>.webp.
 const HOME_ART_RE =
   /^\/home-art\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{16}\/(front|back|board)-\d{3,4}\.webp$/;
-/** A custom design's `home` art from /api/custom-designs, kept only where every URL is one of ours; null otherwise. */
-function homeArtFrom(home) {
+// The shop's WebP ladder of a custom design's template pictures (server/template-pics.js), same shape.
+const TEMPLATE_PICS_RE =
+  /^\/template-pics\/[a-z0-9]+(?:-[a-z0-9]+)*\/[a-f0-9]{16}\/(front|back|board)-\d{3,4}\.webp$/;
+/** A custom design's `home` art (or, with TEMPLATE_PICS_RE, its `pics`) from /api/custom-designs, kept only where
+ *  every URL is one of ours; null otherwise. */
+function homeArtFrom(home, re = HOME_ART_RE) {
   if (!home || typeof home !== 'object') return null;
   const out = {};
   for (const role of ['front', 'back', 'board']) {
     const r = home[role];
-    if (!r || typeof r.src !== 'string' || !HOME_ART_RE.test(r.src)) continue;
+    if (!r || typeof r.src !== 'string' || !re.test(r.src)) continue;
     const parts = typeof r.srcset === 'string' ? r.srcset.split(', ') : [];
-    if (!parts.every((p) => /^\S+ \d{3,4}w$/.test(p) && HOME_ART_RE.test(p.split(' ')[0])))
-      continue;
+    if (!parts.every((p) => /^\S+ \d{3,4}w$/.test(p) && re.test(p.split(' ')[0]))) continue;
     out[role] = { src: r.src, srcset: parts.join(', ') };
   }
   return out.front ? out : null;
@@ -582,8 +586,12 @@ export async function loadCustomDesigns({ fetchImpl, timeoutMs = 2500 } = {}) {
         language: d.language === 'english' ? 'english' : 'hebrew',
         // the homepage's rendered pictures, when the server has them (new.html only)
         home: homeArtFrom(d.home),
+        // the shop's WebP ladder of the SAME pictures as `img`, when the server has it
+        pics: homeArtFrom(d.pics, TEMPLATE_PICS_RE),
       });
     }
+    // every surface asks srcsetFor(<template-image url>) for the ladder (js/design-images.js)
+    registerTemplatePics(out);
     return out;
   } catch {
     return [];

@@ -672,7 +672,17 @@ function sanitizeSvgForDom(svg) {
 // Design names, custom designs and the template picture/asset routes.
 function registerStorefrontTemplates(
   app,
-  { requireAdmin, fs, path, __dirname, pathToFileURL, TEMPLATE_ROOT, templates, homeArt }
+  {
+    requireAdmin,
+    fs,
+    path,
+    __dirname,
+    pathToFileURL,
+    TEMPLATE_ROOT,
+    templates,
+    homeArt,
+    templatePics,
+  }
 ) {
   // Public: the LIVE, owner-editable per-design metadata the storefront and the
   // buyer wizard must not bake into their bundle —
@@ -796,6 +806,10 @@ function registerStorefrontTemplates(
         // artwork as it is now; until then the page shows `img` and the render is queued
         const home = homeArt ? homeArt.artFor(key, t) : null;
         if (home) out[out.length - 1].home = home;
+        // the shop's pictures of it: the SAME template SVGs as `img`, as a WebP ladder (server/template-pics.js), once
+        // they exist for its artwork as it is now; until then the shop shows `img` and the ladder is queued
+        const pics = templatePics ? templatePics.artFor(key, t) : null;
+        if (pics) out[out.length - 1].pics = pics;
       }
     } catch {
       out = [];
@@ -807,6 +821,19 @@ function registerStorefrontTemplates(
   // change: cached for a year. Every part of the path is shape-checked (server/home-art.js fileFor), so no traversal.
   app.get('/home-art/:slug/:rev/:file', (req, res) => {
     const file = homeArt ? homeArt.fileFor(req.params.slug, req.params.rev, req.params.file) : null;
+    if (!file) return res.status(404).type('txt').send('Not found');
+    res.setHeader('Content-Type', 'image/webp');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.sendFile(file);
+  });
+
+  // Public: one file of a design's shop picture ladder (server/template-pics.js). Same contract as /home-art: the URL
+  // carries the artwork's revision, so it is cached for a year (and at the edge); every part of the path is shape-checked.
+  app.get('/template-pics/:slug/:rev/:file', (req, res) => {
+    const file = templatePics
+      ? templatePics.fileFor(req.params.slug, req.params.rev, req.params.file)
+      : null;
     if (!file) return res.status(404).type('txt').send('Not found');
     res.setHeader('Content-Type', 'image/webp');
     res.setHeader('X-Content-Type-Options', 'nosniff');

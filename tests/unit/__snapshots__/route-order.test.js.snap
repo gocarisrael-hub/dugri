@@ -150,6 +150,7 @@ exports[`route registration order > matches the pinned table 1`] = `
   "GET /api/design-names",
   "GET /api/custom-designs",
   "GET /home-art/:slug/:rev/:file",
+  "GET /template-pics/:slug/:rev/:file",
   "GET /api/template-asset/:slug/:name",
   "GET /api/admin/templates/:key/asset-svg/:role",
   "GET /api/template-image/:slug/:slot",
