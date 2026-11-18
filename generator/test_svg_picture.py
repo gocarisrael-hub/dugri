@@ -46,6 +46,16 @@ def test_size_is_none_when_unreadable():
     assert svg_picture.css_size("not svg") is None
 
 
+def _chrome_env(**extra):
+    """The environment for a subprocess, with CHROME stated explicitly.
+
+    test_chrome.py ends several tests with ``os.environ.pop("CHROME")``, which drops the CI runner's CHROME for every
+    test after it in the same worker. In-process renders still find it, because chrome.binary() falls back to the
+    import-time value; a fresh subprocess has only its environment, and fell back to the macOS default on Linux.
+    """
+    return {**os.environ, "CHROME": chrome.binary(), **extra}
+
+
 def _has_chrome():
     exe = chrome.binary()
     return os.path.exists(exe) or shutil.which(os.path.basename(exe))
@@ -57,7 +67,8 @@ def test_renders_the_whole_card_at_the_asked_width(tmp_path):
     svg.write_text(CANVA_CARD)
     out = tmp_path / "out"
     proc = subprocess.run([sys.executable, os.path.join(HERE, "svg_picture.py"), str(out),
-                           f"front={svg}:600"], capture_output=True, text=True, cwd=HERE, timeout=120)
+                           f"front={svg}:600"], capture_output=True, text=True, cwd=HERE, timeout=120,
+                          env=_chrome_env())
     assert proc.returncode == 0, proc.stderr
     res = json.loads(proc.stdout.strip().splitlines()[-1])
     im = Image.open(res["card"]).convert("RGB")
@@ -79,3 +90,28 @@ def test_a_front_that_cannot_render_is_a_failure(tmp_path):
                            f"front={bad}:600"], capture_output=True, text=True, cwd=HERE, timeout=60)
     assert proc.returncode == 1
     assert "front" in proc.stderr
+
+
+def test_finds_chrome_the_way_every_render_does(tmp_path):
+    """svg_picture.py runs the browser named by CHROME, the variable the production image sets
+    (Dockerfile: ENV CHROME=/usr/local/bin/chrome-headless) and server/home-art.js passes through to it. A stub
+    records how it was called and writes the screenshot, so this needs no browser."""
+    calls = tmp_path / "argv"
+    stub = tmp_path / "chrome-headless"
+    stub.write_text('#!/bin/sh\n'
+                    f'printf "%s\\n" "$@" > "{calls}"\n'
+                    'for a in "$@"; do case "$a" in --screenshot=*) cp "$SRC_PNG" "${a#--screenshot=}";; esac; done\n')
+    stub.chmod(0o755)
+    png = tmp_path / "fake.png"
+    Image.new("RGB", (598, 832), "red").save(png)
+    svg = tmp_path / "card.svg"
+    svg.write_text(CANVA_CARD)
+    env = _chrome_env(CHROME=str(stub), SRC_PNG=str(png))
+    proc = subprocess.run([sys.executable, os.path.join(HERE, "svg_picture.py"), str(tmp_path / "o"),
+                           f"front={svg}:600"], capture_output=True, text=True, cwd=HERE, timeout=60, env=env)
+    assert proc.returncode == 0, proc.stderr
+    argv = calls.read_text().split("\n")
+    assert str(svg) in argv
+    assert "--window-size=299,416" in argv
+    assert any(a.startswith("--force-device-scale-factor=2.006") for a in argv), argv
+
