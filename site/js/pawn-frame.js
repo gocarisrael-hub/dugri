@@ -16,10 +16,16 @@
 // zoom > 1 moves closer; dx/dy slide the window across the photo in units of the
 // window's own side, so the numbers mean the same thing at every zoom and on every
 // photo size. build.apply_photo_view and pawn-print.js viewCrop apply them.
+import { PAN_REACH, clampPan } from './pawn-print.js';
+
 export const ZOOM_MIN = 0.5;
 export const ZOOM_MAX = 2.5;
-export const PAN_MAX = 1;
 export const VIEW_DEFAULT = { zoom: 1, dx: 0, dy: 0, bg: false };
+export { PAN_REACH, clampPan };
+
+// HOW FAR SHE MAY PAN is pawn-print.js PAN_REACH / clampPan: a radius that keeps
+// the subject's centre inside the printed circle (the derivation is there, next
+// to viewCrop, which applies the same clamp so the page and the printer agree).
 
 const clampNum = (v, lo, hi, dflt) => {
   const n = Number(v);
@@ -27,15 +33,17 @@ const clampNum = (v, lo, hi, dflt) => {
   return Math.min(hi, Math.max(lo, n));
 };
 
+const finite = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
 /** A stored view coerced into range. Anything unusable falls back to the default. */
 export function clampView(view) {
   const v = view || {};
-  return {
-    zoom: clampNum(v.zoom, ZOOM_MIN, ZOOM_MAX, 1),
-    dx: clampNum(v.dx, -PAN_MAX, PAN_MAX, 0),
-    dy: clampNum(v.dy, -PAN_MAX, PAN_MAX, 0),
-    bg: !!v.bg,
-  };
+  const zoom = clampNum(v.zoom, ZOOM_MIN, ZOOM_MAX, 1);
+  const [dx, dy] = clampPan(finite(v.dx), finite(v.dy), zoom);
+  return { zoom, dx, dy, bg: !!v.bg };
 }
 
 /** True when this view asks for nothing the automatic framing wouldn't do. */

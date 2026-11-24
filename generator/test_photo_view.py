@@ -15,6 +15,7 @@ it.
 
 Run: python3 -m pytest generator/test_photo_view.py
 """
+import math
 import os
 import tempfile
 
@@ -27,7 +28,7 @@ import build
 # --- parsing ----------------------------------------------------------------
 
 def test_parses_the_three_numbers():
-    assert build.parse_photo_view("1.5,0.25,-0.4") == (1.5, 0.25, -0.4)
+    assert build.parse_photo_view("1.5,0.25,-0.1") == (1.5, 0.25, -0.1)
 
 
 def test_the_default_view_is_no_view():
@@ -48,8 +49,13 @@ def test_clamps_to_the_range_the_slider_can_produce():
     # The store clamps too, and so does the page. Three layers because this one
     # is reached by a CLI and the other two are not: a hand-typed --photo-frame
     # must not be able to crop a 4-pixel window out of somebody's order.
-    assert build.parse_photo_view("99,9,-9") == (2.5, 1.0, -1.0)
+    zoom, dx, dy = build.parse_photo_view("99,9,-9")
+    assert zoom == 2.5
+    # The pan is a radius, 0.45 / zoom, and keeps its direction.
+    assert math.sqrt(dx * dx + dy * dy) == pytest.approx(0.45 / 2.5)
+    assert dx == pytest.approx(-dy) and dx > 0
     assert build.parse_photo_view("0.01,0,0") == (0.5, 0.0, 0.0)
+    assert build.parse_photo_view("1,nan,0") is None
 
 
 # --- the transform ----------------------------------------------------------
@@ -69,14 +75,14 @@ def test_zooming_out_grows_it_past_the_photo_on_purpose():
 
 def test_panning_slides_the_window_in_units_of_its_own_side():
     assert build.apply_photo_view(CROP, (1.0, 0.25, 0.0)) == (25, 0, 125, 100)
-    assert build.apply_photo_view(CROP, (1.0, 0.0, -0.5)) == (0, -50, 100, 50)
+    assert build.apply_photo_view(CROP, (1.0, 0.0, -0.4)) == (0, -40, 100, 60)
 
 
 def test_the_pan_is_measured_before_the_zoom_so_it_scales_with_it():
     # dx is a fraction of the window she is LOOKING at, which is what makes a
     # drag feel the same at every zoom.
-    zoomed = build.apply_photo_view(CROP, (2.0, 0.25, 0.0))
-    assert zoomed == (50, 25, 100, 75)
+    zoomed = build.apply_photo_view(CROP, (2.0, 0.2, 0.0))
+    assert zoomed == (45, 25, 95, 75)
 
 
 def test_no_view_is_the_identity():
@@ -89,6 +95,89 @@ def test_the_window_stays_square_even_when_the_crop_was_not_quite():
     # rounding artefact.
     out = build.apply_photo_view((0, 0, 100, 101), (1.0, 0.0, 0.0))
     assert out[2] - out[0] == out[3] - out[1]
+
+
+# --- the pan can crop the subject, never lose it -----------------------------
+#
+# A real order printed five of eight pawns as EMPTY circles: page-scroll swipes
+# that started on a photo were saved as pans of dy=-1 (one also dx=+0.99) and
+# dx=-1/dy=+1, and at ±1 the window no longer overlaps the subject at all. The
+# bound is now a radius of 0.45 / zoom — the subject's centre stays inside the
+# printed disc — and it is applied HERE too, so the views already stored print.
+
+def test_the_pan_is_a_radius_that_shrinks_with_the_zoom():
+    for zoom in (0.5, 1.0, 1.7, 2.5):
+        dx, dy = build.clamp_photo_pan(-1.0, 1.0, zoom)
+        assert math.sqrt(dx * dx + dy * dy) == pytest.approx(0.45 / zoom)
+        assert dx == pytest.approx(-dy)
+    # Inside the circle nothing moves, and a clamped pan clamps to itself.
+    assert build.clamp_photo_pan(0.2, -0.1, 1.0) == (0.2, -0.1)
+    once = build.clamp_photo_pan(0.0, -1.0, 1.0)
+    assert build.clamp_photo_pan(*once, 1.0) == once
+
+
+def test_apply_photo_view_clamps_a_view_stored_before_the_bound():
+    # 100px window, zoom 1: dy=-1 used to slide it a whole side up, off the
+    # subject. Now its centre stops 45px up — on the rim of the printed disc.
+    assert build.apply_photo_view(CROP, (1.0, 0.0, -1.0)) == (0, -45, 100, 55)
+
+
+def _cutout_subject(path, size=400):
+    """A transparent photo with one opaque figure (head + shoulders) in it, the
+    way the wizard hands the generator a background-removed pawn."""
+    from PIL import ImageDraw
+    im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.ellipse((150, 60, 250, 170), fill=(220, 170, 130, 255))   # head
+    d.ellipse((110, 170, 290, 330), fill=(40, 60, 160, 255))    # shoulders
+    im.save(path)
+    return path
+
+
+def _subject_in_disc(path):
+    """How many opaque subject pixels the printed disc carries."""
+    with Image.open(path) as im:
+        a = im.convert("RGBA").getchannel("A")
+        return sum(1 for v in a.getdata() if v > 128)
+
+
+@pytest.mark.parametrize("view", [
+    (1.0, -1.0, 1.0),      # the order's dx=-1, dy=+1
+    (1.0, 0.0, -1.0),      # dy=-1
+    (1.0, 0.99, -1.0),     # dx=+0.99, dy=-1
+    (2.5, -1.0, 1.0),      # the same swipe, zoomed all the way in
+    (0.5, 1.0, -1.0),      # …and all the way out
+])
+def test_a_stored_runaway_pan_still_prints_the_subject(view):
+    with tempfile.TemporaryDirectory() as tmp:
+        src = _cutout_subject(os.path.join(tmp, "p.png"))
+        base = _subject_in_disc(build.square_photo(src, os.path.join(tmp, "w0"), 0))
+        out = build.square_photo(src, os.path.join(tmp, "w1"), 0, view=view)
+        # A real share of the face, not a stray pixel at the rim.
+        assert _subject_in_disc(out) > 0.1 * base
+
+        # …and the test can fail: at zoom 1 the same window WITHOUT the clamp
+        # carries none of the subject, which is the card the order printed.
+        if view[0] == 1.0:
+            assert _unclamped_subject_in_disc(src, view) == 0
+
+
+def _unclamped_subject_in_disc(src, view):
+    """apply_photo_view's old, unclamped transform, through square_photo's disc."""
+    from PIL import ImageChops
+    zoom, dx, dy = view
+    with Image.open(src) as im:
+        im = im.convert("RGBA")
+        box, alpha = build.subject_box(im)
+        x0, y0, x1, y1 = build.subject_window(box, alpha=alpha)
+        side = float(x1 - x0)
+        new = side / zoom
+        cx = (x0 + x1) / 2.0 + dx * side
+        cy = (y0 + y1) / 2.0 + dy * side
+        sq = im.crop((int(round(cx - new / 2)), int(round(cy - new / 2)),
+                      int(round(cx + new / 2)), int(round(cy + new / 2)))).resize((200, 200))
+        a = ImageChops.multiply(sq.getchannel("A"), build._disc_mask(200))
+        return sum(1 for v in a.getdata() if v > 128)
 
 
 # --- square_photo actually applies it ---------------------------------------
@@ -130,8 +219,10 @@ def test_square_photo_without_a_view_is_unchanged():
 
 def test_panning_into_the_white_quadrant_fills_the_disc_with_it():
     # The photo is square, so the automatic crop is the whole frame and the disc
-    # sees a quarter of it white. Zoom in on the top-left and it should be all
-    # white; zoom in on the bottom-right and none of it.
+    # sees a quarter of it white. Zoom in on the top-left and it should be mostly
+    # white; zoom in on the bottom-right and none of it. "Mostly", not "all": the
+    # pan is clamped so the frame's centre stays inside the disc, so a corner can
+    # never fill it completely (see clamp_photo_pan).
     with tempfile.TemporaryDirectory() as tmp:
         src = _opaque_photo(os.path.join(tmp, "a.png"))
         base = _white_share(build.square_photo(src, os.path.join(tmp, "w0"), 0))
@@ -140,7 +231,7 @@ def test_panning_into_the_white_quadrant_fills_the_disc_with_it():
         away = _white_share(
             build.square_photo(src, os.path.join(tmp, "w2"), 0, view=(3.0, 0.3, 0.3)))
         assert 0.2 < base < 0.35
-        assert into > 0.95
+        assert into > 0.75
         assert away < 0.05
 
 
@@ -153,7 +244,7 @@ def test_resolve_photos_pairs_each_view_with_its_own_photo():
                                    views=[(3.0, -0.3, -0.3), None])
         # The first is framed onto the white quadrant, the second is not — swap
         # the two and this is the assertion that fails.
-        assert _white_share(out[0]) > 0.95
+        assert _white_share(out[0]) > 0.75
         assert 0.2 < _white_share(out[1]) < 0.35
 
 

@@ -582,6 +582,36 @@ test('a frozen photo still opens full size, and still does not move', async ({ p
   expect((await owned(page, id, k)).pawn_view?.[photo]).toBeUndefined();
 });
 
+// A CANCELLED GESTURE IS NOT A CHOICE. A real order printed five of eight pawns
+// as empty circles after swipes meant for the page were saved as pans; the
+// browser's pointercancel used to end a drag exactly like letting go, saving
+// wherever the photo had got to. Now the photo goes back and nothing is sent.
+test('a cancelled drag puts the photo back and saves nothing', async ({ page }) => {
+  await stubPawnCard(page);
+  const { url, id, k } = await createCollection(page);
+  const [photo] = await attachPhotos(page, id, k, 1);
+  await page.goto(url);
+  await page.getByTestId('tab-pawns').click();
+
+  const crop = page.getByTestId('pawn-thumb').first().locator('svg[data-pawn-crop]');
+  await expect(crop).toHaveCount(1);
+  const before = await crop.getAttribute('viewBox');
+  const pad = page.locator('.pawn-pad').first();
+
+  await dragBy(pad, 20, 12, 'pointercancel');
+  await expect.poll(() => crop.getAttribute('viewBox')).toBe(before);
+  // Not a tap either: a cancelled press does not open the photo full size.
+  await expect(page.getByTestId('pawn-view')).toBeHidden();
+  await page.waitForTimeout(900); // past the save debounce
+  expect((await owned(page, id, k)).pawn_view?.[photo]).toBeUndefined();
+
+  // The same gesture, let go of, is a choice — and is saved. Without this the
+  // assertion above could pass on a page that never saves anything.
+  await dragBy(pad, 20, 12);
+  await expect.poll(() => crop.getAttribute('viewBox')).not.toBe(before);
+  await expect.poll(async () => (await owned(page, id, k)).pawn_view?.[photo]?.dx ?? 0).not.toBe(0);
+});
+
 test('a contributor sees none of it', async ({ page }) => {
   const { url, id, k } = await createCollection(page);
   await attachPhotos(page, id, k, 1);
@@ -714,7 +744,7 @@ test('an order with nothing to upgrade is offered nothing', async ({ page }) => 
 // touch context listens to, and Playwright's touchscreen only taps — so the
 // three pointer events our own handler reads are dispatched directly, which is
 // also the honest scope: this is a test of the handler, not of the browser.
-async function dragBy(locator, dx, dy) {
+async function dragBy(locator, dx, dy, end = 'pointerup') {
   const box = await locator.boundingBox();
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
@@ -727,7 +757,7 @@ async function dragBy(locator, dx, dy) {
       clientY: y + dy * step,
     });
   }
-  await locator.dispatchEvent('pointerup', { ...opts, clientX: x + dx, clientY: y + dy });
+  await locator.dispatchEvent(end, { ...opts, clientX: x + dx, clientY: y + dy });
 }
 
 // The pawn card is a Chrome render on the server, and the CI node job has no

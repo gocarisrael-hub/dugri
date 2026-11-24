@@ -407,13 +407,59 @@ export function plainCrop(w, h, subjectY = SUBJECT_Y) {
   return [left, 0, left + side, side];
 }
 
-/** build.apply_photo_view: the crop moved and scaled the way the buyer placed it. */
+// HOW FAR SHE MAY PAN: never so far that the subject leaves the circle.
+//
+// The automatic frame (build.subject_window / pawn-print.js subjectWindow) is a
+// square of side S centred on the subject, sized so the subject's farthest pixel
+// sits on the printed disc, whose radius is DISC_FILL / 2 = 0.45 of S. Her view
+// moves that window's centre by (dx, dy) * S and shrinks it to S / zoom, so the
+// disc that prints is centred (dx, dy) * S away from the subject's centre with a
+// radius of 0.45 * S / zoom. (An original with no silhouette gets the plain
+// square instead, and its centre — the head anchor — plays the subject's part.)
+// The subject's centre stays inside the printed disc
+// exactly while
+//
+//     sqrt(dx² + dy²) <= 0.45 / zoom
+//
+// so that is the bound: a RADIUS, not a box, because the thing it protects is a
+// circle (a ±0.45 box would let a corner drag put the centre 0.64 out). At zoom 1
+// the subject's centre can reach the rim and no further — half of it always
+// prints; zoomed out the window grows and so does the reach; zoomed in the disc
+// shrinks and the reach with it. The old ±1 box let the window leave the subject
+// entirely, and a real order printed five empty circles that way.
+//
+// 0.45 is the DEFAULT disc fill, held fixed on purpose: the store and the
+// generator clamp with the same constant, and the three must agree to the bit.
+// build.PHOTO_PAN_REACH and db.js PAWN_PAN_REACH repeat it; pawn-frame.js
+// clampView applies it to every view the page holds or sends.
+export const PAN_REACH = 0.45;
+
+/**
+ * (dx, dy) pulled back onto the circle of radius PAN_REACH / zoom when it lies
+ * outside it, keeping its direction. Plain IEEE arithmetic (sqrt, not hypot) so
+ * build.clamp_photo_pan gets the identical answer; the tolerance makes it
+ * idempotent, so clamping an already-clamped view never nudges it by an ulp.
+ */
+export function clampPan(dx, dy, zoom) {
+  const lim = PAN_REACH / zoom;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (!(len > lim * (1 + 1e-9))) return [dx, dy];
+  const k = lim / len;
+  return [dx * k, dy * k];
+}
+
+/**
+ * build.apply_photo_view: the crop moved and scaled the way the buyer placed it.
+ * The pan is clamped here too, like the generator does, so a view stored before
+ * the bound existed draws on the page exactly as it now prints.
+ */
 export function viewCrop(crop, view) {
   if (!view) return crop;
   const side = crop[2] - crop[0];
   const next = side / view.zoom;
-  const cx = (crop[0] + crop[2]) / 2 + view.dx * side;
-  const cy = (crop[1] + crop[3]) / 2 + view.dy * side;
+  const [dx, dy] = clampPan(view.dx, view.dy, view.zoom);
+  const cx = (crop[0] + crop[2]) / 2 + dx * side;
+  const cy = (crop[1] + crop[3]) / 2 + dy * side;
   return [
     pyRound(cx - next / 2),
     pyRound(cy - next / 2),
