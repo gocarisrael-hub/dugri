@@ -138,11 +138,38 @@ describe('db.setPawnView', () => {
   it('clamps what it is given, so a hand-made request cannot print off the card', () => {
     const { c, paths } = withPhotos(1, 'clamp-');
     db.setPawnView(c.id, c.owner_token, paths[0], { zoom: 99, dx: -8, dy: 8, bg: 'yes' });
+    const v = db.getCollection(c.id).pawn_view[paths[0]];
+    expect(v.zoom).toBe(2.5);
+    expect(v.bg).toBe(true);
+    // The pan is a radius of 0.45 / zoom, in the direction she dragged.
+    expect(Math.hypot(v.dx, v.dy)).toBeCloseTo(0.45 / 2.5, 12);
+    expect(v.dx).toBeCloseTo(-v.dy, 12);
+    expect(v.dx).toBeLessThan(0);
+  });
+
+  // A real order printed five of eight pawns as empty circles: page-scroll swipes
+  // saved as pans of ±1, which slide the window clean off the subject. The store
+  // now keeps the subject's centre inside the printed circle, whatever it is sent.
+  it('never stores a pan that slides the subject out of the circle', () => {
+    const { c, paths } = withPhotos(1, 'runaway-');
+    for (const [zoom, dx, dy] of [
+      [1, -1, 1],
+      [1, 0, -1],
+      [1, 0.99, -1],
+      [0.5, 1, -1],
+      [2.5, -1, 1],
+    ]) {
+      db.setPawnView(c.id, c.owner_token, paths[0], { zoom, dx, dy });
+      const v = db.getCollection(c.id).pawn_view[paths[0]];
+      expect(Math.hypot(v.dx, v.dy)).toBeLessThanOrEqual((0.45 / zoom) * (1 + 1e-9));
+    }
+    // Inside the circle a view is stored exactly as sent.
+    db.setPawnView(c.id, c.owner_token, paths[0], { zoom: 1, dx: 0.3, dy: -0.2 });
     expect(db.getCollection(c.id).pawn_view[paths[0]]).toEqual({
-      zoom: 2.5,
-      dx: -1,
-      dy: 1,
-      bg: true,
+      zoom: 1,
+      dx: 0.3,
+      dy: -0.2,
+      bg: false,
     });
   });
 

@@ -4526,8 +4526,32 @@
           // would see as a failure on a page she was only reading.
           else if (!frozen) savePawnView(src, view);
         };
+        // A CANCELLED GESTURE IS NOT A CHOICE. pointercancel is the browser taking
+        // the press away (a system gesture, a scroll it decided to own, the phone
+        // ringing) — nothing she let go of. It used to end like a pointerup and
+        // SAVE wherever the photo had got to, so a swipe meant for the page could
+        // land on the order. Now the photo goes back where the press found it, and
+        // nothing is sent and nothing opens.
+        //
+        // The pad keeps `touch-action: none` (pawn.css) on purpose: framing is a
+        // two-axis drag, and `pan-y` would hand every vertical drag to the page —
+        // she could no longer move a face up or down on a phone, which is half of
+        // what this control is for. What a swipe that starts on a photo can do is
+        // bounded instead: clampView keeps the subject's centre in the circle
+        // (pawn-print.js PAN_REACH), the move is on screen as it happens, and
+        // "איפוס מיקום" puts it back.
+        const cancelDrag = (e) => {
+          if (!drag || (e && e.pointerId !== drag.id)) return;
+          const { frozen, view: before } = drag;
+          drag = null;
+          if (frozen) return;
+          pawnBusy = false;
+          view = before;
+          paint();
+          pawnShowView(src, view);
+        };
         pad.addEventListener('pointerup', endDrag);
-        pad.addEventListener('pointercancel', endDrag);
+        pad.addEventListener('pointercancel', cancelDrag);
         return cell;
       }
 

@@ -1260,7 +1260,11 @@ function keepPawnKeys(map, paths) {
 // is what the generator reads, so the bounds have to hold on this side too.
 const PAWN_ZOOM_MIN = 0.5;
 const PAWN_ZOOM_MAX = 2.5;
-const PAWN_PAN_MAX = 1;
+// The pan is held to a RADIUS of PAWN_PAN_REACH / zoom, so the subject's centre
+// never leaves the printed circle (derivation: site/js/pawn-print.js PAN_REACH).
+// The old ±1 box let a stray swipe park the window off the subject entirely, and
+// an order printed five empty circles.
+const PAWN_PAN_REACH = 0.45;
 function clampPawnView(view) {
   const v = view && typeof view === 'object' ? view : {};
   const num = (x, lo, hi, dflt) => {
@@ -1268,12 +1272,18 @@ function clampPawnView(view) {
     if (!Number.isFinite(n)) return dflt;
     return Math.min(hi, Math.max(lo, n));
   };
-  return {
-    zoom: num(v.zoom, PAWN_ZOOM_MIN, PAWN_ZOOM_MAX, 1),
-    dx: num(v.dx, -PAWN_PAN_MAX, PAWN_PAN_MAX, 0),
-    dy: num(v.dy, -PAWN_PAN_MAX, PAWN_PAN_MAX, 0),
-    bg: !!v.bg,
-  };
+  const zoom = num(v.zoom, PAWN_ZOOM_MIN, PAWN_ZOOM_MAX, 1);
+  let dx = num(v.dx, -Infinity, Infinity, 0);
+  let dy = num(v.dy, -Infinity, Infinity, 0);
+  // Same arithmetic as pawn-print.js clampPan and build.clamp_photo_pan, to the bit.
+  const lim = PAWN_PAN_REACH / zoom;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len > lim * (1 + 1e-9)) {
+    const k = lim / len;
+    dx *= k;
+    dy *= k;
+  }
+  return { zoom, dx, dy, bg: !!v.bg };
 }
 
 // 'cancelled' (admin soft-cancel) takes precedence; otherwise open while not

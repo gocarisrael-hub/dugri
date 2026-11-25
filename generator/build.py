@@ -1070,12 +1070,39 @@ def parse_photo_view(text):
         zoom, dx, dy = (float(p) for p in parts)
     except ValueError:
         return None
+    if not all(math.isfinite(n) for n in (zoom, dx, dy)):
+        return None
     zoom = min(2.5, max(0.5, zoom))
-    dx = min(1.0, max(-1.0, dx))
-    dy = min(1.0, max(-1.0, dy))
+    dx, dy = clamp_photo_pan(dx, dy, zoom)
     if (zoom, dx, dy) == (1.0, 0.0, 0.0):
         return None
     return (zoom, dx, dy)
+
+
+# HOW FAR THE BUYER MAY PAN: a radius of PHOTO_PAN_REACH / zoom, in units of the
+# automatic window's side. subject_window sizes that window so the subject's
+# farthest pixel sits on the disc (radius PHOTO_DISC_FILL / 2 = 0.45 of the side);
+# her view moves the window's centre by (dx, dy) and shrinks the disc to
+# 0.45 / zoom, so the subject's centre stays inside the printed disc exactly while
+# sqrt(dx² + dy²) <= 0.45 / zoom. The full derivation is next to
+# site/js/pawn-print.js PAN_REACH; db.js PAWN_PAN_REACH is the store's copy. Fixed
+# at the DEFAULT disc fill (not read from DUGRI_PHOTO_DISC_FILL) so all three
+# layers clamp to the same bit.
+PHOTO_PAN_REACH = 0.45
+
+
+def clamp_photo_pan(dx, dy, zoom):
+    """``(dx, dy)`` pulled back onto the circle of radius PHOTO_PAN_REACH / zoom.
+
+    Direction kept. The arithmetic is pawn-print.js ``clampPan`` operation for
+    operation (sqrt, not hypot), and the tolerance makes it idempotent.
+    """
+    lim = PHOTO_PAN_REACH / zoom
+    length = math.sqrt(dx * dx + dy * dy)
+    if not length > lim * (1 + 1e-9):
+        return dx, dy
+    k = lim / length
+    return dx * k, dy * k
 
 
 def apply_photo_view(crop, view):
@@ -1094,6 +1121,10 @@ def apply_photo_view(crop, view):
     if not view:
         return crop
     zoom, dx, dy = view
+    # Clamped HERE as well as in the store and on the page: views saved before
+    # the bound existed (a real order carried dx/dy of ±1 — five empty circles)
+    # still reach this function, and they must print a face.
+    dx, dy = clamp_photo_pan(dx, dy, zoom)
     x0, y0, x1, y1 = crop
     side = float(x1 - x0)
     new = side / zoom
@@ -1186,8 +1217,8 @@ def square_photo(path, workdir, index=0, view=None, cutout=True):
             # whichever square the rules above chose, so "move it a bit left" is
             # relative to a frame she was already looking at rather than to the
             # raw photo. Everything downstream — the resize, the disc clip — runs
-            # exactly as before, which is why she can push the subject past the
-            # circle if she wants to and it comes out cropped rather than broken.
+            # exactly as before. The pan is clamped so the subject's centre stays
+            # inside the circle (clamp_photo_pan); she can crop it, not lose it.
             crop = apply_photo_view(crop, view)
             # Cropping PAST the edge of the photo is intended when the subject
             # runs off it: Pillow pads with zeros, which on RGBA is transparent —
