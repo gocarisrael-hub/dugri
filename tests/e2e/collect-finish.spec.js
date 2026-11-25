@@ -589,7 +589,9 @@ test('a frozen photo still opens full size, and still does not move', async ({ p
 test('a cancelled drag puts the photo back and saves nothing', async ({ page }) => {
   await stubPawnCard(page);
   const { url, id, k } = await createCollection(page);
-  const [photo] = await attachPhotos(page, id, k, 1);
+  // A real-sized photo: on the default 1px one a pan rounds away to the same
+  // viewBox, and "it went back" would pass without anything having moved.
+  const [photo] = await attachPhotos(page, id, k, 1, await gradientPng(40, 40));
   await page.goto(url);
   await page.getByTestId('tab-pawns').click();
 
