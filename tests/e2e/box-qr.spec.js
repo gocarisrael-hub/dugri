@@ -64,15 +64,15 @@ test('scan → phone → the code on screen with the masked address → it appli
     'הקלידו את מספר הטלפון שאיתו הזמנתם, ותקבלו קוד אישי של 10% הנחה למשחק הבא. ' +
       'הקוד בתוקף ל-6 חודשים. ושוב תודה :)'
   );
-  // Ticked by default: the owner's standing choice.
-  await expect(page.getByTestId('box-consent')).toBeChecked();
-  await expect(card).toContainText('אשמח לקבל מדוגרי עדכונים והטבות במייל');
+  // No marketing opt-in on this page.
+  await expect(page.getByTestId('box-consent')).toHaveCount(0);
+  await expect(card).not.toContainText('עדכונים והטבות');
 
   await page.getByTestId('box-phone').fill('+972 52-727-5047');
   await page.getByTestId('box-submit').click();
   await expect(card).toHaveAttribute('data-state', 'done');
   // The number goes as typed: the server normalises it.
-  expect(sent).toEqual({ phone: '+972 52-727-5047', marketing_consent: true });
+  expect(sent).toEqual({ phone: '+972 52-727-5047' });
   await expect(page.getByTestId('box-code')).toHaveText(code);
   await expect(page.getByTestId('box-emailed')).toHaveText(
     'שלחנו אותו גם ל-ha***@gmail.com, שלא ילך לאיבוד.'
@@ -113,7 +113,7 @@ test('a number with no produced order: the neutral message, and the form stays f
   await expect(page.getByTestId('box-code')).toHaveCount(0);
 });
 
-test('unticking the marketing box sends consent false', async ({ page }) => {
+test('the claim sends the phone only, no marketing consent', async ({ page }) => {
   let sent = null;
   await page.route('**/api/box-qr', async (route) => {
     if (route.request().method() !== 'POST') return route.fallback();
@@ -121,13 +121,11 @@ test('unticking the marketing box sends consent false', async ({ page }) => {
     await route.fulfill({ json: { ok: true, all_claimed: true } });
   });
   await page.goto('/box');
-  const consent = page.getByTestId('box-consent');
-  await expect(consent).toBeChecked();
-  await consent.uncheck();
+  await expect(page.getByRole('checkbox')).toHaveCount(0);
   await page.getByTestId('box-phone').fill('0527275047');
   await page.getByTestId('box-submit').click();
   await expect(page.getByTestId('box-card')).toHaveAttribute('data-state', 'all_claimed');
-  expect(sent).toEqual({ phone: '0527275047', marketing_consent: false });
+  expect(sent).toEqual({ phone: '0527275047' });
 });
 
 test('not a phone number is caught before it is sent', async ({ page }) => {
@@ -165,11 +163,10 @@ test('in the redesign the page takes the kit’s look', async ({ page }) => {
   await expect(page.getByTestId('box-card')).toHaveAttribute('data-state', 'open');
   await expect(page.getByTestId('box-card')).toHaveClass(/rd-box/);
   await expect(page.getByTestId('box-submit')).toHaveClass(/rd-btn/);
-  // The same words and the same ticked box in the new look.
+  // The same words, and no opt-in box, in the new look.
   await expect(page.locator('h1')).toHaveText('תודה שבחרתם בדוגרי! מגיע לכם 10% הנחה לפעם הבאה');
   await expect(page.getByTestId('box-card')).toContainText('ושוב תודה :)');
-  await expect(page.getByTestId('box-consent')).toBeChecked();
-  await expect(page.getByTestId('box-consent')).toBeVisible();
+  await expect(page.getByTestId('box-consent')).toHaveCount(0);
   await page.goto('/box?rd=0');
 });
 

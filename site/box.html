@@ -71,16 +71,6 @@
         text-align: left;
         width: 100%;
       }
-      .consent {
-        display: flex;
-        gap: 8px;
-        align-items: flex-start;
-        font-size: 14px;
-        color: #3c3c3c;
-      }
-      .consent input {
-        margin-top: 4px;
-      }
       button,
       .cta {
         font: inherit;
@@ -193,11 +183,6 @@
           esc(copy.lead) +
           '</p><form id="f" novalidate>' +
           '<input id="phone" type="tel" required autocomplete="tel" inputmode="tel" placeholder="050-0000000" aria-label="מספר טלפון" data-testid="box-phone" />' +
-          // Ticked by default (the owner's standing choice, as on the friend
-          // coupon); the server records consent only for an explicit true.
-          '<label class="consent"><input id="consent" type="checkbox" checked data-testid="box-consent" /><span>' +
-          esc(copy.consent) +
-          '</span></label>' +
           '<button type="submit" data-testid="box-submit">' +
           esc(copy.button) +
           '</button><div class="err" id="err" role="alert" data-testid="box-err"></div></form>';
@@ -218,10 +203,9 @@
             const res = await fetch(api, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                phone,
-                marketing_consent: document.getElementById('consent').checked === true,
-              }),
+              // No marketing opt-in on this page (owner's call): without an
+              // explicit true the server records consent false.
+              body: JSON.stringify({ phone }),
             });
             const r = await res.json().catch(() => ({}));
             if (res.status === 429) throw new Error('יותר מדי ניסיונות. נסו שוב בעוד שעה.');
